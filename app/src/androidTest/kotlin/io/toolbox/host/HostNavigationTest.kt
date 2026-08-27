@@ -27,7 +27,7 @@ class HostNavigationTest {
 
         composeRule.onNodeWithContentDescription("返回").performClick()
         composeRule.onNodeWithTag(HostTestTags.BottomSettings).performClick()
-        composeRule.onNodeWithText("设置").assertIsDisplayed()
+        composeRule.onNodeWithText("主题种子色").assertIsDisplayed()
 
         composeRule.onNodeWithTag(HostTestTags.PermissionCenter).performClick()
         composeRule.onNodeWithTag(HostTestTags.PermissionCenter).assertIsDisplayed()
