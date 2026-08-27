@@ -11,6 +11,7 @@ Build an Android host app that imports `.tbx` ZIP packages containing HTML/CSS/J
 3. `schema/manifest.schema.json`
 4. `sdk/toolbox-api.d.ts`
 5. `references/component_mapping.md`
+6. `TESTING.md`
 
 ## Non-negotiable security invariants
 
@@ -50,4 +51,5 @@ Build an Android host app that imports `.tbx` ZIP packages containing HTML/CSS/J
 - No main-thread file, zip, hash, database or network work.
 - Errors are typed and user-visible messages are actionable.
 - Security-sensitive branch has a test.
+- Every retained or new automated test is admitted in `TESTING.md` with its reason, method and expected result; prefer the smallest non-duplicated test at the lowest faithful layer.
 - Documentation and TypeScript API declaration stay in sync.

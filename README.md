@@ -10,6 +10,7 @@ ToolBox 是 Android 13+ 的原生小工具宿主。本仓库当前只完成 `COD
 - 紧凑宽度底部导航和中宽度导航栏布局
 - Compose Preview、单元测试、instrumentation 导航用例和截图 golden
 - CI 中的安全不变量扫描、Debug 构建、测试、Lint 与截图验证
+- 测试准入与逐项理由/方法/预期结果见 `TESTING.md`
 
 阶段 1 中所有安装和运行入口均为禁用或静态占位，不会假装执行后续阶段的安全敏感行为。
 
@@ -31,12 +32,6 @@ ToolBox 是 Android 13+ 的原生小工具宿主。本仓库当前只完成 `COD
 
 ```bash
 ./gradlew :app:installDebug
-```
-
-连接设备后执行宿主导航 instrumentation 测试：
-
-```bash
-./gradlew :app:connectedDebugAndroidTest
 ```
 
 连接设备后执行宿主导航 instrumentation 测试：
