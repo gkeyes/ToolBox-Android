@@ -24,6 +24,10 @@ done
 
 [[ "$attempt_dir" = /* ]] || fail 'USAGE: run-host-gate.sh --attempt <absolute-dir>'
 mkdir -p "$attempt_dir"
+candidate_sha="$(git -C "$repository_root" rev-parse HEAD)"
+timestamp_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'UTC=%s\nCANDIDATE_SHA=%s\nSTATE=HOST_GATE_STARTED\n' \
+    "$timestamp_utc" "$candidate_sha" > "$attempt_dir/host-gate.bootstrap.txt"
 
 resolve_java_home() {
     local candidate=""
@@ -33,6 +37,14 @@ resolve_java_home() {
         "$candidate/bin/java" -version 2>&1 | grep -q 'version "21\.' || fail 'TOOLBOX_JAVA_HOME must name a JDK 21 home'
         printf '%s\n' "$candidate"
         return
+    fi
+
+    if [[ -n "${JAVA_HOME:-}" ]]; then
+        candidate="$JAVA_HOME"
+        if [[ -x "$candidate/bin/java" ]] && "$candidate/bin/java" -version 2>&1 | grep -q 'version "21\.'; then
+            printf '%s\n' "$candidate"
+            return
+        fi
     fi
 
     candidate='/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home'
@@ -52,8 +64,6 @@ resolve_java_home() {
 }
 
 java_home="$(resolve_java_home)"
-candidate_sha="$(git -C "$repository_root" rev-parse HEAD)"
-timestamp_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 grep -Eq 'compileSdk[[:space:]]*=[[:space:]]*37' "$repository_root/app/build.gradle.kts" || fail 'SDK 37 baseline missing from app/build.gradle.kts'
 action_log="$attempt_dir/host-gate.actions.txt"
 surface_record="$attempt_dir/host-gate.ui-surface.txt"

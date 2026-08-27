@@ -51,6 +51,7 @@ jobs:
           name: host-gate-${{ github.run_id }}
           path: ${{ github.workspace }}/.omo/evidence/ci-host-gate
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   instrumentation:
