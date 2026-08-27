@@ -33,21 +33,25 @@ jobs:
         with:
           packages: >-
             platform-tools
-            platforms;android-37.0
+            platforms;android-37
             build-tools;37.0.0
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Verify phase 1
+      - name: Verify host gate
         run: >-
-          ./gradlew --no-daemon
-          verifySecurityInvariants
-          assembleDebug
-          :app:assembleDebugAndroidTest
-          testDebugUnitTest
-          lintDebug
-          validateDebugScreenshotTest
+          bash scripts/qa/run-host-gate.sh
+          --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
+
+      - name: Upload host gate evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: host-gate-${{ github.run_id }}
+          path: ${{ github.workspace }}/.omo/evidence/ci-host-gate
+          if-no-files-found: error
+          retention-days: 14
 
   instrumentation:
     name: Host navigation instrumentation
@@ -85,6 +89,6 @@ jobs:
           target: aosp_atd
           arch: x86_64
           profile: pixel_6
-          disk-size: 2048M
+          disk-size: 4096M
           disable-animations: true
           script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
