@@ -55,7 +55,7 @@ jobs:
           retention-days: 14
 
   instrumentation:
-    name: Host navigation instrumentation
+    name: Host and persistence instrumentation
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -83,7 +83,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run host navigation test
+      - name: Run admitted device tests
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -92,4 +92,4 @@ jobs:
           profile: pixel_6
           disk-size: 4096M
           disable-animations: true
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest :core-data:connectedDebugAndroidTest

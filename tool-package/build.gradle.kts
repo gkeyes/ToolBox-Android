@@ -11,3 +11,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 }
+
+dependencies {
+    implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.junit4)
+}

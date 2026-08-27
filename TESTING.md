@@ -65,6 +65,30 @@
 | `scripts/qa/self-test.sh --case missing-ui-tree` | 宿主门禁必须明确记录其 UI 证据范围，即使范围是未采集设备树。 | 回执引用不存在的 surface 记录。 | 校验器以 `EVIDENCE_INCOMPLETE` 非零退出。 |
 | `scripts/qa/self-test.sh --case missing-cleanup-receipt` | 缺少清理证明时不能复用门禁结果。 | 回执引用不存在的清理记录。 | 校验器以 `EVIDENCE_INCOMPLETE` 非零退出。 |
 
+## Task 7 数据层测试
+
+| 测试 | 测试理由 | 测试方法 | 预期结果 |
+|---|---|---|---|
+| `CatalogRepositoryTest.versionCanBeRegisteredThenActivated` | 目录激活是后续安装事务向运行时交接的持久化边界。 | 通过共享的内存 repository bundle 登记一个 `PENDING` 版本、激活并观察工具/版本 Flow。 | 激活成功，工具指向该版本，版本状态变为 `STABLE`。 |
+| `CatalogRepositoryTest.duplicateVersionIsRejectedWithoutReplacingCatalogState` | 相同 `(toolId, versionCode)` 不得覆盖已登记元数据或 bundle 引用。 | 先登记版本，再用相同复合键写入不同名称和版本内容。 | 返回 `DuplicateVersion`，原工具名称与版本字符串不变。 |
+| `CatalogRepositoryTest.commitFailureLeavesNoActiveVersion` | 目录事务提交点失败时必须整体回滚。 | 登记待定版本，并在激活事务提交点注入异常。 | 返回 `StorageFailure`，active 仍为空，版本仍为 `PENDING`。 |
+| `ToolKvRepositoryTest.quotaAndConcurrentWritesRemainAtomic` | 工具所有权、KV 配额与并发写共同构成资源隔离边界。 | 先登记工具 owner，再参数化覆盖额度内写入、整笔超额和 8 个并发写竞争 5 字节额度。 | 分别得到 2/2 成功且 5 字节、1/2 成功且 4 字节、5/8 成功且 5 字节；失败均为 `QuotaExceeded`，无部分写入。 |
+| `HostSettingsRepositoryTest.invalidNumericUpdatesAreRejectedAndCorruptPersistenceDefaults` | 非法保留期、配额或真实损坏的 Preferences 文件都不能污染宿主设置。 | 对内存与 DataStore repository 提交越界变换；再写入截断 protobuf 字节，用生产同款 corruption handler 读取并比较恢复后的文件。 | 越界更新返回 `InvalidInput` 且状态不变；损坏文件读取为安全默认值，并被替换为有效存储。 |
+| `PersistenceContractTest.freshV1CatalogAndSettingsPersistAcrossReopenedProductionAdapters` | 内存适配器不能证明真实 Room v1 schema 和 DataStore 文件能跨实例恢复。 | 用 `MigrationTestHelper` 创建 v1 并核对七张表；通过生产 Room/DataStore 写入目录激活和全部宿主设置，关闭数据库/scope 后从同一文件重开。 | 初始目录为空；schema 恰有七张规划表；active 版本和全部设置精确保留。 |
+| `PersistenceContractTest.productionAdaptersEnforceRollbackOwnershipQuotaAndRuntimeParity` | 真实 Room 必须与内存适配器保持相同的回滚、所有权、配额和运行会话结果。 | 在一个合并设备测试中注入激活失败，执行 8 路配额竞争、孤儿 KV/授权/会话写入、重复启动及重复/缺失结束，并对比内存结果。 | 激活完整回滚；恰有 5 个 KV 写入；孤儿写为 `NotFound("tool")`，重复启动为 `InvalidInput("sessionId")`，重复或缺失结束为 `NotFound("runtimeSession")`，Room 与内存一致。 |
+
+## Task 8 `.tbx` 检查层测试
+
+37 个场景合并在五个高价值测试入口中，覆盖检查生命周期、恶意 ZIP 和完整性/签名边界；不为 manifest 普通字段或 getter 增加重复测试。
+
+| 测试 | 测试理由 | 测试方法 | 预期结果 |
+|---|---|---|---|
+| `PackageInspectorTest.positionCalculatorInspection` | 真实受支持包必须产出足够的审核事实，并且拒绝结果不能靠伪 fixture 证明。 | 从公共 inspector 流式读取仓库中的仓位计算器示例包，检查完整 manifest、文件/字节统计、权限、CSP/风险和签名状态，再执行两次 discard。 | 得到可安装的不可变 unsigned 检查会话；审核事实准确且无误报风险；首次 discard 成功、第二次为 `NotFound`，无会话残留。 |
+| `PackageInspectorTest.cancellationAndSessionRootFailureTerminateWithoutInspectionResidue` | 导入取消或私有会话目录不可用时不能留下半包或挂起任务。 | 取消一个正在阻塞读取的输入流，并用非法会话根目录触发创建失败。 | 取消向上传播且目录为空；目录失败返回类型化 `SESSION_IO_FAILED`，没有可安装结果。 |
+| `PackageInspectorTest.completedInspectionCanBeClaimedExactlyOnceWithoutReopeningInput` | 检查到安装的交接必须保持同一份已审核字节，并在并发、进程退出或终态清理中都不遗留私有包。 | 用计数输入并发 claim；释放文件锁模拟进程退出并由新 inspector 恢复；检查 live public discard、幂等 lease cleanup、缺 bundle 和预置 `.disposing` 崩溃残留。 | 输入只打开一次；同一时刻仅一个 owner；新实例无需重读即可恢复；public discard 不误删 live bundle；缺损与终态残留均返回类型化结果并收敛为空目录。 |
+| `MaliciousPackageMatrixTest.adversarialArchiveFailsClosedWithoutSessionResidue` | Zip Slip、碰撞、链接、炸弹、嵌套/原生载荷、schema 错误及实际 CRC 篡改属于不同的安全分支。 | 参数化生成 24 个真实二进制 ZIP 变体，其中 CRC 用例仅篡改 STORED payload、保持目录元数据一致，逐个通过公共 inspector。 | 每行都返回对应的类型化拒绝；CRC 用例命中流式 `EXTRACTION_FAILED`/`CRC32`；所有失败均零会话残留。 |
+| `PackageInspectorIntegrityMatrixTest.integrityAndRawSignatureMatrixBlocksEveryInvalidPackageBeforeInstall` | 完整文件集和原始 `integrity.json` 的 Ed25519 验证是安装前阻断边界。 | 参数化覆盖有效 unsigned、缺失/多余/篡改/畸形完整性、有效 unknown publisher、签名后原始字节变异、密钥不匹配/不可用及无效签名。 | 只有策略允许的有效 unsigned/unknown 状态可进入审核；所有无效状态均携带 blocker，且不会保留安装会话。 |
+
 ## 非测试构建门禁
 
 `verifySecurityInvariants`、`assembleDebug`/AndroidTest APK、`lintDebug` 和截图校验是候选构建门禁，不计作功能测试。它们分别预期：禁用 API/权限扫描为零违规、APK 可构建、Lint 无阻断问题、已登记截图与人工批准基线一致。它们不能替代上面的交互测试或未来包/运行时安全测试。
