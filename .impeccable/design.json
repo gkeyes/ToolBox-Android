@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-27T23:10:00+08:00",
+  "title": "Design System: ToolBox Android",
+  "extensions": {
+    "colorMeta": {
+      "action-blue": { "role": "primary", "displayName": "Action Blue", "canonical": "#3482FF", "tonalRamp": ["#07152B", "#102D57", "#1D4C8E", "#2868C4", "#3482FF", "#73A9FF", "#B5D1FF", "#EEF5FF"] },
+      "canvas-light": { "role": "neutral", "displayName": "Cool Canvas", "canonical": "#F3F6FB", "tonalRamp": ["#17191D", "#30343B", "#515761", "#747C89", "#A0A8B5", "#C5CBD4", "#E1E5EC", "#F3F6FB"] },
+      "success": { "role": "secondary", "displayName": "Verified Green", "canonical": "#34C759", "tonalRamp": ["#071B0C", "#10391D", "#1B5D30", "#268443", "#34C759", "#72DE8C", "#B4EFC1", "#EAF9EF"] },
+      "warning": { "role": "tertiary", "displayName": "Caution Orange", "canonical": "#FF9500", "tonalRamp": ["#241300", "#4A2900", "#794500", "#AD6400", "#FF9500", "#FFB84F", "#FFD69A", "#FFF4DE"] },
+      "danger": { "role": "tertiary", "displayName": "Blocking Red", "canonical": "#FF3B30", "tonalRamp": ["#260605", "#4F0E0B", "#821A15", "#BA2821", "#FF3B30", "#FF7B73", "#FFB9B4", "#FFECEA"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Route title", "purpose": "One route title or high-value empty-state statement." },
+      "headline": { "displayName": "Section headline", "purpose": "Grouped decisions and section hierarchy." },
+      "body": { "displayName": "Native body", "purpose": "Actions, explanations and editable values." },
+      "metadata": { "displayName": "Security metadata", "purpose": "Version, size, origin and audit facts that may wrap." },
+      "label": { "displayName": "State label", "purpose": "Badges and compact state paired with semantics." }
+    },
+    "shadows": [
+      { "name": "structural-only", "value": "0 4px 8px rgba(17,24,39,0.10)", "purpose": "Only dialogs, FABs and the runtime action dock may lift above content." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "160ms cubic-bezier(0.2,0,0,1)", "purpose": "Compact state change, dock reveal and selection feedback." },
+      { "name": "state-standard", "value": "240ms cubic-bezier(0.2,0,0,1)", "purpose": "Progress, confirmation and recovery transitions; instant when reduced motion is active." }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "0-599dp" },
+      { "name": "medium", "value": "600-839dp" },
+      { "name": "expanded", "value": "840dp+" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One clear commitment per decision surface.",
+      "html": "<button class=\"ds-btn-primary\">安装并授权</button>",
+      "css": ".ds-btn-primary{min-height:48px;padding:12px 20px;border:0;border-radius:16px;background:#3482FF;color:#fff;font:600 16px system-ui;transition:background 160ms cubic-bezier(.2,0,0,1)}.ds-btn-primary:hover{background:#2868C4}.ds-btn-primary:focus-visible{outline:3px solid #B5D1FF;outline-offset:2px}"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "A real editable 52dp field, never a no-op placeholder.",
+      "html": "<input class=\"ds-search\" placeholder=\"搜索工具、分类或标签\" />",
+      "css": ".ds-search{width:100%;height:52px;box-sizing:border-box;padding:0 16px;border:1px solid #E8EDF5;border-radius:16px;background:#fff;color:#111827;font:400 16px system-ui}.ds-search:focus-visible{outline:3px solid #B5D1FF;border-color:#3482FF}"
+    },
+    {
+      "name": "Dense Review Group",
+      "kind": "card",
+      "refersTo": "card-primary",
+      "description": "One grouped surface with dividers replaces a stack of repetitive cards.",
+      "html": "<div class=\"ds-review\"><div>入口与兼容性</div><div>安全配置</div></div>",
+      "css": ".ds-review{border-radius:16px;background:#fff;color:#111827;font:400 16px system-ui;overflow:hidden}.ds-review>div{min-height:48px;padding:12px 14px;box-sizing:border-box}.ds-review>div+div{border-top:1px solid #E8EDF5}"
+    },
+    {
+      "name": "Runtime Action Dock",
+      "kind": "nav",
+      "refersTo": "runtime-dock",
+      "description": "A recoverable 48dp host control that yields visual priority to tool content.",
+      "html": "<nav class=\"ds-runtime-dock\" aria-label=\"工具操作\"><button>权限</button><button>外部打开</button><button>详情</button></nav>",
+      "css": ".ds-runtime-dock{height:48px;display:flex;align-items:center;padding:0 4px;border-radius:999px;background:#fff;box-shadow:0 4px 8px rgba(17,24,39,.1)}.ds-runtime-dock button{min-width:48px;height:48px;border:0;background:transparent;color:#111827;font:500 12px system-ui}.ds-runtime-dock button:focus-visible{outline:3px solid #B5D1FF;border-radius:999px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Trusted Instrument Tray",
+    "overview": "ToolBox is an instrument tray, not a showroom. The user reaches for one utility, sees its result quickly, and can inspect the host's security facts without losing the work surface. Density is deliberate: repeated shells disappear, related facts group together, and whitespace separates decisions instead of padding every row.",
+    "keyCharacteristics": ["Compact native hierarchy with an 8dp rhythm.", "Tool content dominates runtime; host controls are compact and recoverable.", "Motion is short, stateful and removable, never ornamental."],
+    "rules": [
+      { "name": "The Content-First Rule", "body": "Normal runtime chrome may identify and control the tool, but must never compete with or obscure it.", "section": "overview" },
+      { "name": "The One-Owner Rule", "body": "Each axis has one scroll owner and each window inset has one layout owner.", "section": "overview" },
+      { "name": "The Earned Color Rule", "body": "Semantic color is derived from real inspection, permission or runtime state.", "section": "colors" }
+    ],
+    "dos": ["Do use one 8dp spacing rhythm and remove repeated containers before reducing readable padding.", "Do keep the runtime content-first and system-bar/cutout/navigation safe."],
+    "donts": ["Don't ship fake installed content, fixed sample counts or blank tools presented as real user state.", "Don't render static or no-op controls that look actionable but do nothing.", "Don't build a card wall or oversized spacing.", "Don't let host chrome crowd out tool content."]
+  }
+}
