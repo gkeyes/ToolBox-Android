@@ -20,16 +20,10 @@ class MainDestinationContractTest {
     }
 
     @Test
-    fun parameterizedRoutesRetainOpaqueIdentifiersInsteadOfWholeScreenModels() {
-        val import = ImportReviewRoute(sessionId = "inspection-42")
-        val runtime = RuntimeRoute(toolId = "io.toolbox.positioncalculator")
-        val detail = ToolDetailRoute(toolId = "io.toolbox.positioncalculator")
+    fun capabilityRoutesRetainTypedStateInsteadOfWholeScreenModels() {
+        val unavailable = CapabilityUnavailableRoute(io.toolbox.host.ui.HostCapability.ImportTools)
 
-        assertEquals("inspection-42", import.sessionId)
-        assertEquals("io.toolbox.positioncalculator", runtime.toolId)
-        assertEquals("io.toolbox.positioncalculator", detail.toolId)
-        assertNotEquals(import, ImportReviewRoute(sessionId = "inspection-43"))
-        assertNotEquals(runtime, RuntimeRoute(toolId = "io.toolbox.other"))
-        assertNotEquals(detail, ToolDetailRoute(toolId = "io.toolbox.other"))
+        assertEquals(io.toolbox.host.ui.HostCapability.ImportTools, unavailable.capability)
+        assertNotEquals(unavailable, CapabilityUnavailableRoute(io.toolbox.host.ui.HostCapability.Runtime))
     }
 }

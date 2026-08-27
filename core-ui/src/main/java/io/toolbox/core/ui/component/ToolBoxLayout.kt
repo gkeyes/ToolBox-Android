@@ -7,14 +7,23 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -40,17 +49,57 @@ data class ToolBoxNavigationItem(
 @Composable
 fun ToolBoxAppScaffold(
     modifier: Modifier = Modifier,
-    topBar: @Composable () -> Unit = {},
-    bottomBar: @Composable () -> Unit = {},
-    floatingActionButton: @Composable () -> Unit = {},
+    topBar: (@Composable () -> Unit)? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
+    floatingActionButton: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
+    val ownership = ToolBoxAppScaffoldInsetPolicy.resolve(
+        hasTopBar = topBar != null,
+        hasBottomBar = bottomBar != null,
+        hasFloatingActionButton = floatingActionButton != null,
+    )
+    val topBarInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout)
+    val bottomBarInsets = WindowInsets.navigationBars.union(WindowInsets.ime)
+    val contentWindowInsets = WindowInsets.systemBars
+        .union(WindowInsets.displayCutout)
+        .union(WindowInsets.ime)
+
     Scaffold(
         modifier = modifier,
-        topBar = topBar,
-        bottomBar = bottomBar,
-        floatingActionButton = floatingActionButton,
+        topBar = {
+            if (topBar != null) {
+                val topBarModifier = if (ownership.statusBars == ToolBoxInsetOwner.TopBar) {
+                    Modifier.windowInsetsPadding(topBarInsets)
+                } else {
+                    Modifier
+                }
+                Box(topBarModifier) {
+                    topBar()
+                }
+            }
+        },
+        bottomBar = {
+            if (bottomBar != null) {
+                val bottomBarModifier = if (ownership.navigationBars == ToolBoxInsetOwner.BottomBar) {
+                    Modifier.windowInsetsPadding(bottomBarInsets)
+                } else {
+                    Modifier
+                }
+                Box(bottomBarModifier) {
+                    bottomBar()
+                }
+            }
+        },
+        floatingActionButton = {
+            if (floatingActionButton != null) {
+                Box {
+                    floatingActionButton()
+                }
+            }
+        },
         containerColor = ToolBoxThemeTokens.colors.background,
+        contentWindowInsets = contentWindowInsets,
         content = content,
     )
 }
@@ -92,6 +141,7 @@ fun ToolBoxNavigationBar(
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val itemMinHeight = toolBoxNavigationItemMinHeight(LocalDensity.current.fontScale)
     NavigationBar(
         modifier = modifier,
         color = ToolBoxThemeTokens.colors.surface,
@@ -102,11 +152,14 @@ fun ToolBoxNavigationBar(
                 onClick = { onItemSelected(item) },
                 icon = item.icon.asImageVector(),
                 label = item.label,
-                modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
+                modifier = (item.testTag?.let(Modifier::testTag) ?: Modifier)
+                    .heightIn(min = itemMinHeight),
             )
         }
     }
 }
+
+internal fun toolBoxNavigationItemMinHeight(fontScale: Float) = 64.dp * fontScale.coerceAtLeast(1f)
 
 @Composable
 fun ToolBoxFloatingActionButton(

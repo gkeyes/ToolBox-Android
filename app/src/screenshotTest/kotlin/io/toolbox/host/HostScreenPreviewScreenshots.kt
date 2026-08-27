@@ -7,9 +7,11 @@ import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.ui.HomeScreen
 import io.toolbox.host.ui.ImportReviewScreen
 import io.toolbox.host.ui.PermissionCenterScreen
+import io.toolbox.host.ui.ProductionHostState
 import io.toolbox.host.ui.RuntimeShellScreen
 import io.toolbox.host.ui.SettingsScreen
 import io.toolbox.host.ui.ToolManagerScreen
+import io.toolbox.host.preview.PreviewHostFixtures
 
 @PreviewTest
 @Preview(
@@ -21,6 +23,44 @@ import io.toolbox.host.ui.ToolManagerScreen
 fun HomeCompactScreenshot() {
     ToolBoxTheme {
         HomeScreen(
+            model = PreviewHostFixtures.home,
+            onDestination = {},
+            onImport = {},
+            onLaunchTool = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Home fresh install compact phone",
+    showBackground = true,
+    device = "spec:width=411dp,height=891dp,dpi=420",
+)
+@Composable
+fun HomeFreshInstallCompactScreenshot() {
+    ToolBoxTheme {
+        HomeScreen(
+            model = ProductionHostState.freshInstall().home,
+            onDestination = {},
+            onImport = {},
+            onLaunchTool = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(
+    name = "Home fresh install large text",
+    showBackground = true,
+    device = "spec:width=411dp,height=891dp,dpi=420",
+    fontScale = 2f,
+)
+@Composable
+fun HomeFreshInstallLargeTextScreenshot() {
+    ToolBoxTheme {
+        HomeScreen(
+            model = ProductionHostState.freshInstall().home,
             onDestination = {},
             onImport = {},
             onLaunchTool = {},
@@ -38,6 +78,7 @@ fun HomeCompactScreenshot() {
 fun ToolManagerCompactScreenshot() {
     ToolBoxTheme {
         ToolManagerScreen(
+            model = PreviewHostFixtures.toolManager,
             onDestination = {},
             onImport = {},
             onLaunchTool = {},
@@ -80,7 +121,7 @@ fun PermissionCenterCompactScreenshot() {
 @Composable
 fun SettingsCompactScreenshot() {
     ToolBoxTheme {
-        SettingsScreen(onDestination = {}, onPermissionCenter = {})
+        SettingsScreen(onDestination = {})
     }
 }
 
@@ -93,6 +134,6 @@ fun SettingsCompactScreenshot() {
 @Composable
 fun RuntimeShellMediumScreenshot() {
     ToolBoxTheme {
-        RuntimeShellScreen(onBack = {}, onPermissionCenter = {})
+        RuntimeShellScreen(onBack = {})
     }
 }

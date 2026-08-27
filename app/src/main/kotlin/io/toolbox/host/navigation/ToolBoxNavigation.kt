@@ -1,21 +1,23 @@
 package io.toolbox.host.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import io.toolbox.host.ui.HomeScreen
-import io.toolbox.host.ui.ImportReviewScreen
+import io.toolbox.host.ui.CapabilityUnavailableScreen
+import io.toolbox.host.ui.HostCapability
 import io.toolbox.host.ui.MainDestination
-import io.toolbox.host.ui.PermissionCenterScreen
-import io.toolbox.host.ui.RuntimeShellScreen
+import io.toolbox.host.ui.ProductionHostState
 import io.toolbox.host.ui.SettingsScreen
 import io.toolbox.host.ui.ToolManagerScreen
 
 @Composable
 fun ToolBoxNavigation() {
     val backStack = rememberNavBackStack(HomeRoute)
+    val hostState = remember { ProductionHostState.freshInstall() }
 
     fun navigate(route: NavKey) {
         if (backStack.lastOrNull() != route) backStack.add(route)
@@ -41,30 +43,26 @@ fun ToolBoxNavigation() {
         entryProvider = entryProvider {
             entry<HomeRoute> {
                 HomeScreen(
+                    model = hostState.home,
                     onDestination = ::navigateMain,
-                    onImport = { navigate(ImportReviewRoute("phase1-static-review")) },
-                    onLaunchTool = { navigate(RuntimeRoute("io.toolbox.positioncalculator")) },
+                    onImport = { navigate(CapabilityUnavailableRoute(HostCapability.ImportTools)) },
+                    onLaunchTool = { navigate(CapabilityUnavailableRoute(HostCapability.Runtime)) },
                 )
             }
             entry<ToolManagerRoute> {
                 ToolManagerScreen(
+                    model = hostState.toolManager,
                     onDestination = ::navigateMain,
-                    onImport = { navigate(ImportReviewRoute("phase1-static-review")) },
-                    onLaunchTool = { navigate(RuntimeRoute("io.toolbox.positioncalculator")) },
+                    onImport = { navigate(CapabilityUnavailableRoute(HostCapability.ImportTools)) },
+                    onLaunchTool = { navigate(CapabilityUnavailableRoute(HostCapability.Runtime)) },
                 )
             }
-            entry<ImportReviewRoute> { ImportReviewScreen(onBack = ::goBack) }
-            entry<PermissionCenterRoute> { PermissionCenterScreen(onBack = ::goBack) }
+            entry<CapabilityUnavailableRoute> { route ->
+                CapabilityUnavailableScreen(capability = route.capability, onBack = ::goBack)
+            }
             entry<SettingsRoute> {
                 SettingsScreen(
                     onDestination = ::navigateMain,
-                    onPermissionCenter = { navigate(PermissionCenterRoute) },
-                )
-            }
-            entry<RuntimeRoute> {
-                RuntimeShellScreen(
-                    onBack = ::goBack,
-                    onPermissionCenter = { navigate(PermissionCenterRoute) },
                 )
             }
         },
