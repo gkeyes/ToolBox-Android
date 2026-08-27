@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "SHA-256",
+  "files": {
+    "manifest.json": "7c19f012d6e36cd93b33d4c4c178b5cca508f737c8f1e5a7d9f3064c4e217a84",
+    "index.html": "e3f9af25dc90e153837231f270e9a5000ec85861c7a463e4335e649d5efed3c4",
+    "style.css": "6ba9b8d3d89ac713f8cd0a792e61a913465313473426af3506040141fb7b91ee",
+    "app.js": "cd20aeb5b75977856b0f1f0379a87e0326109287768f4e70d320e8fceb677a0a",
+    "icon.png": "07ca6d1a00f23907e66aab11822b63e31ba988964467b518cb8e36e8269e8214"
+  }
+}

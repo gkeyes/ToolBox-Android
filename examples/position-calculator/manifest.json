@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.positioncalculator",
+  "name": "仓位计算器",
+  "shortName": "仓位",
+  "description": "根据账户资金、入场价和止损价计算风险仓位。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "icon.png",
+  "apiVersion": "1.0",
+  "minHostVersion": "1.0.0",
+  "categories": [
+    "计算",
+    "投资"
+  ],
+  "permissions": [
+    {
+      "name": "storage",
+      "reason": "保存上次输入参数，便于下次继续使用。",
+      "required": false
+    },
+    {
+      "name": "clipboard.write",
+      "reason": "复制计算结果。",
+      "required": false
+    },
+    {
+      "name": "haptics",
+      "reason": "计算完成时提供轻触反馈。",
+      "required": false
+    }
+  ],
+  "securityProfile": "strict",
+  "ui": {
+    "orientation": "portrait",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  },
+  "limits": {
+    "storageBytes": 2097152,
+    "maxBridgePayloadBytes": 262144
+  },
+  "publisher": {
+    "name": "Local Developer"
+  }
+}

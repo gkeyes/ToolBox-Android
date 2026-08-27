@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>仓位计算器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <h1>仓位计算器</h1>
+    <p class="hint">示例仅用于验证 .tbx、严格 CSP 与 ToolBox JS API，不代表宿主 App 的界面规范。</p>
+    <label>账户资金<input id="capital" type="number" inputmode="decimal" value="100000" /></label>
+    <label>单笔风险比例（%）<input id="risk" type="number" inputmode="decimal" value="1" step="0.1" /></label>
+    <label>入场价<input id="entry" type="number" inputmode="decimal" value="10" step="0.01" /></label>
+    <label>止损价<input id="stop" type="number" inputmode="decimal" value="9.5" step="0.01" /></label>
+    <button id="calculate" type="button">计算</button>
+    <section id="result" hidden>
+      <strong id="shares"></strong>
+      <span id="amount"></span>
+      <button id="copy" type="button" class="secondary">复制结果</button>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

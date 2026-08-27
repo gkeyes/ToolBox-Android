@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ToolBox 宿主 App 明亮模式界面方案</title>
+<style>
+  :root{
+    --bg:#f3f6fb;
+    --surface:#ffffff;
+    --surface-2:#f8faff;
+    --text:#111827;
+    --muted:#737b8c;
+    --line:#e8edf5;
+    --blue:#3482ff;
+    --blue-2:#1674ff;
+    --blue-soft:#eaf2ff;
+    --green:#29b765;
+    --green-soft:#eaf9f0;
+    --orange:#ff9500;
+    --orange-soft:#fff4df;
+    --red:#f24b4b;
+    --red-soft:#ffeded;
+    --violet:#7a5cff;
+    --violet-soft:#f0edff;
+    --shadow:0 18px 55px rgba(59,84,125,.12),0 3px 12px rgba(59,84,125,.08);
+    --small-shadow:0 7px 24px rgba(59,84,125,.09);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;font-family:Inter,"MiSans","Noto Sans CJK SC","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
+  body{overflow:hidden}
+  .board{
+    width:2560px;height:1600px;padding:70px 88px 56px;
+    background:
+      radial-gradient(circle at 12% 0%,rgba(52,130,255,.12),transparent 28%),
+      radial-gradient(circle at 90% 4%,rgba(122,92,255,.09),transparent 25%),
+      linear-gradient(180deg,#fbfdff 0%,#f3f6fb 100%);
+  }
+  .header{height:170px;display:flex;align-items:flex-start;justify-content:space-between}
+  .brand{display:flex;align-items:center;gap:28px}
+  .logo{width:104px;height:104px;border-radius:30px;background:#fff;box-shadow:var(--shadow);padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .logo span{border-radius:11px}
+  .logo span:nth-child(1){background:linear-gradient(145deg,#48b9ff,#1674ff)}
+  .logo span:nth-child(2){background:linear-gradient(145deg,#57dc83,#20b75d)}
+  .logo span:nth-child(3){background:linear-gradient(145deg,#9e82ff,#704eff)}
+  .logo span:nth-child(4){background:linear-gradient(145deg,#ffbe5c,#ff8b12)}
+  h1{font-size:54px;line-height:1;margin:4px 0 12px;letter-spacing:-1.5px}
+  .subtitle{font-size:25px;color:#374151;margin-bottom:10px}
+  .caption{font-size:19px;color:var(--muted)}
+  .scope{width:720px;border:1px solid #dfe7f3;background:rgba(255,255,255,.78);box-shadow:var(--small-shadow);border-radius:24px;padding:22px 26px;display:flex;gap:18px;align-items:flex-start}
+  .scope .dot{width:12px;height:12px;background:var(--blue);border-radius:50%;margin-top:8px;box-shadow:0 0 0 7px var(--blue-soft)}
+  .scope strong{display:block;font-size:20px;margin-bottom:7px}
+  .scope p{margin:0;color:var(--muted);font-size:17px;line-height:1.55}
+  .phones{height:960px;display:grid;grid-template-columns:repeat(5,1fr);gap:30px;align-items:start}
+  .phone-wrap{display:flex;flex-direction:column;align-items:center}
+  .label{font-size:18px;color:#566074;margin-bottom:14px;font-weight:650;letter-spacing:.2px}
+  .phone{width:444px;height:900px;border-radius:48px;padding:10px;background:linear-gradient(145deg,#27303d,#0e141d);box-shadow:0 32px 80px rgba(42,58,84,.2),inset 0 0 0 2px rgba(255,255,255,.35)}
+  .screen{height:100%;border-radius:40px;background:#f7f9fd;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.8)}
+  .status{height:42px;padding:13px 24px 0;display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:700;color:#141b26}
+  .status .right{display:flex;align-items:center;gap:7px}
+  .signal{display:flex;align-items:flex-end;gap:2px;height:12px}.signal i{display:block;width:3px;background:#111827;border-radius:2px}.signal i:nth-child(1){height:4px}.signal i:nth-child(2){height:7px}.signal i:nth-child(3){height:10px}.signal i:nth-child(4){height:12px}
+  .wifi{width:15px;height:11px;border:2px solid #111827;border-left-color:transparent;border-right-color:transparent;border-bottom-color:transparent;border-radius:50%;position:relative}.wifi:after{content:"";position:absolute;width:4px;height:4px;background:#111827;border-radius:50%;left:3.5px;top:5px}
+  .battery{width:22px;height:10px;border:1.8px solid #111827;border-radius:3px;position:relative;padding:1.5px}.battery:after{content:"";position:absolute;right:-3.5px;top:2.2px;width:2px;height:5px;border-radius:0 2px 2px 0;background:#111827}.battery b{display:block;width:75%;height:100%;border-radius:1px;background:#111827}
+  .topbar{height:74px;padding:11px 22px 8px;display:flex;align-items:center;justify-content:space-between}
+  .topbar h2{font-size:27px;margin:0;letter-spacing:-.5px}
+  .topbar .left{display:flex;align-items:center;gap:12px}
+  .actions{display:flex;gap:9px}
+  .icon-btn{width:42px;height:42px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:transparent;color:#202938}
+  .icon-btn.soft{background:#fff;border:1px solid var(--line);box-shadow:0 3px 12px rgba(56,78,115,.06)}
+  .ico{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .content{padding:0 20px 96px;height:calc(100% - 116px);overflow:hidden}
+  .hero{background:linear-gradient(135deg,#2f87ff,#6ea9ff);border-radius:27px;padding:23px;color:white;box-shadow:0 15px 30px rgba(52,130,255,.24);position:relative;overflow:hidden}
+  .hero:after{content:"";position:absolute;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.13);right:-50px;top:-70px}
+  .hero .kicker{font-size:15px;opacity:.85;margin-bottom:7px}.hero .big{font-size:30px;font-weight:760;margin-bottom:5px}.hero .small{font-size:15px;opacity:.9}
+  .search{height:53px;background:#fff;border:1px solid var(--line);border-radius:19px;margin:16px 0;display:flex;align-items:center;gap:12px;padding:0 16px;color:#8a93a3;box-shadow:0 4px 14px rgba(50,70,105,.05);font-size:16px}
+  .section-row{display:flex;align-items:center;justify-content:space-between;margin:17px 2px 12px}.section-title{font-size:18px;font-weight:750}.link{font-size:14px;color:var(--blue);font-weight:650}
+  .recent{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .recent-card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 13px rgba(50,70,105,.045)}
+  .tool-icon{width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:white;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.26)}
+  .tool-icon.blue{background:linear-gradient(145deg,#47a4ff,#1876ff)}.tool-icon.orange{background:linear-gradient(145deg,#ffb548,#ff8c00)}.tool-icon.green{background:linear-gradient(145deg,#55d681,#1eb55a)}.tool-icon.violet{background:linear-gradient(145deg,#a082ff,#7655ff)}.tool-icon.red{background:linear-gradient(145deg,#ff7a73,#f34242)}.tool-icon.cyan{background:linear-gradient(145deg,#5bd1f5,#2d9edf)}
+  .tool-icon .ico{width:25px;height:25px}.tname{font-size:15px;font-weight:720}.tmeta{font-size:12px;color:var(--muted);margin-top:3px}
+  .chips{display:flex;gap:9px;margin-bottom:12px}.chip{height:35px;padding:0 14px;border-radius:13px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;font-size:14px;color:#596273}.chip.active{background:var(--blue-soft);border-color:#cce0ff;color:var(--blue);font-weight:700}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}.grid-card{height:118px;border-radius:21px;background:#fff;border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;box-shadow:0 4px 14px rgba(50,70,105,.045);font-size:14px;font-weight:650}
+  .grid-card .tool-icon{width:48px;height:48px}
+  .fab{position:absolute;right:22px;bottom:82px;width:62px;height:62px;border-radius:22px;background:linear-gradient(145deg,#3b91ff,#0d6dff);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 30px rgba(36,116,255,.3)}
+  .bottom-nav{height:72px;position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);padding:7px 28px 8px;backdrop-filter:blur(18px)}
+  .nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#7b8494;font-size:12px}.nav-item .ico{width:21px;height:21px}.nav-item.active{color:var(--blue);font-weight:700}
+  .tabs{display:flex;gap:24px;height:44px;align-items:end;border-bottom:1px solid var(--line);margin-bottom:14px}.tab{height:43px;display:flex;align-items:center;position:relative;color:#6d7585;font-size:16px}.tab.active{color:var(--blue);font-weight:750}.tab.active:after{content:"";position:absolute;height:3px;border-radius:3px;background:var(--blue);left:0;right:0;bottom:-1px}
+  .manage-row{background:#fff;border:1px solid var(--line);border-radius:21px;padding:14px 13px;margin-bottom:11px;display:flex;align-items:center;gap:13px;box-shadow:0 4px 13px rgba(50,70,105,.045)}
+  .manage-main{min-width:0;flex:1}.manage-main .title{font-size:16px;font-weight:740}.manage-main .meta{font-size:12px;color:var(--muted);margin-top:4px}.badge{font-size:11px;padding:5px 8px;border-radius:9px;background:var(--green-soft);color:var(--green);font-weight:750}.more{color:#8a93a3}
+  .summary-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:17px;margin:2px 0 15px;display:flex;align-items:center;justify-content:space-between}.summary-card .n{font-size:28px;font-weight:800}.summary-card .m{font-size:13px;color:var(--muted);margin-top:3px}.seg{display:flex;background:#f0f3f8;border-radius:14px;padding:4px}.seg span{font-size:12px;padding:7px 10px;border-radius:11px;color:#7a8393}.seg .on{background:#fff;color:var(--blue);font-weight:720;box-shadow:0 2px 8px rgba(60,82,115,.08)}
+  .package{background:#fff;border:1px solid var(--line);border-radius:24px;padding:18px;margin-top:4px;box-shadow:0 5px 18px rgba(50,70,105,.05)}.package-head{display:flex;gap:14px;align-items:center}.package h3{font-size:18px;margin:0 0 5px}.package p{margin:0;color:var(--muted);font-size:13px}.status-pill{margin-left:auto;padding:7px 10px;border-radius:12px;background:var(--orange-soft);color:#c87900;font-size:12px;font-weight:750}
+  .scan{background:var(--green-soft);border:1px solid #d0f0dc;color:#25794b;border-radius:18px;padding:13px 14px;margin:13px 0;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
+  .perm-list{background:#fff;border:1px solid var(--line);border-radius:21px;overflow:hidden}.perm{min-height:62px;padding:12px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line)}.perm:last-child{border-bottom:0}.perm .circle{width:35px;height:35px;border-radius:12px;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center}.perm .txt{flex:1}.perm .txt b{display:block;font-size:14px}.perm .txt span{display:block;font-size:11.5px;color:var(--muted);margin-top:3px}.risk-low,.risk-mid,.risk-high{font-size:11px;font-weight:750;padding:5px 8px;border-radius:9px}.risk-low{background:var(--green-soft);color:var(--green)}.risk-mid{background:var(--orange-soft);color:#c87a00}.risk-high{background:var(--red-soft);color:var(--red)}
+  .buttons{position:absolute;left:20px;right:20px;bottom:24px;display:grid;grid-template-columns:1fr 1.4fr;gap:11px}.btn{height:52px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-weight:750;font-size:16px}.btn.secondary{background:#eef2f7;color:#526072}.btn.primary{background:linear-gradient(145deg,#3b91ff,#0d6dff);color:#fff;box-shadow:0 12px 25px rgba(36,116,255,.22)}
+  .risk-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:4px 0 15px}.risk-card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px 10px;text-align:center}.risk-card b{display:block;font-size:24px}.risk-card span{font-size:12px;color:var(--muted)}
+  .permission-row{background:#fff;border:1px solid var(--line);border-radius:21px;padding:14px;margin-bottom:11px}.permission-top{display:flex;align-items:center;gap:12px}.permission-top .info{flex:1}.permission-top b{font-size:15px}.permission-top small{display:block;color:var(--muted);font-size:11.5px;margin-top:3px}.perm-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}.mini-chip{font-size:11px;padding:6px 8px;border-radius:9px;background:#f1f4f8;color:#657083}.mini-chip.sensitive{background:var(--orange-soft);color:#b96f00}
+  .runtime-banner{height:44px;margin:0 20px 10px;border-radius:15px;background:var(--green-soft);color:#24764a;display:flex;align-items:center;gap:9px;padding:0 13px;font-size:13px;font-weight:650}.runtime-banner .pulse{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(41,183,101,.12)}
+  .web-host{margin:0 20px;height:610px;background:#fff;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 7px 22px rgba(50,70,105,.06);display:flex;flex-direction:column}.web-header{height:52px;background:#f8faff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 15px;gap:9px}.web-header .lock{width:30px;height:30px;border-radius:10px;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center}.web-header b{font-size:13px}.web-header span{font-size:11px;color:var(--muted)}.web-body{flex:1;padding:22px}.placeholder{height:100%;border:2px dashed #dce4f0;border-radius:20px;background:linear-gradient(180deg,#fbfdff,#f7f9fd);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#8892a3}.placeholder .picon{width:68px;height:68px;border-radius:22px;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;margin-bottom:16px}.placeholder b{font-size:17px;color:#505a6b;margin-bottom:7px}.placeholder span{font-size:13px;line-height:1.5}
+  .runtime-bottom{position:absolute;left:20px;right:20px;bottom:22px;height:52px;border-radius:18px;background:#fff;border:1px solid var(--line);box-shadow:var(--small-shadow);display:flex;align-items:center;justify-content:space-around;color:#758092}.runtime-bottom .active{color:var(--blue)}
+  .footer{height:330px;margin-top:10px;display:grid;grid-template-columns:1.45fr 1fr 1fr;gap:26px}
+  .panel{background:rgba(255,255,255,.82);border:1px solid #e0e7f2;border-radius:28px;padding:22px 26px;box-shadow:var(--small-shadow)}
+  .panel h3{font-size:21px;margin:0 0 15px}.flow{display:grid;grid-template-columns:repeat(6,1fr);align-items:center;gap:10px}.flow-item{height:82px;border-radius:18px;background:#fff;border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:14px;font-weight:700;position:relative}.flow-item:not(:last-child):after{content:"→";position:absolute;right:-17px;color:#96a1b2;font-size:20px}.flow-item small{font-size:11px;font-weight:500;color:var(--muted);margin-top:5px}
+  .tokens{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.token{height:70px;border-radius:17px;border:1px solid var(--line);background:#fff;padding:11px}.swatch{width:24px;height:24px;border-radius:9px;margin-bottom:6px}.token b{font-size:12px;display:block}.token span{font-size:10px;color:var(--muted)}
+  .components{display:flex;flex-wrap:wrap;gap:8px}.comp{font-size:12px;padding:9px 11px;border-radius:11px;background:#fff;border:1px solid var(--line);color:#566174;font-weight:650}.comp.primary{background:var(--blue-soft);color:var(--blue);border-color:#cfe1ff}
+  .note{font-size:13px;color:var(--muted);line-height:1.55;margin-top:13px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-4v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3v-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.5V3h4v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1v4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7 8 4 8-4v10l-8 4-8-4V7Z"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/></symbol>
+  <symbol id="i-calc" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></symbol>
+  <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H6a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2M16 3h2a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 14h3M14 18v3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M8 6v12M16 6v12M6 18h4M14 18h4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 10h6M9 14h6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 5.3"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3"/><path d="M21 14v6H4V3h6"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path d="M8 9h8v8a4 4 0 0 1-8 0V9Z"/><path d="M9 5h6l1 4H8l1-4ZM4 13h4M16 13h4M5 8l3 2M19 8l-3 2M5 18l3-2M19 18l-3-2"/></symbol>
+</svg>
+<div class="board">
+  <div class="header">
+    <div class="brand">
+      <div class="logo"><span></span><span></span><span></span><span></span></div>
+      <div>
+        <h1>ToolBox</h1>
+        <div class="subtitle">可导入 HTML 小工具的 Android 宿主平台</div>
+        <div class="caption">MIUIX + HyperX Compose · 明亮模式宿主界面方案</div>
+      </div>
+    </div>
+    <div class="scope">
+      <div class="dot"></div>
+      <div><strong>界面范围已纠正</strong><p>下列画面只展示宿主 App：工具集合、导入审核、权限中心与运行外壳；不设计单位换算等 HTML 小程序的内部页面。</p></div>
+    </div>
+  </div>
+
+  <div class="phones">
+    <div class="phone-wrap">
+      <div class="label">01 · 首页 / 工具集合</div>
+      <div class="phone"><div class="screen">
+        <div class="status"><span>2:36</span><div class="right"><div class="signal"><i></i><i></i><i></i><i></i></div><div class="wifi"></div><div class="battery"><b></b></div></div></div>
+        <div class="topbar"><h2>ToolBox</h2><div class="actions"><div class="icon-btn"><svg class="ico"><use href="#i-search"/></svg></div><div class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></div></div></div>
+        <div class="content">
+          <div class="hero"><div class="kicker">我的工具箱</div><div class="big">12 个工具，随用随开</div><div class="small">离线运行 · 数据本地保存 · 权限可控</div></div>
+          <div class="search"><svg class="ico"><use href="#i-search"/></svg><span>搜索工具、分类或标签</span></div>
+          <div class="section-row"><div class="section-title">最近使用</div><div class="link">查看全部</div></div>
+          <div class="recent">
+            <div class="recent-card"><div class="tool-icon blue"><svg class="ico"><use href="#i-calc"/></svg></div><div><div class="tname">仓位计算</div><div class="tmeta">2 分钟前</div></div></div>
+            <div class="recent-card"><div class="tool-icon green"><svg class="ico"><use href="#i-braces"/></svg></div><div><div class="tname">JSON 工具</div><div class="tmeta">昨天</div></div></div>
+          </div>
+          <div class="section-row"><div class="section-title">全部工具</div><div class="link">编辑排序</div></div>
+          <div class="chips"><div class="chip active">全部</div><div class="chip">计算</div><div class="chip">文本</div><div class="chip">开发</div></div>
+          <div class="grid">
+            <div class="grid-card"><div class="tool-icon orange"><svg class="ico"><use href="#i-calc"/></svg></div>计算器</div>
+            <div class="grid-card"><div class="tool-icon violet"><svg class="ico"><use href="#i-qr"/></svg></div>二维码</div>
+            <div class="grid-card"><div class="tool-icon green"><svg class="ico"><use href="#i-braces"/></svg></div>JSON 格式化</div>
+            <div class="grid-card"><div class="tool-icon cyan"><svg class="ico"><use href="#i-text"/></svg></div>文本处理</div>
+            <div class="grid-card"><div class="tool-icon blue"><svg class="ico"><use href="#i-clock"/></svg></div>日期计算</div>
+            <div class="grid-card"><div class="tool-icon red"><svg class="ico"><use href="#i-globe"/></svg></div>IP 工具</div>
+          </div>
+        </div>
+        <div class="fab"><svg class="ico" style="width:30px;height:30px"><use href="#i-plus"/></svg></div>
+        <div class="bottom-nav"><div class="nav-item active"><svg class="ico"><use href="#i-home"/></svg>首页</div><div class="nav-item"><svg class="ico"><use href="#i-grid"/></svg>工具</div><div class="nav-item"><svg class="ico"><use href="#i-settings"/></svg>设置</div></div>
+      </div></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="label">02 · 工具管理</div>
+      <div class="phone"><div class="screen">
+        <div class="status"><span>2:36</span><div class="right"><div class="signal"><i></i><i></i><i></i><i></i></div><div class="wifi"></div><div class="battery"><b></b></div></div></div>
+        <div class="topbar"><div class="left"><div class="icon-btn"><svg class="ico"><use href="#i-back"/></svg></div><h2>工具管理</h2></div><div class="icon-btn"><svg class="ico"><use href="#i-search"/></svg></div></div>
+        <div class="content">
+          <div class="summary-card"><div><div class="n">12</div><div class="m">已安装工具 · 68.2 MB</div></div><div class="seg"><span class="on">列表</span><span>网格</span></div></div>
+          <div class="tabs"><div class="tab active">已安装</div><div class="tab">分类</div><div class="tab">可更新</div></div>
+          <div class="manage-row"><div class="tool-icon blue"><svg class="ico"><use href="#i-calc"/></svg></div><div class="manage-main"><div class="title">仓位计算器</div><div class="meta">v1.2.0 · 8.2 MB · 今天使用</div></div><span class="badge">可信</span><svg class="ico more"><use href="#i-more"/></svg></div>
+          <div class="manage-row"><div class="tool-icon green"><svg class="ico"><use href="#i-braces"/></svg></div><div class="manage-main"><div class="title">JSON 格式化</div><div class="meta">v1.0.3 · 5.9 MB · 昨天使用</div></div><span class="badge">可信</span><svg class="ico more"><use href="#i-more"/></svg></div>
+          <div class="manage-row"><div class="tool-icon violet"><svg class="ico"><use href="#i-qr"/></svg></div><div class="manage-main"><div class="title">二维码工具</div><div class="meta">v1.1.0 · 4.6 MB · 3 天前</div></div><span class="risk-mid">未签名</span><svg class="ico more"><use href="#i-more"/></svg></div>
+          <div class="manage-row"><div class="tool-icon cyan"><svg class="ico"><use href="#i-text"/></svg></div><div class="manage-main"><div class="title">文本处理</div><div class="meta">v2.0.1 · 7.1 MB · 5 天前</div></div><span class="badge">可信</span><svg class="ico more"><use href="#i-more"/></svg></div>
+          <div class="manage-row"><div class="tool-icon orange"><svg class="ico"><use href="#i-clock"/></svg></div><div class="manage-main"><div class="title">日期计算</div><div class="meta">v1.0.0 · 3.8 MB · 1 周前</div></div><span class="badge">可信</span><svg class="ico more"><use href="#i-more"/></svg></div>
+          <div class="manage-row"><div class="tool-icon red"><svg class="ico"><use href="#i-globe"/></svg></div><div class="manage-main"><div class="title">网络诊断</div><div class="meta">v0.9.2 · 6.4 MB · 从未使用</div></div><span class="risk-high">高权限</span><svg class="ico more"><use href="#i-more"/></svg></div>
+        </div>
+        <div class="fab"><svg class="ico" style="width:30px;height:30px"><use href="#i-plus"/></svg></div>
+        <div class="bottom-nav"><div class="nav-item"><svg class="ico"><use href="#i-home"/></svg>首页</div><div class="nav-item active"><svg class="ico"><use href="#i-grid"/></svg>工具</div><div class="nav-item"><svg class="ico"><use href="#i-settings"/></svg>设置</div></div>
+      </div></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="label">03 · 导入审核 / 安装确认</div>
+      <div class="phone"><div class="screen">
+        <div class="status"><span>2:36</span><div class="right"><div class="signal"><i></i><i></i><i></i><i></i></div><div class="wifi"></div><div class="battery"><b></b></div></div></div>
+        <div class="topbar"><div class="left"><div class="icon-btn"><svg class="ico"><use href="#i-back"/></svg></div><h2>导入工具</h2></div><div class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></div></div>
+        <div class="content" style="padding-bottom:90px">
+          <div class="package"><div class="package-head"><div class="tool-icon blue"><svg class="ico"><use href="#i-box"/></svg></div><div><h3>仓位计算器</h3><p>position-calculator.tbx · v1.2.0</p></div><div class="status-pill">未签名</div></div></div>
+          <div class="scan"><svg class="ico"><use href="#i-shield"/></svg>结构检查通过，未发现 Zip Slip 或危险文件</div>
+          <div class="section-row"><div class="section-title">工具信息</div><div class="link">查看文件</div></div>
+          <div class="perm-list">
+            <div class="perm"><div class="circle"><svg class="ico"><use href="#i-code"/></svg></div><div class="txt"><b>入口与兼容性</b><span>index.html · ToolBox API 1.0</span></div><span class="risk-low">通过</span></div>
+            <div class="perm"><div class="circle"><svg class="ico"><use href="#i-lock"/></svg></div><div class="txt"><b>安全配置</b><span>Strict CSP · 禁止外部脚本</span></div><span class="risk-low">严格</span></div>
+          </div>
+          <div class="section-row"><div class="section-title">申请权限</div><div class="link">3 项</div></div>
+          <div class="perm-list">
+            <div class="perm"><div class="circle"><svg class="ico"><use href="#i-folder"/></svg></div><div class="txt"><b>工具专属存储</b><span>保存计算参数，配额 2 MB</span></div><span class="risk-low">低</span></div>
+            <div class="perm"><div class="circle"><svg class="ico"><use href="#i-clipboard"/></svg></div><div class="txt"><b>写入剪贴板</b><span>复制计算结果，不读取现有内容</span></div><span class="risk-mid">中</span></div>
+            <div class="perm"><div class="circle"><svg class="ico"><use href="#i-globe"/></svg></div><div class="txt"><b>网络访问</b><span>仅 api.example.com，HTTPS</span></div><span class="risk-mid">中</span></div>
+          </div>
+          <div class="note" style="padding:0 4px">安装后可在“权限中心”逐项撤销。未签名工具默认使用严格隔离配置。</div>
+        </div>
+        <div class="buttons"><div class="btn secondary">取消</div><div class="btn primary">安装并授权</div></div>
+      </div></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="label">04 · 权限中心 / 安全审计</div>
+      <div class="phone"><div class="screen">
+        <div class="status"><span>2:36</span><div class="right"><div class="signal"><i></i><i></i><i></i><i></i></div><div class="wifi"></div><div class="battery"><b></b></div></div></div>
+        <div class="topbar"><div class="left"><div class="icon-btn"><svg class="ico"><use href="#i-back"/></svg></div><h2>权限中心</h2></div><div class="icon-btn"><svg class="ico"><use href="#i-shield"/></svg></div></div>
+        <div class="content">
+          <div class="risk-overview"><div class="risk-card"><b style="color:var(--green)">8</b><span>低风险工具</span></div><div class="risk-card"><b style="color:var(--orange)">3</b><span>需关注</span></div><div class="risk-card"><b style="color:var(--red)">1</b><span>高权限</span></div></div>
+          <div class="search"><svg class="ico"><use href="#i-search"/></svg><span>搜索工具或权限</span></div>
+          <div class="section-row"><div class="section-title">按工具管理</div><div class="link">审计日志</div></div>
+          <div class="permission-row"><div class="permission-top"><div class="tool-icon blue"><svg class="ico"><use href="#i-calc"/></svg></div><div class="info"><b>仓位计算器</b><small>2 项已允许 · 最近调用 2 分钟前</small></div><svg class="ico more"><use href="#i-more"/></svg></div><div class="perm-chips"><span class="mini-chip">专属存储</span><span class="mini-chip sensitive">剪贴板写入</span></div></div>
+          <div class="permission-row"><div class="permission-top"><div class="tool-icon green"><svg class="ico"><use href="#i-braces"/></svg></div><div class="info"><b>JSON 格式化</b><small>1 项已允许 · 最近调用昨天</small></div><svg class="ico more"><use href="#i-more"/></svg></div><div class="perm-chips"><span class="mini-chip">专属存储</span></div></div>
+          <div class="permission-row"><div class="permission-top"><div class="tool-icon violet"><svg class="ico"><use href="#i-qr"/></svg></div><div class="info"><b>二维码工具</b><small>3 项已允许 · 未签名工具</small></div><svg class="ico more"><use href="#i-more"/></svg></div><div class="perm-chips"><span class="mini-chip">专属存储</span><span class="mini-chip sensitive">文件保存</span><span class="mini-chip sensitive">相机</span></div></div>
+          <div class="permission-row"><div class="permission-top"><div class="tool-icon red"><svg class="ico"><use href="#i-globe"/></svg></div><div class="info"><b>网络诊断</b><small>4 项已允许 · 高风险调用被阻止 1 次</small></div><span class="risk-high">检查</span></div><div class="perm-chips"><span class="mini-chip sensitive">网络</span><span class="mini-chip sensitive">设备信息</span><span class="mini-chip">通知</span><span class="mini-chip">专属存储</span></div></div>
+          <div class="section-row"><div class="section-title">全局策略</div></div>
+          <div class="perm-list"><div class="perm"><div class="circle"><svg class="ico"><use href="#i-shield"/></svg></div><div class="txt"><b>未签名工具严格模式</b><span>禁用直接网络、内联脚本与敏感权限常驻授权</span></div><span class="risk-low">开启</span></div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="label">05 · 小工具运行外壳</div>
+      <div class="phone"><div class="screen">
+        <div class="status"><span>2:36</span><div class="right"><div class="signal"><i></i><i></i><i></i><i></i></div><div class="wifi"></div><div class="battery"><b></b></div></div></div>
+        <div class="topbar"><div class="left"><div class="icon-btn"><svg class="ico"><use href="#i-back"/></svg></div><div><h2 style="font-size:22px">仓位计算器</h2><div style="font-size:11px;color:var(--muted);margin-top:2px">严格隔离 · 本地运行</div></div></div><div class="actions"><div class="icon-btn soft"><svg class="ico"><use href="#i-refresh"/></svg></div><div class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></div></div></div>
+        <div class="runtime-banner"><span class="pulse"></span>安全连接已建立 · ToolBox API 1.0</div>
+        <div class="web-host"><div class="web-header"><div class="lock"><svg class="ico" style="width:17px"><use href="#i-lock"/></svg></div><div><b>position-calculator.toolbox.local</b><br><span>独立 Origin · CSP Strict</span></div></div><div class="web-body"><div class="placeholder"><div class="picon"><svg class="ico" style="width:35px;height:35px"><use href="#i-code"/></svg></div><b>HTML 小工具内容区域</b><span>宿主仅提供运行容器、权限提示与 JS API<br>这里不规定小程序自身的 UI 风格</span></div></div></div>
+        <div class="runtime-bottom"><div class="active"><svg class="ico"><use href="#i-shield"/></svg></div><div><svg class="ico"><use href="#i-open"/></svg></div><div><svg class="ico"><use href="#i-bug"/></svg></div><div><svg class="ico"><use href="#i-settings"/></svg></div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="panel"><h3>核心宿主流程</h3><div class="flow"><div class="flow-item">导入 .tbx<small>SAF 选取文件</small></div><div class="flow-item">结构校验<small>Zip / Manifest</small></div><div class="flow-item">权限审核<small>风险分级</small></div><div class="flow-item">原子安装<small>版本与回滚</small></div><div class="flow-item">隔离运行<small>独立 Origin</small></div><div class="flow-item">导出 / 备份<small>代码或含数据</small></div></div></div>
+    <div class="panel"><h3>明亮主题 Token</h3><div class="tokens"><div class="token"><div class="swatch" style="background:#3482ff"></div><b>Primary</b><span>#3482FF</span></div><div class="token"><div class="swatch" style="background:#ffffff;border:1px solid #e8edf5"></div><b>Surface</b><span>#FFFFFF</span></div><div class="token"><div class="swatch" style="background:#f3f6fb"></div><b>Background</b><span>#F3F6FB</span></div><div class="token"><div class="swatch" style="background:#111827"></div><b>Text</b><span>#111827</span></div></div><div class="note">圆角以 18 / 22 / 28 dp 为主；卡片弱阴影、白色表面、蓝色主操作，适配 HyperOS 明亮模式。</div></div>
+    <div class="panel"><h3>组件落地建议</h3><div class="components"><span class="comp primary">MiuixTheme</span><span class="comp primary">Scaffold</span><span class="comp primary">TopAppBar</span><span class="comp primary">NavigationBar</span><span class="comp">SearchBar</span><span class="comp">Card</span><span class="comp">OverlayBottomSheet</span><span class="comp">OverlayDialog</span><span class="comp">Snackbar</span><span class="comp">HyperXAppLayout</span><span class="comp">AdaptiveIcon</span><span class="comp">IntegratedTextField</span></div><div class="note">Miuix 作为主设计系统；HyperX Compose 仅用于经验证的布局、图标与辅助组件，避免依赖未文档化内部 API。</div></div>
+  </div>
+</div>
+</body>
+</html>
