@@ -83,7 +83,8 @@ printf 'UTC=%s\nCANDIDATE_SHA=%s\nSDK_BASELINE=37\n' \
 run_gate() {
     local name="$1"
     shift
-    local log_file="$attempt_dir/host-gate.$name.log"
+    local log_name="host-gate.$name.log"
+    local log_file="$attempt_dir/$log_name"
     local invocation="./gradlew --no-daemon $* --console=plain"
     printf 'UTC=%s\nCANDIDATE_SHA=%s\nGATE=%s\nINVOCATION=%s\n' \
         "$timestamp_utc" "$candidate_sha" "$name" "$invocation" > "$log_file"
@@ -96,8 +97,8 @@ run_gate() {
     local command_exit=$?
     set -e
     printf 'EXIT_CODE=%s\n' "$command_exit" >> "$log_file"
-    printf 'EXIT_CODE=%s\nLOG=%s\n' "$command_exit" "$log_file" >> "$action_log"
-    printf 'GATE=%s EXIT_CODE=%s LOG=%s\n' "$name" "$command_exit" "$log_file" >> "$summary"
+    printf 'EXIT_CODE=%s\nLOG=%s\n' "$command_exit" "$log_name" >> "$action_log"
+    printf 'GATE=%s EXIT_CODE=%s LOG=%s\n' "$name" "$command_exit" "$log_name" >> "$summary"
     [[ "$command_exit" -eq 0 ]]
 }
 
@@ -116,18 +117,18 @@ printf '%s\n' \
 
 {
     printf '%s\n' \
-        'schema_version=1' \
+        'schema_version=2' \
         "timestamp_utc=$timestamp_utc" \
         "candidate_sha=$candidate_sha" \
         'invocation=bash scripts/qa/run-host-gate.sh --attempt <absolute-dir>' \
         "exit_code=$overall_exit" \
-        "artifact_path=$summary" \
-        "action_log_path=$action_log" \
-        "ui_tree_path=$surface_record" \
-        "cleanup_receipt_path=$cleanup_receipt" \
+        'artifact_path=host-gate.summary.txt' \
+        'action_log_path=host-gate.actions.txt' \
+        'ui_tree_path=host-gate.ui-surface.txt' \
+        'cleanup_receipt_path=host-gate.cleanup.txt' \
         'cleanup_status=CLEAN'
 } > "$receipt"
 
-"$script_dir/verify-receipt.sh" "$receipt" >/dev/null
+"$script_dir/verify-receipt.sh" "$receipt" "$candidate_sha" >/dev/null
 printf 'HOST_GATE_RECEIPT: %s\n' "$receipt"
 exit "$overall_exit"
