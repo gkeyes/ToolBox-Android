@@ -36,6 +36,22 @@ done < <(
     -path '*/src/main/*' -print0
 )
 
+workflow_file="$repository_root/.github/workflows/android.yml"
+if [[ -f "$workflow_file" ]]; then
+  while IFS= read -r action_reference; do
+    if [[ "$action_reference" == ./* ]]; then
+      continue
+    fi
+    if [[ ! "$action_reference" =~ ^[^[:space:]#]+@[0-9a-f]{40}$ ]]; then
+      printf '.github/workflows/android.yml: Action reference must use an immutable 40-character commit SHA: %s\n' \
+        "$action_reference" >&2
+      violations=1
+    fi
+  done < <(
+    sed -nE 's/^[[:space:]]*uses:[[:space:]]*([^[:space:]#]+).*$/\1/p' "$workflow_file"
+  )
+fi
+
 if [[ "$violations" -ne 0 ]]; then
   printf 'Security invariant verification failed.\n' >&2
   exit 1

@@ -123,4 +123,4 @@
 
 ## 非测试构建门禁
 
-`verifySecurityInvariants`、`assembleDebug`/AndroidTest APK、`lintDebug` 和截图校验是候选构建门禁，不计作功能测试。它们分别预期：禁用 API/权限扫描为零违规、APK 可构建、Lint 无阻断问题、已登记截图与人工批准基线一致。它们不能替代上面的交互测试或未来包/运行时安全测试。
+`verifySecurityInvariants`、`assembleDebug`/AndroidTest APK、`lintDebug` 和截图校验是候选构建门禁，不计作功能测试。它们分别预期：禁用 API/权限扫描为零违规且 GitHub Actions 全部锁定到 40 位不可变提交、APK 可构建、Lint 无阻断问题、已登记截图与人工批准基线一致。它们不能替代上面的交互测试或未来包/运行时安全测试。

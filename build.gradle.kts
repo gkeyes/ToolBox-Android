@@ -14,9 +14,11 @@ val verifySecurityInvariants by tasks.registering(Exec::class) {
         include("*/src/main/**/*.kt", "*/src/main/**/*.java", "*/src/main/**/*.xml")
     }
     val verificationScript = layout.projectDirectory.file("scripts/verify-security-invariants.sh")
+    val guardedWorkflow = layout.projectDirectory.file(".github/workflows/android.yml")
 
     inputs.files(guardedSources)
     inputs.file(verificationScript)
+    inputs.file(guardedWorkflow)
     commandLine(
         "bash",
         verificationScript.asFile.absolutePath,
