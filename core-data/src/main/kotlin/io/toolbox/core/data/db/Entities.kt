@@ -29,7 +29,7 @@ internal data class ToolEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("toolId")],
+    indices = [Index("toolId"), Index(value = ["sourceSessionId"], unique = true)],
 )
 internal data class ToolVersionEntity(
     val toolId: String,
@@ -40,6 +40,11 @@ internal data class ToolVersionEntity(
     val integrityHash: String,
     val installedAt: Long,
     val launchState: String,
+    val sourceSessionId: String,
+    val name: String,
+    val signatureState: String,
+    val publisherKeyId: String?,
+    val securityProfile: String,
 )
 
 @Entity(

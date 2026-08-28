@@ -4,111 +4,114 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import io.toolbox.core.ui.theme.ToolBoxTheme
-import io.toolbox.host.ui.HomeScreen
-import io.toolbox.host.ui.ImportReviewScreen
-import io.toolbox.host.ui.PermissionCenterScreen
-import io.toolbox.host.ui.ProductionHostState
-import io.toolbox.host.ui.RuntimeShellScreen
-import io.toolbox.host.ui.SettingsScreen
-import io.toolbox.host.ui.ToolManagerScreen
+import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.host.importflow.ImportReviewScreen
+import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.preview.PreviewHostFixtures
+import io.toolbox.host.settings.SettingsScreen
+import io.toolbox.host.settings.SettingsUiState
+import io.toolbox.host.ui.HomeScreen
+import io.toolbox.host.ui.MainDestination
+import io.toolbox.host.ui.PrimaryScreen
+import io.toolbox.host.ui.ToolManagerScreen
 
 @PreviewTest
 @Preview(
-    name = "Home compact phone",
+    name = "Catalog fixture compact phone",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
 )
 @Composable
-fun HomeCompactScreenshot() {
+fun CatalogFixtureCompactScreenshot() {
     ToolBoxTheme {
         HomeScreen(
-            model = PreviewHostFixtures.home,
+            state = PreviewHostFixtures.catalog,
+            onAction = {},
             onDestination = {},
             onImport = {},
-            onLaunchTool = {},
+            onOpenDetails = {},
         )
     }
 }
 
 @PreviewTest
 @Preview(
-    name = "Home fresh install compact phone",
-    showBackground = true,
-    device = "spec:width=411dp,height=891dp,dpi=420",
-)
-@Composable
-fun HomeFreshInstallCompactScreenshot() {
-    ToolBoxTheme {
-        HomeScreen(
-            model = ProductionHostState.freshInstall().home,
-            onDestination = {},
-            onImport = {},
-            onLaunchTool = {},
-        )
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Home fresh install large text",
+    name = "Fresh catalog large text",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
     fontScale = 2f,
 )
 @Composable
-fun HomeFreshInstallLargeTextScreenshot() {
+fun FreshCatalogLargeTextScreenshot() {
     ToolBoxTheme {
         HomeScreen(
-            model = ProductionHostState.freshInstall().home,
+            state = CatalogUiState(isLoaded = true),
+            onAction = {},
             onDestination = {},
             onImport = {},
-            onLaunchTool = {},
+            onOpenDetails = {},
         )
     }
 }
 
 @PreviewTest
 @Preview(
-    name = "Tool manager compact phone",
+    name = "Tool manager fixture compact phone",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
 )
 @Composable
-fun ToolManagerCompactScreenshot() {
+fun ToolManagerFixtureCompactScreenshot() {
     ToolBoxTheme {
         ToolManagerScreen(
-            model = PreviewHostFixtures.toolManager,
+            state = PreviewHostFixtures.catalog,
+            onAction = {},
             onDestination = {},
             onImport = {},
-            onLaunchTool = {},
+            onOpenDetails = {},
         )
     }
 }
 
 @PreviewTest
 @Preview(
-    name = "Import review compact phone",
+    name = "Import review fixture compact phone",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
 )
 @Composable
-fun ImportReviewCompactScreenshot() {
+fun ImportReviewFixtureCompactScreenshot() {
     ToolBoxTheme {
-        ImportReviewScreen(onBack = {})
+        ImportReviewScreen(
+            state = PreviewHostFixtures.importReview,
+            onBack = {},
+            onPick = {},
+            onRecover = {},
+            onResume = {},
+            onGrantChanged = { _, _ -> },
+            onConfirmReview = {},
+            onInstall = {},
+            onDismissError = {},
+        )
     }
 }
 
 @PreviewTest
 @Preview(
-    name = "Permission center compact phone",
+    name = "Permission center fixture compact phone",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
 )
 @Composable
-fun PermissionCenterCompactScreenshot() {
+fun PermissionCenterFixtureCompactScreenshot() {
     ToolBoxTheme {
-        PermissionCenterScreen(onBack = {})
+        PermissionCenterScreen(
+            state = PreviewHostFixtures.permissionCenter,
+            onBack = {},
+            onRevoke = {},
+            onExplainRuntimeGranting = {},
+            onDismissFeedback = {},
+        )
     }
 }
 
@@ -121,19 +124,21 @@ fun PermissionCenterCompactScreenshot() {
 @Composable
 fun SettingsCompactScreenshot() {
     ToolBoxTheme {
-        SettingsScreen(onDestination = {})
-    }
-}
-
-@PreviewTest
-@Preview(
-    name = "Runtime shell medium window",
-    showBackground = true,
-    device = "spec:width=700dp,height=1024dp,dpi=240",
-)
-@Composable
-fun RuntimeShellMediumScreenshot() {
-    ToolBoxTheme {
-        RuntimeShellScreen(onBack = {})
+        PrimaryScreen(
+            selected = MainDestination.Settings,
+            onDestination = {},
+            title = "设置",
+            onImport = null,
+        ) { contentPadding ->
+            SettingsScreen(
+                state = SettingsUiState(isLoaded = true, developerModeAvailable = false),
+                onThemeSelected = {},
+                onSecurityPolicySelected = {},
+                onAuditRetentionSelected = {},
+                onDefaultStorageQuotaSelected = {},
+                onDeveloperModeChanged = {},
+                contentPadding = contentPadding,
+            )
+        }
     }
 }

@@ -114,10 +114,11 @@ fun ToolBoxTopBar(
     onNavigationClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val topBarMinHeight = toolBoxTopBarMinHeight(LocalDensity.current.fontScale)
     SmallTopAppBar(
         title = title,
         subtitle = subtitle,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = topBarMinHeight),
         color = ToolBoxThemeTokens.colors.surface,
         titleColor = ToolBoxThemeTokens.colors.textPrimary,
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
@@ -160,6 +161,8 @@ fun ToolBoxNavigationBar(
 }
 
 internal fun toolBoxNavigationItemMinHeight(fontScale: Float) = 64.dp * fontScale.coerceAtLeast(1f)
+
+internal fun toolBoxTopBarMinHeight(fontScale: Float) = 64.dp * fontScale.coerceAtLeast(1f)
 
 @Composable
 fun ToolBoxFloatingActionButton(

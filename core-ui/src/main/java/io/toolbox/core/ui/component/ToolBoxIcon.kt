@@ -6,6 +6,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Folder
@@ -57,6 +58,7 @@ enum class ToolBoxIconKey {
     QrCode,
     Text,
     Clock,
+    Check,
 }
 
 @Composable
@@ -117,4 +119,5 @@ internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
     ToolBoxIconKey.QrCode -> Icons.Outlined.QrCode
     ToolBoxIconKey.Text -> Icons.Outlined.TextFields
     ToolBoxIconKey.Clock -> Icons.Outlined.AccessTime
+    ToolBoxIconKey.Check -> Icons.Outlined.Check
 }

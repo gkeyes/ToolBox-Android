@@ -6,8 +6,25 @@ interface CatalogRepository {
     fun observeTools(): Flow<List<InstalledTool>>
     fun observeTool(toolId: String): Flow<InstalledTool?>
     fun observeVersions(toolId: String): Flow<List<ToolVersion>>
-    suspend fun registerVersion(metadata: ToolMetadata, version: ToolVersion): DataResult<Unit>
-    suspend fun activateVersion(toolId: String, versionCode: Int): DataResult<Unit>
+}
+
+interface CatalogLifecycleRepository {
+    suspend fun snapshot(toolId: String): DataResult<CatalogLifecycleSnapshot>
+    suspend fun findCommittedInstall(sourceSessionId: String): DataResult<CommittedInstall?>
+    suspend fun commitInstall(attempt: CatalogInstallAttempt): DataResult<CommitInstallOutcome>
+    suspend fun compensateInstall(
+        attempt: CatalogInstallAttempt,
+        snapshot: CatalogLifecycleSnapshot,
+    ): DataResult<Unit>
+    suspend fun markActiveVersionStable(toolId: String, versionCode: Int): DataResult<Unit>
+    suspend fun rollbackToPreviousStable(toolId: String): DataResult<RollbackOutcome>
+    suspend fun deleteToolCatalog(toolId: String): DataResult<DeleteToolCatalogOutcome>
+}
+
+interface CatalogOrganizationRepository {
+    suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): DataResult<Unit>
+    suspend fun setCategory(toolId: String, categoryId: String?): DataResult<Unit>
+    suspend fun recordOpened(toolId: String, timestamp: Long): DataResult<Unit>
 }
 
 interface PermissionGrantRepository {
@@ -53,6 +70,8 @@ interface HostSettingsRepository {
 
 data class CoreDataRepositories(
     val catalog: CatalogRepository,
+    val lifecycle: CatalogLifecycleRepository,
+    val organization: CatalogOrganizationRepository,
     val grants: PermissionGrantRepository,
     val keyValues: ToolKvRepository,
     val publishers: PublisherRepository,

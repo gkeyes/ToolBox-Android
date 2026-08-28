@@ -21,9 +21,39 @@ class MainDestinationContractTest {
 
     @Test
     fun capabilityRoutesRetainTypedStateInsteadOfWholeScreenModels() {
-        val unavailable = CapabilityUnavailableRoute(io.toolbox.host.ui.HostCapability.ImportTools)
+        val details = ToolDetailRoute("io.toolbox.alpha")
+        val permissions = PermissionCenterRoute("io.toolbox.alpha")
+        val runtime = RuntimeRoute("io.toolbox.alpha")
 
-        assertEquals(io.toolbox.host.ui.HostCapability.ImportTools, unavailable.capability)
-        assertNotEquals(unavailable, CapabilityUnavailableRoute(io.toolbox.host.ui.HostCapability.Runtime))
+        assertEquals("io.toolbox.alpha", details.toolId)
+        assertEquals(details.toolId, permissions.toolId)
+        assertEquals(details.toolId, runtime.toolId)
+        assertNotEquals(details, ToolDetailRoute("io.toolbox.beta"))
+        val importReview: Any = ImportReviewRoute
+        assertNotEquals(importReview, runtime)
+    }
+
+    @Test
+    fun importReviewBackDispatchesThroughSessionCleanupOwner() {
+        var importReviewBackCount = 0
+        var defaultBackCount = 0
+
+        dispatchHostBack(
+            currentRoute = ImportReviewRoute,
+            onImportReviewBack = { importReviewBackCount += 1 },
+            onDefaultBack = { defaultBackCount += 1 },
+        )
+
+        assertEquals(1, importReviewBackCount)
+        assertEquals(0, defaultBackCount)
+
+        dispatchHostBack(
+            currentRoute = SettingsRoute,
+            onImportReviewBack = { importReviewBackCount += 1 },
+            onDefaultBack = { defaultBackCount += 1 },
+        )
+
+        assertEquals(1, importReviewBackCount)
+        assertEquals(1, defaultBackCount)
     }
 }

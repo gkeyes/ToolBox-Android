@@ -49,6 +49,7 @@ fun interface PublisherKeyResolver {
 
 interface ToolPackageInspector {
     suspend fun inspect(input: PackageInput): InspectionResult
+    suspend fun resume(sessionId: String): ResumeInspectionResult
     suspend fun discard(sessionId: String): DiscardResult
 }
 
@@ -74,6 +75,28 @@ sealed interface InspectionResult {
     data class Inspected(val inspection: ImportInspection) : InspectionResult
     data class Rejected(val rejection: PackageRejection) : InspectionResult
 }
+
+sealed interface ResumeInspectionResult {
+    data class Resumed(val inspection: ImportInspection) : ResumeInspectionResult
+    data object NotFound : ResumeInspectionResult
+    data object Busy : ResumeInspectionResult
+    data class Rejected(val rejection: PackageRejection) : ResumeInspectionResult
+}
+
+data class ResumableInspectionRecovery(
+    val inspections: List<ImportInspection>,
+    val busySessionCount: Int,
+    val cleanedResidueCount: Int,
+    val issues: List<ResumableInspectionIssue>,
+    val truncated: Boolean,
+    val recoveryFailure: PackageRejection? = null,
+)
+
+data class ResumableInspectionIssue(
+    val sessionId: String,
+    val rejection: PackageRejection,
+    val residueRemoved: Boolean,
+)
 
 data class ImportInspection(
     val sourceName: String,
@@ -220,4 +243,7 @@ enum class PackageRejectionCode {
     SIGNATURE_KEY_UNAVAILABLE,
     SIGNATURE_KEY_ID_MISMATCH,
     SIGNATURE_INVALID,
+    RECEIPT_MISSING,
+    RECEIPT_INVALID,
+    RECEIPT_TREE_MISMATCH,
 }

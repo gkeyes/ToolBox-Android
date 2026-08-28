@@ -16,10 +16,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -29,6 +34,9 @@ import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.RadioButtonPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 
 enum class ToolBoxRiskLevel {
     Trusted,
@@ -78,7 +86,7 @@ fun ToolBoxSearchField(
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = toolBoxSearchFieldMinHeight(LocalDensity.current.fontScale))
             .semantics { this.contentDescription = contentDescription },
         label = placeholder,
         useLabelAsPlaceholder = true,
@@ -88,6 +96,8 @@ fun ToolBoxSearchField(
         singleLine = true,
     )
 }
+
+internal fun toolBoxSearchFieldMinHeight(fontScale: Float) = 52.dp * fontScale.coerceAtLeast(1f)
 
 @Composable
 fun ToolBoxPermissionRow(
@@ -195,6 +205,85 @@ fun ToolBoxSettingRow(
         enabled = enabled,
         insideMargin = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
     )
+}
+
+@Composable
+fun ToolBoxSwitchSettingRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    SwitchPreference(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        title = title,
+        summary = summary,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        enabled = enabled,
+    )
+}
+
+data class ToolBoxSettingChoice(
+    val value: String,
+    val label: String,
+    val summary: String? = null,
+)
+
+@Composable
+fun ToolBoxChoiceSettingRow(
+    title: String,
+    selectedValue: String,
+    choices: List<ToolBoxSettingChoice>,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    enabled: Boolean = true,
+) {
+    val selectedLabel = choices.firstOrNull { it.value == selectedValue }?.label.orEmpty()
+    var choiceDialogVisible by rememberSaveable(title) { mutableStateOf(false) }
+    val combinedSummary = listOfNotNull(summary, selectedLabel.takeIf(String::isNotBlank))
+        .joinToString(" · ")
+
+    ArrowPreference(
+        title = title,
+        summary = combinedSummary.ifBlank { null },
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        onClick = { if (enabled) choiceDialogVisible = true },
+        enabled = enabled,
+    )
+
+    OverlayDialog(
+        show = choiceDialogVisible,
+        title = title,
+        onDismissRequest = { choiceDialogVisible = false },
+    ) {
+        Column {
+            choices.forEach { choice ->
+                RadioButtonPreference(
+                    title = choice.label,
+                    summary = choice.summary,
+                    selected = choice.value == selectedValue,
+                    onClick = {
+                        onSelected(choice.value)
+                        choiceDialogVisible = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp),
+                    insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+        }
+    }
 }
 
 private fun ToolBoxRiskLevel.defaultLabel(): String = when (this) {

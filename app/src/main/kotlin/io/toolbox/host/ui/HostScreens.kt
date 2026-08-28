@@ -14,7 +14,6 @@ object HostTestTags {
     const val CatalogEmptyState = "catalog_empty_state"
     const val CatalogList = "catalog_list"
     const val ToolCardPrefix = "tool_card:"
-    const val CapabilityUnavailable = "capability_unavailable"
 }
 
 enum class MainDestination(val label: String, val symbol: String) {

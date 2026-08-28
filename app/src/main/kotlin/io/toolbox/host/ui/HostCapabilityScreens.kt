@@ -1,78 +1,208 @@
 package io.toolbox.host.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.toolbox.core.ui.component.ToolBoxIconButton
+import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.runtime.RuntimeUiState
+import io.toolbox.host.runtime.RuntimeViewModel
+import io.toolbox.tool.runtime.HardenedRuntimeWebView
+import io.toolbox.tool.runtime.RuntimeWebViewCallbacks
+import io.toolbox.tool.runtime.RuntimeWebViewCreationResult
+import io.toolbox.tool.runtime.RuntimeWebViewLifecycle
+import java.util.concurrent.atomic.AtomicReference
 
 @Composable
-fun ImportReviewScreen(onBack: () -> Unit) {
-    CapabilityUnavailableScreen(HostCapability.ImportTools, onBack, Modifier.testTag("import_review"))
-}
-
-@Composable
-fun PermissionCenterScreen(onBack: () -> Unit) {
-    CapabilityUnavailableScreen(
-        HostCapability.PermissionCenter,
-        onBack,
-        Modifier.testTag(HostTestTags.PermissionCenter),
-    )
-}
-
-@Composable
-fun RuntimeShellScreen(onBack: () -> Unit) {
-    CapabilityUnavailableScreen(HostCapability.Runtime, onBack, Modifier.testTag(HostTestTags.RuntimeShell))
-}
-
-@Composable
-fun CapabilityUnavailableScreen(
-    capability: HostCapability,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    DetailScreen(title = capability.title, onBack = onBack, modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp)
-                .testTag(HostTestTags.CapabilityUnavailable),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            ToolGlyph("…", size = 56.dp)
-            Spacer(Modifier.height(16.dp))
-            AppText("${capability.title}暂不可用", size = 18, weight = FontWeight.Bold, align = TextAlign.Center)
-            Spacer(Modifier.height(8.dp))
-            AppText(
-                capability.unavailableMessage,
-                size = 13,
-                color = ToolBoxThemeTokens.colors.textSecondary,
-                align = TextAlign.Center,
-            )
+fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var activeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ToolBoxThemeTokens.colors.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .testTag(HostTestTags.RuntimeShell),
+    ) {
+        RuntimeControlRow(
+            state = state,
+            onBack = onBack,
+            onReload = {
+                val webView = activeWebView
+                if (webView == null) viewModel.retry() else webView.reload()
+            },
+            onConfirmReady = viewModel::confirmReadyVersion,
+        )
+        when (val current = state) {
+            RuntimeUiState.Loading -> RuntimeCenteredState("正在安全打开工具", "正在核对活动版本与入口文件。")
+            is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
+            is RuntimeUiState.Ready -> key(current.runtime.toolId, current.runtime.versionCode) {
+                val ownedWebView = remember { AtomicReference<android.webkit.WebView?>(null) }
+                AndroidView(
+                    factory = { context ->
+                        when (val result = HardenedRuntimeWebView.create(
+                            context = context,
+                            runtime = current.runtime,
+                            creationPermit = current.creationPermit,
+                            callbacks = RuntimeWebViewCallbacks(
+                                onMainEntryLoaded = { viewModel.mainEntryLoaded(current.runtime) },
+                                onMainEntryFailed = viewModel::mainEntryFailed,
+                                onRendererGone = viewModel::rendererGone,
+                            ),
+                        )) {
+                            is RuntimeWebViewCreationResult.Created -> result.webView.also { webView ->
+                                ownedWebView.set(webView)
+                                activeWebView = webView
+                            }
+                            is RuntimeWebViewCreationResult.Failed -> android.widget.FrameLayout(context).also {
+                                viewModel.runtimeCreationFailed(result.message)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+                DisposableEffect(Unit) {
+                    onDispose {
+                        ownedWebView.getAndSet(null)?.let { webView ->
+                            if (activeWebView === webView) activeWebView = null
+                            RuntimeWebViewLifecycle.destroyAndUnregister(webView)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-private val HostCapability.title: String
-    get() = when (this) {
-        HostCapability.ImportTools -> "导入工具"
-        HostCapability.PermissionCenter -> "权限中心"
-        HostCapability.Runtime -> "工具运行"
+@Composable
+internal fun RuntimeShellPreviewContent(onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ToolBoxThemeTokens.colors.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
+        RuntimeControlRow(RuntimeUiState.Loading, onBack = onBack, onReload = {}, onConfirmReady = {})
+        RuntimeCenteredState("安全运行容器", "实际运行时，工具 HTML 将占满这里的剩余空间。")
     }
+}
 
-private val HostCapability.unavailableMessage: String
-    get() = when (this) {
-        HostCapability.ImportTools -> "安全导入尚未接入，当前不会选择、检查或安装任何工具包。"
-        HostCapability.PermissionCenter -> "权限授权与撤销尚未接入，当前没有可管理的工具权限。"
-        HostCapability.Runtime -> "安全运行容器尚未接入，当前不会尝试打开任何工具。"
+@Composable
+private fun RuntimeControlRow(
+    state: RuntimeUiState,
+    onBack: () -> Unit,
+    onReload: () -> Unit,
+    onConfirmReady: () -> Unit,
+) {
+    val ready = state as? RuntimeUiState.Ready
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = 56.dp)
+            .background(ToolBoxThemeTokens.colors.surface)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack)
+        Column(Modifier.weight(1f)) {
+            AppText(ready?.runtime?.toolName ?: "工具运行", size = 15, weight = FontWeight.Bold, maxLines = 1)
+            AppText(
+                text = if (ready == null) {
+                    "ToolBox 原生 API 未启用"
+                } else {
+                    "独立 Origin · ${ready.statusMessage} · 原生 API 不可用"
+                },
+                size = 11,
+                color = ToolBoxThemeTokens.colors.textSecondary,
+                maxLines = 1,
+            )
+        }
+        if (ready?.entryLoaded == true && ready.runtime.launchState == io.toolbox.core.data.LaunchState.PENDING) {
+            ToolBoxIconButton(ToolBoxIconKey.Check, "确认工具可用", onConfirmReady)
+        }
+        ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新加载工具", onReload)
     }
+}
+
+@Composable
+private fun RuntimeCenteredState(title: String, detail: String) {
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AppText(title, size = 17, weight = FontWeight.Bold, align = TextAlign.Center)
+            Spacer(Modifier.height(6.dp))
+            AppText(detail, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun RuntimeErrorState(message: String, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        SurfaceCard {
+            AppText("工具暂时无法打开", size = 17, weight = FontWeight.Bold, align = TextAlign.Center)
+            Spacer(Modifier.height(6.dp))
+            AppText(message, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
+            Spacer(Modifier.height(12.dp))
+            ToolBoxPrimaryButton("重试", onClick = onRetry, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ToolBoxThemeTokens.colors.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        SurfaceCard {
+            AppText(
+                if (loading) "正在打开本机工具目录" else "ToolBox 暂时无法启动",
+                size = 18,
+                weight = FontWeight.Bold,
+                align = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            AppText(message, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
+            if (!loading) {
+                Spacer(Modifier.height(12.dp))
+                ToolBoxPrimaryButton(
+                    label = "重试",
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                )
+            }
+        }
+    }
+}

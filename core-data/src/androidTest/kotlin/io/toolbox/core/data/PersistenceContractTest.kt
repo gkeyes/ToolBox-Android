@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.db.RoomCatalogRepository
+import io.toolbox.core.data.db.RoomCatalogLifecycleRepository
+import io.toolbox.core.data.db.RoomCatalogOrganizationRepository
+import io.toolbox.core.data.db.RoomAuditRepository
 import io.toolbox.core.data.db.RoomPermissionGrantRepository
 import io.toolbox.core.data.db.RoomRuntimeSessionRepository
 import io.toolbox.core.data.db.RoomToolKvRepository
@@ -58,7 +61,8 @@ class PersistenceContractTest {
     fun freshV1CatalogAndSettingsPersistAcrossReopenedProductionAdapters() = runBlocking {
         val schemaDatabase = migrationHelper.createDatabase(DATABASE_NAME, 1)
         val tables = schemaDatabase.query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'android_%' AND name NOT LIKE 'room_%'",
+            "SELECT name FROM sqlite_master WHERE type = 'table' " +
+                "AND name NOT LIKE 'android_%' AND name NOT LIKE 'room_%' AND name NOT LIKE 'sqlite_%'",
         ).use { cursor ->
             buildSet {
                 while (cursor.moveToNext()) add(cursor.getString(0))
@@ -80,9 +84,18 @@ class PersistenceContractTest {
 
         val firstDatabase = openDatabase()
         val firstCatalog = RoomCatalogRepository(firstDatabase)
+        val firstLifecycle = RoomCatalogLifecycleRepository(firstDatabase)
+        val firstOrganization = RoomCatalogOrganizationRepository(firstDatabase)
         assertTrue(firstCatalog.observeTools().first().isEmpty())
-        assertTrue(firstCatalog.registerVersion(tool(), version()) is DataResult.Success)
-        assertTrue(firstCatalog.activateVersion(TOOL_ID, VERSION_CODE) is DataResult.Success)
+        assertEquals(
+            DataResult.Success(CommitInstallOutcome.Committed),
+            firstLifecycle.commitInstall(attempt()),
+        )
+        assertEquals(LaunchState.PENDING, firstCatalog.observeVersions(TOOL_ID).first().single().launchState)
+        assertEquals(DataResult.Success(Unit), firstLifecycle.markActiveVersionStable(TOOL_ID, VERSION_CODE))
+        assertEquals(DataResult.Success(Unit), firstOrganization.setPinnedOrder(TOOL_ID, 0))
+        assertEquals(DataResult.Success(Unit), firstOrganization.setCategory(TOOL_ID, "finance"))
+        assertEquals(DataResult.Success(Unit), firstOrganization.recordOpened(TOOL_ID, 1_234L))
 
         val firstSettingsScope = settingsScope()
         val firstSettings = settingsRepository(firstSettingsScope)
@@ -104,9 +117,22 @@ class PersistenceContractTest {
 
         val reopenedDatabase = openDatabase()
         val reopenedCatalog = RoomCatalogRepository(reopenedDatabase)
+        val reopenedLifecycle = RoomCatalogLifecycleRepository(reopenedDatabase)
         val persistedTool = reopenedCatalog.observeTool(TOOL_ID).first()
         assertEquals(VERSION_CODE, persistedTool?.activeVersionCode)
+        assertEquals(0, persistedTool?.metadata?.pinnedOrder)
+        assertEquals("finance", persistedTool?.metadata?.categoryId)
+        assertEquals(1_234L, persistedTool?.lastOpenedAt)
         assertEquals(LaunchState.STABLE, reopenedCatalog.observeVersions(TOOL_ID).first().single().launchState)
+        assertEquals("persistent-session-1", reopenedCatalog.observeVersions(TOOL_ID).first().single().sourceSessionId)
+        assertEquals(
+            DataResult.Success(CommittedInstall(TOOL_ID, VERSION_CODE)),
+            reopenedLifecycle.findCommittedInstall("persistent-session-1"),
+        )
+        assertEquals(
+            DataResult.Success(null),
+            reopenedLifecycle.findCommittedInstall("persistent-session-1-missing"),
+        )
 
         val reopenedSettingsScope = settingsScope()
         val reopenedSettings = settingsRepository(reopenedSettingsScope).settings.first()
@@ -130,16 +156,53 @@ class PersistenceContractTest {
         val database = openDatabase()
         val catalog = RoomCatalogRepository(
             database,
+        )
+        val failingLifecycle = RoomCatalogLifecycleRepository(
+            database,
             CatalogCommitHook { error("injected commit failure") },
         )
-        assertTrue(catalog.registerVersion(tool(), version()) is DataResult.Success)
+        val emptySnapshot = failingLifecycle.snapshot(TOOL_ID)
 
         assertEquals(
-            DataResult.Failure.StorageFailure("activateVersion"),
-            catalog.activateVersion(TOOL_ID, VERSION_CODE),
+            DataResult.Failure.StorageFailure("commitInstall"),
+            failingLifecycle.commitInstall(attempt()),
         )
-        assertEquals(null, catalog.observeTool(TOOL_ID).first()?.activeVersionCode)
-        assertEquals(LaunchState.PENDING, catalog.observeVersions(TOOL_ID).first().single().launchState)
+        assertEquals(emptySnapshot, failingLifecycle.snapshot(TOOL_ID))
+
+        val lifecycle = RoomCatalogLifecycleRepository(database)
+        assertEquals(
+            DataResult.Failure.UnsignedPersistentGrant(TOOL_ID, "storage"),
+            lifecycle.commitInstall(
+                attempt(
+                    sourceSessionId = "unsafe-persistent-grant",
+                    initialGrantScope = GrantScope.PERSISTENT,
+                ),
+            ),
+        )
+        assertEquals(emptySnapshot, lifecycle.snapshot(TOOL_ID))
+        assertTrue(lifecycle.commitInstall(attempt()) is DataResult.Success)
+        assertEquals(DataResult.Success(Unit), lifecycle.markActiveVersionStable(TOOL_ID, VERSION_CODE))
+        val beforeUpdate = (lifecycle.snapshot(TOOL_ID) as DataResult.Success).value
+        val update = attempt(
+            versionCode = 2,
+            name = "Updated tool",
+            sourceSessionId = "persistent-session-2",
+            categoryId = "package-category-must-not-replace-user-category",
+        )
+        assertTrue(
+            lifecycle.commitInstall(update) is DataResult.Success,
+        )
+        assertEquals("user-category", catalog.observeTool(TOOL_ID).first()?.metadata?.categoryId)
+        assertEquals(DataResult.Success(Unit), lifecycle.markActiveVersionStable(TOOL_ID, 2))
+        val stableUpdate = lifecycle.snapshot(TOOL_ID)
+        assertEquals(
+            DataResult.Failure.LifecycleConflict(TOOL_ID),
+            lifecycle.compensateInstall(update, beforeUpdate),
+        )
+        assertEquals(stableUpdate, lifecycle.snapshot(TOOL_ID))
+        assertEquals(DataResult.Success(RollbackOutcome(1)), lifecycle.rollbackToPreviousStable(TOOL_ID))
+        assertEquals("Persistent tool", catalog.observeTool(TOOL_ID).first()?.metadata?.name)
+        assertEquals("user-category", catalog.observeTool(TOOL_ID).first()?.metadata?.categoryId)
 
         val keyValues = RoomToolKvRepository(database)
         val orphanKv = keyValues.put(ORPHAN_TOOL_ID, "key", "x", 1, 5)
@@ -173,12 +236,38 @@ class PersistenceContractTest {
         assertEquals(orphanKv, memory.keyValues.put(ORPHAN_TOOL_ID, "key", "x", 1, 5))
         assertEquals(orphanGrant, memory.grants.put(grant(ORPHAN_TOOL_ID)))
         assertEquals(orphanStart, memory.sessions.start(session(ORPHAN_TOOL_ID)))
-        memory.catalog.registerVersion(tool(), version())
+        memory.lifecycle.commitInstall(attempt())
         assertTrue(memory.sessions.start(session(TOOL_ID)) is DataResult.Success)
         assertEquals(duplicateStart, memory.sessions.start(session(TOOL_ID)))
         assertTrue(memory.sessions.finish("runtime-session", 200, "closed") is DataResult.Success)
         assertEquals(finishedAgain, memory.sessions.finish("runtime-session", 201, "closed-again"))
         assertEquals(missingFinish, memory.sessions.finish("missing-session", 200, "closed"))
+
+        assertTrue(sessions.start(session(TOOL_ID, "runtime-session-open")) is DataResult.Success)
+
+        val audit = RoomAuditRepository(database)
+        assertTrue(audit.append(auditEvent()) is DataResult.Success)
+        assertEquals(DataResult.Success(DeleteToolCatalogOutcome.Deleted), lifecycle.deleteToolCatalog(TOOL_ID))
+        assertEquals(DataResult.Success(DeleteToolCatalogOutcome.AlreadyAbsent), lifecycle.deleteToolCatalog(TOOL_ID))
+        assertTrue(catalog.observeVersions(TOOL_ID).first().isEmpty())
+        assertTrue(grants.observeGrants(TOOL_ID).first().isEmpty())
+        assertEquals(0L, keyValues.bytesUsed(TOOL_ID))
+        assertEquals(DataResult.Failure.NotFound("tool"), keyValues.put(TOOL_ID, "after-delete", "x", 1, 5))
+        assertTrue(sessions.observeOpenSessions().first().isEmpty())
+        assertEquals(1, audit.observeRecent(10).first().size)
+
+        memory.grants.put(grant(TOOL_ID))
+        memory.keyValues.put(TOOL_ID, "owned", "x", 1, 5)
+        memory.sessions.start(session(TOOL_ID, "memory-open"))
+        memory.audit.append(auditEvent())
+        assertEquals(
+            DataResult.Success(DeleteToolCatalogOutcome.Deleted),
+            memory.lifecycle.deleteToolCatalog(TOOL_ID),
+        )
+        assertTrue(memory.grants.observeGrants(TOOL_ID).first().isEmpty())
+        assertEquals(0L, memory.keyValues.bytesUsed(TOOL_ID))
+        assertTrue(memory.sessions.observeOpenSessions().first().isEmpty())
+        assertEquals(1, memory.audit.observeRecent(10).first().size)
         database.close()
     }
 
@@ -194,24 +283,51 @@ class PersistenceContractTest {
         createHostSettingsDataStore(context.preferencesDataStoreFile(SETTINGS_NAME), scope),
     )
 
-    private fun tool() = ToolMetadata(
+    private fun tool(
+        name: String = "Persistent tool",
+        categoryId: String = "user-category",
+    ) = ToolMetadata(
         id = TOOL_ID,
-        name = "Persistent tool",
-        signatureState = SignatureState.VERIFIED_UNKNOWN,
+        name = name,
+        signatureState = SignatureState.UNSIGNED,
         publisherKeyId = null,
         securityProfile = SecurityProfile.STRICT,
         installedAt = 100,
+        categoryId = categoryId,
     )
 
-    private fun version() = ToolVersion(
+    private fun version(
+        versionCode: Int = VERSION_CODE,
+        name: String = "Persistent tool",
+        sourceSessionId: String = "persistent-session-1",
+    ) = ToolVersion(
         toolId = TOOL_ID,
-        versionCode = VERSION_CODE,
-        version = "1.0.0",
-        bundleLocator = BundleLocator("miniapps/persistent/versions/1/bundle"),
+        versionCode = versionCode,
+        version = "$versionCode.0.0",
+        bundleLocator = BundleLocator("miniapps/persistent/versions/$versionCode/bundle"),
         bundleBytes = 256,
-        integrityHash = "sha256:persistent",
+        integrityHash = "sha256:persistent-$versionCode",
         installedAt = 100,
         launchState = LaunchState.PENDING,
+        sourceSessionId = sourceSessionId,
+        identity = ToolVersionIdentity(
+            name = name,
+            signatureState = SignatureState.UNSIGNED,
+            publisherKeyId = null,
+            securityProfile = SecurityProfile.STRICT,
+        ),
+    )
+
+    private fun attempt(
+        versionCode: Int = VERSION_CODE,
+        name: String = "Persistent tool",
+        sourceSessionId: String = "persistent-session-1",
+        categoryId: String = "user-category",
+        initialGrantScope: GrantScope = GrantScope.SESSION,
+    ) = CatalogInstallAttempt(
+        metadata = tool(name, categoryId),
+        version = version(versionCode, name, sourceSessionId),
+        initialGrants = listOf(grant(TOOL_ID).copy(scope = initialGrantScope)),
     )
 
     private fun grant(toolId: String) = PermissionGrant(
@@ -224,8 +340,8 @@ class PersistenceContractTest {
         source = GrantSource.INSTALL,
     )
 
-    private fun session(toolId: String) = RuntimeSession(
-        sessionId = "runtime-session",
+    private fun session(toolId: String, sessionId: String = "runtime-session") = RuntimeSession(
+        sessionId = sessionId,
         toolId = toolId,
         origin = "https://runtime.invalid",
         profileName = null,
@@ -233,6 +349,19 @@ class PersistenceContractTest {
         startedAt = 100,
         endedAt = null,
         exitReason = null,
+    )
+
+    private fun auditEvent() = AuditEvent(
+        toolId = TOOL_ID,
+        sessionId = null,
+        category = "catalog",
+        action = "delete",
+        result = "requested",
+        risk = AuditRisk.MEDIUM,
+        targetHost = null,
+        timestamp = 300,
+        durationMs = null,
+        byteCount = null,
     )
 
     private companion object {

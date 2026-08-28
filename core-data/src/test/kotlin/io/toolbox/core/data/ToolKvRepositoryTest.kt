@@ -14,7 +14,9 @@ class ToolKvRepositoryTest(private val scenario: Scenario) {
     @Test
     fun quotaAndConcurrentWritesRemainAtomic() = runTest {
         val repositories = InMemoryCoreData.create()
-        repositories.catalog.registerVersion(tool(), version())
+        repositories.lifecycle.commitInstall(
+            CatalogInstallAttempt(tool(), version(), emptyList()),
+        )
         val repository = repositories.keyValues
 
         val results = scenario.values.mapIndexed { index, value ->
@@ -62,7 +64,7 @@ class ToolKvRepositoryTest(private val scenario: Scenario) {
     private fun tool() = ToolMetadata(
         id = TOOL_ID,
         name = "Storage tool",
-        signatureState = SignatureState.VERIFIED_UNKNOWN,
+        signatureState = SignatureState.UNSIGNED,
         publisherKeyId = null,
         securityProfile = SecurityProfile.STRICT,
         installedAt = 100,
@@ -77,5 +79,12 @@ class ToolKvRepositoryTest(private val scenario: Scenario) {
         integrityHash = "sha256:storage",
         installedAt = 100,
         launchState = LaunchState.PENDING,
+        sourceSessionId = "storage-session",
+        identity = ToolVersionIdentity(
+            name = "Storage tool",
+            signatureState = SignatureState.UNSIGNED,
+            publisherKeyId = null,
+            securityProfile = SecurityProfile.STRICT,
+        ),
     )
 }

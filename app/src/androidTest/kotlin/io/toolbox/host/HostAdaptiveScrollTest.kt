@@ -1,23 +1,24 @@
 package io.toolbox.host
 
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.setContent
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import io.toolbox.core.data.LaunchState
+import io.toolbox.core.data.SignatureState
 import io.toolbox.core.ui.theme.ToolBoxTheme
+import io.toolbox.host.catalog.CatalogTool
+import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.ui.HomeScreen
-import io.toolbox.host.ui.HostCatalogScreenModel
 import io.toolbox.host.ui.HostTestTags
-import io.toolbox.host.ui.ToolCardModel
-import io.toolbox.host.ui.UiState
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -27,33 +28,18 @@ class HostAdaptiveScrollTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun longCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe() {
-        val lastTool = ToolCardModel(
-            toolId = "tool-80",
-            title = "工具 80",
-            metadata = "测试工具",
-            symbol = "80",
-        )
-        val tools = (1..80).map { index ->
-            if (index == 80) {
-                lastTool
-            } else {
-                ToolCardModel(
-                    toolId = "tool-$index",
-                    title = "工具 $index",
-                    metadata = "测试工具",
-                    symbol = index.toString(),
-                )
-            }
-        }
+    fun fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe() {
+        val tools = (1..80).map(::catalogTool)
+        val lastTool = tools.last()
 
         composeRule.activity.setContent {
             ToolBoxTheme {
                 HomeScreen(
-                    model = HostCatalogScreenModel(UiState.Content(tools)),
+                    state = CatalogUiState(isLoaded = true, tools = tools),
+                    onAction = {},
                     onDestination = {},
                     onImport = {},
-                    onLaunchTool = {},
+                    onOpenDetails = {},
                 )
             }
         }
@@ -75,15 +61,14 @@ class HostAdaptiveScrollTest {
     fun freshInstallRemainsReachableAtTwoHundredPercentFontScale() {
         composeRule.activity.setContent {
             val baseDensity = LocalDensity.current
-            CompositionLocalProvider(
-                LocalDensity provides Density(baseDensity.density, fontScale = 2f),
-            ) {
+            CompositionLocalProvider(LocalDensity provides Density(baseDensity.density, fontScale = 2f)) {
                 ToolBoxTheme {
                     HomeScreen(
-                        model = HostCatalogScreenModel(UiState.Empty),
+                        state = CatalogUiState(isLoaded = true),
+                        onAction = {},
                         onDestination = {},
                         onImport = {},
-                        onLaunchTool = {},
+                        onOpenDetails = {},
                     )
                 }
             }
@@ -113,3 +98,16 @@ class HostAdaptiveScrollTest {
         }
     }
 }
+
+private fun catalogTool(index: Int) = CatalogTool(
+    toolId = "tool-$index",
+    name = "工具 $index",
+    signatureState = SignatureState.VERIFIED_TRUSTED,
+    activeVersionCode = 1,
+    activeVersionName = "1.0.0",
+    bundleBytes = 1024,
+    launchState = LaunchState.STABLE,
+    lastOpenedAt = null,
+    categoryId = null,
+    pinnedOrder = null,
+)

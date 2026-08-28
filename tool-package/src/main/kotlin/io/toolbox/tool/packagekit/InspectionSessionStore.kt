@@ -4,15 +4,11 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.nio.file.StandardOpenOption
-import java.nio.channels.FileChannel
-import java.nio.channels.FileLock
-import java.nio.channels.OverlappingFileLockException
-import java.util.UUID
 
 internal data class InspectionSession(
     val id: String,
     val directory: Path,
+    val ownership: ClaimOwnership,
 )
 
 internal fun interface TerminalCleanupHook {
@@ -26,16 +22,27 @@ internal fun interface TerminalCleanupHook {
 internal class InspectionSessionStore(
     private val root: Path,
     private val terminalCleanupHook: TerminalCleanupHook = TerminalCleanupHook.NONE,
+    recoveryScanHook: RecoveryScanHook = RecoveryScanHook.NONE,
 ) {
     private val lock = Any()
     private val consumed = mutableSetOf<String>()
+    private val ownershipLocks = SessionOwnershipLocks()
+    private val disposal = InspectionSessionDisposal(root, ownershipLocks, terminalCleanupHook) { consumed += it }
+    private val recoveryStore = InspectionSessionRecoveryStore(root, ownershipLocks, ::cleanup, recoveryScanHook)
 
     fun create(sessionId: String): InspectionSession {
         check(isOpaqueSessionId(sessionId))
         Files.createDirectories(root)
         val directory = root.resolve(sessionId)
         Files.createDirectory(directory)
-        return InspectionSession(sessionId, directory)
+        return when (val ownership = ownershipLocks.acquire(directory)) {
+            is OwnershipAttempt.Acquired -> InspectionSession(sessionId, directory, ownership.ownership)
+            OwnershipAttempt.Busy -> throw IllegalStateException("New inspection session is unexpectedly busy")
+            is OwnershipAttempt.Failed -> {
+                runCatching { disposal.cleanup(directory) }
+                throw IllegalStateException(ownership.rejection.detail)
+            }
+        }
     }
 
     fun directoryFor(sessionId: String): Path {
@@ -43,23 +50,77 @@ internal class InspectionSessionStore(
         return root.resolve(sessionId)
     }
 
+    fun publish(session: InspectionSession): PackageRejection? = synchronized(lock) {
+        if (!isOwnedPendingSession(session)) return@synchronized sessionFailure("Inspection session ownership is invalid")
+        session.ownership.release()
+    }
+
+    fun abort(session: InspectionSession): DiscardResult = synchronized(lock) {
+        if (!isOwnedPendingSession(session)) {
+            session.ownership.release()
+            return@synchronized DiscardResult.NotFound
+        }
+        disposal.disposeOwned(session.id, session.directory, session.ownership)
+    }
+
     fun discard(sessionId: String): DiscardResult = synchronized(lock) {
         if (!isOpaqueSessionId(sessionId)) return@synchronized DiscardResult.NotFound
-        when (val recovery = recoverDisposing(sessionId)) {
+        when (val recovery = disposal.recoverDisposing(sessionId)) {
             DisposingRecovery.Absent -> Unit
             DisposingRecovery.Recovered -> return@synchronized DiscardResult.Discarded
             DisposingRecovery.Busy -> return@synchronized DiscardResult.Failed(cleanupInProgress())
             is DisposingRecovery.Failed -> return@synchronized DiscardResult.Failed(recovery.rejection)
         }
         val directory = root.resolve(sessionId)
-        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return@synchronized DiscardResult.NotFound
-        cleanup(directory)?.let { DiscardResult.Failed(it) } ?: DiscardResult.Discarded
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return@synchronized DiscardResult.NotFound
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return@synchronized disposal.cleanup(directory)?.let { DiscardResult.Failed(it) } ?: DiscardResult.Discarded
+        }
+        when (val ownership = ownershipLocks.acquire(directory)) {
+            OwnershipAttempt.Busy -> DiscardResult.Failed(cleanupInProgress())
+            is OwnershipAttempt.Failed -> DiscardResult.Failed(ownership.rejection)
+            is OwnershipAttempt.Acquired -> disposal.disposeOwned(sessionId, directory, ownership.ownership)
+        }
     }
+
+    fun acquireResumable(sessionId: String): StoredResumeResult = synchronized(lock) {
+        if (!isOpaqueSessionId(sessionId)) return@synchronized StoredResumeResult.NotFound
+        recoveryStore.acquirePending(sessionId)
+    }
+
+    fun discoverResumable(
+        maxCandidates: Int = MAX_RESUMABLE_SESSIONS,
+        excludedSessionIds: Set<String> = emptySet(),
+    ): StoredResumableDiscovery = synchronized(lock) {
+        recoveryStore.discoverPending(maxCandidates, excludedSessionIds)
+    }
+
+    fun discoverClaimedResumable(maxCandidates: Int = MAX_RESUMABLE_SESSIONS): StoredResumableDiscovery =
+        synchronized(lock) { recoveryStore.discoverClaimed(maxCandidates) }
+
+    fun acquireClaimedResumable(sessionId: String): StoredClaimedRecoveryResult = synchronized(lock) {
+        if (!isOpaqueSessionId(sessionId)) return@synchronized StoredClaimedRecoveryResult.NotFound
+        recoveryStore.acquireClaimed(sessionId)
+    }
+
+    fun discardResumable(
+        sessionId: String,
+        directory: Path,
+        ownership: ClaimOwnership,
+    ): DiscardResult = synchronized(lock) {
+        if (directory != root.resolve(sessionId)) {
+            ownership.release()
+            return@synchronized DiscardResult.NotFound
+        }
+        disposal.disposeOwned(sessionId, directory, ownership)
+    }
+
+    fun releaseResumable(ownership: ClaimOwnership): PackageRejection? = ownership.release()
 
     fun claim(sessionId: String): StoredClaimResult = synchronized(lock) {
         if (!isOpaqueSessionId(sessionId)) return@synchronized StoredClaimResult.NotFound
         if (sessionId in consumed) return@synchronized StoredClaimResult.Consumed
-        when (val recovery = recoverDisposing(sessionId)) {
+        when (val recovery = disposal.recoverDisposing(sessionId)) {
             DisposingRecovery.Absent -> Unit
             DisposingRecovery.Recovered -> return@synchronized StoredClaimResult.Consumed
             DisposingRecovery.Busy -> return@synchronized StoredClaimResult.AlreadyClaimed
@@ -78,7 +139,7 @@ internal class InspectionSessionStore(
                 StoredClaimResult.NotFound
             }
         }
-        when (val ownership = acquireOwnership(pending)) {
+        when (val ownership = ownershipLocks.acquire(pending)) {
             OwnershipAttempt.Busy -> StoredClaimResult.AlreadyClaimed
             is OwnershipAttempt.Failed -> StoredClaimResult.Failed(ownership.rejection)
             is OwnershipAttempt.Acquired -> {
@@ -88,10 +149,11 @@ internal class InspectionSessionStore(
                     finishClaim(sessionId, claimed, ownership.ownership)
                 } catch (error: Exception) {
                     ownership.ownership.release()
+                    error.rethrowIfInspectionInterrupted("Inspection session claim was interrupted")
                     when {
                         Files.exists(claimed, LinkOption.NOFOLLOW_LINKS) -> StoredClaimResult.AlreadyClaimed
                         else -> {
-                            removeEmptyStateRoot(claimedRoot)
+                            disposal.removeEmptyStateRoot(claimedRoot)
                             StoredClaimResult.Failed(sessionFailure("Inspection session could not be claimed atomically"))
                         }
                     }
@@ -109,55 +171,49 @@ internal class InspectionSessionStore(
             ownership.release()
             return@synchronized DiscardResult.NotFound
         }
-        if (sessionId in consumed) return@synchronized DiscardResult.Discarded
+        if (sessionId in consumed) {
+            ownership.release()
+            return@synchronized DiscardResult.Discarded
+        }
         if (!Files.isDirectory(claimedDirectory, LinkOption.NOFOLLOW_LINKS)) {
             ownership.release()
             return@synchronized DiscardResult.NotFound
         }
-        val disposingRoot = root.resolve(DISPOSING_DIRECTORY)
-        val disposing = disposingRoot.resolve(sessionId)
-        try {
-            Files.createDirectories(disposingRoot)
-            Files.move(claimedDirectory, disposing, StandardCopyOption.ATOMIC_MOVE)
-        } catch (error: Exception) {
-            ownership.release()
-            removeEmptyStateRoot(disposingRoot)
-            return@synchronized DiscardResult.Failed(
-                PackageRejection(
-                    PackageRejectionCode.CLEANUP_FAILED,
-                    "Claimed inspection could not enter terminal cleanup state",
-                ),
-            )
-        }
-        val cleanupFailure = cleanupDisposingWithOwnership(sessionId, disposing, ownership)
-        removeEmptyStateRoot(root.resolve(CLAIMED_DIRECTORY))
-        removeEmptyStateRoot(disposingRoot)
-        if (cleanupFailure != null) return@synchronized DiscardResult.Failed(cleanupFailure)
-        consumed += sessionId
-        DiscardResult.Discarded
+        disposal.disposeOwned(sessionId, claimedDirectory, ownership)
     }
 
-    fun cleanup(directory: Path): PackageRejection? = synchronized(lock) {
-        try {
-            deleteTree(directory)
-            null
-        } catch (error: Exception) {
-            PackageRejection(
-                PackageRejectionCode.CLEANUP_FAILED,
-                "Inspection session cleanup failed; installation remains blocked",
-            )
+    fun requeueClaimed(
+        sessionId: String,
+        claimedDirectory: Path,
+        ownership: ClaimOwnership,
+    ): PackageRejection? = synchronized(lock) {
+        val expected = root.resolve(CLAIMED_DIRECTORY).resolve(sessionId)
+        val pending = root.resolve(sessionId)
+        if (!isOpaqueSessionId(sessionId) || claimedDirectory != expected) {
+            return@synchronized failedRequeue(ownership, "Claimed inspection ownership is invalid")
         }
+        if (!Files.isDirectory(claimedDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            return@synchronized failedRequeue(ownership, "Claimed inspection no longer exists")
+        }
+        if (Files.exists(pending, LinkOption.NOFOLLOW_LINKS)) {
+            return@synchronized failedRequeue(ownership, "Inspection session cannot be requeued over existing state")
+        }
+        try {
+            Files.move(claimedDirectory, pending, StandardCopyOption.ATOMIC_MOVE)
+            disposal.removeEmptyStateRoot(root.resolve(CLAIMED_DIRECTORY))
+        } catch (error: Exception) {
+            val releaseFailure = ownership.release()
+            error.rethrowIfInspectionInterrupted("Claimed inspection requeue was interrupted")
+            return@synchronized releaseFailure
+                ?: sessionFailure("Claimed inspection could not be requeued atomically")
+        }
+        return@synchronized ownership.release()
     }
 
-    private fun deleteTree(path: Path) {
-        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return
-        Files.walk(path).use { paths ->
-            paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
-        }
-    }
+    fun cleanup(directory: Path): PackageRejection? = synchronized(lock) { disposal.cleanup(directory) }
 
     private fun claimExisting(sessionId: String, claimed: Path): StoredClaimResult =
-        when (val ownership = acquireOwnership(claimed)) {
+        when (val ownership = ownershipLocks.acquire(claimed)) {
             OwnershipAttempt.Busy -> StoredClaimResult.AlreadyClaimed
             is OwnershipAttempt.Failed -> StoredClaimResult.Failed(ownership.rejection)
             is OwnershipAttempt.Acquired -> finishClaim(sessionId, claimed, ownership.ownership)
@@ -179,103 +235,8 @@ internal class InspectionSessionStore(
         )
     }
 
-    private fun acquireOwnership(directory: Path): OwnershipAttempt {
-        val channel = try {
-            FileChannel.open(
-                directory.resolve(LOCK_FILE),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                LinkOption.NOFOLLOW_LINKS,
-            )
-        } catch (error: Exception) {
-            return OwnershipAttempt.Failed(sessionFailure("Inspection claim lock could not be opened"))
-        }
-        val fileLock = try {
-            channel.tryLock()
-        } catch (error: OverlappingFileLockException) {
-            null
-        } catch (error: Exception) {
-            runCatching { channel.close() }
-            return OwnershipAttempt.Failed(sessionFailure("Inspection claim lock could not be acquired"))
-        }
-        if (fileLock == null) {
-            runCatching { channel.close() }
-            return OwnershipAttempt.Busy
-        }
-        return OwnershipAttempt.Acquired(ClaimOwnership(channel, fileLock))
-    }
-
-    private fun recoverDisposing(sessionId: String): DisposingRecovery {
-        val disposingRoot = root.resolve(DISPOSING_DIRECTORY)
-        val disposing = disposingRoot.resolve(sessionId)
-        if (!Files.exists(disposing, LinkOption.NOFOLLOW_LINKS)) return DisposingRecovery.Absent
-        if (!Files.isDirectory(disposing, LinkOption.NOFOLLOW_LINKS)) {
-            val failure = cleanup(disposing)
-            removeEmptyStateRoot(disposingRoot)
-            return if (failure == null) {
-                consumed += sessionId
-                DisposingRecovery.Recovered
-            } else {
-                DisposingRecovery.Failed(failure)
-            }
-        }
-        return when (val ownership = acquireOwnership(disposing)) {
-            OwnershipAttempt.Busy -> DisposingRecovery.Busy
-            is OwnershipAttempt.Failed -> {
-                if (!Files.exists(disposing, LinkOption.NOFOLLOW_LINKS)) {
-                    consumed += sessionId
-                    DisposingRecovery.Recovered
-                } else {
-                    DisposingRecovery.Failed(
-                        PackageRejection(
-                            PackageRejectionCode.CLEANUP_FAILED,
-                            "Terminal inspection residue could not be locked for cleanup",
-                        ),
-                    )
-                }
-            }
-            is OwnershipAttempt.Acquired -> {
-                val cleanupFailure = cleanupDisposingWithOwnership(
-                    sessionId,
-                    disposing,
-                    ownership.ownership,
-                )
-                removeEmptyStateRoot(disposingRoot)
-                when {
-                    cleanupFailure != null -> DisposingRecovery.Failed(cleanupFailure)
-                    else -> {
-                        consumed += sessionId
-                        DisposingRecovery.Recovered
-                    }
-                }
-            }
-        }
-    }
-
-    private fun cleanupDisposingWithOwnership(
-        sessionId: String,
-        disposing: Path,
-        ownership: ClaimOwnership,
-    ): PackageRejection? {
-        var failure: PackageRejection? = null
-        try {
-            terminalCleanupHook.beforeCleanup(sessionId)
-            failure = cleanup(disposing)
-        } catch (error: Exception) {
-            failure = PackageRejection(
-                PackageRejectionCode.CLEANUP_FAILED,
-                "Terminal inspection cleanup was interrupted before deletion",
-            )
-        } finally {
-            val releaseFailure = ownership.release()
-            if (failure == null) failure = releaseFailure
-        }
-        return failure
-    }
-
-    private fun removeEmptyStateRoot(stateRoot: Path) {
-        runCatching { Files.deleteIfExists(stateRoot) }
-    }
+    private fun isOwnedPendingSession(session: InspectionSession): Boolean =
+        isOpaqueSessionId(session.id) && session.directory == root.resolve(session.id)
 
     private fun sessionFailure(detail: String) = PackageRejection(
         PackageRejectionCode.SESSION_IO_FAILED,
@@ -287,13 +248,14 @@ internal class InspectionSessionStore(
         "Terminal cleanup is in progress; retry discard after it completes",
     )
 
-    private fun isOpaqueSessionId(value: String): Boolean =
-        runCatching { UUID.fromString(value).toString() == value }.getOrDefault(false)
+    private fun isOpaqueSessionId(value: String): Boolean = isOpaqueInspectionSessionId(value)
+
+    private fun failedRequeue(ownership: ClaimOwnership, detail: String): PackageRejection =
+        ownership.release() ?: sessionFailure(detail)
 
     private companion object {
         const val CLAIMED_DIRECTORY = ".claimed"
-        const val DISPOSING_DIRECTORY = ".disposing"
-        const val LOCK_FILE = ".claim.lock"
+        const val MAX_RESUMABLE_SESSIONS = 32
     }
 }
 
@@ -308,38 +270,4 @@ internal sealed interface StoredClaimResult {
     data object AlreadyClaimed : StoredClaimResult
     data object Consumed : StoredClaimResult
     data class Failed(val rejection: PackageRejection) : StoredClaimResult
-}
-
-internal class ClaimOwnership(
-    private val channel: FileChannel,
-    private val fileLock: FileLock,
-) {
-    fun release(): PackageRejection? = synchronized(this) {
-        var failure: Exception? = null
-        if (fileLock.isValid) {
-            runCatching { fileLock.release() }.onFailure { failure = it as? Exception }
-        }
-        if (channel.isOpen) {
-            runCatching { channel.close() }.onFailure { if (failure == null) failure = it as? Exception }
-        }
-        failure?.let {
-            PackageRejection(
-                PackageRejectionCode.CLEANUP_FAILED,
-                "Inspection claim lock could not be released",
-            )
-        }
-    }
-}
-
-private sealed interface OwnershipAttempt {
-    data class Acquired(val ownership: ClaimOwnership) : OwnershipAttempt
-    data object Busy : OwnershipAttempt
-    data class Failed(val rejection: PackageRejection) : OwnershipAttempt
-}
-
-private sealed interface DisposingRecovery {
-    data object Absent : DisposingRecovery
-    data object Recovered : DisposingRecovery
-    data object Busy : DisposingRecovery
-    data class Failed(val rejection: PackageRejection) : DisposingRecovery
 }

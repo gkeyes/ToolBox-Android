@@ -57,7 +57,42 @@ data class ToolVersion(
     val integrityHash: String,
     val installedAt: Long,
     val launchState: LaunchState,
+    val sourceSessionId: String,
+    val identity: ToolVersionIdentity,
 )
+
+data class ToolVersionIdentity(
+    val name: String,
+    val signatureState: SignatureState,
+    val publisherKeyId: String?,
+    val securityProfile: SecurityProfile,
+) {
+    init {
+        require(signatureState != SignatureState.INVALID) {
+            "Invalid signatures cannot enter version history"
+        }
+    }
+}
+
+data class CatalogInstallAttempt(
+    val metadata: ToolMetadata,
+    val version: ToolVersion,
+    val initialGrants: List<PermissionGrant>,
+)
+
+data class CatalogLifecycleSnapshot(
+    val toolId: String,
+    val tool: InstalledTool?,
+    val versions: List<ToolVersion>,
+    val grants: List<PermissionGrant>,
+)
+
+data class CommittedInstall(val toolId: String, val versionCode: Int)
+
+enum class CommitInstallOutcome { Committed, AlreadyCommitted }
+enum class DeleteToolCatalogOutcome { Deleted, AlreadyAbsent }
+
+data class RollbackOutcome(val activeVersionCode: Int)
 
 data class PermissionGrant(
     val toolId: String,
@@ -141,11 +176,29 @@ internal fun HostSettings.withPersistedDefaults(): HostSettings = copy(
     } ?: HostSettings().defaultStorageQuotaBytes,
 )
 
+internal const val MAX_SOURCE_SESSION_ID_LENGTH = 128
+internal const val MAX_CATEGORY_ID_LENGTH = 128
+
+internal fun String.isValidSourceSessionId(): Boolean =
+    isNotBlank() && length <= MAX_SOURCE_SESSION_ID_LENGTH
+
+internal fun String?.isValidCategoryId(): Boolean =
+    this == null || (isNotBlank() && length <= MAX_CATEGORY_ID_LENGTH)
+
 sealed interface DataResult<out T> {
     data class Success<T>(val value: T) : DataResult<T>
     sealed interface Failure : DataResult<Nothing> {
         data class InvalidInput(val field: String) : Failure
         data class DuplicateVersion(val toolId: String, val versionCode: Int) : Failure
+        data class DuplicateSourceSession(val sourceSessionId: String) : Failure
+        data class NonMonotonicVersion(
+            val toolId: String,
+            val attemptedVersionCode: Int,
+            val currentVersionCode: Int,
+        ) : Failure
+        data class SignatureContinuityViolation(val toolId: String) : Failure
+        data class UnsignedPersistentGrant(val toolId: String, val permission: String) : Failure
+        data class LifecycleConflict(val toolId: String) : Failure
         data class NotFound(val subject: String) : Failure
         data class QuotaExceeded(val quotaBytes: Long, val attemptedBytes: Long) : Failure
         data class StorageFailure(val operation: String) : Failure

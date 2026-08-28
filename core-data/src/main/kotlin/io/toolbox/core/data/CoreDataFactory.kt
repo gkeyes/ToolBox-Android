@@ -6,6 +6,8 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import io.toolbox.core.data.db.RoomAuditRepository
 import io.toolbox.core.data.db.RoomCatalogRepository
+import io.toolbox.core.data.db.RoomCatalogLifecycleRepository
+import io.toolbox.core.data.db.RoomCatalogOrganizationRepository
 import io.toolbox.core.data.db.RoomPermissionGrantRepository
 import io.toolbox.core.data.db.RoomPublisherRepository
 import io.toolbox.core.data.db.RoomRuntimeSessionRepository
@@ -49,6 +51,8 @@ object CoreDataFactory {
         return CoreDataStores(
             repositories = CoreDataRepositories(
                 catalog = RoomCatalogRepository(database),
+                lifecycle = RoomCatalogLifecycleRepository(database),
+                organization = RoomCatalogOrganizationRepository(database),
                 grants = RoomPermissionGrantRepository(database),
                 keyValues = RoomToolKvRepository(database),
                 publishers = RoomPublisherRepository(database),

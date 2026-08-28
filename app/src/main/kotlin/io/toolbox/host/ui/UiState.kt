@@ -1,7 +1,6 @@
 package io.toolbox.host.ui
 
 import androidx.compose.runtime.Immutable
-import kotlinx.serialization.Serializable
 
 sealed interface UiState<out T> {
     data object Loading : UiState<Nothing>
@@ -53,11 +52,4 @@ object ProductionHostState {
         home = HostCatalogScreenModel(state = UiState.Empty),
         toolManager = HostCatalogScreenModel(state = UiState.Empty),
     )
-}
-
-@Serializable
-enum class HostCapability {
-    ImportTools,
-    PermissionCenter,
-    Runtime,
 }

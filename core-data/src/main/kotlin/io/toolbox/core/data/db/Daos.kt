@@ -25,7 +25,19 @@ internal interface ToolDao {
     suspend fun update(entity: ToolEntity)
 
     @Query("UPDATE tools SET activeVersionCode = :versionCode WHERE id = :toolId")
-    suspend fun setActiveVersion(toolId: String, versionCode: Int): Int
+    suspend fun setActiveVersion(toolId: String, versionCode: Int?): Int
+
+    @Query("UPDATE tools SET pinnedOrder = :pinnedOrder WHERE id = :toolId")
+    suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): Int
+
+    @Query("UPDATE tools SET categoryId = :categoryId WHERE id = :toolId")
+    suspend fun setCategory(toolId: String, categoryId: String?): Int
+
+    @Query("UPDATE tools SET lastOpenedAt = :timestamp WHERE id = :toolId")
+    suspend fun recordOpened(toolId: String, timestamp: Long): Int
+
+    @Query("DELETE FROM tools WHERE id = :toolId")
+    suspend fun delete(toolId: String): Int
 }
 
 @Dao
@@ -36,11 +48,26 @@ internal interface ToolVersionDao {
     @Query("SELECT * FROM tool_versions WHERE toolId = :toolId AND versionCode = :versionCode")
     suspend fun get(toolId: String, versionCode: Int): ToolVersionEntity?
 
+    @Query("SELECT * FROM tool_versions WHERE sourceSessionId = :sourceSessionId")
+    suspend fun getBySourceSessionId(sourceSessionId: String): ToolVersionEntity?
+
+    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId ORDER BY versionCode DESC")
+    suspend fun getAll(toolId: String): List<ToolVersionEntity>
+
+    @Query("SELECT MAX(versionCode) FROM tool_versions WHERE toolId = :toolId")
+    suspend fun maxVersionCode(toolId: String): Int?
+
+    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId AND versionCode < :versionCode AND launchState = 'STABLE' ORDER BY versionCode DESC LIMIT 1")
+    suspend fun greatestLowerStable(toolId: String, versionCode: Int): ToolVersionEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: ToolVersionEntity)
 
     @Query("UPDATE tool_versions SET launchState = :launchState WHERE toolId = :toolId AND versionCode = :versionCode")
     suspend fun setLaunchState(toolId: String, versionCode: Int, launchState: String): Int
+
+    @Query("DELETE FROM tool_versions WHERE toolId = :toolId AND versionCode = :versionCode")
+    suspend fun delete(toolId: String, versionCode: Int): Int
 }
 
 @Dao
@@ -48,8 +75,17 @@ internal interface PermissionGrantDao {
     @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY permission")
     fun observeForTool(toolId: String): Flow<List<PermissionGrantEntity>>
 
+    @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY permission")
+    suspend fun getAll(toolId: String): List<PermissionGrantEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: PermissionGrantEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(entities: List<PermissionGrantEntity>)
+
+    @Query("DELETE FROM permission_grants WHERE toolId = :toolId")
+    suspend fun deleteAll(toolId: String): Int
 
     @Query("DELETE FROM permission_grants WHERE toolId = :toolId AND permission = :permission")
     suspend fun delete(toolId: String, permission: String): Int

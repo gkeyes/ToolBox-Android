@@ -17,7 +17,7 @@ class HostNavigationTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun freshInstallNavigationOnlyExposesImplementedHostCapabilities() {
+    fun freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch() {
         composeRule.onNodeWithText("我的工具箱").assertIsDisplayed()
         composeRule.onNodeWithText("0 个已安装工具").assertIsDisplayed()
         composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
@@ -25,16 +25,16 @@ class HostNavigationTest {
 
         composeRule.onNodeWithTag(HostTestTags.BottomTools).performClick()
         composeRule.onNodeWithText("工具管理").assertIsDisplayed()
-        composeRule.onNodeWithText("0").assertIsDisplayed()
         composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
 
         composeRule.onNodeWithTag(HostTestTags.ImportFab).performClick()
-        composeRule.onNodeWithTag(HostTestTags.CapabilityUnavailable).assertIsDisplayed()
-        composeRule.onNodeWithText("导入工具暂不可用").assertIsDisplayed()
-        composeRule.onNodeWithText("安全导入尚未接入，当前不会选择、检查或安装任何工具包。").assertIsDisplayed()
+        composeRule.onNodeWithText("导入工具").assertIsDisplayed()
+        composeRule.onNodeWithText("选择 .tbx 工具包").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("返回").performClick()
         composeRule.onNodeWithTag(HostTestTags.BottomSettings).performClick()
-        composeRule.onNodeWithText("设置将在持久化配置接入后提供；当前没有可更改的宿主选项。").assertIsDisplayed()
+        composeRule.onNodeWithText("主题").assertIsDisplayed()
+        composeRule.onNodeWithText("审计日志保留").assertIsDisplayed()
+        composeRule.onNodeWithText("严格策略固定").assertIsDisplayed()
     }
 }

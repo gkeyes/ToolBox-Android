@@ -38,6 +38,7 @@ internal sealed interface ClaimYieldResult {
 internal class ClaimedInspectionSession(
     val sessionId: String,
     val bundleDirectory: Path,
+    val receipt: VerifiedInspectionReceipt,
     private val ioDispatcher: CoroutineDispatcher,
     private val discardAction: () -> DiscardResult,
     private val yieldAction: () -> PackageRejection?,

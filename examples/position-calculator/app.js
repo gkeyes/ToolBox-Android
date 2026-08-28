@@ -3,7 +3,13 @@
 
   const $ = (id) => document.getElementById(id);
   const readNumber = (id) => Number($(id).value);
+  const nativeClipboardAvailable = typeof window.ToolBox?.clipboard?.writeText === "function";
   let lastText = "";
+
+  if (!nativeClipboardAvailable) {
+    $("copy").disabled = true;
+    $("copy").textContent = "复制需原生 API";
+  }
 
   async function restore() {
     try {
@@ -44,7 +50,7 @@
 
   $("calculate").addEventListener("click", calculate);
   $("copy").addEventListener("click", async () => {
-    if (!lastText) return;
+    if (!lastText || !nativeClipboardAvailable) return;
     try {
       await window.ToolBox.clipboard.writeText(lastText);
       await window.ToolBox.ui.toast("已复制");

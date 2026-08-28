@@ -1,8 +1,5 @@
 package io.toolbox.tool.packagekit
 
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -20,8 +17,11 @@ internal class DefaultPackageInspector(
     private val keyResolver: PublisherKeyResolver = PublisherKeyResolver.NONE,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     terminalCleanupHook: TerminalCleanupHook = TerminalCleanupHook.NONE,
-) : ToolPackageInspector, InspectionSessionConsumer {
-    private val sessionStore = InspectionSessionStore(sessionRoot, terminalCleanupHook)
+    private val receiptDirectorySync: ReceiptDirectorySync = PlatformReceiptDirectorySync,
+    recoveryScanHook: RecoveryScanHook = RecoveryScanHook.NONE,
+) : ToolPackageInspector, InspectionSessionConsumer, ResumableInspectionRecoveryConsumer {
+    private val sessionStore = InspectionSessionStore(sessionRoot, terminalCleanupHook, recoveryScanHook)
+    private val resumableCoordinator = ResumableInspectionCoordinator(sessionStore, limits, keyResolver)
 
     override suspend fun inspect(input: PackageInput): InspectionResult = withContext(ioDispatcher) {
         val sessionId = UUID.randomUUID().toString()
@@ -42,31 +42,87 @@ internal class DefaultPackageInspector(
         runInterruptible { sessionStore.discard(sessionId) }
     }
 
+    override suspend fun resume(sessionId: String): ResumeInspectionResult = withContext(ioDispatcher) {
+        runInterruptible { resumableCoordinator.resume(sessionId) }
+    }
+
+    override suspend fun recoverResumableAfterLifecycle(): ResumableInspectionRecovery = withContext(ioDispatcher) {
+        runInterruptible { resumableCoordinator.recover() }
+    }
+
     override suspend fun claimInspectionSession(sessionId: String): InspectionSessionClaimResult =
         withContext(ioDispatcher) {
-            when (val result = runInterruptible { sessionStore.claim(sessionId) }) {
-                is StoredClaimResult.Claimed -> InspectionSessionClaimResult.Claimed(
+            runInterruptible { claimAndVerifyBlocking(sessionId) }
+        }
+
+    private fun claimAndVerifyBlocking(sessionId: String): InspectionSessionClaimResult =
+        when (val result = sessionStore.claim(sessionId)) {
+            is StoredClaimResult.Claimed -> {
+                val receipt = try {
+                    VerifiedInspectionReceipts.loadAndVerify(
+                        sessionId = result.sessionId,
+                        sessionDirectory = result.directory,
+                        limits = limits,
+                        keyResolver = keyResolver,
+                    )
+                } catch (error: InterruptedException) {
+                    result.ownership.release()
+                    throw error
+                } catch (error: InspectionRejected) {
+                    return terminalClaimFailure(result, error.rejection)
+                } catch (error: Exception) {
+                    if (
+                        error is java.io.InterruptedIOException ||
+                        error is java.nio.channels.ClosedByInterruptException ||
+                        Thread.currentThread().isInterrupted
+                    ) {
+                        result.ownership.release()
+                        throw InterruptedException("Verified receipt reconstruction was interrupted").apply {
+                            initCause(error)
+                        }
+                    }
+                    return terminalClaimFailure(
+                        result,
+                        PackageRejection(
+                            PackageRejectionCode.RECEIPT_INVALID,
+                            "Verified inspection receipt could not be reconstructed",
+                        ),
+                    )
+                }
+                InspectionSessionClaimResult.Claimed(
                     ClaimedInspectionSession(
                         sessionId = result.sessionId,
                         bundleDirectory = result.bundleDirectory,
+                        receipt = receipt,
                         ioDispatcher = ioDispatcher,
                         discardAction = {
                             sessionStore.discardClaimed(result.sessionId, result.directory, result.ownership)
                         },
-                        yieldAction = { result.ownership.release() },
+                        yieldAction = {
+                            sessionStore.requeueClaimed(result.sessionId, result.directory, result.ownership)
+                        },
                     ),
                 )
-                StoredClaimResult.NotFound -> InspectionSessionClaimResult.NotFound
-                StoredClaimResult.AlreadyClaimed -> InspectionSessionClaimResult.AlreadyClaimed
-                StoredClaimResult.Consumed -> InspectionSessionClaimResult.Consumed
-                is StoredClaimResult.Failed -> InspectionSessionClaimResult.Failed(result.rejection)
             }
+            StoredClaimResult.NotFound -> InspectionSessionClaimResult.NotFound
+            StoredClaimResult.AlreadyClaimed -> InspectionSessionClaimResult.AlreadyClaimed
+            StoredClaimResult.Consumed -> InspectionSessionClaimResult.Consumed
+            is StoredClaimResult.Failed -> InspectionSessionClaimResult.Failed(result.rejection)
         }
+
+    private fun terminalClaimFailure(
+        claim: StoredClaimResult.Claimed,
+        rejection: PackageRejection,
+    ): InspectionSessionClaimResult.Failed {
+        val cleanup = sessionStore.discardClaimed(claim.sessionId, claim.directory, claim.ownership)
+        return InspectionSessionClaimResult.Failed((cleanup as? DiscardResult.Failed)?.rejection ?: rejection)
+    }
 
     private fun inspectBlocking(input: PackageInput, sessionId: String, sessionDirectory: Path): InspectionResult {
         val archivePath = sessionDirectory.resolve("source.tbx")
+        var session: InspectionSession? = null
         return try {
-            sessionStore.create(sessionId)
+            session = sessionStore.create(sessionId)
             copyBounded(input, archivePath)
             val checked = ZipStructureReader.read(archivePath, limits)
             validateMetadataBounds(checked)
@@ -78,7 +134,7 @@ internal class DefaultPackageInspector(
             } catch (error: JsonFormatException) {
                 reject(PackageRejectionCode.MANIFEST_INVALID, error.message ?: "manifest.json is invalid")
             }
-            validateEntry(manifest, extracted)
+            BundleEntryValidator.validate(manifest, extracted.bundleDirectory, extracted.hashes)
             val verification = IntegrityVerifier.verify(
                 metadata = extracted.metadata,
                 actualHashes = extracted.hashes,
@@ -94,28 +150,42 @@ internal class DefaultPackageInspector(
             )
             val risks = StaticRiskScanner.scan(extracted.bundleDirectory, extracted.hashes.keys, manifest.securityProfile)
             Files.deleteIfExists(archivePath)
-            if (verification.blockers.isNotEmpty()) {
-                sessionStore.cleanup(sessionDirectory)?.let { return InspectionResult.Rejected(it) }
-            }
-            InspectionResult.Inspected(
-                ImportInspection(
-                    sourceName = input.displayName,
-                    sessionId = sessionId,
-                    manifest = manifest,
-                    archive = summary,
-                    signature = verification.evidence,
-                    riskFindings = risks,
-                    blockers = verification.blockers,
-                ),
+            val inspection = ImportInspection(
+                sourceName = input.displayName,
+                sessionId = sessionId,
+                manifest = manifest,
+                archive = summary,
+                signature = verification.evidence,
+                riskFindings = risks,
+                blockers = verification.blockers,
             )
+            if (verification.blockers.isNotEmpty()) {
+                terminalCleanup(session, sessionDirectory)?.let { return InspectionResult.Rejected(it) }
+                return InspectionResult.Inspected(inspection)
+            }
+            VerifiedInspectionReceipts.persist(
+                sessionDirectory,
+                inspection,
+                extracted.hashes,
+                limits,
+                receiptDirectorySync,
+            )
+            sessionStore.publish(session)?.let { releaseFailure ->
+                terminalCleanup(session, sessionDirectory)?.let { return InspectionResult.Rejected(it) }
+                return InspectionResult.Rejected(releaseFailure)
+            }
+            InspectionResult.Inspected(inspection)
         } catch (error: InspectionRejected) {
-            sessionStore.cleanup(sessionDirectory)?.let(InspectionResult::Rejected)
+            terminalCleanup(session, sessionDirectory)?.let(InspectionResult::Rejected)
                 ?: InspectionResult.Rejected(error.rejection)
         } catch (error: Exception) {
-            if (error is InterruptedException || error is java.io.InterruptedIOException || Thread.currentThread().isInterrupted) {
-                throw error
+            error.inspectionInterruption("Package inspection was interrupted")?.let { interrupted ->
+                terminalCleanup(session, sessionDirectory)?.let { cleanupFailure ->
+                    interrupted.addSuppressed(IllegalStateException(cleanupFailure.detail))
+                }
+                throw interrupted
             }
-            sessionStore.cleanup(sessionDirectory)?.let(InspectionResult::Rejected)
+            terminalCleanup(session, sessionDirectory)?.let(InspectionResult::Rejected)
                 ?: InspectionResult.Rejected(
                     PackageRejection(
                         PackageRejectionCode.SESSION_IO_FAILED,
@@ -124,6 +194,13 @@ internal class DefaultPackageInspector(
                 )
         }
     }
+
+    private fun terminalCleanup(session: InspectionSession?, sessionDirectory: Path): PackageRejection? =
+        if (session == null) {
+            sessionStore.cleanup(sessionDirectory)
+        } else {
+            (sessionStore.abort(session) as? DiscardResult.Failed)?.rejection
+        }
 
     private fun copyBounded(input: PackageInput, archivePath: Path) {
         try {
@@ -149,6 +226,7 @@ internal class DefaultPackageInspector(
         } catch (error: InspectionRejected) {
             throw error
         } catch (error: Exception) {
+            error.rethrowIfInspectionInterrupted("Selected package read was interrupted")
             reject(PackageRejectionCode.SOURCE_READ_FAILED, "Unable to read the selected package")
         }
     }
@@ -171,68 +249,8 @@ internal class DefaultPackageInspector(
         }
     }
 
-    private fun validateEntry(manifest: ToolManifest, extracted: ExtractedArchive) {
-        if (manifest.entry !in extracted.hashes) {
-            reject(PackageRejectionCode.ENTRY_MISSING, "Manifest entry does not exist: ${manifest.entry}")
-        }
-        manifest.icon?.let { icon ->
-            if (icon !in extracted.hashes) {
-                reject(PackageRejectionCode.ENTRY_MISSING, "Manifest icon does not exist: $icon")
-            }
-        }
-        val prefix = Files.newInputStream(extracted.bundleDirectory.resolve(manifest.entry)).use { input ->
-            input.readNBytes(4096)
-        }
-        val text = try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(prefix))
-                .toString()
-        } catch (error: Exception) {
-            reject(PackageRejectionCode.ENTRY_MIME_INVALID, "Manifest entry is not UTF-8 HTML")
-        }
-        val lower = text.trimStart().lowercase()
-        if ('\u0000' in text || (!lower.startsWith("<!doctype html") && !lower.startsWith("<html"))) {
-            reject(PackageRejectionCode.ENTRY_MIME_INVALID, "Manifest entry does not have an HTML document signature")
-        }
-    }
-
     private companion object {
         const val MAX_INTEGRITY_BYTES = 1024L * 1024
         const val MAX_SIGNATURE_BYTES = 64L * 1024
     }
-}
-
-private object StaticRiskScanner {
-    fun scan(bundle: Path, files: Set<String>, profile: SecurityProfile): List<RiskFinding> {
-        val findings = mutableListOf<RiskFinding>()
-        for (path in files.sorted()) {
-            if (!path.endsWith(".html") && !path.endsWith(".js") && !path.endsWith(".css")) continue
-            val file = bundle.resolve(path)
-            if (Files.size(file) > MAX_SCAN_BYTES) continue
-            val text = runCatching {
-                Files.newBufferedReader(file, StandardCharsets.UTF_8).use { it.readText() }
-            }.getOrNull() ?: continue
-            if (profile == SecurityProfile.STRICT && INLINE_SCRIPT.containsMatchIn(text)) {
-                findings += RiskFinding(RiskFindingCode.INLINE_SCRIPT, path, "Inline script may be incompatible with strict CSP")
-            }
-            if (DYNAMIC_CODE.containsMatchIn(text)) {
-                findings += RiskFinding(RiskFindingCode.DYNAMIC_CODE, path, "Dynamic JavaScript construction requires review")
-            }
-            if (EMBEDDED_FRAME.containsMatchIn(text)) {
-                findings += RiskFinding(RiskFindingCode.EMBEDDED_FRAME, path, "Embedded frame markup is blocked by runtime policy")
-            }
-            if (REMOTE_REFERENCE.containsMatchIn(text)) {
-                findings += RiskFinding(RiskFindingCode.REMOTE_REFERENCE, path, "Direct remote references are blocked by runtime policy")
-            }
-        }
-        return findings
-    }
-
-    private const val MAX_SCAN_BYTES = 1024L * 1024
-    private val INLINE_SCRIPT = Regex("<script\\b(?![^>]*\\bsrc\\s*=)[^>]*>", RegexOption.IGNORE_CASE)
-    private val DYNAMIC_CODE = Regex("(?:\\beval\\s*\\(|\\bnew\\s+Function\\s*\\()")
-    private val EMBEDDED_FRAME = Regex("<(?:iframe|object|embed)(?:\\s|>)", RegexOption.IGNORE_CASE)
-    private val REMOTE_REFERENCE = Regex("(?:https?:)?//[A-Za-z0-9]", RegexOption.IGNORE_CASE)
 }

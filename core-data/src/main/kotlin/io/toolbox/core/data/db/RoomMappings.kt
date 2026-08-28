@@ -18,6 +18,7 @@ import io.toolbox.core.data.SignatureState
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
+import io.toolbox.core.data.ToolVersionIdentity
 import kotlinx.coroutines.CancellationException
 
 internal suspend fun storageResult(
@@ -64,12 +65,38 @@ internal fun ToolEntity.toDomain() = InstalledTool(
 )
 
 internal fun ToolVersion.toEntity() = ToolVersionEntity(
-    toolId, versionCode, version, bundleLocator.value, bundleBytes, integrityHash, installedAt, launchState.name,
+    toolId = toolId,
+    versionCode = versionCode,
+    version = version,
+    bundleLocator = bundleLocator.value,
+    bundleBytes = bundleBytes,
+    integrityHash = integrityHash,
+    installedAt = installedAt,
+    launchState = launchState.name,
+    sourceSessionId = sourceSessionId,
+    name = identity.name,
+    signatureState = identity.signatureState.name,
+    publisherKeyId = identity.publisherKeyId,
+    securityProfile = identity.securityProfile.name,
 )
 
 internal fun ToolVersionEntity.toDomain() = ToolVersion(
     toolId, versionCode, version, BundleLocator(bundleLocator), bundleBytes, integrityHash, installedAt,
-    LaunchState.valueOf(launchState),
+    LaunchState.valueOf(launchState), sourceSessionId,
+    ToolVersionIdentity(
+        name = name,
+        signatureState = SignatureState.valueOf(signatureState),
+        publisherKeyId = publisherKeyId,
+        securityProfile = SecurityProfile.valueOf(securityProfile),
+    ),
+)
+
+internal fun ToolEntity.withIdentity(identity: ToolVersionIdentity, activeVersionCode: Int?) = copy(
+    name = identity.name,
+    activeVersionCode = activeVersionCode,
+    signatureState = identity.signatureState.name,
+    publisherKeyId = identity.publisherKeyId,
+    securityProfile = identity.securityProfile.name,
 )
 
 internal fun PermissionGrant.toEntity() = PermissionGrantEntity(
