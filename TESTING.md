@@ -23,10 +23,10 @@
 | `MainDestinationContractTest.topLevelDestinationsExposeTheThreeHostTabsInDesignOrder` | 顶级导航顺序是宿主信息架构合同。 | 读取 `MainDestination.entries` 的类型和标签。 | 顺序固定为首页、工具、设置，标签与类型一致。 |
 | `MainDestinationContractTest.capabilityRoutesRetainTypedStateInsteadOfWholeScreenModels` | 导入、运行等能力路由必须携带最小类型化状态，避免硬编码整个页面模型。 | 构造不同 capability route 并比较其类型和值。 | 不同能力和不同 ID 不会被错误视为同一路由。 |
 | `MainDestinationContractTest.importReviewBackDispatchesThroughSessionCleanupOwner` | 系统返回键曾绕过导入状态机直接弹出路由，留下已审核的私有临时会话。 | 分别把导入审核路由和普通设置路由交给宿主返回分发器，并记录清理回调与默认回调的调用次数。 | 导入审核只调用会话清理所有者；普通页面只调用默认返回，不会交叉触发。 |
-| `HostScreenLayoutContractTest.compactAndMediumWidthsSelectTheContentSpacingUsedByTheHost` | 用户已报告排版松散，宽度策略需要一个低成本合同。 | 向 `hostRouteLayoutFor` 输入 360dp 和 840dp。 | 紧凑/中宽判定正确，水平边距为 20dp/28dp，垂直节奏为 16dp。 |
+| `HostScreenLayoutContractTest.compactAndMediumWidthsSelectTheContentSpacingUsedByTheHost` | 用户已报告排版松散，宽度策略需要一个低成本合同。 | 向 `hostRouteLayoutFor` 输入 360dp 和 840dp。 | 紧凑/中宽判定正确，水平边距为 16dp/28dp，垂直节奏均为 16dp。 |
 | `SettingsViewModelTest.auditRetentionPrunesAtTheSelectedCutoffAndReportsPruneFailureAfterPersistence` | 审计留存必须真正清理过期元数据；清理失败不能伪装成设置未保存，快速改选较长留存期也不能让旧的短留存清理在新选择后执行。 | 用固定时钟分别注入成功和失败的 `AuditRepository`，选择 7 天和 90 天后读取设置与接收的 cutoff；再用受控 `HostSettingsRepository` 让首个 7 天 `update` 发出已开始信号后协作式挂起，选择 90 天后才放行首个 update。 | 成功分支保存 7 天并调用 `deleteBefore(now-7d)`；受控重叠改选后仅保存 90 天且只调用 `deleteBefore(now-90d)`；失败分支仍保存 90 天、调用对应 cutoff，并显示“已保存，但清理旧记录失败”。 |
-| `ToolBoxNavigationItemLayoutTest.navigationTopBarAndSearchFieldMinHeightsExpandWithLargeFontScaleWithoutDroppingBelowTouchTarget` | 已修复 200% 字体下底栏、顶部栏和搜索框文字裁剪，且触控目标不得缩小。 | 输入 0.5x、1x、2x font scale 计算导航项、顶部栏和搜索框最小高度。 | 导航项与顶部栏分别为 64dp、128dp（低于 1x 时仍为 64dp）；搜索框为 52dp、104dp（低于 1x 时仍为 52dp）。 |
-| `ToolBoxAppScaffoldInsetTest.compactScaffoldAssignsEachSystemInsetToOneSemanticOwner` | 紧凑布局曾出现顶部/底部未适配和重复 padding 风险。 | 检查有顶栏、底栏、FAB 时各类 inset 的 owner。 | status/cutout 仅由顶栏、navigation 仅由底栏、IME 仅由内容、FAB inset 仅由 FAB 消费。 |
+| `ToolBoxNavigationItemLayoutTest.navigationTopBarAndSearchFieldKeepBoundedTouchSafeHeightsAtLargeFontScale` | 容器跟随字体倍率整体放大曾挤占工具内容，但完全固定又会裁掉 200% 字体标签。 | 输入 0.5x、1x、2x font scale 计算导航项、顶部栏和搜索框最小高度。 | 导航项与顶部栏从常规 56dp 最多有界增长到 72dp，搜索框最小高度保持 48dp；不再按字体倍率成倍膨胀。 |
+| `ToolBoxAppScaffoldInsetTest.compactScaffoldAssignsEachSystemInsetToOneSemanticOwner` | 紧凑布局曾出现顶部/底部未适配和重复 padding 风险。 | 检查有顶栏、底栏、FAB 时各类 inset 的 owner。 | status/cutout 仅由顶栏、navigation 仅由底栏、IME 仅由内容，FAB 继承底栏的安全位置而不重复消费 inset。 |
 | `ToolBoxAppScaffoldInsetTest.mediumScaffoldLeavesNavigationAndImeToContentInsteadOfTheSideNavigation` | 侧边导航不应错误吞掉底部手势区或 IME。 | 检查中宽布局的 inset policy。 | status/cutout 归顶栏，navigation/IME 归内容，侧栏不重复消费。 |
 | `ToolBoxAppScaffoldInsetTest.scaffoldWithoutBottomBarKeepsContentAndFloatingActionButtonIndependentlyReachable` | 详情页无底栏时内容和 FAB 仍需避让系统区域。 | 检查顶栏+FAB、无底栏组合。 | navigation/IME 归内容，FAB 有独立安全 inset，不发生重叠。 |
 | `ToolBoxAppScaffoldInsetTest.expandedScaffoldWithoutBarsKeepsCutoutNavigationAndImeWithContent` | 无固定 chrome 的展开布局仍需完整适配系统区域。 | 检查无顶栏、无底栏、无 FAB 组合。 | cutout/status/navigation/IME 全部由内容恰好消费一次。 |
@@ -35,9 +35,10 @@
 
 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|
-| `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主启动不得再注入默认工具，且导入审核与可持久化设置必须从主导航实际可达。 | 启动未写入任何目录记录的 `MainActivity`，依次进入工具、导入审核、返回和设置；只检查选择入口，不点击它，因此不会打开外部文件选择器。 | 首页显示 0 个已安装工具，管理页显示真实空状态，且两处均没有默认仓位计算器；导入审核显示真实 `.tbx` 选择入口；设置显示可用主题、审计留存与固定严格策略状态。 |
+| `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主不得注入默认工具、重复管理控件或展示无效设置，且导入审核与真实设置必须可达。 | 启动未写入目录记录的 `MainActivity`，核对首页后依次进入工具、导入审核、返回和设置；只检查选择入口，不启动外部文件选择器。 | 首页只显示一个可操作的真实空状态，且没有默认工具、本机目录或搜索；工具页独占搜索；导入审核显示 `.tbx` 选择入口；设置只显示可用主题与审计留存，不显示静态策略/配额占位。 |
 | `HostAdaptiveScrollTest.fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe` | 直接覆盖用户报告的滑动卡涩风险、稳定 key 与 48dp 触控目标。 | 仅向当前 `HomeScreen(CatalogUiState)` 注入 80 项测试夹具，滚动到 `tool-80`，读取末项和导入 FAB 的语义边界。 | 最后一项可稳定定位且可见，卡片和 FAB 宽高均至少 48dp；夹具不会经过生产目录或被当作预装工具。 |
-| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、底栏和三个导航项。 | 全部内容可达；底栏容器至少 104dp；每个导航项至少 48dp。 |
+| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免底栏再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、底栏和三个导航项。 | 全部标签和内容可达；底栏有界增长到 72dp 而非旧 104dp；每个导航项触控边界至少 48dp。 |
+| `HostDependenciesViewModelTest.readyDoesNotWaitForRuntimeMaintenanceAndMaintenanceFailureDoesNotReplaceReady` | 孤立 WebView 资料清理属于尽力维护，不能挂起首屏或把已经可用的宿主替换成错误页。 | 注入发出开始信号后挂起、最终抛出普通维护异常的任务，并通过真实 `HostDependenciesViewModel` 观察状态与调用次数。 | 维护开始时状态已经是同一 `Ready`；释放后异常不改变 `Ready`，且维护只运行一次。 |
 
 ## 当前截图测试
 
@@ -50,7 +51,7 @@
 | `ToolManagerFixtureCompactScreenshot` | 工具管理需在紧凑手机上展示当前真实目录字段，而非旧页面模型。 | 以 411x891dp 渲染 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 版本、大小、签名状态和操作位置无裁剪或重叠；仅表示截图夹具。 |
 | `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，而不能只保留选择文件的空闲页。 | 以 411x891dp 渲染 `PreviewHostFixtures.importReview` 的无状态审核页；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；不表示生产目录已经审核、授权或安装任何包。 |
 | `PermissionCenterFixtureCompactScreenshot` | 权限中心应展示已观察的授权记录和撤销入口，而不能回退为虚构的全局权限列表。 | 以 411x891dp 渲染一项仅截图夹具的 `PermissionCenterUiState`。 | 工具 ID、授权状态、范围与撤销操作可读且无裁剪；夹具不表示真实授权。 |
-| `SettingsCompactScreenshot` | 设置曾是无效操作，需保护真实主题与审计留存表单在宿主 chrome 和 inset 分配下的紧凑排版。 | 以 411x891dp 通过 `PrimaryScreen(Settings, ...)` 渲染已加载的默认 `SettingsUiState`。 | 顶栏、底栏、系统 inset 与主题、审计留存和不可交互的运行 API 状态无重叠；不将预览当作 DataStore 写入验证。 |
+| `SettingsCompactScreenshot` | 设置曾展示无效操作，需保护真实主题与审计留存表单在宿主 chrome 和 inset 分配下的紧凑排版。 | 以 411x891dp 通过 `PrimaryScreen(Settings, ...)` 渲染已加载的默认 `SettingsUiState`。 | 顶栏、底栏、系统 inset 与主题、审计留存无重叠，且没有静态策略/配额占位；不将预览当作 DataStore 写入验证。 |
 
 ## 当前证据回执自测
 
@@ -75,6 +76,7 @@
 | `HostSettingsRepositoryTest.invalidNumericUpdatesAreRejectedAndCorruptPersistenceDefaults` | 非法保留期、配额或真实损坏的 Preferences 文件都不能污染宿主设置。 | 对内存与 DataStore repository 提交越界变换；再写入截断 protobuf 字节，用生产同款 corruption handler 读取并比较恢复后的文件。 | 越界更新返回 `InvalidInput` 且状态不变；损坏文件读取为安全默认值，并被替换为有效存储。 |
 | `PersistenceContractTest.freshV1CatalogAndSettingsPersistAcrossReopenedProductionAdapters` | 内存适配器不能证明增补后的未发布 Room v1 schema、版本级身份/source session、宿主组织字段和 DataStore 文件能跨实例恢复。 | 用 `MigrationTestHelper` 创建 v1，排除 `android_%`、`room_%`、`sqlite_%` 框架内部表后核对七张应用表；通过生产 Room lifecycle 提交 `PENDING`、显式标稳，写入置顶/分类/最近打开字段与全部设置，关闭数据库/scope 后从同一文件重开并按精确 source session 查询提交记录。 | schema 恰有七张应用规划表；active `STABLE` 版本、精确 source session 到 tool/version 的映射、版本身份、宿主组织字段和全部设置精确保留；相近但不相等的 session 查询为空。 |
 | `PersistenceContractTest.productionAdaptersEnforceRollbackOwnershipQuotaAndRuntimeParity` | 真实 Room 必须证明事务/授权拒绝零残留、过期补偿器不可回退稳定版本、回滚身份恢复、FK 卸载清理及审计保留，同时继续与内存适配器保持所有权/配额/会话结果一致。 | 在同一合并设备测试中注入 commit 失败并比较 snapshot，拒绝未签名持久允许；提交稳定 v1 和 v2、标稳 v2 后尝试旧补偿并回滚，再执行配额/孤儿/会话矩阵，写入审计并两次删除目录。 | commit/授权拒绝无残留；标稳后旧补偿返回冲突且状态不变；回滚选择最大较低 `STABLE` 版本并恢复旧名称、保留用户分类；删除幂等且级联清除版本/授权/KV/会话，审计仍在；既有 Room/内存错误结果一致。 |
+| `PersistenceContractTest.catalogProjectionRetainsToolWhenActiveVersionRowIsMissing` | 目录单查询使用 `LEFT JOIN`；若活动版本行缺失，工具仍必须可见并以空版本字段进入可恢复状态。 | 用真实 Room 提交正常工具，再直接写入一个指向缺失版本的工具记录，读取生产目录投影。 | 正常工具带版本名、字节数和启动状态；缺失版本的工具仍在结果中，四个活动版本字段均为空。 |
 
 ## Task 8 `.tbx` 检查层测试
 
@@ -112,6 +114,7 @@
 |---|---|---|---|
 | `PermissionCenterViewModelTest.revokeRemovesObservedGrantImmediatelyAndRefusesUnknownPermissionMutation` | 权限中心只能管理安装已声明的授权记录；撤销必须及时反映，未知权限绝不能被页面伪造或写入。 | 以受控 `PermissionGrantRepository` 流提供一项已安装授权，调用撤销后检查状态流与仓库调用；再请求撤销不存在的权限。 | 已存在记录立即从状态流移除并只发生一次 repository 撤销；未知权限不触发 repository 写入，返回 `NotDeclared` 类型反馈。 |
 | `CatalogViewModelTest.catalogFlowDrivesRealItemsFiltersOrganizationAndRecoverableUninstall` | 首页与工具管理不得再展示默认工具或在卸载结果返回时本地伪删；筛选、组织字段、具名卸载确认、异步运行数据清理与包目录恢复必须以真实目录流和生命周期类型结果为准。 | 先订阅空的内存目录，再提交两个带真实版本/字节数的工具，覆盖本地搜索、分类筛选与置顶；验证取消具名卸载不清理运行数据，确认后用可控 suspend cleaner 证明清理完成回调前不会调用包生命周期，且包生命周期运行在同一清理租约内；完成后返回 `CommittedRecoveryPending` 并恢复；再分别模拟运行中 profile、清理失败与 WebView provider 能力不足。 | 状态从 0 项随目录流变为两项且保留真实版本/大小；搜索、筛选和置顶准确；取消不触发清理；清理回调成功前包卸载调用为零，成功后只调用一次并显示类型化恢复反馈；运行中、清理失败或 provider 不支持均显示可操作错误且目录和包保持不变；恢复后仅通过目录 Flow 移除目标工具。 |
+| `CatalogViewModelTest.catalogListUsesSingleProjectionWithoutOpeningPerToolVersionFlows` | 目录列表按工具逐个订阅版本会随工具数放大 Flow 与重组成本，直接对应用户报告的滑动卡涩。 | 以计数代理包装内存目录，创建 ViewModel 后提交两个工具并观察列表。 | 两项均进入目录状态，且 `observeVersions(toolId)` 调用次数保持为 0，只使用单一目录投影流。 |
 | `RuntimeViewModelTest.pageLoadAndRendererLossRemainPendingUntilUserConfirmsReadyVersion` | WebView 的页面提交或渲染进程退出不能替代用户确认而把首次运行的新版本误标为稳定；活动版本切换必须先请求旧 WebView 注销确认，provider/profile 创建异常也不能穿透 Compose 导致崩溃。 | 用真实私有 v1/v2 bundle、内存目录和记录等待参数的 creation permit provider 创建 `PENDING` 运行时；v1 加载后切换 active v2，验证新 permit 要求等待旧 runtime release；再驱动 renderer 退出、重试、确认和类型化 WebView 创建失败。 | v2 permit 明确携带等待旧实例释放的请求；加载与渲染器退出后 active v2 仍为 `PENDING`，只有确认才变为 `STABLE`；创建失败进入 `RUNTIME_WEBVIEW_CREATION_FAILED` 可见错误而非抛出。 |
 
 ## Task 12 硬化无桥运行时测试
@@ -119,7 +122,7 @@
 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|
 | `ToolRuntimeSecurityBoundaryTest.exactOriginCanonicalBundleEntryAndOfflinePolicyFailClosed` | 安装后的纯 HTML/CSS/JS 只有在每工具隔离来源、活动目录和入口仍与目录事实一致时才能执行；SDK 声明缺失期间远程请求、危险来源与原生桥必须继续关闭。 | 在一个参数聚合测试中比较两个工具的 SHA-256/Base32 Origin 与 profile，检查 HTTP、显式端口、混淆子域、`file://`、`content://`、`intent://`、`javascript:`、localhost/loopback；创建真实私有 `miniapps/<id>/versions/<code>/bundle`，用严格安装期 manifest 解析边界准备入口，再依次替换版本身份、错误 locator、遍历入口和符号链接入口，并核对 strict/compat CSP。 | 同一工具 Origin/profile 稳定且不同工具隔离；只有无显式端口的 exact HTTPS Origin 可用，危险 scheme、本地服务和混淆来源均被拒绝；规范私有目录成功准备，身份、locator、遍历和链接不一致分别类型化拒绝；两种 CSP 均关闭连接、frame、worker 和 `unsafe-eval`，仅 compat 放开内联脚本。 |
-| `HardenedRuntimeWebViewInstrumentationTest.realWebViewEnforcesOfflineBoundaryAndContainsRendererLoss` | JVM 策略测试不能证明真实 Android WebView 已应用安全设置，也不能证明 provider 能力变化、模式迁移或默认 Profile 污染时专用 Profile 与 Origin-only 无状态回退都不会泄漏浏览状态；permit 交接、清理证明、取消和 renderer 丢失仍是同一真实生命周期边界。 | 在同一测试方法中输出五项 provider capability flags，通过注入 seam 参数化执行 dedicated→stateless 的 Deleted/Absent 成功、Loaded/无 `MULTI_PROFILE` 拒绝，以及 partial ServiceWorker/missing document-start 在 mode record 写入前拒绝；再用真实 WebView 加载 exact HTTPS 页面。专用模式写 Cookie/localStorage 后验证整 Profile 清理；无状态模式验证 Cookie、local/session storage、IndexedDB、Cache API、ServiceWorker、Storage/OPFS、Storage Buckets、WebSQL 与 legacy FileSystem 的直接及原型 descriptor 绕过均失败，重建后复验，并预置 exact-host Cookie 证明 attach/load 前 typed creation failure。两支共用远程 fetch、WebSettings、危险入口、活动租约、下一版本交接、损坏 marker/mode record、孤儿冷回收、清理证明后取消和 renderer-gone 场景。 | permit 模式与全部 capability flags 一致；迁移成功仅在旧专用 Profile 已删除/不存在时改写记录，Loaded/不可证明和安全前置能力不完整时保留旧记录或不创建记录；专用模式旧 Cookie/localStorage 不可见，无状态模式所有持久入口及原型 getter 绕过不可用，sentinel 未成立或 exact Origin 可见 Cookie 非空时不报告加载成功；活动 WebView 返回 `InUse`，下一 permit 等旧实例注销；严格孤儿证据按 feature 回收或返回 `RecoveryDeferred`；取消不执行包动作且 renderer-gone 不迟报成功。 |
+| `HardenedRuntimeWebViewInstrumentationTest.realWebViewEnforcesOfflineBoundaryAndContainsRendererLoss` | JVM 策略测试不能证明真实 Android WebView 已应用安全设置，也不能证明 provider 能力变化、模式迁移、后台孤立资料清理或默认 Profile 污染时不会泄漏浏览状态；permit 交接、清理证明、取消和 renderer 丢失仍是同一真实生命周期边界。 | 在同一测试方法中输出 provider capability flags，覆盖 dedicated/stateless 迁移、真实 WebView exact HTTPS 页面、持久存储封锁、活动租约、下一版本交接、损坏证明及孤立冷回收；孤立 profile 的物理删除回调内尝试同工具预约，清理后再申请许可。 | 模式与 capability 一致，危险入口和持久状态失败关闭；孤立 profile 删除期间同工具预约被清理租约拒绝，证明删除后才释放且新许可可获得；取消不执行包动作，renderer-gone 不迟报成功。 |
 
 ## 非测试构建门禁
 

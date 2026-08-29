@@ -12,7 +12,7 @@ class HostScreenLayoutContractTest {
 
         assertEquals(true, compact.isCompact)
         assertEquals(false, medium.isCompact)
-        assertEquals(20.dp, compact.horizontalContentPadding)
+        assertEquals(16.dp, compact.horizontalContentPadding)
         assertEquals(28.dp, medium.horizontalContentPadding)
         assertEquals(16.dp, compact.verticalContentPadding)
         assertEquals(16.dp, medium.verticalContentPadding)

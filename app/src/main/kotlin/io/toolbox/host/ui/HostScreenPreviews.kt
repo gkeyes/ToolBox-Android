@@ -72,10 +72,7 @@ private fun SettingsPreview() = ToolBoxTheme {
         io.toolbox.host.settings.SettingsScreen(
             state = SettingsUiState(isLoaded = true, developerModeAvailable = false),
             onThemeSelected = {},
-            onSecurityPolicySelected = {},
             onAuditRetentionSelected = {},
-            onDefaultStorageQuotaSelected = {},
-            onDeveloperModeChanged = {},
             contentPadding = contentPadding,
         )
     }

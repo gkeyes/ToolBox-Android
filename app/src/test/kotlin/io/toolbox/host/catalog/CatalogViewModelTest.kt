@@ -3,6 +3,7 @@ package io.toolbox.host.catalog
 import io.toolbox.core.data.BundleLocator
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
+import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.LaunchState
@@ -26,6 +27,7 @@ import io.toolbox.tool.runtime.RuntimeDataCleanupResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -40,6 +42,30 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CatalogViewModelTest {
+    @Test
+    fun catalogListUsesSingleProjectionWithoutOpeningPerToolVersionFlows() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val repositories = InMemoryCoreData.create()
+            val catalog = CountingCatalogRepository(repositories.catalog)
+            val viewModel = CatalogViewModel(
+                catalog = catalog,
+                organization = repositories.organization,
+                packageLifecycle = RecoveringUninstallLifecycle(repositories.lifecycle),
+                runtimeDataCleaner = RecordingRuntimeDataCleaner(),
+            )
+
+            install(repositories, TOOL_A, "仓位计算", 7, "1.2.0", 4_096L)
+            install(repositories, TOOL_B, "JSON 工作区", 3, "1.0.3", 2_048L)
+            advanceUntilIdle()
+
+            assertEquals(2, viewModel.state.value.tools.size)
+            assertEquals(0, catalog.observeVersionsCalls)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun catalogFlowDrivesRealItemsFiltersOrganizationAndRecoverableUninstall() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -247,6 +273,18 @@ class CatalogViewModelTest {
                 RuntimeDataCleanupResult.Failed,
                 -> RuntimeDataCleanupExecution.Rejected(cleanup)
             }
+        }
+    }
+
+    private class CountingCatalogRepository(
+        private val delegate: CatalogRepository,
+    ) : CatalogRepository by delegate {
+        var observeVersionsCalls = 0
+            private set
+
+        override fun observeVersions(toolId: String): Flow<List<ToolVersion>> {
+            observeVersionsCalls += 1
+            return delegate.observeVersions(toolId)
         }
     }
 

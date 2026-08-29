@@ -3,6 +3,7 @@ package io.toolbox.core.data
 import kotlinx.coroutines.flow.Flow
 
 interface CatalogRepository {
+    fun observeCatalogProjection(): Flow<List<CatalogEntry>>
     fun observeTools(): Flow<List<InstalledTool>>
     fun observeTool(toolId: String): Flow<InstalledTool?>
     fun observeVersions(toolId: String): Flow<List<ToolVersion>>

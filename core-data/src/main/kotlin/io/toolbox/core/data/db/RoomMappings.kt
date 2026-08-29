@@ -3,6 +3,7 @@ package io.toolbox.core.data.db
 import io.toolbox.core.data.AuditEvent
 import io.toolbox.core.data.AuditRisk
 import io.toolbox.core.data.BundleLocator
+import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.GrantScope
 import io.toolbox.core.data.GrantSource
@@ -62,6 +63,22 @@ internal fun ToolEntity.toDomain() = InstalledTool(
     ),
     activeVersionCode = activeVersionCode,
     lastOpenedAt = lastOpenedAt,
+)
+
+internal fun CatalogProjection.toDomain() = CatalogEntry(
+    toolId = toolId,
+    name = name,
+    signatureState = SignatureState.valueOf(signatureState),
+    publisherKeyId = publisherKeyId,
+    securityProfile = SecurityProfile.valueOf(securityProfile),
+    installedAt = installedAt,
+    lastOpenedAt = lastOpenedAt,
+    pinnedOrder = pinnedOrder,
+    categoryId = categoryId,
+    activeVersionCode = activeVersionCode,
+    activeVersionName = activeVersionName,
+    bundleBytes = bundleBytes,
+    launchState = launchState?.let(LaunchState::valueOf),
 )
 
 internal fun ToolVersion.toEntity() = ToolVersionEntity(

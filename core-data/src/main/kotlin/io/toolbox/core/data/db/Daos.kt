@@ -9,6 +9,31 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 internal interface ToolDao {
+    @Query(
+        """
+        SELECT
+            tools.id AS toolId,
+            tools.name AS name,
+            tools.signatureState AS signatureState,
+            tools.publisherKeyId AS publisherKeyId,
+            tools.securityProfile AS securityProfile,
+            tools.installedAt AS installedAt,
+            tools.lastOpenedAt AS lastOpenedAt,
+            tools.pinnedOrder AS pinnedOrder,
+            tools.categoryId AS categoryId,
+            tool_versions.versionCode AS activeVersionCode,
+            tool_versions.version AS activeVersionName,
+            tool_versions.bundleBytes AS bundleBytes,
+            tool_versions.launchState AS launchState
+        FROM tools
+        LEFT JOIN tool_versions
+            ON tool_versions.toolId = tools.id
+            AND tool_versions.versionCode = tools.activeVersionCode
+        ORDER BY tools.pinnedOrder IS NULL, tools.pinnedOrder, tools.installedAt DESC, tools.id
+        """,
+    )
+    fun observeCatalogProjection(): Flow<List<CatalogProjection>>
+
     @Query("SELECT * FROM tools ORDER BY pinnedOrder IS NULL, pinnedOrder, installedAt DESC, id")
     fun observeAll(): Flow<List<ToolEntity>>
 

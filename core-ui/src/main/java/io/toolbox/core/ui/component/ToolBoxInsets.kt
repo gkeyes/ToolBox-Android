@@ -30,9 +30,10 @@ data class ToolBoxAppScaffoldInsetOwnership(
  * The single inset policy for every host route.
  *
  * A present top or bottom slot includes its own system geometry in the measurement Miuix receives.
- * When that slot is absent, the content receives the fallback padding. A floating action button
- * inherits an existing bottom bar's safe placement; otherwise it applies its own navigation and
- * IME padding without asking feature code to reinterpret window insets.
+ * When that slot is absent, the content receives the fallback padding. Content always owns IME
+ * padding so focused fields remain reachable. A floating action button inherits an existing
+ * bottom bar's safe placement; otherwise it applies its own navigation and IME placement without
+ * asking feature code to reinterpret window insets.
  */
 object ToolBoxAppScaffoldInsetPolicy {
     fun resolve(
@@ -43,7 +44,7 @@ object ToolBoxAppScaffoldInsetPolicy {
         statusBars = if (hasTopBar) ToolBoxInsetOwner.TopBar else ToolBoxInsetOwner.Content,
         displayCutout = if (hasTopBar) ToolBoxInsetOwner.TopBar else ToolBoxInsetOwner.Content,
         navigationBars = if (hasBottomBar) ToolBoxInsetOwner.BottomBar else ToolBoxInsetOwner.Content,
-        ime = if (hasBottomBar) ToolBoxInsetOwner.BottomBar else ToolBoxInsetOwner.Content,
+        ime = ToolBoxInsetOwner.Content,
         floatingActionButton = when {
             !hasFloatingActionButton -> ToolBoxInsetOwner.None
             hasBottomBar -> ToolBoxInsetOwner.InheritedFromBottomBar

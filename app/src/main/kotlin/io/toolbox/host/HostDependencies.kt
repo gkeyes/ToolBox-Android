@@ -55,10 +55,28 @@ internal enum class HostBootstrapErrorCode {
     CORE_DATA_MAIN_THREAD,
     SETTINGS_PATH_UNAVAILABLE,
     PRIVATE_STORAGE_UNAVAILABLE,
-    RUNTIME_PROVIDER_UNAVAILABLE,
 }
 
-internal class HostDependenciesViewModel(application: Application) : AndroidViewModel(application) {
+internal fun interface HostRuntimeMaintenance {
+    suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult
+}
+
+private object ProductionHostRuntimeMaintenance : HostRuntimeMaintenance {
+    override suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult =
+        withContext(Dispatchers.IO) {
+            val installedToolIds = dependencies.repositories.catalog.observeTools()
+                .first()
+                .mapTo(hashSetOf()) { it.metadata.id }
+            dependencies.runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)
+        }
+}
+
+internal class HostDependenciesViewModel(
+    application: Application,
+    private val runtimeMaintenance: HostRuntimeMaintenance,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, ProductionHostRuntimeMaintenance)
+
     private val mutableState = MutableStateFlow<HostBootstrapState>(HostBootstrapState.Loading)
     val state: StateFlow<HostBootstrapState> = mutableState.asStateFlow()
 
@@ -90,20 +108,7 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
                         inspector = inspector,
                         catalog = createdStores.repositories.lifecycle,
                     )
-                    val installedToolIds = createdStores.repositories.catalog.observeTools()
-                        .first()
-                        .mapTo(hashSetOf()) { it.metadata.id }
                     val runtimeProfileManager = RuntimeProfileManager(app.filesDir)
-                    when (runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)) {
-                        RuntimeDataCleanupResult.Cleared,
-                        RuntimeDataCleanupResult.AlreadyAbsent,
-                        RuntimeDataCleanupResult.RecoveryDeferred,
-                        -> Unit
-                        RuntimeDataCleanupResult.InUse,
-                        RuntimeDataCleanupResult.ProviderUnsupported,
-                        RuntimeDataCleanupResult.Failed,
-                        -> throw RuntimeProviderInitializationException()
-                    }
                     HostDependencies(
                         repositories = createdStores.repositories,
                         inspector = inspector,
@@ -115,6 +120,7 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
                 coroutineContext.ensureActive()
                 stores = openedStores
                 mutableState.value = HostBootstrapState.Ready(dependencies)
+                launchBestEffortRuntimeMaintenance(dependencies)
             } catch (cancelled: CancellationException) {
                 openedStores?.close()
                 throw cancelled
@@ -129,12 +135,6 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
                     },
                     message = "本机目录初始化失败，请重试。",
                 )
-            } catch (_: RuntimeProviderInitializationException) {
-                openedStores?.close()
-                mutableState.value = HostBootstrapState.Error(
-                    code = HostBootstrapErrorCode.RUNTIME_PROVIDER_UNAVAILABLE,
-                    message = "当前系统 WebView 无法安全隔离或清理工具数据，请更新 Android System WebView 后重试。",
-                )
             } catch (_: Exception) {
                 openedStores?.close()
                 mutableState.value = HostBootstrapState.Error(
@@ -145,13 +145,23 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
         }
     }
 
+    private fun launchBestEffortRuntimeMaintenance(dependencies: HostDependencies) {
+        viewModelScope.launch {
+            try {
+                runtimeMaintenance.run(dependencies)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return@launch
+            }
+        }
+    }
+
     override fun onCleared() {
         stores?.close()
         stores = null
     }
 }
-
-private class RuntimeProviderInitializationException : Exception()
 
 internal class RuntimeViewModelFactory(
     private val toolId: String,

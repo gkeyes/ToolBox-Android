@@ -245,6 +245,10 @@ class RuntimeProfileManager internal constructor(
         val orphanMarkers = markers.filter { it.toolId !in installedToolIds }
         val orphanRecords = records.filter { it.toolId !in installedToolIds }
         if (orphanMarkers.isEmpty() && orphanRecords.isEmpty()) return RuntimeDataCleanupResult.AlreadyAbsent
+        val orphanToolIds = buildSet {
+            orphanMarkers.forEach { add(it.toolId) }
+            orphanRecords.forEach { add(it.toolId) }
+        }
         val dedicatedToolIds = buildSet {
             orphanMarkers.forEach { add(it.toolId) }
             orphanRecords.filter { it.mode == RuntimeIsolationMode.DEDICATED_PROFILE }.forEach { add(it.toolId) }
@@ -253,24 +257,42 @@ class RuntimeProfileManager internal constructor(
         if (dedicatedToolIds.isNotEmpty() && !capabilities.multiProfile) {
             return RuntimeDataCleanupResult.RecoveryDeferred
         }
-        val deleted = withContext(Dispatchers.Main.immediate) {
-            if (!RuntimeWebViewLifecycle.isQuiescent()) return@withContext false
-            dedicatedToolIds.all { toolId ->
-                when (deleteProfile(toolId)) {
-                    PhysicalDeleteResult.Deleted,
-                    PhysicalDeleteResult.Absent,
-                    -> true
-                    is PhysicalDeleteResult.Loaded,
-                    PhysicalDeleteResult.Failed,
-                    -> false
+        val cleanupLeases: List<String>? = withContext(Dispatchers.Main.immediate) {
+            if (!RuntimeWebViewLifecycle.isQuiescent()) return@withContext null
+            val acquired = mutableListOf<String>()
+            for (toolId in orphanToolIds) {
+                if (!RuntimeWebViewLifecycle.beginCleanup(toolId)) {
+                    acquired.forEach(RuntimeWebViewLifecycle::finishCleanup)
+                    return@withContext null
+                }
+                acquired += toolId
+            }
+            acquired
+        }
+        if (cleanupLeases == null) return RuntimeDataCleanupResult.Failed
+        try {
+            val deleted = withContext(Dispatchers.Main.immediate) {
+                dedicatedToolIds.all { toolId ->
+                    when (deleteProfile(toolId)) {
+                        PhysicalDeleteResult.Deleted,
+                        PhysicalDeleteResult.Absent,
+                        -> true
+                        is PhysicalDeleteResult.Loaded,
+                        PhysicalDeleteResult.Failed,
+                        -> false
+                    }
                 }
             }
+            if (!deleted) return RuntimeDataCleanupResult.Failed
+            val recoveryProofsRemoved = withContext(NonCancellable + Dispatchers.IO) {
+                removeRecoveryProofs(orphanMarkers, orphanRecords)
+            }
+            return if (recoveryProofsRemoved) RuntimeDataCleanupResult.Cleared else RuntimeDataCleanupResult.Failed
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                cleanupLeases.forEach(RuntimeWebViewLifecycle::finishCleanup)
+            }
         }
-        if (!deleted) return RuntimeDataCleanupResult.Failed
-        val recoveryProofsRemoved = withContext(NonCancellable + Dispatchers.IO) {
-            removeRecoveryProofs(orphanMarkers, orphanRecords)
-        }
-        return if (recoveryProofsRemoved) RuntimeDataCleanupResult.Cleared else RuntimeDataCleanupResult.Failed
     }
 
     private suspend fun selectIsolationMode(toolId: String): IsolationModeSelection {

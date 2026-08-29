@@ -47,6 +47,22 @@ internal data class ToolVersionEntity(
     val securityProfile: String,
 )
 
+internal data class CatalogProjection(
+    val toolId: String,
+    val name: String,
+    val signatureState: String,
+    val publisherKeyId: String?,
+    val securityProfile: String,
+    val installedAt: Long,
+    val lastOpenedAt: Long?,
+    val pinnedOrder: Int?,
+    val categoryId: String?,
+    val activeVersionCode: Int?,
+    val activeVersionName: String?,
+    val bundleBytes: Long?,
+    val launchState: String?,
+)
+
 @Entity(
     tableName = "permission_grants",
     primaryKeys = ["toolId", "permission"],

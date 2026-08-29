@@ -40,6 +40,9 @@ import java.nio.charset.StandardCharsets
 internal class RoomCatalogRepository(
     private val database: ToolBoxDatabase,
 ) : CatalogRepository {
+    override fun observeCatalogProjection() =
+        database.tools().observeCatalogProjection().map { rows -> rows.map(CatalogProjection::toDomain) }
+
     override fun observeTools(): Flow<List<InstalledTool>> =
         database.tools().observeAll().map { rows -> rows.map(ToolEntity::toDomain) }
 

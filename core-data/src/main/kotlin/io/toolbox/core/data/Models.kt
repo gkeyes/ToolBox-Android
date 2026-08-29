@@ -48,6 +48,22 @@ data class InstalledTool(
     val lastOpenedAt: Long?,
 )
 
+data class CatalogEntry(
+    val toolId: String,
+    val name: String,
+    val signatureState: SignatureState,
+    val publisherKeyId: String?,
+    val securityProfile: SecurityProfile,
+    val installedAt: Long,
+    val lastOpenedAt: Long?,
+    val pinnedOrder: Int?,
+    val categoryId: String?,
+    val activeVersionCode: Int?,
+    val activeVersionName: String?,
+    val bundleBytes: Long?,
+    val launchState: LaunchState?,
+)
+
 data class ToolVersion(
     val toolId: String,
     val versionCode: Int,

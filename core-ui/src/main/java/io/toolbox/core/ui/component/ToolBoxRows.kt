@@ -30,7 +30,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -54,6 +53,9 @@ fun ToolBoxRiskBadge(
     label: String = level.defaultLabel(),
 ) {
     val colors = ToolBoxThemeTokens.colors
+    val radii = ToolBoxThemeTokens.radii
+    val sizes = ToolBoxThemeTokens.sizes
+    val spacing = ToolBoxThemeTokens.spacing
     val (container, content, icon) = when (level) {
         ToolBoxRiskLevel.Trusted, ToolBoxRiskLevel.Low -> Triple(colors.softSuccess, colors.success, ToolBoxIconKey.Shield)
         ToolBoxRiskLevel.Medium, ToolBoxRiskLevel.Unsigned -> Triple(colors.softWarning, colors.warning, ToolBoxIconKey.Shield)
@@ -61,14 +63,14 @@ fun ToolBoxRiskBadge(
     }
     Row(
         modifier = modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(radii.badge))
             .background(container)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = spacing.one, vertical = spacing.half)
             .semantics { contentDescription = label },
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(spacing.half),
     ) {
-        ToolBoxIcon(icon = icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = content)
+        ToolBoxIcon(icon = icon, contentDescription = null, modifier = Modifier.size(sizes.badgeIcon), tint = content)
         BasicText(text = label, style = ToolBoxThemeTokens.textStyles.label.copy(color = content), maxLines = 1)
     }
 }
@@ -97,7 +99,7 @@ fun ToolBoxSearchField(
     )
 }
 
-internal fun toolBoxSearchFieldMinHeight(fontScale: Float) = 52.dp * fontScale.coerceAtLeast(1f)
+internal fun toolBoxSearchFieldMinHeight(fontScale: Float) = ToolBoxThemeTokens.sizes.touchTarget
 
 @Composable
 fun ToolBoxPermissionRow(
@@ -110,11 +112,13 @@ fun ToolBoxPermissionRow(
     onClick: (() -> Unit)? = null,
     contained: Boolean = true,
 ) {
+    val sizes = ToolBoxThemeTokens.sizes
+    val spacing = ToolBoxThemeTokens.spacing
     if (contained) {
         ToolBoxCard(
             modifier = modifier.fillMaxWidth(),
             onClick = onClick,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+            contentPadding = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PermissionRowContent(title, summary, riskLevel, statusLabel, icon)
@@ -124,8 +128,8 @@ fun ToolBoxPermissionRow(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .heightIn(min = sizes.denseRow)
+                .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PermissionRowContent(title, summary, riskLevel, statusLabel, icon)
@@ -141,20 +145,22 @@ private fun RowScope.PermissionRowContent(
     statusLabel: String,
     icon: ToolBoxIconKey,
 ) {
+    val sizes = ToolBoxThemeTokens.sizes
+    val spacing = ToolBoxThemeTokens.spacing
     ToolBoxIcon(
         icon = icon,
         contentDescription = null,
         modifier = Modifier
             .clip(androidx.compose.foundation.shape.CircleShape)
             .background(ToolBoxThemeTokens.colors.softPrimary)
-            .padding(7.dp)
-            .size(18.dp),
+            .padding(spacing.one)
+            .size(sizes.rowIcon),
         tint = ToolBoxThemeTokens.colors.primary,
     )
-    Spacer(Modifier.width(10.dp))
+    Spacer(Modifier.width(spacing.one))
     Column(modifier = Modifier.weight(1f)) {
         BasicText(text = title, style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
-        Spacer(Modifier.height(1.dp))
+        Spacer(Modifier.height(sizes.divider))
         BasicText(
             text = summary,
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
@@ -162,7 +168,7 @@ private fun RowScope.PermissionRowContent(
             overflow = TextOverflow.Ellipsis,
         )
     }
-    Spacer(Modifier.width(6.dp))
+    Spacer(Modifier.width(spacing.half))
     ToolBoxRiskBadge(level = riskLevel, label = statusLabel)
 }
 
@@ -195,6 +201,7 @@ fun ToolBoxSettingRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
+    val spacing = ToolBoxThemeTokens.spacing
     ArrowPreference(
         title = title,
         summary = summary,
@@ -203,7 +210,7 @@ fun ToolBoxSettingRow(
             .semantics { role = Role.Button },
         onClick = onClick,
         enabled = enabled,
-        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+        insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
     )
 }
 
@@ -216,6 +223,8 @@ fun ToolBoxSwitchSettingRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
+    val sizes = ToolBoxThemeTokens.sizes
+    val spacing = ToolBoxThemeTokens.spacing
     SwitchPreference(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -223,8 +232,8 @@ fun ToolBoxSwitchSettingRow(
         summary = summary,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp),
-        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            .heightIn(min = sizes.denseRow),
+        insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         enabled = enabled,
     )
 }
@@ -245,6 +254,8 @@ fun ToolBoxChoiceSettingRow(
     summary: String? = null,
     enabled: Boolean = true,
 ) {
+    val sizes = ToolBoxThemeTokens.sizes
+    val spacing = ToolBoxThemeTokens.spacing
     val selectedLabel = choices.firstOrNull { it.value == selectedValue }?.label.orEmpty()
     var choiceDialogVisible by rememberSaveable(title) { mutableStateOf(false) }
     val combinedSummary = listOfNotNull(summary, selectedLabel.takeIf(String::isNotBlank))
@@ -255,8 +266,8 @@ fun ToolBoxChoiceSettingRow(
         summary = combinedSummary.ifBlank { null },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp),
-        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            .heightIn(min = sizes.denseRow),
+        insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         onClick = { if (enabled) choiceDialogVisible = true },
         enabled = enabled,
     )
@@ -278,8 +289,8 @@ fun ToolBoxChoiceSettingRow(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 56.dp),
-                    insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        .heightIn(min = sizes.denseRow),
+                    insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
                 )
             }
         }

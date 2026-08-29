@@ -15,6 +15,7 @@ import io.toolbox.core.data.db.RoomPermissionGrantRepository
 import io.toolbox.core.data.db.RoomRuntimeSessionRepository
 import io.toolbox.core.data.db.RoomToolKvRepository
 import io.toolbox.core.data.db.ToolBoxDatabase
+import io.toolbox.core.data.db.ToolEntity
 import io.toolbox.core.data.memory.InMemoryCoreData
 import io.toolbox.core.data.settings.DataStoreHostSettingsRepository
 import io.toolbox.core.data.settings.createHostSettingsDataStore
@@ -268,6 +269,47 @@ class PersistenceContractTest {
         assertEquals(0L, memory.keyValues.bytesUsed(TOOL_ID))
         assertTrue(memory.sessions.observeOpenSessions().first().isEmpty())
         assertEquals(1, memory.audit.observeRecent(10).first().size)
+        database.close()
+    }
+
+    @Test
+    fun catalogProjectionRetainsToolWhenActiveVersionRowIsMissing() = runBlocking {
+        val database = openDatabase()
+        val lifecycle = RoomCatalogLifecycleRepository(database)
+        val catalog = RoomCatalogRepository(database)
+
+        assertEquals(
+            DataResult.Success(CommitInstallOutcome.Committed),
+            lifecycle.commitInstall(attempt()),
+        )
+        database.tools().insert(
+            ToolEntity(
+                id = ORPHAN_TOOL_ID,
+                name = "Missing active version",
+                activeVersionCode = 999,
+                signatureState = SignatureState.UNSIGNED.name,
+                publisherKeyId = null,
+                securityProfile = SecurityProfile.STRICT.name,
+                installedAt = 99,
+                lastOpenedAt = null,
+                pinnedOrder = null,
+                categoryId = null,
+            ),
+        )
+
+        val projection = catalog.observeCatalogProjection().first()
+        val installed = projection.single { it.toolId == TOOL_ID }
+        assertEquals(VERSION_CODE, installed.activeVersionCode)
+        assertEquals("1.0.0", installed.activeVersionName)
+        assertEquals(256L, installed.bundleBytes)
+        assertEquals(LaunchState.PENDING, installed.launchState)
+
+        val missing = projection.single { it.toolId == ORPHAN_TOOL_ID }
+        assertEquals("Missing active version", missing.name)
+        assertEquals(null, missing.activeVersionCode)
+        assertEquals(null, missing.activeVersionName)
+        assertEquals(null, missing.bundleBytes)
+        assertEquals(null, missing.launchState)
         database.close()
     }
 

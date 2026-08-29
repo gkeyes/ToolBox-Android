@@ -3,14 +3,12 @@ package io.toolbox.host.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.toolbox.core.data.GlobalSecurityPolicy
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.ui.component.ToolBoxChoiceSettingRow
 import io.toolbox.core.ui.component.ToolBoxSettingChoice
@@ -39,22 +37,23 @@ fun SettingsScreen(
 fun SettingsScreen(
     state: SettingsUiState,
     onThemeSelected: (ThemeMode) -> Unit,
-    onSecurityPolicySelected: (GlobalSecurityPolicy) -> Unit = {},
     onAuditRetentionSelected: (Int) -> Unit,
-    onDefaultStorageQuotaSelected: (Long) -> Unit = {},
-    onDeveloperModeChanged: (Boolean) -> Unit = {},
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
     ) {
         state.updateError?.let { error ->
             item {
                 SurfaceCard {
-                    AppText(error, size = 13, color = ToolBoxThemeTokens.colors.danger)
+                    AppText(
+                        error,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.danger,
+                    )
                 }
             }
         }
@@ -83,14 +82,6 @@ fun SettingsScreen(
                     summary = "仅保留最小审计元数据",
                     enabled = state.isLoaded,
                 )
-                StaticSettingsStatus(
-                    title = "严格策略固定",
-                    summary = "运行 API 接入后开放调整",
-                )
-                StaticSettingsStatus(
-                    title = "工具配额与开发者工具",
-                    summary = "运行 API 接入后开放",
-                )
             }
         }
     }
@@ -100,17 +91,6 @@ fun SettingsScreen(
 private fun SettingsCard(content: @Composable () -> Unit) {
     SurfaceCard(contentPadding = 0.dp) {
         content()
-    }
-}
-
-@Composable
-private fun StaticSettingsStatus(title: String, summary: String) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        AppText(title, size = 15)
-        AppText(summary, size = 13, color = ToolBoxThemeTokens.colors.textSecondary)
     }
 }
 

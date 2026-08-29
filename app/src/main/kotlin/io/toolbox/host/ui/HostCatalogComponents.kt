@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
@@ -49,10 +48,20 @@ internal fun ToolCard(tool: ToolCardModel, onLaunchTool: (String) -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ToolGlyph(tool.symbol)
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.two))
             Column(Modifier.weight(1f)) {
-                AppText(tool.title, size = 15, weight = FontWeight.Bold, maxLines = 1)
-                AppText(tool.metadata, size = 11, color = ToolBoxThemeTokens.colors.textSecondary, maxLines = 2)
+                AppText(
+                    tool.title,
+                    textStyle = ToolBoxThemeTokens.textStyles.title,
+                    weight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                AppText(
+                    tool.metadata,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                    maxLines = 2,
+                )
             }
             RiskBadge(tool.trust.label, tool.trust.tone)
         }
@@ -60,22 +69,27 @@ internal fun ToolCard(tool: ToolCardModel, onLaunchTool: (String) -> Unit) {
 }
 
 @Composable
-internal fun ToolGlyph(symbol: String, size: Dp = 48.dp) {
+internal fun ToolGlyph(symbol: String, size: Dp = ToolBoxThemeTokens.sizes.toolGlyph) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(size / 3))
-            .background(ToolBoxThemeTokens.colors.primary),
+            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
+            .background(ToolBoxThemeTokens.colors.divider),
         contentAlignment = Alignment.Center,
     ) {
-        AppText(symbol, color = ToolBoxThemeTokens.colors.onPrimary, size = if (size > 50.dp) 18 else 16, weight = FontWeight.Bold)
+        AppText(
+            symbol,
+            color = ToolBoxThemeTokens.colors.textPrimary,
+            textStyle = ToolBoxThemeTokens.textStyles.title,
+            weight = FontWeight.Bold,
+        )
     }
 }
 
 @Composable
 internal fun SurfaceCard(
     modifier: Modifier = Modifier,
-    contentPadding: Dp = 16.dp,
+    contentPadding: Dp = ToolBoxThemeTokens.spacing.two,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ToolBoxCard(
@@ -88,9 +102,18 @@ internal fun SurfaceCard(
 @Composable
 internal fun SectionHeader(title: String, action: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        AppText(title, modifier = Modifier.weight(1f).semantics { heading() }, size = 18, weight = FontWeight.Bold)
+        AppText(
+            title,
+            modifier = Modifier.weight(1f).semantics { heading() },
+            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+        )
         if (action.isNotEmpty()) {
-            AppText(action, size = 13, color = ToolBoxThemeTokens.colors.primary, weight = FontWeight.SemiBold)
+            AppText(
+                action,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                color = ToolBoxThemeTokens.colors.primary,
+                weight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -110,11 +133,11 @@ private fun RiskBadge(label: String, tone: RiskTone) {
 @Composable
 internal fun EmptyCatalogState(onImport: () -> Unit) {
     SurfaceCard(modifier = Modifier.testTag(HostTestTags.CatalogEmptyState)) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            AppText("还没有已安装工具", size = 18, weight = FontWeight.Bold)
+        Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.two)) {
+            AppText("还没有已安装工具", textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
             AppText(
                 "选择一个 .tbx 工具包后，ToolBox 会先检查结构、权限和风险，再显示可安装的信息。",
-                size = 13,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary,
             )
             ToolBoxPrimaryButton("导入 .tbx 工具包", onClick = onImport)
@@ -125,7 +148,7 @@ internal fun EmptyCatalogState(onImport: () -> Unit) {
 @Composable
 internal fun CatalogStatusState(message: String) {
     SurfaceCard {
-        AppText(message, size = 14, color = ToolBoxThemeTokens.colors.textSecondary)
+        AppText(message, textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
     }
 }
 
@@ -149,14 +172,19 @@ internal fun AppText(
     modifier: Modifier = Modifier,
     size: Int = 14,
     color: Color = ToolBoxThemeTokens.colors.textPrimary,
-    weight: FontWeight = FontWeight.Normal,
+    weight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
     align: TextAlign = TextAlign.Start,
+    textStyle: TextStyle? = null,
 ) {
     BasicText(
         text = text,
         modifier = modifier,
-        style = TextStyle(color = color, fontSize = size.sp, fontWeight = weight, textAlign = align),
+        style = (textStyle ?: TextStyle(fontSize = size.sp)).copy(
+            color = color,
+            fontWeight = weight ?: textStyle?.fontWeight ?: FontWeight.Normal,
+            textAlign = align,
+        ),
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )

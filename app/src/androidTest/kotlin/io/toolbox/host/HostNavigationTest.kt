@@ -18,13 +18,14 @@ class HostNavigationTest {
 
     @Test
     fun freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch() {
-        composeRule.onNodeWithText("我的工具箱").assertIsDisplayed()
-        composeRule.onNodeWithText("0 个已安装工具").assertIsDisplayed()
         composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
         composeRule.onAllNodesWithText("仓位计算器").assertCountEquals(0)
+        composeRule.onAllNodesWithText("本机目录").assertCountEquals(0)
+        composeRule.onAllNodesWithText("搜索名称、ID 或分类").assertCountEquals(0)
 
         composeRule.onNodeWithTag(HostTestTags.BottomTools).performClick()
         composeRule.onNodeWithText("工具管理").assertIsDisplayed()
+        composeRule.onNodeWithText("搜索名称、ID 或分类").assertIsDisplayed()
         composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
 
         composeRule.onNodeWithTag(HostTestTags.ImportFab).performClick()
@@ -35,6 +36,7 @@ class HostNavigationTest {
         composeRule.onNodeWithTag(HostTestTags.BottomSettings).performClick()
         composeRule.onNodeWithText("主题").assertIsDisplayed()
         composeRule.onNodeWithText("审计日志保留").assertIsDisplayed()
-        composeRule.onNodeWithText("严格策略固定").assertIsDisplayed()
+        composeRule.onAllNodesWithText("严格策略固定").assertCountEquals(0)
+        composeRule.onAllNodesWithText("工具配额与开发者工具").assertCountEquals(0)
     }
 }

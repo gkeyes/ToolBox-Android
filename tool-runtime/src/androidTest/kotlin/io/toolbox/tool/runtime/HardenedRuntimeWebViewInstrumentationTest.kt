@@ -488,6 +488,38 @@ class HardenedRuntimeWebViewInstrumentationTest {
             Files.delete(orphanMarker)
         }
 
+        val leasedRecoveryRoot = filesRoot.resolve("orphan-reaper-lease")
+        deleteTree(leasedRecoveryRoot)
+        val leasedMarkerRoot = leasedRecoveryRoot.resolve("runtime-profile-cleanup")
+        val leasedModeRoot = leasedRecoveryRoot.resolve("runtime-isolation-mode")
+        Files.createDirectories(leasedMarkerRoot)
+        Files.createDirectories(leasedModeRoot)
+        val leasedOrphanProfileName = RuntimeIdentity.profileName(ORPHAN_TOOL_ID)
+        writeText(leasedMarkerRoot.resolve("$leasedOrphanProfileName.pending"), encodedMarker(ORPHAN_TOOL_ID))
+        writeText(
+            leasedModeRoot.resolve("$leasedOrphanProfileName.mode"),
+            encodedModeRecord(ORPHAN_TOOL_ID, RuntimeIsolationMode.DEDICATED_PROFILE),
+        )
+        val reservationDuringPhysicalDeletion = AtomicReference<ManagedRuntimeCreationPermit?>()
+        val leasedRecoveryManager = RuntimeProfileManager(leasedRecoveryRoot.toFile(), dedicatedCapabilities()) {
+            reservationDuringPhysicalDeletion.set(RuntimeWebViewLifecycle.reserve(ORPHAN_TOOL_ID))
+            RuntimeProfileManager.PhysicalDeleteResult.Deleted
+        }
+        assertEquals(
+            RuntimeDataCleanupResult.Cleared,
+            runBlocking { leasedRecoveryManager.reapMarkedOrphanProfiles(emptySet()) },
+        )
+        onMain { reservationDuringPhysicalDeletion.get()?.close() }
+        assertNull(
+            "An orphan's runtime reservation must be rejected while its physical profile deletion is in progress",
+            reservationDuringPhysicalDeletion.get(),
+        )
+        assertFalse(Files.exists(leasedMarkerRoot.resolve("$leasedOrphanProfileName.pending")))
+        assertFalse(Files.exists(leasedModeRoot.resolve("$leasedOrphanProfileName.mode")))
+        val permitAfterOrphanCleanup = acquirePermit(leasedRecoveryManager, ORPHAN_TOOL_ID)
+        onMain { permitAfterOrphanCleanup.close() }
+        deleteTree(leasedRecoveryRoot)
+
         val actionCalled = AtomicBoolean(false)
         runBlocking {
             val cleanupProofWritten = CompletableDeferred<Unit>()
@@ -833,8 +865,11 @@ class HardenedRuntimeWebViewInstrumentationTest {
         }
     }
 
-    private fun acquirePermit(manager: RuntimeProfileManager): RuntimeCreationPermit = runBlocking {
-        when (val result = manager.acquireRuntimePermit(TOOL_ID, awaitExistingRuntimeRelease = false)) {
+    private fun acquirePermit(
+        manager: RuntimeProfileManager,
+        toolId: String = TOOL_ID,
+    ): RuntimeCreationPermit = runBlocking {
+        when (val result = manager.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease = false)) {
             is RuntimeCreationPermitResult.Ready -> result.permit
             is RuntimeCreationPermitResult.Rejected -> error("Runtime permit rejected: ${result.reason}")
         }

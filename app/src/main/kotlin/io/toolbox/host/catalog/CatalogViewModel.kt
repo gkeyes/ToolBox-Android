@@ -2,11 +2,10 @@ package io.toolbox.host.catalog
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogOrganizationRepository
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataResult
-import io.toolbox.core.data.InstalledTool
-import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.lifecycle.LifecycleFailure
 import io.toolbox.tool.packagekit.lifecycle.LifecycleFailureCode
 import io.toolbox.tool.packagekit.lifecycle.RecoveryLifecycleResult
@@ -16,7 +15,6 @@ import io.toolbox.tool.runtime.RuntimeDataCleaner
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeDataCleanupResult
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,9 +23,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -93,35 +88,8 @@ class CatalogViewModel(
         }
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private fun observeCatalog(): Flow<List<CatalogTool>> = catalog.observeTools().flatMapLatest { installedTools ->
-        if (installedTools.isEmpty()) {
-            flowOf(emptyList())
-        } else {
-            combine(
-                installedTools.map { tool ->
-                    catalog.observeVersions(tool.metadata.id).mapToCatalogTool(tool)
-                },
-            ) { tools -> tools.toList() }
-        }
-    }
-
-    private fun Flow<List<ToolVersion>>.mapToCatalogTool(tool: InstalledTool): Flow<CatalogTool> =
-        map { versions ->
-            val activeVersion = versions.firstOrNull { it.versionCode == tool.activeVersionCode }
-            CatalogTool(
-                toolId = tool.metadata.id,
-                name = tool.metadata.name,
-                signatureState = tool.metadata.signatureState,
-                activeVersionCode = activeVersion?.versionCode,
-                activeVersionName = activeVersion?.version,
-                bundleBytes = activeVersion?.bundleBytes,
-                launchState = activeVersion?.launchState,
-                lastOpenedAt = tool.lastOpenedAt,
-                categoryId = tool.metadata.categoryId,
-                pinnedOrder = tool.metadata.pinnedOrder,
-            )
-        }
+    private fun observeCatalog(): Flow<List<CatalogTool>> =
+        catalog.observeCatalogProjection().map { entries -> entries.map(CatalogEntry::toCatalogTool) }
 
     private fun selectDetails(toolId: String?) {
         updateState { current ->
@@ -311,6 +279,19 @@ class CatalogViewModel(
         mutableState.update(transform)
     }
 }
+
+private fun CatalogEntry.toCatalogTool() = CatalogTool(
+    toolId = toolId,
+    name = name,
+    signatureState = signatureState,
+    activeVersionCode = activeVersionCode,
+    activeVersionName = activeVersionName,
+    bundleBytes = bundleBytes,
+    launchState = launchState,
+    lastOpenedAt = lastOpenedAt,
+    categoryId = categoryId,
+    pinnedOrder = pinnedOrder,
+)
 
 private fun DataResult.Failure.code(): String = when (this) {
     is DataResult.Failure.InvalidInput -> "INVALID_INPUT"

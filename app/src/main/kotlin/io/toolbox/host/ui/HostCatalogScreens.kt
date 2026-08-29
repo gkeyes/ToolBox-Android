@@ -16,10 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -31,11 +27,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SignatureState
-import io.toolbox.core.ui.component.ToolBoxIconButton
-import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -54,42 +47,48 @@ fun HomeScreen(
     onOpenDetails: (String) -> Unit,
 ) {
     PrimaryScreen(MainDestination.Home, onDestination, "ToolBox", onImport) { contentPadding ->
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+        LazyColumn(
             modifier = Modifier.fillMaxSize().testTag(HostTestTags.CatalogList),
             contentPadding = contentPadding,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
-            item(key = "summary", span = { GridItemSpan(maxLineSpan) }) {
-                CompactCatalogSummary(state.tools.size)
-            }
-            item(key = "search", span = { GridItemSpan(maxLineSpan) }) {
-                CatalogSearchField(state.query) { onAction(CatalogAction.SetQuery(it)) }
-            }
-            item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
-                CatalogFilters(state, onAction)
+            if (state.tools.isNotEmpty()) {
+                item(key = "summary") {
+                    CompactCatalogSummary(state.tools.size)
+                }
             }
             state.feedback?.let { feedback ->
-                item(key = "feedback", span = { GridItemSpan(maxLineSpan) }) {
+                item(key = "feedback") {
                     CatalogFeedbackCard(feedback, onAction)
                 }
             }
             when {
-                !state.isLoaded -> item(key = "loading", span = { GridItemSpan(maxLineSpan) }) {
+                !state.isLoaded -> item(key = "loading") {
                     CatalogStatusState("正在读取已安装工具")
                 }
                 state.visibleTools.isEmpty() && state.tools.isEmpty() ->
-                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { EmptyCatalogState(onImport) }
-                state.visibleTools.isEmpty() -> item(key = "no-match", span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogStatusState("没有符合当前搜索或分类的工具。")
-                }
-                else -> gridItems(state.visibleTools, key = CatalogTool::toolId) { tool ->
-                    HomeToolCard(
-                        tool = tool,
-                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                        onDetails = { onOpenDetails(tool.toolId) },
-                    )
+                    item(key = "empty") { EmptyCatalogState(onImport) }
+                else -> {
+                    val pinnedTools = state.tools
+                        .filter { it.pinnedOrder != null }
+                        .sortedBy(CatalogTool::pinnedOrder)
+                    val recentTools = state.tools
+                        .filter { it.pinnedOrder == null && it.lastOpenedAt != null }
+                        .sortedByDescending(CatalogTool::lastOpenedAt)
+                    val installedTools = state.tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null }
+
+                    if (pinnedTools.isNotEmpty()) {
+                        item(key = "pinned-header") { SectionHeader("已固定", "") }
+                        catalogRows(pinnedTools, onAction, onOpenDetails)
+                    }
+                    if (recentTools.isNotEmpty()) {
+                        item(key = "recent-header") { SectionHeader("最近使用", "") }
+                        catalogRows(recentTools, onAction, onOpenDetails)
+                    }
+                    if (installedTools.isNotEmpty()) {
+                        item(key = "installed-header") { SectionHeader("已安装工具", "") }
+                        catalogRows(installedTools, onAction, onOpenDetails)
+                    }
                 }
             }
         }
@@ -119,7 +118,7 @@ private fun CatalogScreen(
         LazyColumn(
             modifier = Modifier.fillMaxSize().testTag(HostTestTags.CatalogList),
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             item(key = "search") { CatalogSearchField(state.query) { onAction(CatalogAction.SetQuery(it)) } }
             item(key = "filters") { CatalogFilters(state, onAction) }
@@ -155,13 +154,16 @@ private fun LazyListScope.catalogRows(
 
 @Composable
 private fun CompactCatalogSummary(toolCount: Int) {
-    SurfaceCard(contentPadding = 14.dp) {
+    SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.two) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                AppText("我的工具箱", size = 13, color = ToolBoxThemeTokens.colors.textSecondary)
-                AppText("$toolCount 个已安装工具", size = 20, weight = FontWeight.Bold)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half)) {
+                AppText(
+                    "我的工具箱",
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                )
+                AppText("$toolCount 个已安装工具", textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
             }
-            AppText("本机目录", size = 12, color = ToolBoxThemeTokens.colors.primary, weight = FontWeight.SemiBold)
         }
     }
 }
@@ -178,7 +180,7 @@ private fun CatalogSearchField(value: String, onValueChange: (String) -> Unit) {
 
 @Composable
 private fun CatalogFilters(state: CatalogUiState, onAction: (CatalogAction) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
         FilterButton(state.categoryFilter ?: "全部分类", state.categoryFilter != null, Modifier.weight(1f)) {
             val options = listOf(null) + state.categories
             val current = options.indexOf(state.categoryFilter).coerceAtLeast(0)
@@ -197,50 +199,20 @@ private fun FilterButton(label: String, selected: Boolean, modifier: Modifier = 
     val foreground = if (selected) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.textPrimary
     Box(
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .background(background)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
         contentAlignment = Alignment.Center,
     ) {
-        AppText(label, size = 13, color = foreground, weight = FontWeight.SemiBold, maxLines = 1)
-    }
-}
-
-@Composable
-private fun HomeToolCard(tool: CatalogTool, onOpen: () -> Unit, onDetails: () -> Unit) {
-    SurfaceCard(
-        modifier = Modifier.testTag(HostTestTags.ToolCardPrefix + tool.toolId),
-        contentPadding = 10.dp,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolGlyph(tool.name.firstOrNull()?.toString() ?: "T", size = 40.dp)
-            Spacer(Modifier.weight(1f))
-            ToolBoxIconButton(
-                icon = ToolBoxIconKey.More,
-                contentDescription = "查看${tool.name}详情",
-                onClick = onDetails,
-            )
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(role = Role.Button, onClick = onOpen)
-                .semantics { contentDescription = "打开${tool.name}，${tool.signatureState.label}" }
-                .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            AppText(tool.name, size = 15, weight = FontWeight.SemiBold, maxLines = 1)
-            AppText(
-                "${tool.activeVersionName ?: "版本未知"} · ${tool.signatureState.shortLabel}",
-                size = 11,
-                color = ToolBoxThemeTokens.colors.textSecondary,
-                maxLines = 1,
-            )
-        }
+        AppText(
+            label,
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = foreground,
+            weight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -248,29 +220,45 @@ private fun HomeToolCard(tool: CatalogTool, onOpen: () -> Unit, onDetails: () ->
 private fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: () -> Unit) {
     SurfaceCard(
         modifier = Modifier
+            .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
             .testTag(HostTestTags.ToolCardPrefix + tool.toolId),
-        contentPadding = 12.dp,
+        contentPadding = ToolBoxThemeTokens.spacing.oneHalf,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
                     .clickable(role = Role.Button, onClick = onOpen)
                     .semantics { contentDescription = "打开${tool.name}，${tool.signatureState.label}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToolGlyph(tool.name.firstOrNull()?.toString() ?: "T", size = 44.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ToolGlyph(
+                    tool.name.firstOrNull()?.toString() ?: "T",
+                    size = ToolBoxThemeTokens.sizes.compactToolGlyph,
+                )
+                Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AppText(tool.name, modifier = Modifier.weight(1f), size = 15, weight = FontWeight.SemiBold, maxLines = 1)
-                        if (tool.pinnedOrder != null) AppText("已固定", size = 11, color = ToolBoxThemeTokens.colors.primary)
+                        AppText(
+                            tool.name,
+                            modifier = Modifier.weight(1f),
+                            textStyle = ToolBoxThemeTokens.textStyles.title,
+                            weight = FontWeight.SemiBold,
+                            maxLines = 1,
+                        )
+                        if (tool.pinnedOrder != null) {
+                            AppText(
+                                "已固定",
+                                textStyle = ToolBoxThemeTokens.textStyles.label,
+                                color = ToolBoxThemeTokens.colors.primary,
+                            )
+                        }
                     }
                     AppText(
                         "${tool.activeVersionName ?: "版本未知"} · ${tool.bundleBytes.fileSizeLabel()} · ${tool.signatureState.label}",
-                        size = 12,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
                         color = ToolBoxThemeTokens.colors.textSecondary,
                         maxLines = 2,
                     )
@@ -278,13 +266,18 @@ private fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: () 
             }
             Box(
                 modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
                     .clickable(role = Role.Button, onClick = onDetails)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
                 contentAlignment = Alignment.Center,
             ) {
-                AppText("详情", size = 13, color = ToolBoxThemeTokens.colors.primary, weight = FontWeight.SemiBold)
+                AppText(
+                    "详情",
+                    textStyle = ToolBoxThemeTokens.textStyles.label,
+                    color = ToolBoxThemeTokens.colors.primary,
+                    weight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -306,8 +299,11 @@ fun ToolDetailScreen(
     DetailScreen(title = tool?.name ?: "工具详情", onBack = onBack, subtitle = toolId) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(
+                horizontal = ToolBoxThemeTokens.spacing.two,
+                vertical = ToolBoxThemeTokens.spacing.oneHalf,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             if (tool == null) {
                 item { CatalogStatusState(if (state.isLoaded) "该工具已卸载或目录已更新。" else "正在读取工具详情") }
@@ -348,9 +344,13 @@ fun ToolDetailScreen(
 
 @Composable
 private fun ToolFactsCard(tool: CatalogTool) {
-    SurfaceCard(contentPadding = 14.dp) {
-        AppText(tool.name, size = 18, weight = FontWeight.Bold)
-        AppText(tool.toolId, size = 12, color = ToolBoxThemeTokens.colors.textSecondary)
+    SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.oneHalf) {
+        AppText(tool.name, textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
+        AppText(
+            tool.toolId,
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = ToolBoxThemeTokens.colors.textSecondary,
+        )
         AppText("版本 ${tool.activeVersionName ?: "未知"} (${tool.activeVersionCode ?: "-"})")
         AppText("代码 ${tool.bundleBytes.fileSizeLabel()} · ${tool.signatureState.label}")
         AppText("启动状态：${tool.launchState.label}", color = ToolBoxThemeTokens.colors.textSecondary)
@@ -360,18 +360,31 @@ private fun ToolFactsCard(tool: CatalogTool) {
 @Composable
 private fun DetailAction(title: String, summary: String, destructive: Boolean = false, onClick: () -> Unit) {
     val color = if (destructive) ToolBoxThemeTokens.colors.danger else ToolBoxThemeTokens.colors.textPrimary
-    SurfaceCard(Modifier.clickable(role = Role.Button, onClick = onClick), 14.dp) {
-        AppText(title, color = color, weight = FontWeight.SemiBold)
-        AppText(summary, size = 12, color = ToolBoxThemeTokens.colors.textSecondary)
+    SurfaceCard(Modifier.clickable(role = Role.Button, onClick = onClick), ToolBoxThemeTokens.spacing.oneHalf) {
+        AppText(title, textStyle = ToolBoxThemeTokens.textStyles.title, color = color, weight = FontWeight.SemiBold)
+        AppText(
+            summary,
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = ToolBoxThemeTokens.colors.textSecondary,
+        )
     }
 }
 
 @Composable
 private fun UninstallConfirmationCard(toolName: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
-    SurfaceCard(contentPadding = 14.dp) {
-        AppText("确认卸载 $toolName？", weight = FontWeight.Bold, color = ToolBoxThemeTokens.colors.danger)
-        AppText("此操作只针对具名工具；失败或恢复未完成时会保留明确状态。", size = 12, color = ToolBoxThemeTokens.colors.textSecondary)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.oneHalf) {
+        AppText(
+            "确认卸载 $toolName？",
+            textStyle = ToolBoxThemeTokens.textStyles.title,
+            weight = FontWeight.Bold,
+            color = ToolBoxThemeTokens.colors.danger,
+        )
+        AppText(
+            "此操作只针对具名工具；失败或恢复未完成时会保留明确状态。",
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = ToolBoxThemeTokens.colors.textSecondary,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
             FilterButton("取消", false, Modifier.weight(1f), onCancel)
             FilterButton("确认卸载", true, Modifier.weight(1f), onConfirm)
         }
@@ -380,14 +393,14 @@ private fun UninstallConfirmationCard(toolName: String, onCancel: () -> Unit, on
 
 @Composable
 private fun CatalogFeedbackCard(feedback: CatalogFeedback, onAction: (CatalogAction) -> Unit) {
-    SurfaceCard(contentPadding = 14.dp) {
+    SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.oneHalf) {
         val color = when (feedback) {
             is CatalogFeedback.Completed -> ToolBoxThemeTokens.colors.success
             is CatalogFeedback.Failure -> ToolBoxThemeTokens.colors.danger
             is CatalogFeedback.RecoveryPending -> ToolBoxThemeTokens.colors.warning
         }
-        AppText(feedback.message, size = 13, color = color)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppText(feedback.message, textStyle = ToolBoxThemeTokens.textStyles.metadata, color = color)
+        Row(horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
             if (feedback is CatalogFeedback.RecoveryPending) {
                 FilterButton("恢复目录", true, Modifier.weight(1f)) { onAction(CatalogAction.RecoverPendingMutation) }
             }

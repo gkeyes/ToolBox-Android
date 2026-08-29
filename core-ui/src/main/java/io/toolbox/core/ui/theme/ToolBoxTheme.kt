@@ -10,6 +10,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -48,9 +50,42 @@ data class ToolBoxColorScheme(
 data class ToolBoxTextStyles(
     val screenTitle: TextStyle,
     val sectionTitle: TextStyle,
+    val title: TextStyle,
     val body: TextStyle,
     val metadata: TextStyle,
     val label: TextStyle,
+)
+
+@Immutable
+data class ToolBoxSpacing(
+    val half: Dp = 4.dp,
+    val one: Dp = 8.dp,
+    val oneHalf: Dp = 12.dp,
+    val two: Dp = 16.dp,
+    val twoHalf: Dp = 20.dp,
+    val three: Dp = 24.dp,
+)
+
+@Immutable
+data class ToolBoxRadii(
+    val badge: Dp = 12.dp,
+    val denseSurface: Dp = 16.dp,
+    val card: Dp = 22.dp,
+    val full: Dp = 999.dp,
+)
+
+@Immutable
+data class ToolBoxSizes(
+    val divider: Dp = 1.dp,
+    val badgeIcon: Dp = 14.dp,
+    val rowIcon: Dp = 18.dp,
+    val touchTarget: Dp = 48.dp,
+    val compactChrome: Dp = 56.dp,
+    val denseRow: Dp = 56.dp,
+    val largeTextChrome: Dp = 72.dp,
+    val catalogRow: Dp = 72.dp,
+    val compactToolGlyph: Dp = 44.dp,
+    val toolGlyph: Dp = 48.dp,
 )
 
 private val LightToolBoxColors = ToolBoxColorScheme(
@@ -90,6 +125,7 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
 private val DefaultTextStyles = ToolBoxTextStyles(
     screenTitle = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold),
     sectionTitle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+    title = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
     body = TextStyle(fontSize = 16.sp),
     metadata = TextStyle(fontSize = 13.sp),
     label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
@@ -145,6 +181,10 @@ fun ToolBoxTheme(
 }
 
 object ToolBoxThemeTokens {
+    val spacing = ToolBoxSpacing()
+    val radii = ToolBoxRadii()
+    val sizes = ToolBoxSizes()
+
     val colors: ToolBoxColorScheme
         @Composable
         @ReadOnlyComposable

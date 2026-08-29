@@ -32,7 +32,7 @@ internal fun hostRouteLayoutFor(maxWidth: Dp): HostRouteLayout =
     if (maxWidth < 600.dp) {
         HostRouteLayout(
             isCompact = true,
-            horizontalContentPadding = 20.dp,
+            horizontalContentPadding = 16.dp,
             verticalContentPadding = 16.dp,
         )
     } else {

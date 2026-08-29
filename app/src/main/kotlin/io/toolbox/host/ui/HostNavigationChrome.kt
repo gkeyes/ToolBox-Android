@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -102,16 +101,9 @@ private fun DestinationBar(
     onDestination: (MainDestination) -> Unit,
     compact: Boolean,
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val compactHeight = when {
-        fontScale >= 1.75f -> 104.dp
-        fontScale >= 1.3f -> 88.dp
-        else -> 72.dp
-    }
     val modifier = if (compact) {
         Modifier
             .fillMaxWidth()
-            .heightIn(min = compactHeight)
             .testTag(HostTestTags.BottomNavigationContainer)
     } else {
         Modifier.fillMaxHeight().width(96.dp).padding(vertical = 16.dp)

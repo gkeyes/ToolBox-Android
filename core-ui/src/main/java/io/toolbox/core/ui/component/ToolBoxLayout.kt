@@ -10,13 +10,13 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.BasicText
@@ -29,7 +29,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -60,10 +59,15 @@ fun ToolBoxAppScaffold(
         hasFloatingActionButton = floatingActionButton != null,
     )
     val topBarInsets = WindowInsets.statusBars.union(WindowInsets.displayCutout)
-    val bottomBarInsets = WindowInsets.navigationBars.union(WindowInsets.ime)
-    val contentWindowInsets = WindowInsets.systemBars
-        .union(WindowInsets.displayCutout)
-        .union(WindowInsets.ime)
+    val bottomBarInsets = WindowInsets.navigationBars
+    val contentWindowInsets = when {
+        topBar == null && bottomBar == null -> topBarInsets
+            .union(WindowInsets.navigationBars)
+            .union(WindowInsets.ime)
+        topBar == null -> topBarInsets.union(WindowInsets.ime)
+        bottomBar == null -> WindowInsets.navigationBars.union(WindowInsets.ime)
+        else -> WindowInsets.ime
+    }
 
     Scaffold(
         modifier = modifier,
@@ -93,7 +97,14 @@ fun ToolBoxAppScaffold(
         },
         floatingActionButton = {
             if (floatingActionButton != null) {
-                Box {
+                val floatingActionButtonModifier = if (
+                    ownership.floatingActionButton == ToolBoxInsetOwner.FloatingActionButton
+                ) {
+                    Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                } else {
+                    Modifier
+                }
+                Box(floatingActionButtonModifier) {
                     floatingActionButton()
                 }
             }
@@ -144,7 +155,7 @@ fun ToolBoxNavigationBar(
 ) {
     val itemMinHeight = toolBoxNavigationItemMinHeight(LocalDensity.current.fontScale)
     NavigationBar(
-        modifier = modifier,
+        modifier = modifier.height(itemMinHeight),
         color = ToolBoxThemeTokens.colors.surface,
     ) {
         items.forEach { item ->
@@ -160,9 +171,14 @@ fun ToolBoxNavigationBar(
     }
 }
 
-internal fun toolBoxNavigationItemMinHeight(fontScale: Float) = 64.dp * fontScale.coerceAtLeast(1f)
+internal fun toolBoxNavigationItemMinHeight(fontScale: Float) = toolBoxChromeMinHeight(fontScale)
 
-internal fun toolBoxTopBarMinHeight(fontScale: Float) = 64.dp * fontScale.coerceAtLeast(1f)
+internal fun toolBoxTopBarMinHeight(fontScale: Float) = toolBoxChromeMinHeight(fontScale)
+
+private fun toolBoxChromeMinHeight(fontScale: Float) =
+    ToolBoxThemeTokens.sizes.compactChrome +
+        (ToolBoxThemeTokens.sizes.largeTextChrome - ToolBoxThemeTokens.sizes.compactChrome) *
+        (fontScale - 1f).coerceIn(0f, 1f)
 
 @Composable
 fun ToolBoxFloatingActionButton(
@@ -192,14 +208,18 @@ fun ToolBoxCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
+    contentPadding: PaddingValues = PaddingValues(ToolBoxThemeTokens.spacing.two),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
         modifier = modifier.then(
-            if (onClick != null || onLongClick != null) Modifier.sizeIn(minHeight = 48.dp) else Modifier,
+            if (onClick != null || onLongClick != null) {
+                Modifier.sizeIn(minHeight = ToolBoxThemeTokens.sizes.touchTarget)
+            } else {
+                Modifier
+            },
         ),
-        cornerRadius = 22.dp,
+        cornerRadius = ToolBoxThemeTokens.radii.card,
         insideMargin = contentPadding,
         onClick = onClick,
         onLongPress = onLongClick,
@@ -216,9 +236,9 @@ fun ToolBoxPrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
-        minHeight = 48.dp,
+        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
     ) {
         BasicText(text = label, style = ToolBoxThemeTokens.textStyles.body)
     }

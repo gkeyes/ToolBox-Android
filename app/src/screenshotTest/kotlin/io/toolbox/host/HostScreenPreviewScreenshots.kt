@@ -133,10 +133,7 @@ fun SettingsCompactScreenshot() {
             SettingsScreen(
                 state = SettingsUiState(isLoaded = true, developerModeAvailable = false),
                 onThemeSelected = {},
-                onSecurityPolicySelected = {},
                 onAuditRetentionSelected = {},
-                onDefaultStorageQuotaSelected = {},
-                onDeveloperModeChanged = {},
                 contentPadding = contentPadding,
             )
         }

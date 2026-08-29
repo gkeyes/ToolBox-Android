@@ -16,7 +16,7 @@ class ToolBoxAppScaffoldInsetTest {
         assertEquals(ToolBoxInsetOwner.TopBar, ownership.statusBars)
         assertEquals(ToolBoxInsetOwner.TopBar, ownership.displayCutout)
         assertEquals(ToolBoxInsetOwner.BottomBar, ownership.navigationBars)
-        assertEquals(ToolBoxInsetOwner.BottomBar, ownership.ime)
+        assertEquals(ToolBoxInsetOwner.Content, ownership.ime)
         assertEquals(ToolBoxInsetOwner.InheritedFromBottomBar, ownership.floatingActionButton)
     }
 

@@ -19,6 +19,7 @@ import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.ui.HomeScreen
 import io.toolbox.host.ui.HostTestTags
+import kotlin.math.abs
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -80,11 +81,14 @@ class HostAdaptiveScrollTest {
         composeRule.onNodeWithText("导入 .tbx 工具包").assertIsDisplayed()
 
         val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
-        val minimumNavigationHeightPx = with(composeRule.density) { 104.dp.toPx() }
+        val navigationHeightPx = with(composeRule.density) { 72.dp.toPx() }
         composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer).assertIsDisplayed()
         assertTrue(
-            "2× font-scale navigation container must reserve at least 104dp",
-            composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer).fetchSemanticsNode().boundsInRoot.height >= minimumNavigationHeightPx,
+            "Navigation chrome must use only its bounded large-text expansion",
+            abs(
+                composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer)
+                    .fetchSemanticsNode().boundsInRoot.height - navigationHeightPx,
+            ) <= 1f,
         )
         listOf(
             HostTestTags.BottomHome to "首页",

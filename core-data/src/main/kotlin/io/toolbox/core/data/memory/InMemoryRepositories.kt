@@ -6,6 +6,7 @@ import io.toolbox.core.data.CatalogCommitHook
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogLifecycleSnapshot
+import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogOrganizationRepository
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.CommittedInstall
@@ -38,6 +39,7 @@ import io.toolbox.core.data.withPersistedDefaults
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -80,17 +82,43 @@ private class InMemoryCoreState {
 private class InMemoryCatalogRepository(
     private val state: InMemoryCoreState,
 ) : CatalogRepository {
+    override fun observeCatalogProjection(): Flow<List<CatalogEntry>> =
+        combine(state.tools, state.versions) { tools, versions ->
+            tools.values.sortedWith(toolOrder).map { tool ->
+                val activeVersion = tool.activeVersionCode?.let { versions[tool.metadata.id to it] }
+                CatalogEntry(
+                    toolId = tool.metadata.id,
+                    name = tool.metadata.name,
+                    signatureState = tool.metadata.signatureState,
+                    publisherKeyId = tool.metadata.publisherKeyId,
+                    securityProfile = tool.metadata.securityProfile,
+                    installedAt = tool.metadata.installedAt,
+                    lastOpenedAt = tool.lastOpenedAt,
+                    pinnedOrder = tool.metadata.pinnedOrder,
+                    categoryId = tool.metadata.categoryId,
+                    activeVersionCode = activeVersion?.versionCode,
+                    activeVersionName = activeVersion?.version,
+                    bundleBytes = activeVersion?.bundleBytes,
+                    launchState = activeVersion?.launchState,
+                )
+            }
+        }
+
     override fun observeTools(): Flow<List<InstalledTool>> = state.tools.map { values ->
-        values.values.sortedWith(compareBy<InstalledTool> { it.metadata.pinnedOrder == null }
-            .thenBy { it.metadata.pinnedOrder }
-            .thenByDescending { it.metadata.installedAt }
-            .thenBy { it.metadata.id })
+        values.values.sortedWith(toolOrder)
     }
 
     override fun observeTool(toolId: String): Flow<InstalledTool?> = state.tools.map { it[toolId] }
 
     override fun observeVersions(toolId: String): Flow<List<ToolVersion>> = state.versions.map { values ->
         values.values.filter { it.toolId == toolId }.sortedByDescending { it.versionCode }
+    }
+
+    private companion object {
+        val toolOrder = compareBy<InstalledTool> { it.metadata.pinnedOrder == null }
+            .thenBy { it.metadata.pinnedOrder }
+            .thenByDescending { it.metadata.installedAt }
+            .thenBy { it.metadata.id }
     }
 }
 
