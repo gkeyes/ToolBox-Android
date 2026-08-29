@@ -2,8 +2,12 @@ package io.toolbox.host
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -29,6 +33,7 @@ class MainActivity : ComponentActivity() {
             val bootstrapState by dependenciesViewModel.state.collectAsStateWithLifecycle()
             when (val state = bootstrapState) {
                 HostBootstrapState.Loading -> ToolBoxTheme {
+                    ApplySystemBarAppearance(ToolBoxThemeMode.Light)
                     HostBootstrapScreen(
                         loading = true,
                         message = "正在安全地读取数据库和私有包目录。",
@@ -36,6 +41,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 is HostBootstrapState.Error -> ToolBoxTheme {
+                    ApplySystemBarAppearance(ToolBoxThemeMode.Light)
                     HostBootstrapScreen(
                         loading = false,
                         message = "${state.message}（${state.code.name}）",
@@ -63,7 +69,9 @@ class MainActivity : ComponentActivity() {
                             .get("host.settings", SettingsViewModel::class.java)
                     }
                     val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
-                    ToolBoxTheme(mode = settingsState.settings.theme.toToolBoxThemeMode()) {
+                    val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
+                    ToolBoxTheme(mode = themeMode) {
+                        ApplySystemBarAppearance(themeMode)
                         ToolBoxNavigation(
                             dependencies = state.dependencies,
                             viewModelStoreOwner = this,
@@ -75,6 +83,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun ApplySystemBarAppearance(mode: ToolBoxThemeMode) {
+        val usesDarkIcons = when (mode) {
+            ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> false
+            ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> !isSystemInDarkTheme()
+            ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> true
+        }
+        SideEffect {
+            val transparent = android.graphics.Color.TRANSPARENT
+            val style = if (usesDarkIcons) {
+                SystemBarStyle.light(transparent, transparent)
+            } else {
+                SystemBarStyle.dark(transparent)
+            }
+            enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
         }
     }
 }

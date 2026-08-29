@@ -175,7 +175,22 @@ fun ToolBoxTheme(
                 dividerLine = LightToolBoxColors.divider,
                 error = LightToolBoxColors.danger,
             ),
-            darkColors = darkColorScheme(),
+            darkColors = darkColorScheme(
+                primary = DarkToolBoxColors.primary,
+                onPrimary = DarkToolBoxColors.onPrimary,
+                background = DarkToolBoxColors.background,
+                onBackground = DarkToolBoxColors.textPrimary,
+                surface = DarkToolBoxColors.surface,
+                onSurface = DarkToolBoxColors.textPrimary,
+                surfaceVariant = DarkToolBoxColors.surface,
+                onSurfaceSecondary = DarkToolBoxColors.textSecondary,
+                onSurfaceVariantSummary = DarkToolBoxColors.textSecondary,
+                onSurfaceVariantActions = DarkToolBoxColors.textSecondary,
+                surfaceContainer = DarkToolBoxColors.surface,
+                onSurfaceContainer = DarkToolBoxColors.textPrimary,
+                dividerLine = DarkToolBoxColors.divider,
+                error = DarkToolBoxColors.danger,
+            ),
             keyColor = LightToolBoxColors.primary,
         )
     }

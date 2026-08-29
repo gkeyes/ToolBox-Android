@@ -92,10 +92,11 @@ Testing               JUnit, Robolectric, AndroidX Test, Compose UI Test
 Miuix 作为主设计系统，使用：
 
 ```kotlin
-implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.2")
-implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.2")
-implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.2")
-implementation("top.yukonga.miuix.kmp:miuix-squircle-android:0.9.2")
+implementation("top.yukonga.miuix.kmp:miuix-ui:0.9.4-rc01")
+implementation("top.yukonga.miuix.kmp:miuix-preference:0.9.4-rc01")
+implementation("top.yukonga.miuix.kmp:miuix-icons:0.9.4-rc01")
+implementation("top.yukonga.miuix.kmp:miuix-squircle:0.9.4-rc01")
+implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 ```
 
 Miuix 处于实验阶段，API 可能变化，因此：
@@ -103,6 +104,13 @@ Miuix 处于实验阶段，API 可能变化，因此：
 - 所有页面只依赖 ToolBox 自有 UI 适配层。
 - 不允许在 feature 层直接大量 import 第三方组件。
 - 升级 Miuix 时必须跑截图回归、Compose UI Test 和性能基准。
+
+本方案锁定 Miuix `v0.9.4-rc01`。该版本以 `miuix-nav` 替代已移除的
+`miuix-navigation3-ui`，不再引入 `androidx.navigation3`；导航运行时通过
+`rememberNavBackStack`、`NavDisplay` 和 `NavController` 提供连续栈深度
+（`animatedTop`）、滑动/模态转场、预测性返回和侧滑关闭。应用不得在其外再叠加
+另一套 Navigation3 转场。该版本的 Android 最低 API 为 24；本项目当前 minSdk 33，
+满足此要求。
 
 ## 2.3 HyperX Compose 引入原则
 
@@ -214,6 +222,13 @@ interface ToolApiHandler {
 2. **工具**：管理安装包、分类、更新、空间。
 3. **设置**：主题、全局安全策略、备份、开发者模式。
 
+宿主底部主导航使用 Miuix `NavigationBar`。每个 `NavigationBarItem` 的官方内容区为
+64 dp；系统导航/手势区域由 `NavigationBar` surface 内部单独消费，页面内容和外层
+`Scaffold` 不得重复追加。紧凑页面使用 Miuix `SmallTopAppBar` 的 52 dp 内容高度
+（状态栏 inset 另由该 surface 消费）。在大字体或窄屏下使用
+`IconWithSelectedLabel`：未选项仅保留图标，选中项显示标签，不能按 `fontScale`
+整体放大导航栏。
+
 全局导入入口使用首页/工具页右下角 `FloatingActionButton`。
 
 ## 4.3 页面清单
@@ -222,7 +237,7 @@ interface ToolApiHandler {
 
 组成：
 
-- `TopAppBar`：标题、搜索、更多菜单。
+- `SmallTopAppBar`：标题、搜索、更多菜单；需要滚动收缩时才使用 `TopAppBar`。
 - 汇总卡：工具数量、最近运行、数据占用。
 - 搜索框：名称、分类、标签全文筛选。
 - 最近使用：横向小卡片。
@@ -291,7 +306,7 @@ interface ToolApiHandler {
 
 ## 4.4 自适应布局
 
-- 手机：底部 NavigationBar、单列详情、3 列工具宫格。
+- 手机：Miuix `NavigationBar`（64 dp item 内容 + 内部系统导航/手势 inset）、单列详情、3 列工具宫格。
 - 折叠屏/平板：NavigationRail + 双栏；左侧工具列表，右侧详情或预览。
 - 宽度断点建议：`<600dp` compact；`600–840dp` medium；`>840dp` expanded。
 - 所有点击目标至少 48 dp；正文对比度满足 WCAG AA；支持 TalkBack 语义。
@@ -989,7 +1004,10 @@ RuntimeSessionEntity
 
 # 13. 导航与状态管理
 
-建议使用类型安全 Navigation 3，route 不携带整对象：
+使用 Miuix `miuix-nav` 的类型安全返回栈，route 不携带整对象。不要引入
+`androidx.navigation3` 或已移除的 `miuix-navigation3-ui`：
+
+以下 route 均实现 Miuix nav 的 `NavKey`：
 
 ```kotlin
 @Serializable data object HomeRoute
@@ -1000,6 +1018,10 @@ RuntimeSessionEntity
 @Serializable data object PermissionCenterRoute
 @Serializable data object SettingsRoute
 ```
+
+页面通过 `rememberNavBackStack` 与 `NavDisplay` 渲染，统一使用 Miuix nav 的连续栈深度
+（`animatedTop`）、滑动/模态转场、预测性返回和侧滑关闭。页面切换、返回手势和弹层
+不得再由宿主叠加第二套转场或自定义全屏缩放动画。
 
 页面状态统一：
 

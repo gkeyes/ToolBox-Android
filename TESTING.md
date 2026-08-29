@@ -25,11 +25,7 @@
 | `MainDestinationContractTest.importReviewBackDispatchesThroughSessionCleanupOwner` | 系统返回键曾绕过导入状态机直接弹出路由，留下已审核的私有临时会话。 | 分别把导入审核路由和普通设置路由交给宿主返回分发器，并记录清理回调与默认回调的调用次数。 | 导入审核只调用会话清理所有者；普通页面只调用默认返回，不会交叉触发。 |
 | `HostScreenLayoutContractTest.compactAndMediumWidthsSelectTheContentSpacingUsedByTheHost` | 用户已报告排版松散，宽度策略需要一个低成本合同。 | 向 `hostRouteLayoutFor` 输入 360dp 和 840dp。 | 紧凑/中宽判定正确，水平边距为 16dp/28dp，垂直节奏均为 16dp。 |
 | `SettingsViewModelTest.auditRetentionPrunesAtTheSelectedCutoffAndReportsPruneFailureAfterPersistence` | 审计留存必须真正清理过期元数据；清理失败不能伪装成设置未保存，快速改选较长留存期也不能让旧的短留存清理在新选择后执行。 | 用固定时钟分别注入成功和失败的 `AuditRepository`，选择 7 天和 90 天后读取设置与接收的 cutoff；再用受控 `HostSettingsRepository` 让首个 7 天 `update` 发出已开始信号后协作式挂起，选择 90 天后才放行首个 update。 | 成功分支保存 7 天并调用 `deleteBefore(now-7d)`；受控重叠改选后仅保存 90 天且只调用 `deleteBefore(now-90d)`；失败分支仍保存 90 天、调用对应 cutoff，并显示“已保存，但清理旧记录失败”。 |
-| `ToolBoxNavigationItemLayoutTest.navigationTopBarAndSearchFieldUseFixedTouchSafeMinimums` | 容器跟随字体倍率整体放大曾挤占工具内容，V2 要求高度合同不再接收或计算字体倍率。 | 直接读取导航项、顶部栏与搜索框的共享最小高度合同。 | 导航项与顶部栏固定为 56dp，搜索框固定为 48dp；代码路径不存在 `fontScale` 尺寸参数。 |
-| `ToolBoxAppScaffoldInsetTest.compactScaffoldAssignsEachSystemInsetToOneSemanticOwner` | 紧凑布局曾出现顶部/底部未适配和重复 padding 风险。 | 检查有顶栏、底栏、FAB 时各类 inset 的 owner。 | status/cutout 仅由顶栏、navigation 仅由底栏、IME 仅由内容，FAB 继承底栏的安全位置而不重复消费 inset。 |
-| `ToolBoxAppScaffoldInsetTest.mediumScaffoldLeavesNavigationAndImeToContentInsteadOfTheSideNavigation` | 侧边导航不应错误吞掉底部手势区或 IME。 | 检查中宽布局的 inset policy。 | status/cutout 归顶栏，navigation/IME 归内容，侧栏不重复消费。 |
-| `ToolBoxAppScaffoldInsetTest.scaffoldWithoutBottomBarKeepsContentAndFloatingActionButtonIndependentlyReachable` | 详情页无底栏时内容和 FAB 仍需避让系统区域。 | 检查顶栏+FAB、无底栏组合。 | navigation/IME 归内容，FAB 有独立安全 inset，不发生重叠。 |
-| `ToolBoxAppScaffoldInsetTest.expandedScaffoldWithoutBarsKeepsCutoutNavigationAndImeWithContent` | 无固定 chrome 的展开布局仍需完整适配系统区域。 | 检查无顶栏、无底栏、无 FAB 组合。 | cutout/status/navigation/IME 全部由内容恰好消费一次。 |
+| `ToolBoxNavigationItemLayoutTest.navigationTopBarAndSearchFieldUseFixedTouchSafeMinimums` | 容器跟随字体倍率整体放大曾挤占工具内容，Miuix v0.9.4-rc01 的导航项与顶部栏尺寸合同必须保持稳定。 | 直接读取 Miuix 导航项、`SmallTopAppBar` 与搜索框的共享最小高度合同。 | Miuix 导航项内容区固定为 64dp，`SmallTopAppBar` 固定为 52dp，搜索框固定为 48dp；代码路径不存在 `fontScale` 尺寸参数。 |
 
 ## 当前设备/模拟器交互测试
 
@@ -37,7 +33,7 @@
 |---|---|---|---|
 | `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主不得注入默认工具、重复管理控件或展示无效设置，且导入审核与真实设置必须可达。 | 启动未写入目录记录的 `MainActivity`，核对首页后依次进入工具、导入审核、返回和设置；只检查选择入口，不启动外部文件选择器。 | 首页只显示一个可操作的真实空状态，且没有默认工具、本机目录或搜索；工具页独占搜索；导入审核显示 `.tbx` 选择入口；设置只显示可用主题与审计留存，不显示静态策略/配额占位。 |
 | `HostAdaptiveScrollTest.fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe` | 直接覆盖用户报告的滑动卡涩风险、稳定 key 与 48dp 触控目标。 | 仅向当前 `HomeScreen(HomeScreenState)` 注入 80 项测试夹具，滚动到 `tool-80`，读取末项分组行和标题栏导入操作的语义边界。 | 最后一项可稳定定位且可见，分组行和标题栏导入操作宽高均至少 48dp；夹具不会经过生产目录或被当作预装工具。 |
-| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免底栏再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、固定 56dp 底栏和三个导航项。 | 全部标签和内容可达；底栏保持 56dp；每个导航项触控边界至少 48dp。 |
+| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免 Miuix 导航项再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、Miuix 64dp 导航项内容区和三个导航项。 | 全部标签和内容可达；每个导航项内容区保持 64dp；`IconWithSelectedLabel` 下选中项标签可读，且每个导航项触控边界至少 48dp。 |
 | `HostDependenciesViewModelTest.readyDefersNonCoreFactoriesUntilTheirFirstRequiredAccess` | 首页 `Ready` 只可依赖数据库/repository；检查器、包生命周期与运行时服务的构造不得抢占首帧，同时生命周期必须取得创建会话的真实检查器，不能丢失内部安装会话交接能力。 | 给真实 `HostDependenciesViewModel` 注入四项计数工厂与可挂起维护；等待 `Ready` 后模拟首屏读取延迟代理，发送首帧信号，再分别执行检查器/生命周期操作；捕获检查器工厂产物及生命周期工厂入参并比较实例身份。 | 首屏代理读取后四项计数均为 0；首帧维护只构造 Profile 管理器；其余服务仅在首次操作时各构造一次；生命周期收到的检查器与工厂创建的实例相同；维护失败被隔离且同一 `Ready` 实例保持不变。 |
 
 ## 当前截图测试
@@ -47,7 +43,7 @@
 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|
 | `CatalogFixtureCompactScreenshot` | 首页紧凑分组需要保护常用/最近工具的信息层级与密度，长工具名也不能被强制压成一行。 | 以 411x891dp 将含长名称固定工具的 `PreviewHostFixtures.catalog` 投影为 `HomeScreenState` 后渲染当前 `HomeScreen`。 | 标题、副标题、长工具名最多两行、分组工具行和标题栏导入操作无裁剪或重叠；仅表示截图夹具。 |
-| `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`。 | 空状态、固定 56dp 底栏的横排图标/标签和导入操作完整可见，不出现 fixture 工具。 |
+| `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`，使用 Miuix `IconWithSelectedLabel` 导航模式。 | 空状态、64dp 导航项内容区的图标/选中标签和导入操作完整可见，不出现 fixture 工具；导航项不因字体倍率整体增高。 |
 | `ToolManagerFixtureCompactScreenshot` | 工具页需在紧凑手机上展示检索、分组行和当前真实目录字段，并保护带“已固定”标记的长工具名排版。 | 以 411x891dp 渲染含长名称固定工具的 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 搜索/筛选、`已安装 · N`、最多两行的工具名、版本/大小/签名状态、更多操作和标题栏导入均无裁剪或重叠；仅表示截图夹具。 |
 | `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，主操作也不能随长内容滚出屏幕；200% 字体不能截断操作。 | 以 411x891dp、`fontScale=2f` 渲染 `PreviewHostFixtures.importReview` 的无状态审核页及固定底部动作区；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；底部动作在大字体下纵向排列，取消与确认/安装均完整可见；不表示生产目录已经审核、授权或安装任何包。 |
 | `PermissionCenterFixtureCompactScreenshot` | 权限中心应展示已观察的授权记录和撤销入口，而不能回退为虚构的全局权限列表。 | 以 411x891dp 渲染一项仅截图夹具的 `PermissionCenterUiState`。 | 工具 ID、授权状态、范围与撤销操作可读且无裁剪；夹具不表示真实授权。 |

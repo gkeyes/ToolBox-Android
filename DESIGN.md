@@ -4,6 +4,7 @@
 > 审核基线：`main@c0742c46de95d132b4591864dfbc429b9cd84015`
 > 目标设备：Android 13+，优先 Xiaomi / HyperOS 直板手机；兼顾手势导航、三键导航、深色模式、字体放大与横屏。
 > 视觉方向：吸收 iOS grouped-list 的克制、清晰和紧凑感，但保持 Android 的系统字体、返回行为、权限模型和无障碍语义。
+> Miuix 基线：`v0.9.4-rc01`；导航采用 `miuix-nav`，其连续栈深度、滑动/模态转场、预测性返回和侧滑关闭是宿主唯一导航转场来源。
 
 ---
 
@@ -17,7 +18,8 @@ ToolBox V2 不再把宿主界面做成“卡片展厅”，而是做成一个安
 2. **工具页负责检索与管理**，搜索框、筛选、排序只保留在此页。
 3. **设置页只显示真实可用的设置**，删除不可点击或尚未接入的占位行。
 4. **顶部与页面使用同一背景**，取消突兀的整块白色标题栏。
-5. **底部导航内容高度固定为 56dp**，系统导航区单独追加，不再随字体比例倍增。
+5. **底部导航遵循 Miuix NavigationBar**：每个导航项内容区固定为 64dp，系统导航/手势
+   inset 由 Miuix surface 内部单独消费，不再由外层重复追加或随字体比例倍增。
 6. **列表优先于卡片墙**：同一分组只使用一个白色容器，行之间用 0.5–1dp 分割线。
 7. **工具行高度控制在 72–80dp**，图标、标题、元数据和操作在一行内完成。
 8. **动画只表达状态变化**，不使用大幅缩放、长弹簧或装饰性过渡。
@@ -79,7 +81,8 @@ ToolBox 适合以下情况：
 
 - 一屏应至少完整显示 5–7 个普通设置行，或 4–6 个工具行。
 - 48dp 是交互命中区下限，不代表所有容器都必须大于 64dp。
-- 字体放大时允许文本换行或行高自然增长，不得直接把整个导航栏高度乘以 `fontScale`。
+- 字体放大时允许文本换行或行高自然增长；导航栏切换到 Miuix `IconWithSelectedLabel`
+  时未选项仅显示图标、选中项显示标签，不得直接把整个导航栏高度乘以 `fontScale`。
 
 ### 3.4 色彩克制
 
@@ -180,7 +183,7 @@ ToolBox 适合以下情况：
 
 | 场景 | 建议 |
 |---|---|
-| Tab 切换 | 100–160ms 淡入淡出；不缩放整页 |
+| 页面/Tab 切换 | 使用 Miuix `miuix-nav` 的连续栈深度（`animatedTop`）与内置滑动/模态转场；支持预测性返回和侧滑关闭，不叠加整页缩放 |
 | 列表筛选 | 120–180ms 内容淡入；大数据量时直接更新 |
 | 行按下 | 80–120ms 透明度/状态层 |
 | 对话框 | 180–220ms |
@@ -197,7 +200,7 @@ ToolBox 适合以下情况：
 每个 inset 只能由一个层级消费：
 
 - 状态栏：标题区消费；
-- 导航栏：底部导航消费；
+- 导航栏：Miuix `NavigationBar` surface 内部消费底部系统导航/手势 inset；外层页面不得重复消费；
 - IME：当前有输入焦点的内容区消费；
 - `Scaffold` 内容不得再次叠加完整 `systemBars + ime`。
 
@@ -211,8 +214,8 @@ ToolBox 适合以下情况：
 
 | 元素 | 目标尺寸 |
 |---|---:|
-| 顶部标题内容区 | 52–56dp，不含状态栏 |
-| 底部导航内容区 | 56dp，不含系统导航栏 |
+| 顶部标题内容区 | Miuix `SmallTopAppBar` 52dp，不含状态栏 |
+| 底部导航 item 内容区 | Miuix `NavigationBar` 64dp；系统导航/手势 inset 由 Miuix surface 另行消费 |
 | 搜索框 | 48dp |
 | 普通工具行 | 72–80dp |
 | 普通设置行 | 64–72dp |
@@ -381,12 +384,11 @@ ToolBox 适合以下情况：
 
 ### 7.5 `BottomDestinationBar`
 
-- 内容区 56dp；
-- 系统导航栏另行 `navigationBarsPadding()`；
-- 图标 22–24dp；
-- 标签 10–11sp；
-- 选中蓝色，未选中灰色；
-- 不按 `fontScale` 成比例放大整个 bar。
+- 适配 Miuix `NavigationBar`，每个 `NavigationBarItem` 内容区 64dp；
+- 系统导航/手势 inset 由 Miuix surface 内部单独消费，外层不得再调用同一底部 inset；
+- 图标和标签尺寸遵循 Miuix 默认值；选中蓝色，未选中灰色；
+- 大字体或窄屏使用 `IconWithSelectedLabel`：未选项仅显示图标，选中项显示标签，标签
+  保留在语义树中；不按 `fontScale` 成比例放大整个 bar。
 
 ---
 
@@ -500,8 +502,8 @@ ToolBox 适合以下情况：
 
 | 当前实现 | V2 处理 |
 |---|---|
-| `ToolBoxTopBar` | 改为与 canvas 同背景的 `ToolBoxPageHeader` |
-| `ToolBoxNavigationBar` | 重写为 56dp `BottomDestinationBar` |
+| `ToolBoxTopBar` | 改为与 canvas 同背景、遵循 52dp `SmallTopAppBar` 的 `ToolBoxPageHeader` |
+| `ToolBoxNavigationBar` | 重写为 Miuix `NavigationBar` 适配的 64dp item `BottomDestinationBar` |
 | `ToolBoxCard` | 拆分为 `GroupedSurface`、`StandaloneCard` |
 | `ToolBoxSearchField` | 重写，固定 48dp、明确左侧 padding |
 | `HomeToolCard` | 删除，改为紧凑 `ToolRow` |
@@ -516,7 +518,7 @@ ToolBox 适合以下情况：
 
 - [ ] 顶部不存在与背景割裂的白色横带。
 - [ ] 搜索图标距左边缘至少 14dp。
-- [ ] 普通字体下底部导航内容区不超过 56dp。
+- [ ] 普通字体下每个 Miuix 底部导航 item 内容区为 64dp，系统导航/手势 inset 由 Miuix surface 单独消费。
 - [ ] 手势导航和三键导航下底栏均不被遮挡，也不产生双倍空白。
 - [ ] 单个工具行高度不超过 80dp，除非字体放大导致自然换行。
 - [ ] 首页不再出现“本机目录”静态文字。

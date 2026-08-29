@@ -8,8 +8,8 @@ class ToolBoxNavigationItemLayoutTest {
 
     @Test
     fun navigationTopBarAndSearchFieldUseFixedTouchSafeMinimums() {
-        assertEquals(56.dp, toolBoxNavigationItemMinHeight())
-        assertEquals(56.dp, toolBoxTopBarMinHeight())
+        assertEquals(64.dp, toolBoxNavigationItemMinHeight())
+        assertEquals(52.dp, toolBoxTopBarMinHeight())
         assertEquals(48.dp, toolBoxSearchFieldMinHeight())
     }
 }
