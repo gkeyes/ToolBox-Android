@@ -29,6 +29,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TopAppBar
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -75,24 +76,41 @@ fun ToolBoxTopBar(
     onNavigationClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    SmallTopAppBar(
-        title = title,
-        modifier = modifier.semantics { heading() },
-        color = ToolBoxThemeTokens.colors.background,
-        titleColor = ToolBoxThemeTokens.colors.textPrimary,
-        subtitle = subtitle,
-        subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
-        navigationIcon = {
-            if (navigationIcon != null && onNavigationClick != null) {
-                ToolBoxIconButton(
-                    icon = navigationIcon,
-                    contentDescription = navigationContentDescription,
-                    onClick = onNavigationClick,
-                )
-            }
-        },
-        actions = actions,
-    )
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    val navigationSlot: @Composable () -> Unit = {
+        if (navigationIcon != null && onNavigationClick != null) {
+            ToolBoxIconButton(
+                icon = navigationIcon,
+                contentDescription = navigationContentDescription,
+                onClick = onNavigationClick,
+            )
+        }
+    }
+    val appBarModifier = modifier.semantics { heading() }
+    if (largeText) {
+        TopAppBar(
+            title = title,
+            modifier = appBarModifier,
+            color = ToolBoxThemeTokens.colors.background,
+            titleColor = ToolBoxThemeTokens.colors.textPrimary,
+            largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
+            subtitle = subtitle,
+            subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
+            navigationIcon = navigationSlot,
+            actions = actions,
+        )
+    } else {
+        SmallTopAppBar(
+            title = title,
+            modifier = appBarModifier,
+            color = ToolBoxThemeTokens.colors.background,
+            titleColor = ToolBoxThemeTokens.colors.textPrimary,
+            subtitle = subtitle,
+            subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
+            navigationIcon = navigationSlot,
+            actions = actions,
+        )
+    }
 }
 
 @Composable
@@ -108,7 +126,7 @@ fun ToolBoxNavigationBar(
         color = ToolBoxThemeTokens.colors.surface,
         defaultWindowInsetsPadding = true,
         mode = if (compactLargeText) {
-            NavigationBarDisplayMode.IconWithSelectedLabel
+            NavigationBarDisplayMode.IconOnly
         } else {
             NavigationBarDisplayMode.IconAndText
         },

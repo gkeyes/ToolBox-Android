@@ -32,7 +32,7 @@
 |---|---|---|---|
 | `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主不得注入默认工具、重复管理控件或展示无效设置，且导入审核与真实设置必须可达。 | 启动未写入目录记录的 `MainActivity`，核对首页后依次进入工具、导入审核、返回和设置；只检查选择入口，不启动外部文件选择器。 | 首页只显示一个可操作的真实空状态，且没有默认工具、本机目录或搜索；工具页独占搜索；导入审核显示 `.tbx` 选择入口；设置只显示可用主题与审计留存，不显示静态策略/配额占位。 |
 | `HostAdaptiveScrollTest.fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe` | 直接覆盖用户报告的滑动卡涩风险、稳定 key 与 48dp 触控目标。 | 仅向当前 `HomeScreen(HomeScreenState)` 注入 80 项测试夹具，滚动到 `tool-80`，读取末项分组行和标题栏导入操作的语义边界。 | 最后一项可稳定定位且可见，分组行和标题栏导入操作宽高均至少 48dp；夹具不会经过生产目录或被当作预装工具。 |
-| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免 Miuix 导航项再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、Miuix 64dp 导航项内容区和三个导航项。 | 全部标签和内容可达；每个导航项内容区保持 64dp；`IconWithSelectedLabel` 下选中项标签可读，且每个导航项触控边界至少 48dp。 |
+| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免 Miuix 导航项再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态，检查空状态、包含系统手势 inset 的底部 surface、Miuix 64dp `IconOnly` 导航项和三个目的地的 TalkBack 名称。 | 内容和底部 surface 可达；每个导航项内容区保持 64dp 且触控边界至少 48dp；图标无裁剪，首页/工具/设置名称均可由语义树读取。 |
 | `HostDependenciesViewModelTest.readyDefersNonCoreFactoriesUntilTheirFirstRequiredAccess` | 首页 `Ready` 只可依赖数据库/repository；检查器、包生命周期与运行时服务的构造不得抢占首帧，同时生命周期必须取得创建会话的真实检查器，不能丢失内部安装会话交接能力。 | 给真实 `HostDependenciesViewModel` 注入四项计数工厂与可挂起维护；等待 `Ready` 后模拟首屏读取延迟代理，发送首帧信号，再分别执行检查器/生命周期操作；捕获检查器工厂产物及生命周期工厂入参并比较实例身份。 | 首屏代理读取后四项计数均为 0；首帧维护只构造 Profile 管理器；其余服务仅在首次操作时各构造一次；生命周期收到的检查器与工厂创建的实例相同；维护失败被隔离且同一 `Ready` 实例保持不变。 |
 
 ## 当前截图测试
@@ -42,9 +42,9 @@
 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|
 | `CatalogFixtureCompactScreenshot` | 首页紧凑分组需要保护常用/最近工具的信息层级与密度，长工具名也不能被强制压成一行。 | 以 411x891dp 将含长名称固定工具的 `PreviewHostFixtures.catalog` 投影为 `HomeScreenState` 后渲染当前 `HomeScreen`。 | 标题、副标题、长工具名最多两行、分组工具行和标题栏导入操作无裁剪或重叠；仅表示截图夹具。 |
-| `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`，使用 Miuix `IconWithSelectedLabel` 导航模式。 | 空状态、64dp 导航项内容区的图标/选中标签和导入操作完整可见，不出现 fixture 工具；导航项不因字体倍率整体增高。 |
+| `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`，顶部使用可自然增高的 Miuix `TopAppBar`，底部使用 `IconOnly`。 | 顶部标题/副标题、空状态、64dp 导航图标和导入操作完整可见，不出现 fixture 工具；导航项不因字体倍率整体增高。 |
 | `ToolManagerFixtureCompactScreenshot` | 工具页需在紧凑手机上展示检索、分组行和当前真实目录字段，并保护带“已固定”标记的长工具名排版。 | 以 411x891dp 渲染含长名称固定工具的 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 搜索/筛选、`已安装 · N`、最多两行的工具名、版本/大小/签名状态、更多操作和标题栏导入均无裁剪或重叠；仅表示截图夹具。 |
-| `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，主操作也不能随长内容滚出屏幕；200% 字体不能截断操作。 | 以 411x891dp、`fontScale=2f` 渲染 `PreviewHostFixtures.importReview` 的无状态审核页及固定底部动作区；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；底部动作在大字体下纵向排列，取消与确认/安装均完整可见；不表示生产目录已经审核、授权或安装任何包。 |
+| `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，主操作也不能随长内容滚出屏幕；200% 字体不能截断顶栏或操作。 | 以 411x891dp、`fontScale=2f` 渲染 `PreviewHostFixtures.importReview` 的无状态审核页、自适应 `TopAppBar` 及固定底部动作区；该对象仅存在于 `screenshotTest`。 | 顶栏标题/副标题、已检查的工具身份和可见审核信息均无裁剪；底部动作在大字体下纵向排列，取消与确认/安装均完整可见；不表示生产目录已经审核、授权或安装任何包。 |
 | `PermissionCenterFixtureCompactScreenshot` | 权限中心应展示已观察的授权记录和撤销入口，而不能回退为虚构的全局权限列表。 | 以 411x891dp 渲染一项仅截图夹具的 `PermissionCenterUiState`。 | 工具 ID、授权状态、范围与撤销操作可读且无裁剪；夹具不表示真实授权。 |
 | `SettingsCompactScreenshot` | 设置曾展示无效操作，需保护真实主题与审计留存表单在宿主 chrome 和 inset 分配下的紧凑排版。 | 以 411x891dp 通过 `PrimaryScreen(Settings, ...)` 渲染已加载的默认 `SettingsUiState`。 | 顶栏、底栏、系统 inset 与主题、审计留存无重叠，且没有静态策略/配额占位；不将预览当作 DataStore 写入验证。 |
 

@@ -224,10 +224,10 @@ interface ToolApiHandler {
 
 宿主底部主导航使用 Miuix `NavigationBar`。每个 `NavigationBarItem` 的官方内容区为
 64 dp；系统导航/手势区域由 `NavigationBar` surface 内部单独消费，页面内容和外层
-`Scaffold` 不得重复追加。紧凑页面使用 Miuix `SmallTopAppBar` 的 52 dp 内容高度
-（状态栏 inset 另由该 surface 消费）。在大字体或窄屏下使用
-`IconWithSelectedLabel`：未选项仅保留图标，选中项显示标签，不能按 `fontScale`
-整体放大导航栏。
+`Scaffold` 不得重复追加。普通字体使用 Miuix `SmallTopAppBar` 的 52 dp 内容高度；
+大字体使用可自然增高的 Miuix `TopAppBar`（状态栏 inset 均由该 surface 消费）。
+在大字体或窄屏下底部导航使用 `IconOnly`，目的地名称保留给 TalkBack，不能按
+`fontScale` 整体放大导航栏。
 
 全局导入入口使用首页/工具页右下角 `FloatingActionButton`。
 

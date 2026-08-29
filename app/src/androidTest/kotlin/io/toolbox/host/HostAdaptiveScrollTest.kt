@@ -88,24 +88,21 @@ class HostAdaptiveScrollTest {
         composeRule.onNodeWithText("导入 .tbx 工具包").assertIsDisplayed()
 
         val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
-        val navigationHeightPx = with(composeRule.density) { 56.dp.toPx() }
+        val navigationItemHeightPx = with(composeRule.density) { 64.dp.toPx() }
         composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer).assertIsDisplayed()
-        assertTrue(
-            "Navigation chrome must keep its fixed visual height",
-            abs(
-                composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer)
-                    .fetchSemanticsNode().boundsInRoot.height - navigationHeightPx,
-            ) <= 1f,
-        )
         listOf(
             HostTestTags.BottomHome to "首页",
             HostTestTags.BottomTools to "工具",
             HostTestTags.BottomSettings to "设置",
         ).forEach { (tag, label) ->
-            composeRule.onNodeWithText(label).assertIsDisplayed()
+            composeRule.onNodeWithContentDescription(label).assertIsDisplayed()
             val bounds = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
             assertTrue("$label width must be at least 48dp", bounds.width >= minimumTouchTargetPx)
             assertTrue("$label height must be at least 48dp", bounds.height >= minimumTouchTargetPx)
+            assertTrue(
+                "$label content height must remain 64dp",
+                abs(bounds.height - navigationItemHeightPx) <= 1f,
+            )
         }
     }
 }

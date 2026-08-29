@@ -81,8 +81,8 @@ ToolBox 适合以下情况：
 
 - 一屏应至少完整显示 5–7 个普通设置行，或 4–6 个工具行。
 - 48dp 是交互命中区下限，不代表所有容器都必须大于 64dp。
-- 字体放大时允许文本换行或行高自然增长；导航栏切换到 Miuix `IconWithSelectedLabel`
-  时未选项仅显示图标、选中项显示标签，不得直接把整个导航栏高度乘以 `fontScale`。
+- 字体放大时允许文本换行或行高自然增长；大字体导航栏切换到 Miuix
+  `IconOnly`，目的地名称保留给 TalkBack，不得直接把整个导航栏高度乘以 `fontScale`。
 
 ### 3.4 色彩克制
 
@@ -214,7 +214,7 @@ ToolBox 适合以下情况：
 
 | 元素 | 目标尺寸 |
 |---|---:|
-| 顶部标题内容区 | Miuix `SmallTopAppBar` 52dp，不含状态栏 |
+| 顶部标题内容区 | 普通字体为 Miuix `SmallTopAppBar` 52dp；大字体改用可自然增高的 `TopAppBar`，均不含状态栏 |
 | 底部导航 item 内容区 | Miuix `NavigationBar` 64dp；系统导航/手势 inset 由 Miuix surface 另行消费 |
 | 搜索框 | 48dp |
 | 普通工具行 | 72–80dp |
@@ -387,8 +387,8 @@ ToolBox 适合以下情况：
 - 适配 Miuix `NavigationBar`，每个 `NavigationBarItem` 内容区 64dp；
 - 系统导航/手势 inset 由 Miuix surface 内部单独消费，外层不得再调用同一底部 inset；
 - 图标和标签尺寸遵循 Miuix 默认值；选中蓝色，未选中灰色；
-- 大字体或窄屏使用 `IconWithSelectedLabel`：未选项仅显示图标，选中项显示标签，标签
-  保留在语义树中；不按 `fontScale` 成比例放大整个 bar。
+- 大字体或窄屏使用 `IconOnly`，目的地名称保留在语义树中供 TalkBack 读取；
+  不按 `fontScale` 成比例放大整个 bar。
 
 ---
 

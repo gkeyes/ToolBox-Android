@@ -67,10 +67,10 @@ MiuixTheme(controller = controller) { /* app */ }
   `NavigationBarDefaults.ItemHeight = 64.dp`；这不是随 `fontScale` 倍增的尺寸。
 - `NavigationBar` 内部单独消费底部系统导航/手势 inset；`ToolBoxAppShell`、页面内容和
   feature 页不得再次追加同一 inset，避免底部出现双倍空白或小白条被遮挡。
-- 紧凑页面使用 Miuix `SmallTopAppBar` 的 52.dp collapsed 内容高度；状态栏 inset
-  由该 surface 自己消费。
-- 大字体或窄屏时使用 `IconWithSelectedLabel`：未选项保持图标，选中项显示标签；标签
-  保留在语义树中，不能通过增大整个导航栏高度解决排版问题。
+- 普通字体页面使用 Miuix `SmallTopAppBar` 的 52.dp collapsed 内容高度；大字体
+  改用可自然增高的 `TopAppBar`，状态栏 inset 均由该 surface 自己消费。
+- 大字体或窄屏时底部导航使用 `IconOnly`，目的地名称保留在语义树中供
+  TalkBack 读取，不能通过增大整个导航栏高度解决排版问题。
 
 ## 5. 需要建立的适配层
 

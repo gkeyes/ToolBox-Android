@@ -50,19 +50,20 @@ absence is a release boundary for native JS capabilities.
 | Compile / target / minimum SDK | 37 / 37 / 33 |
 | Java and Kotlin JVM target | 21 |
 | Compose BOM | 2026.08.00 |
-| Miuix | 0.9.2 |
+| Miuix | 0.9.4-rc01 |
 | Room | 2.8.4 |
 | DataStore | 1.2.1 |
 | AndroidX WebKit | 1.17.0 |
-| Navigation 3 | 1.1.6 |
+| Miuix Nav | 0.9.4-rc01 |
 
 ## Implemented host behavior
 
 - Native Compose host provides Home, Tools and Settings top-level destinations,
   plus typed routes for import review, tool detail, permission centre and
   runtime. Compact chrome owns system insets once, keeps the search target at
-  48 dp and the bottom visual bar at 56 dp; at 200% font scale its navigation
-  items switch to a horizontal icon-label layout instead of enlarging the bar.
+  48 dp and the Miuix navigation item area at 64 dp; at 200% font scale its
+  top bar expands to fit text and bottom destinations switch to semantic
+  `IconOnly` items instead of enlarging or clipping the bar.
 - The catalog persists tools, version history, grants, publisher records, audit
   metadata and runtime session metadata. Its Room projection observes each
   tool with its active version through one catalog flow; pinning, categories,
