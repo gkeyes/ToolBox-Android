@@ -1,12 +1,12 @@
 package io.toolbox.host.catalog
 
-import android.os.Trace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogOrganizationRepository
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataResult
+import io.toolbox.host.HostTrace
 import io.toolbox.tool.packagekit.lifecycle.LifecycleFailure
 import io.toolbox.tool.packagekit.lifecycle.LifecycleFailureCode
 import io.toolbox.tool.packagekit.lifecycle.RecoveryLifecycleResult
@@ -129,19 +129,18 @@ class CatalogViewModel(
 
     private fun observeCatalog(): Flow<CatalogSnapshot> = flow {
         val traceCookie = System.identityHashCode(this@CatalogViewModel)
-        var firstEmissionPending = true
-        Trace.beginAsyncSection("catalog.firstEmission", traceCookie)
+        var firstEmissionTraceOpen = HostTrace.tryBeginAsyncSection("catalog.firstEmission", traceCookie)
         try {
             catalog.observeCatalogProjection().collect { entries ->
-                if (firstEmissionPending) {
-                    Trace.endAsyncSection("catalog.firstEmission", traceCookie)
-                    firstEmissionPending = false
+                if (firstEmissionTraceOpen) {
+                    HostTrace.bestEffortEndAsyncSection("catalog.firstEmission", traceCookie)
+                    firstEmissionTraceOpen = false
                 }
                 emit(CatalogSnapshot(entries.map(CatalogEntry::toCatalogTool)))
             }
         } finally {
-            if (firstEmissionPending) {
-                Trace.endAsyncSection("catalog.firstEmission", traceCookie)
+            if (firstEmissionTraceOpen) {
+                HostTrace.bestEffortEndAsyncSection("catalog.firstEmission", traceCookie)
             }
         }
     }.catch { failure ->

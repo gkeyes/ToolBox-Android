@@ -1,7 +1,6 @@
 package io.toolbox.host
 
 import android.app.Application
-import android.os.Trace
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -69,11 +68,11 @@ private object ProductionHostRuntimeMaintenance : HostRuntimeMaintenance {
             val installedToolIds = dependencies.repositories.catalog.observeCatalogProjection()
                 .first()
                 .mapTo(hashSetOf()) { it.toolId }
-            Trace.beginAsyncSection("runtimeProfile.cleanup", traceCookie)
+            val traceOpen = HostTrace.tryBeginAsyncSection("runtimeProfile.cleanup", traceCookie)
             try {
                 dependencies.runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)
             } finally {
-                Trace.endAsyncSection("runtimeProfile.cleanup", traceCookie)
+                if (traceOpen) HostTrace.bestEffortEndAsyncSection("runtimeProfile.cleanup", traceCookie)
             }
         }
 }
@@ -114,11 +113,8 @@ internal class HostDependenciesViewModel(
             try {
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
-                    Trace.beginSection("coreData.create")
-                    val createdStores = try {
+                    val createdStores = HostTrace.bestEffortSection("coreData.create") {
                         CoreDataFactory.create(app)
-                    } finally {
-                        Trace.endSection()
                     }
                     openedStores = createdStores
                     val inspector = ToolPackageInspectors.create(

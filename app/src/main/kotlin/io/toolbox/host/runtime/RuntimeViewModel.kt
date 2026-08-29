@@ -1,6 +1,5 @@
 package io.toolbox.host.runtime
 
-import android.os.Trace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogLifecycleRepository
@@ -8,6 +7,7 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SecurityProfile
+import io.toolbox.host.HostTrace
 import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RuntimeCreationPermit
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
@@ -75,11 +75,8 @@ class RuntimeViewModel(
                     }
                     val result = try {
                         withContext(Dispatchers.IO) {
-                            Trace.beginSection("runtime.prepare")
-                            try {
+                            HostTrace.bestEffortSection("runtime.prepare") {
                                 preparer.prepare(toolId, tool, versions)
-                            } finally {
-                                Trace.endSection()
                             }
                         }
                     } catch (cancelled: CancellationException) {
