@@ -71,13 +71,35 @@ fun HomeScreen(
                 state.totalToolCount == 0 -> item(key = "empty", contentType = CatalogContentType.Status) {
                     EmptyCatalogState(onImport)
                 }
+                state.pinnedTools.isEmpty() && state.recentTools.isEmpty() ->
+                    item(key = "no-shortcuts", contentType = CatalogContentType.Status) {
+                        HomeShortcutState { onDestination(MainDestination.Tools) }
+                    }
                 else -> {
-                    catalogSection("pinned", "已固定", state.pinnedTools, onAction, onOpenDetails)
-                    catalogSection("recent", "最近使用", state.recentTools, onAction, onOpenDetails)
-                    catalogSection("installed", "已安装工具", state.installedTools, onAction, onOpenDetails)
+                    catalogSection("pinned", "常用工具", state.pinnedTools, onAction, onOpenDetails)
+                    catalogSection("recent", "最近", state.recentTools, onAction, onOpenDetails)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeShortcutState(onBrowse: () -> Unit) {
+    SurfaceCard {
+        AppText(
+            "还没有常用工具",
+            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+            weight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+        AppText(
+            "在工具页打开或固定工具后，可从首页快速进入。",
+            textStyle = ToolBoxThemeTokens.textStyles.body,
+            color = ToolBoxThemeTokens.colors.textSecondary,
+        )
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
+        ToolBoxPrimaryButton("查看全部工具", onBrowse)
     }
 }
 

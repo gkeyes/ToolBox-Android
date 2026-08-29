@@ -118,7 +118,7 @@ private fun RuntimeControlRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = ToolBoxThemeTokens.sizes.compactChrome)
+            .sizeIn(minHeight = ToolBoxThemeTokens.sizes.runtimeChrome)
             .background(ToolBoxThemeTokens.colors.surface)
             .padding(
                 horizontal = ToolBoxThemeTokens.spacing.half,

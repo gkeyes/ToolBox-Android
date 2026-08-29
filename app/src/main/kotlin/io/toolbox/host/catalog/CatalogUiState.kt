@@ -85,7 +85,6 @@ data class HomeScreenState(
     val totalToolCount: Int = 0,
     val pinnedTools: List<CatalogTool> = emptyList(),
     val recentTools: List<CatalogTool> = emptyList(),
-    val installedTools: List<CatalogTool> = emptyList(),
     val feedback: CatalogFeedback? = null,
 )
 
@@ -131,7 +130,6 @@ internal fun homeScreenState(
     recentTools = tools
         .filter { it.pinnedOrder == null && it.lastOpenedAt != null }
         .sortedByDescending(CatalogTool::lastOpenedAt),
-    installedTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null },
     feedback = feedback,
 )
 

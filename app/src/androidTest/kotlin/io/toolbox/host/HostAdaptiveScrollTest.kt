@@ -40,7 +40,7 @@ class HostAdaptiveScrollTest {
                     state = HomeScreenState(
                         isLoaded = true,
                         totalToolCount = tools.size,
-                        installedTools = tools,
+                        pinnedTools = tools,
                     ),
                     listState = rememberLazyListState(),
                     onAction = {},

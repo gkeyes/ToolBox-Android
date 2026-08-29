@@ -27,15 +27,11 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.tool.packagekit.RiskFinding
 import io.toolbox.tool.packagekit.RiskFindingCode
 import io.toolbox.tool.packagekit.SecurityProfile
-import io.toolbox.tool.packagekit.SignatureState
 
 internal fun LazyListScope.reviewContent(
     state: ImportReviewUiState,
     review: ImportReviewFacts,
     onGrantChanged: (String, ImportGrantChoice) -> Unit,
-    onConfirmReview: () -> Unit,
-    onInstall: () -> Unit,
-    onCancel: () -> Unit,
 ) {
     item(key = "identity") { IdentityCard(review) }
     item(key = "structure") {
@@ -76,35 +72,6 @@ internal fun LazyListScope.reviewContent(
                 review.networkDomains.forEach { domain -> FactLine("HTTPS", domain) }
             }
         }
-    }
-    item(key = "confirm") {
-        CompactActionCard(
-            title = if (state.reviewConfirmed) "审核内容已确认" else "确认审核内容",
-            summary = if (state.hasValidGrantPlan) "确认工具身份、结构、风险与逐项权限选择。" else "必需权限尚未允许本次会话。",
-            actionLabel = if (state.reviewConfirmed) "已确认" else "确认审核",
-            onClick = onConfirmReview,
-            enabled = state.hasValidGrantPlan && !state.reviewConfirmed,
-        )
-    }
-    item(key = "install") {
-        ToolBoxPrimaryButton(
-            label = when {
-                !review.installable -> "禁止安装"
-                review.signature.state == SignatureState.UNSIGNED -> "继续安装未签名工具"
-                else -> "安装并授权"
-            },
-            onClick = onInstall,
-            enabled = state.canInstall,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-    item(key = "cancel") {
-        CompactActionCard(
-            title = "不安装此工具",
-            summary = if (state.cancelRetryAvailable) "上次清理失败，请重试。" else "清理私有审核会话后返回。",
-            actionLabel = "取消导入",
-            onClick = onCancel,
-        )
     }
 }
 

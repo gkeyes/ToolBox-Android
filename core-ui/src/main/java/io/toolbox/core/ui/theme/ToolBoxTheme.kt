@@ -86,6 +86,7 @@ data class ToolBoxSizes(
     val rowIcon: Dp = 18.dp,
     val touchTarget: Dp = 48.dp,
     val compactChrome: Dp = 56.dp,
+    val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
     val catalogRow: Dp = 72.dp,
     val compactToolGlyph: Dp = 44.dp,

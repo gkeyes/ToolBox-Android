@@ -100,7 +100,7 @@ class CatalogViewModelTest {
             assertEquals("1.2.0", viewModel.state.value.tools.single { it.toolId == TOOL_A }.activeVersionName)
             assertEquals(4_096L, viewModel.state.value.tools.single { it.toolId == TOOL_A }.bundleBytes)
             assertEquals(listOf(TOOL_B), viewModel.homeState.value.recentTools.map(CatalogTool::toolId))
-            assertEquals(listOf(TOOL_A), viewModel.homeState.value.installedTools.map(CatalogTool::toolId))
+            assertTrue(viewModel.homeState.value.pinnedTools.isEmpty())
 
             viewModel.dispatch(CatalogAction.SetQuery("json"))
             runCurrent()

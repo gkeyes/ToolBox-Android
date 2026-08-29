@@ -84,7 +84,6 @@ private fun CatalogUiState.toHomeScreenState() = HomeScreenState(
     pinnedTools = tools.filter { it.pinnedOrder != null }.sortedBy { it.pinnedOrder },
     recentTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt != null }
         .sortedByDescending { it.lastOpenedAt },
-    installedTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null },
     feedback = feedback,
 )
 
