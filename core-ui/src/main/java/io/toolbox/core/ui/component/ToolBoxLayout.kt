@@ -20,7 +20,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
@@ -126,10 +125,6 @@ fun ToolBoxNavigationBar(
         }
     }
 }
-
-internal fun toolBoxNavigationItemMinHeight() = 64.dp
-
-internal fun toolBoxTopBarMinHeight() = 52.dp
 
 @Composable
 fun ToolBoxFloatingActionButton(

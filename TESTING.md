@@ -25,7 +25,6 @@
 | `MainDestinationContractTest.importReviewBackDispatchesThroughSessionCleanupOwner` | 系统返回键曾绕过导入状态机直接弹出路由，留下已审核的私有临时会话。 | 分别把导入审核路由和普通设置路由交给宿主返回分发器，并记录清理回调与默认回调的调用次数。 | 导入审核只调用会话清理所有者；普通页面只调用默认返回，不会交叉触发。 |
 | `HostScreenLayoutContractTest.compactAndMediumWidthsSelectTheContentSpacingUsedByTheHost` | 用户已报告排版松散，宽度策略需要一个低成本合同。 | 向 `hostRouteLayoutFor` 输入 360dp 和 840dp。 | 紧凑/中宽判定正确，水平边距为 16dp/28dp，垂直节奏均为 16dp。 |
 | `SettingsViewModelTest.auditRetentionPrunesAtTheSelectedCutoffAndReportsPruneFailureAfterPersistence` | 审计留存必须真正清理过期元数据；清理失败不能伪装成设置未保存，快速改选较长留存期也不能让旧的短留存清理在新选择后执行。 | 用固定时钟分别注入成功和失败的 `AuditRepository`，选择 7 天和 90 天后读取设置与接收的 cutoff；再用受控 `HostSettingsRepository` 让首个 7 天 `update` 发出已开始信号后协作式挂起，选择 90 天后才放行首个 update。 | 成功分支保存 7 天并调用 `deleteBefore(now-7d)`；受控重叠改选后仅保存 90 天且只调用 `deleteBefore(now-90d)`；失败分支仍保存 90 天、调用对应 cutoff，并显示“已保存，但清理旧记录失败”。 |
-| `ToolBoxNavigationItemLayoutTest.navigationTopBarAndSearchFieldUseFixedTouchSafeMinimums` | 容器跟随字体倍率整体放大曾挤占工具内容，Miuix v0.9.4-rc01 的导航项与顶部栏尺寸合同必须保持稳定。 | 直接读取 Miuix 导航项、`SmallTopAppBar` 与搜索框的共享最小高度合同。 | Miuix 导航项内容区固定为 64dp，`SmallTopAppBar` 固定为 52dp，搜索框固定为 48dp；代码路径不存在 `fontScale` 尺寸参数。 |
 
 ## 当前设备/模拟器交互测试
 

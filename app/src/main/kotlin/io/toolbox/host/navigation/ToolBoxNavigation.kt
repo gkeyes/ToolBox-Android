@@ -36,6 +36,7 @@ import io.toolbox.host.ui.ToolManagerScreen
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
+import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
@@ -96,7 +97,7 @@ internal fun ToolBoxNavigation(
         backStack = backStack,
         onBack = {
             dispatchHostBack(
-                currentRoute = backStack.lastOrNull() as? ToolBoxRoute,
+                currentRoute = backStack.lastOrNull(),
                 onImportReviewBack = importReviewViewModel::cancelAndExit,
                 onDefaultBack = ::goBack,
             )
@@ -176,7 +177,7 @@ internal fun ToolBoxNavigation(
 }
 
 internal fun dispatchHostBack(
-    currentRoute: ToolBoxRoute?,
+    currentRoute: NavKey?,
     onImportReviewBack: () -> Unit,
     onDefaultBack: () -> Unit,
 ) {
