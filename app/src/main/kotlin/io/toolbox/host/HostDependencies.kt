@@ -52,7 +52,7 @@ internal class HostDependencies(
 ) {
     private val deferredInspector = lazy(LazyThreadSafetyMode.SYNCHRONIZED, inspectorFactory)
     private val deferredLifecycle = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        lifecycleFactory(inspector)
+        lifecycleFactory(deferredInspector.value)
     }
     private val deferredRuntimeProfileManager = lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,

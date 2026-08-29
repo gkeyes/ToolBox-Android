@@ -8,12 +8,14 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.CoreDataStores
+import io.toolbox.tool.packagekit.ToolPackageInspector
 import io.toolbox.tool.packagekit.ToolPackageInspectors
 import io.toolbox.tool.packagekit.lifecycle.ToolPackageLifecycles
 import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.ToolRuntimePreparer
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -32,6 +34,8 @@ class HostDependenciesViewModelTest {
         val application = ApplicationProvider.getApplicationContext<Application>()
         val inspectorCreates = AtomicInteger()
         val lifecycleCreates = AtomicInteger()
+        val createdInspector = AtomicReference<ToolPackageInspector?>()
+        val lifecycleInspector = AtomicReference<ToolPackageInspector?>()
         val runtimePreparerCreates = AtomicInteger()
         val runtimeProfileManagerCreates = AtomicInteger()
         val maintenanceStarted = CompletableDeferred<Unit>()
@@ -60,6 +64,8 @@ class HostDependenciesViewModelTest {
                             stores = stores,
                             inspectorCreates = inspectorCreates,
                             lifecycleCreates = lifecycleCreates,
+                            createdInspector = createdInspector,
+                            lifecycleInspector = lifecycleInspector,
                             runtimePreparerCreates = runtimePreparerCreates,
                             runtimeProfileManagerCreates = runtimeProfileManagerCreates,
                         )
@@ -101,6 +107,7 @@ class HostDependenciesViewModelTest {
             assertEquals(0, lifecycleCreates.get())
             dependencies.lifecycle.recover()
             assertEquals(1, lifecycleCreates.get())
+            assertSame(createdInspector.get(), lifecycleInspector.get())
             dependencies.runtimePreparer
             assertEquals(1, runtimePreparerCreates.get())
 
@@ -122,6 +129,8 @@ class HostDependenciesViewModelTest {
         stores: CoreDataStores,
         inspectorCreates: AtomicInteger,
         lifecycleCreates: AtomicInteger,
+        createdInspector: AtomicReference<ToolPackageInspector?>,
+        lifecycleInspector: AtomicReference<ToolPackageInspector?>,
         runtimePreparerCreates: AtomicInteger,
         runtimeProfileManagerCreates: AtomicInteger,
     ): HostDependencies = HostDependencies(
@@ -129,9 +138,11 @@ class HostDependenciesViewModelTest {
         inspectorFactory = {
             inspectorCreates.incrementAndGet()
             ToolPackageInspectors.create(File(application.filesDir, "inspection-sessions").toPath())
+                .also(createdInspector::set)
         },
         lifecycleFactory = { inspector ->
             lifecycleCreates.incrementAndGet()
+            lifecycleInspector.set(inspector)
             ToolPackageLifecycles.create(application.filesDir, inspector, stores.repositories.lifecycle)
         },
         runtimePreparerFactory = {

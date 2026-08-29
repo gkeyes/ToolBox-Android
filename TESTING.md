@@ -38,7 +38,7 @@
 | `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主不得注入默认工具、重复管理控件或展示无效设置，且导入审核与真实设置必须可达。 | 启动未写入目录记录的 `MainActivity`，核对首页后依次进入工具、导入审核、返回和设置；只检查选择入口，不启动外部文件选择器。 | 首页只显示一个可操作的真实空状态，且没有默认工具、本机目录或搜索；工具页独占搜索；导入审核显示 `.tbx` 选择入口；设置只显示可用主题与审计留存，不显示静态策略/配额占位。 |
 | `HostAdaptiveScrollTest.fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe` | 直接覆盖用户报告的滑动卡涩风险、稳定 key 与 48dp 触控目标。 | 仅向当前 `HomeScreen(HomeScreenState)` 注入 80 项测试夹具，滚动到 `tool-80`，读取末项分组行和标题栏导入操作的语义边界。 | 最后一项可稳定定位且可见，分组行和标题栏导入操作宽高均至少 48dp；夹具不会经过生产目录或被当作预装工具。 |
 | `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免底栏再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、固定 56dp 底栏和三个导航项。 | 全部标签和内容可达；底栏保持 56dp；每个导航项触控边界至少 48dp。 |
-| `HostDependenciesViewModelTest.readyDefersNonCoreFactoriesUntilTheirFirstRequiredAccess` | 首页 `Ready` 只可依赖数据库/repository；检查器、包生命周期与运行时服务的构造不得抢占首帧，但首帧维护和用户功能仍必须取得相同服务。 | 给真实 `HostDependenciesViewModel` 注入四项计数工厂与可挂起维护；等待 `Ready` 后模拟首屏 ViewModel 读取各延迟代理并检查仍未构造，发送首帧信号后验证仅 Profile 管理器因维护构造，再分别执行检查器/生命周期操作和读取运行准备器。 | `Ready` 及首屏代理读取后四项计数均为 0；首帧维护启动后只构造 Profile 管理器一次；其余服务仅在各自首次真实操作时各构造一次；维护失败被隔离，原来的同一 `Ready` 实例保持不变。 |
+| `HostDependenciesViewModelTest.readyDefersNonCoreFactoriesUntilTheirFirstRequiredAccess` | 首页 `Ready` 只可依赖数据库/repository；检查器、包生命周期与运行时服务的构造不得抢占首帧，同时生命周期必须取得创建会话的真实检查器，不能丢失内部安装会话交接能力。 | 给真实 `HostDependenciesViewModel` 注入四项计数工厂与可挂起维护；等待 `Ready` 后模拟首屏读取延迟代理，发送首帧信号，再分别执行检查器/生命周期操作；捕获检查器工厂产物及生命周期工厂入参并比较实例身份。 | 首屏代理读取后四项计数均为 0；首帧维护只构造 Profile 管理器；其余服务仅在首次操作时各构造一次；生命周期收到的检查器与工厂创建的实例相同；维护失败被隔离且同一 `Ready` 实例保持不变。 |
 
 ## 当前截图测试
 
