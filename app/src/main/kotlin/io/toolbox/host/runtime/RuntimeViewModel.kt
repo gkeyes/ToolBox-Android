@@ -1,5 +1,6 @@
 package io.toolbox.host.runtime
 
+import android.os.Trace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogLifecycleRepository
@@ -73,7 +74,14 @@ class RuntimeViewModel(
                         mutableState.value = RuntimeUiState.Loading
                     }
                     val result = try {
-                        withContext(Dispatchers.IO) { preparer.prepare(toolId, tool, versions) }
+                        withContext(Dispatchers.IO) {
+                            Trace.beginSection("runtime.prepare")
+                            try {
+                                preparer.prepare(toolId, tool, versions)
+                            } finally {
+                                Trace.endSection()
+                            }
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {

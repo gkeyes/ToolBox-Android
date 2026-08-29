@@ -1,6 +1,7 @@
 package io.toolbox.host
 
 import android.app.Application
+import android.os.Trace
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -64,10 +65,16 @@ internal fun interface HostRuntimeMaintenance {
 private object ProductionHostRuntimeMaintenance : HostRuntimeMaintenance {
     override suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult =
         withContext(Dispatchers.IO) {
-            val installedToolIds = dependencies.repositories.catalog.observeTools()
+            val traceCookie = System.identityHashCode(dependencies)
+            val installedToolIds = dependencies.repositories.catalog.observeCatalogProjection()
                 .first()
-                .mapTo(hashSetOf()) { it.metadata.id }
-            dependencies.runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)
+                .mapTo(hashSetOf()) { it.toolId }
+            Trace.beginAsyncSection("runtimeProfile.cleanup", traceCookie)
+            try {
+                dependencies.runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)
+            } finally {
+                Trace.endAsyncSection("runtimeProfile.cleanup", traceCookie)
+            }
         }
 }
 
@@ -81,6 +88,7 @@ internal class HostDependenciesViewModel(
     val state: StateFlow<HostBootstrapState> = mutableState.asStateFlow()
 
     private var stores: CoreDataStores? = null
+    private var maintenanceStarted = false
 
     init {
         initialize()
@@ -91,14 +99,27 @@ internal class HostDependenciesViewModel(
         initialize()
     }
 
+    fun onHostFirstFrame() {
+        val dependencies = (mutableState.value as? HostBootstrapState.Ready)?.dependencies ?: return
+        if (maintenanceStarted) return
+        maintenanceStarted = true
+        launchBestEffortRuntimeMaintenance(dependencies)
+    }
+
     private fun initialize() {
+        maintenanceStarted = false
         mutableState.value = HostBootstrapState.Loading
         viewModelScope.launch {
             var openedStores: CoreDataStores? = null
             try {
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
-                    val createdStores = CoreDataFactory.create(app)
+                    Trace.beginSection("coreData.create")
+                    val createdStores = try {
+                        CoreDataFactory.create(app)
+                    } finally {
+                        Trace.endSection()
+                    }
                     openedStores = createdStores
                     val inspector = ToolPackageInspectors.create(
                         File(app.filesDir, "inspection-sessions").toPath(),
@@ -120,7 +141,6 @@ internal class HostDependenciesViewModel(
                 coroutineContext.ensureActive()
                 stores = openedStores
                 mutableState.value = HostBootstrapState.Ready(dependencies)
-                launchBestEffortRuntimeMaintenance(dependencies)
             } catch (cancelled: CancellationException) {
                 openedStores?.close()
                 throw cancelled

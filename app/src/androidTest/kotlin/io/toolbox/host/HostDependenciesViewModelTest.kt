@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -20,7 +21,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class HostDependenciesViewModelTest {
     @Test
-    fun readyDoesNotWaitForRuntimeMaintenanceAndMaintenanceFailureDoesNotReplaceReady() = runBlocking {
+    fun maintenanceWaitsForHostFirstFrameAndFailureDoesNotReplaceReady() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val application = ApplicationProvider.getApplicationContext<Application>()
         val maintenanceStarted = CompletableDeferred<Unit>()
@@ -47,9 +48,14 @@ class HostDependenciesViewModelTest {
         }
 
         try {
-            withTimeout(10_000) { maintenanceStarted.await() }
-            val ready = viewModel.state.value
-            assertTrue("Runtime maintenance must start only after Ready is published", ready is HostBootstrapState.Ready)
+            val ready = withTimeout(10_000) {
+                viewModel.state.first { it is HostBootstrapState.Ready }
+            }
+            assertTrue("Maintenance must not run before the host reports its first frame", !maintenanceStarted.isCompleted)
+            assertEquals(0, maintenanceRuns.get())
+
+            instrumentation.runOnMainSync(viewModel::onHostFirstFrame)
+            withTimeout(5_000) { maintenanceStarted.await() }
 
             maintenanceMayFinish.complete(Unit)
             withTimeout(5_000) { maintenanceFinished.await() }

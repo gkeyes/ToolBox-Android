@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
+import android.os.Trace
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -39,6 +40,11 @@ sealed interface RuntimeWebViewCreationResult {
 }
 
 object HardenedRuntimeWebView {
+    fun release(webView: WebView) {
+        (webView.webViewClient as? RuntimeWebViewClient)?.endFirstMainFrameTrace()
+        RuntimeWebViewLifecycle.destroyAndUnregister(webView)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     fun create(
         context: Context,
@@ -46,7 +52,22 @@ object HardenedRuntimeWebView {
         creationPermit: RuntimeCreationPermit,
         callbacks: RuntimeWebViewCallbacks,
     ): RuntimeWebViewCreationResult {
+        Trace.beginSection("webView.create")
+        return try {
+            createTraced(context, runtime, creationPermit, callbacks)
+        } finally {
+            Trace.endSection()
+        }
+    }
+
+    private fun createTraced(
+        context: Context,
+        runtime: PreparedToolRuntime,
+        creationPermit: RuntimeCreationPermit,
+        callbacks: RuntimeWebViewCallbacks,
+    ): RuntimeWebViewCreationResult {
         var webView: WebView? = null
+        var runtimeClient: RuntimeWebViewClient? = null
         try {
             WebView.setWebContentsDebuggingEnabled(false)
             val createdWebView = WebView(context)
@@ -90,17 +111,20 @@ object HardenedRuntimeWebView {
                     BundlePathHandler(runtime.privateFilesRoot, runtime.bundleRoot, runtime.securityProfile),
                 )
                 .build()
-            createdWebView.webViewClient = RuntimeWebViewClient(
+            runtimeClient = RuntimeWebViewClient(
                 runtime = runtime,
                 assetLoader = assetLoader,
                 callbacks = callbacks,
                 requireStatelessSentinel = creationPermit.isolationMode == RuntimeIsolationMode.ORIGIN_ONLY_STATELESS,
             )
+            createdWebView.webViewClient = runtimeClient
             createdWebView.webChromeClient = RuntimeWebChromeClient()
             creationPermit.attach(createdWebView)
+            runtimeClient.beginFirstMainFrameTrace()
             createdWebView.loadUrl(runtime.entryUrl)
             return RuntimeWebViewCreationResult.Created(createdWebView)
         } catch (_: RuntimeException) {
+            runtimeClient?.endFirstMainFrameTrace()
             creationPermit.close()
             webView?.let(RuntimeWebViewLifecycle::destroyAndUnregister)
             return RuntimeWebViewCreationResult.Failed(
@@ -253,6 +277,20 @@ private class RuntimeWebViewClient(
     private var mainFrameTerminal = false
     private var sentinelCheckPending = false
     private var rendererGone = false
+    private var firstMainFrameTraceOpen = false
+    private val firstMainFrameTraceCookie = System.identityHashCode(this)
+
+    fun beginFirstMainFrameTrace() {
+        if (firstMainFrameTraceOpen) return
+        firstMainFrameTraceOpen = true
+        Trace.beginAsyncSection("webView.firstMainFrame", firstMainFrameTraceCookie)
+    }
+
+    fun endFirstMainFrameTrace() {
+        if (!firstMainFrameTraceOpen) return
+        firstMainFrameTraceOpen = false
+        Trace.endAsyncSection("webView.firstMainFrame", firstMainFrameTraceCookie)
+    }
 
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
         if (!RuntimeIdentity.isExactLocalUrl(request.url.toString(), runtime.origin)) {
@@ -275,10 +313,15 @@ private class RuntimeWebViewClient(
         }
     }
 
+    override fun onPageCommitVisible(view: WebView, url: String) {
+        if (url == runtime.entryUrl) endFirstMainFrameTrace()
+    }
+
     override fun onPageFinished(view: WebView, url: String) {
         if (!mainFrameTerminal && !sentinelCheckPending && url == runtime.entryUrl) {
             if (!requireStatelessSentinel) {
                 mainFrameTerminal = true
+                endFirstMainFrameTrace()
                 callbacks.onMainEntryLoaded()
                 return
             }
@@ -286,6 +329,7 @@ private class RuntimeWebViewClient(
             view.evaluateJavascript("globalThis.__toolboxStatelessHardened === true") { result ->
                 if (mainFrameTerminal) return@evaluateJavascript
                 mainFrameTerminal = true
+                endFirstMainFrameTrace()
                 if (result == "true") {
                     callbacks.onMainEntryLoaded()
                 } else {
@@ -300,6 +344,7 @@ private class RuntimeWebViewClient(
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame && !mainFrameTerminal) {
             mainFrameTerminal = true
+            endFirstMainFrameTrace()
             callbacks.onMainEntryFailed("工具入口加载失败，请重试。")
         }
     }
@@ -311,11 +356,13 @@ private class RuntimeWebViewClient(
     ) {
         if (request.isForMainFrame && !mainFrameTerminal) {
             mainFrameTerminal = true
+            endFirstMainFrameTrace()
             callbacks.onMainEntryFailed("工具入口被安全策略拒绝，请重新导入。")
         }
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        endFirstMainFrameTrace()
         RuntimeWebViewLifecycle.destroyAndUnregister(view)
         if (!rendererGone) {
             rendererGone = true

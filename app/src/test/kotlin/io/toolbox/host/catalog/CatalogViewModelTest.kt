@@ -1,6 +1,7 @@
 package io.toolbox.host.catalog
 
 import io.toolbox.core.data.BundleLocator
+import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogRepository
@@ -29,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
@@ -57,9 +59,11 @@ class CatalogViewModelTest {
 
             install(repositories, TOOL_A, "仓位计算", 7, "1.2.0", 4_096L)
             install(repositories, TOOL_B, "JSON 工作区", 3, "1.0.3", 2_048L)
-            advanceUntilIdle()
+            runCurrent()
 
             assertEquals(2, viewModel.state.value.tools.size)
+            assertEquals(2, viewModel.state.value.visibleTools.size)
+            assertEquals(1, catalog.observeCatalogProjectionCalls)
             assertEquals(0, catalog.observeVersionsCalls)
         } finally {
             Dispatchers.resetMain()
@@ -95,11 +99,25 @@ class CatalogViewModelTest {
             assertEquals(2, viewModel.state.value.tools.size)
             assertEquals("1.2.0", viewModel.state.value.tools.single { it.toolId == TOOL_A }.activeVersionName)
             assertEquals(4_096L, viewModel.state.value.tools.single { it.toolId == TOOL_A }.bundleBytes)
+            assertEquals(listOf(TOOL_B), viewModel.homeState.value.recentTools.map(CatalogTool::toolId))
+            assertEquals(listOf(TOOL_A), viewModel.homeState.value.installedTools.map(CatalogTool::toolId))
 
             viewModel.dispatch(CatalogAction.SetQuery("json"))
+            runCurrent()
+            assertEquals("json", viewModel.query.value)
+            assertEquals("json", viewModel.state.value.query)
+            assertEquals(2, viewModel.state.value.visibleTools.size)
+            advanceTimeBy(119L)
+            runCurrent()
+            assertEquals(2, viewModel.state.value.visibleTools.size)
+            advanceTimeBy(1L)
+            runCurrent()
             assertEquals(listOf(TOOL_B), viewModel.state.value.visibleTools.map(CatalogTool::toolId))
             viewModel.dispatch(CatalogAction.SetQuery(""))
+            runCurrent()
+            assertEquals(2, viewModel.state.value.visibleTools.size)
             viewModel.dispatch(CatalogAction.SetCategoryFilter("finance"))
+            runCurrent()
             assertEquals(listOf(TOOL_A), viewModel.state.value.visibleTools.map(CatalogTool::toolId))
 
             viewModel.dispatch(CatalogAction.TogglePinned(TOOL_A))
@@ -279,8 +297,15 @@ class CatalogViewModelTest {
     private class CountingCatalogRepository(
         private val delegate: CatalogRepository,
     ) : CatalogRepository by delegate {
+        var observeCatalogProjectionCalls = 0
+            private set
         var observeVersionsCalls = 0
             private set
+
+        override fun observeCatalogProjection(): Flow<List<CatalogEntry>> {
+            observeCatalogProjectionCalls += 1
+            return delegate.observeCatalogProjection()
+        }
 
         override fun observeVersions(toolId: String): Flow<List<ToolVersion>> {
             observeVersionsCalls += 1

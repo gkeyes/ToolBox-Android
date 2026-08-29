@@ -1,5 +1,6 @@
 package io.toolbox.host.catalog
 
+import android.os.Trace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogEntry
@@ -15,6 +16,7 @@ import io.toolbox.tool.runtime.RuntimeDataCleaner
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeDataCleanupResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,8 +25,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
 class CatalogViewModel(
@@ -37,45 +40,81 @@ class CatalogViewModel(
     private val mutableState = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
 
+    private val mutableHomeState = MutableStateFlow(HomeScreenState())
+    val homeState: StateFlow<HomeScreenState> = mutableHomeState.asStateFlow()
+
+    private val mutableQuery = MutableStateFlow("")
+    val query: StateFlow<String> = mutableQuery.asStateFlow()
+
+    private val appliedQuery = MutableStateFlow("")
+
+    private val mutableCategoryFilter = MutableStateFlow<String?>(null)
+    val categoryFilter: StateFlow<String?> = mutableCategoryFilter.asStateFlow()
+
+    private val mutableSort = MutableStateFlow(CatalogSort.PINNED_THEN_RECENT)
+    val sort: StateFlow<CatalogSort> = mutableSort.asStateFlow()
+
     private val mutableNavigation = MutableSharedFlow<CatalogNavigationIntent>(extraBufferCapacity = 1)
     val navigation: SharedFlow<CatalogNavigationIntent> = mutableNavigation.asSharedFlow()
 
     init {
         viewModelScope.launch {
-            observeCatalog()
-                .catch {
-                    updateState {
-                        it.copy(
-                            isLoaded = true,
-                            feedback = CatalogFeedback.Failure(
-                                operation = CatalogOperation.RECOVERY,
-                                code = "CATALOG_UNAVAILABLE",
-                                message = "已安装工具暂时无法读取，请稍后重试。",
-                            ),
-                        )
-                    }
-                    emit(emptyList())
+            mutableQuery.collectLatest { nextQuery ->
+                if (nextQuery.isNotBlank()) delay(QUERY_DEBOUNCE_MILLIS)
+                appliedQuery.value = nextQuery
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                observeCatalog(),
+                appliedQuery,
+                mutableCategoryFilter,
+                mutableSort,
+            ) { snapshot, filteredQuery, categoryFilter, sort ->
+                val tools = snapshot.tools
+                CatalogDerivedState(
+                    tools = tools,
+                    visibleTools = visibleCatalogTools(tools, filteredQuery, categoryFilter, sort),
+                    categories = catalogCategories(tools),
+                    categoryFilter = categoryFilter,
+                    sort = sort,
+                    loadFailure = snapshot.loadFailure,
+                )
+            }.collect { derived ->
+                updateState { current ->
+                    val availableIds = derived.tools.mapTo(hashSetOf(), CatalogTool::toolId)
+                    current.copy(
+                        isLoaded = true,
+                        tools = derived.tools,
+                        visibleTools = derived.visibleTools,
+                        categories = derived.categories,
+                        query = mutableQuery.value,
+                        categoryFilter = derived.categoryFilter,
+                        sort = derived.sort,
+                        selectedToolId = current.selectedToolId?.takeIf(availableIds::contains),
+                        uninstallConfirmation = current.uninstallConfirmation
+                            ?.takeIf { it.toolId in availableIds },
+                        feedback = derived.loadFailure ?: current.feedback,
+                    )
                 }
-                .collect { tools ->
-                    updateState { current ->
-                        val availableIds = tools.mapTo(hashSetOf(), CatalogTool::toolId)
-                        current.copy(
-                            isLoaded = true,
-                            tools = tools,
-                            selectedToolId = current.selectedToolId?.takeIf(availableIds::contains),
-                            uninstallConfirmation = current.uninstallConfirmation
-                                ?.takeIf { it.toolId in availableIds },
-                        )
-                    }
-                }
+            }
         }
     }
 
     fun dispatch(action: CatalogAction) {
         when (action) {
-            is CatalogAction.SetQuery -> updateState { it.copy(query = action.query) }
-            is CatalogAction.SetCategoryFilter -> updateState { it.copy(categoryFilter = action.categoryId) }
-            is CatalogAction.SetSort -> updateState { it.copy(sort = action.sort) }
+            is CatalogAction.SetQuery -> {
+                updateState { it.copy(query = action.query) }
+                mutableQuery.value = action.query
+            }
+            is CatalogAction.SetCategoryFilter -> {
+                updateState { it.copy(categoryFilter = action.categoryId) }
+                mutableCategoryFilter.value = action.categoryId
+            }
+            is CatalogAction.SetSort -> {
+                updateState { it.copy(sort = action.sort) }
+                mutableSort.value = action.sort
+            }
             is CatalogAction.SelectDetails -> selectDetails(action.toolId)
             is CatalogAction.TogglePinned -> togglePinned(action.toolId)
             is CatalogAction.SetCategory -> setCategory(action.toolId, action.categoryId)
@@ -88,8 +127,36 @@ class CatalogViewModel(
         }
     }
 
-    private fun observeCatalog(): Flow<List<CatalogTool>> =
-        catalog.observeCatalogProjection().map { entries -> entries.map(CatalogEntry::toCatalogTool) }
+    private fun observeCatalog(): Flow<CatalogSnapshot> = flow {
+        val traceCookie = System.identityHashCode(this@CatalogViewModel)
+        var firstEmissionPending = true
+        Trace.beginAsyncSection("catalog.firstEmission", traceCookie)
+        try {
+            catalog.observeCatalogProjection().collect { entries ->
+                if (firstEmissionPending) {
+                    Trace.endAsyncSection("catalog.firstEmission", traceCookie)
+                    firstEmissionPending = false
+                }
+                emit(CatalogSnapshot(entries.map(CatalogEntry::toCatalogTool)))
+            }
+        } finally {
+            if (firstEmissionPending) {
+                Trace.endAsyncSection("catalog.firstEmission", traceCookie)
+            }
+        }
+    }.catch { failure ->
+        if (failure is CancellationException) throw failure
+        emit(
+            CatalogSnapshot(
+                tools = emptyList(),
+                loadFailure = CatalogFeedback.Failure(
+                    operation = CatalogOperation.RECOVERY,
+                    code = "CATALOG_UNAVAILABLE",
+                    message = "已安装工具暂时无法读取，请稍后重试。",
+                ),
+            ),
+        )
+    }
 
     private fun selectDetails(toolId: String?) {
         updateState { current ->
@@ -276,9 +343,38 @@ class CatalogViewModel(
     }
 
     private fun updateState(transform: (CatalogUiState) -> CatalogUiState) {
-        mutableState.update(transform)
+        val current = mutableState.value
+        val next = transform(current)
+        mutableState.value = next
+        mutableHomeState.value = when {
+            current.isLoaded != next.isLoaded || current.tools != next.tools -> homeScreenState(
+                tools = next.tools,
+                isLoaded = next.isLoaded,
+                feedback = next.feedback,
+            )
+            current.feedback != next.feedback -> mutableHomeState.value.copy(feedback = next.feedback)
+            else -> mutableHomeState.value
+        }
+    }
+
+    private companion object {
+        const val QUERY_DEBOUNCE_MILLIS = 120L
     }
 }
+
+private data class CatalogSnapshot(
+    val tools: List<CatalogTool>,
+    val loadFailure: CatalogFeedback.Failure? = null,
+)
+
+private data class CatalogDerivedState(
+    val tools: List<CatalogTool>,
+    val visibleTools: List<CatalogTool>,
+    val categories: List<String>,
+    val categoryFilter: String?,
+    val sort: CatalogSort,
+    val loadFailure: CatalogFeedback.Failure?,
+)
 
 private fun CatalogEntry.toCatalogTool() = CatalogTool(
     toolId = toolId,

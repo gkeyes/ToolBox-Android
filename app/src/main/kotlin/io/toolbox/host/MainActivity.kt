@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
@@ -41,6 +43,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 is HostBootstrapState.Ready -> {
+                    LaunchedEffect(state.dependencies) {
+                        withFrameNanos { }
+                        dependenciesViewModel.onHostFirstFrame()
+                    }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)
                     }

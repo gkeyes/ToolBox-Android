@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +49,9 @@ internal fun ToolBoxNavigation(
 ) {
     val backStack = rememberNavBackStack(HomeRoute)
     val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+    val homeState by catalogViewModel.homeState.collectAsStateWithLifecycle()
+    val homeListState = rememberLazyListState()
+    val toolsListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
@@ -98,7 +102,8 @@ internal fun ToolBoxNavigation(
         entryProvider = entryProvider {
             entry<HomeRoute> {
                 HomeScreen(
-                    state = catalogState,
+                    state = homeState,
+                    listState = homeListState,
                     onAction = catalogViewModel::dispatch,
                     onDestination = ::navigateMain,
                     onImport = { navigate(ImportReviewRoute) },
@@ -108,6 +113,7 @@ internal fun ToolBoxNavigation(
             entry<ToolManagerRoute> {
                 ToolManagerScreen(
                     state = catalogState,
+                    listState = toolsListState,
                     onAction = catalogViewModel::dispatch,
                     onDestination = ::navigateMain,
                     onImport = { navigate(ImportReviewRoute) },

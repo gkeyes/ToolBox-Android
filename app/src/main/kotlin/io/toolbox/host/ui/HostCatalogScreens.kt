@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,20 +29,25 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SignatureState
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
+import io.toolbox.core.ui.component.ToolBoxIconButton
+import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.CatalogFeedback
 import io.toolbox.host.catalog.CatalogSort
 import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.host.catalog.HomeScreenState
 
 @Composable
 fun HomeScreen(
-    state: CatalogUiState,
+    state: HomeScreenState,
+    listState: LazyListState,
     onAction: (CatalogAction) -> Unit,
     onDestination: (MainDestination) -> Unit,
     onImport: () -> Unit,
@@ -48,47 +55,26 @@ fun HomeScreen(
 ) {
     PrimaryScreen(MainDestination.Home, onDestination, "ToolBox", onImport) { contentPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().testTag(HostTestTags.CatalogList),
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
-            if (state.tools.isNotEmpty()) {
-                item(key = "summary") {
-                    CompactCatalogSummary(state.tools.size)
-                }
-            }
             state.feedback?.let { feedback ->
-                item(key = "feedback") {
-                    CatalogFeedbackCard(feedback, onAction)
+                item(key = "feedback", contentType = CatalogContentType.Feedback) {
+                    SectionBlock { CatalogFeedbackCard(feedback, onAction) }
                 }
             }
             when {
-                !state.isLoaded -> item(key = "loading") {
+                !state.isLoaded -> item(key = "loading", contentType = CatalogContentType.Status) {
                     CatalogStatusState("正在读取已安装工具")
                 }
-                state.visibleTools.isEmpty() && state.tools.isEmpty() ->
-                    item(key = "empty") { EmptyCatalogState(onImport) }
+                state.totalToolCount == 0 -> item(key = "empty", contentType = CatalogContentType.Status) {
+                    EmptyCatalogState(onImport)
+                }
                 else -> {
-                    val pinnedTools = state.tools
-                        .filter { it.pinnedOrder != null }
-                        .sortedBy(CatalogTool::pinnedOrder)
-                    val recentTools = state.tools
-                        .filter { it.pinnedOrder == null && it.lastOpenedAt != null }
-                        .sortedByDescending(CatalogTool::lastOpenedAt)
-                    val installedTools = state.tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null }
-
-                    if (pinnedTools.isNotEmpty()) {
-                        item(key = "pinned-header") { SectionHeader("已固定", "") }
-                        catalogRows(pinnedTools, onAction, onOpenDetails)
-                    }
-                    if (recentTools.isNotEmpty()) {
-                        item(key = "recent-header") { SectionHeader("最近使用", "") }
-                        catalogRows(recentTools, onAction, onOpenDetails)
-                    }
-                    if (installedTools.isNotEmpty()) {
-                        item(key = "installed-header") { SectionHeader("已安装工具", "") }
-                        catalogRows(installedTools, onAction, onOpenDetails)
-                    }
+                    catalogSection("pinned", "已固定", state.pinnedTools, onAction, onOpenDetails)
+                    catalogSection("recent", "最近使用", state.recentTools, onAction, onOpenDetails)
+                    catalogSection("installed", "已安装工具", state.installedTools, onAction, onOpenDetails)
                 }
             }
         }
@@ -98,54 +84,88 @@ fun HomeScreen(
 @Composable
 fun ToolManagerScreen(
     state: CatalogUiState,
+    listState: LazyListState,
     onAction: (CatalogAction) -> Unit,
     onDestination: (MainDestination) -> Unit,
     onImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
-    CatalogScreen(state, onAction, onDestination, onImport, onOpenDetails)
+    CatalogScreen(state, listState, onAction, onDestination, onImport, onOpenDetails)
 }
 
 @Composable
 private fun CatalogScreen(
     state: CatalogUiState,
+    listState: LazyListState,
     onAction: (CatalogAction) -> Unit,
     onDestination: (MainDestination) -> Unit,
     onImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
-    PrimaryScreen(MainDestination.Tools, onDestination, "工具管理", onImport) { contentPadding ->
+    PrimaryScreen(MainDestination.Tools, onDestination, "工具", onImport) { contentPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().testTag(HostTestTags.CatalogList),
             contentPadding = contentPadding,
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
-            item(key = "search") { CatalogSearchField(state.query) { onAction(CatalogAction.SetQuery(it)) } }
-            item(key = "filters") { CatalogFilters(state, onAction) }
+            item(key = "search", contentType = CatalogContentType.Control) {
+                SectionBlock { CatalogSearchField(state.query) { onAction(CatalogAction.SetQuery(it)) } }
+            }
+            item(key = "filters", contentType = CatalogContentType.Control) {
+                SectionBlock { CatalogFilters(state, onAction) }
+            }
+            item(key = "installed-count", contentType = CatalogContentType.Header) {
+                SectionHeaderBlock { SectionHeader("已安装 · ${state.tools.size}", "") }
+            }
             state.feedback?.let { feedback ->
-                item(key = "feedback") { CatalogFeedbackCard(feedback, onAction) }
+                item(key = "feedback", contentType = CatalogContentType.Feedback) {
+                    SectionBlock { CatalogFeedbackCard(feedback, onAction) }
+                }
             }
             when {
-                !state.isLoaded -> item(key = "loading") { CatalogStatusState("正在读取已安装工具") }
+                !state.isLoaded -> item(key = "loading", contentType = CatalogContentType.Status) {
+                    CatalogStatusState("正在读取已安装工具")
+                }
                 state.visibleTools.isEmpty() && state.tools.isEmpty() ->
-                    item(key = "empty") { EmptyCatalogState(onImport) }
-                state.visibleTools.isEmpty() -> item(key = "no-match") {
+                    item(key = "empty", contentType = CatalogContentType.Status) { EmptyCatalogState(onImport) }
+                state.visibleTools.isEmpty() -> item(key = "no-match", contentType = CatalogContentType.Status) {
                     CatalogStatusState("没有符合当前搜索或分类的工具。")
                 }
-                else -> catalogRows(state.visibleTools, onAction, onOpenDetails)
+                else -> catalogRows("all", state.visibleTools, onAction, onOpenDetails)
             }
         }
     }
 }
 
-private fun LazyListScope.catalogRows(
+private fun LazyListScope.catalogSection(
+    sectionKey: String,
+    title: String,
     tools: List<CatalogTool>,
     onAction: (CatalogAction) -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
-    items(tools, key = CatalogTool::toolId) { tool ->
+    if (tools.isEmpty()) return
+    item(key = "$sectionKey-header", contentType = CatalogContentType.Header) {
+        SectionHeaderBlock { SectionHeader(title, "") }
+    }
+    catalogRows(sectionKey, tools, onAction, onOpenDetails)
+}
+
+private fun LazyListScope.catalogRows(
+    sectionKey: String,
+    tools: List<CatalogTool>,
+    onAction: (CatalogAction) -> Unit,
+    onOpenDetails: (String) -> Unit,
+) {
+    itemsIndexed(
+        items = tools,
+        key = { _, tool -> "$sectionKey:${tool.toolId}" },
+        contentType = { _, _ -> CatalogContentType.ToolRow },
+    ) { index, tool ->
         CatalogToolRow(
             tool = tool,
+            isFirst = index == 0,
+            isLast = index == tools.lastIndex,
             onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
             onDetails = { onOpenDetails(tool.toolId) },
         )
@@ -153,18 +173,21 @@ private fun LazyListScope.catalogRows(
 }
 
 @Composable
-private fun CompactCatalogSummary(toolCount: Int) {
-    SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.two) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half)) {
-                AppText(
-                    "我的工具箱",
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                    color = ToolBoxThemeTokens.colors.textSecondary,
-                )
-                AppText("$toolCount 个已安装工具", textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
-            }
-        }
+private fun SectionBlock(content: @Composable () -> Unit) {
+    Box(Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one)) {
+        content()
+    }
+}
+
+@Composable
+private fun SectionHeaderBlock(content: @Composable () -> Unit) {
+    Box(
+        Modifier.padding(
+            top = ToolBoxThemeTokens.spacing.oneHalf,
+            bottom = ToolBoxThemeTokens.spacing.one,
+        ),
+    ) {
+        content()
     }
 }
 
@@ -180,13 +203,13 @@ private fun CatalogSearchField(value: String, onValueChange: (String) -> Unit) {
 
 @Composable
 private fun CatalogFilters(state: CatalogUiState, onAction: (CatalogAction) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-        FilterButton(state.categoryFilter ?: "全部分类", state.categoryFilter != null, Modifier.weight(1f)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+        FilterButton(state.categoryFilter ?: "全部分类", state.categoryFilter != null) {
             val options = listOf(null) + state.categories
             val current = options.indexOf(state.categoryFilter).coerceAtLeast(0)
             onAction(CatalogAction.SetCategoryFilter(options[(current + 1) % options.size]))
         }
-        FilterButton("排序：${state.sort.label}", false, Modifier.weight(1f)) {
+        FilterButton("排序：${state.sort.label}", false) {
             val sorts = CatalogSort.entries
             onAction(CatalogAction.SetSort(sorts[(sorts.indexOf(state.sort) + 1) % sorts.size]))
         }
@@ -200,31 +223,58 @@ private fun FilterButton(label: String, selected: Boolean, modifier: Modifier = 
     Box(
         modifier = modifier
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-            .background(background)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
+            .padding(vertical = ToolBoxThemeTokens.spacing.half),
         contentAlignment = Alignment.Center,
     ) {
-        AppText(
-            label,
-            textStyle = ToolBoxThemeTokens.textStyles.label,
-            color = foreground,
-            weight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
+        Box(
+            modifier = Modifier
+                .height(36.dp)
+                .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full))
+                .background(background)
+                .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
+            contentAlignment = Alignment.Center,
+        ) {
+            AppText(
+                label,
+                textStyle = ToolBoxThemeTokens.textStyles.label,
+                color = foreground,
+                weight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
     }
 }
 
 @Composable
-private fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: () -> Unit) {
-    SurfaceCard(
+private fun CatalogToolRow(
+    tool: CatalogTool,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onOpen: () -> Unit,
+    onDetails: () -> Unit,
+) {
+    val corner = ToolBoxThemeTokens.radii.denseSurface
+    val shape = RoundedCornerShape(
+        topStart = if (isFirst) corner else 0.dp,
+        topEnd = if (isFirst) corner else 0.dp,
+        bottomStart = if (isLast) corner else 0.dp,
+        bottomEnd = if (isLast) corner else 0.dp,
+    )
+    Column(
         modifier = Modifier
-            .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ToolBoxThemeTokens.colors.surface)
             .testTag(HostTestTags.ToolCardPrefix + tool.toolId),
-        contentPadding = ToolBoxThemeTokens.spacing.oneHalf,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
+                .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -264,23 +314,30 @@ private fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: () 
                     )
                 }
             }
+            ToolBoxIconButton(
+                icon = ToolBoxIconKey.More,
+                contentDescription = "管理${tool.name}",
+                onClick = onDetails,
+            )
+        }
+        if (!isLast) {
             Box(
-                modifier = Modifier
-                    .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-                    .clickable(role = Role.Button, onClick = onDetails)
-                    .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf),
-                contentAlignment = Alignment.Center,
-            ) {
-                AppText(
-                    "详情",
-                    textStyle = ToolBoxThemeTokens.textStyles.label,
-                    color = ToolBoxThemeTokens.colors.primary,
-                    weight = FontWeight.SemiBold,
-                )
-            }
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = ToolBoxThemeTokens.sizes.compactToolGlyph + ToolBoxThemeTokens.spacing.three)
+                    .height(ToolBoxThemeTokens.sizes.divider)
+                    .background(ToolBoxThemeTokens.colors.divider),
+            )
         }
     }
+}
+
+private object CatalogContentType {
+    const val Header = "catalog-header"
+    const val Control = "catalog-control"
+    const val Feedback = "catalog-feedback"
+    const val Status = "catalog-status"
+    const val ToolRow = "catalog-tool-row"
 }
 
 @Composable

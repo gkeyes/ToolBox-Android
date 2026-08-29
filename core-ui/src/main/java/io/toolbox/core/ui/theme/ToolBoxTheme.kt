@@ -70,7 +70,7 @@ data class ToolBoxSpacing(
 data class ToolBoxRadii(
     val badge: Dp = 12.dp,
     val denseSurface: Dp = 16.dp,
-    val card: Dp = 22.dp,
+    val card: Dp = 18.dp,
     val full: Dp = 999.dp,
 )
 
@@ -82,40 +82,39 @@ data class ToolBoxSizes(
     val touchTarget: Dp = 48.dp,
     val compactChrome: Dp = 56.dp,
     val denseRow: Dp = 56.dp,
-    val largeTextChrome: Dp = 72.dp,
     val catalogRow: Dp = 72.dp,
     val compactToolGlyph: Dp = 44.dp,
     val toolGlyph: Dp = 48.dp,
 )
 
 private val LightToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF3482FF),
+    primary = Color(0xFF007AFF),
     onPrimary = Color.White,
-    background = Color(0xFFF3F6FB),
+    background = Color(0xFFF2F2F7),
     surface = Color.White,
     textPrimary = Color(0xFF111827),
-    textSecondary = Color(0xFF737B8C),
+    textSecondary = Color(0xFF8E8E93),
     success = Color(0xFF34C759),
     warning = Color(0xFFFF9500),
     danger = Color(0xFFFF3B30),
-    divider = Color(0xFFE8EDF5),
-    softPrimary = Color(0xFFEEF5FF),
+    divider = Color(0xFFE5E5EA),
+    softPrimary = Color(0xFFE9F2FF),
     softSuccess = Color(0xFFEAF9EF),
     softWarning = Color(0xFFFFF4DE),
     softDanger = Color(0xFFFFECEA),
 )
 
 private val DarkToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF9DC2FF),
-    onPrimary = Color(0xFF00315F),
-    background = Color(0xFF10141B),
-    surface = Color(0xFF1A1F29),
-    textPrimary = Color(0xFFE8EDF5),
-    textSecondary = Color(0xFFB3BBCB),
+    primary = Color(0xFF0A84FF),
+    onPrimary = Color.White,
+    background = Color.Black,
+    surface = Color(0xFF1C1C1E),
+    textPrimary = Color(0xFFF5F5F7),
+    textSecondary = Color(0xFF98989D),
     success = Color(0xFF75E395),
     warning = Color(0xFFFFC165),
     danger = Color(0xFFFF8B83),
-    divider = Color(0xFF303844),
+    divider = Color(0xFF38383A),
     softPrimary = Color(0xFF1B365A),
     softSuccess = Color(0xFF173D27),
     softWarning = Color(0xFF493414),
@@ -123,12 +122,12 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
 )
 
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold),
-    sectionTitle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-    title = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
-    body = TextStyle(fontSize = 16.sp),
-    metadata = TextStyle(fontSize = 13.sp),
-    label = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+    screenTitle = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
+    sectionTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
+    body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
+    metadata = TextStyle(fontSize = 13.sp, lineHeight = 17.sp),
+    label = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
 )
 
 private val LocalToolBoxColors = staticCompositionLocalOf { LightToolBoxColors }

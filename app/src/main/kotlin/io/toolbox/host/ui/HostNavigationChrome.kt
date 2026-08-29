@@ -28,8 +28,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
-import io.toolbox.core.ui.component.ToolBoxFloatingActionButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.ToolBoxTopBar
@@ -47,17 +47,8 @@ internal fun PrimaryScreen(
         val layout = hostRouteLayoutFor(maxWidth)
         ToolBoxAppScaffold(
             modifier = Modifier.fillMaxSize(),
-            topBar = if (layout.isCompact) ({ TopBar(title) }) else null,
+            topBar = if (layout.isCompact) ({ TopBar(selected, title, onImport) }) else null,
             bottomBar = if (layout.isCompact) ({ DestinationBar(selected, onDestination, compact = true) }) else null,
-            floatingActionButton = onImport?.let { import ->
-                {
-                    ToolBoxFloatingActionButton(
-                        contentDescription = "导入 .tbx 工具包",
-                        onClick = import,
-                        modifier = Modifier.testTag(HostTestTags.ImportFab),
-                    )
-                }
-            },
         ) { scaffoldPadding ->
             Box(
                 Modifier
@@ -66,19 +57,19 @@ internal fun PrimaryScreen(
                     .consumeWindowInsets(scaffoldPadding),
             ) {
                 if (layout.isCompact) {
-                    content(layout.contentPadding(hasImportAction = onImport != null))
+                    content(layout.contentPadding())
                 } else {
                     Row(Modifier.fillMaxSize()) {
                         DestinationBar(selected, onDestination, compact = false)
                         Column(Modifier.weight(1f)) {
-                            TopBar(title)
+                            TopBar(selected, title, onImport)
                             Box(
                                 Modifier
                                     .weight(1f)
                                     .widthIn(max = 1040.dp)
                                     .align(Alignment.CenterHorizontally),
                             ) {
-                                content(layout.contentPadding(hasImportAction = onImport != null))
+                                content(layout.contentPadding())
                             }
                         }
                     }
@@ -88,11 +79,11 @@ internal fun PrimaryScreen(
     }
 }
 
-private fun HostRouteLayout.contentPadding(hasImportAction: Boolean) = PaddingValues(
+private fun HostRouteLayout.contentPadding() = PaddingValues(
     start = horizontalContentPadding,
     top = verticalContentPadding,
     end = horizontalContentPadding,
-    bottom = verticalContentPadding + if (hasImportAction) 80.dp else 0.dp,
+    bottom = verticalContentPadding,
 )
 
 @Composable
@@ -187,8 +178,42 @@ internal fun DetailScreen(
 }
 
 @Composable
-private fun TopBar(title: String) {
-    ToolBoxTopBar(title = title)
+private fun TopBar(selected: MainDestination, title: String, onImport: (() -> Unit)?) {
+    ToolBoxTopBar(
+        title = title,
+        subtitle = if (selected == MainDestination.Home) "本地运行的小工具" else "",
+        actions = {
+            if (onImport != null) {
+                if (selected == MainDestination.Tools) {
+                    Box(
+                        modifier = Modifier
+                            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.full))
+                            .background(ToolBoxThemeTokens.colors.softPrimary)
+                            .clickable(role = Role.Button, onClick = onImport)
+                            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf)
+                            .testTag(HostTestTags.ImportFab)
+                            .semantics { contentDescription = "导入 .tbx 工具包" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AppText(
+                            "导入",
+                            textStyle = ToolBoxThemeTokens.textStyles.label,
+                            color = ToolBoxThemeTokens.colors.primary,
+                            weight = FontWeight.SemiBold,
+                        )
+                    }
+                } else {
+                    ToolBoxIconButton(
+                        icon = ToolBoxIconKey.Add,
+                        contentDescription = "导入 .tbx 工具包",
+                        onClick = onImport,
+                        modifier = Modifier.testTag(HostTestTags.ImportFab),
+                    )
+                }
+            }
+        },
+    )
 }
 
 private val mainNavigationItems = MainDestination.entries.map { destination ->

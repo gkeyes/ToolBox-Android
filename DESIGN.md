@@ -1,218 +1,527 @@
----
-name: ToolBox Android
-description: A compact, trustworthy native host that keeps real tools in the foreground.
-colors:
-  action-blue: "#3482FF"
-  action-on-blue: "#FFFFFF"
-  canvas-light: "#F3F6FB"
-  surface-light: "#FFFFFF"
-  ink-light: "#111827"
-  secondary-ink-light: "#737B8C"
-  divider-light: "#E8EDF5"
-  success: "#34C759"
-  warning: "#FF9500"
-  danger: "#FF3B30"
-  canvas-dark: "#10141B"
-  surface-dark: "#1A1F29"
-  ink-dark: "#E8EDF5"
-  secondary-ink-dark: "#B3BBCB"
-typography:
-  display:
-    fontFamily: "Android system sans"
-    fontSize: "26sp"
-    fontWeight: 700
-    lineHeight: 1.2
-  headline:
-    fontFamily: "Android system sans"
-    fontSize: "18sp"
-    fontWeight: 600
-    lineHeight: 1.3
-  body:
-    fontFamily: "Android system sans"
-    fontSize: "16sp"
-    fontWeight: 400
-    lineHeight: 1.45
-  metadata:
-    fontFamily: "Android system sans"
-    fontSize: "13sp"
-    fontWeight: 400
-    lineHeight: 1.4
-  label:
-    fontFamily: "Android system sans"
-    fontSize: "12sp"
-    fontWeight: 500
-    lineHeight: 1.3
-rounded:
-  badge: "12dp"
-  dense-surface: "16dp"
-  card: "22dp"
-  full: "999dp"
-spacing:
-  half: "4dp"
-  one: "8dp"
-  one-half: "12dp"
-  two: "16dp"
-  two-half: "20dp"
-  three: "24dp"
-components:
-  button-primary:
-    backgroundColor: "{colors.action-blue}"
-    textColor: "{colors.action-on-blue}"
-    rounded: "{rounded.dense-surface}"
-    height: "48dp"
-    padding: "12dp 20dp"
-  card-primary:
-    backgroundColor: "{colors.surface-light}"
-    textColor: "{colors.ink-light}"
-    rounded: "{rounded.card}"
-    padding: "16dp"
-  input-search:
-    backgroundColor: "{colors.surface-light}"
-    textColor: "{colors.ink-light}"
-    rounded: "{rounded.dense-surface}"
-    height: "52dp"
-    padding: "0 16dp"
-  runtime-topbar:
-    backgroundColor: "{colors.surface-light}"
-    textColor: "{colors.ink-light}"
-    height: "52dp"
-    padding: "0 8dp"
-  runtime-dock:
-    backgroundColor: "{colors.surface-light}"
-    textColor: "{colors.ink-light}"
-    rounded: "{rounded.full}"
-    height: "48dp"
-    padding: "0 4dp"
+# ToolBox Android V2 设计规范
+
+> 文档用途：替换当前仓库根目录的 `DESIGN.md`，作为 UI 重构、组件实现、截图验收与 Codex 执行的唯一视觉基线。
+> 审核基线：`main@c0742c46de95d132b4591864dfbc429b9cd84015`
+> 目标设备：Android 13+，优先 Xiaomi / HyperOS 直板手机；兼顾手势导航、三键导航、深色模式、字体放大与横屏。
+> 视觉方向：吸收 iOS grouped-list 的克制、清晰和紧凑感，但保持 Android 的系统字体、返回行为、权限模型和无障碍语义。
+
 ---
 
-# Design System: ToolBox Android
+## 1. 设计结论
 
-## Overview
+ToolBox V2 不再把宿主界面做成“卡片展厅”，而是做成一个安静、紧凑的本地工具架。
 
-**Creative North Star: "The Trusted Instrument Tray"**
+核心调整：
 
-ToolBox is an instrument tray, not a showroom. The user reaches for one utility, sees its result quickly, and can inspect the host's security facts without losing the work surface. Density is deliberate: repeated shells disappear, related facts group together, and whitespace separates decisions instead of padding every row.
+1. **首页只负责快速打开工具**，不再重复搜索、分类、排序和管理信息。
+2. **工具页负责检索与管理**，搜索框、筛选、排序只保留在此页。
+3. **设置页只显示真实可用的设置**，删除不可点击或尚未接入的占位行。
+4. **顶部与页面使用同一背景**，取消突兀的整块白色标题栏。
+5. **底部导航内容高度固定为 56dp**，系统导航区单独追加，不再随字体比例倍增。
+6. **列表优先于卡片墙**：同一分组只使用一个白色容器，行之间用 0.5–1dp 分割线。
+7. **工具行高度控制在 72–80dp**，图标、标题、元数据和操作在一行内完成。
+8. **动画只表达状态变化**，不使用大幅缩放、长弹簧或装饰性过渡。
 
-The light board leads because the reference use is a phone in changing ambient light; dark and Monet modes preserve the same hierarchy. The system explicitly rejects fake installed content, static or no-op controls, a card wall, oversized spacing, janky nested scrolling, screen-consuming runtime chrome, and security theater.
+---
 
-**Key Characteristics:**
+## 2. 产品定位与信息架构
 
-- Compact native hierarchy with an 8dp rhythm.
-- One dominant action blue; semantic colors only communicate verified state.
-- Tool content dominates runtime; host controls are compact and recoverable.
-- Every interaction is reachable at 48dp and remains usable at 2.0 font scale.
-- Motion is short, stateful and removable, never ornamental.
+### 2.1 产品一句话
 
-**The Content-First Rule.** Normal runtime chrome may identify and control the tool, but must never compete with or obscure it. Only exceptions and permission confirmations expand.
+**ToolBox 是一个本地运行、可快速更新、可统一管理权限的个人小工具架。**
 
-**The One-Owner Rule.** Each axis has one scroll owner and each window inset has one layout owner.
+### 2.2 适用边界
 
-## Colors
+ToolBox 适合以下情况：
 
-The palette uses a cool neutral canvas, clean surfaces and one precise blue action voice; green, orange and red appear only when state earns them.
+- 用户会维护多个 HTML/CSS/JavaScript 小工具；
+- 工具需要频繁更新，不希望每次重新构建整个 APK；
+- 多个工具需要共用宿主提供的文件、剪贴板、分享、网络或存储能力；
+- 希望工具之间有统一的安装、版本、数据清理与权限管理入口。
 
-### Primary
+若长期只有一个固定工具，且不需要动态更新或共享能力，直接做成单一原生 App 或内置 WebView App 更简单。V2 不通过堆叠管理功能来掩盖这一产品边界。
 
-- **Action Blue:** The only default accent for selected navigation, primary actions, focus and ToolBox-owned affordances.
+### 2.3 主导航
 
-### Secondary
+| 目的地 | 单一职责 | 不应出现 |
+|---|---|---|
+| 首页 | 打开常用、最近工具；导入入口 | 搜索、排序、分类、版本详情 |
+| 工具 | 搜索、筛选、排序、查看详情、卸载 | 宿主安全长文、重复统计卡 |
+| 设置 | 外观、运行模式、信任、审计、诊断 | 尚未接入的占位按钮 |
 
-- **Verified Green:** Successful integrity, trusted state and completed operations.
-- **Caution Orange:** Unsigned, medium-risk or user-attention states.
-- **Blocking Red:** Invalid, destructive or high-risk states that need explicit action.
+### 2.4 二级页面
 
-### Neutral
+- 工具详情
+- 导入审核
+- 权限与信任
+- 性能诊断
+- 运行容器
+- 关于 ToolBox
 
-- **Cool Canvas:** Separates the app background from white/light surfaces without ornamental gradients.
-- **Instrument Ink:** High-contrast primary text and icon color.
-- **Quiet Metadata:** Secondary copy only; never use it where contrast falls below 4.5:1.
-- **Hairline Divider:** Groups dense rows when an extra card would be noise.
+---
 
-**The Earned Color Rule.** Semantic color is derived from real inspection, permission or runtime state. Copy alone can never turn a state green.
+## 3. 视觉原则
 
-**The One Voice Rule.** Action Blue is scarce enough to remain meaningful; it must not tint every card or icon.
+### 3.1 Grouped-list，而不是 Card wall
 
-## Typography
+- 页面背景负责分区；白色分组容器负责承载相关行。
+- 同一语义组中禁止每一行再套一张卡。
+- 首页和工具页的工具条目默认使用紧凑行，不使用上下分裂的高卡片。
+- 只有导入风险、错误恢复、破坏性确认等需要独立注意力的内容可使用单独卡片。
 
-**Display Font:** Android system sans
-**Body Font:** Android system sans
-**Label/Mono Font:** Web tool content may choose its own local font; the native host does not impose one.
+### 3.2 同一画布
 
-**Character:** Native, highly legible and quiet. Weight and spacing create hierarchy; novelty fonts never carry security or action meaning.
+- 状态栏下方、标题区和内容区使用同一 `canvas` 背景。
+- 不再用纯白色 TopAppBar 横切页面。
+- 页面滚动时可使用轻微的顶部模糊/半透明效果，但第一版不必实现；优先稳定和低开销。
 
-### Hierarchy
+### 3.3 信息密度
 
-- **Display** (700, 26sp, 1.2): One route title or high-value empty-state statement.
-- **Headline** (600, 18sp, 1.3): Section and grouped-decision titles.
-- **Title** (500–600, 16sp, 1.35): Tool names, settings and permission rows.
-- **Body** (400, 16sp, 1.45): Actions, explanations and editable values.
-- **Metadata** (400, 13sp, 1.4): Versions, sizes, origins and recent activity; wrap rather than truncate security facts.
-- **Label** (500, 12sp, 1.3): Badges and compact state, always paired with a semantic announcement.
+- 一屏应至少完整显示 5–7 个普通设置行，或 4–6 个工具行。
+- 48dp 是交互命中区下限，不代表所有容器都必须大于 64dp。
+- 字体放大时允许文本换行或行高自然增长，不得直接把整个导航栏高度乘以 `fontScale`。
 
-**The Security Copy Rule.** Signature, origin, permission and blocking explanations may wrap; never ellipsize away the fact the user is deciding on.
+### 3.4 色彩克制
 
-## Elevation
+- 蓝色只用于选中状态、主动作、链接和聚焦。
+- 未签名、警告、阻止等状态使用语义色，但不把整张工具卡染色。
+- 普通工具图标允许使用包内图标；宿主不强制统一蓝底字母图标。
 
-ToolBox is flat by default. Canvas/surface contrast and dividers establish structure; Miuix elevation appears only where a floating action, dialog or transient dock must sit above content. Broad decorative shadows are forbidden.
+---
 
-**The Structural Elevation Rule.** If removing a shadow does not make ownership or interaction ambiguous, remove it.
+## 4. Design Tokens
 
-## Components
+### 4.1 颜色
 
-### Buttons
+#### 明亮模式
 
-- **Shape:** Clearly curved, not pill-shaped, with a 48dp minimum height.
-- **Primary:** Action Blue with white text; one primary commitment per decision surface.
-- **Pressed / Focus:** Miuix state layer plus visible focus semantics; no scale bounce.
-- **Destructive:** Red is reserved for the named destructive action inside a confirmation flow.
+| Token | 色值 | 用途 |
+|---|---:|---|
+| `canvas` | `#F2F2F7` | 页面、标题区、列表外背景 |
+| `surface` | `#FFFFFF` | 分组容器、搜索结果行、弹层 |
+| `surfaceMuted` | `#E7E7EC` | 搜索框、弱选中、禁用背景 |
+| `primary` | `#007AFF` | 选中、主动作、链接 |
+| `primarySoft` | `#E9F2FF` | 蓝色弱背景 |
+| `textPrimary` | `#111827` | 标题与正文 |
+| `textSecondary` | `#8E8E93` | 元数据、说明 |
+| `separator` | `#E5E5EA` | 分组内分割线 |
+| `success` | `#34C759` | 已验证、成功 |
+| `warning` | `#FF9500` | 未签名、需确认 |
+| `danger` | `#FF3B30` | 阻止、卸载、清数据 |
+| `scrim` | `#00000052` | 弹层遮罩 |
 
-### Chips
+#### 深色模式
 
-- **Style:** 12dp badge radius, compact visual height for labels, but interactive chips keep a 48dp hit region.
-- **State:** Selected state includes text/semantics, not color alone. Permission labels are dense badges unless they are actionable.
+| Token | 色值 | 用途 |
+|---|---:|---|
+| `canvas` | `#000000` | 页面背景 |
+| `surface` | `#1C1C1E` | 分组容器 |
+| `surfaceMuted` | `#2C2C2E` | 搜索框、弱选中 |
+| `primary` | `#0A84FF` | 主动作 |
+| `textPrimary` | `#F5F5F7` | 标题与正文 |
+| `textSecondary` | `#98989D` | 元数据 |
+| `separator` | `#38383A` | 分割线 |
 
-### Cards / Containers
+说明：不得打包或分发 Apple 专有字体或资源。颜色只借鉴视觉秩序，不复制受限资产。
 
-- **Corner Style:** 22dp only for meaningful standalone groups; dense grouped rows use 16dp and dividers.
-- **Background:** Surface over canvas; no nested cards.
-- **Shadow Strategy:** Flat unless interaction ownership requires lift.
-- **Internal Padding:** Usually 16dp; dense audit/review rows use 12–14dp.
+### 4.2 字体
 
-### Inputs / Fields
+全部使用 Android 系统无衬线字体。
 
-- **Style:** 52dp search field, 16dp radius, clear label and real editable state.
-- **Focus:** Action Blue focus treatment and logical IME progression.
-- **Error / Disabled:** Text explanation plus semantic state; never leave a fake editable field with a no-op callback.
+| 层级 | 字号 | 字重 | 行高 | 用途 |
+|---|---:|---:|---:|---|
+| Large title | 28sp | 700 | 34sp | 一级页面标题 |
+| Section | 17sp | 650 | 22sp | 分组标题 |
+| Row title | 16sp | 500–600 | 21sp | 工具名、设置名 |
+| Body | 15sp | 400 | 21sp | 说明与正文 |
+| Metadata | 12–13sp | 400 | 17sp | 版本、大小、状态 |
+| Tab label | 10–11sp | 500 | 14sp | 底部导航标签 |
 
-### Navigation
+规则：
 
-- Compact phones use a system-inset-aware bottom destination bar; medium/expanded windows use a side destination surface. Selected state has icon, label and semantics. The shared scaffold consumes system/cutout/IME insets exactly once.
+- 不使用 `BasicText` 绕过统一排版，统一使用 ToolBox `Text` 包装。
+- 所有文本样式必须显式包含 `lineHeight`。
+- 工具名最多两行；安全事实不得因省略号丢失关键含义。
 
-### Runtime Shell
+### 4.3 间距
 
-- A 48–52dp top control carries Back, the real tool name and expandable verified security state.
-- A 48dp floating action dock provides refresh, permissions, external opening, diagnostics policy and details. It may retract on tool scroll/inactivity, but tap, keyboard focus and TalkBack always restore it.
-- The WebView is the dominant surface. The dock's exclusion or overlay region may never hide focused or critical bottom content.
-- Normal security state stays compact; abnormal and permission-confirmation states may expand with a truthful reason and action.
+基础节奏为 4dp，常用值：
 
-## Do's and Don'ts
+- 页面水平边距：16dp
+- 页面顶部内容间距：12dp
+- 分组标题与容器：8dp
+- 分组之间：22–24dp
+- 行水平内边距：16dp
+- 行垂直内边距：10–12dp
+- 图标与文字：12dp
+- 标题与元数据：2–4dp
 
-### Do:
+### 4.4 圆角
 
-- **Do** use one 8dp spacing rhythm and remove repeated containers before reducing readable padding.
-- **Do** show a real, actionable empty state on a fresh install.
-- **Do** derive tool counts, sizes, signature, risk, origin and permission state from production data.
-- **Do** keep every action at least 48dp and verify TalkBack, RTL and 2.0 font scale.
-- **Do** give progress, success, failure, confirmation, retry and renderer recovery distinct feedback.
-- **Do** keep the runtime content-first and system-bar/cutout/navigation safe.
+| 元素 | 圆角 |
+|---|---:|
+| 工具图标 | 12–14dp |
+| 搜索框 | 14–15dp |
+| 普通分组 | 16–18dp |
+| 按钮 | 12–14dp |
+| 对话框/Bottom Sheet | 24–28dp |
+| Chip | 高度的一半 |
 
-### Don't:
+禁止所有卡片统一使用 22dp 大圆角；大圆角只用于大分组或弹层。
 
-- **Don't** ship fake installed content, fixed sample counts or blank tools presented as real user state.
-- **Don't** render static or no-op controls that look actionable but do nothing.
-- **Don't** build a card wall, nested cards or oversized spacing that makes an everyday utility feel loose and slow.
-- **Don't** use janky nested scrolling, ornamental motion or animation that delays feedback.
-- **Don't** let top, bottom or system chrome ignore cutouts/navigation modes or crowd out tool content.
-- **Don't** use security theater: reassuring copy that is not derived from verified runtime state.
-- **Don't** prioritize a generic demo host mockup over the actual tool and its result.
-- **Don't** use gradients, decorative glass, colored side-stripe borders or broad ghost-card shadows.
+### 4.5 阴影与层级
+
+- 普通分组不使用阴影。
+- 浮动按钮、菜单、对话框可使用 2–8dp 的轻阴影。
+- 底部导航使用顶部 0.5–1dp 分割线，不依赖厚阴影。
+- 禁止玻璃拟态、渐变背景和大面积模糊作为基础结构。
+
+### 4.6 动效
+
+| 场景 | 建议 |
+|---|---|
+| Tab 切换 | 100–160ms 淡入淡出；不缩放整页 |
+| 列表筛选 | 120–180ms 内容淡入；大数据量时直接更新 |
+| 行按下 | 80–120ms 透明度/状态层 |
+| 对话框 | 180–220ms |
+| 成功/失败 | 轻触觉反馈 + 状态文本，不播放长动画 |
+
+系统动画关闭或 reduced motion 生效时，非必要动画必须停用。
+
+---
+
+## 5. 系统栏与布局尺寸
+
+### 5.1 Insets 单一归属
+
+每个 inset 只能由一个层级消费：
+
+- 状态栏：标题区消费；
+- 导航栏：底部导航消费；
+- IME：当前有输入焦点的内容区消费；
+- `Scaffold` 内容不得再次叠加完整 `systemBars + ime`。
+
+键盘弹出时：
+
+- 底部导航优先隐藏或保持在键盘后，不得把底栏高度扩展到 IME 顶部；
+- 搜索结果区使用 `imePadding()` 或等价策略；
+- FAB 不与键盘、底栏同时争抢底部空间。
+
+### 5.2 固定尺寸
+
+| 元素 | 目标尺寸 |
+|---|---:|
+| 顶部标题内容区 | 52–56dp，不含状态栏 |
+| 底部导航内容区 | 56dp，不含系统导航栏 |
+| 搜索框 | 48dp |
+| 普通工具行 | 72–80dp |
+| 普通设置行 | 64–72dp |
+| 图标按钮命中区 | 44–48dp |
+| 工具图标 | 44–52dp |
+| 筛选 Chip | 32–36dp |
+
+**禁止**：`64.dp * fontScale`、`52.dp * fontScale` 这类整体倍增。字体比例只作用于文字，布局使用内容测量、换行和最小触控尺寸适配。
+
+---
+
+## 6. 页面规范
+
+## 6.1 首页
+
+### 目标
+
+让用户在一次点击内打开常用工具。首页不是目录管理页。
+
+### 结构
+
+1. 大标题 `ToolBox`
+2. 副标题 `本地运行的小工具`
+3. 右上角 `+` 导入按钮
+4. `常用工具` 分组
+5. `最近` 分组，仅在与常用内容不完全重复时显示
+6. 底部主导航
+
+### 规则
+
+- 不显示搜索框、分类、排序。
+- 不显示“本机目录”这类无操作、无解释的静态标签。
+- 不显示重复的“1 个已安装工具”大卡片；数量可作为小型元数据放在工具页标题旁。
+- 只有一个工具时，工具行仍保持 72–80dp，不为了填满屏幕放大卡片。
+- 空状态直接展示 `导入第一个工具` 主按钮和 1–2 句说明。
+
+## 6.2 工具页
+
+### 目标
+
+完成检索、筛选、排序和管理。
+
+### 结构
+
+1. 标题 `工具`
+2. 右上角小型 `导入` 按钮
+3. 48dp 搜索框
+4. 横向筛选 Chip
+5. `已安装 · N` 小标题
+6. 紧凑工具列表
+
+### 搜索框
+
+- 左侧内边距 14–16dp；图标与边缘不得贴合。
+- 图标宽 18–20dp；图标与文字间距 8–10dp。
+- 无焦点时使用 `surfaceMuted`；聚焦时增加 1dp `primary` 描边或状态层。
+- 输入时不应每个字符都触发列表多次排序和全量 Room 订阅重建。
+
+### 工具行
+
+- 左：44–52dp 实际工具图标；没有图标才使用字母占位。
+- 中：工具名 + `版本 · 大小 · 信任状态`。
+- 右：更多菜单或 chevron，二选一；不要同时放“详情”文字按钮和更多图标。
+- 整行点击打开工具；更多按钮只负责管理菜单。
+
+## 6.3 设置页
+
+### 目标
+
+只展示真实生效、用户能理解的宿主设置。
+
+### 推荐分组
+
+#### 外观
+
+- 主题：跟随系统 / 明亮 / 深色
+- 动效：跟随系统 / 减少动效（可选）
+
+#### 运行与信任
+
+- 运行模式：个人 / 严格
+- 我的签名密钥
+- 默认授权策略
+- 审计日志保留
+
+#### 关于
+
+- 性能诊断
+- 关于 ToolBox
+
+### 禁止
+
+- 显示无点击行为、无实际存储逻辑的“严格策略固定”。
+- 显示“运行 API 接入后开放”但看起来像正常可操作设置。
+- 将开发者功能与普通设置混在同一层级。未实现时直接隐藏。
+
+## 6.4 工具详情
+
+采用 grouped-list：
+
+- 顶部：实际图标、名称、版本、签名状态；
+- 信息：ID、大小、安装时间、最近使用；
+- 管理：权限、固定、导出、清数据；
+- 破坏操作：卸载，单独红色分组；
+- 不把每一项做成独立大卡片。
+
+## 6.5 导入审核
+
+导入审核必须真实，但不应对自有工具重复制造摩擦。
+
+- 个人模式 + 自有签名匹配：显示一页紧凑摘要，可直接安装；
+- 未签名或签名不匹配：显示完整结构、权限、域名与风险；
+- 阻断原因必须明确，禁止只显示“安全策略不允许”。
+
+页面结构：
+
+1. 工具身份
+2. 文件结构与完整性
+3. 权限与域名
+4. 风险与处理结果
+5. 固定底部动作区
+
+## 6.6 运行容器
+
+- 工具内容占据绝大部分区域。
+- 顶部控制区 48–52dp：返回、工具名、状态、刷新。
+- 正常状态不展示长安全说明。
+- 异常状态、权限请求、渲染器恢复时才扩展。
+- WebView 创建、销毁、刷新不能触发布局跳动或保留已销毁实例。
+
+---
+
+## 7. 核心组件
+
+### 7.1 `ToolBoxPage`
+
+职责：统一画布、标题、状态栏 inset、内容和底部导航。不得在 feature 页重复处理系统栏。
+
+### 7.2 `GroupedSurface`
+
+- 一个语义组对应一个 surface；
+- 支持首行、中间行、末行分割；
+- 默认无阴影；
+- 圆角 16–18dp。
+
+### 7.3 `ToolRow`
+
+参数：
+
+- `icon`
+- `title`
+- `metadata`
+- `status`
+- `onOpen`
+- `onMore`
+
+必须支持稳定 key、内容类型和 TalkBack 描述。
+
+### 7.4 `SearchField`
+
+- 48dp 固定最小高度；
+- 明确左右内边距；
+- 仅输入层持有编辑状态；
+- 对目录筛选使用 100–150ms debounce；
+- 不在 Composable getter 中重复全量排序。
+
+### 7.5 `BottomDestinationBar`
+
+- 内容区 56dp；
+- 系统导航栏另行 `navigationBarsPadding()`；
+- 图标 22–24dp；
+- 标签 10–11sp；
+- 选中蓝色，未选中灰色；
+- 不按 `fontScale` 成比例放大整个 bar。
+
+---
+
+## 8. 无障碍
+
+- 所有交互命中区至少 48dp，紧凑视觉可通过透明命中区实现。
+- 文字放大到 2.0 时，工具名允许两行，设置摘要允许两行。
+- TalkBack 顺序：标题 → 行主操作 → 行更多操作。
+- 状态不得只通过颜色传递。
+- 更多菜单按钮必须描述为“管理某工具”，不能只读作“更多”。
+- 图标字母占位不得被 TalkBack 单独重复朗读。
+
+---
+
+## 9. 性能导向设计规则
+
+1. 每个滚动轴只使用一个 Lazy 容器。
+2. 首页不嵌套横向列表，除非工具数明显增加且经真机验证。
+3. 列表行不得包含不必要的阴影、模糊、嵌套卡片和复杂 shape clipping。
+4. 动态工具图标必须在 IO 线程解码并缓存，禁止滚动时同步读取文件。
+5. 列表使用稳定 `key` 和 `contentType`。
+6. 搜索结果由 ViewModel/数据层预计算，不在每次重组中重复过滤和排序。
+7. 底部 Tab 切换保留每页 `LazyListState`，不重建整个目录订阅。
+8. 屏幕首次显示前只完成必要初始化；文件清理、历史修复等维护任务延后。
+
+---
+
+## 10. 界面草图
+
+### 10.1 首页
+
+```text
+┌────────────────────────────┐
+│ ToolBox                  ＋ │
+│ 本地运行的小工具             │
+│                            │
+│ 常用工具                    │
+│ ┌────────────────────────┐ │
+│ │ [图标] 仓位计算器      › │ │
+│ │        最近使用 · 7 KB   │ │
+│ ├────────────────────────┤ │
+│ │ [ ＋ ] 导入工具        › │ │
+│ │        选择本机 .tbx     │ │
+│ └────────────────────────┘ │
+│                            │
+│ 最近                       │
+│ ┌────────────────────────┐ │
+│ │ [图标] 仓位计算器      › │ │
+│ │        1.0.0 · 未签名    │ │
+│ └────────────────────────┘ │
+├────────────────────────────┤
+│  首页        工具       设置 │
+└────────────────────────────┘
+```
+
+### 10.2 工具页
+
+```text
+┌────────────────────────────┐
+│ 工具                  导入  │
+│ ┌────────────────────────┐ │
+│ │ 🔍  搜索名称、ID 或分类 │ │
+│ └────────────────────────┘ │
+│ [全部] [计算] [效率] [其他] │
+│                            │
+│ 已安装 · 1                 │
+│ ┌────────────────────────┐ │
+│ │ [图标] 仓位计算器     ⋮ │ │
+│ │        1.0.0 · 7 KB     │ │
+│ └────────────────────────┘ │
+├────────────────────────────┤
+│  首页        工具       设置 │
+└────────────────────────────┘
+```
+
+### 10.3 设置页
+
+```text
+┌────────────────────────────┐
+│ 设置                       │
+│ 外观                       │
+│ ┌────────────────────────┐ │
+│ │ 主题              跟随系统 ›│
+│ └────────────────────────┘ │
+│                            │
+│ 运行与信任                 │
+│ ┌────────────────────────┐ │
+│ │ 运行模式          个人  ›│ │
+│ ├────────────────────────┤ │
+│ │ 我的签名密钥            ›│ │
+│ ├────────────────────────┤ │
+│ │ 审计日志          30 天  ›│ │
+│ └────────────────────────┘ │
+│                            │
+│ 关于                       │
+│ ┌────────────────────────┐ │
+│ │ 性能诊断                ›│ │
+│ ├────────────────────────┤ │
+│ │ 关于 ToolBox            ›│ │
+│ └────────────────────────┘ │
+├────────────────────────────┤
+│  首页        工具       设置 │
+└────────────────────────────┘
+```
+
+精确视觉稿见同包文件 `toolbox_ui_wireframe_v2.png`。
+
+---
+
+## 11. 当前代码到 V2 组件的映射
+
+| 当前实现 | V2 处理 |
+|---|---|
+| `ToolBoxTopBar` | 改为与 canvas 同背景的 `ToolBoxPageHeader` |
+| `ToolBoxNavigationBar` | 重写为 56dp `BottomDestinationBar` |
+| `ToolBoxCard` | 拆分为 `GroupedSurface`、`StandaloneCard` |
+| `ToolBoxSearchField` | 重写，固定 48dp、明确左侧 padding |
+| `HomeToolCard` | 删除，改为紧凑 `ToolRow` |
+| `CatalogToolRow` | 改为分组内行，更多菜单取代“详情”文字按钮 |
+| `CompactCatalogSummary` | 删除；数量移到工具页小标题 |
+| `StaticSettingsStatus` | 删除；功能未实现时不渲染 |
+| `PrimaryScreen` | 统一 inset，保留每个 Tab 的滚动状态 |
+
+---
+
+## 12. 视觉验收清单
+
+- [ ] 顶部不存在与背景割裂的白色横带。
+- [ ] 搜索图标距左边缘至少 14dp。
+- [ ] 普通字体下底部导航内容区不超过 56dp。
+- [ ] 手势导航和三键导航下底栏均不被遮挡，也不产生双倍空白。
+- [ ] 单个工具行高度不超过 80dp，除非字体放大导致自然换行。
+- [ ] 首页不再出现“本机目录”静态文字。
+- [ ] 设置页无不可点击占位行。
+- [ ] 同一分组中没有嵌套卡片。
+- [ ] 明亮模式背景不偏蓝、不刺眼；白色 surface 边界清晰。
+- [ ] 深色模式、字体 1.3/2.0、横屏、TalkBack 通过。
+- [ ] 真实设备滚动与 Tab 切换达到性能计划中的帧率门槛。

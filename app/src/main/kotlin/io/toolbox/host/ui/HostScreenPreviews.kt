@@ -1,9 +1,11 @@
 package io.toolbox.host.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.tooling.preview.Preview
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.host.catalog.HomeScreenState
 import io.toolbox.host.importflow.ImportReviewUiState
 import io.toolbox.host.permissions.PermissionCenterUiState
 import io.toolbox.host.settings.SettingsUiState
@@ -12,7 +14,8 @@ import io.toolbox.host.settings.SettingsUiState
 @Composable
 private fun HomePreview() = ToolBoxTheme {
     HomeScreen(
-        state = CatalogUiState(isLoaded = true),
+        state = HomeScreenState(isLoaded = true),
+        listState = rememberLazyListState(),
         onAction = {},
         onDestination = {},
         onImport = {},
@@ -25,6 +28,7 @@ private fun HomePreview() = ToolBoxTheme {
 private fun ToolManagerPreview() = ToolBoxTheme {
     ToolManagerScreen(
         state = CatalogUiState(isLoaded = true),
+        listState = rememberLazyListState(),
         onAction = {},
         onDestination = {},
         onImport = {},

@@ -2,6 +2,7 @@ package io.toolbox.host
 
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
@@ -16,7 +17,7 @@ import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SignatureState
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.catalog.CatalogTool
-import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.host.catalog.HomeScreenState
 import io.toolbox.host.ui.HomeScreen
 import io.toolbox.host.ui.HostTestTags
 import kotlin.math.abs
@@ -36,7 +37,12 @@ class HostAdaptiveScrollTest {
         composeRule.activity.setContent {
             ToolBoxTheme {
                 HomeScreen(
-                    state = CatalogUiState(isLoaded = true, tools = tools),
+                    state = HomeScreenState(
+                        isLoaded = true,
+                        totalToolCount = tools.size,
+                        installedTools = tools,
+                    ),
+                    listState = rememberLazyListState(),
                     onAction = {},
                     onDestination = {},
                     onImport = {},
@@ -65,7 +71,8 @@ class HostAdaptiveScrollTest {
             CompositionLocalProvider(LocalDensity provides Density(baseDensity.density, fontScale = 2f)) {
                 ToolBoxTheme {
                     HomeScreen(
-                        state = CatalogUiState(isLoaded = true),
+                        state = HomeScreenState(isLoaded = true),
+                        listState = rememberLazyListState(),
                         onAction = {},
                         onDestination = {},
                         onImport = {},
@@ -81,10 +88,10 @@ class HostAdaptiveScrollTest {
         composeRule.onNodeWithText("导入 .tbx 工具包").assertIsDisplayed()
 
         val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
-        val navigationHeightPx = with(composeRule.density) { 72.dp.toPx() }
+        val navigationHeightPx = with(composeRule.density) { 56.dp.toPx() }
         composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer).assertIsDisplayed()
         assertTrue(
-            "Navigation chrome must use only its bounded large-text expansion",
+            "Navigation chrome must keep its fixed visual height",
             abs(
                 composeRule.onNodeWithTag(HostTestTags.BottomNavigationContainer)
                     .fetchSemanticsNode().boundsInRoot.height - navigationHeightPx,

@@ -5,6 +5,7 @@
 **/build/
 local.properties
 captures/
+artifacts/perf/
 externalNativeBuild/
 .cxx/
 .codegraph

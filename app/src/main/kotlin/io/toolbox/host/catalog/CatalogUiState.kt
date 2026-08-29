@@ -1,9 +1,11 @@
 package io.toolbox.host.catalog
 
+import androidx.compose.runtime.Immutable
 import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SignatureState
 import io.toolbox.tool.packagekit.lifecycle.LifecycleFailureCode
 
+@Immutable
 data class CatalogTool(
     val toolId: String,
     val name: String,
@@ -24,24 +26,29 @@ enum class CatalogSort {
     INSTALLED_VERSION,
 }
 
+@Immutable
 data class UninstallConfirmation(
     val toolId: String,
     val toolName: String,
 )
 
+@Immutable
 sealed interface CatalogFeedback {
+    @Immutable
     data class Failure(
         val operation: CatalogOperation,
         val code: String,
         val message: String,
     ) : CatalogFeedback
 
+    @Immutable
     data class RecoveryPending(
         val operation: CatalogOperation,
         val code: LifecycleFailureCode,
         val message: String,
     ) : CatalogFeedback
 
+    @Immutable
     data class Completed(val message: String) : CatalogFeedback
 }
 
@@ -72,9 +79,22 @@ sealed interface CatalogAction {
     data object DismissFeedback : CatalogAction
 }
 
+@Immutable
+data class HomeScreenState(
+    val isLoaded: Boolean = false,
+    val totalToolCount: Int = 0,
+    val pinnedTools: List<CatalogTool> = emptyList(),
+    val recentTools: List<CatalogTool> = emptyList(),
+    val installedTools: List<CatalogTool> = emptyList(),
+    val feedback: CatalogFeedback? = null,
+)
+
+@Immutable
 data class CatalogUiState(
     val isLoaded: Boolean = false,
     val tools: List<CatalogTool> = emptyList(),
+    val visibleTools: List<CatalogTool> = tools,
+    val categories: List<String> = catalogCategories(tools),
     val query: String = "",
     val categoryFilter: String? = null,
     val sort: CatalogSort = CatalogSort.PINNED_THEN_RECENT,
@@ -82,19 +102,38 @@ data class CatalogUiState(
     val uninstallConfirmation: UninstallConfirmation? = null,
     val feedback: CatalogFeedback? = null,
 ) {
-    val categories: List<String>
-        get() = tools.mapNotNull(CatalogTool::categoryId).distinct().sorted()
-
     val selectedTool: CatalogTool?
         get() = tools.firstOrNull { it.toolId == selectedToolId }
-
-    val visibleTools: List<CatalogTool>
-        get() = tools.asSequence()
-            .filter { tool -> categoryFilter == null || tool.categoryId == categoryFilter }
-            .filter { tool -> tool.matches(query) }
-            .sortedWith(sort.comparator)
-            .toList()
 }
+
+internal fun catalogCategories(tools: List<CatalogTool>): List<String> =
+    tools.mapNotNull(CatalogTool::categoryId).distinct().sorted()
+
+internal fun visibleCatalogTools(
+    tools: List<CatalogTool>,
+    query: String,
+    categoryFilter: String?,
+    sort: CatalogSort,
+): List<CatalogTool> = tools.asSequence()
+    .filter { tool -> categoryFilter == null || tool.categoryId == categoryFilter }
+    .filter { tool -> tool.matches(query) }
+    .sortedWith(sort.comparator)
+    .toList()
+
+internal fun homeScreenState(
+    tools: List<CatalogTool>,
+    isLoaded: Boolean,
+    feedback: CatalogFeedback?,
+): HomeScreenState = HomeScreenState(
+    isLoaded = isLoaded,
+    totalToolCount = tools.size,
+    pinnedTools = tools.filter { it.pinnedOrder != null }.sortedBy(CatalogTool::pinnedOrder),
+    recentTools = tools
+        .filter { it.pinnedOrder == null && it.lastOpenedAt != null }
+        .sortedByDescending(CatalogTool::lastOpenedAt),
+    installedTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null },
+    feedback = feedback,
+)
 
 private fun CatalogTool.matches(query: String): Boolean {
     val normalizedQuery = query.trim()

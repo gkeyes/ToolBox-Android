@@ -1,10 +1,12 @@
 package io.toolbox.host
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.host.catalog.HomeScreenState
 import io.toolbox.host.importflow.ImportReviewScreen
 import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.preview.PreviewHostFixtures
@@ -25,7 +27,8 @@ import io.toolbox.host.ui.ToolManagerScreen
 fun CatalogFixtureCompactScreenshot() {
     ToolBoxTheme {
         HomeScreen(
-            state = PreviewHostFixtures.catalog,
+            state = PreviewHostFixtures.catalog.toHomeScreenState(),
+            listState = rememberLazyListState(),
             onAction = {},
             onDestination = {},
             onImport = {},
@@ -45,7 +48,8 @@ fun CatalogFixtureCompactScreenshot() {
 fun FreshCatalogLargeTextScreenshot() {
     ToolBoxTheme {
         HomeScreen(
-            state = CatalogUiState(isLoaded = true),
+            state = HomeScreenState(isLoaded = true),
+            listState = rememberLazyListState(),
             onAction = {},
             onDestination = {},
             onImport = {},
@@ -65,6 +69,7 @@ fun ToolManagerFixtureCompactScreenshot() {
     ToolBoxTheme {
         ToolManagerScreen(
             state = PreviewHostFixtures.catalog,
+            listState = rememberLazyListState(),
             onAction = {},
             onDestination = {},
             onImport = {},
@@ -72,6 +77,16 @@ fun ToolManagerFixtureCompactScreenshot() {
         )
     }
 }
+
+private fun CatalogUiState.toHomeScreenState() = HomeScreenState(
+    isLoaded = isLoaded,
+    totalToolCount = tools.size,
+    pinnedTools = tools.filter { it.pinnedOrder != null }.sortedBy { it.pinnedOrder },
+    recentTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt != null }
+        .sortedByDescending { it.lastOpenedAt },
+    installedTools = tools.filter { it.pinnedOrder == null && it.lastOpenedAt == null },
+    feedback = feedback,
+)
 
 @PreviewTest
 @Preview(

@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -88,7 +87,7 @@ fun ToolBoxSearchField(
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = toolBoxSearchFieldMinHeight(LocalDensity.current.fontScale))
+            .heightIn(min = toolBoxSearchFieldMinHeight())
             .semantics { this.contentDescription = contentDescription },
         label = placeholder,
         useLabelAsPlaceholder = true,
@@ -99,7 +98,7 @@ fun ToolBoxSearchField(
     )
 }
 
-internal fun toolBoxSearchFieldMinHeight(fontScale: Float) = ToolBoxThemeTokens.sizes.touchTarget
+internal fun toolBoxSearchFieldMinHeight() = ToolBoxThemeTokens.sizes.touchTarget
 
 @Composable
 fun ToolBoxPermissionRow(

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +37,6 @@ import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.tool.runtime.HardenedRuntimeWebView
 import io.toolbox.tool.runtime.RuntimeWebViewCallbacks
 import io.toolbox.tool.runtime.RuntimeWebViewCreationResult
-import io.toolbox.tool.runtime.RuntimeWebViewLifecycle
-import java.util.concurrent.atomic.AtomicReference
 
 @Composable
 fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
@@ -65,7 +62,6 @@ fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
             RuntimeUiState.Loading -> RuntimeCenteredState("正在安全打开工具", "正在核对活动版本与入口文件。")
             is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
             is RuntimeUiState.Ready -> key(current.runtime.toolId, current.runtime.versionCode) {
-                val ownedWebView = remember { AtomicReference<android.webkit.WebView?>(null) }
                 AndroidView(
                     factory = { context ->
                         when (val result = HardenedRuntimeWebView.create(
@@ -79,7 +75,6 @@ fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
                             ),
                         )) {
                             is RuntimeWebViewCreationResult.Created -> result.webView.also { webView ->
-                                ownedWebView.set(webView)
                                 activeWebView = webView
                             }
                             is RuntimeWebViewCreationResult.Failed -> android.widget.FrameLayout(context).also {
@@ -88,15 +83,13 @@ fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
                         }
                     },
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                )
-                DisposableEffect(Unit) {
-                    onDispose {
-                        ownedWebView.getAndSet(null)?.let { webView ->
+                    onRelease = { releasedView ->
+                        (releasedView as? android.webkit.WebView)?.let { webView ->
                             if (activeWebView === webView) activeWebView = null
-                            RuntimeWebViewLifecycle.destroyAndUnregister(webView)
+                            HardenedRuntimeWebView.release(webView)
                         }
-                    }
-                }
+                    },
+                )
             }
         }
     }
