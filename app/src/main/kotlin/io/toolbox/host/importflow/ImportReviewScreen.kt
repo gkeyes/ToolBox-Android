@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxCard
@@ -147,6 +148,7 @@ private fun ImportReviewActionBar(
     onCancel: () -> Unit,
 ) {
     val awaitingConfirmation = !state.reviewConfirmed
+    val stackActions = LocalDensity.current.fontScale >= 1.5f
     val primaryLabel = when {
         awaitingConfirmation -> "确认审核"
         !review.installable -> "禁止安装"
@@ -168,35 +170,64 @@ private fun ImportReviewActionBar(
         ToolBoxText(
             text = summary,
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-            maxLines = 1,
+            maxLines = if (stackActions) 2 else 1,
         )
         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.half))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-        ) {
-            ToolBoxCard(
-                modifier = Modifier.weight(1f),
-                onClick = onCancel,
-                contentPadding = PaddingValues(
-                    horizontal = ToolBoxThemeTokens.spacing.one,
-                    vertical = ToolBoxThemeTokens.spacing.oneHalf,
-                ),
-            ) {
-                ToolBoxText(
-                    text = if (state.cancelRetryAvailable) "重试取消" else "取消导入",
-                    modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally),
-                    style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
-                    maxLines = 1,
+        if (stackActions) {
+            Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+                ImportReviewCancelAction(
+                    label = if (state.cancelRetryAvailable) "重试取消" else "取消导入",
+                    onClick = onCancel,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ToolBoxPrimaryButton(
+                    label = primaryLabel,
+                    onClick = if (awaitingConfirmation) onConfirmReview else onInstall,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = if (awaitingConfirmation) state.hasValidGrantPlan else state.canInstall,
                 )
             }
-            ToolBoxPrimaryButton(
-                label = primaryLabel,
-                onClick = if (awaitingConfirmation) onConfirmReview else onInstall,
-                modifier = Modifier.weight(2f),
-                enabled = if (awaitingConfirmation) state.hasValidGrantPlan else state.canInstall,
-            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+            ) {
+                ImportReviewCancelAction(
+                    label = if (state.cancelRetryAvailable) "重试取消" else "取消导入",
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                )
+                ToolBoxPrimaryButton(
+                    label = primaryLabel,
+                    onClick = if (awaitingConfirmation) onConfirmReview else onInstall,
+                    modifier = Modifier.weight(2f),
+                    enabled = if (awaitingConfirmation) state.hasValidGrantPlan else state.canInstall,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ImportReviewCancelAction(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ToolBoxCard(
+        modifier = modifier,
+        onClick = onClick,
+        contentPadding = PaddingValues(
+            horizontal = ToolBoxThemeTokens.spacing.one,
+            vertical = ToolBoxThemeTokens.spacing.oneHalf,
+        ),
+    ) {
+        ToolBoxText(
+            text = label,
+            modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally),
+            style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
+            maxLines = 2,
+        )
     }
 }
 

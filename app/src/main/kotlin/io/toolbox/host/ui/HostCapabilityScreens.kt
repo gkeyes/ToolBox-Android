@@ -122,7 +122,7 @@ private fun RuntimeControlRow(
             .background(ToolBoxThemeTokens.colors.surface)
             .padding(
                 horizontal = ToolBoxThemeTokens.spacing.half,
-                vertical = ToolBoxThemeTokens.spacing.half,
+                vertical = ToolBoxThemeTokens.spacing.micro,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -92,6 +92,7 @@ private fun CatalogUiState.toHomeScreenState() = HomeScreenState(
     name = "Import review fixture compact phone",
     showBackground = true,
     device = "spec:width=411dp,height=891dp,dpi=420",
+    fontScale = 2f,
 )
 @Composable
 fun ImportReviewFixtureCompactScreenshot() {

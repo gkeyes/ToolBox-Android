@@ -49,7 +49,7 @@
 | `CatalogFixtureCompactScreenshot` | 首页紧凑分组需要保护常用/最近工具的信息层级与密度，长工具名也不能被强制压成一行。 | 以 411x891dp 将含长名称固定工具的 `PreviewHostFixtures.catalog` 投影为 `HomeScreenState` 后渲染当前 `HomeScreen`。 | 标题、副标题、长工具名最多两行、分组工具行和标题栏导入操作无裁剪或重叠；仅表示截图夹具。 |
 | `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`。 | 空状态、固定 56dp 底栏的横排图标/标签和导入操作完整可见，不出现 fixture 工具。 |
 | `ToolManagerFixtureCompactScreenshot` | 工具页需在紧凑手机上展示检索、分组行和当前真实目录字段，并保护带“已固定”标记的长工具名排版。 | 以 411x891dp 渲染含长名称固定工具的 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 搜索/筛选、`已安装 · N`、最多两行的工具名、版本/大小/签名状态、更多操作和标题栏导入均无裁剪或重叠；仅表示截图夹具。 |
-| `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，主操作也不能随长内容滚出屏幕。 | 以 411x891dp 渲染 `PreviewHostFixtures.importReview` 的无状态审核页及固定底部动作区；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；底部始终可见取消与确认/安装动作；不表示生产目录已经审核、授权或安装任何包。 |
+| `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，主操作也不能随长内容滚出屏幕；200% 字体不能截断操作。 | 以 411x891dp、`fontScale=2f` 渲染 `PreviewHostFixtures.importReview` 的无状态审核页及固定底部动作区；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；底部动作在大字体下纵向排列，取消与确认/安装均完整可见；不表示生产目录已经审核、授权或安装任何包。 |
 | `PermissionCenterFixtureCompactScreenshot` | 权限中心应展示已观察的授权记录和撤销入口，而不能回退为虚构的全局权限列表。 | 以 411x891dp 渲染一项仅截图夹具的 `PermissionCenterUiState`。 | 工具 ID、授权状态、范围与撤销操作可读且无裁剪；夹具不表示真实授权。 |
 | `SettingsCompactScreenshot` | 设置曾展示无效操作，需保护真实主题与审计留存表单在宿主 chrome 和 inset 分配下的紧凑排版。 | 以 411x891dp 通过 `PrimaryScreen(Settings, ...)` 渲染已加载的默认 `SettingsUiState`。 | 顶栏、底栏、系统 inset 与主题、审计留存无重叠，且没有静态策略/配额占位；不将预览当作 DataStore 写入验证。 |
 
