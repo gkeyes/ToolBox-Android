@@ -17,9 +17,9 @@ import io.toolbox.core.ui.component.ToolBoxRiskBadge
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import androidx.compose.foundation.text.BasicText
 
 @Preview(showBackground = true, widthDp = 390)
 @Composable
@@ -47,7 +47,7 @@ private fun ToolBoxCardAndNavigationPreview() {
     ToolBoxTheme {
         Column {
             ToolBoxCard(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-                BasicText(
+                ToolBoxText(
                     text = "12 个工具，随用随开",
                     style = ToolBoxThemeTokens.textStyles.sectionTitle.copy(color = ToolBoxThemeTokens.colors.textPrimary),
                 )

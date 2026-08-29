@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +69,7 @@ fun ToolBoxRiskBadge(
         horizontalArrangement = Arrangement.spacedBy(spacing.half),
     ) {
         ToolBoxIcon(icon = icon, contentDescription = null, modifier = Modifier.size(sizes.badgeIcon), tint = content)
-        BasicText(text = label, style = ToolBoxThemeTokens.textStyles.label.copy(color = content), maxLines = 1)
+        ToolBoxText(text = label, style = ToolBoxThemeTokens.textStyles.label.copy(color = content), maxLines = 1)
     }
 }
 
@@ -158,9 +157,9 @@ private fun RowScope.PermissionRowContent(
     )
     Spacer(Modifier.width(spacing.one))
     Column(modifier = Modifier.weight(1f)) {
-        BasicText(text = title, style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
+        ToolBoxText(text = title, style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
         Spacer(Modifier.height(sizes.divider))
-        BasicText(
+        ToolBoxText(
             text = summary,
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
             maxLines = 2,

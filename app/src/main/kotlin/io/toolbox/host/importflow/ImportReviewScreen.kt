@@ -10,12 +10,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
 fun ImportReviewScreen(
@@ -77,8 +77,11 @@ fun ImportReviewScreen(
     ) { scaffoldPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(scaffoldPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(
+                horizontal = ToolBoxThemeTokens.spacing.two,
+                vertical = ToolBoxThemeTokens.spacing.row,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             state.error?.let { error ->
                 item(key = "error") {

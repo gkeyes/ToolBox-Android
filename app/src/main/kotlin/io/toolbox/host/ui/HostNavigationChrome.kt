@@ -26,7 +26,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxIconButton
@@ -66,7 +65,7 @@ internal fun PrimaryScreen(
                             Box(
                                 Modifier
                                     .weight(1f)
-                                    .widthIn(max = 1040.dp)
+                                    .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
                                     .align(Alignment.CenterHorizontally),
                             ) {
                                 content(layout.contentPadding())
@@ -97,7 +96,10 @@ private fun DestinationBar(
             .fillMaxWidth()
             .testTag(HostTestTags.BottomNavigationContainer)
     } else {
-        Modifier.fillMaxHeight().width(96.dp).padding(vertical = 16.dp)
+        Modifier
+            .fillMaxHeight()
+            .width(ToolBoxThemeTokens.sizes.mediumNavigationWidth)
+            .padding(vertical = ToolBoxThemeTokens.spacing.two)
     }
     if (compact) {
         ToolBoxNavigationBar(
@@ -109,7 +111,7 @@ private fun DestinationBar(
     } else {
         Column(
             modifier.background(ToolBoxThemeTokens.colors.surface),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.two),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             MainDestination.entries.forEach { destination ->
@@ -128,17 +130,26 @@ private fun DestinationItem(
     val color = if (selected) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.textSecondary
     Column(
         modifier = Modifier
-            .width(80.dp)
-            .heightIn(min = 56.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .width(ToolBoxThemeTokens.sizes.mediumNavigationItemWidth)
+            .heightIn(min = ToolBoxThemeTokens.sizes.compactChrome)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .clickable(role = Role.Tab) { onDestination(destination) }
             .testTag(destination.testTag)
             .semantics { contentDescription = "${destination.label}标签${if (selected) "，已选择" else ""}" },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        AppText(destination.symbol, size = 20, color = color)
-        AppText(destination.label, size = 12, color = color, weight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        AppText(
+            destination.symbol,
+            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+            color = color,
+        )
+        AppText(
+            destination.label,
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = color,
+            weight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
     }
 }
 
@@ -155,7 +166,7 @@ internal fun DetailScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         ToolBoxAppScaffold(
-            modifier = Modifier.fillMaxSize().widthIn(max = 1040.dp),
+            modifier = Modifier.fillMaxSize().widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth),
             topBar = {
                 ToolBoxTopBar(
                     title = title,

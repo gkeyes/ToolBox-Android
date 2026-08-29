@@ -1,17 +1,22 @@
 # V2 Phase 0 current-state inventory
 
-> Snapshot: `2026-08-29` on `codex/v2-phase0-4` at
-> `5d5fb62ff4e296a158e2684ed1b3fe681fad1592`. This is an implementation
-> inventory, not a claim that every planned API is available to imported tools.
+> Snapshot maintained on `2026-08-29` for `codex/refactor-lightweight-v2`.
+> Resolve the exact candidate with `git rev-parse HEAD`; embedding that commit
+> here would make this document self-stale on every documentation commit. This
+> is an implementation inventory, not a claim that every planned API is
+> available to imported tools.
 
 ## Baseline relation
 
 - Phase-0 reference tag: `v2-phase0-baseline-20260829`
   (`c0742c46de95d132b4591864dfbc429b9cd84015`, also `main` and
   `origin/main` when inspected).
-- Current branch is one commit ahead of that reference and zero commits behind:
-  `5d5fb62 feat: optimize V2 host responsiveness`.
-- The reference-to-current diff contains 37 tracked files. It covers compact
+- The plan's `refactor/lightweight-v2` name is represented as
+  `codex/refactor-lightweight-v2` because this workspace requires the `codex/`
+  prefix; no scope or baseline meaning changed.
+- The current branch contains the Phase 0–4 delivery series after that tag;
+  inspect the exact list with `git log --oneline v2-phase0-baseline-20260829..HEAD`.
+- The reference-to-current diff covers compact
   host UI/insets, catalog projection, deferred startup maintenance, runtime
   cleanup leasing, their focused tests, and screenshot references. This Phase-0
   documentation does not alter host behavior.

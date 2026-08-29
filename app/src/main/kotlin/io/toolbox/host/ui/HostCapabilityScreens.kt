@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxIconButton
@@ -119,21 +118,29 @@ private fun RuntimeControlRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = 56.dp)
+            .sizeIn(minHeight = ToolBoxThemeTokens.sizes.compactChrome)
             .background(ToolBoxThemeTokens.colors.surface)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(
+                horizontal = ToolBoxThemeTokens.spacing.half,
+                vertical = ToolBoxThemeTokens.spacing.half,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack)
         Column(Modifier.weight(1f)) {
-            AppText(ready?.runtime?.toolName ?: "工具运行", size = 15, weight = FontWeight.Bold, maxLines = 1)
+            AppText(
+                ready?.runtime?.toolName ?: "工具运行",
+                textStyle = ToolBoxThemeTokens.textStyles.body,
+                weight = FontWeight.Bold,
+                maxLines = 1,
+            )
             AppText(
                 text = if (ready == null) {
                     "ToolBox 原生 API 未启用"
                 } else {
                     "独立 Origin · ${ready.statusMessage} · 原生 API 不可用"
                 },
-                size = 11,
+                textStyle = ToolBoxThemeTokens.textStyles.label,
                 color = ToolBoxThemeTokens.colors.textSecondary,
                 maxLines = 1,
             )
@@ -147,23 +154,49 @@ private fun RuntimeControlRow(
 
 @Composable
 private fun RuntimeCenteredState(title: String, detail: String) {
-    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().padding(ToolBoxThemeTokens.spacing.twoHalf),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            AppText(title, size = 17, weight = FontWeight.Bold, align = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            AppText(detail, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
+            AppText(
+                title,
+                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+                weight = FontWeight.Bold,
+                align = TextAlign.Center,
+            )
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
+            AppText(
+                detail,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                color = ToolBoxThemeTokens.colors.textSecondary,
+                align = TextAlign.Center,
+            )
         }
     }
 }
 
 @Composable
 private fun RuntimeErrorState(message: String, onRetry: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().padding(ToolBoxThemeTokens.spacing.twoHalf),
+        contentAlignment = Alignment.Center,
+    ) {
         SurfaceCard {
-            AppText("工具暂时无法打开", size = 17, weight = FontWeight.Bold, align = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            AppText(message, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
-            Spacer(Modifier.height(12.dp))
+            AppText(
+                "工具暂时无法打开",
+                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+                weight = FontWeight.Bold,
+                align = TextAlign.Center,
+            )
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
+            AppText(
+                message,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                color = ToolBoxThemeTokens.colors.textSecondary,
+                align = TextAlign.Center,
+            )
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             ToolBoxPrimaryButton("重试", onClick = onRetry, modifier = Modifier.fillMaxWidth())
         }
     }
@@ -176,24 +209,29 @@ fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) 
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background)
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(20.dp),
+            .padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
         SurfaceCard {
             AppText(
                 if (loading) "正在打开本机工具目录" else "ToolBox 暂时无法启动",
-                size = 18,
+                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
                 weight = FontWeight.Bold,
                 align = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
-            AppText(message, size = 13, color = ToolBoxThemeTokens.colors.textSecondary, align = TextAlign.Center)
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+            AppText(
+                message,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                color = ToolBoxThemeTokens.colors.textSecondary,
+                align = TextAlign.Center,
+            )
             if (!loading) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
                 ToolBoxPrimaryButton(
                     label = "重试",
                     onClick = onRetry,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
                 )
             }
         }

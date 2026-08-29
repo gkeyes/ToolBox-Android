@@ -58,9 +58,14 @@ data class ToolBoxTextStyles(
 
 @Immutable
 data class ToolBoxSpacing(
+    val micro: Dp = 2.dp,
+    val tight: Dp = 3.dp,
     val half: Dp = 4.dp,
+    val compact: Dp = 6.dp,
     val one: Dp = 8.dp,
+    val row: Dp = 10.dp,
     val oneHalf: Dp = 12.dp,
+    val card: Dp = 14.dp,
     val two: Dp = 16.dp,
     val twoHalf: Dp = 20.dp,
     val three: Dp = 24.dp,
@@ -85,6 +90,10 @@ data class ToolBoxSizes(
     val catalogRow: Dp = 72.dp,
     val compactToolGlyph: Dp = 44.dp,
     val toolGlyph: Dp = 48.dp,
+    val factLabelWidth: Dp = 72.dp,
+    val mediumNavigationItemWidth: Dp = 80.dp,
+    val mediumNavigationWidth: Dp = 96.dp,
+    val contentMaxWidth: Dp = 1040.dp,
 )
 
 private val LightToolBoxColors = ToolBoxColorScheme(

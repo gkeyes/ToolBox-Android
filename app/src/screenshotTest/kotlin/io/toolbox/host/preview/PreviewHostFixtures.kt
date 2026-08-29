@@ -26,7 +26,7 @@ object PreviewHostFixtures {
         tools = listOf(
             tool(
                 id = "io.toolbox.preview.calculator",
-                name = "仓位计算器",
+                name = "多市场仓位风险预算与分批止盈止损策略组合回测计算器",
                 signature = SignatureState.VERIFIED_TRUSTED,
                 version = "1.2.0",
                 bytes = 8_388_608L,

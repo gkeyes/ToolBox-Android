@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,11 +28,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRiskBadge
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 private enum class RiskTone { Safe, Warning, Danger }
@@ -170,19 +169,18 @@ private val ToolTrust.tone: RiskTone
 internal fun AppText(
     text: String,
     modifier: Modifier = Modifier,
-    size: Int = 14,
     color: Color = ToolBoxThemeTokens.colors.textPrimary,
     weight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
     align: TextAlign = TextAlign.Start,
-    textStyle: TextStyle? = null,
+    textStyle: TextStyle = ToolBoxThemeTokens.textStyles.body,
 ) {
-    BasicText(
+    ToolBoxText(
         text = text,
         modifier = modifier,
-        style = (textStyle ?: TextStyle(fontSize = size.sp)).copy(
+        style = textStyle.copy(
             color = color,
-            fontWeight = weight ?: textStyle?.fontWeight ?: FontWeight.Normal,
+            fontWeight = weight ?: textStyle.fontWeight ?: FontWeight.Normal,
             textAlign = align,
         ),
         maxLines = maxLines,

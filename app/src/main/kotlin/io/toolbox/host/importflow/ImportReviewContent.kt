@@ -11,19 +11,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxPermissionRow
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRiskBadge
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
 import io.toolbox.core.ui.component.ToolBoxStatusRow
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.tool.packagekit.RiskFinding
 import io.toolbox.tool.packagekit.RiskFindingCode
@@ -132,30 +131,33 @@ internal fun LazyListScope.installedContent(state: ImportReviewUiState, onBack: 
 
 @Composable
 private fun IdentityCard(review: ImportReviewFacts) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                BasicText(
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.micro),
+            ) {
+                ToolBoxText(
                     review.toolName,
                     style = ToolBoxThemeTokens.textStyles.screenTitle.copy(
                         color = ToolBoxThemeTokens.colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
-                BasicText(
+                ToolBoxText(
                     "${review.toolId} · ${review.version} (${review.versionCode})",
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                BasicText(
+                ToolBoxText(
                     review.sourceName,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             ToolBoxRiskBadge(review.signature.riskLevel, label = review.signature.label)
         }
     }
@@ -167,7 +169,7 @@ private fun PermissionChoiceCard(
     choice: ImportGrantChoice,
     onChoice: (ImportGrantChoice) -> Unit,
 ) {
-    ToolBoxCard(contentPadding = PaddingValues(vertical = 4.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(vertical = ToolBoxThemeTokens.spacing.half)) {
         ToolBoxPermissionRow(
             title = permission.displayName,
             summary = "${permission.reason}${if (permission.required) " · 必需" else " · 可选"}",
@@ -176,8 +178,11 @@ private fun PermissionChoiceCard(
             contained = false,
         )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(
+                horizontal = ToolBoxThemeTokens.spacing.row,
+                vertical = ToolBoxThemeTokens.spacing.compact,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             CompactChoice("拒绝", choice == ImportGrantChoice.DENY, { onChoice(ImportGrantChoice.DENY) }, Modifier.weight(1f))
             CompactChoice(
@@ -192,8 +197,15 @@ private fun PermissionChoiceCard(
 
 @Composable
 private fun CompactChoice(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    ToolBoxCard(modifier, onClick, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)) {
-        BasicText(
+    ToolBoxCard(
+        modifier,
+        onClick,
+        contentPadding = PaddingValues(
+            horizontal = ToolBoxThemeTokens.spacing.row,
+            vertical = ToolBoxThemeTokens.spacing.oneHalf,
+        ),
+    ) {
+        ToolBoxText(
             if (selected) "✓ $label" else label,
             style = ToolBoxThemeTokens.textStyles.label.copy(
                 color = if (selected) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.textSecondary,

@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -149,7 +148,7 @@ fun ToolBoxTopBar(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half),
         ) {
-            BasicText(
+            ToolBoxText(
                 text = title,
                 modifier = Modifier.semantics { heading() },
                 style = ToolBoxThemeTokens.textStyles.screenTitle.copy(
@@ -157,7 +156,7 @@ fun ToolBoxTopBar(
                 ),
             )
             if (subtitle.isNotEmpty()) {
-                BasicText(
+                ToolBoxText(
                     text = subtitle,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(
                         color = ToolBoxThemeTokens.colors.textSecondary,
@@ -214,7 +213,7 @@ fun ToolBoxNavigationBar(
                     ) {
                         ToolBoxIcon(item.icon, contentDescription = null, tint = color)
                         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-                        BasicText(
+                        ToolBoxText(
                             text = item.label,
                             style = ToolBoxThemeTokens.textStyles.label.copy(color = color),
                             maxLines = 1,
@@ -228,7 +227,7 @@ fun ToolBoxNavigationBar(
                     ) {
                         ToolBoxIcon(item.icon, contentDescription = null, tint = color)
                         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.half))
-                        BasicText(
+                        ToolBoxText(
                             text = item.label,
                             style = ToolBoxThemeTokens.textStyles.label.copy(color = color),
                             maxLines = 1,
@@ -304,6 +303,6 @@ fun ToolBoxPrimaryButton(
         enabled = enabled,
         minHeight = ToolBoxThemeTokens.sizes.touchTarget,
     ) {
-        BasicText(text = label, style = ToolBoxThemeTokens.textStyles.body)
+        ToolBoxText(text = label, style = ToolBoxThemeTokens.textStyles.body)
     }
 }

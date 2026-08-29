@@ -296,7 +296,7 @@ private fun CatalogToolRow(
                             modifier = Modifier.weight(1f),
                             textStyle = ToolBoxThemeTokens.textStyles.title,
                             weight = FontWeight.SemiBold,
-                            maxLines = 1,
+                            maxLines = 2,
                         )
                         if (tool.pinnedOrder != null) {
                             AppText(

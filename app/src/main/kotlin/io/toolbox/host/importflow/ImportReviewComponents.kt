@@ -8,16 +8,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRiskBadge
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.tool.packagekit.RiskFindingCode
 import io.toolbox.tool.packagekit.SignatureEvidence
@@ -31,27 +30,27 @@ internal fun MessageCard(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                BasicText(
+                ToolBoxText(
                     title,
                     style = ToolBoxThemeTokens.textStyles.body.copy(
                         color = ToolBoxThemeTokens.colors.textPrimary,
                         fontWeight = FontWeight.SemiBold,
                     ),
                 )
-                Spacer(Modifier.height(3.dp))
-                BasicText(
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.tight))
+                ToolBoxText(
                     message,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             ToolBoxRiskBadge(level)
         }
         if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.row))
             ToolBoxPrimaryButton(actionLabel, onAction, Modifier.fillMaxWidth())
         }
     }
@@ -65,36 +64,36 @@ internal fun CompactActionCard(
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
-        BasicText(
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
+        ToolBoxText(
             title,
             style = ToolBoxThemeTokens.textStyles.body.copy(
                 color = ToolBoxThemeTokens.colors.textPrimary,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
-        Spacer(Modifier.height(2.dp))
-        BasicText(
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.micro))
+        ToolBoxText(
             summary,
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
         ToolBoxPrimaryButton(actionLabel, onClick, Modifier.fillMaxWidth(), enabled)
     }
 }
 
 @Composable
 internal fun GroupCard(title: String, content: @Composable () -> Unit) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
         SectionLabel(title)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.half))
         content()
     }
 }
 
 @Composable
 internal fun SectionLabel(text: String) {
-    BasicText(
+    ToolBoxText(
         text,
         style = ToolBoxThemeTokens.textStyles.body.copy(
             color = ToolBoxThemeTokens.colors.textPrimary,
@@ -105,13 +104,13 @@ internal fun SectionLabel(text: String) {
 
 @Composable
 internal fun FactLine(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        BasicText(
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = ToolBoxThemeTokens.spacing.tight)) {
+        ToolBoxText(
             label,
-            modifier = Modifier.width(72.dp),
+            modifier = Modifier.width(ToolBoxThemeTokens.sizes.factLabelWidth),
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
         )
-        BasicText(
+        ToolBoxText(
             value,
             modifier = Modifier.weight(1f),
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textPrimary),

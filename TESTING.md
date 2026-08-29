@@ -38,7 +38,7 @@
 | `HostNavigationTest.freshProductionCatalogNavigatesToImportReviewAndSettingsWithoutPickerLaunch` | 真实宿主不得注入默认工具、重复管理控件或展示无效设置，且导入审核与真实设置必须可达。 | 启动未写入目录记录的 `MainActivity`，核对首页后依次进入工具、导入审核、返回和设置；只检查选择入口，不启动外部文件选择器。 | 首页只显示一个可操作的真实空状态，且没有默认工具、本机目录或搜索；工具页独占搜索；导入审核显示 `.tbx` 选择入口；设置只显示可用主题与审计留存，不显示静态策略/配额占位。 |
 | `HostAdaptiveScrollTest.fixtureLongCatalogScrollsToTheLastStableKeyAndKeepsActionsTouchSafe` | 直接覆盖用户报告的滑动卡涩风险、稳定 key 与 48dp 触控目标。 | 仅向当前 `HomeScreen(HomeScreenState)` 注入 80 项测试夹具，滚动到 `tool-80`，读取末项分组行和标题栏导入操作的语义边界。 | 最后一项可稳定定位且可见，分组行和标题栏导入操作宽高均至少 48dp；夹具不会经过生产目录或被当作预装工具。 |
 | `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 保护 200% 字体下内容与底部导航不被裁剪，同时避免底栏再次随字体倍率膨胀。 | 使用 `fontScale=2f` 渲染全新状态并检查空状态、固定 56dp 底栏和三个导航项。 | 全部标签和内容可达；底栏保持 56dp；每个导航项触控边界至少 48dp。 |
-| `HostDependenciesViewModelTest.maintenanceWaitsForHostFirstFrameAndFailureDoesNotReplaceReady` | 孤立 WebView 资料清理不能争抢首个可用宿主帧，也不能把已经发布的 `Ready` 替换成错误页。 | 给真实 `HostDependenciesViewModel` 注入计数且可挂起的维护任务；等待 `Ready`，在发送显式首帧信号前后检查调用次数，再让维护以普通异常结束。 | 首帧信号前调用次数为 0，信号后恰好运行 1 次；维护失败被隔离，原来的同一 `Ready` 实例保持不变。 |
+| `HostDependenciesViewModelTest.readyDefersNonCoreFactoriesUntilTheirFirstRequiredAccess` | 首页 `Ready` 只可依赖数据库/repository；检查器、包生命周期与运行时服务的构造不得抢占首帧，但首帧维护和用户功能仍必须取得相同服务。 | 给真实 `HostDependenciesViewModel` 注入四项计数工厂与可挂起维护；等待 `Ready` 后模拟首屏 ViewModel 读取各延迟代理并检查仍未构造，发送首帧信号后验证仅 Profile 管理器因维护构造，再分别执行检查器/生命周期操作和读取运行准备器。 | `Ready` 及首屏代理读取后四项计数均为 0；首帧维护启动后只构造 Profile 管理器一次；其余服务仅在各自首次真实操作时各构造一次；维护失败被隔离，原来的同一 `Ready` 实例保持不变。 |
 
 ## 当前截图测试
 
@@ -46,9 +46,9 @@
 
 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|
-| `CatalogFixtureCompactScreenshot` | 首页紧凑分组需要保护常用/最近工具的信息层级与密度。 | 以 411x891dp 将 `PreviewHostFixtures.catalog` 投影为 `HomeScreenState` 后渲染当前 `HomeScreen`。 | 标题、副标题、分组工具行和标题栏导入操作无裁剪或重叠；仅表示截图夹具。 |
+| `CatalogFixtureCompactScreenshot` | 首页紧凑分组需要保护常用/最近工具的信息层级与密度，长工具名也不能被强制压成一行。 | 以 411x891dp 将含长名称固定工具的 `PreviewHostFixtures.catalog` 投影为 `HomeScreenState` 后渲染当前 `HomeScreen`。 | 标题、副标题、长工具名最多两行、分组工具行和标题栏导入操作无裁剪或重叠；仅表示截图夹具。 |
 | `FreshCatalogLargeTextScreenshot` | 大字体是已发生的顶部/底部可达性回归场景。 | 以 411x891dp、`fontScale=2f` 渲染空的 `HomeScreenState(isLoaded=true)`。 | 空状态、固定 56dp 底栏的横排图标/标签和导入操作完整可见，不出现 fixture 工具。 |
-| `ToolManagerFixtureCompactScreenshot` | 工具页需在紧凑手机上展示检索、分组行和当前真实目录字段，而非旧卡片墙。 | 以 411x891dp 渲染 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 搜索/筛选、`已安装 · N`、版本/大小/签名状态、更多操作和标题栏导入均无裁剪或重叠；仅表示截图夹具。 |
+| `ToolManagerFixtureCompactScreenshot` | 工具页需在紧凑手机上展示检索、分组行和当前真实目录字段，并保护带“已固定”标记的长工具名排版。 | 以 411x891dp 渲染含长名称固定工具的 `PreviewHostFixtures.catalog` 到当前 `ToolManagerScreen`。 | 搜索/筛选、`已安装 · N`、最多两行的工具名、版本/大小/签名状态、更多操作和标题栏导入均无裁剪或重叠；仅表示截图夹具。 |
 | `ImportReviewFixtureCompactScreenshot` | 导入审核必须在紧凑屏展示检查后的 manifest、风险与逐项权限，而不能只保留选择文件的空闲页。 | 以 411x891dp 渲染 `PreviewHostFixtures.importReview` 的无状态审核页；该对象仅存在于 `screenshotTest`。 | 显示已检查的工具身份、结构/签名、风险提示和权限选择；不表示生产目录已经审核、授权或安装任何包。 |
 | `PermissionCenterFixtureCompactScreenshot` | 权限中心应展示已观察的授权记录和撤销入口，而不能回退为虚构的全局权限列表。 | 以 411x891dp 渲染一项仅截图夹具的 `PermissionCenterUiState`。 | 工具 ID、授权状态、范围与撤销操作可读且无裁剪；夹具不表示真实授权。 |
 | `SettingsCompactScreenshot` | 设置曾展示无效操作，需保护真实主题与审计留存表单在宿主 chrome 和 inset 分配下的紧凑排版。 | 以 411x891dp 通过 `PrimaryScreen(Settings, ...)` 渲染已加载的默认 `SettingsUiState`。 | 顶栏、底栏、系统 inset 与主题、审计留存无重叠，且没有静态策略/配额占位；不将预览当作 DataStore 写入验证。 |

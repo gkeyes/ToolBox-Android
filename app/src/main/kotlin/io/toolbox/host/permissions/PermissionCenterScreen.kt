@@ -16,7 +16,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.GrantState
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
@@ -27,6 +26,7 @@ import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRiskBadge
 import io.toolbox.core.ui.component.ToolBoxRiskLevel
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
@@ -68,8 +68,11 @@ fun PermissionCenterScreen(
     ) { contentPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(
+                horizontal = ToolBoxThemeTokens.spacing.two,
+                vertical = ToolBoxThemeTokens.spacing.oneHalf,
+            ),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.row),
         ) {
             state.feedback?.let { feedback ->
                 item(key = "feedback") {
@@ -107,31 +110,39 @@ private fun PermissionGrantCard(
     item: PermissionGrantItem,
     onRevoke: (String) -> Unit,
 ) {
-    ToolBoxCard(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+    ToolBoxCard(
+        contentPadding = PaddingValues(
+            horizontal = ToolBoxThemeTokens.spacing.card,
+            vertical = ToolBoxThemeTokens.spacing.oneHalf,
+        ),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ToolBoxIcon(
                 icon = item.icon,
                 contentDescription = null,
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.padding(ToolBoxThemeTokens.spacing.one),
                 tint = ToolBoxThemeTokens.colors.primary,
             )
-            Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                androidx.compose.foundation.text.BasicText(
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.micro),
+            ) {
+                ToolBoxText(
                     text = item.title,
                     style = ToolBoxThemeTokens.textStyles.body.copy(
                         color = ToolBoxThemeTokens.colors.textPrimary,
                         fontWeight = FontWeight.SemiBold,
                     ),
                 )
-                androidx.compose.foundation.text.BasicText(
+                ToolBoxText(
                     text = item.details,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
                 )
             }
             ToolBoxRiskBadge(level = item.riskLevel, label = item.stateLabel)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
         ToolBoxPrimaryButton(
             label = "撤销此权限",
             onClick = { onRevoke(item.permission) },
@@ -142,38 +153,38 @@ private fun PermissionGrantCard(
 
 @Composable
 private fun RuntimeGrantCard(onClick: () -> Unit) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ToolBoxIcon(ToolBoxIconKey.Shield, contentDescription = null, tint = ToolBoxThemeTokens.colors.primary)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.row))
             Column(modifier = Modifier.weight(1f)) {
-                androidx.compose.foundation.text.BasicText(
+                ToolBoxText(
                     text = "新增授权",
                     style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
                 )
-                androidx.compose.foundation.text.BasicText(
+                ToolBoxText(
                     text = "运行时请求时确认，当前未接入。此页不能新增或授权权限。",
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
                 )
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.row))
         ToolBoxPrimaryButton(label = "了解授权方式", onClick = onClick, modifier = Modifier.fillMaxWidth())
     }
 }
 
 @Composable
 private fun FactCard(title: String, message: String) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
-        androidx.compose.foundation.text.BasicText(
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
+        ToolBoxText(
             text = title,
             style = ToolBoxThemeTokens.textStyles.body.copy(
                 color = ToolBoxThemeTokens.colors.textPrimary,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
-        Spacer(Modifier.height(4.dp))
-        androidx.compose.foundation.text.BasicText(
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.half))
+        ToolBoxText(
             text = message,
             style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
         )
@@ -182,21 +193,21 @@ private fun FactCard(title: String, message: String) {
 
 @Composable
 private fun FeedbackCard(feedback: PermissionCenterFeedback, onDismiss: () -> Unit) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
+    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.card)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ToolBoxIcon(
                 icon = if (feedback is PermissionCenterFeedback.Revoked) ToolBoxIconKey.Shield else ToolBoxIconKey.Lock,
                 contentDescription = null,
                 tint = feedback.color,
             )
-            Spacer(Modifier.width(8.dp))
-            androidx.compose.foundation.text.BasicText(
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
+            ToolBoxText(
                 text = feedback.message,
                 modifier = Modifier.weight(1f),
                 style = ToolBoxThemeTokens.textStyles.metadata.copy(color = feedback.color),
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
         ToolBoxPrimaryButton(label = "知道了", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
     }
 }
