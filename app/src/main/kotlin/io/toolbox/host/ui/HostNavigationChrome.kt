@@ -42,7 +42,12 @@ internal fun PrimaryScreen(
     onImport: (() -> Unit)?,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize().background(ToolBoxThemeTokens.colors.background)) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(ToolBoxThemeTokens.colors.background)
+            .testTag(selected.screenTestTag),
+    ) {
         val layout = hostRouteLayoutFor(maxWidth)
         ToolBoxAppScaffold(
             modifier = Modifier.fillMaxSize(),
@@ -245,4 +250,11 @@ private val MainDestination.testTag: String
         MainDestination.Home -> HostTestTags.BottomHome
         MainDestination.Tools -> HostTestTags.BottomTools
         MainDestination.Settings -> HostTestTags.BottomSettings
+    }
+
+private val MainDestination.screenTestTag: String
+    get() = when (this) {
+        MainDestination.Home -> HostTestTags.PrimaryHome
+        MainDestination.Tools -> HostTestTags.PrimaryTools
+        MainDestination.Settings -> HostTestTags.PrimarySettings
     }
