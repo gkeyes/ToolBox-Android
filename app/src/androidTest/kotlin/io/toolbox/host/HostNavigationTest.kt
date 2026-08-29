@@ -2,6 +2,8 @@ package io.toolbox.host
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,7 +26,7 @@ class HostNavigationTest {
         composeRule.onAllNodesWithText("搜索名称、ID 或分类").assertCountEquals(0)
 
         composeRule.onNodeWithTag(HostTestTags.BottomTools).performClick()
-        composeRule.onNodeWithText("工具管理").assertIsDisplayed()
+        composeRule.onNode(hasText("工具") and isHeading()).assertIsDisplayed()
         composeRule.onNodeWithText("搜索名称、ID 或分类").assertIsDisplayed()
         composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
 
