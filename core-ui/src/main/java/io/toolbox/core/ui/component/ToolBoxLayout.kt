@@ -86,7 +86,7 @@ fun ToolBoxTopBar(
             )
         }
     }
-    val appBarModifier = modifier.semantics { heading() }
+    val appBarModifier = modifier.semantics(mergeDescendants = true) { heading() }
     if (largeText) {
         TopAppBar(
             title = title,
