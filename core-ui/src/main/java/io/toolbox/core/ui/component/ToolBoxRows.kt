@@ -28,6 +28,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
@@ -239,7 +241,11 @@ fun ToolBoxSwitchSettingRow(
         summary = summary,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
+            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
+            .semantics {
+                role = Role.Switch
+                toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+            },
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         enabled = enabled,
     )
