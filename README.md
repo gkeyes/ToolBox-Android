@@ -40,14 +40,15 @@ manifest、完整性清单、可重复打包脚本和 `.tbx`。
 ./gradlew --no-daemon verifySecurityInvariants assembleDebug testDebugUnitTest
 ```
 
-连接 Android 13+ 设备或模拟器后安装：
+需要真机测试时，可在 Android 13+ 设备上安装：
 
 ```bash
 ./gradlew :app:installDebug
 ```
 
-最终候选必须先卸载旧包，再干净安装并完成一次小米真机组合旅程。GitHub Actions 只有在编译和
-模拟器关键路径均通过后才上传 APK、三个 `.tbx` 和 `SHA256SUMS.txt`。
+GitHub Actions 在安全不变量、API 合同、静态编译和最小单元门禁通过后上传 APK、三个 `.tbx`
+和 `SHA256SUMS.txt`。系统权限、SAF、相机、通知、后台调度和 HyperOS 系统栏由用户在小米真机
+上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。
 
 ## 工程结构
 

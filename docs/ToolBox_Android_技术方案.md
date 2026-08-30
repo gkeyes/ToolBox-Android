@@ -201,12 +201,12 @@ cancel(taskId)
 `SUCCEEDED | FAILED | CANCELLED`。一次性任务结束为 `COMPLETED` 或 `CANCELLED`；周期任务
 每次运行结束回到 `QUEUED`，并保存最近一次 `TaskRunResult`。
 
-首版 spec 仅支持：
+首版 spec 仅支持下列字段和操作；公开 SDK 不声明指定运行时间、充电或低电量约束：
 
 - `httpGet`：HTTPS URL（最大 2048 字符）、文本/JSON、无请求 body/认证/cookie，受
   `network` + `background.tasks` 和 manifest allowlist 约束；请求和解码后响应各不超过
   256 KiB。
-- `notify`：title ≤64、body ≤256、可指定 not-before；受 `notifications` +
+- `notify`：title ≤64、body ≤256；受 `notifications` +
   `background.tasks` + Android 通知授权约束。
 
 每工具最多 8 个活动任务、4 个周期任务；周期下限 15 分钟；工具内串行、全局最多两个并发；
@@ -273,9 +273,10 @@ mapped 私网 IPv6 等地址，防止 DNS TOCTOU/SSRF。
 | 后台与代理 | 防止虚假后台或 SSRF。 | WorkManager TestDriver + Room + 可注入传输/DNS，覆盖状态、重试、取消、私网/重定向和清理。 | 正确状态/结果；无 WebView、SSRF、孤儿 Work/通知。 |
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、三个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
-GitHub Actions 的顺序固定为：编译/最小单元测试 → 模拟器关键宿主流程 → APK 产物。产物 job
-必须依赖前两项成功，最终上传 `toolbox-v0.2.0-debug.apk`、三个 `.tbx`、`SHA256SUMS.txt` 和
-构建/测试回执。模拟器不替代相机、SAF、Sharesheet、快捷方式和 Xiaomi 系统栏的真机组合旅程。
+GitHub Actions 的顺序固定为：安全/API/静态编译/最小单元门禁 → APK 产物。产物 job 只依赖
+静态门禁成功，最终上传 `toolbox-v0.2.0-debug.apk`、三个 `.tbx`、`SHA256SUMS.txt` 和构建/测试
+回执。自动交付流程不启动模拟器；回执必须明确设备测试未执行。相机、SAF、Sharesheet、快捷
+方式、通知、WorkManager 时序和 Xiaomi 系统栏由用户在候选 APK 上完成真机组合旅程。
 
 ## 11. 完成条件
 
@@ -283,5 +284,5 @@ GitHub Actions 的顺序固定为：编译/最小单元测试 → 模拟器关�
   或无效按钮。
 - 三个范例可由干净安装的候选 APK 导入并完成各自声明功能。
 - WebView、消息桥、包检查和网络代理符合第 2 节不变量。
-- 每项保留测试有理由/方法/预期；最小相关构建、测试和真实 Xiaomi 组合旅程有证据。
-- GitHub 只在所有前置门通过后发布 APK 和范例产物。
+- 每项保留测试有理由/方法/预期；静态候选门禁结果与用户真机结果分开记录。
+- GitHub 只在静态门禁通过后发布 APK 和范例产物，不伪造设备验证结论。

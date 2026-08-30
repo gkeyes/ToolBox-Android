@@ -99,9 +99,7 @@ export type HapticEffect = "click" | "confirm" | "reject";
 
 export interface NetworkRequest {
   url: string;
-  method?: "GET" | "POST";
-  body?: string;
-  contentType?: "text/plain" | "application/json";
+  method?: "GET";
 }
 
 export interface NetworkResponse {
@@ -123,8 +121,6 @@ export interface FileReadResult {
 
 export interface TaskConstraints {
   network?: "none" | "connected";
-  requiresCharging?: boolean;
-  batteryNotLow?: boolean;
 }
 
 export interface HttpGetTaskOperation {
@@ -143,7 +139,6 @@ export type BackgroundTaskOperation = HttpGetTaskOperation | NotifyTaskOperation
 export interface BackgroundTaskSpec {
   key: string;
   operation: BackgroundTaskOperation;
-  earliestAt?: number;
   constraints?: TaskConstraints;
 }
 

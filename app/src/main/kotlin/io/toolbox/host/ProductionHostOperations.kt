@@ -48,7 +48,6 @@ import io.toolbox.tool.runtime.RuntimeBridgeConfiguration
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeM2Handlers
 import io.toolbox.tool.runtime.RuntimeNetworkHandler
-import io.toolbox.tool.runtime.RuntimeNetworkMethod
 import io.toolbox.tool.runtime.RuntimeNetworkRequest
 import io.toolbox.tool.runtime.RuntimeNetworkResponse
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
@@ -264,9 +263,6 @@ internal class ProductionHostBackgroundOperations(
         runtime: PreparedToolRuntime,
         request: RuntimeNetworkRequest,
     ): RuntimeNetworkResponse {
-        if (request.method != RuntimeNetworkMethod.GET) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "POST requests are not available yet")
-        }
         val policy = runtime.installedManifest.network ?: throw RuntimeHandlerException(
             RuntimeRpcErrorCode.NETWORK_BLOCKED,
             "This tool does not declare network access",
@@ -407,13 +403,7 @@ private class RuntimeBackgroundTaskAdapter(
     }
 
     private fun validateSupportedSchedule(spec: RuntimeBackgroundTaskSpec) {
-        if (spec.earliestAt != null) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "指定运行时间暂不支持")
-        }
         val constraints = spec.constraints ?: return
-        if (constraints.requiresCharging == true || constraints.batteryNotLow == true) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "此任务约束暂不支持")
-        }
         if (constraints.network == io.toolbox.tool.runtime.RuntimeNetworkConstraint.NONE &&
             spec.operation is RuntimeBackgroundTaskOperation.HttpGet
         ) {

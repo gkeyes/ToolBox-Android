@@ -103,8 +103,9 @@ JavaScript calls, packaging, import, background limits and errors.
 ## Remaining delivery boundary
 
 The current local candidate has compilation and the admitted smallest unit
-suite evidence. The CI workflow runs that gate first, then the emulator host
-flow, and only then uploads the APK and three examples with SHA-256 sums.
+suite evidence. The CI workflow runs that static gate and then uploads the APK
+and three examples with SHA-256 sums. It does not start an emulator or claim
+device validation in the delivery receipt.
 
 Real Android system surfaces remain device-specific: SAF, camera, Sharesheet,
 notification delivery, WorkManager timing and HyperOS system bars must be

@@ -151,13 +151,11 @@ fun interface RuntimeNetworkHandler {
     suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse
 }
 
-enum class RuntimeNetworkMethod { GET, POST }
+enum class RuntimeNetworkMethod { GET }
 
 data class RuntimeNetworkRequest(
     val url: String,
     val method: RuntimeNetworkMethod,
-    val body: String?,
-    val contentType: String?,
 )
 
 data class RuntimeNetworkResponse(
@@ -178,8 +176,6 @@ sealed interface RuntimeBackgroundTaskOperation {
 
 data class RuntimeTaskConstraints(
     val network: RuntimeNetworkConstraint?,
-    val requiresCharging: Boolean?,
-    val batteryNotLow: Boolean?,
 )
 
 enum class RuntimeNetworkConstraint { NONE, CONNECTED }
@@ -187,7 +183,6 @@ enum class RuntimeNetworkConstraint { NONE, CONNECTED }
 data class RuntimeBackgroundTaskSpec(
     val key: String,
     val operation: RuntimeBackgroundTaskOperation,
-    val earliestAt: Long?,
     val constraints: RuntimeTaskConstraints?,
 )
 
@@ -734,12 +729,6 @@ class RuntimeRpcDispatcher(
     private fun RpcValue.ObjectValue.optionalLong(name: String, min: Long, max: Long): Long? =
         if (name in value) requiredLong(name, min, max) else null
 
-    private fun RpcValue.ObjectValue.optionalBoolean(name: String): Boolean? = when (val raw = value[name]) {
-        null -> null
-        is RpcValue.Bool -> raw.value
-        else -> throw IllegalArgumentException(name)
-    }
-
     private fun RpcValue.ObjectValue.requiredObject(name: String): RpcValue.ObjectValue =
         required(name) as? RpcValue.ObjectValue ?: throw IllegalArgumentException(name)
 
@@ -775,37 +764,29 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RpcValue.ObjectValue.toNetworkRequest(): RuntimeNetworkRequest {
-        requireOnly("url", "method", "body", "contentType")
+        requireOnly("url", "method")
         val url = requiredString("url", MAX_NETWORK_URL_CHARS)
         require(url == url.trim() && url.none(Char::isISOControl))
         val method = when (optionalString("method", 4) ?: "GET") {
             "GET" -> RuntimeNetworkMethod.GET
-            "POST" -> RuntimeNetworkMethod.POST
             else -> throw IllegalArgumentException("method")
         }
-        val body = optionalString("body", MAX_NETWORK_REQUEST_BODY_CHARS)
-        body?.let { require(it.toByteArray(StandardCharsets.UTF_8).size <= MAX_NETWORK_REQUEST_BODY_BYTES) }
-        val contentType = optionalString("contentType", MAX_CONTENT_TYPE_CHARS)
-        contentType?.let { require(it in NETWORK_CONTENT_TYPES) }
-        if (method == RuntimeNetworkMethod.GET) require(body == null && contentType == null)
-        if (contentType != null) require(body != null)
-        return RuntimeNetworkRequest(url, method, body, contentType)
+        return RuntimeNetworkRequest(url, method)
     }
 
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
         val allowed = if (periodic) {
-            arrayOf("key", "operation", "earliestAt", "constraints", "intervalMinutes")
+            arrayOf("key", "operation", "constraints", "intervalMinutes")
         } else {
-            arrayOf("key", "operation", "earliestAt", "constraints")
+            arrayOf("key", "operation", "constraints")
         }
         requireOnly(*allowed)
         val key = requiredIdentifier("key", MAX_TASK_KEY_CHARS)
         val operation = requiredObject("operation").toBackgroundOperation()
-        val earliestAt = optionalLong("earliestAt", 0L, MAX_SAFE_INTEGER)
         val constraints = value["constraints"]?.let {
             (it as? RpcValue.ObjectValue ?: throw IllegalArgumentException("constraints")).toTaskConstraints()
         }
-        return RuntimeBackgroundTaskSpec(key, operation, earliestAt, constraints)
+        return RuntimeBackgroundTaskSpec(key, operation, constraints)
     }
 
     private fun RpcValue.ObjectValue.toBackgroundOperation(): RuntimeBackgroundTaskOperation {
@@ -829,7 +810,7 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RpcValue.ObjectValue.toTaskConstraints(): RuntimeTaskConstraints {
-        requireOnly("network", "requiresCharging", "batteryNotLow")
+        requireOnly("network")
         val network = optionalString("network", 16)?.let {
             when (it) {
                 "none" -> RuntimeNetworkConstraint.NONE
@@ -837,11 +818,7 @@ class RuntimeRpcDispatcher(
                 else -> throw IllegalArgumentException("constraints.network")
             }
         }
-        return RuntimeTaskConstraints(
-            network = network,
-            requiresCharging = optionalBoolean("requiresCharging"),
-            batteryNotLow = optionalBoolean("batteryNotLow"),
-        )
+        return RuntimeTaskConstraints(network = network)
     }
 
     private fun RpcValue.ObjectValue.requiredBytes(name: String, maxBytes: Int): ByteArray = when (val raw = required(name)) {
@@ -862,7 +839,6 @@ class RuntimeRpcDispatcher(
         val SUPPORTED_CONTRACT_PHASES = setOf(ContractPhase.M1, ContractPhase.M2, ContractPhase.M3)
         val HEADER_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")
         val FORBIDDEN_RESPONSE_HEADERS = setOf("set-cookie", "set-cookie2", "proxy-authenticate")
-        val NETWORK_CONTENT_TYPES = setOf("text/plain", "application/json")
         val MIME_TYPE = Regex("^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+*\\-]+$")
         const val MAX_KEY_CHARS = 128
         const val MAX_TOAST_CHARS = 200
@@ -882,12 +858,9 @@ class RuntimeRpcDispatcher(
         const val DEFAULT_LOCATION_TIMEOUT_MS = 10_000L
         const val MAX_LOCATION_TIMEOUT_MS = 30_000L
         const val MAX_NETWORK_URL_CHARS = 2_048
-        const val MAX_NETWORK_REQUEST_BODY_CHARS = 64 * 1024
-        const val MAX_NETWORK_REQUEST_BODY_BYTES = 64 * 1024
         const val MAX_NETWORK_RESPONSE_BYTES = 1_024 * 1_024
         const val MAX_NETWORK_RESPONSE_HEADERS = 64
         const val MAX_NETWORK_HEADER_VALUE_CHARS = 4_096
-        const val MAX_CONTENT_TYPE_CHARS = 32
         const val MAX_NOTIFICATION_ID_CHARS = 64
         const val MAX_NOTIFICATION_TITLE_CHARS = 64
         const val MAX_NOTIFICATION_BODY_CHARS = 256

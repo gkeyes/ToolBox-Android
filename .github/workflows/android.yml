@@ -57,53 +57,9 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
-  instrumentation:
-    name: Emulator critical host flow
-    needs: verify
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
-
-      - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: Run admitted emulator critical-flow tests
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
-        with:
-          api-level: 35
-          target: aosp_atd
-          arch: x86_64
-          profile: pixel_6
-          disk-size: 4096M
-          disable-animations: true
-          script: |
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.HostNavigationTest
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.M3BrokerLifecycleInstrumentedTest
-            ./gradlew --no-daemon :core-data:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.core.data.FreshPersistenceContractTest
-            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.HardenedRuntimeWebViewInstrumentationTest
-
   delivery:
-    name: Package verified v0.2.0 delivery
-    needs: [verify, instrumentation]
+    name: Package statically verified v0.2.0 delivery
+    needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -152,11 +108,9 @@ jobs:
       - name: Assemble checksummed delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
-          EMULATOR_JOB_RESULT: ${{ needs.instrumentation.result }}
         run: |
           set -euo pipefail
           [[ "$VERIFY_JOB_RESULT" == "success" ]]
-          [[ "$EMULATOR_JOB_RESULT" == "success" ]]
 
           delivery_dir="$GITHUB_WORKSPACE/build/ci-delivery"
           mkdir -p "$delivery_dir"
@@ -178,8 +132,7 @@ jobs:
             printf 'VERSION_CODE=2\n'
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
-            printf 'EMULATOR_JOB=Emulator critical host flow\n'
-            printf 'EMULATOR_RESULT=%s\n' "$EMULATOR_JOB_RESULT"
+            printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
             printf 'EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"

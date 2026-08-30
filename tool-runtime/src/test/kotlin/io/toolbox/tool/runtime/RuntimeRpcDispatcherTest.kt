@@ -102,21 +102,36 @@ class RuntimeRpcDispatcherTest {
         )
         val inbound = RuntimeInboundContext(identity.exactOrigin, true, 1)
 
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            dispatcher.dispatch(
+                request(
+                    method = "network.request",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "url" to RpcValue.StringValue("https://api.example.invalid/value"),
+                            "method" to RpcValue.StringValue("POST"),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+        assertEquals(null, recorder.networkRequest)
+
         val network = dispatcher.dispatch(
             request(
                 method = "network.request",
                 params = RpcValue.ObjectValue(
                     mapOf(
                         "url" to RpcValue.StringValue("https://api.example.invalid/value"),
-                        "method" to RpcValue.StringValue("POST"),
-                        "body" to RpcValue.StringValue("{\"value\":1}"),
-                        "contentType" to RpcValue.StringValue("application/json"),
+                        "method" to RpcValue.StringValue("GET"),
                     ),
                 ),
             ),
             inbound,
         ) as RuntimeRpcResponse.Success
-        assertEquals(RuntimeNetworkMethod.POST, recorder.networkRequest?.method)
+        assertEquals(RuntimeNetworkMethod.GET, recorder.networkRequest?.method)
         assertEquals(201.0, ((network.result as RpcValue.ObjectValue).value.getValue("status") as RpcValue.Number).value, 0.0)
 
         val notification = dispatcher.dispatch(
@@ -144,6 +159,58 @@ class RuntimeRpcDispatcherTest {
         )
         assertTrue(notificationCancelled is RuntimeRpcResponse.Success)
         assertEquals("sync-ready", recorder.cancelledNotificationId)
+
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            dispatcher.dispatch(
+                request(
+                    method = "background.enqueue",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "key" to RpcValue.StringValue("unsupported-schedule"),
+                            "operation" to RpcValue.ObjectValue(
+                                mapOf(
+                                    "type" to RpcValue.StringValue("notify"),
+                                    "title" to RpcValue.StringValue("Reminder"),
+                                    "body" to RpcValue.StringValue("Unsupported schedule"),
+                                ),
+                            ),
+                            "earliestAt" to RpcValue.Number(1_000.0),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            dispatcher.dispatch(
+                request(
+                    method = "background.enqueue",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "key" to RpcValue.StringValue("unsupported-constraint"),
+                            "operation" to RpcValue.ObjectValue(
+                                mapOf(
+                                    "type" to RpcValue.StringValue("notify"),
+                                    "title" to RpcValue.StringValue("Reminder"),
+                                    "body" to RpcValue.StringValue("Unsupported constraint"),
+                                ),
+                            ),
+                            "constraints" to RpcValue.ObjectValue(
+                                mapOf(
+                                    "network" to RpcValue.StringValue("connected"),
+                                    "requiresCharging" to RpcValue.Bool(true),
+                                    "batteryNotLow" to RpcValue.Bool(true),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+        assertEquals(null, recorder.enqueuedSpec)
 
         val enqueued = dispatcher.dispatch(
             request(
