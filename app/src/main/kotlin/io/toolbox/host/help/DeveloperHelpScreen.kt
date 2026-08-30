@@ -124,6 +124,23 @@ internal fun DeveloperHelpScreen(
                     """,
                 )
             }
+            item("performance") {
+                HelpSection(
+                    title = "高性能计算",
+                    body = "大量计算不要放在页面主线程。把 worker.js 一起打进 .tbx，用同源 Web Worker 计算，再通过 postMessage 把结果交给页面；Worker 不能直接调用 ToolBox API，系统能力仍由顶层页面发起。远程、blob 和 data Worker 均被阻止，ServiceWorker 仍不可用。",
+                    code = """
+                        // app.js
+                        const worker = new Worker("worker.js")
+                        worker.onmessage = ({ data }) => render(data)
+                        worker.postMessage(input)
+
+                        // worker.js
+                        self.onmessage = ({ data }) => {
+                          self.postMessage(runHeavyCalculation(data))
+                        }
+                    """,
+                )
+            }
             item("package") {
                 HelpSection(
                     title = "5. 打包与导入",

@@ -1,5 +1,6 @@
 package io.toolbox.host.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -38,10 +40,20 @@ import io.toolbox.tool.runtime.RuntimeWebViewCallbacks
 import io.toolbox.tool.runtime.RuntimeWebViewCreationResult
 
 @Composable
-internal fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
+internal fun RuntimeShellScreen(
+    viewModel: RuntimeViewModel,
+    onBack: () -> Unit,
+    onPresentationReady: () -> Unit,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var activeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
     val ready = state as? RuntimeUiState.Ready
+
+    LaunchedEffect(state) {
+        if (state is RuntimeUiState.Error) onPresentationReady()
+    }
+
+    BackHandler(onBack = onBack)
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -59,7 +71,11 @@ internal fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit)
                         contentDescription = "重新加载工具",
                         onClick = {
                             val webView = activeWebView
-                            if (webView == null) viewModel.retry() else webView.reload()
+                            if (webView == null) {
+                                viewModel.retry()
+                            } else {
+                                webView.reload()
+                            }
                         },
                     )
                 },
@@ -82,7 +98,7 @@ internal fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit)
                                 runtime = current.runtime,
                                 creationPermit = current.creationPermit,
                                 callbacks = RuntimeWebViewCallbacks(
-                                    onMainEntryLoaded = {},
+                                    onMainEntryLoaded = onPresentationReady,
                                     onMainEntryFailed = viewModel::mainEntryFailed,
                                     onRendererGone = viewModel::rendererGone,
                                 ),
@@ -112,14 +128,17 @@ internal fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit)
 }
 
 @Composable
-internal fun RuntimeShellPreviewContent(onBack: () -> Unit) {
+internal fun RuntimeShellPreviewContent(
+    onBack: () -> Unit,
+    title: String = "工具",
+) {
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background),
         topBar = {
             ToolBoxRuntimeTopBar(
-                title = "工具",
+                title = title,
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
                 actions = {
@@ -129,7 +148,7 @@ internal fun RuntimeShellPreviewContent(onBack: () -> Unit) {
         },
     ) { contentPadding ->
         Box(Modifier.fillMaxSize().padding(contentPadding)) {
-            RuntimeCenteredState("正在打开工具", "工具页面会占满剩余空间。")
+            RuntimeCenteredState("正在打开工具", "正在准备页面。")
         }
     }
 }

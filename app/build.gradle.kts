@@ -41,6 +41,11 @@ android {
                 "proguard-rules.pro",
             )
         }
+        create("candidate") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {
@@ -65,7 +70,11 @@ android {
 }
 
 tasks.configureEach {
-    if (name.startsWith("merge") && name.endsWith("Assets")) {
+    val consumesBundledExamples =
+        (name.startsWith("merge") && name.endsWith("Assets")) ||
+            name.startsWith("lintVital") ||
+            (name.startsWith("generate") && name.endsWith("LintVitalReportModel"))
+    if (consumesBundledExamples) {
         dependsOn(packageBundledExamples)
     }
 }
@@ -89,6 +98,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.core)

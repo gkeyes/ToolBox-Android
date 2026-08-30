@@ -74,15 +74,18 @@ object HardenedRuntimeWebView {
             WebView.setWebContentsDebuggingEnabled(false)
             val createdWebView = WebView(context)
             webView = createdWebView
+            val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
+            val serviceWorkerIntercept = WebViewFeature.isFeatureSupported(
+                WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST,
+            )
+            check(!serviceWorkerBasic || serviceWorkerIntercept) {
+                "ServiceWorker interception is unavailable"
+            }
             if (creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE) {
                 WebViewCompat.setProfile(createdWebView, runtime.profileName)
             } else {
                 val documentStartSupported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
-                val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
-                val serviceWorkerIntercept = WebViewFeature.isFeatureSupported(
-                    WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST,
-                )
-                check(documentStartSupported && (!serviceWorkerBasic || serviceWorkerIntercept)) {
+                check(documentStartSupported) {
                     "Stateless WebView hardening is unavailable"
                 }
                 WebViewCompat.addDocumentStartJavaScript(
@@ -131,7 +134,7 @@ object HardenedRuntimeWebView {
             creationPermit.close()
             webView?.let(RuntimeWebViewLifecycle::destroyAndUnregister)
             return RuntimeWebViewCreationResult.Failed(
-                "当前系统 WebView 无法创建安全工具环境，请更新 Android System WebView 后重试。",
+                "工具运行环境创建失败，请返回工具列表后重试。",
             )
         }
     }

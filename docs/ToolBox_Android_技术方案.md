@@ -168,6 +168,12 @@ nonce 绑定消息接口。iframe、错误 source origin、非 main-frame、导�
 方法、过期版本和缺失手势都必须被拒绝。真实手势由宿主记录 WebView `MotionEvent`，不是
 JS 传入字段。会话结束、工具切换和 Activity 销毁取消未完成请求并删除临时句柄。
 
+耗时计算使用随 `.tbx` 安装的同源静态 Web Worker，不占用页面的 DOM/渲染线程；CSP 仅允许
+`worker-src 'self'`，远程、`blob:`、`data:` Worker 和 ServiceWorker 继续阻断。Worker 不暴露
+ToolBox bridge，结果经 `postMessage` 返回顶层页面后再调用原生能力。宿主 RPC 的 UTF-8 计量、
+JSON 解码、摘要与 handler 调度离开 UI 回调线程，并以保留系统渲染余量的有限并发执行；文件、
+数据库和网络 handler 继续切换到 IO dispatcher。工具计算量不由该 RPC 并发上限约束。
+
 运行容器不使用宿主底栏：顶部约 48dp，只放返回、标题、刷新/更多；其余区域由 WebView
 占满，不显示 origin/API/安全技术副标题。仍必须保留 CSP、安全响应头、危险 scheme 和导航
 阻断、renderer-gone 恢复、文件/content/mixed-content/popup 禁用等边界。
@@ -233,8 +239,9 @@ mapped 私网 IPv6 等地址，防止 DNS TOCTOU/SSRF。
 
 ## 8. Miuix 页面与布局
 
-- 使用 Miuix `0.9.4-rc01` 与 `miuix-nav`，所有业务页面只依赖 ToolBox 适配组件；不叠加
-  第二套导航动画。
+- 使用 Miuix `0.9.4-rc01` 与 `miuix-nav`，所有业务页面只依赖 ToolBox 适配组件。一级页面使用
+  Miuix Nav；二级页面由宿主常驻分层渲染，底页保持组合和测量结果，进入与返回只移动最上层，
+  不叠加 Navigation3、`AnimatedContent` 或第二套双页动画。
 - 主导航仅“工具”“设置”；导入放工具页顶部操作区。底栏视觉内容约 56dp，系统手势/导航
   inset 只由一个 surface 消费一次，保留设备自己的手势小白条。
 - 工具列表使用 stable key/content type；一个滚动轴只有一个 Lazy 容器；图标/文件/数据库
@@ -242,7 +249,9 @@ mapped 私网 IPv6 等地址，防止 DNS TOCTOU/SSRF。
 - 普通行 64–80dp、搜索框 48dp、最小触控目标 48dp。字体可换行/自然增高，禁止把顶栏、
   搜索框或底栏乘以 `fontScale`。
 - 每页状态栏、cutout、IME、导航/手势 inset 只能消费一次；IME 只由有输入焦点的内容区处理。
-- Tab 使用短淡入，详情进入/返回使用 Miuix 方向一致转场；系统关闭动画时禁用非必要动效。
+- Tab 使用短淡入，详情进入/返回使用同一 Miuix easing。WebView 运行层不参与 Compose 页面
+  变形：进入工具时先完成轻量原生页面壳转场，随后才创建 WebView，首帧完成后原地揭示；返回时
+  由保留的原生源页面覆盖运行层后释放 WebView。系统关闭动画时禁用非必要动效。
 
 设置最终只显示真实功能：主题、后台总开关、Developer Help。Developer Help 是离线原生页面，
 从 API v1 合同和三个实际范例派生，说明包目录、manifest、permissions、API、打包、导入、

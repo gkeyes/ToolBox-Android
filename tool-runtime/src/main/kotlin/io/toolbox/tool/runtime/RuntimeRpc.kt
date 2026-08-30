@@ -893,7 +893,10 @@ internal fun runtimeFileReadEncodedUpperBound(requestId: String, rawBytes: Int):
 private const val FILE_READ_RESPONSE_FIXED_BYTES = 42
 
 internal class RuntimeSessionJobs {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val rpcParallelism = (java.lang.Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default.limitedParallelism(rpcParallelism),
+    )
 
     fun launch(block: suspend () -> Unit) = scope.launch { block() }
 

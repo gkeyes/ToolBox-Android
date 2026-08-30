@@ -100,26 +100,45 @@ class RuntimeBridgeSession internal constructor(
     ) {
         if (!active.get()) return
         val encoded = message.data ?: return
-        if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) {
+        if (encoded.length > maxPayloadBytes) {
             reply(webView, replyProxy, invalidRequest("", RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"))
             return
         }
-        val request = runCatching { RuntimeRpcJson.decodeRequest(encoded) }.getOrElse {
-            reply(webView, replyProxy, invalidRequest("", RuntimeRpcErrorCode.INVALID_REQUEST, "Malformed ToolBox request"))
-            return
-        }
-        if (!inFlightIds.add(request.id)) {
-            reply(webView, replyProxy, invalidRequest(request.id, RuntimeRpcErrorCode.BUSY, "Request id is already active"))
-            return
-        }
+        val exactSourceOrigin = sourceOrigin.toString()
         val now = clockMillis()
         val touchedAt = gestureAtMillis.get()
         val touchAge = if (touchedAt == NO_GESTURE) null else now - touchedAt
         jobs.launch {
+            if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) {
+                reply(
+                    webView,
+                    replyProxy,
+                    invalidRequest("", RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"),
+                )
+                return@launch
+            }
+            val request = try {
+                RuntimeRpcJson.decodeRequest(encoded)
+            } catch (_: Exception) {
+                reply(
+                    webView,
+                    replyProxy,
+                    invalidRequest("", RuntimeRpcErrorCode.INVALID_REQUEST, "Malformed ToolBox request"),
+                )
+                return@launch
+            }
+            if (!inFlightIds.add(request.id)) {
+                reply(
+                    webView,
+                    replyProxy,
+                    invalidRequest(request.id, RuntimeRpcErrorCode.BUSY, "Request id is already active"),
+                )
+                return@launch
+            }
             try {
                 val response = dispatcher.dispatch(
                     request,
-                    RuntimeInboundContext(sourceOrigin.toString(), isMainFrame, touchAge),
+                    RuntimeInboundContext(exactSourceOrigin, isMainFrame, touchAge),
                 )
                 reply(webView, replyProxy, response)
             } catch (_: CancellationException) {

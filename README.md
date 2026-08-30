@@ -22,7 +22,8 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 
 1. **导入、目录和权限**：SAF 导入、内部包检查、原子安装/更新、真实删除、Miuix 权限开关。
 2. **安全运行时与基础 API**：exact HTTPS origin、CSP、消息桥、`ready`、toast、SHA-256、
-   storage、secure storage、device basic、haptics、clipboard write。
+   storage、secure storage、device basic、haptics、clipboard write；包内同源 Web Worker 可承载
+   高负载前台计算，ServiceWorker 与远程 Worker 仍禁用。
 3. **后台任务**：WorkManager 委派的 allowlist HTTPS `httpGet` 和命名空间通知；工具代码不在
    后台运行，也不使用后台 WebView 或常驻前台服务。
 4. **App 式能力与帮助**：剪贴板读取、系统分享、SAF 文件、快捷方式、系统相机、前台单次
@@ -43,8 +44,11 @@ manifest、完整性清单、可重复打包脚本和 `.tbx`。
 需要真机测试时，可在 Android 13+ 设备上安装：
 
 ```bash
-./gradlew :app:installDebug
+./gradlew :app:installCandidate
 ```
+
+`candidate` 与 release 使用相同的 R8 优化，仅使用本机 debug key 签名以便直接安装测试；不要用
+debug 构建评价页面帧性能。
 
 GitHub Actions 在安全不变量、API 合同、静态编译和最小单元门禁通过后上传 APK、三个 `.tbx`
 和 `SHA256SUMS.txt`。系统权限、SAF、相机、通知、后台调度和 HyperOS 系统栏由用户在小米真机

@@ -48,7 +48,9 @@ fun ToolBoxSearchField(
         label = placeholder,
         useLabelAsPlaceholder = true,
         leadingIcon = {
-            ToolBoxIcon(icon = ToolBoxIconKey.Search, contentDescription = null)
+            Box(Modifier.padding(start = ToolBoxThemeTokens.spacing.two)) {
+                ToolBoxIcon(icon = ToolBoxIconKey.Search, contentDescription = null)
+            }
         },
         singleLine = true,
     )
