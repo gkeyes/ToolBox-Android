@@ -508,7 +508,7 @@ class RuntimeProfileManager internal constructor(
         if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() !in 1..MAX_MODE_BYTES) {
             return@runCatching null
         }
-        val lines = Files.readAllLines(path, Charsets.UTF_8)
+        val lines = readUtf8Lines(path)
         if (lines.size != 4 || lines[0] != "version=1") return@runCatching null
         val toolId = lines[1].removePrefix("toolId=").takeIf { lines[1] == "toolId=$it" }
             ?: return@runCatching null
@@ -531,7 +531,7 @@ class RuntimeProfileManager internal constructor(
         if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() !in 1..MAX_MARKER_BYTES) {
             return@runCatching null
         }
-        val lines = Files.readAllLines(path, Charsets.UTF_8)
+        val lines = readUtf8Lines(path)
         if (lines.size != 4 || lines[0] != "version=1" || lines[3] != "status=$MARKER_STATUS") {
             return@runCatching null
         }
@@ -546,6 +546,11 @@ class RuntimeProfileManager internal constructor(
         if (path.fileName.toString() != "$profileName$MARKER_SUFFIX") return@runCatching null
         CleanupMarker(toolId, profileName)
     }.getOrNull()
+
+    private fun readUtf8Lines(path: Path): List<String> =
+        Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).bufferedReader(Charsets.UTF_8).use { reader ->
+            reader.readLines()
+        }
 
     private fun removeRecoveryProofs(
         markers: List<CleanupMarker>,

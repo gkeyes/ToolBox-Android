@@ -94,7 +94,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
     fun publish(transactionId: String, toolId: String, versionCode: Int) {
         val stageRoot = stageRoot(transactionId)
         val owner = stageRoot.resolve(OWNER_FILE)
-        if (!Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) || Files.readString(owner) != transactionId) {
+        if (!Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) || readMarker(owner) != transactionId) {
             throw IOException("Staged package ownership is invalid")
         }
         val target = versionRoot(toolId, versionCode)
@@ -109,7 +109,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         val root = versionRoot(toolId, versionCode)
         val owner = root.resolve(OWNER_FILE)
         val hasOwner = Files.exists(owner, LinkOption.NOFOLLOW_LINKS)
-        val ownsVersion = Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && Files.readString(owner) == transactionId
+        val ownsVersion = Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && readMarker(owner) == transactionId
         if (hasOwner && !ownsVersion) throw IOException("Published package ownership is invalid")
         removeOtherVersions(toolId, versionCode)
         if (ownsVersion) {
@@ -122,7 +122,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         deleteTree(stageRoot(transactionId))
         val root = versionRoot(toolId, versionCode)
         val owner = root.resolve(OWNER_FILE)
-        if (Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && Files.readString(owner) == transactionId) {
+        if (Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && readMarker(owner) == transactionId) {
             deleteTree(root)
         }
     }
@@ -227,7 +227,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
                                 result += OwnedVersion(
                                     toolId = toolRoot.fileName.toString(),
                                     versionCode = versionCode,
-                                    transactionId = Files.readString(owner),
+                                    transactionId = readMarker(owner),
                                 )
                             }
                         }
@@ -309,8 +309,19 @@ internal class LifecycleStorage(private val filesRoot: Path) {
     }
 
     private fun readMarker(path: Path): String {
-        if (Files.size(path) > MAX_MARKER_BYTES) throw IOException("Lifecycle marker is too large")
-        return Files.readString(path, StandardCharsets.UTF_8)
+        val expectedSize = Files.size(path)
+        if (expectedSize > MAX_MARKER_BYTES) throw IOException("Lifecycle marker is too large")
+        val bytes = ByteArray(expectedSize.toInt())
+        Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { input ->
+            var offset = 0
+            while (offset < bytes.size) {
+                val count = input.read(bytes, offset, bytes.size - offset)
+                if (count < 0) throw IOException("Lifecycle marker was truncated")
+                offset += count
+            }
+            if (input.read() >= 0) throw IOException("Lifecycle marker is too large")
+        }
+        return bytes.toString(StandardCharsets.UTF_8)
     }
 
     private fun deleteTree(path: Path) {
