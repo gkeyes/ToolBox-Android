@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -281,7 +282,7 @@ private fun ConfirmationSurface(title: String, onCancel: () -> Unit, onConfirm: 
 
 @Composable
 internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Unit) {
-    SurfaceCard {
+    SurfaceCard(Modifier.testTag(HostTestTags.CatalogEmptyState)) {
         AppText("还没有工具", textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
         AppText(
             "导入 .tbx，或安装三个可直接使用的范例。",
