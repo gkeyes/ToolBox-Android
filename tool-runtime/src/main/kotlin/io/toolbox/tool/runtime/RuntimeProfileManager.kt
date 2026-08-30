@@ -697,6 +697,7 @@ object RuntimeWebViewLifecycle {
     fun destroyAndUnregister(webView: WebView) {
         if (!destroyedWebViews.add(webView)) return
         if (toolByWebView.remove(webView) != null) notifyLifecycleChanged()
+        RuntimeBridgeLifecycle.release(webView)
         runCatching { webView.stopLoading() }
         runCatching { webView.destroy() }
     }

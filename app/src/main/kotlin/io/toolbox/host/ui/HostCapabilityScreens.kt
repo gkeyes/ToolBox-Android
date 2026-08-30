@@ -3,7 +3,6 @@ package io.toolbox.host.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +28,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
+import io.toolbox.core.ui.component.ToolBoxRuntimeTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
@@ -38,57 +38,74 @@ import io.toolbox.tool.runtime.RuntimeWebViewCallbacks
 import io.toolbox.tool.runtime.RuntimeWebViewCreationResult
 
 @Composable
-fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
+internal fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var activeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
-    Column(
+    val ready = state as? RuntimeUiState.Ready
+    ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
             .testTag(HostTestTags.RuntimeShell),
-    ) {
-        RuntimeControlRow(
-            state = state,
-            onBack = onBack,
-            onReload = {
-                val webView = activeWebView
-                if (webView == null) viewModel.retry() else webView.reload()
-            },
-            onConfirmReady = viewModel::confirmReadyVersion,
-        )
-        when (val current = state) {
-            RuntimeUiState.Loading -> RuntimeCenteredState("正在安全打开工具", "正在核对活动版本与入口文件。")
-            is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
-            is RuntimeUiState.Ready -> key(current.runtime.toolId, current.runtime.versionCode) {
-                AndroidView(
-                    factory = { context ->
-                        when (val result = HardenedRuntimeWebView.create(
-                            context = context,
-                            runtime = current.runtime,
-                            creationPermit = current.creationPermit,
-                            callbacks = RuntimeWebViewCallbacks(
-                                onMainEntryLoaded = { viewModel.mainEntryLoaded(current.runtime) },
-                                onMainEntryFailed = viewModel::mainEntryFailed,
-                                onRendererGone = viewModel::rendererGone,
-                            ),
-                        )) {
-                            is RuntimeWebViewCreationResult.Created -> result.webView.also { webView ->
-                                activeWebView = webView
+        topBar = {
+            ToolBoxRuntimeTopBar(
+                title = ready?.runtime?.toolName ?: "工具",
+                navigationIcon = ToolBoxIconKey.Back,
+                navigationContentDescription = "返回",
+                onNavigationClick = onBack,
+                actions = {
+                    ToolBoxIconButton(
+                        icon = ToolBoxIconKey.Refresh,
+                        contentDescription = "重新加载工具",
+                        onClick = {
+                            val webView = activeWebView
+                            if (webView == null) viewModel.retry() else webView.reload()
+                        },
+                    )
+                },
+            )
+        },
+    ) { contentPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
+            when (val current = state) {
+                RuntimeUiState.Loading -> RuntimeCenteredState("正在打开工具", "正在准备页面。")
+                is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
+                is RuntimeUiState.Ready -> key(current.runtime.toolId, current.runtime.versionCode) {
+                    AndroidView(
+                        factory = { context ->
+                            when (val result = HardenedRuntimeWebView.create(
+                                context = context,
+                                runtime = current.runtime,
+                                creationPermit = current.creationPermit,
+                                callbacks = RuntimeWebViewCallbacks(
+                                    onMainEntryLoaded = {},
+                                    onMainEntryFailed = viewModel::mainEntryFailed,
+                                    onRendererGone = viewModel::rendererGone,
+                                ),
+                                bridgeProvider = viewModel.bridgeProvider,
+                            )) {
+                                is RuntimeWebViewCreationResult.Created -> result.webView.also { webView ->
+                                    activeWebView = webView
+                                }
+
+                                is RuntimeWebViewCreationResult.Failed -> android.widget.FrameLayout(context).also {
+                                    viewModel.runtimeCreationFailed(result.message)
+                                }
                             }
-                            is RuntimeWebViewCreationResult.Failed -> android.widget.FrameLayout(context).also {
-                                viewModel.runtimeCreationFailed(result.message)
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        onRelease = { releasedView ->
+                            (releasedView as? android.webkit.WebView)?.let { webView ->
+                                if (activeWebView === webView) activeWebView = null
+                                HardenedRuntimeWebView.release(webView)
                             }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    onRelease = { releasedView ->
-                        (releasedView as? android.webkit.WebView)?.let { webView ->
-                            if (activeWebView === webView) activeWebView = null
-                            HardenedRuntimeWebView.release(webView)
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
     }
@@ -96,59 +113,24 @@ fun RuntimeShellScreen(viewModel: RuntimeViewModel, onBack: () -> Unit) {
 
 @Composable
 internal fun RuntimeShellPreviewContent(onBack: () -> Unit) {
-    Column(
+    ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(ToolBoxThemeTokens.colors.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-    ) {
-        RuntimeControlRow(RuntimeUiState.Loading, onBack = onBack, onReload = {}, onConfirmReady = {})
-        RuntimeCenteredState("安全运行容器", "实际运行时，工具 HTML 将占满这里的剩余空间。")
-    }
-}
-
-@Composable
-private fun RuntimeControlRow(
-    state: RuntimeUiState,
-    onBack: () -> Unit,
-    onReload: () -> Unit,
-    onConfirmReady: () -> Unit,
-) {
-    val ready = state as? RuntimeUiState.Ready
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .sizeIn(minHeight = ToolBoxThemeTokens.sizes.runtimeChrome)
-            .background(ToolBoxThemeTokens.colors.surface)
-            .padding(
-                horizontal = ToolBoxThemeTokens.spacing.half,
-                vertical = ToolBoxThemeTokens.spacing.micro,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack)
-        Column(Modifier.weight(1f)) {
-            AppText(
-                ready?.runtime?.toolName ?: "工具运行",
-                textStyle = ToolBoxThemeTokens.textStyles.body,
-                weight = FontWeight.Bold,
-                maxLines = 1,
-            )
-            AppText(
-                text = if (ready == null) {
-                    "ToolBox 原生 API 未启用"
-                } else {
-                    "独立 Origin · ${ready.statusMessage} · 原生 API 不可用"
+            .background(ToolBoxThemeTokens.colors.background),
+        topBar = {
+            ToolBoxRuntimeTopBar(
+                title = "工具",
+                navigationIcon = ToolBoxIconKey.Back,
+                onNavigationClick = onBack,
+                actions = {
+                    ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新加载工具", onClick = {})
                 },
-                textStyle = ToolBoxThemeTokens.textStyles.label,
-                color = ToolBoxThemeTokens.colors.textSecondary,
-                maxLines = 1,
             )
+        },
+    ) { contentPadding ->
+        Box(Modifier.fillMaxSize().padding(contentPadding)) {
+            RuntimeCenteredState("正在打开工具", "工具页面会占满剩余空间。")
         }
-        if (ready?.entryLoaded == true && ready.runtime.launchState == io.toolbox.core.data.LaunchState.PENDING) {
-            ToolBoxIconButton(ToolBoxIconKey.Check, "确认工具可用", onConfirmReady)
-        }
-        ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新加载工具", onReload)
     }
 }
 

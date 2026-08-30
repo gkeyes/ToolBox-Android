@@ -1,16 +1,14 @@
 package io.toolbox.tool.packagekit
 
-import java.net.URI
-
 internal object ManifestValidator {
     private val idPattern = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
     private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
-    private val apiPattern = Regex("^1(?:\\.[0-9]+)?$")
+    private val apiPattern = Regex("^1\\.0$")
     private val domainPattern = Regex("^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
     private val allowedPermissions = setOf(
         "storage", "storage.secure", "clipboard.write", "clipboard.read", "share",
         "files.open", "files.save", "network", "device.basic", "haptics", "notifications",
-        "shortcuts", "camera", "location",
+        "shortcuts", "camera", "location", "background.tasks",
     )
 
     fun parse(bytes: ByteArray, limits: PackageLimits): ToolManifest {
@@ -50,7 +48,6 @@ internal object ManifestValidator {
             storageBytes = 2_097_152,
             maxBridgePayloadBytes = 262_144,
         )
-        val publisher = root["publisher"]?.let(::parsePublisher)
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -69,18 +66,19 @@ internal object ManifestValidator {
             network = network,
             ui = ui,
             limits = manifestLimits,
-            publisher = publisher,
         )
     }
 
     private fun parsePermissions(value: JsonValue): List<ManifestPermission> {
         val values = value.asArray("permissions")
-        if (values.size > 14) throw JsonFormatException("permissions exceeds 14 items")
+        if (values.size > 15) throw JsonFormatException("permissions exceeds 15 items")
+        val seen = mutableSetOf<String>()
         return values.mapIndexed { index, item ->
             val permission = item.asObject("permissions[$index]")
             permission.requireOnly("permissions[$index]", setOf("name", "reason", "required"))
             val name = permission.required("name").asString("permissions[$index].name")
             if (name !in allowedPermissions) throw JsonFormatException("Unsupported permission: $name")
+            if (!seen.add(name)) throw JsonFormatException("Duplicate permission: $name")
             ManifestPermission(
                 name = name,
                 reason = requireString(permission, "reason", 2, 120),
@@ -166,21 +164,6 @@ internal object ManifestValidator {
         )
     }
 
-    private fun parsePublisher(value: JsonValue): ManifestPublisher {
-        val publisher = value.asObject("publisher")
-        publisher.requireOnly("publisher", setOf("name", "keyId", "website"))
-        val website = publisher["website"]?.asString("publisher.website")?.also {
-            if (it.length > 512 || runCatching { URI(it).isAbsolute }.getOrDefault(false).not()) {
-                throw JsonFormatException("publisher.website must be an absolute URI")
-            }
-        }
-        return ManifestPublisher(
-            name = requireString(publisher, "name", 1, 80),
-            keyId = optionalString(publisher, "keyId", 8, 128),
-            website = website,
-        )
-    }
-
     private fun validateRelativePath(path: String, limits: PackageLimits, htmlOnly: Boolean): String {
         val safe = try {
             PackagePathPolicy.validate(path, limits)
@@ -225,7 +208,7 @@ internal object ManifestValidator {
     private val TOP_LEVEL_FIELDS = setOf(
         "schemaVersion", "id", "name", "shortName", "description", "version", "versionCode",
         "entry", "icon", "apiVersion", "minHostVersion", "categories", "permissions", "network",
-        "securityProfile", "ui", "limits", "publisher",
+        "securityProfile", "ui", "limits",
     )
     private val PATH_CHARACTERS = Regex("^[A-Za-z0-9._/-]+$")
 }

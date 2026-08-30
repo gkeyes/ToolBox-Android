@@ -1,82 +1,102 @@
 package io.toolbox.tool.packagekit.lifecycle
 
 import io.toolbox.core.data.CatalogLifecycleRepository
-import io.toolbox.core.data.PermissionGrant
-import io.toolbox.tool.packagekit.ToolPackageInspector
+import io.toolbox.core.data.CatalogRepository
+import io.toolbox.core.data.InstallTransactionRepository
+import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.PackageLimits
+import io.toolbox.tool.packagekit.PackageRejection
 import java.io.File
 
-interface ToolPackageLifecycle {
-    suspend fun install(
-        inspectionSessionId: String,
-        initialGrants: List<PermissionGrant>,
-    ): InstallLifecycleResult
+interface ToolPackageManager {
+    suspend fun recoverPendingMutations(
+        cleanup: ToolStateCleanup = ToolStateCleanup.None,
+    ): PackageRecoveryResult
 
-    suspend fun rollback(toolId: String): RollbackLifecycleResult
+    suspend fun importAndInstall(
+        input: PackageInput,
+        cleanup: ToolStateCleanup = ToolStateCleanup.None,
+    ): PackageInstallResult
 
-    suspend fun uninstall(toolId: String): UninstallLifecycleResult
-
-    suspend fun recover(): RecoveryLifecycleResult
+    suspend fun uninstall(
+        toolId: String,
+        cleanup: ToolStateCleanup = ToolStateCleanup.None,
+    ): PackageUninstallResult
 }
 
-object ToolPackageLifecycles {
+interface ToolStateCleanup {
+    suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int)
+
+    suspend fun afterUninstall(toolId: String)
+
+    data object None : ToolStateCleanup {
+        override suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) = Unit
+        override suspend fun afterUninstall(toolId: String) = Unit
+    }
+}
+
+object ToolPackageManagers {
     fun create(
         privateFilesDirectory: File,
-        inspector: ToolPackageInspector,
-        catalog: CatalogLifecycleRepository,
-    ): ToolPackageLifecycle = DefaultToolPackageLifecycle(
+        catalog: CatalogRepository,
+        lifecycle: CatalogLifecycleRepository,
+        transactions: InstallTransactionRepository,
+        limits: PackageLimits = PackageLimits(),
+        supportedCapabilities: Set<String> = SupportedToolCapabilities.All,
+    ): ToolPackageManager = DefaultToolPackageManager(
         filesRoot = privateFilesDirectory.toPath(),
-        inspector = inspector,
         catalog = catalog,
+        lifecycle = lifecycle,
+        transactions = transactions,
+        limits = limits,
+        supportedCapabilities = supportedCapabilities,
     )
 }
 
-sealed interface InstallLifecycleResult {
-    data class Committed(val toolId: String, val versionCode: Int) : InstallLifecycleResult
-    data class AlreadyCommitted(val toolId: String, val versionCode: Int) : InstallLifecycleResult
-    data class CommittedRecoveryPending(
-        val toolId: String,
-        val versionCode: Int,
-        val reason: LifecycleFailure,
-    ) : InstallLifecycleResult
-    data object InspectionNotFound : InstallLifecycleResult
-    data object InspectionBusy : InstallLifecycleResult
-    data class Failed(val reason: LifecycleFailure) : InstallLifecycleResult
+sealed interface PackageInstallResult {
+    data class Installed(val toolId: String, val versionCode: Int, val updated: Boolean) : PackageInstallResult
+    data class Rejected(val rejection: PackageRejection) : PackageInstallResult
+    data class Failed(val failure: PackageOperationFailure) : PackageInstallResult
 }
 
-sealed interface RollbackLifecycleResult {
-    data class RolledBack(val toolId: String, val versionCode: Int) : RollbackLifecycleResult
-    data class CommittedRecoveryPending(
-        val toolId: String,
-        val versionCode: Int,
-        val reason: LifecycleFailure,
-    ) : RollbackLifecycleResult
-    data class Failed(val reason: LifecycleFailure) : RollbackLifecycleResult
+sealed interface PackageUninstallResult {
+    data class Uninstalled(val toolId: String) : PackageUninstallResult
+    data class AlreadyAbsent(val toolId: String) : PackageUninstallResult
+    data class Failed(val failure: PackageOperationFailure) : PackageUninstallResult
 }
 
-sealed interface UninstallLifecycleResult {
-    data class Uninstalled(val toolId: String) : UninstallLifecycleResult
-    data class AlreadyAbsent(val toolId: String) : UninstallLifecycleResult
-    data class CommittedRecoveryPending(val toolId: String, val reason: LifecycleFailure) : UninstallLifecycleResult
-    data class Failed(val reason: LifecycleFailure) : UninstallLifecycleResult
+sealed interface PackageRecoveryResult {
+    data object Recovered : PackageRecoveryResult
+    data class Failed(val failure: PackageOperationFailure) : PackageRecoveryResult
 }
 
-sealed interface RecoveryLifecycleResult {
-    data object Recovered : RecoveryLifecycleResult
-    data class Pending(val reason: LifecycleFailure) : RecoveryLifecycleResult
-}
+data class PackageOperationFailure(val code: PackageOperationFailureCode, val message: String)
 
-data class LifecycleFailure(
-    val code: LifecycleFailureCode,
-    val message: String,
-)
-
-enum class LifecycleFailureCode {
+enum class PackageOperationFailureCode {
     BUSY,
-    RECOVERY_REQUIRED,
-    INSPECTION_REJECTED,
-    GRANT_PLAN_INVALID,
-    CATALOG_REJECTED,
-    FILE_COLLISION,
-    FILE_INTEGRITY_MISMATCH,
+    VERSION_NOT_NEWER,
+    UNSUPPORTED_REQUIRED_CAPABILITY,
+    DATA_FAILURE,
     STORAGE_FAILURE,
+    CLEANUP_FAILURE,
+}
+
+object SupportedToolCapabilities {
+    val All = setOf(
+        "storage",
+        "storage.secure",
+        "clipboard.write",
+        "clipboard.read",
+        "share",
+        "files.open",
+        "files.save",
+        "network",
+        "device.basic",
+        "haptics",
+        "notifications",
+        "shortcuts",
+        "camera",
+        "location",
+        "background.tasks",
+    )
 }

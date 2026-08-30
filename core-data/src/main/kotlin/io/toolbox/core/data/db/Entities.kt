@@ -8,9 +8,6 @@ import androidx.room.Index
 internal data class ToolEntity(
     @androidx.room.PrimaryKey val id: String,
     val name: String,
-    val activeVersionCode: Int?,
-    val signatureState: String,
-    val publisherKeyId: String?,
     val securityProfile: String,
     val installedAt: Long,
     val lastOpenedAt: Long?,
@@ -20,7 +17,6 @@ internal data class ToolEntity(
 
 @Entity(
     tableName = "tool_versions",
-    primaryKeys = ["toolId", "versionCode"],
     foreignKeys = [
         ForeignKey(
             entity = ToolEntity::class,
@@ -29,43 +25,36 @@ internal data class ToolEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("toolId"), Index(value = ["sourceSessionId"], unique = true)],
 )
 internal data class ToolVersionEntity(
-    val toolId: String,
+    @androidx.room.PrimaryKey val toolId: String,
     val versionCode: Int,
     val version: String,
     val bundleLocator: String,
     val bundleBytes: Long,
     val integrityHash: String,
     val installedAt: Long,
-    val launchState: String,
-    val sourceSessionId: String,
-    val name: String,
-    val signatureState: String,
-    val publisherKeyId: String?,
-    val securityProfile: String,
 )
 
-internal data class CatalogProjection(
-    val toolId: String,
+internal data class InstalledToolProjection(
+    val id: String,
     val name: String,
-    val signatureState: String,
-    val publisherKeyId: String?,
     val securityProfile: String,
     val installedAt: Long,
     val lastOpenedAt: Long?,
     val pinnedOrder: Int?,
     val categoryId: String?,
-    val activeVersionCode: Int?,
-    val activeVersionName: String?,
-    val bundleBytes: Long?,
-    val launchState: String?,
+    val versionCode: Int,
+    val version: String,
+    val bundleLocator: String,
+    val bundleBytes: Long,
+    val integrityHash: String,
+    val versionInstalledAt: Long,
 )
 
 @Entity(
     tableName = "permission_grants",
-    primaryKeys = ["toolId", "permission"],
+    primaryKeys = ["toolId", "capability"],
     foreignKeys = [
         ForeignKey(
             entity = ToolEntity::class,
@@ -78,12 +67,9 @@ internal data class CatalogProjection(
 )
 internal data class PermissionGrantEntity(
     val toolId: String,
-    val permission: String,
-    val state: String,
-    val scope: String,
-    val grantedAt: Long,
-    val expiresAt: Long?,
-    val source: String,
+    val capability: String,
+    val granted: Boolean,
+    val updatedAt: Long,
 )
 
 @Entity(
@@ -107,32 +93,19 @@ internal data class ToolKvEntity(
     val bytes: Int,
 )
 
-@Entity(tableName = "publishers")
-internal data class PublisherEntity(
-    @androidx.room.PrimaryKey val keyId: String,
-    val displayName: String,
-    val encodedPublicKey: String,
-    val trustState: String,
-    val addedAt: Long,
-)
-
-@Entity(tableName = "audit_logs", indices = [Index("timestamp"), Index("toolId")])
-internal data class AuditLogEntity(
-    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long,
-    val toolId: String?,
-    val sessionId: String?,
-    val category: String,
-    val action: String,
-    val result: String,
-    val risk: String,
-    val targetHost: String?,
-    val timestamp: Long,
-    val durationMs: Long?,
-    val byteCount: Long?,
+@Entity(tableName = "install_transactions", indices = [Index("state"), Index("toolId")])
+internal data class InstallTransactionEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val toolId: String,
+    val versionCode: Int,
+    val state: String,
+    val startedAt: Long,
+    val updatedAt: Long,
+    val failureCode: String?,
 )
 
 @Entity(
-    tableName = "runtime_sessions",
+    tableName = "background_tasks",
     foreignKeys = [
         ForeignKey(
             entity = ToolEntity::class,
@@ -141,15 +114,40 @@ internal data class AuditLogEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("toolId"), Index("endedAt")],
+    indices = [Index("toolId"), Index(value = ["toolId", "key"]), Index("state")],
 )
-internal data class RuntimeSessionEntity(
-    @androidx.room.PrimaryKey val sessionId: String,
+internal data class BackgroundTaskEntity(
+    @androidx.room.PrimaryKey val taskId: String,
     val toolId: String,
-    val origin: String,
-    val profileName: String?,
-    val nonceHash: String,
-    val startedAt: Long,
-    val endedAt: Long?,
-    val exitReason: String?,
+    val versionCode: Int,
+    val key: String,
+    val operation: String,
+    val specJson: String,
+    val periodic: Boolean,
+    val intervalMinutes: Long?,
+    val state: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val nextRunAt: Long?,
+    val runAttempt: Int,
+)
+
+@Entity(
+    tableName = "task_results",
+    foreignKeys = [
+        ForeignKey(
+            entity = BackgroundTaskEntity::class,
+            parentColumns = ["taskId"],
+            childColumns = ["taskId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+internal data class TaskResultEntity(
+    @androidx.room.PrimaryKey val taskId: String,
+    val outcome: String,
+    val completedAt: Long,
+    val payloadJson: String?,
+    val errorCode: String?,
+    val attemptCount: Int,
 )

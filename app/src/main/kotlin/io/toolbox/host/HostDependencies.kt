@@ -10,29 +10,16 @@ import io.toolbox.core.data.CoreDataInitializationException
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.CoreDataStores
 import io.toolbox.host.catalog.CatalogViewModel
-import io.toolbox.host.importflow.ImportReviewViewModel
+import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.SettingsViewModel
-import io.toolbox.tool.packagekit.DiscardResult
-import io.toolbox.tool.packagekit.InspectionResult
-import io.toolbox.tool.packagekit.PackageInput
-import io.toolbox.tool.packagekit.ResumeInspectionResult
-import io.toolbox.tool.packagekit.ToolPackageInspector
-import io.toolbox.tool.packagekit.ToolPackageInspectors
-import io.toolbox.tool.packagekit.lifecycle.InstallLifecycleResult
-import io.toolbox.tool.packagekit.lifecycle.RecoveryLifecycleResult
-import io.toolbox.tool.packagekit.lifecycle.RollbackLifecycleResult
-import io.toolbox.tool.packagekit.lifecycle.ToolPackageLifecycle
-import io.toolbox.tool.packagekit.lifecycle.ToolPackageLifecycles
-import io.toolbox.tool.packagekit.lifecycle.UninstallLifecycleResult
-import io.toolbox.core.data.PermissionGrant
 import io.toolbox.tool.runtime.RuntimeDataCleaner
-import io.toolbox.tool.runtime.RuntimeProfileManager
+import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeDataCleanupResult
 import io.toolbox.tool.runtime.RuntimePermitProvider
+import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.ToolRuntimePreparer
-import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -45,57 +32,54 @@ import kotlinx.coroutines.withContext
 
 internal class HostDependencies(
     val repositories: CoreDataRepositories,
-    private val inspectorFactory: () -> ToolPackageInspector,
-    private val lifecycleFactory: (ToolPackageInspector) -> ToolPackageLifecycle,
+    private val packageOperationsFactory: (RuntimeDataCleaner, HostBackgroundOperations) -> HostPackageOperations,
+    val backgroundOperations: HostBackgroundOperations,
+    val permissionSideEffects: HostPermissionSideEffects,
     private val runtimePreparerFactory: () -> ToolRuntimePreparer,
     private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
+    private val runtimeBridgeProviderFactory: (HostRuntimeM2HandlerFactory) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
+    private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
 ) {
-    private val deferredInspector = lazy(LazyThreadSafetyMode.SYNCHRONIZED, inspectorFactory)
-    private val deferredLifecycle = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        lifecycleFactory(deferredInspector.value)
-    }
     private val deferredRuntimeProfileManager = lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
         runtimeProfileManagerFactory,
     )
 
-    val inspector: ToolPackageInspector = object : ToolPackageInspector {
-        override suspend fun inspect(input: PackageInput): InspectionResult = deferredInspector.value.inspect(input)
+    val runtimePreparer: ToolRuntimePreparer by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+        runtimePreparerFactory,
+    )
 
-        override suspend fun resume(sessionId: String): ResumeInspectionResult =
-            deferredInspector.value.resume(sessionId)
-
-        override suspend fun discard(sessionId: String): DiscardResult = deferredInspector.value.discard(sessionId)
-    }
-
-    val lifecycle: ToolPackageLifecycle = object : ToolPackageLifecycle {
-        override suspend fun install(
-            inspectionSessionId: String,
-            initialGrants: List<PermissionGrant>,
-        ): InstallLifecycleResult = deferredLifecycle.value.install(inspectionSessionId, initialGrants)
-
-        override suspend fun rollback(toolId: String): RollbackLifecycleResult =
-            deferredLifecycle.value.rollback(toolId)
-
-        override suspend fun uninstall(toolId: String): UninstallLifecycleResult =
-            deferredLifecycle.value.uninstall(toolId)
-
-        override suspend fun recover(): RecoveryLifecycleResult = deferredLifecycle.value.recover()
-    }
-
-    val runtimePreparer: ToolRuntimePreparer by lazy(LazyThreadSafetyMode.SYNCHRONIZED, runtimePreparerFactory)
     val runtimeDataCleaner: RuntimeDataCleaner = object : RuntimeDataCleaner {
         override suspend fun <T> clearThenRun(
             toolId: String,
             action: suspend () -> T,
-        ) = deferredRuntimeProfileManager.value.clearThenRun(toolId, action)
+        ): RuntimeDataCleanupExecution<T> =
+            deferredRuntimeProfileManager.value.clearThenRun(toolId, action)
     }
+
     val runtimePermitProvider = RuntimePermitProvider { toolId, awaitExistingRuntimeRelease ->
         deferredRuntimeProfileManager.value.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease)
     }
 
+    val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        runtimeBridgeProviderFactory(runtimeM2HandlerFactory)
+    }
+
+    val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        packageOperationsFactory(runtimeDataCleaner, backgroundOperations)
+    }
+
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
         deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
+
+    suspend fun recoverPendingPackageMutations() {
+        (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+    }
+
+    suspend fun reconcileBackgroundTasks() {
+        (backgroundOperations as? HostBackgroundMaintenance)?.reconcile()
+    }
 }
 
 internal fun interface HostDependenciesFactory {
@@ -103,23 +87,32 @@ internal fun interface HostDependenciesFactory {
 }
 
 private object ProductionHostDependenciesFactory : HostDependenciesFactory {
-    override fun create(application: Application, stores: CoreDataStores): HostDependencies = HostDependencies(
-        repositories = stores.repositories,
-        inspectorFactory = {
-            ToolPackageInspectors.create(
-                File(application.filesDir, "inspection-sessions").toPath(),
-            )
-        },
-        lifecycleFactory = { inspector ->
-            ToolPackageLifecycles.create(
-                privateFilesDirectory = application.filesDir,
-                inspector = inspector,
-                catalog = stores.repositories.lifecycle,
-            )
-        },
-        runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir) },
-        runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
-    )
+    override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+        val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
+        return HostDependencies(
+            repositories = stores.repositories,
+            packageOperationsFactory = { runtimeDataCleaner, background ->
+                ProductionHostPackageOperations(
+                    application = application,
+                    repositories = stores.repositories,
+                    runtimeDataCleaner = runtimeDataCleaner,
+                    background = background,
+                )
+            },
+            backgroundOperations = backgroundOperations,
+            permissionSideEffects = backgroundOperations,
+            runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir) },
+            runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
+            runtimeBridgeProviderFactory = { m2Handlers ->
+                io.toolbox.host.runtime.HostRuntimeBridgeProvider(
+                    context = application,
+                    repositories = stores.repositories,
+                    m2HandlerFactory = m2Handlers,
+                )
+            },
+            runtimeM2HandlerFactory = backgroundOperations,
+        )
+    }
 }
 
 internal sealed interface HostBootstrapState {
@@ -147,11 +140,13 @@ private object ProductionHostRuntimeMaintenance : HostRuntimeMaintenance {
     override suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult =
         withContext(Dispatchers.IO) {
             val traceCookie = System.identityHashCode(dependencies)
-            val installedToolIds = dependencies.repositories.catalog.observeCatalogProjection()
-                .first()
-                .mapTo(hashSetOf()) { it.toolId }
             val traceOpen = HostTrace.tryBeginAsyncSection("runtimeProfile.cleanup", traceCookie)
             try {
+                dependencies.recoverPendingPackageMutations()
+                dependencies.reconcileBackgroundTasks()
+                val installedToolIds = dependencies.repositories.catalog.observeCatalogProjection()
+                    .first()
+                    .mapTo(hashSetOf()) { it.toolId }
                 dependencies.reapMarkedOrphanProfiles(installedToolIds)
             } finally {
                 if (traceOpen) HostTrace.bestEffortEndAsyncSection("runtimeProfile.cleanup", traceCookie)
@@ -257,15 +252,15 @@ internal class RuntimeViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        require(modelClass.isAssignableFrom(RuntimeViewModel::class.java)) {
+        require(RuntimeViewModel::class.java.isAssignableFrom(modelClass)) {
             "Unsupported runtime ViewModel: ${modelClass.name}"
         }
         return RuntimeViewModel(
             toolId = toolId,
             catalog = dependencies.repositories.catalog,
-            lifecycle = dependencies.repositories.lifecycle,
             preparer = dependencies.runtimePreparer,
-            runtimeProfileManager = dependencies.runtimePermitProvider,
+            runtimePermitProvider = dependencies.runtimePermitProvider,
+            bridgeProvider = dependencies.runtimeBridgeProvider,
         ) as T
     }
 }
@@ -275,37 +270,37 @@ internal class HostFeatureViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
-        modelClass.isAssignableFrom(CatalogViewModel::class.java) -> CatalogViewModel(
+        CatalogViewModel::class.java.isAssignableFrom(modelClass) -> CatalogViewModel(
             catalog = dependencies.repositories.catalog,
             organization = dependencies.repositories.organization,
-            packageLifecycle = dependencies.lifecycle,
-            runtimeDataCleaner = dependencies.runtimeDataCleaner,
+            packageOperations = dependencies.packageOperations,
         ) as T
-        modelClass.isAssignableFrom(SettingsViewModel::class.java) -> SettingsViewModel(
+        ImportViewModel::class.java.isAssignableFrom(modelClass) -> ImportViewModel(
+            operations = dependencies.packageOperations,
+        ) as T
+        SettingsViewModel::class.java.isAssignableFrom(modelClass) -> SettingsViewModel(
             repository = dependencies.repositories.settings,
-            audit = dependencies.repositories.audit,
-            nowMillis = System::currentTimeMillis,
+            catalog = dependencies.repositories.catalog,
+            background = dependencies.backgroundOperations,
         ) as T
-        modelClass.isAssignableFrom(ImportReviewViewModel::class.java) ->
-            createImportReviewViewModelAtRecoveryApiBoundary() as T
         else -> error("Unsupported host ViewModel: ${modelClass.name}")
     }
-
-    private fun createImportReviewViewModelAtRecoveryApiBoundary(): ImportReviewViewModel = ImportReviewViewModel(
-        inspector = dependencies.inspector,
-        lifecycle = dependencies.lifecycle,
-    )
 }
 
 internal class PermissionCenterViewModelFactory(
     private val toolId: String,
-    private val repositories: CoreDataRepositories,
+    private val dependencies: HostDependencies,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        require(modelClass.isAssignableFrom(PermissionCenterViewModel::class.java)) {
+        require(PermissionCenterViewModel::class.java.isAssignableFrom(modelClass)) {
             "Unsupported permission ViewModel: ${modelClass.name}"
         }
-        return PermissionCenterViewModel(toolId, repositories.grants) as T
+        return PermissionCenterViewModel(
+            toolId = toolId,
+            packages = dependencies.packageOperations,
+            grants = dependencies.repositories.grants,
+            sideEffects = dependencies.permissionSideEffects,
+        ) as T
     }
 }

@@ -1,123 +1,111 @@
-# V2 Phase 0 current-state inventory
+# ToolBox V2 current state
 
-> Snapshot maintained on `2026-08-29` for `codex/refactor-lightweight-v2`.
-> Resolve the exact candidate with `git rev-parse HEAD`; embedding that commit
-> here would make this document self-stale on every documentation commit. This
-> is an implementation inventory, not a claim that every planned API is
-> available to imported tools.
+> Updated 2026-08-30 for `codex/refactor-lightweight-v2`.
+> Resolve the exact delivery revision with `git rev-parse HEAD` rather than
+> treating this document as a commit marker.
 
-## Baseline relation
+## Product boundary
 
-- Phase-0 reference tag: `v2-phase0-baseline-20260829`
-  (`c0742c46de95d132b4591864dfbc429b9cd84015`, also `main` and
-  `origin/main` when inspected).
-- The plan's `refactor/lightweight-v2` name is represented as
-  `codex/refactor-lightweight-v2` because this workspace requires the `codex/`
-  prefix; no scope or baseline meaning changed.
-- The current branch contains the Phase 0–4 delivery series after that tag;
-  inspect the exact list with `git log --oneline v2-phase0-baseline-20260829..HEAD`.
-- The reference-to-current diff covers compact
-  host UI/insets, catalog projection, deferred startup maintenance, runtime
-  cleanup leasing, their focused tests, and screenshot references. This Phase-0
-  documentation does not alter host behavior.
-- The only pre-existing untracked file observed while making this inventory was
-  `.DS_Store`; it is intentionally not part of this work.
+ToolBox is a lightweight host for `.tbx` HTML/CSS/JavaScript tools. A mini-app
+owns its own interface and business logic; the native host supplies a small,
+per-tool capability surface where Android integration matters:
 
-## Modules and dependency direction
+- direct import, update and uninstall;
+- per-tool capability toggles;
+- native delegated background tasks and notifications;
+- system-mediated file, share, camera and foreground-location operations.
 
-| Module | Current responsibility | Key dependencies |
-|---|---|---|
-| `:app` | Compose host, Navigation 3 routes, import-review, catalog, permissions, settings and runtime shell | `:core-data`, `:core-ui`, `:tool-package`, `:tool-runtime` |
-| `:core-ui` | ToolBox theme/tokens and Miuix adaptation components | Compose BOM, Miuix UI/preference/icons/squircle |
-| `:core-data` | Room/DataStore models, repositories and catalog transactions | Room, DataStore, coroutines |
-| `:tool-package` | `.tbx` inspection, manifest/integrity/signature evidence, resumable inspection and transactional lifecycle | `:core-data`, coroutines |
-| `:tool-runtime` | exact-origin asset loading, hardened WebView, profile/state cleanup and runtime preparation | `:core-data`, `:tool-package`, AndroidX WebKit |
-| `:tool-api` | Present Gradle module only; no production source or published JS bridge contract | none |
+It is **not** an installation review, risk-scoring, publisher-trust or audit-log
+product. Package validation and optional package-local signature verification
+run automatically before installation. A successful import appears in the tool
+list; an invalid package reports a simple failure and leaves no partial tool.
 
-`settings.gradle.kts` includes all six modules. There is no `vendor-hyperx`
-module and no dependency injection framework. The JS declaration named by
-`AGENTS.md`, `sdk/toolbox-api.d.ts`, is absent. `sdk/PROVENANCE.md` records it
-as blocked pending the authoritative file with SHA-256
-`7792a14e810d77d2e8c1368fc4cb38e2b4d304d8b4d701bfc082e2ef6dfb4421`; its
-absence is a release boundary for native JS capabilities.
+## Modules and data
 
-## Pinned build baseline
-
-| Item | Pinned value |
-|---|---:|
-| Android Gradle Plugin | 9.1.1 |
-| Kotlin / Compose compiler plugin | 2.4.10 |
-| Compile / target / minimum SDK | 37 / 37 / 33 |
-| Java and Kotlin JVM target | 21 |
-| Compose BOM | 2026.08.00 |
-| Miuix | 0.9.4-rc01 |
-| Room | 2.8.4 |
-| DataStore | 1.2.1 |
-| AndroidX WebKit | 1.17.0 |
-| Miuix Nav | 0.9.4-rc01 |
-
-## Implemented host behavior
-
-- Native Compose host provides Home, Tools and Settings top-level destinations,
-  plus typed routes for import review, tool detail, permission centre and
-  runtime. Compact chrome owns system insets once, keeps the search target at
-  48 dp and the Miuix navigation item area at 64 dp; at 200% font scale its
-  top bar expands to fit text and bottom destinations switch to semantic
-  `IconOnly` items instead of enlarging or clipping the bar.
-- The catalog persists tools, version history, grants, publisher records, audit
-  metadata and runtime session metadata. Its Room projection observes each
-  tool with its active version through one catalog flow; pinning, categories,
-  last-opened state, rollback and confirmed uninstall are implemented through
-  repositories/lifecycle code.
-- Import uses `ACTION_OPEN_DOCUMENT` for `.tbx`, does not persist the external
-  URI, and inspects the one-shot stream in app-private storage. Inspection
-  enforces package limits and rejects unsafe paths, links, nested archives,
-  native/dynamic-code payloads, manifest/integrity/signature failures and
-  blocked risk conditions. The review UI displays findings and creates only the
-  initial install grants allowed by the review state. Install, rollback,
-  uninstall and recovery have transactional lifecycle results.
-- The repository includes one actual example, `examples/position-calculator.tbx`.
-  Its internal HTML may feature-detect `ToolBox` APIs, but it does not make
-  those APIs available.
-- Runtime preparation rechecks the installed manifest, private bundle locator
-  and entry before load. The WebView uses a unique HTTPS
-  `*.toolbox.invalid` origin through `WebViewAssetLoader`, disallows file and
-  content access, mixed content, popup windows, file chooser and WebView
-  permission prompts, blocks non-exact navigation, disables cookies, applies
-  CSP response headers, and handles renderer loss. Dedicated WebView profiles
-  are used when the provider supports the required APIs; otherwise the runtime
-  selects an origin-only stateless mode or rejects unsafe cleanup/creation.
-- Permission centre reads installed grant records and can revoke one existing
-  record. Settings persists only host theme and audit-retention selections.
-
-## Deliberately unimplemented or incomplete capabilities
-
-| Area | Current boundary |
+| Module | Current responsibility |
 |---|---|
-| ToolBox JS API / RPC | No `WebViewCompat.addWebMessageListener`, document-start shim, session nonce validation or native ToolBox handler exists. The runtime shell correctly labels the native API as unavailable. |
-| Runtime grants | There is no runtime capability prompt or execution path. Permission centre cannot add grants; it only revokes stored install-review records. |
-| Native capabilities | No storage, secure storage, clipboard, share, files, network proxy, device, haptics, notifications, shortcuts, camera, location or crypto handler is exposed to imported content. |
-| Network | Imported pages have `connect-src 'none'`; there is no native HTTPS proxy, domain allowlist executor, redirect revalidation or SSRF implementation. |
-| Signature trust | Inspector produces signature evidence, but owner-key onboarding/trusted publisher management UI and personal-mode automation are not implemented. Invalid signatures remain blocking. |
-| Settings | DataStore contains additional safety/developer/quota values, but the current Settings screen intentionally exposes only theme and audit retention. No fake controls are shown. |
-| Tool management extras | No batch operations, code export, update discovery, desktop shortcut creation, backup/import, developer console or audit-log browser is exposed. |
-| Device performance facts | No physical-device A–E numbers are recorded yet. Use `scripts/perf/capture-host.sh` and `docs/performance/BASELINE.md`; do not infer smoothness from source or emulator screenshots. |
+| `:app` | Native Miuix/Compose host, direct import, catalog/detail/permission/background/settings/help screens and Android capability adapters. |
+| `:core-ui` | ToolBox Miuix adaptation components, theme and layout tokens. |
+| `:core-data` | Room v1 repositories for installed tools/current version, grants, regular KV, install transactions, background tasks and task results; DataStore for theme and background master switch. |
+| `:tool-package` | One-shot package inspection and transactional install/update/uninstall lifecycle. |
+| `:tool-runtime` | Exact-origin `WebViewAssetLoader` runtime, hardened WebView and WebMessage RPC bridge. |
+| `:tool-api` | Canonical ToolBox API 1.0 source, generated Kotlin metadata, JS shim and TypeScript declaration check. |
 
-## Database schema
+The Room schema intentionally has no migration or compatibility layer. It has
+no audit, publisher-trust or runtime-session tables. Existing pre-V2 app data
+is not a supported upgrade path.
 
-- Room database: `io.toolbox.core.data.db.ToolBoxDatabase`, schema version `1`,
-  `exportSchema = true`.
-- Exported schema: `core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/1.json`.
-- Tables: `tools`, `tool_versions`, `permission_grants`, `tool_kv`,
-  `publishers`, `audit_logs`, `runtime_sessions`.
-- Host preferences are stored separately in DataStore. This inventory records
-  schema shape only; it does not read, copy or print any user database values,
-  tool KV values, audit bodies, clipboard values or installed bundle files.
+## Implemented user flow
 
-## Security status retained by this phase
+1. The Tools screen opens a `.tbx` with the system document picker and installs
+   it immediately after internal validation.
+2. A tool detail screen offers real actions: open, permissions, background
+   tasks and delete. The overflow action is a native Miuix menu.
+3. Each declared capability is a real per-tool Miuix toggle. A grant never
+   overrides the package manifest, Android system permission, origin/session,
+   user-gesture, rate or quota checks.
+4. The runtime uses a compact return/title/refresh/overflow bar and gives the
+   remaining screen to the tool; it has no host bottom navigation or security
+   status strip.
+5. Settings contains only theme, the global background-task switch, tool
+   permissions and offline developer help.
 
-The historical and current branches retain the repository guard against
-`addJavascriptInterface`, broad storage/package visibility permissions, and
-enabled WebView file/content/universal-file access. This document does not
-reclassify the secondary runtime process as a UID sandbox and does not loosen
-any security invariant in `AGENTS.md`.
+## ToolBox API 1.0
+
+The canonical machine-readable source is
+`tool-api/src/main/resources/toolbox-api-v1.json`. The contract task keeps it
+in sync with Kotlin descriptors, the WebMessage shim and `sdk/toolbox-api.d.ts`.
+
+The implemented capability families are deliberately limited:
+
+- local and secure storage, device basics, toast, SHA-256, haptics and writing
+  the clipboard;
+- delegated HTTPS GET, notifications and native background task scheduling;
+- explicit clipboard read, Android Sharesheet, SAF file open/save, shortcuts,
+  system-camera capture and foreground single-shot location.
+
+There is no contacts, SMS, accessibility, root, broad filesystem or arbitrary
+background-JavaScript capability. A tool's background work is native
+WorkManager work, not a retained WebView.
+
+## Package and runtime safety boundary
+
+- Import rejects unsafe paths, path collisions, symbolic links, nested
+  archives, compressed-size abuse, native/dynamic-code payloads, invalid
+  manifests, bad integrity data and invalid optional signatures.
+- Tools run through a unique HTTPS AssetLoader origin. They do not use
+  `file://`, a local web server or `addJavascriptInterface`.
+- Every WebMessage call validates exact origin, main frame, session nonce,
+  installed version, manifest declaration, tool grant, Android permission,
+  gesture requirement, rate limit and quota.
+- Network is off by default. The native HTTPS proxy enforces the manifest
+  allowlist, rechecks every redirect, blocks private/reserved addresses and
+  disables cookies, cache, proxy use, automatic redirects and automatic retry.
+- Background tasks are quota-limited, do not keep a WebView alive, retry
+  transient failures at most three times, recover orphaned interrupted runs and
+  retain only the most recent task result for seven days.
+
+The authoritative non-negotiable rules remain in `AGENTS.md`.
+
+## Shipped examples and developer help
+
+`scripts/package-examples.sh` produces the three importable API 1.0 examples:
+
+1. `position-calculator.tbx` — persisted inputs, result copy and haptics.
+2. `quick-notes.tbx` — create/edit/delete/persist/copy notes.
+3. `background-task-demo.tbx` — GitHub HTTP and notification tasks, task list,
+   cancellation and latest result.
+
+The in-app offline Developer Help is generated from this API contract and the
+examples. It documents package layout, manifest declarations, permissions,
+JavaScript calls, packaging, import, background limits and errors.
+
+## Remaining delivery boundary
+
+The current local candidate has compilation and the admitted smallest unit
+suite evidence. The CI workflow runs that gate first, then the emulator host
+flow, and only then uploads the APK and three examples with SHA-256 sums.
+
+Real Android system surfaces remain device-specific: SAF, camera, Sharesheet,
+notification delivery, WorkManager timing and HyperOS system bars must be
+observed on the intended phone during the final clean installation journey.

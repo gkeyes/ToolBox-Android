@@ -51,10 +51,11 @@ object HardenedRuntimeWebView {
         runtime: PreparedToolRuntime,
         creationPermit: RuntimeCreationPermit,
         callbacks: RuntimeWebViewCallbacks,
+        bridgeProvider: RuntimeBridgeProvider,
     ): RuntimeWebViewCreationResult {
         Trace.beginSection("webView.create")
         return try {
-            createTraced(context, runtime, creationPermit, callbacks)
+            createTraced(context, runtime, creationPermit, callbacks, bridgeProvider)
         } finally {
             Trace.endSection()
         }
@@ -65,6 +66,7 @@ object HardenedRuntimeWebView {
         runtime: PreparedToolRuntime,
         creationPermit: RuntimeCreationPermit,
         callbacks: RuntimeWebViewCallbacks,
+        bridgeProvider: RuntimeBridgeProvider,
     ): RuntimeWebViewCreationResult {
         var webView: WebView? = null
         var runtimeClient: RuntimeWebViewClient? = null
@@ -119,6 +121,7 @@ object HardenedRuntimeWebView {
             )
             createdWebView.webViewClient = runtimeClient
             createdWebView.webChromeClient = RuntimeWebChromeClient()
+            createRuntimeBridgeSession(runtime, bridgeProvider.create(runtime)).attach(createdWebView)
             creationPermit.attach(createdWebView)
             runtimeClient.beginFirstMainFrameTrace()
             createdWebView.loadUrl(runtime.entryUrl)

@@ -17,11 +17,13 @@ android {
 
 dependencies {
     implementation(project(":core-data"))
+    implementation(project(":tool-api"))
     implementation(project(":tool-package"))
     implementation(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

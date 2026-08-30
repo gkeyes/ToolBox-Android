@@ -1,6 +1,7 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -126,7 +127,14 @@ fun ToolBoxPermissionRow(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .heightIn(min = sizes.denseRow)
+                .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(role = Role.Button, onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -205,6 +213,7 @@ fun ToolBoxSettingRow(
         summary = summary,
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
             .semantics { role = Role.Button },
         onClick = onClick,
         enabled = enabled,
@@ -230,7 +239,7 @@ fun ToolBoxSwitchSettingRow(
         summary = summary,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = sizes.denseRow),
+            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         enabled = enabled,
     )
@@ -264,7 +273,7 @@ fun ToolBoxChoiceSettingRow(
         summary = combinedSummary.ifBlank { null },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = sizes.denseRow),
+            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         onClick = { if (enabled) choiceDialogVisible = true },
         enabled = enabled,
@@ -287,7 +296,7 @@ fun ToolBoxChoiceSettingRow(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = sizes.denseRow),
+                        .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
                     insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
                 )
             }

@@ -6,19 +6,11 @@ interface CatalogRepository {
     fun observeCatalogProjection(): Flow<List<CatalogEntry>>
     fun observeTools(): Flow<List<InstalledTool>>
     fun observeTool(toolId: String): Flow<InstalledTool?>
-    fun observeVersions(toolId: String): Flow<List<ToolVersion>>
 }
 
 interface CatalogLifecycleRepository {
-    suspend fun snapshot(toolId: String): DataResult<CatalogLifecycleSnapshot>
-    suspend fun findCommittedInstall(sourceSessionId: String): DataResult<CommittedInstall?>
+    suspend fun findCommittedInstall(transactionId: String): DataResult<CommittedInstall?>
     suspend fun commitInstall(attempt: CatalogInstallAttempt): DataResult<CommitInstallOutcome>
-    suspend fun compensateInstall(
-        attempt: CatalogInstallAttempt,
-        snapshot: CatalogLifecycleSnapshot,
-    ): DataResult<Unit>
-    suspend fun markActiveVersionStable(toolId: String, versionCode: Int): DataResult<Unit>
-    suspend fun rollbackToPreviousStable(toolId: String): DataResult<RollbackOutcome>
     suspend fun deleteToolCatalog(toolId: String): DataResult<DeleteToolCatalogOutcome>
 }
 
@@ -31,37 +23,47 @@ interface CatalogOrganizationRepository {
 interface PermissionGrantRepository {
     fun observeGrants(toolId: String): Flow<List<PermissionGrant>>
     suspend fun put(grant: PermissionGrant): DataResult<Unit>
-    suspend fun revoke(toolId: String, permission: String): DataResult<Unit>
+    suspend fun revoke(toolId: String, capability: String): DataResult<Unit>
 }
 
 interface ToolKvRepository {
     fun observe(toolId: String, key: String): Flow<ToolKvValue?>
-    suspend fun put(
-        toolId: String,
-        key: String,
-        valueJson: String,
-        updatedAt: Long,
-        quotaBytes: Long,
-    ): DataResult<Unit>
+    suspend fun put(toolId: String, key: String, valueJson: String, updatedAt: Long): DataResult<Unit>
     suspend fun remove(toolId: String, key: String): DataResult<Unit>
     suspend fun bytesUsed(toolId: String): Long
 }
 
-interface PublisherRepository {
-    fun observePublishers(): Flow<List<Publisher>>
-    suspend fun put(publisher: Publisher): DataResult<Unit>
+interface InstallTransactionRepository {
+    fun observeIncomplete(): Flow<List<InstallTransaction>>
+    suspend fun get(transactionId: String): DataResult<InstallTransaction?>
+    suspend fun begin(transaction: InstallTransaction): DataResult<Unit>
+    suspend fun markCommitting(transactionId: String, updatedAt: Long): DataResult<Unit>
+    suspend fun fail(transactionId: String, updatedAt: Long, failureCode: String): DataResult<Unit>
 }
 
-interface AuditRepository {
-    fun observeRecent(limit: Int): Flow<List<AuditEvent>>
-    suspend fun append(event: AuditEvent): DataResult<Long>
-    suspend fun deleteBefore(timestamp: Long): DataResult<Int>
-}
-
-interface RuntimeSessionRepository {
-    fun observeOpenSessions(): Flow<List<RuntimeSession>>
-    suspend fun start(session: RuntimeSession): DataResult<Unit>
-    suspend fun finish(sessionId: String, endedAt: Long, exitReason: String): DataResult<Unit>
+interface BackgroundTaskRepository {
+    fun observeTasks(toolId: String): Flow<List<BackgroundTask>>
+    fun observeResult(taskId: String): Flow<TaskRunResult?>
+    suspend fun getTask(taskId: String): DataResult<BackgroundTask?>
+    suspend fun create(task: BackgroundTask): DataResult<Unit>
+    suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>
+    suspend fun deferRetry(
+        taskId: String,
+        updatedAt: Long,
+        nextRunAt: Long,
+        runAttempt: Int,
+    ): DataResult<Unit>
+    suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): DataResult<Unit>
+    suspend fun finishRun(
+        taskId: String,
+        result: TaskRunResult,
+        nextState: TaskState,
+        nextRunAt: Long?,
+    ): DataResult<Unit>
+    suspend fun finishCancelled(taskId: String, result: TaskRunResult): DataResult<Unit>
+    suspend fun cancel(taskId: String, updatedAt: Long): DataResult<Unit>
+    suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int>
+    suspend fun deleteForTool(toolId: String): DataResult<Unit>
 }
 
 interface HostSettingsRepository {
@@ -75,8 +77,7 @@ data class CoreDataRepositories(
     val organization: CatalogOrganizationRepository,
     val grants: PermissionGrantRepository,
     val keyValues: ToolKvRepository,
-    val publishers: PublisherRepository,
-    val audit: AuditRepository,
-    val sessions: RuntimeSessionRepository,
+    val installs: InstallTransactionRepository,
+    val backgroundTasks: BackgroundTaskRepository,
     val settings: HostSettingsRepository,
 )

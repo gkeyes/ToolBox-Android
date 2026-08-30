@@ -1,7 +1,7 @@
 package io.toolbox.tool.packagekit.lifecycle
 
+import io.toolbox.tool.packagekit.PreparedPackage
 import java.io.IOException
-import java.nio.charset.StandardCharsets
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -12,32 +12,21 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.UUID
-
-internal enum class JournalKind { INSTALL, ROLLBACK, UNINSTALL }
-internal enum class JournalPhase { PREPARED, FINALIZED, COMMITTED }
-
-internal data class LifecycleJournal(
-    val operationId: String,
-    val kind: JournalKind,
-    val phase: JournalPhase = JournalPhase.PREPARED,
-    val toolId: String,
-    val versionCode: Int?,
-    val priorVersionCode: Int? = null,
-    val sessionId: String?,
-)
 
 internal class LifecycleStorage(private val filesRoot: Path) {
     private val miniappsRoot = filesRoot.resolve("miniapps")
-    private val stateRoot = miniappsRoot.resolve(".lifecycle")
-    private val journalsRoot = stateRoot.resolve("journals")
+    private val lifecycleRoot = miniappsRoot.resolve(".lifecycle")
     private val stagingRoot = miniappsRoot.resolve(".staging")
+    private val importsRoot = miniappsRoot.resolve(".imports")
+    private val replacementCleanupRoot = lifecycleRoot.resolve("replacement-cleanup")
+    private val uninstallCleanupRoot = lifecycleRoot.resolve("uninstall-cleanup")
 
     fun acquireMutationLock(): MutationLock? {
-        Files.createDirectories(stateRoot)
+        Files.createDirectories(lifecycleRoot)
         val channel = FileChannel.open(
-            stateRoot.resolve("mutation.lock"),
+            lifecycleRoot.resolve("mutation.lock"),
             StandardOpenOption.CREATE,
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
@@ -57,97 +46,20 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         return MutationLock(channel, lock)
     }
 
-    fun newJournal(
-        kind: JournalKind,
-        toolId: String,
-        versionCode: Int? = null,
-        priorVersionCode: Int? = null,
-        sessionId: String? = null,
-    ): LifecycleJournal = LifecycleJournal(
-        operationId = UUID.randomUUID().toString(),
-        kind = kind,
-        phase = JournalPhase.PREPARED,
-        toolId = requireToolId(toolId),
-        versionCode = versionCode,
-        priorVersionCode = priorVersionCode,
-        sessionId = sessionId,
-    )
-
-    fun persist(journal: LifecycleJournal) {
-        Files.createDirectories(journalsRoot)
-        val bytes = buildString {
-            append("schema=1\n")
-            append("operationId=").append(journal.operationId).append('\n')
-            append("kind=").append(journal.kind.name).append('\n')
-            append("phase=").append(journal.phase.name).append('\n')
-            append("toolId=").append(journal.toolId).append('\n')
-            append("versionCode=").append(journal.versionCode ?: "").append('\n')
-            append("priorVersionCode=").append(journal.priorVersionCode ?: "").append('\n')
-            append("sessionId=").append(journal.sessionId ?: "").append('\n')
-        }.toByteArray(StandardCharsets.UTF_8)
-        require(bytes.size <= MAX_JOURNAL_BYTES)
-        val temporary = journalsRoot.resolve(".${journal.operationId}.tmp")
-        val target = journalPath(journal)
-        writeForced(temporary, bytes)
-        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        forceDirectory(journalsRoot)
-    }
-
-    fun readJournals(): List<LifecycleJournal> {
-        if (!Files.isDirectory(journalsRoot, LinkOption.NOFOLLOW_LINKS)) return emptyList()
-        val journals = mutableListOf<Path>()
-        Files.list(journalsRoot).use { paths ->
-            paths.forEach { path ->
-                if (TEMP_JOURNAL.matches(path.fileName.toString())) {
-                    Files.deleteIfExists(path)
-                } else {
-                    journals.add(path)
-                }
-            }
-        }
-        forceDirectory(journalsRoot)
-        return journals.sorted().map(::parseJournal)
-    }
-
-    fun removeJournal(journal: LifecycleJournal) {
-        Files.deleteIfExists(journalPath(journal))
-        forceDirectory(journalsRoot)
-    }
-
-    fun copyVerifiedBundle(
-        journal: LifecycleJournal,
-        sourceBundle: Path,
-        expectedHashes: Map<String, String>,
-        maxTotalBytes: Long,
-    ): Long {
-        verifyExactSourceTree(sourceBundle, expectedHashes.keys)
-        val stageVersionRoot = stageVersionRoot(journal)
-        val stageBundle = stageBundle(journal)
-        if (Files.exists(stageRoot(journal), LinkOption.NOFOLLOW_LINKS)) deleteTree(stageRoot(journal))
+    fun stage(transactionId: String, prepared: PreparedPackage) {
+        val stageRoot = stageRoot(transactionId)
+        deleteTree(stageRoot)
+        val stageBundle = stageRoot.resolve("bundle")
         Files.createDirectories(stageBundle)
-        writeForced(
-            stageVersionRoot.resolve(OWNER_FILE),
-            journal.operationId.toByteArray(StandardCharsets.UTF_8),
-        )
-        forceDirectory(stageVersionRoot)
-        forceDirectory(stageRoot(journal))
-        forceDirectory(stagingRoot)
-        var bytes = 0L
-        for ((relative, expectedHash) in expectedHashes.toSortedMap()) {
-            val source = resolveRelative(sourceBundle, relative)
-            verifySourceParents(sourceBundle, relative)
-            val attributes = Files.readAttributes(
-                source,
-                BasicFileAttributes::class.java,
-                LinkOption.NOFOLLOW_LINKS,
-            )
-            if (!attributes.isRegularFile || attributes.isSymbolicLink) {
-                throw IntegrityMismatch("Verified source is no longer a regular file: $relative")
-            }
+        var totalBytes = 0L
+        verifyExactTree(prepared.bundleDirectory, prepared.fileHashes.keys)
+        prepared.fileHashes.toSortedMap().forEach { (relative, expectedHash) ->
+            val source = resolveRelative(prepared.bundleDirectory, relative)
             val target = resolveRelative(stageBundle, relative)
             Files.createDirectories(target.parent)
+            val attributes = Files.readAttributes(source, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (!attributes.isRegularFile || attributes.isSymbolicLink) throw IntegrityMismatch("Package tree changed")
             val digest = MessageDigest.getInstance("SHA-256")
-            var copied = 0L
             Files.newInputStream(source, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
                 FileChannel.open(
                     target,
@@ -155,261 +67,220 @@ internal class LifecycleStorage(private val filesRoot: Path) {
                     StandardOpenOption.WRITE,
                     LinkOption.NOFOLLOW_LINKS,
                 ).use { output ->
-                    val buffer = java.nio.ByteBuffer.allocate(DEFAULT_BUFFER_SIZE)
+                    val bytes = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
-                        if (Thread.currentThread().isInterrupted) throw InterruptedException("Bundle copy interrupted")
-                        buffer.clear()
-                        val count = input.read(buffer.array())
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException("Package copy interrupted")
+                        val count = input.read(bytes)
                         if (count < 0) break
                         if (count == 0) continue
-                        digest.update(buffer.array(), 0, count)
-                        copied += count
-                        if (bytes + copied > maxTotalBytes) {
-                            throw IntegrityMismatch("Verified bundle exceeds its inspected byte count")
-                        }
-                        val outputBuffer = java.nio.ByteBuffer.wrap(buffer.array(), 0, count)
-                        while (outputBuffer.hasRemaining()) output.write(outputBuffer)
+                        digest.update(bytes, 0, count)
+                        totalBytes += count
+                        if (totalBytes > prepared.archive.extractedBytes) throw IntegrityMismatch("Package size changed")
+                        var buffer = java.nio.ByteBuffer.wrap(bytes, 0, count)
+                        while (buffer.hasRemaining()) output.write(buffer)
                     }
                     output.force(true)
                 }
             }
-            val actual = digest.digest().toHex()
-            if (!MessageDigest.isEqual(actual.toByteArray(), expectedHash.lowercase().toByteArray())) {
-                throw IntegrityMismatch("Verified source hash changed during copy: $relative")
+            if (!MessageDigest.isEqual(digest.digest().toHex().toByteArray(), expectedHash.toByteArray())) {
+                throw IntegrityMismatch("Package hash changed: $relative")
             }
-            bytes += copied
         }
-        forceTreeDirectories(stageVersionRoot)
-        return bytes
+        if (totalBytes != prepared.archive.extractedBytes) throw IntegrityMismatch("Package byte count changed")
+        writeForced(stageRoot.resolve(OWNER_FILE), transactionId.toByteArray())
+        forceTree(stageRoot)
     }
 
-    fun publishInstall(journal: LifecycleJournal) {
-        val versionCode = requireNotNull(journal.versionCode)
-        val versionRoot = versionRoot(journal.toolId, versionCode)
-        if (Files.exists(versionRoot, LinkOption.NOFOLLOW_LINKS)) {
-            throw FileAlreadyExistsException(versionRoot.toString())
+    fun publish(transactionId: String, toolId: String, versionCode: Int) {
+        val stageRoot = stageRoot(transactionId)
+        val owner = stageRoot.resolve(OWNER_FILE)
+        if (!Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) || Files.readString(owner) != transactionId) {
+            throw IOException("Staged package ownership is invalid")
         }
-        val stagedVersion = stageVersionRoot(journal)
-        val stagedOwner = stagedVersion.resolve(OWNER_FILE)
-        if (!Files.isRegularFile(stagedOwner, LinkOption.NOFOLLOW_LINKS) || readOwner(stagedOwner) != journal.operationId) {
-            throw IOException("Staged version ownership marker is missing or invalid")
-        }
-        Files.createDirectories(versionRoot.parent)
-        Files.move(stagedVersion, versionRoot, StandardCopyOption.ATOMIC_MOVE)
-        Files.deleteIfExists(stageRoot(journal))
-        forceDirectory(versionRoot.parent)
+        val target = versionRoot(toolId, versionCode)
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) throw FileAlreadyExistsException(target.toString())
+        Files.createDirectories(target.parent)
+        Files.move(stageRoot, target, StandardCopyOption.ATOMIC_MOVE)
+        forceDirectory(target.parent)
         forceDirectory(stagingRoot)
     }
 
-    fun markInstallFinalized(journal: LifecycleJournal): LifecycleJournal =
-        journal.copy(phase = JournalPhase.FINALIZED).also(::persist)
-
-    fun bundleExists(toolId: String, versionCode: Int): Boolean =
-        Files.isDirectory(versionRoot(toolId, versionCode).resolve("bundle"), LinkOption.NOFOLLOW_LINKS)
-
-    fun cleanupUncommittedInstall(journal: LifecycleJournal) {
-        deleteTree(stageRoot(journal))
-        deleteOwnedVersion(journal)
+    fun finalizeCommitted(toolId: String, versionCode: Int, transactionId: String) {
+        val root = versionRoot(toolId, versionCode)
+        val owner = root.resolve(OWNER_FILE)
+        val hasOwner = Files.exists(owner, LinkOption.NOFOLLOW_LINKS)
+        val ownsVersion = Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && Files.readString(owner) == transactionId
+        if (hasOwner && !ownsVersion) throw IOException("Published package ownership is invalid")
+        removeOtherVersions(toolId, versionCode)
+        if (ownsVersion) {
+            Files.delete(owner)
+            forceDirectory(root)
+        }
     }
 
-    fun markInstallCommitted(journal: LifecycleJournal): LifecycleJournal {
-        val committed = journal.copy(phase = JournalPhase.COMMITTED)
-        persist(committed)
-        clearInstallOwner(journal)
-        return committed
+    fun removeUncommitted(toolId: String, versionCode: Int, transactionId: String) {
+        deleteTree(stageRoot(transactionId))
+        val root = versionRoot(toolId, versionCode)
+        val owner = root.resolve(OWNER_FILE)
+        if (Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS) && Files.readString(owner) == transactionId) {
+            deleteTree(root)
+        }
     }
 
-    fun clearInstallOwner(journal: LifecycleJournal) {
-        val owner = versionRoot(journal.toolId, requireNotNull(journal.versionCode)).resolve(OWNER_FILE)
-        if (!Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS)) return
-        if (readOwner(owner) != journal.operationId) throw IOException("Install ownership marker mismatches journal")
-        Files.delete(owner)
-        forceDirectory(owner.parent)
+    fun removeTool(toolId: String) = deleteTree(toolRoot(toolId))
+
+    fun recordReplacementCleanup(
+        transactionId: String,
+        toolId: String,
+        previousVersionCode: Int,
+        nextVersionCode: Int,
+    ) {
+        require(previousVersionCode > 0 && nextVersionCode > previousVersionCode)
+        val marker = replacementCleanupRoot.resolve(requireTransactionId(transactionId))
+        Files.createDirectories(replacementCleanupRoot)
+        writeForced(
+            marker,
+            listOf(requireToolId(toolId), previousVersionCode.toString(), nextVersionCode.toString())
+                .joinToString("\n", postfix = "\n")
+                .toByteArray(StandardCharsets.UTF_8),
+        )
+        forceDirectory(replacementCleanupRoot)
     }
 
-    fun markCommitted(journal: LifecycleJournal): LifecycleJournal =
-        journal.copy(phase = JournalPhase.COMMITTED).also(::persist)
-
-    fun cleanupStaging(journal: LifecycleJournal) = deleteTree(stageRoot(journal))
-
-    fun removeInstalledPackages(toolId: String) {
-        val toolRoot = toolRoot(toolId)
-        deleteTree(toolRoot.resolve("versions"))
-        Files.deleteIfExists(toolRoot.resolve("active.json"))
-        Files.deleteIfExists(toolRoot.resolve(".active.tmp"))
-        runCatching { Files.deleteIfExists(toolRoot) }
+    fun listReplacementCleanups(): List<ReplacementCleanup> = listRegularFiles(replacementCleanupRoot).map { marker ->
+        val transactionId = marker.fileName.toString().also(::requireTransactionId)
+        val parts = readMarker(marker).lineSequence().filter(String::isNotEmpty).toList()
+        if (parts.size != 3) throw IOException("Replacement cleanup marker is malformed")
+        val toolId = requireToolId(parts[0])
+        val previousVersionCode = parts[1].toIntOrNull() ?: throw IOException("Replacement cleanup marker is malformed")
+        val nextVersionCode = parts[2].toIntOrNull() ?: throw IOException("Replacement cleanup marker is malformed")
+        if (previousVersionCode < 1 || nextVersionCode <= previousVersionCode) {
+            throw IOException("Replacement cleanup marker is malformed")
+        }
+        ReplacementCleanup(transactionId, toolId, previousVersionCode, nextVersionCode)
     }
 
-    fun writeActive(toolId: String, versionCode: Int) {
-        val root = toolRoot(toolId)
-        Files.createDirectories(root)
-        val bytes = "{\"schemaVersion\":1,\"versionCode\":$versionCode}\n"
-            .toByteArray(StandardCharsets.UTF_8)
-        val temporary = root.resolve(".active.tmp")
-        writeForced(temporary, bytes)
-        Files.move(temporary, root.resolve("active.json"), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        forceDirectory(root)
+    fun completeReplacementCleanup(transactionId: String) {
+        Files.deleteIfExists(replacementCleanupRoot.resolve(requireTransactionId(transactionId)))
+        forceDirectory(replacementCleanupRoot)
     }
 
-    fun removeActive(toolId: String) {
-        val root = toolRoot(toolId)
-        Files.deleteIfExists(root.resolve("active.json"))
-        Files.deleteIfExists(root.resolve(".active.tmp"))
+    fun beginUninstall(toolId: String) {
+        val safeToolId = requireToolId(toolId)
+        val marker = uninstallCleanupRoot.resolve(safeToolId)
+        Files.createDirectories(uninstallCleanupRoot)
+        if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS) || readMarker(marker) != safeToolId) {
+                throw IOException("Uninstall cleanup marker is invalid")
+            }
+            return
+        }
+        writeForced(marker, safeToolId.toByteArray(StandardCharsets.UTF_8))
+        forceDirectory(uninstallCleanupRoot)
     }
+
+    fun listUninstalls(): List<String> = listRegularFiles(uninstallCleanupRoot).map { marker ->
+        val toolId = requireToolId(readMarker(marker))
+        if (marker.fileName.toString() != toolId) throw IOException("Uninstall cleanup marker is invalid")
+        toolId
+    }
+
+    fun completeUninstall(toolId: String) {
+        Files.deleteIfExists(uninstallCleanupRoot.resolve(requireToolId(toolId)))
+        forceDirectory(uninstallCleanupRoot)
+    }
+
+    fun listToolIds(): List<String> {
+        if (!Files.isDirectory(miniappsRoot, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val toolIds = mutableListOf<String>()
+        Files.list(miniappsRoot).use { entries ->
+            entries.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
+                .map { it.fileName.toString() }
+                .filter { !it.startsWith('.') && TOOL_ID.matches(it) }
+                .forEach(toolIds::add)
+        }
+        return toolIds
+    }
+
+    fun removeInactiveVersions(toolId: String, activeVersionCode: Int) {
+        removeOtherVersions(toolId, activeVersionCode)
+    }
+
+    fun removeAllImports() = deleteChildren(importsRoot)
 
     fun bundleLocator(toolId: String, versionCode: Int): String =
         "miniapps/${requireToolId(toolId)}/versions/$versionCode/bundle"
 
-    private fun parseJournal(path: Path): LifecycleJournal {
-        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw IOException("Lifecycle journal is not regular")
-        val bytes = Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use {
-            it.readNBytes(MAX_JOURNAL_BYTES + 1)
-        }
-        if (bytes.size > MAX_JOURNAL_BYTES) throw IOException("Lifecycle journal exceeds its bound")
-        val entries = linkedMapOf<String, String>()
-        bytes.toString(StandardCharsets.UTF_8).lineSequence()
-            .filter(String::isNotEmpty)
-            .forEach { line ->
-                val index = line.indexOf('=')
-                if (index <= 0) throw IOException("Lifecycle journal is malformed")
-                val key = line.substring(0, index)
-                if (entries.put(key, line.substring(index + 1)) != null) {
-                    throw IOException("Lifecycle journal contains duplicate keys")
+    fun listOwnedPublishedVersions(): List<OwnedVersion> {
+        if (!Files.isDirectory(miniappsRoot, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val result = mutableListOf<OwnedVersion>()
+        Files.list(miniappsRoot).use { tools ->
+            tools.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) && !it.fileName.toString().startsWith('.') }
+                .forEach { toolRoot ->
+                    val versions = toolRoot.resolve("versions")
+                    if (!Files.isDirectory(versions, LinkOption.NOFOLLOW_LINKS)) return@forEach
+                    Files.list(versions).use { roots ->
+                        roots.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }.forEach { root ->
+                            val versionCode = root.fileName.toString().toIntOrNull() ?: return@forEach
+                            val owner = root.resolve(OWNER_FILE)
+                            if (Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS)) {
+                                result += OwnedVersion(
+                                    toolId = toolRoot.fileName.toString(),
+                                    versionCode = versionCode,
+                                    transactionId = Files.readString(owner),
+                                )
+                            }
+                        }
+                    }
                 }
-            }
-        if (entries.keys != JOURNAL_KEYS || entries["schema"] != "1") throw IOException("Lifecycle journal schema is invalid")
-        val operationId = entries.getValue("operationId")
-        if (runCatching { UUID.fromString(operationId).toString() == operationId }.getOrDefault(false).not()) {
-            throw IOException("Lifecycle operation id is invalid")
         }
-        if (path.fileName.toString() != "$operationId.journal") throw IOException("Lifecycle journal name mismatches content")
-        val kind = runCatching { JournalKind.valueOf(entries.getValue("kind")) }
-            .getOrElse { throw IOException("Lifecycle journal kind is invalid") }
-        val phase = runCatching { JournalPhase.valueOf(entries.getValue("phase")) }
-            .getOrElse { throw IOException("Lifecycle journal phase is invalid") }
-        val toolId = requireToolId(entries.getValue("toolId"))
-        val versionCode = entries.getValue("versionCode").takeIf(String::isNotEmpty)?.toIntOrNull()
-        val priorVersionCode = entries.getValue("priorVersionCode").takeIf(String::isNotEmpty)?.toIntOrNull()
-        val sessionId = entries.getValue("sessionId").takeIf(String::isNotEmpty)
-        if (sessionId != null && runCatching { UUID.fromString(sessionId).toString() == sessionId }.getOrDefault(false).not()) {
-            throw IOException("Inspection session id is invalid")
-        }
-        if (kind == JournalKind.INSTALL && (versionCode == null || versionCode < 1 || sessionId == null)) {
-            throw IOException("Install journal facts are incomplete")
-        }
-        if (kind == JournalKind.INSTALL && priorVersionCode != null) {
-            throw IOException("Install journal contains rollback facts")
-        }
-        if (kind == JournalKind.ROLLBACK && (versionCode == null || priorVersionCode == null || sessionId != null)) {
-            throw IOException("Rollback journal facts are incomplete")
-        }
-        if (kind == JournalKind.UNINSTALL && (versionCode != null || priorVersionCode != null || sessionId != null)) {
-            throw IOException("Uninstall journal contains unrelated facts")
-        }
-        if (kind != JournalKind.INSTALL && phase == JournalPhase.FINALIZED) {
-            throw IOException("Lifecycle journal phase is invalid for its operation")
-        }
-        return LifecycleJournal(operationId, kind, phase, toolId, versionCode, priorVersionCode, sessionId)
+        return result
     }
 
-    private fun journalPath(journal: LifecycleJournal) = journalsRoot.resolve("${journal.operationId}.journal")
-    private fun stageRoot(journal: LifecycleJournal) = stagingRoot.resolve(journal.operationId)
-    private fun stageVersionRoot(journal: LifecycleJournal) = stageRoot(journal).resolve("version")
-    private fun stageBundle(journal: LifecycleJournal) = stageVersionRoot(journal).resolve("bundle")
-    private fun toolRoot(toolId: String) = miniappsRoot.resolve(requireToolId(toolId))
-    private fun versionRoot(toolId: String, versionCode: Int) = toolRoot(toolId).resolve("versions").resolve(versionCode.toString())
+    fun removeAllStaging() = deleteChildren(stagingRoot)
+
+    private fun removeOtherVersions(toolId: String, activeVersionCode: Int) {
+        val versions = toolRoot(toolId).resolve("versions")
+        if (!Files.isDirectory(versions, LinkOption.NOFOLLOW_LINKS)) return
+        Files.list(versions).use { paths ->
+            paths.filter { it.fileName.toString() != activeVersionCode.toString() }.forEach(::deleteTree)
+        }
+        forceDirectory(versions)
+    }
+
+    private fun verifyExactTree(root: Path, expectedFiles: Set<String>) {
+        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) throw IntegrityMismatch("Package tree is missing")
+        val actual = mutableSetOf<String>()
+        Files.walk(root).use { paths ->
+            paths.forEach { path ->
+                if (path == root) return@forEach
+                val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                if (attributes.isSymbolicLink || (!attributes.isRegularFile && !attributes.isDirectory)) {
+                    throw IntegrityMismatch("Package tree contains a link or special file")
+                }
+                if (attributes.isRegularFile) actual += root.relativize(path).joinToString("/") { it.toString() }
+            }
+        }
+        if (actual != expectedFiles) throw IntegrityMismatch("Package file set changed")
+    }
 
     private fun resolveRelative(root: Path, relative: String): Path {
-        val path = root.resolve(relative).normalize()
-        if (!path.startsWith(root) || relative.startsWith('/') || '\\' in relative) {
-            throw IntegrityMismatch("Bundle path is not normalized: $relative")
+        val target = root.resolve(relative).normalize()
+        if (!target.startsWith(root) || relative.startsWith('/') || '\\' in relative) {
+            throw IntegrityMismatch("Package path is not normalized")
         }
-        return path
-    }
-
-    private fun verifyExactSourceTree(sourceRoot: Path, expectedFiles: Set<String>) {
-        if (!Files.isDirectory(sourceRoot, LinkOption.NOFOLLOW_LINKS)) {
-            throw IntegrityMismatch("Verified source bundle is no longer a directory")
-        }
-        val expectedDirectories = expectedFiles.flatMapTo(mutableSetOf()) { relative ->
-            val segments = relative.split('/')
-            (1 until segments.size).map { count -> segments.take(count).joinToString("/") }
-        }
-        val actualFiles = mutableSetOf<String>()
-        Files.walk(sourceRoot).use { paths ->
-            paths.forEach { path ->
-                if (path == sourceRoot) return@forEach
-                val relative = sourceRoot.relativize(path).joinToString("/") { it.toString() }
-                val attributes = Files.readAttributes(
-                    path,
-                    BasicFileAttributes::class.java,
-                    LinkOption.NOFOLLOW_LINKS,
-                )
-                when {
-                    attributes.isSymbolicLink || (!attributes.isDirectory && !attributes.isRegularFile) ->
-                        throw IntegrityMismatch("Verified source contains a link or special file: $relative")
-                    attributes.isDirectory && relative !in expectedDirectories ->
-                        throw IntegrityMismatch("Verified source contains an added directory: $relative")
-                    attributes.isRegularFile -> actualFiles.add(relative)
-                }
-            }
-        }
-        if (actualFiles != expectedFiles) {
-            throw IntegrityMismatch("Verified source file set changed before installation")
-        }
-    }
-
-    private fun verifySourceParents(sourceRoot: Path, relative: String) {
-        var current = sourceRoot
-        relative.split('/').dropLast(1).forEach { segment ->
-            current = current.resolve(segment)
-            val attributes = Files.readAttributes(
-                current,
-                BasicFileAttributes::class.java,
-                LinkOption.NOFOLLOW_LINKS,
-            )
-            if (!attributes.isDirectory || attributes.isSymbolicLink) {
-                throw IntegrityMismatch("Verified source parent changed before installation")
-            }
-        }
-    }
-
-    private fun requireToolId(toolId: String): String {
-        require(TOOL_ID.matches(toolId)) { "Invalid tool id" }
-        return toolId
+        return target
     }
 
     private fun writeForced(path: Path, bytes: ByteArray) {
-        FileChannel.open(
-            path,
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING,
-            StandardOpenOption.WRITE,
-            LinkOption.NOFOLLOW_LINKS,
-        ).use { channel ->
+        FileChannel.open(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).use {
             var buffer = java.nio.ByteBuffer.wrap(bytes)
-            while (buffer.hasRemaining()) channel.write(buffer)
-            channel.force(true)
+            while (buffer.hasRemaining()) it.write(buffer)
+            it.force(true)
         }
     }
 
-    private fun deleteOwnedVersion(journal: LifecycleJournal) {
-        val versionCode = journal.versionCode ?: return
-        val root = versionRoot(journal.toolId, versionCode)
-        val owner = root.resolve(OWNER_FILE)
-        if (!Files.isRegularFile(owner, LinkOption.NOFOLLOW_LINKS)) return
-        val value = readOwner(owner)
-        if (value != journal.operationId) return
-        deleteTree(root)
-        forceDirectory(root.parent)
-    }
-
-    private fun forceDirectory(path: Path) {
-        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return
-        FileChannel.open(path, StandardOpenOption.READ).use { it.force(true) }
-    }
-
-    private fun forceTreeDirectories(root: Path) {
+    private fun forceTree(root: Path) {
         Files.walk(root).use { paths ->
             paths.filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
                 .sorted(Comparator.reverseOrder())
@@ -417,43 +288,61 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         }
     }
 
-    private fun readOwner(owner: Path): String =
-        Files.newInputStream(owner, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
-            input.readNBytes(OWNER_ID_MAX_BYTES).toString(StandardCharsets.UTF_8)
+    private fun forceDirectory(path: Path) {
+        if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            FileChannel.open(path, StandardOpenOption.READ).use { it.force(true) }
         }
+    }
+
+    private fun deleteChildren(path: Path) {
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return
+        Files.list(path).use { children -> children.forEach(::deleteTree) }
+    }
+
+    private fun listRegularFiles(path: Path): List<Path> {
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val files = mutableListOf<Path>()
+        Files.list(path).use { entries ->
+            entries.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }.forEach(files::add)
+        }
+        return files
+    }
+
+    private fun readMarker(path: Path): String {
+        if (Files.size(path) > MAX_MARKER_BYTES) throw IOException("Lifecycle marker is too large")
+        return Files.readString(path, StandardCharsets.UTF_8)
+    }
 
     private fun deleteTree(path: Path) {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return
-        Files.walk(path).use { paths ->
-            paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
-        }
+        Files.walk(path).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
     }
 
+    private fun stageRoot(transactionId: String) = stagingRoot.resolve(requireTransactionId(transactionId))
+    private fun toolRoot(toolId: String) = miniappsRoot.resolve(requireToolId(toolId))
+    private fun versionRoot(toolId: String, versionCode: Int) = toolRoot(toolId).resolve("versions/$versionCode")
+
+    private fun requireToolId(toolId: String): String = require(TOOL_ID.matches(toolId)) { "Invalid tool id" }.let { toolId }
+    private fun requireTransactionId(value: String): String = require(TRANSACTION_ID.matches(value)) { "Invalid transaction id" }.let { value }
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     private companion object {
-        const val MAX_JOURNAL_BYTES = 8192
         const val OWNER_FILE = ".install-owner"
-        const val OWNER_ID_MAX_BYTES = 64
-        val TEMP_JOURNAL = Regex("^\\.[0-9a-f-]{36}\\.tmp$")
+        const val MAX_MARKER_BYTES = 512L
         val TOOL_ID = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
-        val JOURNAL_KEYS = setOf(
-            "schema",
-            "operationId",
-            "kind",
-            "phase",
-            "toolId",
-            "versionCode",
-            "priorVersionCode",
-            "sessionId",
-        )
+        val TRANSACTION_ID = Regex("^[0-9a-f-]{36}$")
     }
 }
 
-internal class MutationLock(
-    private val channel: FileChannel,
-    private val lock: FileLock,
-) : AutoCloseable {
+internal data class OwnedVersion(val toolId: String, val versionCode: Int, val transactionId: String)
+internal data class ReplacementCleanup(
+    val transactionId: String,
+    val toolId: String,
+    val previousVersionCode: Int,
+    val nextVersionCode: Int,
+)
+
+internal class MutationLock(private val channel: FileChannel, private val lock: FileLock) : AutoCloseable {
     override fun close() {
         runCatching { if (lock.isValid) lock.release() }
         runCatching { if (channel.isOpen) channel.close() }

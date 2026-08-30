@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.backgroundtaskdemo",
+  "name": "后台任务演示",
+  "shortName": "后台任务",
+  "description": "受控 GitHub HTTP 请求与通知后台任务示例。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.2.0",
+  "categories": ["开发", "后台"],
+  "permissions": [
+    {"name": "background.tasks", "reason": "创建、查看和取消原生后台任务。", "required": false},
+    {"name": "network", "reason": "访问固定 GitHub API 地址。", "required": false},
+    {"name": "notifications", "reason": "显示后台通知任务。", "required": false}
+  ],
+  "network": {"allowDomains": ["api.github.com"], "allowRedirects": false, "maxResponseBytes": 262144, "timeoutMs": 15000},
+  "securityProfile": "strict",
+  "ui": {"orientation": "portrait", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true},
+  "limits": {"storageBytes": 65536, "maxBridgePayloadBytes": 16384}
+}

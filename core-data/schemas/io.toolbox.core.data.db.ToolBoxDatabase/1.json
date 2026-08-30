@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "24186c7f2213961fa223041d2742d6fa",
+    "identityHash": "5701836a6a66922df92b0afe13fc96fe",
     "entities": [
       {
         "tableName": "tools",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `activeVersionCode` INTEGER, `signatureState` TEXT NOT NULL, `publisherKeyId` TEXT, `securityProfile` TEXT NOT NULL, `installedAt` INTEGER NOT NULL, `lastOpenedAt` INTEGER, `pinnedOrder` INTEGER, `categoryId` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `securityProfile` TEXT NOT NULL, `installedAt` INTEGER NOT NULL, `lastOpenedAt` INTEGER, `pinnedOrder` INTEGER, `categoryId` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -19,22 +19,6 @@
             "columnName": "name",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "activeVersionCode",
-            "columnName": "activeVersionCode",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "signatureState",
-            "columnName": "signatureState",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "publisherKeyId",
-            "columnName": "publisherKeyId",
-            "affinity": "TEXT"
           },
           {
             "fieldPath": "securityProfile",
@@ -73,7 +57,7 @@
       },
       {
         "tableName": "tool_versions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`toolId` TEXT NOT NULL, `versionCode` INTEGER NOT NULL, `version` TEXT NOT NULL, `bundleLocator` TEXT NOT NULL, `bundleBytes` INTEGER NOT NULL, `integrityHash` TEXT NOT NULL, `installedAt` INTEGER NOT NULL, `launchState` TEXT NOT NULL, `sourceSessionId` TEXT NOT NULL, `name` TEXT NOT NULL, `signatureState` TEXT NOT NULL, `publisherKeyId` TEXT, `securityProfile` TEXT NOT NULL, PRIMARY KEY(`toolId`, `versionCode`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`toolId` TEXT NOT NULL, `versionCode` INTEGER NOT NULL, `version` TEXT NOT NULL, `bundleLocator` TEXT NOT NULL, `bundleBytes` INTEGER NOT NULL, `integrityHash` TEXT NOT NULL, `installedAt` INTEGER NOT NULL, PRIMARY KEY(`toolId`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "toolId",
@@ -116,70 +100,14 @@
             "columnName": "installedAt",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "launchState",
-            "columnName": "launchState",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "sourceSessionId",
-            "columnName": "sourceSessionId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "signatureState",
-            "columnName": "signatureState",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "publisherKeyId",
-            "columnName": "publisherKeyId",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "securityProfile",
-            "columnName": "securityProfile",
-            "affinity": "TEXT",
-            "notNull": true
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "toolId",
-            "versionCode"
+            "toolId"
           ]
         },
-        "indices": [
-          {
-            "name": "index_tool_versions_toolId",
-            "unique": false,
-            "columnNames": [
-              "toolId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_tool_versions_toolId` ON `${TABLE_NAME}` (`toolId`)"
-          },
-          {
-            "name": "index_tool_versions_sourceSessionId",
-            "unique": true,
-            "columnNames": [
-              "sourceSessionId"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tool_versions_sourceSessionId` ON `${TABLE_NAME}` (`sourceSessionId`)"
-          }
-        ],
         "foreignKeys": [
           {
             "table": "tools",
@@ -196,7 +124,7 @@
       },
       {
         "tableName": "permission_grants",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`toolId` TEXT NOT NULL, `permission` TEXT NOT NULL, `state` TEXT NOT NULL, `scope` TEXT NOT NULL, `grantedAt` INTEGER NOT NULL, `expiresAt` INTEGER, `source` TEXT NOT NULL, PRIMARY KEY(`toolId`, `permission`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`toolId` TEXT NOT NULL, `capability` TEXT NOT NULL, `granted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`toolId`, `capability`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "toolId",
@@ -205,38 +133,21 @@
             "notNull": true
           },
           {
-            "fieldPath": "permission",
-            "columnName": "permission",
+            "fieldPath": "capability",
+            "columnName": "capability",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "state",
-            "columnName": "state",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "scope",
-            "columnName": "scope",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "grantedAt",
-            "columnName": "grantedAt",
+            "fieldPath": "granted",
+            "columnName": "granted",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "expiresAt",
-            "columnName": "expiresAt",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "source",
-            "columnName": "source",
-            "affinity": "TEXT",
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
             "notNull": true
           }
         ],
@@ -244,7 +155,7 @@
           "autoGenerate": false,
           "columnNames": [
             "toolId",
-            "permission"
+            "capability"
           ]
         },
         "indices": [
@@ -340,147 +251,12 @@
         ]
       },
       {
-        "tableName": "publishers",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`keyId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `encodedPublicKey` TEXT NOT NULL, `trustState` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, PRIMARY KEY(`keyId`))",
-        "fields": [
-          {
-            "fieldPath": "keyId",
-            "columnName": "keyId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "displayName",
-            "columnName": "displayName",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "encodedPublicKey",
-            "columnName": "encodedPublicKey",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "trustState",
-            "columnName": "trustState",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "addedAt",
-            "columnName": "addedAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "keyId"
-          ]
-        }
-      },
-      {
-        "tableName": "audit_logs",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `toolId` TEXT, `sessionId` TEXT, `category` TEXT NOT NULL, `action` TEXT NOT NULL, `result` TEXT NOT NULL, `risk` TEXT NOT NULL, `targetHost` TEXT, `timestamp` INTEGER NOT NULL, `durationMs` INTEGER, `byteCount` INTEGER)",
+        "tableName": "install_transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `toolId` TEXT NOT NULL, `versionCode` INTEGER NOT NULL, `state` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `failureCode` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "toolId",
-            "columnName": "toolId",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sessionId",
-            "columnName": "sessionId",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "category",
-            "columnName": "category",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "action",
-            "columnName": "action",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "result",
-            "columnName": "result",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "risk",
-            "columnName": "risk",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "targetHost",
-            "columnName": "targetHost",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "timestamp",
-            "columnName": "timestamp",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "durationMs",
-            "columnName": "durationMs",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "byteCount",
-            "columnName": "byteCount",
-            "affinity": "INTEGER"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": true,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_audit_logs_timestamp",
-            "unique": false,
-            "columnNames": [
-              "timestamp"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_logs_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
-          },
-          {
-            "name": "index_audit_logs_toolId",
-            "unique": false,
-            "columnNames": [
-              "toolId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_logs_toolId` ON `${TABLE_NAME}` (`toolId`)"
-          }
-        ]
-      },
-      {
-        "tableName": "runtime_sessions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `toolId` TEXT NOT NULL, `origin` TEXT NOT NULL, `profileName` TEXT, `nonceHash` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER, `exitReason` TEXT, PRIMARY KEY(`sessionId`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
-        "fields": [
-          {
-            "fieldPath": "sessionId",
-            "columnName": "sessionId",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -491,19 +267,14 @@
             "notNull": true
           },
           {
-            "fieldPath": "origin",
-            "columnName": "origin",
-            "affinity": "TEXT",
+            "fieldPath": "versionCode",
+            "columnName": "versionCode",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "profileName",
-            "columnName": "profileName",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "nonceHash",
-            "columnName": "nonceHash",
+            "fieldPath": "state",
+            "columnName": "state",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -514,40 +285,159 @@
             "notNull": true
           },
           {
-            "fieldPath": "endedAt",
-            "columnName": "endedAt",
-            "affinity": "INTEGER"
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
           },
           {
-            "fieldPath": "exitReason",
-            "columnName": "exitReason",
+            "fieldPath": "failureCode",
+            "columnName": "failureCode",
             "affinity": "TEXT"
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "sessionId"
+            "id"
           ]
         },
         "indices": [
           {
-            "name": "index_runtime_sessions_toolId",
+            "name": "index_install_transactions_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_install_transactions_state` ON `${TABLE_NAME}` (`state`)"
+          },
+          {
+            "name": "index_install_transactions_toolId",
             "unique": false,
             "columnNames": [
               "toolId"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_runtime_sessions_toolId` ON `${TABLE_NAME}` (`toolId`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_install_transactions_toolId` ON `${TABLE_NAME}` (`toolId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "background_tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`taskId` TEXT NOT NULL, `toolId` TEXT NOT NULL, `versionCode` INTEGER NOT NULL, `key` TEXT NOT NULL, `operation` TEXT NOT NULL, `specJson` TEXT NOT NULL, `periodic` INTEGER NOT NULL, `intervalMinutes` INTEGER, `state` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `nextRunAt` INTEGER, `runAttempt` INTEGER NOT NULL, PRIMARY KEY(`taskId`), FOREIGN KEY(`toolId`) REFERENCES `tools`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "taskId",
+            "columnName": "taskId",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "name": "index_runtime_sessions_endedAt",
+            "fieldPath": "toolId",
+            "columnName": "toolId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "versionCode",
+            "columnName": "versionCode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "specJson",
+            "columnName": "specJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodic",
+            "columnName": "periodic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intervalMinutes",
+            "columnName": "intervalMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextRunAt",
+            "columnName": "nextRunAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "runAttempt",
+            "columnName": "runAttempt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "taskId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_background_tasks_toolId",
             "unique": false,
             "columnNames": [
-              "endedAt"
+              "toolId"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_runtime_sessions_endedAt` ON `${TABLE_NAME}` (`endedAt`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_background_tasks_toolId` ON `${TABLE_NAME}` (`toolId`)"
+          },
+          {
+            "name": "index_background_tasks_toolId_key",
+            "unique": false,
+            "columnNames": [
+              "toolId",
+              "key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_background_tasks_toolId_key` ON `${TABLE_NAME}` (`toolId`, `key`)"
+          },
+          {
+            "name": "index_background_tasks_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_background_tasks_state` ON `${TABLE_NAME}` (`state`)"
           }
         ],
         "foreignKeys": [
@@ -563,11 +453,70 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "task_results",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`taskId` TEXT NOT NULL, `outcome` TEXT NOT NULL, `completedAt` INTEGER NOT NULL, `payloadJson` TEXT, `errorCode` TEXT, `attemptCount` INTEGER NOT NULL, PRIMARY KEY(`taskId`), FOREIGN KEY(`taskId`) REFERENCES `background_tasks`(`taskId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "taskId",
+            "columnName": "taskId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payloadJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "taskId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "background_tasks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "taskId"
+            ],
+            "referencedColumns": [
+              "taskId"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '24186c7f2213961fa223041d2742d6fa')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5701836a6a66922df92b0afe13fc96fe')"
     ]
   }
 }

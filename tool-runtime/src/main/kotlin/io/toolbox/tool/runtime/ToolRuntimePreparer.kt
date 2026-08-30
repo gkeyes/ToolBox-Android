@@ -1,8 +1,7 @@
 package io.toolbox.tool.runtime
 
 import io.toolbox.core.data.InstalledTool
-import io.toolbox.core.data.LaunchState
-import io.toolbox.core.data.ToolVersion
+import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.InstalledManifestVerification
 import io.toolbox.tool.packagekit.InstalledManifestVerifier
 import java.io.File
@@ -16,13 +15,15 @@ data class PreparedToolRuntime(
     val toolId: String,
     val toolName: String,
     val versionCode: Int,
-    val launchState: LaunchState,
     val privateFilesRoot: Path,
     val bundleRoot: Path,
     val entry: String,
     val origin: String,
     val profileName: String,
     val securityProfile: io.toolbox.core.data.SecurityProfile,
+    val installedManifest: InstalledManifest,
+    val declaredCapabilities: Set<String> = emptySet(),
+    val maxBridgePayloadBytes: Int = RuntimeBridgeConfiguration.DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
 ) {
     val entryUrl: String get() = origin + entry
 }
@@ -47,19 +48,12 @@ sealed interface RuntimePreparationResult {
 class ToolRuntimePreparer(privateFilesDirectory: File) {
     private val filesRoot = privateFilesDirectory.toPath().toAbsolutePath().normalize()
 
-    fun prepare(toolId: String, tool: InstalledTool?, versions: List<ToolVersion>): RuntimePreparationResult {
+    fun prepare(toolId: String, tool: InstalledTool?): RuntimePreparationResult {
         val installed = tool?.takeIf { it.metadata.id == toolId }
             ?: return failed(RuntimePreparationCode.TOOL_NOT_INSTALLED, "该工具已卸载或目录记录不可用。")
-        val activeCode = installed.activeVersionCode
-            ?: return failed(RuntimePreparationCode.ACTIVE_VERSION_MISSING, "该工具没有可运行的活动版本。")
-        val version = versions.singleOrNull { it.toolId == toolId && it.versionCode == activeCode }
-            ?: return failed(RuntimePreparationCode.ACTIVE_VERSION_MISSING, "活动版本记录不完整，请重新导入工具。")
-        if (
-            version.identity.name != installed.metadata.name ||
-            version.identity.securityProfile != installed.metadata.securityProfile
-        ) {
-            return failed(RuntimePreparationCode.MANIFEST_INVALID, "活动版本身份与工具目录不一致。")
-        }
+        val version = installed.currentVersion
+        val activeCode = version.versionCode
+        if (version.toolId != toolId) return failed(RuntimePreparationCode.ACTIVE_VERSION_MISSING, "活动版本记录不完整，请重新导入工具。")
         val expectedLocator = RuntimeIdentity.expectedBundleLocator(toolId, activeCode)
         if (version.bundleLocator.value != expectedLocator) {
             return failed(RuntimePreparationCode.LOCATOR_MISMATCH, "活动版本目录不符合 ToolBox 私有目录规则。")
@@ -84,7 +78,7 @@ class ToolRuntimePreparer(privateFilesDirectory: File) {
                 "已安装 manifest.json 校验失败：${verified.detail}",
             )
         }
-        if (manifest.name != version.identity.name) {
+        if (manifest.name != installed.metadata.name) {
             return failed(RuntimePreparationCode.MANIFEST_INVALID, "已安装 manifest.json 名称与活动版本不一致。")
         }
         val entryFile = resolveSafeRegularFile(bundle, manifest.entry)
@@ -97,13 +91,15 @@ class ToolRuntimePreparer(privateFilesDirectory: File) {
                 toolId = toolId,
                 toolName = manifest.name,
                 versionCode = activeCode,
-                launchState = version.launchState,
                 privateFilesRoot = filesRoot,
                 bundleRoot = bundle,
                 entry = manifest.entry,
                 origin = RuntimeIdentity.origin(toolId),
                 profileName = RuntimeIdentity.profileName(toolId),
                 securityProfile = installed.metadata.securityProfile,
+                installedManifest = manifest,
+                declaredCapabilities = manifest.permissions,
+                maxBridgePayloadBytes = manifest.maxBridgePayloadBytes,
             ),
         )
     }

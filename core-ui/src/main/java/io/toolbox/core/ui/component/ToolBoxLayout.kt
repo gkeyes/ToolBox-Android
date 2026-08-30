@@ -6,14 +6,13 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -29,7 +28,6 @@ import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.TopAppBar
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -46,6 +44,8 @@ fun ToolBoxAppScaffold(
     floatingActionButton: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
+    val hasTopBar = topBar != null
+    val hasBottomBar = bottomBar != null
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -58,12 +58,44 @@ fun ToolBoxAppScaffold(
             floatingActionButton?.invoke()
         },
         containerColor = ToolBoxThemeTokens.colors.background,
-        contentWindowInsets = WindowInsets.statusBars
-            .union(WindowInsets.displayCutout)
-            .union(WindowInsets.navigationBars)
-            .union(WindowInsets.ime),
+        contentWindowInsets = toolBoxScaffoldContentInsets(
+            hasTopBar = hasTopBar,
+            hasBottomBar = hasBottomBar,
+        ),
         content = content,
     )
+}
+
+@Composable
+fun ToolBoxRuntimeScaffold(
+    modifier: Modifier = Modifier,
+    topBar: (@Composable () -> Unit)? = null,
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    ToolBoxAppScaffold(
+        modifier = modifier,
+        topBar = topBar,
+        bottomBar = null,
+        floatingActionButton = null,
+        content = content,
+    )
+}
+
+@Composable
+private fun toolBoxScaffoldContentInsets(
+    hasTopBar: Boolean,
+    hasBottomBar: Boolean,
+): WindowInsets {
+    var insets = WindowInsets(0, 0, 0, 0)
+    if (!hasTopBar) {
+        insets = insets
+            .union(WindowInsets.statusBars)
+            .union(WindowInsets.displayCutout)
+    }
+    if (!hasBottomBar) {
+        insets = insets.union(WindowInsets.navigationBars)
+    }
+    return insets
 }
 
 @Composable
@@ -76,7 +108,6 @@ fun ToolBoxTopBar(
     onNavigationClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val largeText = LocalDensity.current.fontScale >= 1.5f
     val navigationSlot: @Composable () -> Unit = {
         if (navigationIcon != null && onNavigationClick != null) {
             ToolBoxIconButton(
@@ -86,31 +117,39 @@ fun ToolBoxTopBar(
             )
         }
     }
-    val appBarModifier = modifier.semantics(mergeDescendants = true) { heading() }
-    if (largeText) {
-        TopAppBar(
-            title = title,
-            modifier = appBarModifier,
-            color = ToolBoxThemeTokens.colors.background,
-            titleColor = ToolBoxThemeTokens.colors.textPrimary,
-            largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
-            subtitle = subtitle,
-            subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
-            navigationIcon = navigationSlot,
-            actions = actions,
-        )
-    } else {
-        SmallTopAppBar(
-            title = title,
-            modifier = appBarModifier,
-            color = ToolBoxThemeTokens.colors.background,
-            titleColor = ToolBoxThemeTokens.colors.textPrimary,
-            subtitle = subtitle,
-            subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
-            navigationIcon = navigationSlot,
-            actions = actions,
-        )
-    }
+    val appBarModifier = modifier
+        .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+        .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+        .semantics(mergeDescendants = true) { heading() }
+    SmallTopAppBar(
+        title = title,
+        modifier = appBarModifier,
+        color = ToolBoxThemeTokens.colors.background,
+        titleColor = ToolBoxThemeTokens.colors.textPrimary,
+        subtitle = subtitle,
+        subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
+        navigationIcon = navigationSlot,
+        actions = actions,
+    )
+}
+
+@Composable
+fun ToolBoxRuntimeTopBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    navigationIcon: ToolBoxIconKey? = null,
+    navigationContentDescription: String = "返回",
+    onNavigationClick: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    ToolBoxTopBar(
+        title = title,
+        modifier = modifier,
+        navigationIcon = navigationIcon,
+        navigationContentDescription = navigationContentDescription,
+        onNavigationClick = onNavigationClick,
+        actions = actions,
+    )
 }
 
 @Composable
@@ -120,16 +159,11 @@ fun ToolBoxNavigationBar(
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val compactLargeText = LocalDensity.current.fontScale >= 1.5f
     NavigationBar(
         modifier = modifier,
         color = ToolBoxThemeTokens.colors.surface,
         defaultWindowInsetsPadding = true,
-        mode = if (compactLargeText) {
-            NavigationBarDisplayMode.IconOnly
-        } else {
-            NavigationBarDisplayMode.IconAndText
-        },
+        mode = NavigationBarDisplayMode.IconAndText,
     ) {
         items.forEach { item ->
             val isSelected = item.id == selectedId

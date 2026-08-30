@@ -1,10 +1,23 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.tasks.Exec
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.screenshot)
+}
+
+val packageBundledExamples by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Packages the three shipped ToolBox examples for Android assets."
+    inputs.dir(rootProject.layout.projectDirectory.dir("examples/position-calculator"))
+    inputs.dir(rootProject.layout.projectDirectory.dir("examples/quick-notes"))
+    inputs.dir(rootProject.layout.projectDirectory.dir("examples/background-task-demo"))
+    inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
+    outputs.dir(rootProject.layout.buildDirectory.dir("examples"))
+    workingDir = rootProject.projectDir
+    commandLine("bash", rootProject.layout.projectDirectory.file("scripts/package-examples.sh").asFile.absolutePath)
 }
 
 android {
@@ -15,8 +28,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -45,6 +58,16 @@ android {
     testOptions {
         animationsDisabled = true
     }
+
+    sourceSets.getByName("main").assets.directories.add(
+        rootProject.layout.buildDirectory.dir("examples").get().asFile.absolutePath,
+    )
+}
+
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) {
+        dependsOn(packageBundledExamples)
+    }
 }
 
 kotlin {
@@ -58,6 +81,7 @@ dependencies {
     implementation(project(":core-ui"))
     implementation(project(":tool-package"))
     implementation(project(":tool-runtime"))
+    implementation(project(":tool-api"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -66,14 +90,18 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.serialization.core)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.miuix.nav)
+    implementation(libs.okhttp)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.work.testing)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

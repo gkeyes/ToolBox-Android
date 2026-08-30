@@ -2,12 +2,12 @@ package io.toolbox.host.navigation
 
 import android.content.ContentResolver
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -15,19 +15,20 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostDependencies
 import io.toolbox.host.PermissionCenterViewModelFactory
 import io.toolbox.host.RuntimeViewModelFactory
+import io.toolbox.host.background.BackgroundTasksScreen
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogViewModel
+import io.toolbox.host.help.DeveloperHelpScreen
 import io.toolbox.host.importflow.ContentResolverPackageInputFactory
-import io.toolbox.host.importflow.ImportReviewScreen
-import io.toolbox.host.importflow.ImportReviewViewModel
+import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.importflow.SelectedPackageSource
 import io.toolbox.host.importflow.ToolBoxOpenDocument
 import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.permissions.PermissionCenterViewModel
+import io.toolbox.host.permissions.ToolPermissionsScreen
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
-import io.toolbox.host.ui.HomeScreen
 import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellScreen
@@ -36,7 +37,6 @@ import io.toolbox.host.ui.ToolManagerScreen
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
-import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
@@ -46,23 +46,22 @@ internal fun ToolBoxNavigation(
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
     catalogViewModel: CatalogViewModel,
-    importReviewViewModel: ImportReviewViewModel,
+    importViewModel: ImportViewModel,
     settingsViewModel: SettingsViewModel,
     contentResolver: ContentResolver,
 ) {
-    val backStack = rememberNavBackStack<ToolBoxRoute>(HomeRoute)
+    val backStack = rememberNavBackStack<ToolBoxRoute>(ToolManagerRoute)
     val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
-    val homeState by catalogViewModel.homeState.collectAsStateWithLifecycle()
-    val homeListState = rememberLazyListState()
+    val importState by importViewModel.state.collectAsStateWithLifecycle()
     val toolsListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
         scope.launch {
             when (val source = packageInputFactory.fromPickerResult(uri)) {
-                SelectedPackageSource.Cancelled -> importReviewViewModel.pickerCancelled()
-                is SelectedPackageSource.Ready -> importReviewViewModel.inspect(source.input)
-                is SelectedPackageSource.Rejected -> importReviewViewModel.pickerRejected(source.message)
+                SelectedPackageSource.Cancelled -> Unit
+                is SelectedPackageSource.Ready -> importViewModel.importPackage(source.input)
+                is SelectedPackageSource.Rejected -> importViewModel.pickerRejected(source.message)
             }
         }
     }
@@ -74,11 +73,10 @@ internal fun ToolBoxNavigation(
     fun navigateMain(destination: MainDestination) {
         while (backStack.size > 1) backStack.removeLastOrNull()
         val route = when (destination) {
-            MainDestination.Home -> HomeRoute
             MainDestination.Tools -> ToolManagerRoute
             MainDestination.Settings -> SettingsRoute
         }
-        if (route != HomeRoute) backStack.add(route)
+        if (backStack.lastOrNull() != route) backStack.add(route)
     }
 
     fun goBack() {
@@ -95,13 +93,7 @@ internal fun ToolBoxNavigation(
 
     NavDisplay(
         backStack = backStack,
-        onBack = {
-            dispatchHostBack(
-                currentRoute = backStack.lastOrNull(),
-                onImportReviewBack = importReviewViewModel::cancelAndExit,
-                onDefaultBack = ::goBack,
-            )
-        },
+        onBack = ::goBack,
         transition = NavTransitions.MiuixDefault,
         effects = NavDisplayEffects(
             cornerClipRadius = rememberNavSystemCornerRadius(),
@@ -109,23 +101,16 @@ internal fun ToolBoxNavigation(
             blockInputDuringTransition = true,
         ),
     ) {
-        entry<HomeRoute> {
-            HomeScreen(
-                state = homeState,
-                listState = homeListState,
-                onAction = catalogViewModel::dispatch,
-                onDestination = ::navigateMain,
-                onImport = { navigate(ImportReviewRoute) },
-                onOpenDetails = { navigate(ToolDetailRoute(it)) },
-            )
-        }
         entry<ToolManagerRoute> {
             ToolManagerScreen(
                 state = catalogState,
+                importState = importState,
                 listState = toolsListState,
                 onAction = catalogViewModel::dispatch,
                 onDestination = ::navigateMain,
-                onImport = { navigate(ImportReviewRoute) },
+                onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
+                onInstallExamples = importViewModel::installBundledExamples,
+                onDismissImport = importViewModel::dismissMessage,
                 onOpenDetails = { navigate(ToolDetailRoute(it)) },
             )
         }
@@ -136,23 +121,24 @@ internal fun ToolBoxNavigation(
                 onAction = catalogViewModel::dispatch,
                 onBack = ::goBack,
                 onPermissions = { navigate(PermissionCenterRoute(it)) },
-            )
-        }
-        entry<ImportReviewRoute> {
-            ImportReviewScreen(
-                viewModel = importReviewViewModel,
-                onBack = ::goBack,
-                onPickerRequest = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
+                onBackground = { navigate(BackgroundTasksRoute(it)) },
             )
         }
         entry<PermissionCenterRoute> { route ->
             val permissionViewModel = remember(route.toolId, dependencies) {
                 ViewModelProvider(
                     viewModelStoreOwner,
-                    PermissionCenterViewModelFactory(route.toolId, dependencies.repositories),
+                    PermissionCenterViewModelFactory(route.toolId, dependencies),
                 ).get("permission:${route.toolId}", PermissionCenterViewModel::class.java)
             }
             PermissionCenterScreen(permissionViewModel, onBack = ::goBack)
+        }
+        entry<BackgroundTasksRoute> { route ->
+            BackgroundTasksScreen(
+                toolId = route.toolId,
+                operations = dependencies.backgroundOperations,
+                onBack = ::goBack,
+            )
         }
         entry<RuntimeRoute> { route ->
             val runtimeViewModel = remember(route.toolId, dependencies) {
@@ -170,20 +156,26 @@ internal fun ToolBoxNavigation(
                 title = "设置",
                 onImport = null,
             ) { padding ->
-                SettingsScreen(settingsViewModel, contentPadding = padding)
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    contentPadding = padding,
+                    onToolPermissions = { navigate(ToolPermissionsRoute) },
+                    onDeveloperHelp = { navigate(DeveloperHelpRoute) },
+                )
             }
         }
-    }
-}
-
-internal fun dispatchHostBack(
-    currentRoute: NavKey?,
-    onImportReviewBack: () -> Unit,
-    onDefaultBack: () -> Unit,
-) {
-    if (currentRoute == ImportReviewRoute) {
-        onImportReviewBack()
-    } else {
-        onDefaultBack()
+        entry<ToolPermissionsRoute> {
+            ToolPermissionsScreen(
+                catalog = dependencies.repositories.catalog,
+                onBack = ::goBack,
+                onSelectTool = { navigate(PermissionCenterRoute(it)) },
+            )
+        }
+        entry<DeveloperHelpRoute> {
+            DeveloperHelpScreen(
+                onBack = ::goBack,
+                onInstallExamples = importViewModel::installBundledExamples,
+            )
+        }
     }
 }

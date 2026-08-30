@@ -7,97 +7,67 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.ui.component.ToolBoxChoiceSettingRow
 import io.toolbox.core.ui.component.ToolBoxSettingChoice
+import io.toolbox.core.ui.component.ToolBoxSettingRow
+import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
-    modifier: Modifier = Modifier,
+    onToolPermissions: () -> Unit,
+    onDeveloperHelp: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    SettingsScreen(
-        state = state,
-        onThemeSelected = viewModel::selectTheme,
-        onAuditRetentionSelected = viewModel::selectAuditRetention,
-        contentPadding = contentPadding,
-        modifier = modifier,
-    )
-}
-
-@Composable
-fun SettingsScreen(
-    state: SettingsUiState,
-    onThemeSelected: (ThemeMode) -> Unit,
-    onAuditRetentionSelected: (Int) -> Unit,
-    contentPadding: PaddingValues,
-    modifier: Modifier = Modifier,
-) {
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
     ) {
-        state.updateError?.let { error ->
-            item {
-                SurfaceCard {
-                    AppText(
-                        error,
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.danger,
-                    )
-                }
-            }
-        }
-        item { SectionHeader("外观", "") }
-        item {
-            SettingsCard {
+        state.error?.let { item("error") { SurfaceCard { AppText(it, color = ToolBoxThemeTokens.colors.danger) } } }
+        item("appearance-title") { SectionHeader("外观") }
+        item("appearance") {
+            SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.half) {
                 ToolBoxChoiceSettingRow(
                     title = "主题",
                     selectedValue = state.settings.theme.name,
-                    choices = themeChoices,
-                    onSelected = { onThemeSelected(ThemeMode.valueOf(it)) },
-                    summary = "只影响宿主界面",
-                    enabled = state.isLoaded,
+                    choices = ThemeMode.entries.map { ToolBoxSettingChoice(it.name, it.label) },
+                    onSelected = { viewModel.selectTheme(ThemeMode.valueOf(it)) },
+                    summary = "只影响 ToolBox 宿主界面",
+                    enabled = state.loaded,
                 )
             }
         }
-
-        item { SectionHeader("安全与审计", "") }
-        item {
-            SettingsCard {
-                ToolBoxChoiceSettingRow(
-                    title = "审计日志保留",
-                    selectedValue = state.settings.auditRetentionDays.toString(),
-                    choices = auditRetentionChoices,
-                    onSelected = { onAuditRetentionSelected(it.toInt()) },
-                    summary = "仅保留最小审计元数据",
-                    enabled = state.isLoaded,
+        item("operation-title") { SectionHeader("功能") }
+        item("operation") {
+            SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.half) {
+                ToolBoxSwitchSettingRow(
+                    title = "后台运行",
+                    summary = "关闭会取消全部工具后台任务和对应通知",
+                    checked = state.settings.backgroundEnabled,
+                    onCheckedChange = viewModel::setBackgroundEnabled,
+                    enabled = state.loaded,
+                )
+                ToolBoxSettingRow(
+                    title = "工具权限",
+                    summary = "按工具管理已声明能力",
+                    onClick = onToolPermissions,
+                    enabled = state.loaded,
+                )
+                ToolBoxSettingRow(
+                    title = "开发帮助",
+                    summary = "离线查看 .tbx 与 ToolBox API 1.0",
+                    onClick = onDeveloperHelp,
+                    enabled = state.loaded,
                 )
             }
         }
     }
-}
-
-@Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
-    SurfaceCard(contentPadding = 0.dp) {
-        content()
-    }
-}
-
-private val themeChoices = ThemeMode.entries.map { theme ->
-    ToolBoxSettingChoice(value = theme.name, label = theme.label)
-}
-
-private val auditRetentionChoices = listOf(7, 30, 90, 365).map { days ->
-    ToolBoxSettingChoice(value = days.toString(), label = "$days 天")
 }

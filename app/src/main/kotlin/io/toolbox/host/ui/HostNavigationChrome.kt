@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -164,6 +165,7 @@ internal fun DetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String = "",
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
@@ -178,6 +180,7 @@ internal fun DetailScreen(
                     subtitle = subtitle,
                     navigationIcon = ToolBoxIconKey.Back,
                     onNavigationClick = onBack,
+                    actions = actions,
                 )
             },
         ) { scaffoldPadding ->
@@ -197,34 +200,24 @@ internal fun DetailScreen(
 private fun TopBar(selected: MainDestination, title: String, onImport: (() -> Unit)?) {
     ToolBoxTopBar(
         title = title,
-        subtitle = if (selected == MainDestination.Home) "本地运行的小工具" else "",
         actions = {
             if (onImport != null) {
-                if (selected == MainDestination.Tools) {
-                    Box(
-                        modifier = Modifier
-                            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.full))
-                            .background(ToolBoxThemeTokens.colors.softPrimary)
-                            .clickable(role = Role.Button, onClick = onImport)
-                            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf)
-                            .testTag(HostTestTags.ImportFab)
-                            .semantics { contentDescription = "导入 .tbx 工具包" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        AppText(
-                            "导入",
-                            textStyle = ToolBoxThemeTokens.textStyles.label,
-                            color = ToolBoxThemeTokens.colors.primary,
-                            weight = FontWeight.SemiBold,
-                        )
-                    }
-                } else {
-                    ToolBoxIconButton(
-                        icon = ToolBoxIconKey.Add,
-                        contentDescription = "导入 .tbx 工具包",
-                        onClick = onImport,
-                        modifier = Modifier.testTag(HostTestTags.ImportFab),
+                Box(
+                    modifier = Modifier
+                        .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.full))
+                        .background(ToolBoxThemeTokens.colors.softPrimary)
+                        .clickable(role = Role.Button, onClick = onImport)
+                        .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf)
+                        .testTag(HostTestTags.ImportFab)
+                        .semantics { contentDescription = "导入 .tbx 工具包" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AppText(
+                        "导入",
+                        textStyle = ToolBoxThemeTokens.textStyles.label,
+                        color = ToolBoxThemeTokens.colors.primary,
+                        weight = FontWeight.SemiBold,
                     )
                 }
             }
@@ -237,7 +230,6 @@ private val mainNavigationItems = MainDestination.entries.map { destination ->
         id = destination.name,
         label = destination.label,
         icon = when (destination) {
-            MainDestination.Home -> ToolBoxIconKey.Home
             MainDestination.Tools -> ToolBoxIconKey.Tools
             MainDestination.Settings -> ToolBoxIconKey.Settings
         },
@@ -247,14 +239,12 @@ private val mainNavigationItems = MainDestination.entries.map { destination ->
 
 private val MainDestination.testTag: String
     get() = when (this) {
-        MainDestination.Home -> HostTestTags.BottomHome
         MainDestination.Tools -> HostTestTags.BottomTools
         MainDestination.Settings -> HostTestTags.BottomSettings
     }
 
 private val MainDestination.screenTestTag: String
     get() = when (this) {
-        MainDestination.Home -> HostTestTags.PrimaryHome
         MainDestination.Tools -> HostTestTags.PrimaryTools
         MainDestination.Settings -> HostTestTags.PrimarySettings
     }

@@ -6,8 +6,8 @@
 
 ## 背景
 
-V2 Phase 4 要求首页不等待孤儿 WebView Profile 扫描，并评估个人模式是否应默认采用
-origin-only。启动维护时机与工具运行隔离策略是两个不同决策：把清理延后可以直接缩短首屏关键
+V2 要求宿主首帧不等待孤儿 WebView Profile 扫描。启动维护时机与工具运行隔离策略是两个不同
+决策：把清理延后可以直接缩短首屏关键
 路径，而更换隔离模式会改变浏览状态能力、卸载证明和 provider 迁移边界。
 
 ## 方案比较
@@ -20,31 +20,31 @@ origin-only。启动维护时机与工具运行隔离策略是两个不同决策
   证据并 fail closed。
 - 孤儿清理可能访问 WebView provider，因此不属于首页首帧的必要工作。
 
-### Origin-only personal mode
+### Origin-only stateless mode
 
 - 唯一 exact HTTPS Origin 只能隔离同源数据，不能证明默认 Profile 中所有浏览状态都能按工具
   完整删除。
 - 只有采用 ADR 0004 的无状态约束，禁用 Cookie、DOM storage、IndexedDB、Cache、ServiceWorker
   与相关持久 API，才能在不依赖整 Profile 删除的情况下安全卸载。
-- 它减少 provider 能力要求，但会移除网页持久存储能力；这不是单纯的性能开关，也不能等同于
-  “个人工具可放宽安全边界”。
+- 它减少 provider 能力要求，但会移除网页持久存储能力；这不是单纯的性能开关，也不放宽
+  任何安全边界。
 
 ## 决策
 
-本阶段不按个人/严格模式改写 Profile 选择。继续采用 ADR 0004 的 capability-driven 规则：
-provider 同时支持 multi-profile 与 browsing-data 删除时使用 dedicated profile，否则仅在完整无状态
-前置能力成立时使用 origin-only stateless。严格模式和个人模式都保留 exact Origin、CSP、导航与
-网络阻断、文件/content access 禁用、运行租约和可验证卸载。
+继续采用 ADR 0004 的 capability-driven 规则：provider 同时支持 multi-profile 与
+browsing-data 删除时使用 dedicated profile，否则仅在完整无状态前置能力成立时使用 origin-only
+stateless。两种模式都保留 exact Origin、CSP、导航与网络阻断、文件/content access 禁用、运行
+租约和可验证卸载。
 
 孤儿 Profile/模式记录清理改为收到真实 Compose 宿主首帧信号后执行。清理失败不替换已经发布的
 宿主 Ready 状态；遗留 marker/记录继续由运行许可和卸载流程按 ADR 0003/0004 显式 fail closed。
 
 ## 后果
 
-- 首页关键路径不再等待 catalog 首次读取和 provider 清理。
+- 宿主首帧关键路径不再等待 catalog 首次读取和 provider 清理。
 - 延后不等于忽略：清理证据仍保留，相关工具操作仍会给出类型化错误。
-- 是否让个人模式固定选择 origin-only 必须另行获得功能需求、真机启动/内存数据和存储能力取舍，
-  不在本性能阶段猜测或降低严格模式。
+- 是否固定选择某一隔离模式必须基于真机启动/内存数据和存储能力取舍，不能以产品模式名
+  猜测或降低边界。
 
 ## 验证
 

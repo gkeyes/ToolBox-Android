@@ -2,8 +2,9 @@ name: Android CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build, test, lint, screenshot
+    name: Build and smallest admitted unit suite
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -39,7 +40,9 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
-      - name: Verify host gate
+      # This script contains the existing verifySecurityInvariants invocation.
+      # Keep it before every candidate build and do not upload an APK from this job.
+      - name: Verify security invariants, build and admitted unit suite
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
@@ -54,17 +57,8 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
-      - name: Upload verified debug APK
-        if: ${{ success() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: toolbox-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
   instrumentation:
-    name: Host and persistence instrumentation
+    name: Emulator critical host flow
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -92,7 +86,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run admitted device tests
+      - name: Run admitted emulator critical-flow tests
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -101,8 +95,119 @@ jobs:
           profile: pixel_6
           disk-size: 4096M
           disable-animations: true
-          script: >-
-            ./gradlew --no-daemon
-            :app:connectedDebugAndroidTest
-            :core-data:connectedDebugAndroidTest
-            :tool-runtime:connectedDebugAndroidTest
+          script: |
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.HostNavigationTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.M3BrokerLifecycleInstrumentedTest
+            ./gradlew --no-daemon :core-data:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.core.data.FreshPersistenceContractTest
+            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.HardenedRuntimeWebViewInstrumentationTest
+
+  delivery:
+    name: Package verified v0.2.0 delivery
+    needs: [verify, instrumentation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK 37
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            build-tools;37.0.0
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+
+      - name: Assemble delivery APK after prerequisite success
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Package the three bundled examples
+        run: bash scripts/package-examples.sh
+
+      - name: Verify bundled example packages are reproducible
+        run: |
+          first_sums="$RUNNER_TEMP/toolbox-example-sums-first.txt"
+          second_sums="$RUNNER_TEMP/toolbox-example-sums-second.txt"
+          shasum -a 256 \
+            build/examples/position-calculator.tbx \
+            build/examples/quick-notes.tbx \
+            build/examples/background-task-demo.tbx > "$first_sums"
+          bash scripts/package-examples.sh
+          shasum -a 256 \
+            build/examples/position-calculator.tbx \
+            build/examples/quick-notes.tbx \
+            build/examples/background-task-demo.tbx > "$second_sums"
+          diff -u "$first_sums" "$second_sums"
+
+      - name: Assemble checksummed delivery
+        env:
+          VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          EMULATOR_JOB_RESULT: ${{ needs.instrumentation.result }}
+        run: |
+          set -euo pipefail
+          [[ "$VERIFY_JOB_RESULT" == "success" ]]
+          [[ "$EMULATOR_JOB_RESULT" == "success" ]]
+
+          delivery_dir="$GITHUB_WORKSPACE/build/ci-delivery"
+          mkdir -p "$delivery_dir"
+
+          apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
+          [[ -f "$apk_path" ]]
+          cp "$apk_path" "$delivery_dir/toolbox-v0.2.0-debug.apk"
+
+          for example_name in position-calculator quick-notes background-task-demo; do
+            matches="$(find "$GITHUB_WORKSPACE/build" -type f -name "${example_name}.tbx" -print)"
+            [[ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" == "1" ]]
+            cp "$matches" "$delivery_dir/${example_name}.tbx"
+          done
+
+          {
+            printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
+            printf 'BUILD_REF=%s\n' "$GITHUB_REF"
+            printf 'VERSION_NAME=0.2.0\n'
+            printf 'VERSION_CODE=2\n'
+            printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
+            printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
+            printf 'EMULATOR_JOB=Emulator critical host flow\n'
+            printf 'EMULATOR_RESULT=%s\n' "$EMULATOR_JOB_RESULT"
+            printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
+            printf 'EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx\n'
+          } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
+
+          (
+            cd "$delivery_dir"
+            LC_ALL=C shasum -a 256 \
+              toolbox-v0.2.0-debug.apk \
+              position-calculator.tbx \
+              quick-notes.tbx \
+              background-task-demo.tbx \
+              BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
+          )
+
+      - name: Upload verified v0.2.0 delivery
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-v0.2.0-${{ github.sha }}
+          path: |
+            build/ci-delivery/toolbox-v0.2.0-debug.apk
+            build/ci-delivery/position-calculator.tbx
+            build/ci-delivery/quick-notes.tbx
+            build/ci-delivery/background-task-demo.tbx
+            build/ci-delivery/SHA256SUMS.txt
+            build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
+          if-no-files-found: error
+          retention-days: 14

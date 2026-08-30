@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build an Android host app that imports `.tbx` ZIP packages containing HTML/CSS/JavaScript, reviews their permissions and risk, installs them atomically, and runs them in a hardened WebView with a capability-gated ToolBox JS API.
+Build a lightweight Android host app that imports `.tbx` ZIP packages containing HTML/CSS/JavaScript, validates them internally, installs them atomically, and runs them in a hardened WebView with a capability-gated ToolBox JS API. The visible core flow is import, use, per-tool permissions, background tasks and uninstall; package checks must not become a user-facing review ceremony.
 
 ## Read first
 
@@ -34,15 +34,17 @@ Build an Android host app that imports `.tbx` ZIP packages containing HTML/CSS/J
 - HyperX Compose is optional and must be pinned as source/submodule; never track its moving `main` in production.
 - Implement the light design board first. Preserve semantic colors, spacing and information hierarchy rather than drawing phone frames.
 - Support font scaling, TalkBack, 48 dp touch targets and adaptive layouts.
+- Keep the runtime content-first: compact return/title/overflow chrome only, no host bottom navigation or technical security/status strip around a running tool.
+- Per-tool permissions are real Miuix toggles backed by capability grants. A toggle never bypasses the manifest, Android system permission, user-gesture, quota or origin checks above.
 
 ## Delivery order
 
 1. Scaffold modules, theme, navigation and static host screens.
-2. Implement `.tbx` inspect/install/uninstall and the import-review UI.
+2. Implement one-step `.tbx` inspect/install/uninstall, the installed-tool detail screen and per-tool permission toggles.
 3. Implement AssetLoader, unique origin/profile, CSP and hardened navigation.
-4. Implement RPC bridge and `ready/ui/storage/haptics` vertical slice.
-5. Add permissions, audit, clipboard/share/files/network/notification/shortcut APIs.
-6. Add integrity/signature, update/rollback/export and hardening tests.
+4. Implement the RPC bridge and the `ready/ui/crypto/storage/device/haptics/clipboard.write` vertical slice.
+5. Add delegated background work, network, notifications and the remaining app-like capabilities, plus Developer Help and three functional examples.
+6. Add integrity/signature validation, uninstall cleanup, SSRF and hardening tests. Do not add audit-log, publisher-trust, migration or compatibility features.
 
 ## Definition of done for each change
 
