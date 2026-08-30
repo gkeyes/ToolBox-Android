@@ -1,75 +1,118 @@
 # ToolBox Android
 
-ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/CSS/JavaScript 的
-本地 ZIP 包，在唯一 HTTPS origin 的硬化 WebView 中运行，并按工具提供真实的权限开关和
-受限后台任务。
+> 面向 Android 13+ 的本地 `.tbx` HTML 小工具宿主。
+>
+> An early Android host for locally imported HTML mini-tools.
 
-当前重构的目标是让用户只经历：**导入、使用、授权、后台任务、删除**。导入是一次操作：
-选择 `.tbx` 后，宿主在后台完成结构、完整性和签名检查；成功进入工具列表，失败显示原因且
-没有残留。不会出现审核会话、风险评分、签名/发布者标签、审计日志或恢复审核页面。
+[从源码构建](#从源码构建) · [查看 API](sdk/USAGE.md) · [查看示例](#三个示例) · [提交问题](https://github.com/gkeyes/ToolBox-Android/issues)
 
-## 开发基线
+## ToolBox 是什么
 
-这是尚未发布的全新数据基线。现有安装、权限和设置不保留：最终 Room schema 从
-`version = 1` 新建，没有 database migration、兼容读取或旧字段回退。候选 APK 以卸载
-`io.toolbox.host` 后的干净安装验证。
+ToolBox 让你把包含 HTML、CSS 和 JavaScript 的 `.tbx` ZIP 包导入 Android 设备，并在原生宿主中打开、授权、管理和删除。小工具拥有自己的界面和业务逻辑；宿主只提供有明确边界的 Android 集成能力。
 
-设置只保留真实主题、后台总开关和 Developer Help。工具详情提供打开、权限、后台任务和
-删除；权限是每工具的虚拟 grant，仍必须通过 manifest、宿主 Android 权限、用户手势、配额
-与 origin 校验才会生效。
+它不是应用商店、云同步服务或通用浏览器，也不会让小工具任意执行原生代码、访问 root 或取得广泛设备权限。
 
-## 功能切片
+## 当前状态
 
-1. **导入、目录和权限**：SAF 导入、内部包检查、原子安装/更新、真实删除、Miuix 权限开关。
-2. **安全运行时与基础 API**：exact HTTPS origin、CSP、消息桥、`ready`、toast、SHA-256、
-   storage、secure storage、device basic、haptics、clipboard write；包内同源 Web Worker 可承载
-   高负载前台计算，ServiceWorker 与远程 Worker 仍禁用。
-3. **后台任务**：WorkManager 委派的 allowlist HTTPS `httpGet` 和命名空间通知；工具代码不在
-   后台运行，也不使用后台 WebView 或常驻前台服务。
-4. **App 式能力与帮助**：剪贴板读取、系统分享、SAF 文件、快捷方式、系统相机、前台单次
-   定位，以及从 API/范例派生的离线 Developer Help。
+| 项目 | 当前情况 |
+| --- | --- |
+| 代码基线 | `main` 上的 `0.2.0`，仍在开发中 |
+| 平台 | Android 13+，JDK 21，Android SDK 37 |
+| 正式 v0.2 Release | 尚未发布；请从源码构建或使用对应 GitHub Actions 产物进行测试 |
+| 旧预览包 | [v0.1.0-alpha.1](https://github.com/gkeyes/ToolBox-Android/releases/tag/v0.1.0-alpha.1) 仅代表旧实现，不包含当前 v0.2 功能 |
+| 验证边界 | CI 运行静态安全、协议、编译与单元门禁；系统权限、SAF、相机、通知、后台时序和 HyperOS 系统栏仍需在目标设备上验证 |
 
-最终随 APK 交付三个可导入示例：仓位计算器、快速笔记、后台任务演示。每一个都包含源码、
-manifest、完整性清单、可重复打包脚本和 `.tbx`。
+v0.2 是全新的数据基线，**不承诺保留旧安装、权限或设置**。请把它当作开发候选，而不是面向普通用户的稳定产品，也不要用它处理敏感数据或关键工作流。
 
-## 本地运行
+## 能做什么
 
-需要 JDK 21 与 Android SDK 37。按当前阶段只运行最小相关验证；完整命令与每项测试的理由、
-方法、预期结果见 [`TESTING.md`](TESTING.md)。典型本地构建为：
+### 导入与管理
+
+- 通过系统文件选择器导入 `.tbx`；
+- 在后台检查包结构、manifest、完整性和可选签名，失败不会留下半安装状态；
+- 原子安装、更新和卸载工具；
+- 在工具详情中打开、管理权限、查看后台任务或删除工具。
+
+### 小工具 API
+
+ToolBox API 1.0 提供受限的原生能力，所有调用都必须同时通过包声明、每工具授权、Android 系统状态、用户手势、速率和配额检查。
+
+- 本地/安全存储、toast、SHA-256、基础设备信息、触觉反馈和剪贴板写入；
+- 明确确认后的剪贴板读取、系统分享、SAF 文件读写、快捷方式、系统相机和前台单次定位；
+- 经域名白名单限制的 HTTPS GET、通知与原生委派后台任务。
+
+后台任务由 WorkManager 和原生代码执行；**工具 JavaScript 不会在后台常驻，也不会保活 WebView。**
+
+## 三个示例
+
+仓库随附可重复打包、可直接导入的 API 1.0 示例：
+
+| 示例 | 说明 |
+| --- | --- |
+| [仓位计算器](examples/position-calculator) | 保存输入、计算结果、复制与触觉反馈 |
+| [快速笔记](examples/quick-notes) | 创建、编辑、删除、恢复和复制本地笔记 |
+| [后台任务演示](examples/background-task-demo) | 受控 GitHub HTTP 请求、通知、任务列表与取消 |
+
+运行以下命令会生成三个 `.tbx` 文件到 `build/examples/`：
 
 ```bash
-./gradlew --no-daemon verifySecurityInvariants assembleDebug testDebugUnitTest
+bash scripts/package-examples.sh
 ```
 
-需要真机测试时，可在 Android 13+ 设备上安装：
+## `.tbx` 包结构
 
-```bash
-./gradlew :app:installCandidate
-```
-
-`candidate` 与 release 使用相同的 R8 优化，仅使用本机 debug key 签名以便直接安装测试；不要用
-debug 构建评价页面帧性能。
-
-GitHub Actions 在安全不变量、API 合同、静态编译和最小单元门禁通过后上传 APK、三个 `.tbx`
-和 `SHA256SUMS.txt`。系统权限、SAF、相机、通知、后台调度和 HyperOS 系统栏由用户在小米真机
-上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。
-
-## 工程结构
+`.tbx` 是一个 ZIP 小工具包。通常至少包含入口页面和 manifest：
 
 ```text
-app/                              宿主 Compose 页面、路由、系统结果协调
-core-ui/                          ToolBox/Miuix 适配层与主题
-core-data/                        Room、DataStore、目录、grant、KV、任务与结果
-tool-package/                     `.tbx` 检查、签名/完整性、原子安装与卸载
-tool-runtime/                     exact-origin AssetLoader 与硬化 WebView
-tool-api/                         API v1 合同、bridge、handler 与后台协调
-docs/ToolBox_Android_技术方案.md   当前产品与安全架构基线
-examples/                         三个范例源码、打包脚本与 `.tbx`
+my-tool.tbx
+├── manifest.json       # 身份、入口、版本与权限声明
+├── index.html          # HTML 入口
+├── app.js / style.css  # 工具自身前端资源
+├── assets/             # 可选静态资源
+├── integrity.json      # 完整性清单
+└── signature.json      # 可选包内签名
 ```
+
+- [manifest JSON Schema](schema/manifest.schema.json) 定义可声明的字段和 capability；
+- [TypeScript API 声明](sdk/toolbox-api.d.ts) 是前端调用的类型合同；
+- [API 使用示例](sdk/USAGE.md) 提供最小调用方式。
+
+不要在包中放入 APK、DEX、JAR、SO、class、嵌套压缩包或其他动态/原生代码。
 
 ## 安全边界
 
-安全不变量以 [`AGENTS.md`](AGENTS.md) 为准：不使用 `addJavascriptInterface`、`file://` 或
-localhost；不申请广泛存储、应用列表、无障碍、短信、联系人或 root 权限；所有 WebView 调用
-验证 origin/frame/nonce/声明/grant/系统权限/手势/限额；网络只经原生 HTTPS 代理并执行域名、
-重定向和 SSRF 检查。简化界面不等于放宽这些边界。
+ToolBox 的安全策略旨在限制导入内容，而不是让安全信息占据使用流程：
+
+- 每个工具由独立的 exact HTTPS AssetLoader origin 提供，不使用 `file://` 或 localhost；
+- 不使用 `addJavascriptInterface`；WebMessage 调用校验来源、主 frame、会话 nonce、当前版本、声明、授权、系统权限、手势、速率和配额；
+- 远程网络默认关闭；启用后也只能经过原生 HTTPS 代理，并重新校验域名白名单、重定向和私有/保留地址；
+- 不申请广泛存储、应用列表、无障碍、短信、联系人或 root 权限；
+- 后台执行是原生委派任务，不是独立 UID 沙箱，也不是任意 JavaScript 的后台运行环境。
+
+这些是工程边界，不是独立安全审计或绝对隔离保证。
+
+## 从源码构建
+
+需要 JDK 21 和 Android SDK 37：
+
+```bash
+git clone https://github.com/gkeyes/ToolBox-Android.git
+cd ToolBox-Android
+./gradlew --no-daemon verifySecurityInvariants assembleDebug testDebugUnitTest
+bash scripts/package-examples.sh
+```
+
+调试 APK 输出在 `app/build/outputs/apk/debug/`，示例包输出在 `build/examples/`。完整测试准入、理由与预期见 [TESTING.md](TESTING.md)。本地构建通过不等同于所有真机系统表面的验证已完成。
+
+## 文档与反馈
+
+- [GitHub Actions](https://github.com/gkeyes/ToolBox-Android/actions)
+- [发布版本](https://github.com/gkeyes/ToolBox-Android/releases)
+- [测试准入与验证矩阵](TESTING.md)
+- [提交 Bug 或功能建议](https://github.com/gkeyes/ToolBox-Android/issues)
+
+提交问题时，请附上 Android 版本、设备型号、ToolBox 版本、重现步骤和不含敏感内容的日志或截图。不要在公开 Issue 中上传私密工具包、凭据或个人数据。
+
+## License
+
+本仓库目前尚未发布许可证。除非仓库所有者另行添加许可证，否则请不要假定可以将其代码或资源用于其他项目。
