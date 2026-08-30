@@ -22,7 +22,7 @@ object RuntimePolicy {
             "object-src 'none'",
             "base-uri 'none'",
             "form-action 'none'",
-            "worker-src 'none'",
+            "worker-src 'self'",
             "upgrade-insecure-requests",
         ).joinToString("; ", postfix = ";")
     }

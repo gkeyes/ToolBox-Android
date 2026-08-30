@@ -10,18 +10,16 @@ import io.toolbox.core.data.CoreDataInitializationException
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.CoreDataStores
 import io.toolbox.host.catalog.CatalogViewModel
-import io.toolbox.host.importflow.ImportReviewViewModel
+import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.SettingsViewModel
-import io.toolbox.tool.packagekit.ToolPackageInspector
-import io.toolbox.tool.packagekit.ToolPackageInspectors
-import io.toolbox.tool.packagekit.lifecycle.ToolPackageLifecycle
-import io.toolbox.tool.packagekit.lifecycle.ToolPackageLifecycles
-import io.toolbox.tool.runtime.RuntimeProfileManager
+import io.toolbox.tool.runtime.RuntimeDataCleaner
+import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeDataCleanupResult
+import io.toolbox.tool.runtime.RuntimePermitProvider
+import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.ToolRuntimePreparer
-import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -32,13 +30,90 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal data class HostDependencies(
+internal class HostDependencies(
     val repositories: CoreDataRepositories,
-    val inspector: ToolPackageInspector,
-    val lifecycle: ToolPackageLifecycle,
-    val runtimePreparer: ToolRuntimePreparer,
-    val runtimeProfileManager: RuntimeProfileManager,
-)
+    private val packageOperationsFactory: (RuntimeDataCleaner, HostBackgroundOperations) -> HostPackageOperations,
+    val backgroundOperations: HostBackgroundOperations,
+    val permissionSideEffects: HostPermissionSideEffects,
+    private val runtimePreparerFactory: () -> ToolRuntimePreparer,
+    private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
+    private val runtimeBridgeProviderFactory: (HostRuntimeM2HandlerFactory) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
+    private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
+) {
+    private val deferredRuntimeProfileManager = lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+        runtimeProfileManagerFactory,
+    )
+
+    val runtimePreparer: ToolRuntimePreparer by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+        runtimePreparerFactory,
+    )
+
+    val runtimeDataCleaner: RuntimeDataCleaner = object : RuntimeDataCleaner {
+        override suspend fun <T> clearThenRun(
+            toolId: String,
+            action: suspend () -> T,
+        ): RuntimeDataCleanupExecution<T> =
+            deferredRuntimeProfileManager.value.clearThenRun(toolId, action)
+    }
+
+    val runtimePermitProvider = RuntimePermitProvider { toolId, awaitExistingRuntimeRelease ->
+        deferredRuntimeProfileManager.value.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease)
+    }
+
+    val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        runtimeBridgeProviderFactory(runtimeM2HandlerFactory)
+    }
+
+    val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        packageOperationsFactory(runtimeDataCleaner, backgroundOperations)
+    }
+
+    suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
+        deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
+
+    suspend fun recoverPendingPackageMutations() {
+        (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+    }
+
+    suspend fun reconcileBackgroundTasks() {
+        (backgroundOperations as? HostBackgroundMaintenance)?.reconcile()
+    }
+}
+
+internal fun interface HostDependenciesFactory {
+    fun create(application: Application, stores: CoreDataStores): HostDependencies
+}
+
+private object ProductionHostDependenciesFactory : HostDependenciesFactory {
+    override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+        val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
+        return HostDependencies(
+            repositories = stores.repositories,
+            packageOperationsFactory = { runtimeDataCleaner, background ->
+                ProductionHostPackageOperations(
+                    application = application,
+                    repositories = stores.repositories,
+                    runtimeDataCleaner = runtimeDataCleaner,
+                    background = background,
+                )
+            },
+            backgroundOperations = backgroundOperations,
+            permissionSideEffects = backgroundOperations,
+            runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir) },
+            runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
+            runtimeBridgeProviderFactory = { m2Handlers ->
+                io.toolbox.host.runtime.HostRuntimeBridgeProvider(
+                    context = application,
+                    repositories = stores.repositories,
+                    m2HandlerFactory = m2Handlers,
+                )
+            },
+            runtimeM2HandlerFactory = backgroundOperations,
+        )
+    }
+}
 
 internal sealed interface HostBootstrapState {
     data object Loading : HostBootstrapState
@@ -55,14 +130,46 @@ internal enum class HostBootstrapErrorCode {
     CORE_DATA_MAIN_THREAD,
     SETTINGS_PATH_UNAVAILABLE,
     PRIVATE_STORAGE_UNAVAILABLE,
-    RUNTIME_PROVIDER_UNAVAILABLE,
 }
 
-internal class HostDependenciesViewModel(application: Application) : AndroidViewModel(application) {
+internal fun interface HostRuntimeMaintenance {
+    suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult
+}
+
+private object ProductionHostRuntimeMaintenance : HostRuntimeMaintenance {
+    override suspend fun run(dependencies: HostDependencies): RuntimeDataCleanupResult =
+        withContext(Dispatchers.IO) {
+            val traceCookie = System.identityHashCode(dependencies)
+            val traceOpen = HostTrace.tryBeginAsyncSection("runtimeProfile.cleanup", traceCookie)
+            try {
+                dependencies.recoverPendingPackageMutations()
+                dependencies.reconcileBackgroundTasks()
+                val installedToolIds = dependencies.repositories.catalog.observeCatalogProjection()
+                    .first()
+                    .mapTo(hashSetOf()) { it.toolId }
+                dependencies.reapMarkedOrphanProfiles(installedToolIds)
+            } finally {
+                if (traceOpen) HostTrace.bestEffortEndAsyncSection("runtimeProfile.cleanup", traceCookie)
+            }
+        }
+}
+
+internal class HostDependenciesViewModel(
+    application: Application,
+    private val runtimeMaintenance: HostRuntimeMaintenance,
+    private val dependenciesFactory: HostDependenciesFactory = ProductionHostDependenciesFactory,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        ProductionHostRuntimeMaintenance,
+        ProductionHostDependenciesFactory,
+    )
+
     private val mutableState = MutableStateFlow<HostBootstrapState>(HostBootstrapState.Loading)
     val state: StateFlow<HostBootstrapState> = mutableState.asStateFlow()
 
     private var stores: CoreDataStores? = null
+    private var maintenanceStarted = false
 
     init {
         initialize()
@@ -73,44 +180,26 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
         initialize()
     }
 
+    fun onHostFirstFrame() {
+        val dependencies = (mutableState.value as? HostBootstrapState.Ready)?.dependencies ?: return
+        if (maintenanceStarted) return
+        maintenanceStarted = true
+        launchBestEffortRuntimeMaintenance(dependencies)
+    }
+
     private fun initialize() {
+        maintenanceStarted = false
         mutableState.value = HostBootstrapState.Loading
         viewModelScope.launch {
             var openedStores: CoreDataStores? = null
             try {
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
-                    val createdStores = CoreDataFactory.create(app)
-                    openedStores = createdStores
-                    val inspector = ToolPackageInspectors.create(
-                        File(app.filesDir, "inspection-sessions").toPath(),
-                    )
-                    val lifecycle = ToolPackageLifecycles.create(
-                        privateFilesDirectory = app.filesDir,
-                        inspector = inspector,
-                        catalog = createdStores.repositories.lifecycle,
-                    )
-                    val installedToolIds = createdStores.repositories.catalog.observeTools()
-                        .first()
-                        .mapTo(hashSetOf()) { it.metadata.id }
-                    val runtimeProfileManager = RuntimeProfileManager(app.filesDir)
-                    when (runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)) {
-                        RuntimeDataCleanupResult.Cleared,
-                        RuntimeDataCleanupResult.AlreadyAbsent,
-                        RuntimeDataCleanupResult.RecoveryDeferred,
-                        -> Unit
-                        RuntimeDataCleanupResult.InUse,
-                        RuntimeDataCleanupResult.ProviderUnsupported,
-                        RuntimeDataCleanupResult.Failed,
-                        -> throw RuntimeProviderInitializationException()
+                    val createdStores = HostTrace.bestEffortSection("coreData.create") {
+                        CoreDataFactory.create(app)
                     }
-                    HostDependencies(
-                        repositories = createdStores.repositories,
-                        inspector = inspector,
-                        lifecycle = lifecycle,
-                        runtimePreparer = ToolRuntimePreparer(app.filesDir),
-                        runtimeProfileManager = runtimeProfileManager,
-                    )
+                    openedStores = createdStores
+                    dependenciesFactory.create(app, createdStores)
                 }
                 coroutineContext.ensureActive()
                 stores = openedStores
@@ -129,12 +218,6 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
                     },
                     message = "本机目录初始化失败，请重试。",
                 )
-            } catch (_: RuntimeProviderInitializationException) {
-                openedStores?.close()
-                mutableState.value = HostBootstrapState.Error(
-                    code = HostBootstrapErrorCode.RUNTIME_PROVIDER_UNAVAILABLE,
-                    message = "当前系统 WebView 无法安全隔离或清理工具数据，请更新 Android System WebView 后重试。",
-                )
             } catch (_: Exception) {
                 openedStores?.close()
                 mutableState.value = HostBootstrapState.Error(
@@ -145,13 +228,23 @@ internal class HostDependenciesViewModel(application: Application) : AndroidView
         }
     }
 
+    private fun launchBestEffortRuntimeMaintenance(dependencies: HostDependencies) {
+        viewModelScope.launch {
+            try {
+                runtimeMaintenance.run(dependencies)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return@launch
+            }
+        }
+    }
+
     override fun onCleared() {
         stores?.close()
         stores = null
     }
 }
-
-private class RuntimeProviderInitializationException : Exception()
 
 internal class RuntimeViewModelFactory(
     private val toolId: String,
@@ -159,15 +252,15 @@ internal class RuntimeViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        require(modelClass.isAssignableFrom(RuntimeViewModel::class.java)) {
+        require(RuntimeViewModel::class.java.isAssignableFrom(modelClass)) {
             "Unsupported runtime ViewModel: ${modelClass.name}"
         }
         return RuntimeViewModel(
             toolId = toolId,
             catalog = dependencies.repositories.catalog,
-            lifecycle = dependencies.repositories.lifecycle,
             preparer = dependencies.runtimePreparer,
-            runtimeProfileManager = dependencies.runtimeProfileManager,
+            runtimePermitProvider = dependencies.runtimePermitProvider,
+            bridgeProvider = dependencies.runtimeBridgeProvider,
         ) as T
     }
 }
@@ -177,37 +270,37 @@ internal class HostFeatureViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
-        modelClass.isAssignableFrom(CatalogViewModel::class.java) -> CatalogViewModel(
+        CatalogViewModel::class.java.isAssignableFrom(modelClass) -> CatalogViewModel(
             catalog = dependencies.repositories.catalog,
             organization = dependencies.repositories.organization,
-            packageLifecycle = dependencies.lifecycle,
-            runtimeDataCleaner = dependencies.runtimeProfileManager,
+            packageOperations = dependencies.packageOperations,
         ) as T
-        modelClass.isAssignableFrom(SettingsViewModel::class.java) -> SettingsViewModel(
+        ImportViewModel::class.java.isAssignableFrom(modelClass) -> ImportViewModel(
+            operations = dependencies.packageOperations,
+        ) as T
+        SettingsViewModel::class.java.isAssignableFrom(modelClass) -> SettingsViewModel(
             repository = dependencies.repositories.settings,
-            audit = dependencies.repositories.audit,
-            nowMillis = System::currentTimeMillis,
+            catalog = dependencies.repositories.catalog,
+            background = dependencies.backgroundOperations,
         ) as T
-        modelClass.isAssignableFrom(ImportReviewViewModel::class.java) ->
-            createImportReviewViewModelAtRecoveryApiBoundary() as T
         else -> error("Unsupported host ViewModel: ${modelClass.name}")
     }
-
-    private fun createImportReviewViewModelAtRecoveryApiBoundary(): ImportReviewViewModel = ImportReviewViewModel(
-        inspector = dependencies.inspector,
-        lifecycle = dependencies.lifecycle,
-    )
 }
 
 internal class PermissionCenterViewModelFactory(
     private val toolId: String,
-    private val repositories: CoreDataRepositories,
+    private val dependencies: HostDependencies,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        require(modelClass.isAssignableFrom(PermissionCenterViewModel::class.java)) {
+        require(PermissionCenterViewModel::class.java.isAssignableFrom(modelClass)) {
             "Unsupported permission ViewModel: ${modelClass.name}"
         }
-        return PermissionCenterViewModel(toolId, repositories.grants) as T
+        return PermissionCenterViewModel(
+            toolId = toolId,
+            packages = dependencies.packageOperations,
+            grants = dependencies.repositories.grants,
+            sideEffects = dependencies.permissionSideEffects,
+        ) as T
     }
 }

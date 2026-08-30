@@ -7,25 +7,40 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+private const val INSTALLED_TOOL_SELECT = """
+    SELECT tools.id AS id,
+           tools.name AS name,
+           tools.securityProfile AS securityProfile,
+           tools.installedAt AS installedAt,
+           tools.lastOpenedAt AS lastOpenedAt,
+           tools.pinnedOrder AS pinnedOrder,
+           tools.categoryId AS categoryId,
+           tool_versions.versionCode AS versionCode,
+           tool_versions.version AS version,
+           tool_versions.bundleLocator AS bundleLocator,
+           tool_versions.bundleBytes AS bundleBytes,
+           tool_versions.integrityHash AS integrityHash,
+           tool_versions.installedAt AS versionInstalledAt
+    FROM tools
+    INNER JOIN tool_versions ON tool_versions.toolId = tools.id
+"""
+
 @Dao
 internal interface ToolDao {
-    @Query("SELECT * FROM tools ORDER BY pinnedOrder IS NULL, pinnedOrder, installedAt DESC, id")
-    fun observeAll(): Flow<List<ToolEntity>>
+    @Query("$INSTALLED_TOOL_SELECT ORDER BY tools.pinnedOrder IS NULL, tools.pinnedOrder, tools.installedAt DESC, tools.id")
+    fun observeAll(): Flow<List<InstalledToolProjection>>
 
-    @Query("SELECT * FROM tools WHERE id = :toolId")
-    fun observe(toolId: String): Flow<ToolEntity?>
+    @Query("$INSTALLED_TOOL_SELECT WHERE tools.id = :toolId")
+    fun observe(toolId: String): Flow<InstalledToolProjection?>
 
     @Query("SELECT * FROM tools WHERE id = :toolId")
     suspend fun get(toolId: String): ToolEntity?
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(entity: ToolEntity): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: ToolEntity)
 
     @Update
     suspend fun update(entity: ToolEntity)
-
-    @Query("UPDATE tools SET activeVersionCode = :versionCode WHERE id = :toolId")
-    suspend fun setActiveVersion(toolId: String, versionCode: Int?): Int
 
     @Query("UPDATE tools SET pinnedOrder = :pinnedOrder WHERE id = :toolId")
     suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): Int
@@ -42,41 +57,17 @@ internal interface ToolDao {
 
 @Dao
 internal interface ToolVersionDao {
-    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId ORDER BY versionCode DESC")
-    fun observeForTool(toolId: String): Flow<List<ToolVersionEntity>>
+    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId")
+    suspend fun get(toolId: String): ToolVersionEntity?
 
-    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId AND versionCode = :versionCode")
-    suspend fun get(toolId: String, versionCode: Int): ToolVersionEntity?
-
-    @Query("SELECT * FROM tool_versions WHERE sourceSessionId = :sourceSessionId")
-    suspend fun getBySourceSessionId(sourceSessionId: String): ToolVersionEntity?
-
-    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId ORDER BY versionCode DESC")
-    suspend fun getAll(toolId: String): List<ToolVersionEntity>
-
-    @Query("SELECT MAX(versionCode) FROM tool_versions WHERE toolId = :toolId")
-    suspend fun maxVersionCode(toolId: String): Int?
-
-    @Query("SELECT * FROM tool_versions WHERE toolId = :toolId AND versionCode < :versionCode AND launchState = 'STABLE' ORDER BY versionCode DESC LIMIT 1")
-    suspend fun greatestLowerStable(toolId: String, versionCode: Int): ToolVersionEntity?
-
-    @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insert(entity: ToolVersionEntity)
-
-    @Query("UPDATE tool_versions SET launchState = :launchState WHERE toolId = :toolId AND versionCode = :versionCode")
-    suspend fun setLaunchState(toolId: String, versionCode: Int, launchState: String): Int
-
-    @Query("DELETE FROM tool_versions WHERE toolId = :toolId AND versionCode = :versionCode")
-    suspend fun delete(toolId: String, versionCode: Int): Int
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(entity: ToolVersionEntity)
 }
 
 @Dao
 internal interface PermissionGrantDao {
-    @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY permission")
+    @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY capability")
     fun observeForTool(toolId: String): Flow<List<PermissionGrantEntity>>
-
-    @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY permission")
-    suspend fun getAll(toolId: String): List<PermissionGrantEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: PermissionGrantEntity)
@@ -87,8 +78,8 @@ internal interface PermissionGrantDao {
     @Query("DELETE FROM permission_grants WHERE toolId = :toolId")
     suspend fun deleteAll(toolId: String): Int
 
-    @Query("DELETE FROM permission_grants WHERE toolId = :toolId AND permission = :permission")
-    suspend fun delete(toolId: String, permission: String): Int
+    @Query("DELETE FROM permission_grants WHERE toolId = :toolId AND capability = :capability")
+    suspend fun delete(toolId: String, capability: String): Int
 }
 
 @Dao
@@ -110,37 +101,68 @@ internal interface ToolKvDao {
 }
 
 @Dao
-internal interface PublisherDao {
-    @Query("SELECT * FROM publishers ORDER BY displayName, keyId")
-    fun observeAll(): Flow<List<PublisherEntity>>
+internal interface InstallTransactionDao {
+    @Query("SELECT * FROM install_transactions WHERE state IN ('PREPARING', 'COMMITTING') ORDER BY startedAt")
+    fun observeIncomplete(): Flow<List<InstallTransactionEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun put(entity: PublisherEntity)
-}
-
-@Dao
-internal interface AuditDao {
-    @Query("SELECT * FROM audit_logs ORDER BY timestamp DESC, id DESC LIMIT :limit")
-    fun observeRecent(limit: Int): Flow<List<AuditLogEntity>>
-
-    @Insert
-    suspend fun insert(entity: AuditLogEntity): Long
-
-    @Query("DELETE FROM audit_logs WHERE timestamp < :timestamp")
-    suspend fun deleteBefore(timestamp: Long): Int
-}
-
-@Dao
-internal interface RuntimeSessionDao {
-    @Query("SELECT * FROM runtime_sessions WHERE endedAt IS NULL ORDER BY startedAt DESC")
-    fun observeOpen(): Flow<List<RuntimeSessionEntity>>
-
-    @Query("SELECT * FROM runtime_sessions WHERE sessionId = :sessionId")
-    suspend fun get(sessionId: String): RuntimeSessionEntity?
+    @Query("SELECT * FROM install_transactions WHERE id = :transactionId")
+    suspend fun get(transactionId: String): InstallTransactionEntity?
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insert(entity: RuntimeSessionEntity)
+    suspend fun insert(entity: InstallTransactionEntity)
 
-    @Query("UPDATE runtime_sessions SET endedAt = :endedAt, exitReason = :exitReason WHERE sessionId = :sessionId AND endedAt IS NULL")
-    suspend fun finish(sessionId: String, endedAt: Long, exitReason: String): Int
+    @Query("UPDATE install_transactions SET state = :state, updatedAt = :updatedAt, failureCode = :failureCode WHERE id = :transactionId AND state IN (:expectedStates)")
+    suspend fun transition(
+        transactionId: String,
+        expectedStates: List<String>,
+        state: String,
+        updatedAt: Long,
+        failureCode: String?,
+    ): Int
+
+    @Query("DELETE FROM install_transactions WHERE toolId = :toolId")
+    suspend fun deleteForTool(toolId: String): Int
+}
+
+@Dao
+internal interface BackgroundTaskDao {
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId ORDER BY createdAt DESC, taskId")
+    fun observeForTool(toolId: String): Flow<List<BackgroundTaskEntity>>
+
+    @Query("SELECT * FROM background_tasks WHERE taskId = :taskId")
+    suspend fun get(taskId: String): BackgroundTaskEntity?
+
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId AND `key` = :key AND state IN ('QUEUED', 'RUNNING') LIMIT 1")
+    suspend fun getActiveByKey(toolId: String, key: String): BackgroundTaskEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: BackgroundTaskEntity)
+
+    @Query("UPDATE background_tasks SET state = :nextState, updatedAt = :updatedAt, nextRunAt = :nextRunAt, runAttempt = :runAttempt WHERE taskId = :taskId AND state IN (:expectedStates)")
+    suspend fun transition(
+        taskId: String,
+        expectedStates: List<String>,
+        nextState: String,
+        updatedAt: Long,
+        nextRunAt: Long?,
+        runAttempt: Int,
+    ): Int
+
+    @Query("UPDATE background_tasks SET state = 'QUEUED', updatedAt = :updatedAt, nextRunAt = :updatedAt WHERE taskId = :taskId AND state = 'RUNNING' AND updatedAt <= :updatedAt")
+    suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): Int
+
+    @Query("DELETE FROM background_tasks WHERE toolId = :toolId")
+    suspend fun deleteForTool(toolId: String): Int
+}
+
+@Dao
+internal interface TaskResultDao {
+    @Query("SELECT * FROM task_results WHERE taskId = :taskId")
+    fun observe(taskId: String): Flow<TaskResultEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(entity: TaskResultEntity)
+
+    @Query("DELETE FROM task_results WHERE completedAt < :cutoffMillis")
+    suspend fun deleteCompletedBefore(cutoffMillis: Long): Int
 }

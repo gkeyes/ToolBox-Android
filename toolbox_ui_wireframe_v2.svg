@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.12"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <style>
+      .t { font-family: 'Noto Sans CJK SC', 'Noto Sans CJK JP', sans-serif; fill:#111827; }
+      .muted { fill:#8E8E93; }
+      .blue { fill:#007AFF; }
+      .title { font-size:38px; font-weight:700; }
+      .screenTitle { font-size:30px; font-weight:700; }
+      .section { font-size:20px; font-weight:650; }
+      .body { font-size:18px; font-weight:500; }
+      .meta { font-size:14px; font-weight:400; }
+      .tab { font-size:13px; font-weight:500; }
+      .measure { font-size:16px; font-weight:600; fill:#007AFF; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1180" fill="#F4F6FA"/>
+  <text x="80" y="72" class="t title">ToolBox V2 · 轻量化界面草图</text>
+  <text x="80" y="108" class="t muted" font-size="19">目标：层级更少、卡片更紧凑、滚动更轻、接近 iOS grouped-list 的视觉秩序</text>
+
+  <!-- Phone 1 -->
+  <g transform="translate(90,160)">
+    <rect x="0" y="0" rx="54" ry="54" width="500" height="900" fill="#FFFFFF"/>
+    <rect x="12" y="12" rx="44" ry="44" width="476" height="876" fill="#F2F2F7"/>
+    <!-- status -->
+    <text x="48" y="53" class="t body" font-size="16">9:41</text>
+    <g transform="translate(395,34)" fill="#111827">
+      <rect x="0" y="10" width="5" height="8" rx="2"/><rect x="8" y="7" width="5" height="11" rx="2"/><rect x="16" y="4" width="5" height="14" rx="2"/><rect x="24" y="1" width="5" height="17" rx="2"/>
+      <path d="M42,14 q12,-14 24,0 q-12,-8 -24,0" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/>
+      <rect x="76" y="3" width="31" height="16" rx="5" fill="none" stroke="#111827" stroke-width="2"/><rect x="108" y="8" width="3" height="6" rx="1"/><rect x="79" y="6" width="22" height="10" rx="3"/>
+    </g>
+    <!-- header same background, no white band -->
+    <text x="38" y="118" class="t screenTitle">ToolBox</text>
+    <text x="38" y="147" class="t muted" font-size="15">本地运行的小工具</text>
+    <circle cx="438" cy="114" r="22" fill="#FFFFFF"/>
+    <path d="M438 103 V125 M427 114 H449" stroke="#007AFF" stroke-width="3" stroke-linecap="round"/>
+
+    <text x="38" y="202" class="t section">常用工具</text>
+    <rect x="28" y="224" width="444" height="170" rx="20" fill="#FFFFFF"/>
+    <!-- row 1 -->
+    <rect x="46" y="246" width="52" height="52" rx="15" fill="#1677FF"/>
+    <text x="72" y="281" class="t" font-size="23" text-anchor="middle" fill="#FFFFFF" style="fill:#fff">仓</text>
+    <text x="118" y="268" class="t body">仓位计算器</text>
+    <text x="118" y="292" class="t meta muted">最近使用 · 7 KB</text>
+    <path d="M438 268 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="118" y1="311" x2="454" y2="311" stroke="#E5E5EA" stroke-width="1"/>
+    <!-- row 2 -->
+    <rect x="46" y="327" width="52" height="52" rx="15" fill="#8E8E93"/>
+    <text x="72" y="361" class="t" font-size="20" text-anchor="middle" style="fill:#fff">+</text>
+    <text x="118" y="349" class="t body">导入工具</text>
+    <text x="118" y="373" class="t meta muted">选择本机 .tbx 文件</text>
+    <path d="M438 349 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="38" y="445" class="t section">最近</text>
+    <rect x="28" y="466" width="444" height="84" rx="20" fill="#FFFFFF"/>
+    <rect x="46" y="482" width="48" height="48" rx="14" fill="#E9F2FF"/>
+    <text x="70" y="514" class="t blue" font-size="19" text-anchor="middle">仓</text>
+    <text x="112" y="500" class="t body">仓位计算器</text>
+    <text x="112" y="525" class="t meta muted">1.0.0 · 未签名</text>
+    <path d="M438 497 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- bottom nav -->
+    <line x1="12" y1="801" x2="488" y2="801" stroke="#D9D9DE" stroke-width="1"/>
+    <rect x="12" y="802" width="476" height="86" rx="0" fill="#FFFFFF" fill-opacity="0.94"/>
+    <g transform="translate(90,824)">
+      <path d="M0 16 L14 4 L28 16 V32 H18 V22 H10 V32 H0Z" fill="#007AFF"/>
+      <text x="14" y="54" class="t tab blue" text-anchor="middle">首页</text>
+    </g>
+    <g transform="translate(232,824)">
+      <g fill="#8E8E93"><rect x="0" y="4" width="11" height="11" rx="2"/><rect x="17" y="4" width="11" height="11" rx="2"/><rect x="0" y="21" width="11" height="11" rx="2"/><rect x="17" y="21" width="11" height="11" rx="2"/></g>
+      <text x="14" y="54" class="t tab muted" text-anchor="middle">工具</text>
+    </g>
+    <g transform="translate(374,824)">
+      <circle cx="14" cy="13" r="7" fill="none" stroke="#8E8E93" stroke-width="3"/><path d="M14 0 v5 M14 21 v5 M1 13 h5 M22 13 h5 M5 4 l4 4 M19 18 l4 4 M23 4 l-4 4 M9 18 l-4 4" stroke="#8E8E93" stroke-width="2.5" stroke-linecap="round"/>
+      <text x="14" y="54" class="t tab muted" text-anchor="middle">设置</text>
+    </g>
+  </g>
+
+  <!-- Phone 2 -->
+  <g transform="translate(650,160)">
+    <rect x="0" y="0" rx="54" ry="54" width="500" height="900" fill="#FFFFFF"/>
+    <rect x="12" y="12" rx="44" ry="44" width="476" height="876" fill="#F2F2F7"/>
+    <text x="48" y="53" class="t body" font-size="16">9:41</text>
+    <g transform="translate(395,34)" fill="#111827"><rect x="0" y="10" width="5" height="8" rx="2"/><rect x="8" y="7" width="5" height="11" rx="2"/><rect x="16" y="4" width="5" height="14" rx="2"/><rect x="24" y="1" width="5" height="17" rx="2"/><path d="M42,14 q12,-14 24,0 q-12,-8 -24,0" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/><rect x="76" y="3" width="31" height="16" rx="5" fill="none" stroke="#111827" stroke-width="2"/><rect x="108" y="8" width="3" height="6" rx="1"/><rect x="79" y="6" width="22" height="10" rx="3"/></g>
+    <text x="38" y="118" class="t screenTitle">工具</text>
+    <rect x="388" y="89" width="70" height="40" rx="20" fill="#E9F2FF"/>
+    <text x="423" y="115" class="t blue" font-size="15" text-anchor="middle">导入</text>
+
+    <!-- search -->
+    <rect x="28" y="157" width="444" height="50" rx="15" fill="#E7E7EC"/>
+    <circle cx="53" cy="182" r="8" fill="none" stroke="#8E8E93" stroke-width="2.5"/>
+    <line x1="59" y1="188" x2="66" y2="195" stroke="#8E8E93" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="78" y="188" class="t muted" font-size="16">搜索名称、ID 或分类</text>
+
+    <!-- chips -->
+    <rect x="28" y="226" width="76" height="34" rx="17" fill="#007AFF"/>
+    <text x="66" y="249" class="t" font-size="14" text-anchor="middle" style="fill:#fff">全部</text>
+    <rect x="114" y="226" width="76" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="152" y="249" class="t" font-size="14" text-anchor="middle">计算</text>
+    <rect x="200" y="226" width="76" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="238" y="249" class="t" font-size="14" text-anchor="middle">效率</text>
+    <rect x="286" y="226" width="76" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="324" y="249" class="t" font-size="14" text-anchor="middle">其他</text>
+
+    <text x="38" y="304" class="t section">已安装 · 1</text>
+    <rect x="28" y="326" width="444" height="86" rx="20" fill="#FFFFFF"/>
+    <rect x="46" y="343" width="52" height="52" rx="15" fill="#1677FF"/>
+    <text x="72" y="378" class="t" font-size="23" text-anchor="middle" style="fill:#fff">仓</text>
+    <text x="118" y="363" class="t body">仓位计算器</text>
+    <text x="118" y="389" class="t meta muted">1.0.0 · 7 KB · 未签名</text>
+    <circle cx="437" cy="369" r="18" fill="#F2F2F7"/>
+    <circle cx="437" cy="362" r="2.2" fill="#8E8E93"/><circle cx="437" cy="369" r="2.2" fill="#8E8E93"/><circle cx="437" cy="376" r="2.2" fill="#8E8E93"/>
+
+    <line x1="12" y1="801" x2="488" y2="801" stroke="#D9D9DE" stroke-width="1"/>
+    <rect x="12" y="802" width="476" height="86" fill="#FFFFFF" fill-opacity="0.94"/>
+    <g transform="translate(90,824)"><path d="M0 16 L14 4 L28 16 V32 H18 V22 H10 V32 H0Z" fill="#8E8E93"/><text x="14" y="54" class="t tab muted" text-anchor="middle">首页</text></g>
+    <g transform="translate(232,824)"><g fill="#007AFF"><rect x="0" y="4" width="11" height="11" rx="2"/><rect x="17" y="4" width="11" height="11" rx="2"/><rect x="0" y="21" width="11" height="11" rx="2"/><rect x="17" y="21" width="11" height="11" rx="2"/></g><text x="14" y="54" class="t tab blue" text-anchor="middle">工具</text></g>
+    <g transform="translate(374,824)"><circle cx="14" cy="13" r="7" fill="none" stroke="#8E8E93" stroke-width="3"/><path d="M14 0 v5 M14 21 v5 M1 13 h5 M22 13 h5 M5 4 l4 4 M19 18 l4 4 M23 4 l-4 4 M9 18 l-4 4" stroke="#8E8E93" stroke-width="2.5" stroke-linecap="round"/><text x="14" y="54" class="t tab muted" text-anchor="middle">设置</text></g>
+  </g>
+
+  <!-- Phone 3 -->
+  <g transform="translate(1210,160)">
+    <rect x="0" y="0" rx="54" ry="54" width="500" height="900" fill="#FFFFFF"/>
+    <rect x="12" y="12" rx="44" ry="44" width="476" height="876" fill="#F2F2F7"/>
+    <text x="48" y="53" class="t body" font-size="16">9:41</text>
+    <g transform="translate(395,34)" fill="#111827"><rect x="0" y="10" width="5" height="8" rx="2"/><rect x="8" y="7" width="5" height="11" rx="2"/><rect x="16" y="4" width="5" height="14" rx="2"/><rect x="24" y="1" width="5" height="17" rx="2"/><path d="M42,14 q12,-14 24,0 q-12,-8 -24,0" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/><rect x="76" y="3" width="31" height="16" rx="5" fill="none" stroke="#111827" stroke-width="2"/><rect x="108" y="8" width="3" height="6" rx="1"/><rect x="79" y="6" width="22" height="10" rx="3"/></g>
+    <text x="38" y="118" class="t screenTitle">设置</text>
+
+    <text x="38" y="176" class="t section">外观</text>
+    <rect x="28" y="198" width="444" height="78" rx="20" fill="#FFFFFF"/>
+    <text x="50" y="228" class="t body">主题</text>
+    <text x="50" y="253" class="t meta muted">跟随系统</text>
+    <path d="M438 225 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="38" y="326" class="t section">运行与信任</text>
+    <rect x="28" y="348" width="444" height="228" rx="20" fill="#FFFFFF"/>
+    <text x="50" y="379" class="t body">运行模式</text>
+    <text x="50" y="404" class="t meta muted">个人模式 · 自有工具减少确认</text>
+    <text x="424" y="392" class="t blue" font-size="14" text-anchor="end">个人</text>
+    <path d="M438 384 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="50" y1="426" x2="454" y2="426" stroke="#E5E5EA"/>
+    <text x="50" y="458" class="t body">我的签名密钥</text>
+    <text x="50" y="483" class="t meta muted">自有签名工具可自动信任</text>
+    <path d="M438 463 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="50" y1="502" x2="454" y2="502" stroke="#E5E5EA"/>
+    <text x="50" y="536" class="t body">审计日志</text>
+    <text x="50" y="561" class="t meta muted">保留 30 天 · 仅最小元数据</text>
+    <path d="M438 540 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="38" y="626" class="t section">关于</text>
+    <rect x="28" y="648" width="444" height="152" rx="20" fill="#FFFFFF"/>
+    <text x="50" y="681" class="t body">性能诊断</text><text x="50" y="706" class="t meta muted">帧率、启动耗时、WebView 状态</text><path d="M438 688 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="50" y1="724" x2="454" y2="724" stroke="#E5E5EA"/>
+    <text x="50" y="759" class="t body">关于 ToolBox</text><text x="50" y="784" class="t meta muted">版本、开源许可、数据说明</text><path d="M438 766 l7 7 -7 7" fill="none" stroke="#C7C7CC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <line x1="12" y1="801" x2="488" y2="801" stroke="#D9D9DE" stroke-width="1"/>
+    <rect x="12" y="802" width="476" height="86" fill="#FFFFFF" fill-opacity="0.94"/>
+    <g transform="translate(90,824)"><path d="M0 16 L14 4 L28 16 V32 H18 V22 H10 V32 H0Z" fill="#8E8E93"/><text x="14" y="54" class="t tab muted" text-anchor="middle">首页</text></g>
+    <g transform="translate(232,824)"><g fill="#8E8E93"><rect x="0" y="4" width="11" height="11" rx="2"/><rect x="17" y="4" width="11" height="11" rx="2"/><rect x="0" y="21" width="11" height="11" rx="2"/><rect x="17" y="21" width="11" height="11" rx="2"/></g><text x="14" y="54" class="t tab muted" text-anchor="middle">工具</text></g>
+    <g transform="translate(374,824)"><circle cx="14" cy="13" r="7" fill="none" stroke="#007AFF" stroke-width="3"/><path d="M14 0 v5 M14 21 v5 M1 13 h5 M22 13 h5 M5 4 l4 4 M19 18 l4 4 M23 4 l-4 4 M9 18 l-4 4" stroke="#007AFF" stroke-width="2.5" stroke-linecap="round"/><text x="14" y="54" class="t tab blue" text-anchor="middle">设置</text></g>
+  </g>
+
+  <!-- measure notes -->
+  <g transform="translate(90,1095)">
+    <rect x="0" y="0" width="1620" height="58" rx="18" fill="#FFFFFF"/>
+    <text x="24" y="36" class="t measure">关键尺寸：页面边距 16dp　搜索框 48dp　工具行 72–80dp　分组圆角 16dp　底栏内容 56dp + 系统导航区　顶部不再使用突兀白色带</text>
+  </g>
+</svg>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>后台任务演示</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app" aria-labelledby="page-title">
+    <header class="hero"><p class="eyebrow">原生后台工作</p><h1 id="page-title">后台任务演示</h1><p>任务由 ToolBox 原生后台执行，不会在后台运行网页脚本。</p></header>
+    <section class="endpoint" aria-label="固定请求地址"><span>固定接口</span><code>api.github.com/repos/gkeyes/ToolBox-Android</code></section>
+    <section class="actions" aria-label="创建后台任务">
+      <button id="enqueue-http" class="primary" type="button">创建 GitHub HTTP 任务</button>
+      <button id="enqueue-notification" class="secondary" type="button">创建通知任务</button>
+      <button id="refresh" class="quiet" type="button">刷新任务列表</button>
+    </section>
+    <p id="status" class="status" aria-live="polite">正在读取任务…</p>
+    <section id="tasks" class="tasks" aria-label="当前后台任务"></section>
+  </main>
+  <template id="task-template">
+    <article class="task">
+      <div class="task-heading"><strong class="task-key"></strong><span class="task-state"></span></div>
+      <p class="task-type"></p>
+      <p class="task-result"></p>
+      <button class="cancel" type="button">取消任务</button>
+    </article>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>

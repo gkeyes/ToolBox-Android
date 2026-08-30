@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,18 +22,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
-import io.toolbox.core.ui.component.ToolBoxFloatingActionButton
+import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
@@ -44,21 +44,17 @@ internal fun PrimaryScreen(
     onImport: (() -> Unit)?,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize().background(ToolBoxThemeTokens.colors.background)) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(ToolBoxThemeTokens.colors.background)
+            .testTag(selected.screenTestTag),
+    ) {
         val layout = hostRouteLayoutFor(maxWidth)
         ToolBoxAppScaffold(
             modifier = Modifier.fillMaxSize(),
-            topBar = if (layout.isCompact) ({ TopBar(title) }) else null,
+            topBar = if (layout.isCompact) ({ TopBar(selected, title, onImport) }) else null,
             bottomBar = if (layout.isCompact) ({ DestinationBar(selected, onDestination, compact = true) }) else null,
-            floatingActionButton = onImport?.let { import ->
-                {
-                    ToolBoxFloatingActionButton(
-                        contentDescription = "导入 .tbx 工具包",
-                        onClick = import,
-                        modifier = Modifier.testTag(HostTestTags.ImportFab),
-                    )
-                }
-            },
         ) { scaffoldPadding ->
             Box(
                 Modifier
@@ -67,19 +63,19 @@ internal fun PrimaryScreen(
                     .consumeWindowInsets(scaffoldPadding),
             ) {
                 if (layout.isCompact) {
-                    content(layout.contentPadding(hasImportAction = onImport != null))
+                    content(layout.contentPadding())
                 } else {
                     Row(Modifier.fillMaxSize()) {
                         DestinationBar(selected, onDestination, compact = false)
                         Column(Modifier.weight(1f)) {
-                            TopBar(title)
+                            TopBar(selected, title, onImport)
                             Box(
                                 Modifier
                                     .weight(1f)
-                                    .widthIn(max = 1040.dp)
+                                    .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
                                     .align(Alignment.CenterHorizontally),
                             ) {
-                                content(layout.contentPadding(hasImportAction = onImport != null))
+                                content(layout.contentPadding())
                             }
                         }
                     }
@@ -89,11 +85,11 @@ internal fun PrimaryScreen(
     }
 }
 
-private fun HostRouteLayout.contentPadding(hasImportAction: Boolean) = PaddingValues(
+private fun HostRouteLayout.contentPadding() = PaddingValues(
     start = horizontalContentPadding,
     top = verticalContentPadding,
     end = horizontalContentPadding,
-    bottom = verticalContentPadding + if (hasImportAction) 80.dp else 0.dp,
+    bottom = verticalContentPadding,
 )
 
 @Composable
@@ -102,19 +98,15 @@ private fun DestinationBar(
     onDestination: (MainDestination) -> Unit,
     compact: Boolean,
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val compactHeight = when {
-        fontScale >= 1.75f -> 104.dp
-        fontScale >= 1.3f -> 88.dp
-        else -> 72.dp
-    }
     val modifier = if (compact) {
         Modifier
             .fillMaxWidth()
-            .heightIn(min = compactHeight)
             .testTag(HostTestTags.BottomNavigationContainer)
     } else {
-        Modifier.fillMaxHeight().width(96.dp).padding(vertical = 16.dp)
+        Modifier
+            .fillMaxHeight()
+            .width(ToolBoxThemeTokens.sizes.mediumNavigationWidth)
+            .padding(vertical = ToolBoxThemeTokens.spacing.two)
     }
     if (compact) {
         ToolBoxNavigationBar(
@@ -126,7 +118,7 @@ private fun DestinationBar(
     } else {
         Column(
             modifier.background(ToolBoxThemeTokens.colors.surface),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.two),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             MainDestination.entries.forEach { destination ->
@@ -145,17 +137,26 @@ private fun DestinationItem(
     val color = if (selected) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.textSecondary
     Column(
         modifier = Modifier
-            .width(80.dp)
-            .heightIn(min = 56.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .width(ToolBoxThemeTokens.sizes.mediumNavigationItemWidth)
+            .heightIn(min = ToolBoxThemeTokens.sizes.compactChrome)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .clickable(role = Role.Tab) { onDestination(destination) }
             .testTag(destination.testTag)
             .semantics { contentDescription = "${destination.label}标签${if (selected) "，已选择" else ""}" },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        AppText(destination.symbol, size = 20, color = color)
-        AppText(destination.label, size = 12, color = color, weight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        ToolBoxIcon(
+            icon = destination.icon,
+            contentDescription = null,
+            tint = color,
+        )
+        AppText(
+            destination.label,
+            textStyle = ToolBoxThemeTokens.textStyles.label,
+            color = color,
+            weight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
     }
 }
 
@@ -165,6 +166,7 @@ internal fun DetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String = "",
+    actions: @Composable RowScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
@@ -172,13 +174,14 @@ internal fun DetailScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         ToolBoxAppScaffold(
-            modifier = Modifier.fillMaxSize().widthIn(max = 1040.dp),
+            modifier = Modifier.fillMaxSize().widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth),
             topBar = {
                 ToolBoxTopBar(
                     title = title,
                     subtitle = subtitle,
                     navigationIcon = ToolBoxIconKey.Back,
                     onNavigationClick = onBack,
+                    actions = actions,
                 )
             },
         ) { scaffoldPadding ->
@@ -195,26 +198,47 @@ internal fun DetailScreen(
 }
 
 @Composable
-private fun TopBar(title: String) {
-    ToolBoxTopBar(title = title)
+private fun TopBar(selected: MainDestination, title: String, onImport: (() -> Unit)?) {
+    ToolBoxTopBar(
+        title = title,
+        actions = {
+            if (onImport != null) {
+                ToolBoxTextButton(
+                    label = "导入",
+                    onClick = onImport,
+                    modifier = Modifier
+                        .testTag(HostTestTags.ImportFab)
+                        .semantics { contentDescription = "导入 .tbx 工具包" },
+                    contentColor = ToolBoxThemeTokens.colors.primary,
+                )
+            }
+        },
+    )
 }
 
 private val mainNavigationItems = MainDestination.entries.map { destination ->
     ToolBoxNavigationItem(
         id = destination.name,
         label = destination.label,
-        icon = when (destination) {
-            MainDestination.Home -> ToolBoxIconKey.Home
-            MainDestination.Tools -> ToolBoxIconKey.Tools
-            MainDestination.Settings -> ToolBoxIconKey.Settings
-        },
+        icon = destination.icon,
         testTag = destination.testTag,
     )
 }
 
+private val MainDestination.icon: ToolBoxIconKey
+    get() = when (this) {
+        MainDestination.Tools -> ToolBoxIconKey.Tools
+        MainDestination.Settings -> ToolBoxIconKey.Settings
+    }
+
 private val MainDestination.testTag: String
     get() = when (this) {
-        MainDestination.Home -> HostTestTags.BottomHome
         MainDestination.Tools -> HostTestTags.BottomTools
         MainDestination.Settings -> HostTestTags.BottomSettings
+    }
+
+private val MainDestination.screenTestTag: String
+    get() = when (this) {
+        MainDestination.Tools -> HostTestTags.PrimaryTools
+        MainDestination.Settings -> HostTestTags.PrimarySettings
     }

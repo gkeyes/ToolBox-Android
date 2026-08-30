@@ -1,25 +1,31 @@
 package io.toolbox.host.navigation
 
-import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable
+import top.yukonga.miuix.kmp.nav.core.NavKey
 
 @Serializable
-data object HomeRoute : NavKey
+sealed interface ToolBoxRoute : NavKey
 
 @Serializable
-data object ToolManagerRoute : NavKey
+data object ToolManagerRoute : ToolBoxRoute
 
 @Serializable
-data class ToolDetailRoute(val toolId: String) : NavKey
+data class ToolDetailRoute(val toolId: String) : ToolBoxRoute
 
 @Serializable
-data object ImportReviewRoute : NavKey
+data class PermissionCenterRoute(val toolId: String) : ToolBoxRoute
 
 @Serializable
-data class PermissionCenterRoute(val toolId: String) : NavKey
+data class RuntimeRoute(val toolId: String) : ToolBoxRoute
 
 @Serializable
-data class RuntimeRoute(val toolId: String) : NavKey
+data object SettingsRoute : ToolBoxRoute
 
 @Serializable
-data object SettingsRoute : NavKey
+data class BackgroundTasksRoute(val toolId: String) : ToolBoxRoute
+
+@Serializable
+data object ToolPermissionsRoute : ToolBoxRoute
+
+@Serializable
+data object DeveloperHelpRoute : ToolBoxRoute

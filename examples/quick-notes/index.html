@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>快速笔记</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app" aria-labelledby="page-title">
+    <header class="hero"><p class="eyebrow">随手记录</p><h1 id="page-title">快速笔记</h1><p>创建、编辑、复制；内容会在下次打开时恢复。</p></header>
+    <form id="editor" class="editor" novalidate>
+      <label class="sr-only" for="note-input">笔记内容</label>
+      <textarea id="note-input" maxlength="2000" placeholder="写下一件要记住的事…" required></textarea>
+      <div class="editor-actions"><span id="editor-state" aria-live="polite">新笔记</span><button type="submit">保存笔记</button></div>
+    </form>
+    <p id="empty" class="empty">还没有笔记，先写下一条吧。</p>
+    <section id="notes" class="notes" aria-label="已保存的笔记"></section>
+  </main>
+  <template id="note-template">
+    <article class="note">
+      <p class="note-body"></p>
+      <p class="note-time"></p>
+      <div class="note-actions"><button class="text-button edit" type="button">编辑</button><button class="text-button copy" type="button">复制</button><button class="text-button danger delete" type="button">删除</button></div>
+    </article>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>

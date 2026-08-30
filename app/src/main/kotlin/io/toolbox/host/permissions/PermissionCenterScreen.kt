@@ -1,232 +1,165 @@
 package io.toolbox.host.permissions
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.toolbox.core.data.GrantState
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
-import io.toolbox.core.ui.component.ToolBoxCard
-import io.toolbox.core.ui.component.ToolBoxIcon
-import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
-import io.toolbox.core.ui.component.ToolBoxRiskBadge
-import io.toolbox.core.ui.component.ToolBoxRiskLevel
+import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.HostTestTags
+import io.toolbox.host.ui.SurfaceCard
+import io.toolbox.host.ui.CatalogStatusState
 
 @Composable
-fun PermissionCenterScreen(
-    viewModel: PermissionCenterViewModel,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+internal fun PermissionCenterScreen(viewModel: PermissionCenterViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    PermissionCenterScreen(
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf("") }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        val granted = if (pending == "location") {
+            results["android.permission.ACCESS_COARSE_LOCATION"] == true ||
+                results["android.permission.ACCESS_FINE_LOCATION"] == true
+        } else {
+            results.values.all { it }
+        }
+        viewModel.systemPermissionResult(pending, granted)
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.requests.collect { request ->
+            pending = request.capability
+            launcher.launch(request.permissions.toTypedArray())
+        }
+    }
+    PermissionCenterContent(
         state = state,
         onBack = onBack,
-        onRevoke = viewModel::revoke,
-        onExplainRuntimeGranting = viewModel::explainRuntimeGranting,
-        onDismissFeedback = viewModel::dismissFeedback,
-        modifier = modifier,
+        onSetEnabled = viewModel::setEnabled,
+        onOpenSystemSettings = {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(
+                    Uri.fromParts("package", context.packageName, null),
+                ),
+            )
+        },
     )
 }
 
 @Composable
-fun PermissionCenterScreen(
+internal fun PermissionCenterContent(
     state: PermissionCenterUiState,
     onBack: () -> Unit,
-    onRevoke: (String) -> Unit,
-    onExplainRuntimeGranting: () -> Unit,
-    onDismissFeedback: () -> Unit,
-    modifier: Modifier = Modifier,
+    onSetEnabled: (String, Boolean) -> Unit,
+    onOpenSystemSettings: () -> Unit,
 ) {
     ToolBoxAppScaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         topBar = {
             ToolBoxTopBar(
-                title = "权限中心",
-                subtitle = state.toolId,
+                title = "${state.toolName} · 权限",
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
             )
         },
-    ) { contentPadding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(contentPadding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            state.feedback?.let { feedback ->
-                item(key = "feedback") {
-                    FeedbackCard(feedback = feedback, onDismiss = onDismissFeedback)
-                }
-            }
-            item(key = "scope") {
-                FactCard(
-                    title = "已安装的权限记录",
-                    message = "这里只显示安装审核已写入的记录。记录不是运行时放行证明；实际调用仍需通过声明、授权、系统权限和安全策略。",
+    ) { padding ->
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .align(Alignment.TopCenter),
+                contentPadding = PaddingValues(
+                    start = ToolBoxThemeTokens.spacing.two,
+                    top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
+                    end = ToolBoxThemeTokens.spacing.two,
+                    bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
+                ),
+            ) {
+            item("explanation") {
+                AppText(
+                    text = "只管理此工具已声明的能力。关闭后，对应功能会立即不可用。",
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 )
             }
-            if (!state.isLoaded) {
-                item(key = "loading") {
-                    FactCard(title = "正在读取", message = "正在读取该工具的已安装权限记录。")
+            item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+            state.message?.let { message ->
+                item("message") {
+                    SurfaceCard {
+                        AppText(message)
+                        if (state.showSystemSettings) {
+                            ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
+                        }
+                    }
                 }
-            } else if (state.grants.isEmpty()) {
-                item(key = "empty") {
-                    FactCard(title = "没有可管理的权限", message = "此工具没有已安装的权限记录。新增授权只能在运行时按已声明能力确认。")
-                }
+                item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+            }
+            if (!state.loaded) {
+                item("loading") { CatalogStatusState("正在读取权限") }
+            } else if (state.items.isEmpty()) {
+                item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
             } else {
-                items(state.grants.size, key = { index -> state.grants[index].permission }) { index ->
-                    PermissionGrantCard(item = state.grants[index], onRevoke = onRevoke)
+                item("permission-group") {
+                    ToolBoxGroupedSurface {
+                        state.items.forEachIndexed { index, item ->
+                            ToolBoxSwitchSettingRow(
+                                title = item.title,
+                                summary = item.reason,
+                                checked = item.enabled,
+                                onCheckedChange = { onSetEnabled(item.capability, it) },
+                                icon = item.capability.capabilityIcon(),
+                                modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
+                            )
+                            if (index != state.items.lastIndex) ToolBoxGroupDivider()
+                        }
+                    }
                 }
             }
-            item(key = "runtime") {
-                RuntimeGrantCard(onClick = onExplainRuntimeGranting)
             }
         }
     }
 }
 
-@Composable
-private fun PermissionGrantCard(
-    item: PermissionGrantItem,
-    onRevoke: (String) -> Unit,
-) {
-    ToolBoxCard(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolBoxIcon(
-                icon = item.icon,
-                contentDescription = null,
-                modifier = Modifier.padding(8.dp),
-                tint = ToolBoxThemeTokens.colors.primary,
-            )
-            Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                androidx.compose.foundation.text.BasicText(
-                    text = item.title,
-                    style = ToolBoxThemeTokens.textStyles.body.copy(
-                        color = ToolBoxThemeTokens.colors.textPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                )
-                androidx.compose.foundation.text.BasicText(
-                    text = item.details,
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-                )
-            }
-            ToolBoxRiskBadge(level = item.riskLevel, label = item.stateLabel)
-        }
-        Spacer(Modifier.height(8.dp))
-        ToolBoxPrimaryButton(
-            label = "撤销此权限",
-            onClick = { onRevoke(item.permission) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
+private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
+    "storage", "files.open", "files.save" -> ToolBoxIconKey.Folder
+    "storage.secure" -> ToolBoxIconKey.Lock
+    "clipboard.write", "clipboard.read" -> ToolBoxIconKey.Clipboard
+    "share" -> ToolBoxIconKey.Share
+    "network" -> ToolBoxIconKey.Globe
+    "device.basic" -> ToolBoxIconKey.Device
+    "haptics" -> ToolBoxIconKey.Haptics
+    "notifications" -> ToolBoxIconKey.Notifications
+    "shortcuts" -> ToolBoxIconKey.Tools
+    "camera" -> ToolBoxIconKey.Camera
+    "location" -> ToolBoxIconKey.Location
+    "background.tasks" -> ToolBoxIconKey.Clock
+    else -> ToolBoxIconKey.Shield
 }
-
-@Composable
-private fun RuntimeGrantCard(onClick: () -> Unit) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolBoxIcon(ToolBoxIconKey.Shield, contentDescription = null, tint = ToolBoxThemeTokens.colors.primary)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                androidx.compose.foundation.text.BasicText(
-                    text = "新增授权",
-                    style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
-                )
-                androidx.compose.foundation.text.BasicText(
-                    text = "运行时请求时确认，当前未接入。此页不能新增或授权权限。",
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        ToolBoxPrimaryButton(label = "了解授权方式", onClick = onClick, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-private fun FactCard(title: String, message: String) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
-        androidx.compose.foundation.text.BasicText(
-            text = title,
-            style = ToolBoxThemeTokens.textStyles.body.copy(
-                color = ToolBoxThemeTokens.colors.textPrimary,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
-        Spacer(Modifier.height(4.dp))
-        androidx.compose.foundation.text.BasicText(
-            text = message,
-            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-        )
-    }
-}
-
-@Composable
-private fun FeedbackCard(feedback: PermissionCenterFeedback, onDismiss: () -> Unit) {
-    ToolBoxCard(contentPadding = PaddingValues(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolBoxIcon(
-                icon = if (feedback is PermissionCenterFeedback.Revoked) ToolBoxIconKey.Shield else ToolBoxIconKey.Lock,
-                contentDescription = null,
-                tint = feedback.color,
-            )
-            Spacer(Modifier.width(8.dp))
-            androidx.compose.foundation.text.BasicText(
-                text = feedback.message,
-                modifier = Modifier.weight(1f),
-                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = feedback.color),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        ToolBoxPrimaryButton(label = "知道了", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-private val PermissionGrantItem.icon: ToolBoxIconKey
-    get() = when (permission) {
-        "storage", "storage.secure", "files.open", "files.save" -> ToolBoxIconKey.Folder
-        "clipboard.read", "clipboard.write" -> ToolBoxIconKey.Clipboard
-        "network" -> ToolBoxIconKey.Globe
-        else -> ToolBoxIconKey.Shield
-    }
-
-private val PermissionGrantItem.riskLevel: ToolBoxRiskLevel
-    get() = when (state) {
-        GrantState.GRANTED -> ToolBoxRiskLevel.Low
-        GrantState.DENIED -> ToolBoxRiskLevel.Medium
-        GrantState.BLOCKED -> ToolBoxRiskLevel.Blocked
-    }
-
-private val PermissionGrantItem.stateLabel: String
-    get() = when (state) {
-        GrantState.GRANTED -> "已允许"
-        GrantState.DENIED -> "已拒绝"
-        GrantState.BLOCKED -> "已阻止"
-    }
-
-private val PermissionCenterFeedback.color
-    @Composable get() = when (this) {
-        is PermissionCenterFeedback.Revoked -> ToolBoxThemeTokens.colors.success
-        is PermissionCenterFeedback.NotDeclared,
-        is PermissionCenterFeedback.RevokeFailed -> ToolBoxThemeTokens.colors.danger
-        PermissionCenterFeedback.RuntimeConfirmationRequired -> ToolBoxThemeTokens.colors.warning
-    }

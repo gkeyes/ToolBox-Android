@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.quicknotes",
+  "name": "快速笔记",
+  "shortName": "笔记",
+  "description": "创建、编辑、删除并复制本地笔记。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.2.0",
+  "categories": ["效率", "文本"],
+  "permissions": [
+    {"name": "storage", "reason": "保存和恢复笔记。", "required": false},
+    {"name": "clipboard.write", "reason": "复制笔记内容。", "required": false}
+  ],
+  "securityProfile": "strict",
+  "ui": {"orientation": "portrait", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true},
+  "limits": {"storageBytes": 262144, "maxBridgePayloadBytes": 16384}
+}

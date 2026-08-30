@@ -1,60 +1,49 @@
 (() => {
   "use strict";
-
   const $ = (id) => document.getElementById(id);
-  const readNumber = (id) => Number($(id).value);
-  const nativeClipboardAvailable = typeof window.ToolBox?.clipboard?.writeText === "function";
-  let lastText = "";
+  const fieldIds = ["capital", "risk", "entry", "stop"];
+  let lastResult = "";
+  const toolbox = () => window.ToolBox;
+  const setError = (message) => { const error = $("form-error"); error.textContent = message; error.hidden = !message; };
+  const inputs = () => Object.fromEntries(fieldIds.map((id) => [id, Number($(id).value)]));
 
-  if (!nativeClipboardAvailable) {
-    $("copy").disabled = true;
-    $("copy").textContent = "复制需原生 API";
+  async function notify(message) { try { await toolbox()?.ui?.toast?.(message); } catch (_) {} }
+  async function save(values) {
+    try { await toolbox()?.storage?.set?.("last-input", values); } catch (_) {}
   }
-
   async function restore() {
-    try {
-      await window.ToolBox.ready();
-      const saved = await window.ToolBox.storage.get("last-input");
-      if (saved && typeof saved === "object") {
-        for (const key of ["capital", "risk", "entry", "stop"]) {
-          if (saved[key] !== undefined) $(key).value = String(saved[key]);
-        }
-      }
-    } catch (_) {
-      // Browser preview mode: the host bridge may not exist.
-    }
+    let saved = null;
+    try { await toolbox()?.ready?.(); saved = await toolbox()?.storage?.get?.("last-input"); } catch (_) {}
+    if (saved && typeof saved === "object") fieldIds.forEach((id) => { if (Number.isFinite(Number(saved[id]))) $(id).value = String(saved[id]); });
   }
-
-  async function calculate() {
-    const capital = readNumber("capital");
-    const risk = readNumber("risk");
-    const entry = readNumber("entry");
-    const stop = readNumber("stop");
+  async function calculate(event) {
+    event.preventDefault();
+    const { capital, risk, entry, stop } = inputs();
     const perShareRisk = entry - stop;
-    if (![capital, risk, entry, stop].every(Number.isFinite) || capital <= 0 || risk <= 0 || perShareRisk <= 0) {
-      window.ToolBox?.ui?.toast?.("请检查输入：入场价必须高于止损价");
-      return;
+    if (![capital, risk, entry, stop].every(Number.isFinite) || capital <= 0 || risk <= 0 || entry <= 0 || stop < 0 || perShareRisk <= 0) {
+      setError("请填写有效数值，且入场价必须高于止损价。"); return;
     }
     const riskAmount = capital * risk / 100;
-    const shares = Math.floor(riskAmount / perShareRisk / 100) * 100;
+    const shares = Math.max(0, Math.floor(riskAmount / perShareRisk / 100) * 100);
     const amount = shares * entry;
-    lastText = `建议仓位：${shares} 股，预计占用资金：${amount.toFixed(2)} 元`;
-    $("shares").textContent = `建议仓位：${shares} 股`;
-    $("amount").textContent = `预计占用资金：${amount.toFixed(2)} 元`;
+    lastResult = `建议仓位：${shares} 股；预计占用资金：${amount.toFixed(2)} 元；单笔最大风险：${riskAmount.toFixed(2)} 元。`;
+    $("shares").textContent = `${shares.toLocaleString("zh-CN")} 股`;
+    $("amount").textContent = `${amount.toFixed(2)} 元`;
+    $("risk-amount").textContent = `${riskAmount.toFixed(2)} 元`;
     $("result").hidden = false;
-    try {
-      await window.ToolBox.storage.set("last-input", { capital, risk, entry, stop });
-      await window.ToolBox.haptics.perform("confirm");
-    } catch (_) {}
+    setError("");
+    await save({ capital, risk, entry, stop });
+    try { await toolbox()?.haptics?.perform?.("confirm"); } catch (_) {}
   }
-
-  $("calculate").addEventListener("click", calculate);
-  $("copy").addEventListener("click", async () => {
-    if (!lastText || !nativeClipboardAvailable) return;
+  async function copyResult() {
+    if (!lastResult) { await notify("请先完成一次计算"); return; }
     try {
-      await window.ToolBox.clipboard.writeText(lastText);
-      await window.ToolBox.ui.toast("已复制");
-    } catch (_) {}
-  });
+      if (!toolbox()?.clipboard?.writeText) throw new Error("ToolBox clipboard unavailable");
+      await toolbox().clipboard.writeText(lastResult);
+      await notify("计算结果已复制");
+    } catch (_) { await notify("无法复制，请检查剪贴板权限"); }
+  }
+  $("calculator").addEventListener("submit", calculate);
+  $("copy").addEventListener("click", copyResult);
   restore();
 })();

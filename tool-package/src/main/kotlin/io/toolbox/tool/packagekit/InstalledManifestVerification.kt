@@ -8,6 +8,23 @@ data class InstalledManifest(
     val versionCode: Int,
     val entry: String,
     val securityProfile: CatalogSecurityProfile,
+    val permissions: Set<String>,
+    val permissionDeclarations: List<InstalledManifestPermission>,
+    val network: InstalledManifestNetwork?,
+    val maxBridgePayloadBytes: Int,
+)
+
+data class InstalledManifestPermission(
+    val name: String,
+    val reason: String,
+    val required: Boolean,
+)
+
+data class InstalledManifestNetwork(
+    val allowDomains: Set<String>,
+    val allowRedirects: Boolean,
+    val maxResponseBytes: Int,
+    val timeoutMs: Int,
 )
 
 sealed interface InstalledManifestVerification {
@@ -48,6 +65,23 @@ object InstalledManifestVerifier {
                 versionCode = parsed.versionCode,
                 entry = parsed.entry,
                 securityProfile = profile,
+                permissions = parsed.permissions.mapTo(linkedSetOf()) { it.name },
+                permissionDeclarations = parsed.permissions.map { permission ->
+                    InstalledManifestPermission(
+                        name = permission.name,
+                        reason = permission.reason,
+                        required = permission.required,
+                    )
+                },
+                network = parsed.network?.let { network ->
+                    InstalledManifestNetwork(
+                        allowDomains = network.allowDomains.toCollection(linkedSetOf()),
+                        allowRedirects = network.allowRedirects,
+                        maxResponseBytes = network.maxResponseBytes,
+                        timeoutMs = network.timeoutMs,
+                    )
+                },
+                maxBridgePayloadBytes = parsed.limits.maxBridgePayloadBytes,
             ),
         )
     }

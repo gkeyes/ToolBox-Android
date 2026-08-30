@@ -2,12 +2,9 @@ package io.toolbox.tool.runtime
 
 import io.toolbox.core.data.BundleLocator
 import io.toolbox.core.data.InstalledTool
-import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SecurityProfile
-import io.toolbox.core.data.SignatureState
 import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
-import io.toolbox.core.data.ToolVersionIdentity
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,27 +54,20 @@ class ToolRuntimeSecurityBoundaryTest {
         Files.writeString(bundle.resolve("app.js"), "document.body.textContent = 'ok'")
 
         val tool = installedTool(toolId, "Alpha", 7)
-        val version = toolVersion(toolId, "Alpha", 7, locator)
         val preparer = ToolRuntimePreparer(filesRoot)
-        val prepared = preparer.prepare(toolId, tool, listOf(version))
+        val prepared = preparer.prepare(toolId, tool)
         assertTrue(prepared is RuntimePreparationResult.Prepared)
 
-        val wrongIdentity = version.copy(identity = version.identity.copy(name = "Tampered"))
-        assertEquals(
-            RuntimePreparationCode.MANIFEST_INVALID,
-            (preparer.prepare(toolId, tool, listOf(wrongIdentity)) as RuntimePreparationResult.Failed).code,
-        )
-
-        val wrongLocator = version.copy(bundleLocator = BundleLocator("miniapps/$toolId/versions/6/bundle"))
+        val wrongLocator = tool.currentVersion.copy(bundleLocator = BundleLocator("miniapps/$toolId/versions/6/bundle"))
         assertEquals(
             RuntimePreparationCode.LOCATOR_MISMATCH,
-            (preparer.prepare(toolId, tool, listOf(wrongLocator)) as RuntimePreparationResult.Failed).code,
+            (preparer.prepare(toolId, tool.copy(currentVersion = wrongLocator)) as RuntimePreparationResult.Failed).code,
         )
 
         Files.writeString(bundle.resolve("manifest.json"), manifest(toolId, "Alpha", 7, "../index.html", "strict"))
         assertEquals(
             RuntimePreparationCode.MANIFEST_INVALID,
-            (preparer.prepare(toolId, tool, listOf(version)) as RuntimePreparationResult.Failed).code,
+            (preparer.prepare(toolId, tool) as RuntimePreparationResult.Failed).code,
         )
 
         Files.writeString(bundle.resolve("manifest.json"), validManifest)
@@ -85,14 +75,16 @@ class ToolRuntimeSecurityBoundaryTest {
         Files.createSymbolicLink(bundle.resolve("index.html"), bundle.resolve("app.js"))
         assertEquals(
             RuntimePreparationCode.ENTRY_UNAVAILABLE,
-            (preparer.prepare(toolId, tool, listOf(version)) as RuntimePreparationResult.Failed).code,
+            (preparer.prepare(toolId, tool) as RuntimePreparationResult.Failed).code,
         )
 
         val strict = RuntimePolicy.contentSecurityPolicy(SecurityProfile.STRICT)
         val compat = RuntimePolicy.contentSecurityPolicy(SecurityProfile.COMPAT)
         assertTrue("connect-src 'none'" in strict)
         assertTrue("frame-src 'none'" in strict)
-        assertTrue("worker-src 'none'" in strict)
+        assertTrue("worker-src 'self'" in strict)
+        assertFalse("worker-src 'self' blob:" in strict)
+        assertFalse("worker-src *" in strict)
         assertTrue("script-src 'self';" in strict)
         assertFalse("script-src 'self' 'unsafe-inline'" in strict)
         assertTrue("script-src 'self' 'unsafe-inline'" in compat)
@@ -103,16 +95,14 @@ class ToolRuntimeSecurityBoundaryTest {
         metadata = ToolMetadata(
             id = toolId,
             name = name,
-            signatureState = SignatureState.UNSIGNED,
-            publisherKeyId = null,
             securityProfile = SecurityProfile.STRICT,
             installedAt = 1L,
         ),
-        activeVersionCode = versionCode,
+        currentVersion = toolVersion(toolId, versionCode, RuntimeIdentity.expectedBundleLocator(toolId, versionCode)),
         lastOpenedAt = null,
     )
 
-    private fun toolVersion(toolId: String, name: String, versionCode: Int, locator: String) = ToolVersion(
+    private fun toolVersion(toolId: String, versionCode: Int, locator: String) = ToolVersion(
         toolId = toolId,
         versionCode = versionCode,
         version = "1.0.0",
@@ -120,14 +110,6 @@ class ToolRuntimeSecurityBoundaryTest {
         bundleBytes = 3L,
         integrityHash = "0".repeat(64),
         installedAt = 1L,
-        launchState = LaunchState.PENDING,
-        sourceSessionId = "session-1",
-        identity = ToolVersionIdentity(
-            name = name,
-            signatureState = SignatureState.UNSIGNED,
-            publisherKeyId = null,
-            securityProfile = SecurityProfile.STRICT,
-        ),
     )
 
     private fun manifest(

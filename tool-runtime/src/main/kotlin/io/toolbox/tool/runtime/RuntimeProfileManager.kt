@@ -17,7 +17,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.IdentityHashMap
+import java.util.Collections
 import java.util.UUID
+import java.util.WeakHashMap
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -245,6 +247,10 @@ class RuntimeProfileManager internal constructor(
         val orphanMarkers = markers.filter { it.toolId !in installedToolIds }
         val orphanRecords = records.filter { it.toolId !in installedToolIds }
         if (orphanMarkers.isEmpty() && orphanRecords.isEmpty()) return RuntimeDataCleanupResult.AlreadyAbsent
+        val orphanToolIds = buildSet {
+            orphanMarkers.forEach { add(it.toolId) }
+            orphanRecords.forEach { add(it.toolId) }
+        }
         val dedicatedToolIds = buildSet {
             orphanMarkers.forEach { add(it.toolId) }
             orphanRecords.filter { it.mode == RuntimeIsolationMode.DEDICATED_PROFILE }.forEach { add(it.toolId) }
@@ -253,24 +259,42 @@ class RuntimeProfileManager internal constructor(
         if (dedicatedToolIds.isNotEmpty() && !capabilities.multiProfile) {
             return RuntimeDataCleanupResult.RecoveryDeferred
         }
-        val deleted = withContext(Dispatchers.Main.immediate) {
-            if (!RuntimeWebViewLifecycle.isQuiescent()) return@withContext false
-            dedicatedToolIds.all { toolId ->
-                when (deleteProfile(toolId)) {
-                    PhysicalDeleteResult.Deleted,
-                    PhysicalDeleteResult.Absent,
-                    -> true
-                    is PhysicalDeleteResult.Loaded,
-                    PhysicalDeleteResult.Failed,
-                    -> false
+        val cleanupLeases: List<String>? = withContext(Dispatchers.Main.immediate) {
+            if (!RuntimeWebViewLifecycle.isQuiescent()) return@withContext null
+            val acquired = mutableListOf<String>()
+            for (toolId in orphanToolIds) {
+                if (!RuntimeWebViewLifecycle.beginCleanup(toolId)) {
+                    acquired.forEach(RuntimeWebViewLifecycle::finishCleanup)
+                    return@withContext null
+                }
+                acquired += toolId
+            }
+            acquired
+        }
+        if (cleanupLeases == null) return RuntimeDataCleanupResult.Failed
+        try {
+            val deleted = withContext(Dispatchers.Main.immediate) {
+                dedicatedToolIds.all { toolId ->
+                    when (deleteProfile(toolId)) {
+                        PhysicalDeleteResult.Deleted,
+                        PhysicalDeleteResult.Absent,
+                        -> true
+                        is PhysicalDeleteResult.Loaded,
+                        PhysicalDeleteResult.Failed,
+                        -> false
+                    }
                 }
             }
+            if (!deleted) return RuntimeDataCleanupResult.Failed
+            val recoveryProofsRemoved = withContext(NonCancellable + Dispatchers.IO) {
+                removeRecoveryProofs(orphanMarkers, orphanRecords)
+            }
+            return if (recoveryProofsRemoved) RuntimeDataCleanupResult.Cleared else RuntimeDataCleanupResult.Failed
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                cleanupLeases.forEach(RuntimeWebViewLifecycle::finishCleanup)
+            }
         }
-        if (!deleted) return RuntimeDataCleanupResult.Failed
-        val recoveryProofsRemoved = withContext(NonCancellable + Dispatchers.IO) {
-            removeRecoveryProofs(orphanMarkers, orphanRecords)
-        }
-        return if (recoveryProofsRemoved) RuntimeDataCleanupResult.Cleared else RuntimeDataCleanupResult.Failed
     }
 
     private suspend fun selectIsolationMode(toolId: String): IsolationModeSelection {
@@ -484,7 +508,7 @@ class RuntimeProfileManager internal constructor(
         if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() !in 1..MAX_MODE_BYTES) {
             return@runCatching null
         }
-        val lines = Files.readAllLines(path, Charsets.UTF_8)
+        val lines = readUtf8Lines(path)
         if (lines.size != 4 || lines[0] != "version=1") return@runCatching null
         val toolId = lines[1].removePrefix("toolId=").takeIf { lines[1] == "toolId=$it" }
             ?: return@runCatching null
@@ -507,7 +531,7 @@ class RuntimeProfileManager internal constructor(
         if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() !in 1..MAX_MARKER_BYTES) {
             return@runCatching null
         }
-        val lines = Files.readAllLines(path, Charsets.UTF_8)
+        val lines = readUtf8Lines(path)
         if (lines.size != 4 || lines[0] != "version=1" || lines[3] != "status=$MARKER_STATUS") {
             return@runCatching null
         }
@@ -522,6 +546,11 @@ class RuntimeProfileManager internal constructor(
         if (path.fileName.toString() != "$profileName$MARKER_SUFFIX") return@runCatching null
         CleanupMarker(toolId, profileName)
     }.getOrNull()
+
+    private fun readUtf8Lines(path: Path): List<String> =
+        Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).bufferedReader(Charsets.UTF_8).use { reader ->
+            reader.readLines()
+        }
 
     private fun removeRecoveryProofs(
         markers: List<CleanupMarker>,
@@ -640,6 +669,7 @@ class RuntimeProfileManager internal constructor(
 
 object RuntimeWebViewLifecycle {
     private val toolByWebView = IdentityHashMap<WebView, String>()
+    private val destroyedWebViews = Collections.newSetFromMap(WeakHashMap<WebView, Boolean>())
     private val reservations = IdentityHashMap<ManagedRuntimeCreationPermit, String>()
     private val clearingToolIds = hashSetOf<String>()
     private val lifecycleGeneration = MutableStateFlow(0L)
@@ -670,7 +700,9 @@ object RuntimeWebViewLifecycle {
 
     @UiThread
     fun destroyAndUnregister(webView: WebView) {
+        if (!destroyedWebViews.add(webView)) return
         if (toolByWebView.remove(webView) != null) notifyLifecycleChanged()
+        RuntimeBridgeLifecycle.release(webView)
         runCatching { webView.stopLoading() }
         runCatching { webView.destroy() }
     }

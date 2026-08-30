@@ -1,69 +1,38 @@
-# ADR 0002：权威 SDK 输入恢复前暂缓 RPC 桥
+# ADR 0002：项目内 API v1 合同是 RPC 的单一来源
 
-- 状态：Accepted
-- 日期：2026-08-28
+- 状态：Accepted（取代“等待缺失外部 d.ts”的阻断决定）
+- 日期：2026-08-30
 
 ## 背景
 
-阶段 3 的完整目标包括独立 Origin、硬化 WebView、RPC 消息桥，以及与
-`sdk/toolbox-api.d.ts` 一致的 `ready/ui.toast/storage/haptics` API。当前资料包中
-缺少该声明文件；`sdk/PROVENANCE.md` 给出的唯一可接受校验锚点是：
+历史资料引用的 `sdk/toolbox-api.d.ts` 不在交付包中，导致无桥运行器和所有示例原生能力长期
+不可用。继续等待不可恢复的外部 hash 会把“工具真实可用”永久阻塞，也会促使 Kotlin、JS、
+schema 和帮助文档各自手写一套 API。
 
-```text
-SHA-256  7792a14e810d77d2e8c1368fc4cb38e2b4d304d8b4d701bfc082e2ef6dfb4421
-Path     sdk/toolbox-api.d.ts
-```
-
-技术方案明确要求 API 声明作为桥协议来源，且禁止从技术方案或示例反向推导。
-因此，在声明恢复并验证前实现桥协议会把未经授权的猜测变成公开接口，违反来源和
-安全边界。
+安全约束并不要求该 API 必须来自外部文件；它要求消息桥逐次验证 origin、frame、nonce、
+manifest、grant、Android 权限、手势、速率和配额。
 
 ## 决策
 
-阶段 3 允许的唯一调整是拆开“安全渲染器”和“原生 API 桥”两个交付门：
+1. 在 `:tool-api` 维护机器可读的 ToolBox API v1 合同，作为 capability、方法、参数上限、
+   manifest 映射和错误码的唯一来源。
+2. Gradle 任务从该合同生成或严格校验 Kotlin descriptors、JS shim method table、
+   `sdk/toolbox-api.d.ts` 和 manifest capability 枚举；生成物必须纳入仓库，CI 失败于漂移。
+3. 不存在真实 production handler 的 capability 不能出现在可授予权限 UI，也不能被 shim
+   伪造为成功。
+4. bridge 仍唯一使用 `WebViewCompat.addWebMessageListener`，继续遵守全部 AGENTS 安全
+   不变量；本 ADR 不允许 `addJavascriptInterface`、`file://`、localhost 或弱化检查。
+5. Developer Help 与三个范例直接从 API v1 合同同步，避免文档与运行时分叉。
 
-1. 立即实现不依赖 SDK 声明的硬化无桥渲染器：每工具唯一 exact HTTPS Origin、
-   `WebViewAssetLoader`、CSP、安全响应头、导航限制、禁用文件/内容访问和
-   renderer 崩溃恢复。
-2. 暂缓 RPC、JS shim、`ready/ui.toast/storage/haptics` handler、声明生成物及
-   依赖声明的范例工具原生能力。不得用占位实现、静默降级或伪造成功结果替代它们。
-3. 工具需要原生能力时，宿主必须在可见界面明确报告“ToolBox 原生 API 不可用”，
-   并给出可操作的原因或重试提示；离线 HTML/CSS/JS 渲染仍可继续。
-4. 以上调整不改变任何 `AGENTS.md`、`CODEX_PROMPT.md` 或技术方案中的安全不变量，
-   尤其不允许 `addJavascriptInterface`、`file://`、localhost 服务或放宽导航/来源校验。
+## 后果
 
-## 安全后果
+- 阶段 2 可以实现 `ready`、toast、sha256、storage、secure storage、device basic、haptics
+  和 clipboard write 的真实垂直切片。
+- 旧的外部 SHA-256 不是继续开发或发布的门；它只保留为历史资料，不进入 build 逻辑。
+- API 变更必须先修改 canonical 合同、生成物和最小 dispatcher 测试，再修改示例和帮助。
 
-- 正面：没有未经证实的协议形状、能力名称或授权语义进入可发布 APK；无桥状态减少
-  可被利用的入口，并保留独立 Origin、CSP 和 WebView 隔离边界。
-- 代价：在 SDK 输入恢复前，依赖 ToolBox 原生 API 的工具不能宣称功能可用；阶段 3
-  和完整端到端验收保持未完成状态。
-- 风险控制：无桥渲染器仍须通过 exact Origin、主 frame、危险 scheme、远程资源和
-  renderer 崩溃测试；任何“原生 API 不可用”状态不得绕过权限或网络策略。
+## 验证
 
-## 拒绝的备选方案
-
-- 根据技术方案、`USAGE.md` 或现有示例自行推导 `toolbox-api.d.ts`：拒绝，违反
-  `sdk/PROVENANCE.md` 的来源约束，且可能造成协议不兼容和错误授权。
-- 先实现一个兼容桥或空实现，再以后替换：拒绝，容易让工具误以为能力已执行，无法
-  证明权限、审计、限流和返回值语义正确。
-- 为了“完整运行”放宽 WebView 安全设置或使用 `file://`/localhost：拒绝，直接违反
-  不可协商的安全不变量。
-
-## 重新进入条件
-
-只有以下条件全部满足，才能恢复 RPC/API 工作：
-
-1. 从原始交付方或可验证不可变上游恢复 `sdk/toolbox-api.d.ts`；
-2. 文件 SHA-256 与 `7792a14e810d77d2e8c1368fc4cb38e2b4d304d8b4d701bfc082e2ef6dfb4421`
-   完全一致；
-3. 在 `sdk/PROVENANCE.md` 记录来源位置、获取日期和不可变标识；
-4. 基于该文件实现桥和 shim，补齐来源、frame、nonce、声明、授权、Android 权限、
-   用户手势、限流和配额校验，并完成对应安全测试与 API 文档同步。
-
-## 测试与验收影响
-
-当前交付可验收的范围是硬化无桥渲染：验证唯一 Origin、CSP/响应头、危险导航阻断、
-文件/内容访问关闭和 renderer 恢复；每项测试仍须在 `TESTING.md` 记录理由、方法和
-预期结果。RPC、shim、ToolBox API 调用、权限联动和“导入 → 安装 → 运行 → API”
-完整链路在权威声明恢复前必须标记为阻塞，不得以静态占位页或伪造返回值通过验收。
+CI 运行生成/差异检查；参数化 dispatcher 测试确认每个方法同时通过 capability handler、
+manifest、grant、系统状态、手势与配额。exact-origin instrumentation 确认 iframe、错误 origin、
+非 main-frame 和旧 nonce 无法调用任一已生成方法。

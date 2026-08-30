@@ -21,8 +21,10 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.webkit.WebViewRenderProcess
 import androidx.webkit.ProfileStore
-import io.toolbox.core.data.LaunchState
 import io.toolbox.core.data.SecurityProfile
+import io.toolbox.tool.api.MethodDescriptor
+import io.toolbox.tool.api.ToolBoxCapabilityId
+import io.toolbox.tool.packagekit.InstalledManifest
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Comparator
@@ -46,6 +48,32 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+
+private val instrumentationBridgeProvider = RuntimeBridgeProvider {
+    RuntimeBridgeConfiguration(
+        authorization = object : RuntimeAuthorizationPolicy {
+            override suspend fun isCurrent(identity: RuntimeSessionIdentity): Boolean = true
+
+            override suspend fun isGranted(
+                identity: RuntimeSessionIdentity,
+                capability: ToolBoxCapabilityId,
+            ): Boolean = true
+
+            override suspend fun hasSystemPermissions(
+                identity: RuntimeSessionIdentity,
+                permissions: Set<String>,
+            ): Boolean = true
+
+            override suspend fun admit(
+                identity: RuntimeSessionIdentity,
+                method: MethodDescriptor,
+                encodedBytes: Int,
+            ): RuntimePolicyDecision = RuntimePolicyDecision.Allowed
+        },
+        handlers = RuntimeM1Handlers(),
+        hostVersion = "0.2.0",
+    )
+}
 
 @RunWith(AndroidJUnit4::class)
 class HardenedRuntimeWebViewInstrumentationTest {
@@ -131,8 +159,8 @@ class HardenedRuntimeWebViewInstrumentationTest {
         assertEquals(quote(runtime.origin.removeSuffix("/")), evaluateJavaScript(webView, "location.origin"))
         assertEquals(quote(runtime.entryUrl), evaluateJavaScript(webView, "location.href"))
         assertEquals("true", evaluateJavaScript(webView, "window.__pageExecuted === true"))
-        assertEquals("true", evaluateJavaScript(webView, "window.__toolBoxAbsent === true"))
-        assertEquals(quote("undefined"), evaluateJavaScript(webView, "typeof window.ToolBox"))
+        assertEquals("true", evaluateJavaScript(webView, "window.__toolBoxPresent === true"))
+        assertEquals(quote("object"), evaluateJavaScript(webView, "typeof window.ToolBox"))
         assertTrue(
             "The page's direct remote fetch was not rejected by the combined CSP/offline boundary",
             awaitJavaScriptValue(webView, "window.__remoteFetchState", quote("blocked")),
@@ -488,6 +516,38 @@ class HardenedRuntimeWebViewInstrumentationTest {
             Files.delete(orphanMarker)
         }
 
+        val leasedRecoveryRoot = filesRoot.resolve("orphan-reaper-lease")
+        deleteTree(leasedRecoveryRoot)
+        val leasedMarkerRoot = leasedRecoveryRoot.resolve("runtime-profile-cleanup")
+        val leasedModeRoot = leasedRecoveryRoot.resolve("runtime-isolation-mode")
+        Files.createDirectories(leasedMarkerRoot)
+        Files.createDirectories(leasedModeRoot)
+        val leasedOrphanProfileName = RuntimeIdentity.profileName(ORPHAN_TOOL_ID)
+        writeText(leasedMarkerRoot.resolve("$leasedOrphanProfileName.pending"), encodedMarker(ORPHAN_TOOL_ID))
+        writeText(
+            leasedModeRoot.resolve("$leasedOrphanProfileName.mode"),
+            encodedModeRecord(ORPHAN_TOOL_ID, RuntimeIsolationMode.DEDICATED_PROFILE),
+        )
+        val reservationDuringPhysicalDeletion = AtomicReference<ManagedRuntimeCreationPermit?>()
+        val leasedRecoveryManager = RuntimeProfileManager(leasedRecoveryRoot.toFile(), dedicatedCapabilities()) {
+            reservationDuringPhysicalDeletion.set(RuntimeWebViewLifecycle.reserve(ORPHAN_TOOL_ID))
+            RuntimeProfileManager.PhysicalDeleteResult.Deleted
+        }
+        assertEquals(
+            RuntimeDataCleanupResult.Cleared,
+            runBlocking { leasedRecoveryManager.reapMarkedOrphanProfiles(emptySet()) },
+        )
+        onMain { reservationDuringPhysicalDeletion.get()?.close() }
+        assertNull(
+            "An orphan's runtime reservation must be rejected while its physical profile deletion is in progress",
+            reservationDuringPhysicalDeletion.get(),
+        )
+        assertFalse(Files.exists(leasedMarkerRoot.resolve("$leasedOrphanProfileName.pending")))
+        assertFalse(Files.exists(leasedModeRoot.resolve("$leasedOrphanProfileName.mode")))
+        val permitAfterOrphanCleanup = acquirePermit(leasedRecoveryManager, ORPHAN_TOOL_ID)
+        onMain { permitAfterOrphanCleanup.close() }
+        deleteTree(leasedRecoveryRoot)
+
         val actionCalled = AtomicBoolean(false)
         runBlocking {
             val cleanupProofWritten = CompletableDeferred<Unit>()
@@ -613,6 +673,7 @@ class HardenedRuntimeWebViewInstrumentationTest {
                         onMainEntryFailed = { error("Cookie-contaminated origin reached page loading") },
                         onRendererGone = { error("Cookie-contaminated origin created a renderer") },
                     ),
+                    bridgeProvider = instrumentationBridgeProvider,
                 )
             }
             assertTrue("A default-profile cookie must fail typed WebView creation", creation is RuntimeWebViewCreationResult.Failed)
@@ -699,7 +760,7 @@ class HardenedRuntimeWebViewInstrumentationTest {
             bundleRoot.resolve("app.js"),
             """
                 window.__pageExecuted = true;
-                window.__toolBoxAbsent = typeof window.ToolBox === "undefined";
+                window.__toolBoxPresent = typeof window.ToolBox === "object";
                 window.__remoteFetchState = "pending";
                 window.__cacheState = "pending";
                 window.__opfsState = "pending";
@@ -764,13 +825,23 @@ class HardenedRuntimeWebViewInstrumentationTest {
         toolId = TOOL_ID,
         toolName = "Runtime Instrumentation",
         versionCode = VERSION_CODE,
-        launchState = LaunchState.PENDING,
         privateFilesRoot = filesRoot,
         bundleRoot = bundleRoot,
         entry = entry,
         origin = RuntimeIdentity.origin(TOOL_ID),
         profileName = RuntimeIdentity.profileName(TOOL_ID),
         securityProfile = SecurityProfile.STRICT,
+        installedManifest = InstalledManifest(
+            id = TOOL_ID,
+            name = "Runtime Instrumentation",
+            versionCode = VERSION_CODE,
+            entry = entry,
+            securityProfile = SecurityProfile.STRICT,
+            permissions = emptySet(),
+            permissionDeclarations = emptyList(),
+            network = null,
+            maxBridgePayloadBytes = RuntimeBridgeConfiguration.DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
+        ),
     )
 
     private fun evaluateJavaScript(webView: WebView, script: String): String {
@@ -833,8 +904,11 @@ class HardenedRuntimeWebViewInstrumentationTest {
         }
     }
 
-    private fun acquirePermit(manager: RuntimeProfileManager): RuntimeCreationPermit = runBlocking {
-        when (val result = manager.acquireRuntimePermit(TOOL_ID, awaitExistingRuntimeRelease = false)) {
+    private fun acquirePermit(
+        manager: RuntimeProfileManager,
+        toolId: String = TOOL_ID,
+    ): RuntimeCreationPermit = runBlocking {
+        when (val result = manager.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease = false)) {
             is RuntimeCreationPermitResult.Ready -> result.permit
             is RuntimeCreationPermitResult.Rejected -> error("Runtime permit rejected: ${result.reason}")
         }
@@ -952,6 +1026,7 @@ class RuntimeWebViewTestActivity : Activity() {
         runtime: PreparedToolRuntime,
         creationPermit: RuntimeCreationPermit,
         callbacks: RuntimeWebViewCallbacks,
+        bridgeProvider: RuntimeBridgeProvider = instrumentationBridgeProvider,
     ): WebView {
         disposeActiveWebView()
         activeDestroyedByClient = false
@@ -961,7 +1036,13 @@ class RuntimeWebViewTestActivity : Activity() {
                 callbacks.onRendererGone()
             },
         )
-        val creation = HardenedRuntimeWebView.create(this, runtime, creationPermit, guardedCallbacks)
+        val creation = HardenedRuntimeWebView.create(
+            this,
+            runtime,
+            creationPermit,
+            guardedCallbacks,
+            bridgeProvider,
+        )
         val webView = when (creation) {
             is RuntimeWebViewCreationResult.Created -> creation.webView
             is RuntimeWebViewCreationResult.Failed -> error(creation.message)

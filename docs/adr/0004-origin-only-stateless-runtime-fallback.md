@@ -26,11 +26,13 @@
   的 `Cache-Control: no-store`。文档开始脚本在任何工具脚本前禁用 Cache API、IndexedDB、
   local/session storage、`navigator.serviceWorker`、Storage/OPFS、Storage Buckets、WebSQL 与
   legacy FileSystem API；同时锁死实例和原型链 descriptor，不能通过恢复原 getter 绕过。
-  CSP 的 `worker-src 'none'` 与全局 ServiceWorker client 的阻断响应构成第二道门禁。
-  ServiceWorker 设置同时禁止网络、文件和 content 访问并关闭缓存读取。
+  CSP 的 `worker-src 'self'` 只允许安装包内、经 exact-origin AssetLoader 读取的静态 Dedicated
+  Worker，以便把高负载计算移出页面线程；远程、`blob:` 和 `data:` Worker 仍被拒绝。全局
+  ServiceWorker client 对所有注册脚本返回阻断响应，文档开始脚本继续移除
+  `navigator.serviceWorker`。ServiceWorker 设置同时禁止网络、文件和 content 访问并关闭缓存读取。
 - 无状态模式要求 `DOCUMENT_START_SCRIPT`。若 provider 声称支持 ServiceWorker basic usage，
   还必须支持 `SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST`；缺任一前置能力时在写 mode record 前
-  拒绝 permit，并在 WebView 创建时按实际 provider feature 再检查一次。
+  拒绝 permit，并在两种隔离模式创建 WebView 时按实际 provider feature 再检查一次。
 - 默认 Profile 禁用 Cookie 后，创建器仍用 `CookieManager.getCookie(exact origin)` 检查该
   Origin 可见的所有 Cookie（包括适用的父域 Cookie）。任何非空结果都在 attach/load 前返回
   typed creation failure，不能让受污染的默认 Profile 进入工具代码。

@@ -4,22 +4,23 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 object HostTestTags {
-    const val BottomHome = "bottom_home"
+    const val PrimaryTools = "primary_tools"
+    const val PrimarySettings = "primary_settings"
     const val BottomTools = "bottom_tools"
     const val BottomSettings = "bottom_settings"
     const val BottomNavigationContainer = "bottom_navigation_container"
     const val ImportFab = "import_fab"
     const val PermissionCenter = "permission_center"
+    const val PermissionRowPrefix = "permission_row:"
     const val RuntimeShell = "runtime_shell"
     const val CatalogEmptyState = "catalog_empty_state"
     const val CatalogList = "catalog_list"
     const val ToolCardPrefix = "tool_card:"
 }
 
-enum class MainDestination(val label: String, val symbol: String) {
-    Home("首页", "⌂"),
-    Tools("工具", "▦"),
-    Settings("设置", "⚙"),
+enum class MainDestination(val label: String) {
+    Tools("工具"),
+    Settings("设置"),
 }
 
 internal data class HostRouteLayout(
@@ -32,7 +33,7 @@ internal fun hostRouteLayoutFor(maxWidth: Dp): HostRouteLayout =
     if (maxWidth < 600.dp) {
         HostRouteLayout(
             isCompact = true,
-            horizontalContentPadding = 20.dp,
+            horizontalContentPadding = 16.dp,
             verticalContentPadding = 16.dp,
         )
     } else {

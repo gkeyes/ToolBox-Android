@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "algorithm": "SHA-256",
   "files": {
-    "manifest.json": "7c19f012d6e36cd93b33d4c4c178b5cca508f737c8f1e5a7d9f3064c4e217a84",
-    "index.html": "b492c8dc6602abea4e0580a4ebb663ee46bb988d2dc06445a53a4da51eb308fd",
-    "style.css": "64e8065a5eac633fc7a5601401376f9e584ee334733eaa7ba5e0bdbdac011537",
-    "app.js": "168c890178d9997e572c6fa46088add082d77b73b541a99080eab94480bdd86f",
-    "icon.png": "07ca6d1a00f23907e66aab11822b63e31ba988964467b518cb8e36e8269e8214"
+    "manifest.json": "89cef2f587eea0cb3f42f60664014685b52e11d71b9d1365509f02462f195810",
+    "index.html": "ed5b8f9c8a5bbc35fbc44a37b368681dff3a19a41061232add4a250654490094",
+    "style.css": "bbb699607e9fdb449178a9dcaafc3b17b0382d0fe4b70d7beea2c1bf30b88b26",
+    "app.js": "f0c4568ea8a8c7e15bca0abfdd9ab205e63dc30f9c8c8c288e2fb69918b671f1",
+    "icon.svg": "08264dd7937133d859c0928b6e8f1d77a7560baeed4340134f640eee9cdb7175"
   }
 }

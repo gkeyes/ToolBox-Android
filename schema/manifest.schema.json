@@ -60,8 +60,7 @@
       "$ref": "#/$defs/relativeAssetPath"
     },
     "apiVersion": {
-      "type": "string",
-      "pattern": "^1(?:\\.[0-9]+)?$",
+      "const": "1.0",
       "description": "ToolBox JS API compatibility level."
     },
     "minHostVersion": {
@@ -80,7 +79,24 @@
     },
     "permissions": {
       "type": "array",
-      "maxItems": 14,
+      "maxItems": 15,
+      "allOf": [
+        {"contains":{"properties":{"name":{"const":"storage"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"storage.secure"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"clipboard.write"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"clipboard.read"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"share"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"files.open"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"files.save"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"network"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"device.basic"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"haptics"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"notifications"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"shortcuts"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"camera"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"location"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"background.tasks"}},"required":["name"]},"minContains":0,"maxContains":1}
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -104,7 +120,8 @@
               "notifications",
               "shortcuts",
               "camera",
-              "location"
+              "location",
+              "background.tasks"
             ]
           },
           "reason": {
@@ -207,30 +224,6 @@
           "minimum": 4096,
           "maximum": 1048576,
           "default": 262144
-        }
-      }
-    },
-    "publisher": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
-        "keyId": {
-          "type": "string",
-          "minLength": 8,
-          "maxLength": 128
-        },
-        "website": {
-          "type": "string",
-          "format": "uri",
-          "maxLength": 512
         }
       }
     }

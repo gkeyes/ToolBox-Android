@@ -1,50 +1,42 @@
-# Product
+# Product：ToolBox
 
-## Register
+ToolBox 是 Android 13+ 的个人 HTML 小工具架。它的任务是让用户快速导入、打开、授权、让有限
+原生任务后台执行并删除 `.tbx` 工具；宿主不把自己做成审核或安全运营产品。
 
-Product. ToolBox is a native Android host whose interface serves the user's task; visual design must never compete with the imported tool itself.
+## 用户与成功标准
 
-## Users
+主要用户是在自己 Android 设备上维护 HTML/CSS/JavaScript 小工具的人。用户应能在干净安装后：
 
-ToolBox is for Android 13+ users who want to import small local HTML/CSS/JavaScript utilities, understand exactly what each package requests, and run it without surrendering broad device access. The primary reference is a one-handed HyperOS phone; tablet, foldable, landscape, large text and assistive-technology users are first-class.
+1. 导入一个 `.tbx`，只得到安装成功或可行动的失败结果；
+2. 打开工具并真正使用已声明能力，而不是看到灰色占位按钮；
+3. 在工具详情中按工具开关能力，并在需要时走真实 Android 系统授权；
+4. 让受控 HTTP/通知任务在应用不在前台时由宿主完成；
+5. 删除工具后不留下数据、后台任务、通知或权限。
 
-## Purpose
+## 产品原则
 
-ToolBox makes a `.tbx` package inspectable before trust, installs it atomically, and runs it inside a hardened exact-origin WebView behind capability grants the user can review and revoke. The host should disappear into the task while keeping security facts truthful and immediately reachable.
+1. **功能优先。** 工具结果和操作优先于宿主标题、安全信息或固定工具栏。
+2. **一步导入。** 包检查、完整性和签名验证在内部执行；不对用户展示审核、风险、发布者、
+   审计或恢复步骤。
+3. **真实状态。** 只展示有处理器、有存储和有结果的设置、开关、菜单、任务与范例。
+4. **每工具可控。** 工具有 App 式 capability 开关，但真实生效仍受 manifest、系统权限、
+   手势、origin、限额和安全策略约束。
+5. **后台有边界。** 后台由宿主委派原生任务执行，不在后台保活 WebView 或运行任意脚本。
+6. **轻量且紧凑。** Miuix grouped-list、稳定滚动、单次 inset 消费、48dp 命中目标和内容优先
+   的运行页优先于大卡片和装饰动画。
+7. **安全不表演。** 不展示安全戏剧化 UI，也不放宽包、WebView、消息桥、网络和敏感数据保护。
 
-## Personality
+## 不可接受的体验
 
-Trustworthy, restrained, precise, efficient and native. The interface feels like a well-made instrument tray: compact enough for frequent use, calm under failure, and explicit whenever an action changes permissions, files, data or installed code.
+- 默认预装或假装已安装的工具，空白/无效按钮，或静态“权限中心”。
+- 为小工具导入增加审核、签名信任、风险提示、审计留存、恢复状态等用户决策步骤。
+- 运行页被底栏、固定权限栏、origin/API/签名技术文字挤压。
+- 将 Android 宿主权限误称为单个工具已获系统授权。
+- 用后台 WebView、任意 JavaScript、常驻服务或广泛系统权限换取“后台能力”。
+- 宽松卡片墙、双重 system inset、因字体倍率而膨胀的导航栏、掉帧滚动和迟缓动画。
 
-## Anti-references
+## 交付边界
 
-- Fake installed content, fixed sample counts or blank tools presented as real user state.
-- Static or no-op controls that look actionable but do nothing.
-- A card wall, oversized spacing or repeated shells that make an everyday utility feel loose and slow.
-- Janky nested scrolling, ornamental motion or animation that delays feedback.
-- Top, bottom or system chrome that ignores cutouts/navigation modes or crowds out tool content.
-- Security theater: reassuring copy that is not derived from verified runtime state.
-- Generic demo styling that prioritizes a host mockup over the actual tool and its result.
-
-## Product principles
-
-1. **Honest state before visual fullness.** A fresh install is an actionable empty state. Examples are real packages a user deliberately imports.
-2. **Content first.** In the runtime, the imported tool owns nearly all usable space; host controls stay compact, recoverable and truthful.
-3. **Secure by default, understandable by design.** Risk, signature, origin, permission and failure states are explicit, attributable and reversible.
-4. **Dense with clarity.** Use one visual hierarchy, one scroll owner per axis and an 8dp rhythm; remove repeated containers before shrinking touch targets.
-5. **Native and adaptive.** Miuix is wrapped behind ToolBox interfaces; edge-to-edge, cutouts, navigation modes, font scale, TalkBack, RTL and large windows are designed in.
-6. **Motion communicates state.** Progress, completion, denial, retraction and recovery may animate; decorative choreography is forbidden and reduced-motion always works.
-7. **Evidence earns release.** A green build is not a working product. Every visible action and every security branch needs fresh automated plus real-surface proof.
-
-## Accessibility
-
-- WCAG AA contrast for host text and controls.
-- TalkBack labels, roles, state descriptions and logical focus order on every native route.
-- At least 48dp for every interactive target, including compact runtime controls.
-- Usable at font scale 2.0 and enlarged display size without clipping or unreachable actions.
-- Status is never conveyed by color alone.
-- Nonessential motion is disabled when system animator scale is off or reduced motion is requested.
-
-## Release boundary
-
-Store-ready means the exact signed artifact passes package, runtime, bridge, permission, network, accessibility, visual, performance and cleanup gates. Play publication additionally requires owner-provided signing/Play credentials, privacy/support URLs and any account-specific closed-testing eligibility; absence of those inputs must never be reported as publication.
+发布候选是干净数据安装后的 APK、三个可导入范例、SHA256 清单和与同一提交绑定的 GitHub
+Actions 回执。每个真实测试必须说明理由、方法、预期和实际结果；模拟器不能替代 Xiaomi 真机
+对系统权限、SAF、分享、相机、快捷方式、通知和系统栏的组合验证。
