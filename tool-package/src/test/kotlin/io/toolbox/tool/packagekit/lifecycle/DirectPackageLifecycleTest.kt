@@ -44,12 +44,29 @@ class DirectPackageLifecycleTest {
             assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), first)
             assertTrue(repositories.keyValues.put(TOOL_ID, "draft", "1", 1) is DataResult.Success)
 
+            val released = mutableListOf<String>()
             val replaced = mutableListOf<Pair<Int, Int>>()
             val cleanup = object : ToolStateCleanup {
+                override suspend fun beforeVersionReplacement(
+                    toolId: String,
+                    previousVersionCode: Int,
+                    nextVersionCode: Int,
+                ) {
+                    assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/1")))
+                    released += "update:$previousVersionCode:$nextVersionCode"
+                }
+
                 override suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) {
                     assertEquals(TOOL_ID, toolId)
                     assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
                     replaced += previousVersionCode to nextVersionCode
+                }
+
+                override suspend fun beforeUninstall(toolId: String) {
+                    assertEquals(2, repositories.catalog.observeTool(toolId).first()?.currentVersion?.versionCode)
+                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/2")))
+                    released += "uninstall"
                 }
 
                 override suspend fun afterUninstall(toolId: String) {
@@ -58,6 +75,7 @@ class DirectPackageLifecycleTest {
             }
             val second = manager.importAndInstall(ByteInput("v2.tbx", packageBytes(versionCode = 2, signed = true)), cleanup)
             assertEquals(PackageInstallResult.Installed(TOOL_ID, 2, true), second)
+            assertEquals(listOf("update:1:2"), released)
             assertEquals(listOf(1 to 2), replaced)
             assertEquals(ToolKvValue("draft", "1", 1), repositories.keyValues.observe(TOOL_ID, "draft").first())
 
@@ -69,6 +87,7 @@ class DirectPackageLifecycleTest {
             assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
 
             assertEquals(PackageUninstallResult.Uninstalled(TOOL_ID), manager.uninstall(TOOL_ID, cleanup))
+            assertEquals(listOf("update:1:2", "uninstall"), released)
             assertNull(repositories.catalog.observeTool(TOOL_ID).first())
             assertNull(repositories.keyValues.observe(TOOL_ID, "draft").first())
             assertFalse(Files.exists(root.resolve("miniapps/$TOOL_ID")))
@@ -249,15 +268,45 @@ class DirectPackageLifecycleTest {
         }
     }
 
+    @Test
+    fun packageRequiringNewerHostIsRejectedWithoutResidue() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-host-version")
+        try {
+            val repositories = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+                hostVersion = "0.3.0",
+            )
+
+            val result = manager.importAndInstall(
+                ByteInput("future.tbx", packageBytes(minHostVersion = "0.4.0")),
+            )
+
+            assertTrue(
+                result is PackageInstallResult.Failed &&
+                    result.failure.code == PackageOperationFailureCode.UNSUPPORTED_HOST_VERSION,
+            )
+            assertTrue(repositories.catalog.observeTools().first().isEmpty())
+            assertNoTransientFiles(root)
+            assertNoPendingCleanup(root)
+        } finally {
+            deleteTree(root)
+        }
+    }
+
     private fun packageBytes(
         versionCode: Int = 1,
+        minHostVersion: String = "0.2.0",
         signed: Boolean = false,
         corruptIntegrity: Boolean = false,
         corruptSignature: Boolean = false,
         extra: Map<String, ByteArray> = emptyMap(),
     ): ByteArray {
         val content = linkedMapOf(
-            "manifest.json" to manifest(versionCode).toByteArray(),
+            "manifest.json" to manifest(versionCode, minHostVersion).toByteArray(),
             "index.html" to HTML,
         ).apply { putAll(extra) }
         val integrity = integrity(content, corruptIntegrity).toByteArray()
@@ -269,8 +318,8 @@ class DirectPackageLifecycleTest {
         return zip(entries)
     }
 
-    private fun manifest(versionCode: Int) = """
-        {"schemaVersion":1,"id":"$TOOL_ID","name":"Fixture","version":"1.0.$versionCode","versionCode":$versionCode,"entry":"index.html","apiVersion":"1.0","minHostVersion":"0.2.0","permissions":[{"name":"storage","reason":"Save values"},{"name":"network","reason":"Fetch data"}],"network":{"allowDomains":["api.github.com"]},"securityProfile":"strict"}
+    private fun manifest(versionCode: Int, minHostVersion: String) = """
+        {"schemaVersion":1,"id":"$TOOL_ID","name":"Fixture","version":"1.0.$versionCode","versionCode":$versionCode,"entry":"index.html","apiVersion":"1.0","minHostVersion":"$minHostVersion","permissions":[{"name":"storage","reason":"Save values"},{"name":"network","reason":"Fetch data"}],"network":{"allowDomains":["api.github.com"]},"securityProfile":"strict"}
     """.trimIndent()
 
     private fun integrity(content: Map<String, ByteArray>, corrupt: Boolean): String {

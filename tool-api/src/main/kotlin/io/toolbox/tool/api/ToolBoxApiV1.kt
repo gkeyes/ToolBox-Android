@@ -22,6 +22,9 @@ enum class ToolBoxCapabilityId {
     CAMERA,
     LOCATION,
     BACKGROUND_TASKS,
+    BACKGROUND_RUNTIME,
+    LOCATION_BACKGROUND,
+    ALARMS,
 }
 
 data class CapabilityDescriptor(
@@ -44,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "aad95df52b9265d15bee16cbd003b39500788d16d7b082aa1b5e0748b219ddbd"
+    const val CANONICAL_SHA256: String = "25ce65e4e13f8e0ff588bac12b7c904f627538399a961a521c735768440d4c7b"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -57,11 +60,14 @@ object ToolBoxApiV1 {
         CapabilityDescriptor(ToolBoxCapabilityId.NETWORK, "network", ContractPhase.M2, false, setOf("android.permission.INTERNET"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
         CapabilityDescriptor(ToolBoxCapabilityId.DEVICE_BASIC, "device.basic", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.HAPTICS, "haptics", ContractPhase.M1, true, setOf("android.permission.VIBRATE"), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.NOTIFICATIONS, "notifications", ContractPhase.M2, false, setOf("android.permission.POST_NOTIFICATIONS"), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.NOTIFICATIONS, "notifications", ContractPhase.M2, false, setOf("android.permission.POST_NOTIFICATIONS"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
         CapabilityDescriptor(ToolBoxCapabilityId.SHORTCUTS, "shortcuts", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.CAMERA, "camera", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.LOCATION, "location", ContractPhase.M3, false, setOf("android.permission.ACCESS_COARSE_LOCATION"), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.BACKGROUND_TASKS, "background.tasks", ContractPhase.M2, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.LOCATION, "location", ContractPhase.M3, false, setOf("android.permission.ACCESS_COARSE_LOCATION"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.BACKGROUND_TASKS, "background.tasks", ContractPhase.M2, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.BACKGROUND_RUNTIME, "background.runtime", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.LOCATION_BACKGROUND, "location.background", ContractPhase.M3, false, setOf("android.permission.ACCESS_BACKGROUND_LOCATION"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
+        CapabilityDescriptor(ToolBoxCapabilityId.ALARMS, "alarms", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
     )
 
     val methods: List<MethodDescriptor> = listOf(
@@ -81,12 +87,22 @@ object ToolBoxApiV1 {
         MethodDescriptor("clipboard.writeText", ContractPhase.M1, ToolBoxCapabilityId.CLIPBOARD_WRITE, "ClipboardWriteRequest", "void"),
         MethodDescriptor("network.request", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkRequest", "NetworkResponse"),
         MethodDescriptor("notifications.post", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
+        MethodDescriptor("notifications.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.cancel", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),
+        MethodDescriptor("notifications.focus.start", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "FocusNotificationRequest", "FocusNotificationResult"),
+        MethodDescriptor("notifications.focus.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "FocusNotificationRequest", "FocusNotificationResult"),
+        MethodDescriptor("notifications.focus.end", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),
         MethodDescriptor("background.enqueue", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "BackgroundTaskSpec", "TaskIdResult"),
         MethodDescriptor("background.schedulePeriodic", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "PeriodicTaskSpec", "TaskIdResult"),
+        MethodDescriptor("background.start", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundStartOptions", "BackgroundSessionSummary"),
+        MethodDescriptor("background.stop", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundSessionIdRequest", "void"),
+        MethodDescriptor("background.status", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundSessionIdRequest", "BackgroundSessionSummary | null"),
         MethodDescriptor("background.list", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "void", "TaskSummary[]"),
+        MethodDescriptor("background.listSessions", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "void", "BackgroundSessionSummary[]"),
         MethodDescriptor("background.getResult", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "TaskIdRequest", "TaskRunResult | null"),
         MethodDescriptor("background.cancel", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "TaskIdRequest", "void"),
+        MethodDescriptor("background.setTimer", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundTimerRequest", "void"),
+        MethodDescriptor("background.cancelTimer", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundTimerKeyRequest", "void"),
         MethodDescriptor("clipboard.readText", ContractPhase.M3, ToolBoxCapabilityId.CLIPBOARD_READ, "void", "ClipboardReadResult"),
         MethodDescriptor("share.text", ContractPhase.M3, ToolBoxCapabilityId.SHARE, "ShareTextRequest", "void"),
         MethodDescriptor("files.open", ContractPhase.M3, ToolBoxCapabilityId.FILES_OPEN, "FileOpenRequest", "FileToken | null"),
@@ -95,6 +111,11 @@ object ToolBoxApiV1 {
         MethodDescriptor("shortcuts.pin", ContractPhase.M3, ToolBoxCapabilityId.SHORTCUTS, "ShortcutPinRequest", "ShortcutPinResult"),
         MethodDescriptor("camera.capture", ContractPhase.M3, ToolBoxCapabilityId.CAMERA, "void", "FileToken | null"),
         MethodDescriptor("location.getCurrent", ContractPhase.M3, ToolBoxCapabilityId.LOCATION, "LocationRequest", "LocationResult"),
+        MethodDescriptor("location.watch", ContractPhase.M3, ToolBoxCapabilityId.LOCATION, "LocationWatchOptions", "WatchIdResult"),
+        MethodDescriptor("location.clearWatch", ContractPhase.M3, ToolBoxCapabilityId.LOCATION, "WatchIdRequest", "void"),
+        MethodDescriptor("alarms.schedule", ContractPhase.M3, ToolBoxCapabilityId.ALARMS, "AlarmScheduleOptions", "AlarmSummary"),
+        MethodDescriptor("alarms.list", ContractPhase.M3, ToolBoxCapabilityId.ALARMS, "void", "AlarmSummary[]"),
+        MethodDescriptor("alarms.cancel", ContractPhase.M3, ToolBoxCapabilityId.ALARMS, "AlarmIdRequest", "void"),
     )
 
     private val capabilitiesById = capabilities.associateBy(CapabilityDescriptor::id)

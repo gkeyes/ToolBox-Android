@@ -4,6 +4,7 @@ import io.toolbox.core.data.InstalledTool
 import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.InstalledManifestVerification
 import io.toolbox.tool.packagekit.InstalledManifestVerifier
+import io.toolbox.tool.packagekit.HostVersionPolicy
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -34,6 +35,7 @@ enum class RuntimePreparationCode {
     LOCATOR_MISMATCH,
     BUNDLE_UNAVAILABLE,
     MANIFEST_INVALID,
+    UNSUPPORTED_HOST_VERSION,
     ENTRY_UNAVAILABLE,
 }
 
@@ -45,7 +47,10 @@ sealed interface RuntimePreparationResult {
     ) : RuntimePreparationResult
 }
 
-class ToolRuntimePreparer(privateFilesDirectory: File) {
+class ToolRuntimePreparer(
+    privateFilesDirectory: File,
+    private val hostVersion: String = "0.3.0",
+) {
     private val filesRoot = privateFilesDirectory.toPath().toAbsolutePath().normalize()
 
     fun prepare(toolId: String, tool: InstalledTool?): RuntimePreparationResult {
@@ -80,6 +85,12 @@ class ToolRuntimePreparer(privateFilesDirectory: File) {
         }
         if (manifest.name != installed.metadata.name) {
             return failed(RuntimePreparationCode.MANIFEST_INVALID, "已安装 manifest.json 名称与活动版本不一致。")
+        }
+        if (!HostVersionPolicy.supports(hostVersion, manifest.minHostVersion)) {
+            return failed(
+                RuntimePreparationCode.UNSUPPORTED_HOST_VERSION,
+                "此工具需要 ToolBox ${manifest.minHostVersion} 或更高版本。",
+            )
         }
         val entryFile = resolveSafeRegularFile(bundle, manifest.entry)
             ?: return failed(RuntimePreparationCode.ENTRY_UNAVAILABLE, "工具入口文件不存在或不安全。")

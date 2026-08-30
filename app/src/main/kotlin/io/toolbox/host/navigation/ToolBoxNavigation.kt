@@ -36,6 +36,7 @@ import io.toolbox.host.HostDependencies
 import io.toolbox.host.PermissionCenterViewModelFactory
 import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.background.BackgroundTasksScreen
+import io.toolbox.host.background.BackgroundSafeguardsScreen
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.catalog.CatalogViewModel
@@ -255,6 +256,7 @@ internal fun ToolBoxNavigation(
                         SettingsScreen(
                             viewModel = settingsViewModel,
                             contentPadding = padding,
+                            onBackgroundSafeguards = { navigate(BackgroundSafeguardsRoute) },
                             onToolPermissions = { navigate(ToolPermissionsRoute) },
                             onDeveloperHelp = { navigate(DeveloperHelpRoute) },
                         )
@@ -281,6 +283,7 @@ internal fun ToolBoxNavigation(
                             catalogViewModel = catalogViewModel,
                             catalogState = catalogState,
                             importViewModel = importViewModel,
+                            settingsViewModel = settingsViewModel,
                             onBack = requestBack,
                             onNavigate = ::navigate,
                         )
@@ -376,6 +379,7 @@ private fun SecondaryRouteContent(
     catalogViewModel: CatalogViewModel,
     catalogState: CatalogUiState,
     importViewModel: ImportViewModel,
+    settingsViewModel: SettingsViewModel,
     onBack: () -> Unit,
     onNavigate: (ToolBoxRoute) -> Unit,
 ) {
@@ -409,6 +413,12 @@ private fun SecondaryRouteContent(
             catalog = dependencies.repositories.catalog,
             onBack = onBack,
             onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
+        )
+
+        BackgroundSafeguardsRoute -> BackgroundSafeguardsScreen(
+            viewModel = settingsViewModel,
+            runtimeSessions = dependencies.runtimeSessions,
+            onBack = onBack,
         )
 
         DeveloperHelpRoute -> DeveloperHelpScreen(

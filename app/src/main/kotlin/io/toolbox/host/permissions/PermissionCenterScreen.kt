@@ -159,7 +159,7 @@ private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
     "notifications" -> ToolBoxIconKey.Notifications
     "shortcuts" -> ToolBoxIconKey.Tools
     "camera" -> ToolBoxIconKey.Camera
-    "location" -> ToolBoxIconKey.Location
-    "background.tasks" -> ToolBoxIconKey.Clock
+    "location", "location.background" -> ToolBoxIconKey.Location
+    "background.tasks", "background.runtime", "alarms" -> ToolBoxIconKey.Clock
     else -> ToolBoxIconKey.Shield
 }

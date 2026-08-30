@@ -1,6 +1,7 @@
 package io.toolbox.host
 
 import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(state.dependencies) {
                         withFrameNanos { }
                         dependenciesViewModel.onHostFirstFrame()
+                        state.dependencies.runtimeSessions.recover("process")
                     }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)
@@ -94,7 +96,9 @@ class MainActivity : ComponentActivity() {
                         )
                         LaunchedEffect(pendingShortcutIntent) {
                             val launchIntent = pendingShortcutIntent ?: return@LaunchedEffect
-                            val shortcutToolId = withContext(Dispatchers.IO) {
+                            val requestedToolId = launchIntent.takeIf { it.action == ACTION_OPEN_TOOL }
+                                ?.getStringExtra(EXTRA_TOOL_ID)
+                            val shortcutToolId = requestedToolId ?: withContext(Dispatchers.IO) {
                                 ForegroundCapabilityBroker.resolveShortcutToolId(this@MainActivity, launchIntent)
                             }
                             shortcutIntent.value = null
@@ -119,6 +123,17 @@ class MainActivity : ComponentActivity() {
         foregroundCapabilityBroker?.close()
         foregroundCapabilityBroker = null
         super.onDestroy()
+    }
+
+    companion object {
+        private const val ACTION_OPEN_TOOL = "io.toolbox.host.OPEN_TOOL"
+        private const val EXTRA_TOOL_ID = "toolId"
+
+        internal fun openToolIntent(context: Context, toolId: String): Intent =
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_OPEN_TOOL)
+                .putExtra(EXTRA_TOOL_ID, toolId)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 
     @Composable

@@ -13,6 +13,7 @@ import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.runtime.RuntimeViewModel
+import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.tool.runtime.RuntimeDataCleaner
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
@@ -31,13 +32,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal class HostDependencies(
+    private val application: Application,
     val repositories: CoreDataRepositories,
     private val packageOperationsFactory: (RuntimeDataCleaner, HostBackgroundOperations) -> HostPackageOperations,
     val backgroundOperations: HostBackgroundOperations,
     val permissionSideEffects: HostPermissionSideEffects,
     private val runtimePreparerFactory: () -> ToolRuntimePreparer,
     private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
-    private val runtimeBridgeProviderFactory: (HostRuntimeM2HandlerFactory) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
+    private val runtimeBridgeProviderFactory: (
+        HostRuntimeM2HandlerFactory,
+        (io.toolbox.tool.runtime.PreparedToolRuntime) -> io.toolbox.host.runtime.HostRuntimeContinuityHandlers,
+    ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
     private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
 ) {
     private val deferredRuntimeProfileManager = lazy(
@@ -63,7 +68,17 @@ internal class HostDependencies(
     }
 
     val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runtimeBridgeProviderFactory(runtimeM2HandlerFactory)
+        runtimeBridgeProviderFactory(runtimeM2HandlerFactory, runtimeSessions::handlers)
+    }
+
+    val runtimeSessions: RuntimeSessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RuntimeSessionManager(
+            context = application,
+            repositories = repositories,
+            preparer = runtimePreparer,
+            permitProvider = runtimePermitProvider,
+            bridgeProvider = { runtimeBridgeProvider },
+        )
     }
 
     val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -86,10 +101,12 @@ internal fun interface HostDependenciesFactory {
     fun create(application: Application, stores: CoreDataStores): HostDependencies
 }
 
-private object ProductionHostDependenciesFactory : HostDependenciesFactory {
+internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
     override fun create(application: Application, stores: CoreDataStores): HostDependencies {
         val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
-        return HostDependencies(
+        lateinit var dependencies: HostDependencies
+        dependencies = HostDependencies(
+            application = application,
             repositories = stores.repositories,
             packageOperationsFactory = { runtimeDataCleaner, background ->
                 ProductionHostPackageOperations(
@@ -101,17 +118,20 @@ private object ProductionHostDependenciesFactory : HostDependenciesFactory {
             },
             backgroundOperations = backgroundOperations,
             permissionSideEffects = backgroundOperations,
-            runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir) },
+            runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir, BuildConfig.VERSION_NAME) },
             runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
-            runtimeBridgeProviderFactory = { m2Handlers ->
+            runtimeBridgeProviderFactory = { m2Handlers, continuityHandlers ->
                 io.toolbox.host.runtime.HostRuntimeBridgeProvider(
                     context = application,
                     repositories = stores.repositories,
                     m2HandlerFactory = m2Handlers,
+                    continuityHandlerFactory = continuityHandlers,
                 )
             },
             runtimeM2HandlerFactory = backgroundOperations,
         )
+        backgroundOperations.attachRuntimeSessions(dependencies.runtimeSessions)
+        return dependencies
     }
 }
 
@@ -195,9 +215,12 @@ internal class HostDependenciesViewModel(
             try {
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
-                    val createdStores = HostTrace.bestEffortSection("coreData.create") {
-                        CoreDataFactory.create(app)
+                    if (app is ToolBoxApplication && dependenciesFactory === ProductionHostDependenciesFactory) {
+                        return@withContext HostTrace.bestEffortSection("coreData.create") {
+                            app.hostDependencies()
+                        }
                     }
+                    val createdStores = HostTrace.bestEffortSection("coreData.create") { CoreDataFactory.create(app) }
                     openedStores = createdStores
                     dependenciesFactory.create(app, createdStores)
                 }
@@ -257,10 +280,7 @@ internal class RuntimeViewModelFactory(
         }
         return RuntimeViewModel(
             toolId = toolId,
-            catalog = dependencies.repositories.catalog,
-            preparer = dependencies.runtimePreparer,
-            runtimePermitProvider = dependencies.runtimePermitProvider,
-            bridgeProvider = dependencies.runtimeBridgeProvider,
+            sessions = dependencies.runtimeSessions,
         ) as T
     }
 }

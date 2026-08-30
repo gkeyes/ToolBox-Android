@@ -28,4 +28,7 @@ data class BackgroundTasksRoute(val toolId: String) : ToolBoxRoute
 data object ToolPermissionsRoute : ToolBoxRoute
 
 @Serializable
+data object BackgroundSafeguardsRoute : ToolBoxRoute
+
+@Serializable
 data object DeveloperHelpRoute : ToolBoxRoute

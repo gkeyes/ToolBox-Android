@@ -40,6 +40,9 @@ sealed interface RuntimeWebViewCreationResult {
 }
 
 object HardenedRuntimeWebView {
+    fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
+        RuntimeBridgeLifecycle.emitEvent(webView, name, payload)
+
     fun release(webView: WebView) {
         (webView.webViewClient as? RuntimeWebViewClient)?.endFirstMainFrameTrace()
         RuntimeWebViewLifecycle.destroyAndUnregister(webView)

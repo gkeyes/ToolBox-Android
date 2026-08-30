@@ -2,7 +2,7 @@
 
 ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/CSS/JavaScript 的
 本地 ZIP 包，在唯一 HTTPS origin 的硬化 WebView 中运行，并按工具提供真实的权限开关和
-受限后台任务。
+可独立于 Compose 页面生命周期的通用网页运行环境。
 
 当前重构的目标是让用户只经历：**导入、使用、授权、后台任务、删除**。导入是一次操作：
 选择 `.tbx` 后，宿主在后台完成结构、完整性和签名检查；成功进入工具列表，失败显示原因且
@@ -14,7 +14,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 `version = 1` 新建，没有 database migration、兼容读取或旧字段回退。候选 APK 以卸载
 `io.toolbox.host` 后的干净安装验证。
 
-设置只保留真实主题、后台总开关和 Developer Help。工具详情提供打开、权限、后台任务和
+设置只保留真实主题、后台保障、工具权限和 Developer Help。工具详情提供打开、权限、后台任务和
 删除；权限是每工具的虚拟 grant，仍必须通过 manifest、宿主 Android 权限、用户手势、配额
 与 origin 校验才会生效。
 
@@ -24,13 +24,14 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 2. **安全运行时与基础 API**：exact HTTPS origin、CSP、消息桥、`ready`、toast、SHA-256、
    storage、secure storage、device basic、haptics、clipboard write；包内同源 Web Worker 可承载
    高负载前台计算，ServiceWorker 与远程 Worker 仍禁用。
-3. **后台任务**：WorkManager 委派的 allowlist HTTPS `httpGet` 和命名空间通知；工具代码不在
-   后台运行，也不使用后台 WebView 或常驻前台服务。
-4. **App 式能力与帮助**：剪贴板读取、系统分享、SAF 文件、快捷方式、系统相机、前台单次
-   定位，以及从 API/范例派生的离线 Developer Help。
+3. **持续运行环境**：应用级管理器拥有 WebView、permit、bridge、timer 和位置监听；运行页只
+   挂载显示层。工具主动 `background.start()` 后可在离开页面时继续工作，并在进程/重启恢复后
+   接收事件；一个 `specialUse` 前台服务提供持续通知和停止入口。
+4. **通用宿主能力**：声明域名内的公网 HTTPS 请求、普通/HyperOS 增强通知、前后台位置 watch、精确
+   闹钟，以及剪贴板、分享、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
 
-最终随 APK 交付三个可导入示例：仓位计算器、快速笔记、后台任务演示。每一个都包含源码、
-manifest、完整性清单、可重复打包脚本和 `.tbx`。
+仓位计算器、快速笔记、后台任务演示三个现有范例保持原样并继续内置；0.3 不新增范例，最终
+GitHub 产物只包含 APK、SHA256 清单和同提交测试回执。
 
 ## 本地运行
 
@@ -50,8 +51,8 @@ manifest、完整性清单、可重复打包脚本和 `.tbx`。
 `candidate` 与 release 使用相同的 R8 优化，仅使用本机 debug key 签名以便直接安装测试；不要用
 debug 构建评价页面帧性能。
 
-GitHub Actions 在安全不变量、API 合同、静态编译和最小单元门禁通过后上传 APK、三个 `.tbx`
-和 `SHA256SUMS.txt`。系统权限、SAF、相机、通知、后台调度和 HyperOS 系统栏由用户在小米真机
+GitHub Actions 在安全不变量、API 合同、静态编译和最小单元门禁通过后上传 APK、
+`SHA256SUMS.txt` 和构建回执。系统权限、SAF、相机、通知、持续运行、后台位置、精确闹钟和 HyperOS 增强通知由用户在小米真机
 上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。
 
 ## 工程结构
@@ -71,5 +72,6 @@ examples/                         三个范例源码、打包脚本与 `.tbx`
 
 安全不变量以 [`AGENTS.md`](AGENTS.md) 为准：不使用 `addJavascriptInterface`、`file://` 或
 localhost；不申请广泛存储、应用列表、无障碍、短信、联系人或 root 权限；所有 WebView 调用
-验证 origin/frame/nonce/声明/grant/系统权限/手势/限额；网络只经原生 HTTPS 代理并执行域名、
-重定向和 SSRF 检查。简化界面不等于放宽这些边界。
+验证 origin/frame/nonce/声明/grant/系统权限/手势/限额；网络只经原生 HTTPS 代理并执行 manifest
+域名 allowlist、重定向和 SSRF 检查。回环、私网、保留地址和 IP 字面量始终禁止；
+简化界面不等于放宽这些边界。

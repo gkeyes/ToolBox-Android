@@ -151,23 +151,48 @@ fun interface RuntimeNetworkHandler {
     suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse
 }
 
-enum class RuntimeNetworkMethod { GET }
+enum class RuntimeNetworkMethod { GET, POST, PUT, PATCH, DELETE, HEAD }
 
 data class RuntimeNetworkRequest(
     val url: String,
     val method: RuntimeNetworkMethod,
+    val headers: Map<String, String> = emptyMap(),
+    val body: ByteArray? = null,
+    val bodyIsJson: Boolean = false,
+    val timeoutMillis: Long? = null,
+    val maxResponseBytes: Int? = null,
 )
 
 data class RuntimeNetworkResponse(
     val status: Int,
     val headers: Map<String, String>,
     val body: String,
+    val bodyEncoding: RuntimeNetworkBodyEncoding = RuntimeNetworkBodyEncoding.TEXT,
 )
+
+enum class RuntimeNetworkBodyEncoding { TEXT, BASE64 }
 
 interface RuntimeNotificationHandler {
     suspend fun post(notificationId: String, title: String, body: String)
+    suspend fun update(notificationId: String, title: String, body: String) = post(notificationId, title, body)
     suspend fun cancel(notificationId: String)
+    suspend fun focus(
+        notificationId: String,
+        title: String,
+        body: String,
+        progress: Int?,
+    ): RuntimeFocusNotificationResult = throw RuntimeHandlerException(
+        RuntimeRpcErrorCode.UNSUPPORTED,
+        "Focus notifications are unavailable",
+    )
+
+    suspend fun endFocus(notificationId: String) = cancel(notificationId)
 }
+
+data class RuntimeFocusNotificationResult(
+    val enhancementRequested: Boolean,
+    val protocolVersion: Int,
+)
 
 sealed interface RuntimeBackgroundTaskOperation {
     data class HttpGet(val url: String) : RuntimeBackgroundTaskOperation
@@ -220,10 +245,45 @@ interface RuntimeBackgroundTaskHandler {
     suspend fun cancel(taskId: String): Boolean
 }
 
+data class RuntimeBackgroundStartOptions(
+    val restoreAfterProcessDeath: Boolean,
+    val restoreAfterReboot: Boolean,
+)
+
+data class RuntimeBackgroundSessionSummary(
+    val sessionId: String,
+    val startedAt: Long,
+    val restoreAfterProcessDeath: Boolean,
+    val restoreAfterReboot: Boolean,
+)
+
+interface RuntimeContinuousBackgroundHandler {
+    suspend fun start(options: RuntimeBackgroundStartOptions): RuntimeBackgroundSessionSummary
+    suspend fun stop(sessionId: String): Boolean
+    suspend fun status(sessionId: String): RuntimeBackgroundSessionSummary?
+    suspend fun list(): List<RuntimeBackgroundSessionSummary>
+    suspend fun setTimer(key: String, intervalMillis: Long)
+    suspend fun cancelTimer(key: String): Boolean
+}
+
+data class RuntimeAlarmSummary(
+    val alarmId: String,
+    val triggerAt: Long,
+    val scheduledAt: Long,
+)
+
+interface RuntimeAlarmHandler {
+    suspend fun schedule(alarm: RuntimeAlarmSummary): RuntimeAlarmSummary
+    suspend fun list(): List<RuntimeAlarmSummary>
+    suspend fun cancel(alarmId: String): Boolean
+}
+
 data class RuntimeM2Handlers(
     val network: RuntimeNetworkHandler? = null,
     val notifications: RuntimeNotificationHandler? = null,
     val background: RuntimeBackgroundTaskHandler? = null,
+    val continuousBackground: RuntimeContinuousBackgroundHandler? = null,
+    val alarms: RuntimeAlarmHandler? = null,
 )
 
 fun interface RuntimeClipboardReadHandler {
@@ -271,6 +331,18 @@ fun interface RuntimeLocationHandler {
     suspend fun getCurrent(precise: Boolean, timeoutMillis: Long): RuntimeLocationResult
 }
 
+data class RuntimeLocationWatchOptions(
+    val precise: Boolean,
+    val intervalMillis: Long,
+    val minDistanceMeters: Float,
+    val allowBackground: Boolean,
+)
+
+interface RuntimeLocationWatchHandler {
+    suspend fun watch(options: RuntimeLocationWatchOptions): String
+    suspend fun clearWatch(watchId: String): Boolean
+}
+
 data class RuntimeM3Handlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
@@ -278,6 +350,7 @@ data class RuntimeM3Handlers(
     val shortcuts: RuntimeShortcutHandler? = null,
     val camera: RuntimeCameraHandler? = null,
     val location: RuntimeLocationHandler? = null,
+    val locationWatch: RuntimeLocationWatchHandler? = null,
     val sessionCleanup: RuntimeSessionCleanupHandler? = null,
 )
 
@@ -456,9 +529,35 @@ class RuntimeRpcDispatcher(
             )
             RpcValue.Null
         }
+        "notifications.update" -> {
+            params.requireOnly("id", "title", "body")
+            requireHandler(m2Handlers.notifications).update(
+                notificationId = params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
+                title = params.requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
+                body = params.requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
+            )
+            RpcValue.Null
+        }
         "notifications.cancel" -> {
             params.requireOnly("id")
             requireHandler(m2Handlers.notifications).cancel(
+                params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
+            )
+            RpcValue.Null
+        }
+        "notifications.focus.start", "notifications.focus.update" -> {
+            params.requireOnly("id", "title", "body", "progress")
+            val result = requireHandler(m2Handlers.notifications).focus(
+                notificationId = params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
+                title = params.requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
+                body = params.requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
+                progress = params.optionalInt("progress", 0, 100),
+            )
+            result.toRpcValue()
+        }
+        "notifications.focus.end" -> {
+            params.requireOnly("id")
+            requireHandler(m2Handlers.notifications).endFocus(
                 params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
             )
             RpcValue.Null
@@ -475,9 +574,38 @@ class RuntimeRpcDispatcher(
                     .also { requireTaskId(it) },
             )
         }
+        "background.start" -> {
+            params.requireOnly("restoreAfterProcessDeath", "restoreAfterReboot")
+            requireHandler(m2Handlers.continuousBackground).start(
+                RuntimeBackgroundStartOptions(
+                    restoreAfterProcessDeath = params.optionalBoolean("restoreAfterProcessDeath") ?: true,
+                    restoreAfterReboot = params.optionalBoolean("restoreAfterReboot") ?: false,
+                ),
+            ).toRpcValue()
+        }
+        "background.stop" -> {
+            params.requireOnly("sessionId")
+            if (!requireHandler(m2Handlers.continuousBackground).stop(params.requiredSessionId())) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background session was not found")
+            }
+            RpcValue.Null
+        }
+        "background.status" -> {
+            params.requireOnly("sessionId")
+            requireHandler(m2Handlers.continuousBackground)
+                .status(params.requiredSessionId())
+                ?.toRpcValue()
+                ?: RpcValue.Null
+        }
         "background.list" -> {
             params.requireOnly()
             RpcValue.ArrayValue(requireHandler(m2Handlers.background).list().map { task -> task.toRpcValue() })
+        }
+        "background.listSessions" -> {
+            params.requireOnly()
+            RpcValue.ArrayValue(
+                requireHandler(m2Handlers.continuousBackground).list().map { session -> session.toRpcValue() },
+            )
         }
         "background.getResult" -> {
             params.requireOnly("taskId")
@@ -488,10 +616,27 @@ class RuntimeRpcDispatcher(
         }
         "background.cancel" -> {
             params.requireOnly("taskId")
-            val cancelled = requireHandler(m2Handlers.background).cancel(params.requiredTaskId())
+            val taskId = params.requiredTaskId()
+            val cancelled = requireHandler(m2Handlers.background).cancel(taskId)
             if (!cancelled) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background task was not found")
             }
+            RpcValue.Null
+        }
+        "background.setTimer" -> {
+            params.requireOnly("key", "intervalMs")
+            requireHandler(m2Handlers.continuousBackground).setTimer(
+                key = params.requiredIdentifier("key", MAX_TIMER_KEY_CHARS),
+                intervalMillis = params.requiredLong("intervalMs", 1, MAX_SAFE_INTEGER),
+            )
+            RpcValue.Null
+        }
+        "background.cancelTimer" -> {
+            params.requireOnly("key")
+            val cancelled = requireHandler(m2Handlers.continuousBackground).cancelTimer(
+                params.requiredIdentifier("key", MAX_TIMER_KEY_CHARS),
+            )
+            if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Timer was not found")
             RpcValue.Null
         }
         "clipboard.readText" -> {
@@ -547,6 +692,55 @@ class RuntimeRpcDispatcher(
                     ?: DEFAULT_LOCATION_TIMEOUT_MS,
             ).toRpcValue()
         }
+        "location.watch" -> {
+            params.requireOnly("accuracy", "intervalMs", "minDistanceMeters", "allowBackground")
+            val precise = when (params.optionalString("accuracy", 16) ?: "coarse") {
+                "coarse" -> false
+                "precise" -> true
+                else -> throw IllegalArgumentException("accuracy")
+            }
+            RpcValue.StringValue(
+                requireHandler(m3Handlers.locationWatch).watch(
+                    RuntimeLocationWatchOptions(
+                        precise = precise,
+                        intervalMillis = params.optionalLong("intervalMs", 0, MAX_SAFE_INTEGER) ?: 0,
+                        minDistanceMeters = params.optionalFloat("minDistanceMeters", 0f) ?: 0f,
+                        allowBackground = params.optionalBoolean("allowBackground") ?: false,
+                    ),
+                ).also { requireIdentifier(it, MAX_WATCH_ID_CHARS) },
+            )
+        }
+        "location.clearWatch" -> {
+            params.requireOnly("watchId")
+            val removed = requireHandler(m3Handlers.locationWatch).clearWatch(
+                params.requiredIdentifier("watchId", MAX_WATCH_ID_CHARS),
+            )
+            if (!removed) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Location watch was not found")
+            RpcValue.Null
+        }
+        "alarms.schedule" -> {
+            params.requireOnly("id", "triggerAt")
+            val now = System.currentTimeMillis()
+            requireHandler(m2Handlers.alarms).schedule(
+                RuntimeAlarmSummary(
+                    alarmId = params.requiredIdentifier("id", MAX_ALARM_ID_CHARS),
+                    triggerAt = params.requiredLong("triggerAt", 0, MAX_SAFE_INTEGER),
+                    scheduledAt = now,
+                ),
+            ).toRpcValue()
+        }
+        "alarms.list" -> {
+            params.requireOnly()
+            RpcValue.ArrayValue(requireHandler(m2Handlers.alarms).list().map { it.toRpcValue() })
+        }
+        "alarms.cancel" -> {
+            params.requireOnly("id")
+            val cancelled = requireHandler(m2Handlers.alarms).cancel(
+                params.requiredIdentifier("id", MAX_ALARM_ID_CHARS),
+            )
+            if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Alarm was not found")
+            RpcValue.Null
+        }
         else -> throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Method has no native handler")
     }
 
@@ -585,6 +779,7 @@ class RuntimeRpcDispatcher(
                 "status" to RpcValue.Number(status.toDouble()),
                 "headers" to RpcValue.ObjectValue(rpcHeaders),
                 "body" to RpcValue.StringValue(body),
+                "bodyEncoding" to RpcValue.StringValue(bodyEncoding.name.lowercase(Locale.ROOT)),
             ),
         )
     }
@@ -594,12 +789,49 @@ class RuntimeRpcDispatcher(
         requireIdentifier(key, MAX_TASK_KEY_CHARS)
         nextRunAt?.let { require(it in 0..MAX_SAFE_INTEGER) }
         return RpcValue.ObjectValue(buildMap {
+            put("kind", RpcValue.StringValue("task"))
             put("taskId", RpcValue.StringValue(taskId))
             put("key", RpcValue.StringValue(key))
             put("state", RpcValue.StringValue(state.name))
             put("periodic", RpcValue.Bool(periodic))
             nextRunAt?.let { put("nextRunAt", RpcValue.Number(it.toDouble())) }
         })
+    }
+
+    private fun RuntimeBackgroundSessionSummary.toRpcValue(): RpcValue.ObjectValue {
+        requireIdentifier(sessionId, MAX_SESSION_ID_CHARS)
+        require(startedAt in 0..MAX_SAFE_INTEGER)
+        return RpcValue.ObjectValue(
+            mapOf(
+                "sessionId" to RpcValue.StringValue(sessionId),
+                "startedAt" to RpcValue.Number(startedAt.toDouble()),
+                "restoreAfterProcessDeath" to RpcValue.Bool(restoreAfterProcessDeath),
+                "restoreAfterReboot" to RpcValue.Bool(restoreAfterReboot),
+            ),
+        )
+    }
+
+    private fun RuntimeFocusNotificationResult.toRpcValue(): RpcValue.ObjectValue {
+        require(protocolVersion >= 0)
+        return RpcValue.ObjectValue(
+            mapOf(
+                "mode" to RpcValue.StringValue(if (enhancementRequested) "ENHANCEMENT_REQUESTED" else "STANDARD"),
+                "protocolVersion" to RpcValue.Number(protocolVersion.toDouble()),
+            ),
+        )
+    }
+
+    private fun RuntimeAlarmSummary.toRpcValue(): RpcValue.ObjectValue {
+        requireIdentifier(alarmId, MAX_ALARM_ID_CHARS)
+        require(triggerAt in 0..MAX_SAFE_INTEGER)
+        require(scheduledAt in 0..MAX_SAFE_INTEGER)
+        return RpcValue.ObjectValue(
+            mapOf(
+                "id" to RpcValue.StringValue(alarmId),
+                "triggerAt" to RpcValue.Number(triggerAt.toDouble()),
+                "scheduledAt" to RpcValue.Number(scheduledAt.toDouble()),
+            ),
+        )
     }
 
     private fun RuntimeBackgroundTaskRunResult.toRpcValue(): RpcValue.ObjectValue {
@@ -702,6 +934,9 @@ class RuntimeRpcDispatcher(
     private fun RpcValue.ObjectValue.requiredTaskId(): String =
         requiredIdentifier("taskId", MAX_TASK_ID_CHARS)
 
+    private fun RpcValue.ObjectValue.requiredSessionId(): String =
+        requiredIdentifier("sessionId", MAX_SESSION_ID_CHARS)
+
     private fun requireTaskId(taskId: String) {
         requireIdentifier(taskId, MAX_TASK_ID_CHARS)
     }
@@ -728,6 +963,21 @@ class RuntimeRpcDispatcher(
 
     private fun RpcValue.ObjectValue.optionalLong(name: String, min: Long, max: Long): Long? =
         if (name in value) requiredLong(name, min, max) else null
+
+    private fun RpcValue.ObjectValue.optionalInt(name: String, min: Int, max: Int): Int? =
+        optionalLong(name, min.toLong(), max.toLong())?.toInt()
+
+    private fun RpcValue.ObjectValue.optionalBoolean(name: String): Boolean? = when (val raw = value[name]) {
+        null -> null
+        is RpcValue.Bool -> raw.value
+        else -> throw IllegalArgumentException(name)
+    }
+
+    private fun RpcValue.ObjectValue.optionalFloat(name: String, min: Float): Float? {
+        val number = (value[name] ?: return null) as? RpcValue.Number ?: throw IllegalArgumentException(name)
+        require(number.value.isFinite() && number.value >= min.toDouble() && number.value <= Float.MAX_VALUE)
+        return number.value.toFloat()
+    }
 
     private fun RpcValue.ObjectValue.requiredObject(name: String): RpcValue.ObjectValue =
         required(name) as? RpcValue.ObjectValue ?: throw IllegalArgumentException(name)
@@ -764,14 +1014,50 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RpcValue.ObjectValue.toNetworkRequest(): RuntimeNetworkRequest {
-        requireOnly("url", "method")
+        requireOnly("url", "method", "headers", "body", "bodyEncoding", "timeoutMs", "maxResponseBytes")
         val url = requiredString("url", MAX_NETWORK_URL_CHARS)
         require(url == url.trim() && url.none(Char::isISOControl))
-        val method = when (optionalString("method", 4) ?: "GET") {
+        val method = when (optionalString("method", 6) ?: "GET") {
             "GET" -> RuntimeNetworkMethod.GET
+            "POST" -> RuntimeNetworkMethod.POST
+            "PUT" -> RuntimeNetworkMethod.PUT
+            "PATCH" -> RuntimeNetworkMethod.PATCH
+            "DELETE" -> RuntimeNetworkMethod.DELETE
+            "HEAD" -> RuntimeNetworkMethod.HEAD
             else -> throw IllegalArgumentException("method")
         }
-        return RuntimeNetworkRequest(url, method)
+        val headers = (value["headers"] as? RpcValue.ObjectValue)?.value?.mapValues { (name, raw) ->
+            require(REQUEST_HEADER_NAME.matches(name))
+            require(name.lowercase(Locale.ROOT) !in FORBIDDEN_REQUEST_HEADERS)
+            val headerValue = (raw as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException("headers")
+            require(headerValue.length <= MAX_NETWORK_HEADER_VALUE_CHARS)
+            require(headerValue.none { it == '\r' || it == '\n' || it.isISOControl() })
+            headerValue
+        }.orEmpty().also { require(it.size <= MAX_NETWORK_REQUEST_HEADERS) }
+        val rawBody = value["body"]
+        val bodyEncoding = optionalString("bodyEncoding", 8)
+        val body = when {
+            bodyEncoding == "bytes" -> requiredBytes("body", MAX_NETWORK_REQUEST_BYTES)
+            bodyEncoding != null -> throw IllegalArgumentException("bodyEncoding")
+            rawBody == null -> null
+            rawBody is RpcValue.StringValue -> rawBody.value.toByteArray(StandardCharsets.UTF_8)
+            else -> RuntimeRpcJson.encodeValue(rawBody).toByteArray(StandardCharsets.UTF_8)
+        }
+        body?.let { require(it.size <= MAX_NETWORK_REQUEST_BYTES) }
+        require(method !in setOf(RuntimeNetworkMethod.GET, RuntimeNetworkMethod.HEAD) || body == null)
+        return RuntimeNetworkRequest(
+            url = url,
+            method = method,
+            headers = headers,
+            body = body,
+            bodyIsJson = bodyEncoding == null && rawBody != null && rawBody !is RpcValue.StringValue,
+            timeoutMillis = optionalLong("timeoutMs", MIN_NETWORK_TIMEOUT_MS, MAX_NETWORK_TIMEOUT_MS),
+            maxResponseBytes = optionalLong(
+                "maxResponseBytes",
+                MIN_NETWORK_RESPONSE_BYTES.toLong(),
+                MAX_NETWORK_RESPONSE_BYTES.toLong(),
+            )?.toInt(),
+        )
     }
 
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
@@ -838,7 +1124,12 @@ class RuntimeRpcDispatcher(
     private companion object {
         val SUPPORTED_CONTRACT_PHASES = setOf(ContractPhase.M1, ContractPhase.M2, ContractPhase.M3)
         val HEADER_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")
+        val REQUEST_HEADER_NAME = HEADER_NAME
         val FORBIDDEN_RESPONSE_HEADERS = setOf("set-cookie", "set-cookie2", "proxy-authenticate")
+        val FORBIDDEN_REQUEST_HEADERS = setOf(
+            "connection", "content-length", "host", "proxy-authorization", "proxy-connection", "te", "trailer",
+            "transfer-encoding", "upgrade",
+        )
         val MIME_TYPE = Regex("^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+*\\-]+$")
         const val MAX_KEY_CHARS = 128
         const val MAX_TOAST_CHARS = 200
@@ -858,14 +1149,23 @@ class RuntimeRpcDispatcher(
         const val DEFAULT_LOCATION_TIMEOUT_MS = 10_000L
         const val MAX_LOCATION_TIMEOUT_MS = 30_000L
         const val MAX_NETWORK_URL_CHARS = 2_048
-        const val MAX_NETWORK_RESPONSE_BYTES = 1_024 * 1_024
+        const val MAX_NETWORK_RESPONSE_BYTES = 64 * 1_024 * 1_024
+        const val MIN_NETWORK_RESPONSE_BYTES = 1_024
+        const val MAX_NETWORK_REQUEST_BYTES = 1_024 * 1_024
+        const val MAX_NETWORK_REQUEST_HEADERS = 32
         const val MAX_NETWORK_RESPONSE_HEADERS = 64
         const val MAX_NETWORK_HEADER_VALUE_CHARS = 4_096
+        const val MIN_NETWORK_TIMEOUT_MS = 1_000L
+        const val MAX_NETWORK_TIMEOUT_MS = 600_000L
         const val MAX_NOTIFICATION_ID_CHARS = 64
         const val MAX_NOTIFICATION_TITLE_CHARS = 64
         const val MAX_NOTIFICATION_BODY_CHARS = 256
         const val MAX_TASK_ID_CHARS = 128
         const val MAX_TASK_KEY_CHARS = 64
+        const val MAX_TIMER_KEY_CHARS = 128
+        const val MAX_SESSION_ID_CHARS = 128
+        const val MAX_WATCH_ID_CHARS = 128
+        const val MAX_ALARM_ID_CHARS = 128
         const val MAX_BACKGROUND_RESULT_BYTES = 256 * 1024
         const val MAX_ERROR_MESSAGE_CHARS = 256
         const val MIN_PERIODIC_INTERVAL_MINUTES = 15L

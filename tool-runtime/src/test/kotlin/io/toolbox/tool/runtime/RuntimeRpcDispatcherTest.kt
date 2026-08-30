@@ -17,7 +17,7 @@ class RuntimeRpcDispatcherTest {
         toolId = "io.toolbox.runtime.test",
         versionCode = 7,
         generation = "io.toolbox.runtime.test:7",
-        hostVersion = "0.2.0",
+        hostVersion = "0.3.0",
         nonce = "nonce-with-enough-entropy-for-test",
         exactOrigin = "https://runtime-test.toolbox.invalid/",
         declaredCapabilities = setOf("clipboard.write"),
@@ -69,7 +69,7 @@ class RuntimeRpcDispatcherTest {
         ) as RuntimeRpcResponse.Success
         val result = (response.result as RpcValue.ObjectValue).value
         assertEquals("1.0", (result.getValue("apiVersion") as RpcValue.StringValue).value)
-        assertEquals("0.2.0", (result.getValue("hostVersion") as RpcValue.StringValue).value)
+        assertEquals("0.3.0", (result.getValue("hostVersion") as RpcValue.StringValue).value)
         assertEquals(identity.generation, (result.getValue("generation") as RpcValue.StringValue).value)
     }
 
@@ -95,13 +95,52 @@ class RuntimeRpcDispatcherTest {
     fun m2MethodsUseTypedNativeHandlersAndContractValues() = runTest {
         val recorder = M2Recorder()
         val dispatcher = RuntimeRpcDispatcher(
-            identity.copy(declaredCapabilities = setOf("network", "notifications", "background.tasks")),
+            identity.copy(
+                declaredCapabilities = setOf(
+                    "network",
+                    "notifications",
+                    "background.tasks",
+                    "background.runtime",
+                    "alarms",
+                ),
+            ),
             MutablePolicy(),
             RuntimeM1Handlers(),
             recorder.handlers(),
         )
         val inbound = RuntimeInboundContext(identity.exactOrigin, true, 1)
 
+        val networkResponse = dispatcher.dispatch(
+            request(
+                method = "network.request",
+                params = RpcValue.ObjectValue(
+                    mapOf(
+                        "url" to RpcValue.StringValue("https://api.example.invalid/value"),
+                        "method" to RpcValue.StringValue("POST"),
+                        "headers" to RpcValue.ObjectValue(
+                            mapOf("Authorization" to RpcValue.StringValue("Bearer test-token")),
+                        ),
+                        "body" to RpcValue.ObjectValue(
+                            mapOf("symbol" to RpcValue.StringValue("TEST")),
+                        ),
+                        "timeoutMs" to RpcValue.Number(120_000.0),
+                        "maxResponseBytes" to RpcValue.Number(1_048_576.0),
+                    ),
+                ),
+            ),
+            inbound,
+        )
+        assertTrue(networkResponse.toString(), networkResponse is RuntimeRpcResponse.Success)
+        val network = networkResponse as RuntimeRpcResponse.Success
+        assertEquals(RuntimeNetworkMethod.POST, recorder.networkRequest?.method)
+        assertEquals("Bearer test-token", recorder.networkRequest?.headers?.get("Authorization"))
+        assertEquals("{\"symbol\":\"TEST\"}", recorder.networkRequest?.body?.toString(Charsets.UTF_8))
+        assertEquals(true, recorder.networkRequest?.bodyIsJson)
+        assertEquals(120_000L, recorder.networkRequest?.timeoutMillis)
+        assertEquals(1_048_576, recorder.networkRequest?.maxResponseBytes)
+        assertEquals(201.0, ((network.result as RpcValue.ObjectValue).value.getValue("status") as RpcValue.Number).value, 0.0)
+
+        recorder.networkRequest = null
         assertFailure(
             RuntimeRpcErrorCode.INVALID_REQUEST,
             dispatcher.dispatch(
@@ -110,7 +149,9 @@ class RuntimeRpcDispatcherTest {
                     params = RpcValue.ObjectValue(
                         mapOf(
                             "url" to RpcValue.StringValue("https://api.example.invalid/value"),
-                            "method" to RpcValue.StringValue("POST"),
+                            "headers" to RpcValue.ObjectValue(
+                                mapOf("Host" to RpcValue.StringValue("other.example.invalid")),
+                            ),
                         ),
                     ),
                 ),
@@ -118,21 +159,6 @@ class RuntimeRpcDispatcherTest {
             ),
         )
         assertEquals(null, recorder.networkRequest)
-
-        val network = dispatcher.dispatch(
-            request(
-                method = "network.request",
-                params = RpcValue.ObjectValue(
-                    mapOf(
-                        "url" to RpcValue.StringValue("https://api.example.invalid/value"),
-                        "method" to RpcValue.StringValue("GET"),
-                    ),
-                ),
-            ),
-            inbound,
-        ) as RuntimeRpcResponse.Success
-        assertEquals(RuntimeNetworkMethod.GET, recorder.networkRequest?.method)
-        assertEquals(201.0, ((network.result as RpcValue.ObjectValue).value.getValue("status") as RpcValue.Number).value, 0.0)
 
         val notification = dispatcher.dispatch(
             request(
@@ -149,6 +175,24 @@ class RuntimeRpcDispatcherTest {
         )
         assertTrue(notification is RuntimeRpcResponse.Success)
         assertEquals("sync-ready", recorder.postedNotificationId)
+
+        val focus = dispatcher.dispatch(
+            request(
+                method = "notifications.focus.start",
+                params = RpcValue.ObjectValue(
+                    mapOf(
+                        "id" to RpcValue.StringValue("sync-focus"),
+                        "title" to RpcValue.StringValue("Running"),
+                        "body" to RpcValue.StringValue("Standard notification fallback"),
+                    ),
+                ),
+            ),
+            inbound,
+        ) as RuntimeRpcResponse.Success
+        assertEquals(
+            "STANDARD",
+            ((focus.result as RpcValue.ObjectValue).value.getValue("mode") as RpcValue.StringValue).value,
+        )
 
         val notificationCancelled = dispatcher.dispatch(
             request(
@@ -263,6 +307,30 @@ class RuntimeRpcDispatcherTest {
         ) as RuntimeRpcResponse.Success
         assertEquals(1, (listed.result as RpcValue.ArrayValue).value.size)
 
+        val sessions = dispatcher.dispatch(
+            request(method = "background.listSessions", params = RpcValue.ObjectValue(emptyMap())),
+            inbound,
+        ) as RuntimeRpcResponse.Success
+        val session = ((sessions.result as RpcValue.ArrayValue).value.single() as RpcValue.ObjectValue).value
+        assertEquals("runtime-session", (session.getValue("sessionId") as RpcValue.StringValue).value)
+        assertTrue("taskId" !in session)
+
+        val alarm = dispatcher.dispatch(
+            request(
+                method = "alarms.schedule",
+                params = RpcValue.ObjectValue(
+                    mapOf(
+                        "id" to RpcValue.StringValue("market-open"),
+                        "triggerAt" to RpcValue.Number(1_900_000_000_000.0),
+                    ),
+                ),
+            ),
+            inbound,
+        ) as RuntimeRpcResponse.Success
+        val alarmSummary = (alarm.result as RpcValue.ObjectValue).value
+        assertEquals("market-open", (alarmSummary.getValue("id") as RpcValue.StringValue).value)
+        assertEquals(setOf("id", "triggerAt", "scheduledAt"), alarmSummary.keys)
+
         val result = dispatcher.dispatch(
             request(
                 method = "background.getResult",
@@ -303,10 +371,6 @@ class RuntimeRpcDispatcherTest {
                 ),
             ),
         )
-        assertFailure(
-            RuntimeRpcErrorCode.USER_GESTURE_REQUIRED,
-            dispatcher.dispatch(notification, RuntimeInboundContext(identity.exactOrigin, true, null)),
-        )
         policy.systemAvailable = false
         assertFailure(
             RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED,
@@ -345,6 +409,8 @@ class RuntimeRpcDispatcherTest {
         var consumed = false
         var consumeLimit: Int? = null
         var preciseRequested: Boolean? = null
+        var watchOptions: RuntimeLocationWatchOptions? = null
+        var clearedWatchId: String? = null
         val files = object : RuntimeFilesHandler {
             override suspend fun open(mimeTypes: List<String>): RuntimeFileToken? = null
 
@@ -379,6 +445,17 @@ class RuntimeRpcDispatcherTest {
                 location = RuntimeLocationHandler { precise, _ ->
                     preciseRequested = precise
                     RuntimeLocationResult(31.2, 121.5, 12.0, 1_700_000_000_000)
+                },
+                locationWatch = object : RuntimeLocationWatchHandler {
+                    override suspend fun watch(options: RuntimeLocationWatchOptions): String {
+                        watchOptions = options
+                        return "watch-1"
+                    }
+
+                    override suspend fun clearWatch(watchId: String): Boolean {
+                        clearedWatchId = watchId
+                        return true
+                    }
                 },
             ),
             maxResponseBytes = 4_096,
@@ -427,6 +504,36 @@ class RuntimeRpcDispatcherTest {
         assertTrue(location is RuntimeRpcResponse.Success)
         assertEquals(true, preciseRequested)
         assertEquals(setOf("android.permission.ACCESS_COARSE_LOCATION"), policy.checkedSystemPermissions)
+
+        val watch = dispatcher.dispatch(
+            request(
+                method = "location.watch",
+                params = RpcValue.ObjectValue(
+                    mapOf(
+                        "accuracy" to RpcValue.StringValue("precise"),
+                        "intervalMs" to RpcValue.Number(2_500.0),
+                        "minDistanceMeters" to RpcValue.Number(3.5),
+                        "allowBackground" to RpcValue.Bool(true),
+                    ),
+                ),
+            ),
+            RuntimeInboundContext(identity.exactOrigin, true, 1),
+        ) as RuntimeRpcResponse.Success
+        assertEquals("watch-1", (watch.result as RpcValue.StringValue).value)
+        assertEquals(true, watchOptions?.precise)
+        assertEquals(2_500L, watchOptions?.intervalMillis)
+        assertEquals(3.5f, watchOptions?.minDistanceMeters)
+        assertEquals(true, watchOptions?.allowBackground)
+
+        val clearWatch = dispatcher.dispatch(
+            request(
+                method = "location.clearWatch",
+                params = RpcValue.ObjectValue(mapOf("watchId" to RpcValue.StringValue("watch-1"))),
+            ),
+            RuntimeInboundContext(identity.exactOrigin, true, 1),
+        )
+        assertTrue(clearWatch is RuntimeRpcResponse.Success)
+        assertEquals("watch-1", clearedWatchId)
 
         val unavailableLocation = RuntimeRpcDispatcher(
             identity.copy(declaredCapabilities = setOf("location")),
@@ -530,6 +637,13 @@ class RuntimeRpcDispatcherTest {
                 override suspend fun cancel(notificationId: String) {
                     cancelledNotificationId = notificationId
                 }
+
+                override suspend fun focus(
+                    notificationId: String,
+                    title: String,
+                    body: String,
+                    progress: Int?,
+                ) = RuntimeFocusNotificationResult(enhancementRequested = false, protocolVersion = 0)
             },
             background = object : RuntimeBackgroundTaskHandler {
                 override suspend fun enqueue(spec: RuntimeBackgroundTaskSpec): String {
@@ -566,6 +680,42 @@ class RuntimeRpcDispatcherTest {
                 override suspend fun cancel(taskId: String): Boolean {
                     cancelledTaskId = taskId
                     return true
+                }
+            },
+            continuousBackground = object : RuntimeContinuousBackgroundHandler {
+                private val session = RuntimeBackgroundSessionSummary(
+                    sessionId = "runtime-session",
+                    startedAt = 1_700_000_000_000,
+                    restoreAfterProcessDeath = true,
+                    restoreAfterReboot = false,
+                )
+
+                override suspend fun start(options: RuntimeBackgroundStartOptions) = session
+
+                override suspend fun stop(sessionId: String) = sessionId == session.sessionId
+
+                override suspend fun status(sessionId: String) = session.takeIf { sessionId == session.sessionId }
+
+                override suspend fun list() = listOf(session)
+
+                override suspend fun setTimer(key: String, intervalMillis: Long) = Unit
+
+                override suspend fun cancelTimer(key: String) = true
+            },
+            alarms = object : RuntimeAlarmHandler {
+                private var scheduled: RuntimeAlarmSummary? = null
+
+                override suspend fun schedule(alarm: RuntimeAlarmSummary): RuntimeAlarmSummary {
+                    scheduled = alarm
+                    return alarm
+                }
+
+                override suspend fun list(): List<RuntimeAlarmSummary> = listOfNotNull(scheduled)
+
+                override suspend fun cancel(alarmId: String): Boolean {
+                    val matches = scheduled?.alarmId == alarmId
+                    if (matches) scheduled = null
+                    return matches
                 }
             },
         )

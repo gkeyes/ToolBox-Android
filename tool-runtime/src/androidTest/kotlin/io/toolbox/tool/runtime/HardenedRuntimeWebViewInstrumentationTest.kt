@@ -162,6 +162,25 @@ class HardenedRuntimeWebViewInstrumentationTest {
         assertEquals("true", evaluateJavaScript(webView, "window.__toolBoxPresent === true"))
         assertEquals(quote("object"), evaluateJavaScript(webView, "typeof window.ToolBox"))
         assertTrue(
+            "The main frame did not finish the ToolBox ready handshake",
+            awaitJavaScriptValue(webView, "window.__toolBoxReadyState", quote("ready")),
+        )
+        assertTrue(
+            "The iframe ready request did not exercise the rejected source boundary",
+            awaitJavaScriptValue(webView, "window.__iframeReadyState", quote("rejected")),
+        )
+        assertTrue(
+            HardenedRuntimeWebView.emitEvent(
+                webView,
+                "background.timer",
+                RpcValue.ObjectValue(mapOf("key" to RpcValue.StringValue("native-event"))),
+            ),
+        )
+        assertTrue(
+            "A rejected iframe request must not capture native runtime events",
+            awaitJavaScriptValue(webView, "window.__nativeEventKey", quote("native-event")),
+        )
+        assertTrue(
             "The page's direct remote fetch was not rejected by the combined CSP/offline boundary",
             awaitJavaScriptValue(webView, "window.__remoteFetchState", quote("blocked")),
         )
@@ -769,6 +788,16 @@ class HardenedRuntimeWebViewInstrumentationTest {
                 window.__requestFileSystemState = "pending";
                 window.__resolveFileSystemState = "pending";
                 window.__serviceWorkerState = "pending";
+                window.__toolBoxReadyState = "pending";
+                window.__iframeReadyState = "pending";
+                window.__nativeEventKey = "pending";
+                ToolBox.background.onTimer(event => { window.__nativeEventKey = event.key; });
+                ToolBox.ready().then(() => {
+                  window.__toolBoxReadyState = "ready";
+                  const frame = document.createElement("iframe");
+                  frame.src = "child.html";
+                  document.documentElement.appendChild(frame);
+                }).catch(() => { window.__toolBoxReadyState = "failed"; });
                 fetch("https://example.com/toolbox-runtime-must-not-fetch")
                   .then(() => { window.__remoteFetchState = "unexpected-success"; })
                   .catch(() => { window.__remoteFetchState = "blocked"; });
@@ -809,6 +838,16 @@ class HardenedRuntimeWebViewInstrumentationTest {
                 }
             """.trimIndent(),
         )
+        writeText(
+            bundleRoot.resolve("child.html"),
+            """
+                <!doctype html><html><head><meta charset="utf-8"></head><body><script>
+                ToolBox.ready()
+                  .then(() => { parent.__iframeReadyState = "unexpected-success"; })
+                  .catch(() => { parent.__iframeReadyState = "rejected"; });
+                </script></body></html>
+            """.trimIndent(),
+        )
         writeText(bundleRoot.resolve("sw.js"), "self.addEventListener('fetch', () => {});")
         writeText(
             bundleRoot.resolve("hang.html"),
@@ -835,6 +874,7 @@ class HardenedRuntimeWebViewInstrumentationTest {
             id = TOOL_ID,
             name = "Runtime Instrumentation",
             versionCode = VERSION_CODE,
+            minHostVersion = "0.3.0",
             entry = entry,
             securityProfile = SecurityProfile.STRICT,
             permissions = emptySet(),

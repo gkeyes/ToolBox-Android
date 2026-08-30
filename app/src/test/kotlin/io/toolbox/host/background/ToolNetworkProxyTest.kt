@@ -8,7 +8,9 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ToolNetworkProxyTest {
@@ -72,6 +74,64 @@ class ToolNetworkProxyTest {
                 allowedHosts = setOf("api.example.com"),
             ),
         )
+    }
+
+    @Test
+    fun declaredHttpsPostAllowsCustomPortHeadersAndHttpErrorResponse() = runTest {
+        var captured: Request? = null
+        var capturedTimeout = 0L
+        val transport = ToolNetworkTransport { request, timeout ->
+            captured = request
+            capturedTimeout = timeout
+            response(request, 401, "Unauthorized", "{\"error\":\"expired\"}")
+        }
+        val proxy = ToolNetworkProxy(transport, Dns.SYSTEM, 5)
+
+        val result = proxy.request(
+            url = "https://api.example.com:8443/v1/quote",
+            method = NetworkRequestMethod.POST,
+            headers = mapOf(
+                "Authorization" to "Bearer test-token",
+                "Content-Type" to "application/json",
+            ),
+            body = "{\"symbol\":\"TEST\"}".toByteArray(),
+            bodyIsJson = true,
+            allowedHosts = setOf("api.example.com"),
+            timeoutMillis = 120_000,
+            maxResponseBytes = 4 * 1024 * 1024,
+        )
+
+        assertTrue(result is NetworkExecution.Success)
+        result as NetworkExecution.Success
+        assertEquals(401, result.statusCode)
+        assertEquals("{\"error\":\"expired\"}", result.body)
+        assertEquals(120_000L, capturedTimeout)
+        val capturedRequest = checkNotNull(captured)
+        assertEquals(8443, capturedRequest.url.port)
+        assertEquals("Bearer test-token", capturedRequest.header("Authorization"))
+        assertEquals("POST", capturedRequest.method)
+        assertEquals("{\"symbol\":\"TEST\"}", capturedRequest.body?.let(::readBody))
+    }
+
+    @Test
+    fun legacyHttpGetKeepsTaskRetryClassification() = runTest {
+        val transport = ToolNetworkTransport { request, _ ->
+            response(request, 503, "Unavailable", "retry")
+        }
+        val proxy = ToolNetworkProxy(transport, Dns.SYSTEM, 5)
+
+        assertEquals(
+            NetworkExecution.RetryableFailure("HTTP_503"),
+            proxy.httpGet(
+                url = "https://api.example.com/value",
+                allowedHosts = setOf("api.example.com"),
+            ),
+        )
+    }
+
+    private fun readBody(body: okhttp3.RequestBody): String = Buffer().use { buffer ->
+        body.writeTo(buffer)
+        buffer.readUtf8()
     }
 
     private fun response(

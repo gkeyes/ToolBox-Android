@@ -21,9 +21,11 @@ import io.toolbox.host.background.BackgroundTaskCoordinator
 import io.toolbox.host.background.BackgroundTaskRequest
 import io.toolbox.host.background.EnqueueResult
 import io.toolbox.host.background.NetworkExecution
+import io.toolbox.host.background.NetworkRequestMethod
 import io.toolbox.host.background.RepositoryBackgroundAuthorization
 import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
+import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
 import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.PackageInput
@@ -48,6 +50,7 @@ import io.toolbox.tool.runtime.RuntimeBridgeConfiguration
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeM2Handlers
 import io.toolbox.tool.runtime.RuntimeNetworkHandler
+import io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding
 import io.toolbox.tool.runtime.RuntimeNetworkRequest
 import io.toolbox.tool.runtime.RuntimeNetworkResponse
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
@@ -73,15 +76,28 @@ internal class ProductionHostPackageOperations(
         catalog = repositories.catalog,
         lifecycle = repositories.lifecycle,
         transactions = repositories.installs,
+        hostVersion = BuildConfig.VERSION_NAME,
     )
     private val runtimePreparer = ToolRuntimePreparer(application.filesDir)
     private val cleanup = object : ToolStateCleanup {
+        override suspend fun beforeVersionReplacement(
+            toolId: String,
+            previousVersionCode: Int,
+            nextVersionCode: Int,
+        ) {
+            background.releaseRuntime(toolId)
+        }
+
         override suspend fun afterVersionReplacement(
             toolId: String,
             previousVersionCode: Int,
             nextVersionCode: Int,
         ) {
             clearRuntimeState(toolId, removeShortcut = false)
+        }
+
+        override suspend fun beforeUninstall(toolId: String) {
+            background.releaseRuntime(toolId)
         }
 
         override suspend fun afterUninstall(toolId: String) {
@@ -186,6 +202,7 @@ internal class ProductionHostPackageOperations(
 
     private fun importFailureMessage(failure: PackageOperationFailure): String = when (failure.code.name) {
         "VERSION_NOT_NEWER" -> "此工具已安装相同或更高版本。"
+        "UNSUPPORTED_HOST_VERSION" -> "此工具需要更高版本的 ToolBox。"
         "BUSY" -> "正在处理另一个工具包，请稍后重试。"
         else -> "安装未完成，请重试。"
     }
@@ -223,6 +240,12 @@ internal class ProductionHostBackgroundOperations(
         notifications = notifications,
     )
     private val delegate = BackgroundHostOperations(coordinator)
+    private var runtimeSessions: RuntimeSessionManager? = null
+
+    fun attachRuntimeSessions(sessions: RuntimeSessionManager) {
+        check(runtimeSessions == null)
+        runtimeSessions = sessions
+    }
 
     override fun observeTasks(toolId: String) = delegate.observeTasks(toolId)
 
@@ -230,12 +253,24 @@ internal class ProductionHostBackgroundOperations(
 
     override suspend fun cancel(toolId: String, taskId: String): Boolean = delegate.cancel(toolId, taskId)
 
-    override suspend fun cancelTool(toolId: String) = delegate.cancelTool(toolId)
+    override suspend fun cancelTool(toolId: String) {
+        delegate.cancelTool(toolId)
+        runtimeSessions?.stopTool(toolId)
+    }
 
-    override suspend fun cancelAll(toolIds: Collection<String>) = delegate.cancelAll(toolIds)
+    override suspend fun releaseRuntime(toolId: String) {
+        runtimeSessions?.releaseTool(toolId)
+    }
 
-    override suspend fun onCapabilityDisabled(toolId: String, capability: String) =
+    override suspend fun cancelAll(toolIds: Collection<String>) {
+        delegate.cancelAll(toolIds)
+        runtimeSessions?.stopAll()
+    }
+
+    override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
         delegate.onCapabilityDisabled(toolId, capability)
+        runtimeSessions?.onCapabilityDisabled(toolId, capability)
+    }
 
     override suspend fun reconcile() = coordinator.reconcile()
 
@@ -255,6 +290,39 @@ internal class ProductionHostBackgroundOperations(
             override suspend fun cancel(notificationId: String) {
                 notifications.cancel(runtime.toolId, notificationId)
             }
+
+            override suspend fun update(notificationId: String, title: String, body: String) {
+                when (val result = notifications.postOrUpdate(runtime.toolId, notificationId, title, body)) {
+                    io.toolbox.host.background.NotificationResult.Posted -> Unit
+                    is io.toolbox.host.background.NotificationResult.Rejected -> throw RuntimeHandlerException(
+                        result.errorCode.toRuntimeErrorCode(),
+                        "通知未能更新。",
+                    )
+                }
+            }
+
+            override suspend fun focus(
+                notificationId: String,
+                title: String,
+                body: String,
+                progress: Int?,
+            ): io.toolbox.tool.runtime.RuntimeFocusNotificationResult = when (
+                val result = notifications.postFocus(runtime.toolId, notificationId, title, body, progress)
+            ) {
+                is io.toolbox.host.background.FocusDeliveryResult.Posted ->
+                    io.toolbox.tool.runtime.RuntimeFocusNotificationResult(
+                        result.enhancementRequested,
+                        result.protocolVersion,
+                    )
+                is io.toolbox.host.background.FocusDeliveryResult.Rejected -> throw RuntimeHandlerException(
+                    result.errorCode.toRuntimeErrorCode(),
+                    "焦点通知未能发送。",
+                )
+            }
+
+            override suspend fun endFocus(notificationId: String) {
+                notifications.cancel(runtime.toolId, notificationId)
+            }
         },
         background = RuntimeBackgroundTaskAdapter(runtime, coordinator),
     )
@@ -263,26 +331,51 @@ internal class ProductionHostBackgroundOperations(
         runtime: PreparedToolRuntime,
         request: RuntimeNetworkRequest,
     ): RuntimeNetworkResponse {
-        val policy = runtime.installedManifest.network ?: throw RuntimeHandlerException(
-            RuntimeRpcErrorCode.NETWORK_BLOCKED,
-            "This tool does not declare network access",
+        val policy = runtime.installedManifest.network
+            ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "工具未声明网络域名")
+        val rpcRawBudget = ((runtime.maxBridgePayloadBytes - 1_024).coerceAtLeast(1_024) / 4) * 3
+        val requestedTimeout = request.timeoutMillis ?: 30_000L
+        val effectiveTimeout = minOf(requestedTimeout, policy.timeoutMs.toLong())
+        val requestedResponseLimit = request.maxResponseBytes ?: minOf(4 * 1_024 * 1_024, rpcRawBudget)
+        val effectiveResponseLimit = minOf(
+            requestedResponseLimit,
+            policy.maxResponseBytes,
+            rpcRawBudget,
         )
         return when (
-            val result = network.httpGet(
+            val result = network.request(
                 url = request.url,
-                allowedHosts = policy.allowDomains,
+                method = when (request.method) {
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.GET -> NetworkRequestMethod.GET
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.POST -> NetworkRequestMethod.POST
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.PUT -> NetworkRequestMethod.PUT
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.PATCH -> NetworkRequestMethod.PATCH
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.DELETE -> NetworkRequestMethod.DELETE
+                    io.toolbox.tool.runtime.RuntimeNetworkMethod.HEAD -> NetworkRequestMethod.HEAD
+                },
+                headers = request.headers,
+                body = request.body,
+                bodyIsJson = request.bodyIsJson,
+                allowedHosts = policy.allowDomains.toSet(),
                 allowRedirects = policy.allowRedirects,
-                timeoutMillis = policy.timeoutMs.toLong(),
-                maxResponseBytes = policy.maxResponseBytes,
+                timeoutMillis = effectiveTimeout,
+                maxResponseBytes = effectiveResponseLimit,
             )
         ) {
             is NetworkExecution.Success -> RuntimeNetworkResponse(
                 status = result.statusCode,
                 headers = buildMap {
-                    result.contentType?.let { put("content-type", it) }
+                    putAll(result.headers)
+                    if (keys.none { it.equals("content-type", ignoreCase = true) }) {
+                        result.contentType?.let { put("content-type", it) }
+                    }
                     put("x-toolbox-final-url", result.finalUrl)
                 },
                 body = result.body,
+                bodyEncoding = when (result.bodyEncoding) {
+                    io.toolbox.host.background.NetworkBodyEncoding.TEXT -> RuntimeNetworkBodyEncoding.TEXT
+                    io.toolbox.host.background.NetworkBodyEncoding.BASE64 -> RuntimeNetworkBodyEncoding.BASE64
+                },
             )
 
             is NetworkExecution.RetryableFailure -> throw RuntimeHandlerException(

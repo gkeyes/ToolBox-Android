@@ -54,7 +54,7 @@ internal fun DeveloperHelpScreen(
                         weight = FontWeight.SemiBold,
                     )
                     AppText(
-                        "这是离线的 .tbx 开发参考。小工具是 HTML、CSS 和 JavaScript；ToolBox 负责导入、权限、原生能力和受控后台任务。",
+                        "这是离线的 .tbx 开发参考。小工具是 HTML、CSS 和 JavaScript；ToolBox 负责导入、权限、原生能力、持续运行环境和旧版后台任务。",
                         textStyle = ToolBoxThemeTokens.textStyles.metadata,
                         color = ToolBoxThemeTokens.colors.textSecondary,
                     )
@@ -85,7 +85,7 @@ internal fun DeveloperHelpScreen(
             item("manifest") {
                 HelpSection(
                     title = "2. manifest.json",
-                    body = "声明工具身份、入口、版本、所需能力和网络域名。只有声明过的能力才会出现在这个工具的权限页。",
+                    body = "声明工具身份、入口、版本和所需能力。只有声明过的能力才会出现在这个工具的权限页；使用 0.3 新能力时，minHostVersion 至少为 0.3.0。",
                     code = manifestExample,
                 )
             }
@@ -108,7 +108,7 @@ internal fun DeveloperHelpScreen(
                 HelpContractSection(
                     title = "4. JavaScript API",
                     rows = apiPhaseRows(),
-                    footer = "网页通过 window.ToolBox 调用异步 API。files.open 与 camera.capture 返回的 token 只能用 files.read 读取一次；读取上限由当前会话消息配额决定，不会暴露路径或永久文件权限。调用失败会返回稳定错误码。",
+                    footer = "网页通过 window.ToolBox 调用异步 API。宿主事件在 ready 完成后投递；即使监听器稍后注册，有限数量的早到事件也会排队。files.open 与 camera.capture 返回的 token 只能用 files.read 读取一次；读取上限由当前会话消息配额决定。",
                 )
             }
             item("api-example") {
@@ -153,8 +153,14 @@ internal fun DeveloperHelpScreen(
             }
             item("background") {
                 HelpSection(
-                    title = "6. 后台任务限制",
-                    body = "后台由宿主原生 WorkManager 执行，不会在后台保留 WebView，也不会执行任意网页 JavaScript。首版后台操作只有受 allowDomains 约束的 HTTPS httpGet 和通知 notify。\n\n每个工具最多 8 个活动任务、4 个周期任务；周期最短 15 分钟。HTTP 仅允许 2xx 成功；4xx 不重试，网络/超时/5xx 最多退避重试三次。关闭后台总开关、关闭后台权限、更新或删除工具都会取消任务。",
+                    title = "6. 持续运行与后台任务",
+                    body = "0.3 的 background.start 会把当前运行页面提升为持续环境。离开页面后 WebView 与桥接会从界面分离但不销毁，再次打开会挂回同一环境；重复 start 返回同一 sessionId。页面可用 setTimer 接收 background.timer，并在进程或重启恢复后通过 background.restore 自行恢复状态。连续运行每 12 小时会提醒一次，Android 仍可能回收进程，因此这是可恢复的尽力运行，不是永久存活保证。\n\nbackground.listSessions 只列持续环境；旧 background.list 仍列 WorkManager 任务。旧任务继续保持每工具 8 个活动任务、4 个周期任务和最短 15 分钟周期，三个现有范例无需修改。",
+                )
+            }
+            item("network") {
+                HelpSection(
+                    title = "公网网络",
+                    body = "network.request 支持 manifest.network.allowDomains 中精确声明的公网 HTTPS 主机与合法 HTTPS 端口，可使用 GET、POST、PUT、PATCH、DELETE、HEAD、自定义常用 Header、文本/JSON/Uint8Array 请求体、超时和响应上限。allowDomains 必须包含 1–32 个精确域名或 *.example.com 形式的子域通配项。\n\n宿主始终阻止未声明域名、回环、链路本地、私网、保留地址和 IP 字面量，并在每次 DNS 与重定向时重新检查。Host、Content-Length、Connection、Transfer-Encoding、Upgrade 与 Proxy 系列协议 Header 不能由页面控制。Authorization、Cookie、X-API-Key、Accept、Content-Type 等普通 Header 可以使用。响应实际大小还受当前 WebMessage 配额限制。",
                 )
             }
             item("errors") {
@@ -326,11 +332,14 @@ private val capabilityGroups = listOf(
     ),
     CapabilityGroup(
         title = "网络与后台",
-        description = "需要在 manifest 中声明网络域名，并受后台总开关和工具权限共同控制。",
+        description = "公网 HTTPS、通知、持续页面、后台位置、精确闹钟与兼容的旧后台任务。",
         ids = setOf(
             ToolBoxCapabilityId.NETWORK,
             ToolBoxCapabilityId.NOTIFICATIONS,
             ToolBoxCapabilityId.BACKGROUND_TASKS,
+            ToolBoxCapabilityId.BACKGROUND_RUNTIME,
+            ToolBoxCapabilityId.LOCATION_BACKGROUND,
+            ToolBoxCapabilityId.ALARMS,
         ),
     ),
 )
@@ -344,7 +353,7 @@ private val manifestExample = """
       "versionCode": 1,
       "entry": "index.html",
       "apiVersion": "1.0",
-      "minHostVersion": "0.2.0",
+      "minHostVersion": "0.3.0",
       "permissions": [
         { "name": "storage", "reason": "保存工具数据" }
       ],
@@ -360,7 +369,7 @@ private val errorGuidance = listOf(
     HelpRow("SYSTEM_PERMISSION_DENIED", "允许宿主的系统授权，或前往系统设置后重试。"),
     HelpRow("USER_GESTURE_REQUIRED", "让用户先点击工具内的按钮，再调用复制、触觉或系统交互。"),
     HelpRow("BUSY / DUPLICATE_TASK", "等待当前操作完成；后台任务 key 在同一工具内必须唯一。"),
-    HelpRow("NETWORK_BLOCKED", "仅使用 HTTPS，并把目标域名写入 manifest.network.allowDomains。"),
+    HelpRow("NETWORK_BLOCKED", "确认目标为公网 HTTPS；私网、回环、IP 字面量、危险重定向和协议级 Header 会被阻止。"),
     HelpRow("RATE_LIMITED / QUOTA_EXCEEDED", "降低调用频率或缩小单工具存储、消息和结果内容。"),
     HelpRow("CANCELLED / SESSION_ENDED", "工具被关闭、切换或权限关闭后，停止等待这次请求。"),
     HelpRow("INVALID_REQUEST / NOT_FOUND", "检查方法参数和任务 ID；不要使用未在 API 1.0 中声明的方法。"),

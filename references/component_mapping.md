@@ -28,7 +28,8 @@ implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 | 工具详情 | grouped surface、menu、dialog | `ToolDetailSection` | 打开、权限、后台任务、删除必须真实。 |
 | 工具权限 | preference switch | `ToolBoxSwitchSettingRow` | 整行与开关可点；映射实际 manifest + handler。 |
 | 后台任务 | grouped rows、status、dialog | `TaskRow` | 显示真实任务、结果和取消，不展示审计/恢复。 |
-| 设置 | arrow/switch preference | `SettingsSection` | 主题、后台总开关、Developer Help。 |
+| 设置 | arrow preference | `SettingsSection` | 主题、后台保障、工具权限、Developer Help。 |
+| 后台保障 | preference switch、grouped rows | `BackgroundSafeguardsScreen` | 总开关、持续会话停止按钮和真实系统设置入口。 |
 | Developer Help | top bar、grouped list、text | `DeveloperHelpScreen` | 离线内容来自 API v1 和三个范例。 |
 | 运行容器 | `SmallTopAppBar`、menu、snackbar | `RuntimeToolBar`、`MiniAppWebView` | 顶部约 48dp；无底栏/安全条，WebView 填满其余空间。 |
 

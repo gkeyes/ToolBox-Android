@@ -16,7 +16,6 @@ import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingChoice
 import io.toolbox.core.ui.component.ToolBoxSettingRow
-import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.SectionHeader
@@ -26,6 +25,7 @@ import io.toolbox.host.ui.SurfaceCard
 internal fun SettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
+    onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
 ) {
@@ -34,7 +34,7 @@ internal fun SettingsScreen(
         state = state,
         contentPadding = contentPadding,
         onThemeSelected = { viewModel.selectTheme(ThemeMode.valueOf(it)) },
-        onBackgroundEnabled = viewModel::setBackgroundEnabled,
+        onBackgroundSafeguards = onBackgroundSafeguards,
         onToolPermissions = onToolPermissions,
         onDeveloperHelp = onDeveloperHelp,
     )
@@ -45,7 +45,7 @@ internal fun SettingsContent(
     state: SettingsUiState,
     contentPadding: PaddingValues,
     onThemeSelected: (String) -> Unit,
-    onBackgroundEnabled: (Boolean) -> Unit,
+    onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
 ) {
@@ -77,12 +77,11 @@ internal fun SettingsContent(
         item("before-operation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("operation") {
             ToolBoxGroupedSurface {
-                ToolBoxSwitchSettingRow(
-                    title = "后台运行",
-                    summary = "关闭会取消全部后台任务和通知",
-                    checked = state.settings.backgroundEnabled,
-                    onCheckedChange = onBackgroundEnabled,
+                ToolBoxSettingRow(
+                    title = "后台保障",
+                    summary = if (state.settings.backgroundEnabled) "已开启 · 管理会话与系统权限" else "已关闭",
                     icon = ToolBoxIconKey.Clock,
+                    onClick = onBackgroundSafeguards,
                     enabled = state.loaded,
                 )
                 ToolBoxGroupDivider()

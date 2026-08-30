@@ -22,6 +22,7 @@ import io.toolbox.tool.packagekit.PackageRejectionCode
 import io.toolbox.tool.packagekit.PreparationResult
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.SecurityProfile
+import io.toolbox.tool.packagekit.HostVersionPolicy
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.FileAlreadyExistsException
@@ -43,6 +44,7 @@ internal class DefaultToolPackageManager(
     private val transactions: InstallTransactionRepository,
     limits: PackageLimits,
     private val supportedCapabilities: Set<String>,
+    private val hostVersion: String,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ToolPackageManager {
@@ -90,6 +92,17 @@ internal class DefaultToolPackageManager(
                     failure(PackageOperationFailureCode.STORAGE_FAILURE, "Tool deletion could not be prepared safely"),
                 )
             }
+            try {
+                cleanup.beforeUninstall(toolId)
+            } catch (cancelled: CancellationException) {
+                runCatching { runInterruptible { storage.completeUninstall(toolId) } }
+                throw cancelled
+            } catch (_: Exception) {
+                runCatching { runInterruptible { storage.completeUninstall(toolId) } }
+                return@withContext PackageUninstallResult.Failed(
+                    failure(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for deletion"),
+                )
+            }
             when (val result = lifecycle.deleteToolCatalog(toolId)) {
                 is DataResult.Failure -> {
                     runCatching { runInterruptible { storage.completeUninstall(toolId) } }
@@ -112,6 +125,13 @@ internal class DefaultToolPackageManager(
         cleanup: ToolStateCleanup,
     ): PackageInstallResult {
         val manifest = prepared.manifest
+        if (!HostVersionPolicy.supports(hostVersion, manifest.minHostVersion)) {
+            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+            return failed(
+                PackageOperationFailureCode.UNSUPPORTED_HOST_VERSION,
+                "Package requires ToolBox ${manifest.minHostVersion} or newer",
+            )
+        }
         manifest.permissions.firstOrNull { it.required && it.name !in supportedCapabilities }?.let { unsupported ->
             discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
             return failed(
@@ -186,6 +206,21 @@ internal class DefaultToolPackageManager(
         } catch (_: Exception) {
             failAndClean(transaction, null, "PUBLISH_FAILED")
             return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be published atomically")
+        }
+        if (previous != null) {
+            try {
+                cleanup.beforeVersionReplacement(
+                    manifest.id,
+                    previous.currentVersion.versionCode,
+                    manifest.versionCode,
+                )
+            } catch (cancelled: CancellationException) {
+                failAndClean(transaction, null, "CANCELLED")
+                throw cancelled
+            } catch (_: Exception) {
+                failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
+                return failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
+            }
         }
         when (val marking = transactions.markCommitting(transactionId, now())) {
             is DataResult.Failure -> {

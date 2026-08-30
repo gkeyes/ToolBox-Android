@@ -124,6 +124,7 @@ private fun String.defaultEnabled() = this in setOf(
 private fun String.androidPermissions(): List<String> = when (this) {
     "notifications" -> if (android.os.Build.VERSION.SDK_INT >= 33) listOf("android.permission.POST_NOTIFICATIONS") else emptyList()
     "location" -> listOf("android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION")
+    "location.background" -> listOf("android.permission.ACCESS_BACKGROUND_LOCATION")
     else -> emptyList()
 }
 
@@ -143,5 +144,8 @@ private fun String.capabilityTitle(): String = when (this) {
     "camera" -> "系统相机"
     "location" -> "位置"
     "background.tasks" -> "后台任务"
+    "background.runtime" -> "持续运行环境"
+    "location.background" -> "后台位置"
+    "alarms" -> "精确闹钟"
     else -> this
 }

@@ -25,7 +25,11 @@ interface ToolPackageManager {
 }
 
 interface ToolStateCleanup {
+    suspend fun beforeVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) = Unit
+
     suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int)
+
+    suspend fun beforeUninstall(toolId: String) = Unit
 
     suspend fun afterUninstall(toolId: String)
 
@@ -43,6 +47,7 @@ object ToolPackageManagers {
         transactions: InstallTransactionRepository,
         limits: PackageLimits = PackageLimits(),
         supportedCapabilities: Set<String> = SupportedToolCapabilities.All,
+        hostVersion: String = "0.3.0",
     ): ToolPackageManager = DefaultToolPackageManager(
         filesRoot = privateFilesDirectory.toPath(),
         catalog = catalog,
@@ -50,6 +55,7 @@ object ToolPackageManagers {
         transactions = transactions,
         limits = limits,
         supportedCapabilities = supportedCapabilities,
+        hostVersion = hostVersion,
     )
 }
 
@@ -76,6 +82,7 @@ enum class PackageOperationFailureCode {
     BUSY,
     VERSION_NOT_NEWER,
     UNSUPPORTED_REQUIRED_CAPABILITY,
+    UNSUPPORTED_HOST_VERSION,
     DATA_FAILURE,
     STORAGE_FAILURE,
     CLEANUP_FAILURE,
@@ -98,5 +105,8 @@ object SupportedToolCapabilities {
         "camera",
         "location",
         "background.tasks",
+        "background.runtime",
+        "location.background",
+        "alarms",
     )
 }

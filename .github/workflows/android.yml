@@ -40,9 +40,7 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
-      # This script contains the existing verifySecurityInvariants invocation.
-      # Keep it before every candidate build and do not upload an APK from this job.
-      - name: Verify security invariants, build and admitted unit suite
+      - name: Verify protocol, security, compile and admitted unit suite
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
@@ -58,7 +56,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package statically verified v0.2.0 delivery
+    name: Package statically verified v0.3.0 delivery
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -87,9 +85,6 @@ jobs:
       - name: Assemble delivery APK after prerequisite success
         run: ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Package the three bundled examples
-        run: bash scripts/package-examples.sh
-
       - name: Verify bundled example packages are reproducible
         run: |
           first_sums="$RUNNER_TEMP/toolbox-example-sums-first.txt"
@@ -105,6 +100,14 @@ jobs:
             build/examples/background-task-demo.tbx > "$second_sums"
           diff -u "$first_sums" "$second_sums"
 
+      - name: Verify APK embeds the unchanged examples
+        run: |
+          apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
+          unzip -Z1 "$apk_path" > "$RUNNER_TEMP/toolbox-apk-files.txt"
+          grep -Fx 'assets/position-calculator.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+          grep -Fx 'assets/quick-notes.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+          grep -Fx 'assets/background-task-demo.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+
       - name: Assemble checksummed delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
@@ -117,45 +120,34 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.2.0-debug.apk"
-
-          for example_name in position-calculator quick-notes background-task-demo; do
-            matches="$(find "$GITHUB_WORKSPACE/build" -type f -name "${example_name}.tbx" -print)"
-            [[ "$(printf '%s\n' "$matches" | sed '/^$/d' | wc -l | tr -d ' ')" == "1" ]]
-            cp "$matches" "$delivery_dir/${example_name}.tbx"
-          done
+          cp "$apk_path" "$delivery_dir/toolbox-v0.3.0-debug.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.2.0\n'
-            printf 'VERSION_CODE=2\n'
+            printf 'VERSION_NAME=0.3.0\n'
+            printf 'VERSION_CODE=3\n'
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
-            printf 'EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx\n'
+            printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx\n'
+            printf 'DELIVERY_FILES=toolbox-v0.3.0-debug.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.2.0-debug.apk \
-              position-calculator.tbx \
-              quick-notes.tbx \
-              background-task-demo.tbx \
+              toolbox-v0.3.0-debug.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.2.0 delivery
+      - name: Upload verified v0.3.0 delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.2.0-${{ github.sha }}
+          name: toolbox-v0.3.0-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.2.0-debug.apk
-            build/ci-delivery/position-calculator.tbx
-            build/ci-delivery/quick-notes.tbx
-            build/ci-delivery/background-task-demo.tbx
+            build/ci-delivery/toolbox-v0.3.0-debug.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

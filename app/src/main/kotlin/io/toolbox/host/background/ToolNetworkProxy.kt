@@ -10,6 +10,7 @@ import java.net.UnknownHostException
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.Locale
+import java.util.Base64
 import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -18,8 +19,11 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Authenticator
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 internal fun interface ToolNetworkTransport {
     suspend fun execute(request: Request, timeoutMillis: Long): Response
@@ -61,11 +65,32 @@ class ToolNetworkProxy private constructor(
         allowRedirects: Boolean = false,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         maxResponseBytes: Int = MAX_RESULT_BYTES,
+    ): NetworkExecution = request(
+        url = url,
+        method = NetworkRequestMethod.GET,
+        allowedHosts = allowedHosts,
+        allowRedirects = allowRedirects,
+        timeoutMillis = timeoutMillis,
+        maxResponseBytes = maxResponseBytes,
+        acceptHttpErrors = false,
+    )
+
+    suspend fun request(
+        url: String,
+        method: NetworkRequestMethod,
+        headers: Map<String, String> = emptyMap(),
+        body: ByteArray? = null,
+        bodyIsJson: Boolean = false,
+        allowedHosts: Set<String>,
+        allowRedirects: Boolean = true,
+        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
+        acceptHttpErrors: Boolean = true,
     ): NetworkExecution {
         if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
             return NetworkExecution.TerminalFailure("INVALID_TIMEOUT")
         }
-        if (maxResponseBytes !in 1..MAX_RESULT_BYTES) {
+        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
             return NetworkExecution.TerminalFailure("INVALID_RESPONSE_LIMIT")
         }
         if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) {
@@ -81,6 +106,9 @@ class ToolNetworkProxy private constructor(
         }
         var current = url.toHttpUrlOrNull()
             ?: return NetworkExecution.TerminalFailure("INVALID_URL")
+        var currentMethod = method
+        var currentBody = body
+        var includeCallerHeaders = true
         var redirects = 0
         while (true) {
             val validation = NetworkPolicy.validateEndpoint(current, normalizedAllowlist)
@@ -88,9 +116,35 @@ class ToolNetworkProxy private constructor(
             val response = try {
                 val request = Request.Builder()
                     .url(current)
-                    .get()
-                    .header("User-Agent", USER_AGENT)
-                    .header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8")
+                    .apply {
+                        if (includeCallerHeaders) {
+                            headers.forEach { (name, value) -> header(name, value) }
+                        }
+                        when (currentMethod) {
+                            NetworkRequestMethod.GET -> get()
+                            NetworkRequestMethod.HEAD -> head()
+                            NetworkRequestMethod.POST -> post(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.PUT -> put(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.PATCH -> patch(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.DELETE -> if (currentBody == null) delete() else delete(
+                                currentBody.toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                        }
+                    }
+                    .apply {
+                        if (!includeCallerHeaders || headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+                            header("User-Agent", USER_AGENT)
+                        }
+                        if (!includeCallerHeaders || headers.keys.none { it.equals("Accept", ignoreCase = true) }) {
+                            header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8, */*;q=0.5")
+                        }
+                    }
                     .build()
                 transport?.execute(request, timeoutMillis)
                     ?: requireNotNull(requestClient).newCall(request).await()
@@ -111,21 +165,31 @@ class ToolNetworkProxy private constructor(
                     if (redirects >= maxRedirects) return NetworkExecution.TerminalFailure("TOO_MANY_REDIRECTS")
                     val location = it.header("Location")
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
-                    current = current.resolve(location)
+                    val redirected = current.resolve(location)
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
+                    includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
+                    if (it.code in setOf(301, 302, 303) && currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)) {
+                        currentMethod = NetworkRequestMethod.GET
+                        currentBody = null
+                    }
+                    current = redirected
                     redirects += 1
                     continue
                 }
-                if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
-                if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
-                if (!isTextResponse(it)) return NetworkExecution.TerminalFailure("UNSUPPORTED_CONTENT_TYPE")
+                if (!acceptHttpErrors) {
+                    if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
+                    if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
+                }
                 val body = it.body.readBounded(maxResponseBytes)
                     ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
+                val text = isTextResponse(it)
                 return NetworkExecution.Success(
                     statusCode = it.code,
                     finalUrl = current.toString(),
                     contentType = it.header("Content-Type")?.substringBefore(';'),
-                    body = body.toString(Charsets.UTF_8),
+                    body = if (text) body.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(body),
+                    bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
+                    headers = it.exposedHeaders(),
                 )
             }
         }
@@ -149,23 +213,50 @@ class ToolNetworkProxy private constructor(
     }
 
     private companion object {
-        const val USER_AGENT = "ToolBox/0.2.0 (Android)"
-        const val DEFAULT_TIMEOUT_MILLIS = 15_000L
+        const val USER_AGENT = "ToolBox/0.3.0 (Android)"
+        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
-        const val MAX_TIMEOUT_MILLIS = 30_000L
+        const val MAX_TIMEOUT_MILLIS = 600_000L
+        const val DEFAULT_RESPONSE_BYTES = 4 * 1_024 * 1_024
+        const val MAX_PROXY_RESPONSE_BYTES = 64 * 1_024 * 1_024
         const val DEFAULT_MAX_REDIRECTS = 5
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }
 
+enum class NetworkRequestMethod { GET, POST, PUT, PATCH, DELETE, HEAD }
+
+enum class NetworkBodyEncoding { TEXT, BASE64 }
+
+private fun requestMediaType(headers: Map<String, String>, bodyIsJson: Boolean) =
+    headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+        ?.value
+        ?.toMediaTypeOrNull()
+        ?: if (bodyIsJson) JSON_MEDIA_TYPE else TEXT_MEDIA_TYPE
+
+private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+private val TEXT_MEDIA_TYPE = "text/plain; charset=utf-8".toMediaType()
+private val HIDDEN_RESPONSE_HEADERS = setOf(
+    "connection",
+    "proxy-authenticate",
+    "set-cookie",
+    "set-cookie2",
+    "transfer-encoding",
+    "upgrade",
+)
+
+private fun sameOrigin(first: HttpUrl, second: HttpUrl): Boolean =
+    first.scheme == second.scheme && first.host == second.host && first.port == second.port
+
 internal object NetworkPolicy {
     fun validateEndpoint(url: HttpUrl, allowedHosts: Set<String>): String? {
         if (!url.isHttps) return "HTTPS_REQUIRED"
-        if (url.port != 443) return "PORT_NOT_ALLOWED"
         if (url.username.isNotEmpty() || url.password.isNotEmpty()) return "URL_CREDENTIALS_FORBIDDEN"
         val host = normalizeHost(url.host) ?: return "INVALID_HOST"
         if (isIpLiteralHost(host)) return "IP_LITERAL_FORBIDDEN"
-        if (allowedHosts.none { allowed -> hostMatches(host, allowed) }) return "NETWORK_HOST_NOT_ALLOWED"
+        if (allowedHosts.none { allowed -> hostMatches(host, allowed) }) {
+            return "NETWORK_HOST_NOT_ALLOWED"
+        }
         return null
     }
 
@@ -178,6 +269,8 @@ sealed interface NetworkExecution {
         val finalUrl: String,
         val contentType: String?,
         val body: String,
+        val bodyEncoding: NetworkBodyEncoding = NetworkBodyEncoding.TEXT,
+        val headers: Map<String, String> = emptyMap(),
     ) : NetworkExecution
 
     data class RetryableFailure(val errorCode: String) : NetworkExecution
@@ -297,6 +390,13 @@ internal fun hostMatches(host: String, allowed: String): Boolean =
 
 private fun isIpLiteralHost(host: String): Boolean =
     host.contains(':') || IPV4_LITERAL.matches(host)
+
+private fun Response.exposedHeaders(): Map<String, String> = headers.names()
+    .asSequence()
+    .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
+    .mapNotNull { name -> headers[name]?.takeIf { it.length <= 4_096 }?.let { name to it } }
+    .take(64)
+    .toMap(linkedMapOf())
 
 private fun Byte.unsigned(): Int = toInt() and 0xff
 

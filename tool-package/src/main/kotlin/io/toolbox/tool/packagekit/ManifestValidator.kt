@@ -8,7 +8,8 @@ internal object ManifestValidator {
     private val allowedPermissions = setOf(
         "storage", "storage.secure", "clipboard.write", "clipboard.read", "share",
         "files.open", "files.save", "network", "device.basic", "haptics", "notifications",
-        "shortcuts", "camera", "location", "background.tasks",
+        "shortcuts", "camera", "location", "background.tasks", "background.runtime",
+        "location.background", "alarms",
     )
 
     fun parse(bytes: ByteArray, limits: PackageLimits): ToolManifest {
@@ -28,6 +29,10 @@ internal object ManifestValidator {
         val apiVersion = requireString(root, "apiVersion", 1, 16, apiPattern)
         val minHostVersion = requireString(root, "minHostVersion", 1, 32, versionPattern)
         val permissions = parsePermissions(root.required("permissions"))
+        val v03Capabilities = setOf("background.runtime", "location.background", "alarms")
+        if (permissions.any { it.name in v03Capabilities } && !versionAtLeast(minHostVersion, 0, 3, 0)) {
+            throw JsonFormatException("0.3 capabilities require minHostVersion 0.3.0")
+        }
         val securityProfile = when (root.required("securityProfile").asString("securityProfile")) {
             "strict" -> SecurityProfile.STRICT
             "compat" -> SecurityProfile.COMPAT
@@ -71,7 +76,7 @@ internal object ManifestValidator {
 
     private fun parsePermissions(value: JsonValue): List<ManifestPermission> {
         val values = value.asArray("permissions")
-        if (values.size > 15) throw JsonFormatException("permissions exceeds 15 items")
+        if (values.size > 18) throw JsonFormatException("permissions exceeds 18 items")
         val seen = mutableSetOf<String>()
         return values.mapIndexed { index, item ->
             val permission = item.asObject("permissions[$index]")
@@ -102,13 +107,13 @@ internal object ManifestValidator {
         }
         return ManifestNetwork(
             allowDomains = domains,
-            allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: false,
+            allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: true,
             maxResponseBytes = network["maxResponseBytes"]?.let {
-                requireIntValue(it, "network.maxResponseBytes", 1024, 10_485_760)
-            } ?: 1_048_576,
+                requireIntValue(it, "network.maxResponseBytes", 1024, 67_108_864)
+            } ?: 4_194_304,
             timeoutMs = network["timeoutMs"]?.let {
-                requireIntValue(it, "network.timeoutMs", 1000, 30_000)
-            } ?: 15_000,
+                requireIntValue(it, "network.timeoutMs", 1000, 600_000)
+            } ?: 30_000,
         )
     }
 
@@ -203,6 +208,13 @@ internal object ManifestValidator {
         val number = value.asInt(name)
         if (number !in min..max) throw JsonFormatException("$name must be between $min and $max")
         return number
+    }
+
+    private fun versionAtLeast(value: String, major: Int, minor: Int, patch: Int): Boolean {
+        val numeric = value.substringBefore('-').substringBefore('+').split('.').map(String::toInt)
+        return numeric.zip(listOf(major, minor, patch)).firstOrNull { (left, right) -> left != right }
+            ?.let { (left, right) -> left > right }
+            ?: true
     }
 
     private val TOP_LEVEL_FIELDS = setOf(

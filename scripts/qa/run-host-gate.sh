@@ -103,9 +103,11 @@ run_gate() {
 }
 
 overall_exit=0
-run_gate security verifySecurityInvariants || overall_exit=1
 run_gate api-contract :tool-api:verifyToolBoxApiContract || overall_exit=1
-run_gate compile :app:compileDebugKotlin || overall_exit=1
+run_gate security verifySecurityInvariants || overall_exit=1
+run_gate compile \
+    :app:compileDebugKotlin \
+    :tool-runtime:compileDebugAndroidTestKotlin || overall_exit=1
 run_gate admitted-unit \
     :app:testDebugUnitTest \
     :core-data:testDebugUnitTest \
@@ -116,6 +118,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
     --tests 'io.toolbox.host.background.NetworkBoundaryTest' \
     --tests 'io.toolbox.host.background.ToolNetworkProxyTest' \
+    --tests 'io.toolbox.host.runtime.RuntimeReminderPolicyTest' \
     --tests 'io.toolbox.core.data.BackgroundTaskRepositoryTest' \
     --tests 'io.toolbox.core.data.CatalogAndStorageRepositoryTest' \
     --tests 'io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest' \

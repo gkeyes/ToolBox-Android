@@ -16,6 +16,7 @@ import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,8 +57,11 @@ class RuntimeBridgeSession internal constructor(
     private val clockMillis: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private val active = AtomicBoolean(true)
+    private val eventReady = AtomicBoolean(false)
     private val gestureAtMillis = AtomicLong(NO_GESTURE)
     private val inFlightIds = ConcurrentHashMap.newKeySet<String>()
+    private val eventProxy = AtomicReference<JavaScriptReplyProxy?>(null)
+    private val pendingEvents = ArrayDeque<String>()
     private val jobs = RuntimeSessionJobs()
     private val dispatcher = RuntimeRpcDispatcher(
         identity = identity,
@@ -141,6 +145,11 @@ class RuntimeBridgeSession internal constructor(
                     RuntimeInboundContext(exactSourceOrigin, isMainFrame, touchAge),
                 )
                 reply(webView, replyProxy, response)
+                if (request.method == "ready" && response is RuntimeRpcResponse.Success) {
+                    eventProxy.set(replyProxy)
+                    eventReady.set(true)
+                    flushPendingEvents(webView, replyProxy)
+                }
             } catch (_: CancellationException) {
             } finally {
                 inFlightIds.remove(request.id)
@@ -153,9 +162,51 @@ class RuntimeBridgeSession internal constructor(
         jobs.close()
         runCatching { sessionCleanup?.close() }
         inFlightIds.clear()
+        eventReady.set(false)
+        eventProxy.set(null)
+        synchronized(pendingEvents) { pendingEvents.clear() }
         gestureAtMillis.set(NO_GESTURE)
         runCatching { WebViewCompat.removeWebMessageListener(webView, BRIDGE_OBJECT) }
         webView.setOnTouchListener(null)
+    }
+
+    internal fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean {
+        if (!active.get() || !EVENT_NAME.matches(name)) return false
+        val encoded = JSONObject()
+            .put("type", "event")
+            .put("event", name)
+            .put("generation", identity.generation)
+            .put("timestamp", System.currentTimeMillis())
+            .put("data", JSONTokener(RuntimeRpcJson.encodeValue(payload)).nextValue())
+            .toString()
+        if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) return false
+        val proxy = eventProxy.get()
+        if (!eventReady.get() || proxy == null) {
+            synchronized(pendingEvents) {
+                if (pendingEvents.size == MAX_PENDING_EVENTS) pendingEvents.removeFirst()
+                pendingEvents.addLast(encoded)
+            }
+            return true
+        }
+        webView.post {
+            if (active.get() && eventReady.get() && eventProxy.get() === proxy) {
+                runCatching { proxy.postMessage(encoded) }
+            }
+        }
+        return true
+    }
+
+    private fun flushPendingEvents(webView: WebView, proxy: JavaScriptReplyProxy) {
+        val queued = synchronized(pendingEvents) {
+            buildList {
+                while (pendingEvents.isNotEmpty()) add(pendingEvents.removeFirst())
+            }
+        }
+        if (queued.isEmpty()) return
+        webView.post {
+            if (!active.get() || !eventReady.get() || eventProxy.get() !== proxy) return@post
+            queued.forEach { encoded -> runCatching { proxy.postMessage(encoded) } }
+        }
     }
 
     private fun reply(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
@@ -186,10 +237,36 @@ class RuntimeBridgeSession internal constructor(
               'use strict';
               const nativeBridge = globalThis.$BRIDGE_OBJECT;
               const pending = new Map();
+              const listeners = new Map();
+              const earlyEvents = new Map();
+              let earlyEventCount = 0;
               let sequence = 0;
               nativeBridge.onmessage = event => {
                 let response;
                 try { response = JSON.parse(event.data); } catch (_) { return; }
+                if (response.type === 'event' && typeof response.event === 'string') {
+                  const callbacks = listeners.get(response.event);
+                  if (callbacks && callbacks.size > 0) {
+                    callbacks.forEach(callback => {
+                      try { callback(response.data); } catch (_) {}
+                    });
+                  } else {
+                    if (earlyEventCount >= 64) {
+                      for (const [name, values] of earlyEvents) {
+                        if (values.length > 0) {
+                          values.shift(); earlyEventCount -= 1;
+                          if (values.length === 0) earlyEvents.delete(name);
+                          break;
+                        }
+                      }
+                    }
+                    let queue = earlyEvents.get(response.event);
+                    if (!queue) earlyEvents.set(response.event, queue = []);
+                    queue.push(response.data); earlyEventCount += 1;
+                  }
+                  try { globalThis.dispatchEvent(new CustomEvent(`toolbox:${'$'}{response.event}`, { detail: response.data })); } catch (_) {}
+                  return;
+                }
                 const waiter = pending.get(response.id);
                 if (!waiter) return;
                 pending.delete(response.id);
@@ -204,6 +281,21 @@ class RuntimeBridgeSession internal constructor(
                 }));
               });
               const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
+              const subscribe = (name, listener) => {
+                if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+                let callbacks = listeners.get(name);
+                if (!callbacks) listeners.set(name, callbacks = new Set());
+                callbacks.add(listener);
+                const queued = earlyEvents.get(name);
+                if (queued) {
+                  earlyEvents.delete(name);
+                  earlyEventCount -= queued.length;
+                  queueMicrotask(() => queued.forEach(payload => {
+                    try { listener(payload); } catch (_) {}
+                  }));
+                }
+                return () => callbacks.delete(listener);
+              };
               const api = {
                 ready: () => call('ready'),
                 ui: { toast: message => call('ui.toast', { message }) },
@@ -226,17 +318,36 @@ class RuntimeBridgeSession internal constructor(
                   writeText: text => call('clipboard.writeText', { text }),
                   readText: () => call('clipboard.readText')
                 },
-                network: { request: request => call('network.request', request) },
+                network: { request: request => {
+                  if (request && request.body instanceof Uint8Array) {
+                    return call('network.request', { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' });
+                  }
+                  return call('network.request', request);
+                } },
                 notifications: {
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
-                  cancel: id => call('notifications.cancel', { id })
+                  update: (id, title, body) => call('notifications.update', { id, title, body }),
+                  cancel: id => call('notifications.cancel', { id }),
+                  focus: {
+                    start: request => call('notifications.focus.start', request),
+                    update: request => call('notifications.focus.update', request),
+                    end: id => call('notifications.focus.end', { id })
+                  }
                 },
                 background: {
                   enqueue: spec => call('background.enqueue', spec),
                   schedulePeriodic: spec => call('background.schedulePeriodic', spec),
+                  start: options => call('background.start', options === undefined ? {} : options),
+                  stop: sessionId => call('background.stop', { sessionId }),
+                  status: sessionId => call('background.status', { sessionId }),
                   list: () => call('background.list'),
+                  listSessions: () => call('background.listSessions'),
                   getResult: taskId => call('background.getResult', { taskId }),
-                  cancel: taskId => call('background.cancel', { taskId })
+                  cancel: taskId => call('background.cancel', { taskId }),
+                  setTimer: (key, intervalMs) => call('background.setTimer', { key, intervalMs }),
+                  cancelTimer: key => call('background.cancelTimer', { key }),
+                  onRestore: listener => subscribe('background.restore', listener),
+                  onTimer: listener => subscribe('background.timer', listener)
                 },
                 share: { text: text => call('share.text', { text }) },
                 files: {
@@ -253,7 +364,16 @@ class RuntimeBridgeSession internal constructor(
                   getCurrent: (accuracy, timeoutMs) => call('location.getCurrent', {
                     ...(accuracy === undefined ? {} : { accuracy }),
                     ...(timeoutMs === undefined ? {} : { timeoutMs })
-                  })
+                  }),
+                  watch: options => call('location.watch', options === undefined ? {} : options),
+                  clearWatch: watchId => call('location.clearWatch', { watchId }),
+                  onChanged: listener => subscribe('location.onChanged', listener)
+                },
+                alarms: {
+                  schedule: options => call('alarms.schedule', options),
+                  list: () => call('alarms.list'),
+                  cancel: id => call('alarms.cancel', { id }),
+                  onAlarm: listener => subscribe('alarm', listener)
                 }
               };
               Object.defineProperty(globalThis, 'ToolBox', { value: Object.freeze(api), configurable: false, writable: false });
@@ -264,6 +384,8 @@ class RuntimeBridgeSession internal constructor(
     private companion object {
         const val BRIDGE_OBJECT = "__toolboxNative"
         const val NO_GESTURE = Long.MIN_VALUE
+        const val MAX_PENDING_EVENTS = 64
+        val EVENT_NAME = Regex("^[a-z][a-zA-Z0-9.]{1,63}$")
     }
 }
 
@@ -286,9 +408,14 @@ internal object RuntimeBridgeLifecycle {
     fun release(webView: WebView) {
         sessions.remove(webView)?.close(webView)
     }
+
+    fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
+        sessions[webView]?.emitEvent(webView, name, payload) == true
 }
 
 internal object RuntimeRpcJson {
+    fun encodeValue(value: RpcValue): String = buildString { appendJson(value) }
+
     fun decodeRequest(encoded: String): RuntimeRpcRequest {
         val root = JSONTokener(encoded).nextValue() as? JSONObject ?: throw IllegalArgumentException("request")
         val allowedKeys = setOf("id", "method", "nonce", "toolId", "versionCode", "generation", "params")
@@ -337,6 +464,58 @@ internal object RuntimeRpcJson {
         else -> throw IllegalArgumentException("json")
     }
 
+    private fun StringBuilder.appendJson(value: RpcValue) {
+        when (value) {
+            RpcValue.Null -> append("null")
+            is RpcValue.Bool -> append(value.value)
+            is RpcValue.Number -> {
+                require(value.value.isFinite())
+                append(value.value)
+            }
+            is RpcValue.StringValue -> appendJsonString(value.value)
+            is RpcValue.ArrayValue -> {
+                append('[')
+                value.value.forEachIndexed { index, child ->
+                    if (index > 0) append(',')
+                    appendJson(child)
+                }
+                append(']')
+            }
+            is RpcValue.ObjectValue -> {
+                append('{')
+                value.value.entries.forEachIndexed { index, (name, child) ->
+                    if (index > 0) append(',')
+                    appendJsonString(name)
+                    append(':')
+                    appendJson(child)
+                }
+                append('}')
+            }
+        }
+    }
+
+    private fun StringBuilder.appendJsonString(value: String) {
+        append('"')
+        value.forEach { char ->
+            when (char) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (char.code < 0x20 || char.code in 0xD800..0xDFFF || char == '\u2028' || char == '\u2029') {
+                    append("\\u")
+                    repeat(4) { shift -> append(HEX[(char.code ushr (12 - shift * 4)) and 0xF]) }
+                } else {
+                    append(char)
+                }
+            }
+        }
+        append('"')
+    }
+
     private fun toJson(value: RpcValue): Any = when (value) {
         RpcValue.Null -> JSONObject.NULL
         is RpcValue.Bool -> value.value
@@ -347,6 +526,8 @@ internal object RuntimeRpcJson {
             value.value.forEach { (name, child) -> output.put(name, toJson(child)) }
         }
     }
+
+    private const val HEX = "0123456789abcdef"
 }
 
 internal fun createRuntimeBridgeSession(

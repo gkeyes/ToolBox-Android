@@ -41,8 +41,8 @@ val verifyToolBoxApiContract by tasks.registering {
         val contract = objectValue(JsonSlurper().parseText(contractText))
         val capabilities = arrayValue(contract["capabilities"]).map(::objectValue)
         val capabilityIds = capabilities.map { it["id"] as String }
-        check(capabilityIds.size == 15 && capabilityIds.distinct().size == capabilityIds.size) {
-            "Canonical ToolBox API v1 must contain exactly 15 unique capabilities"
+        check(capabilityIds.size == 18 && capabilityIds.distinct().size == capabilityIds.size) {
+            "Canonical ToolBox API v1 must contain exactly 18 unique capabilities"
         }
         val methods = arrayValue(contract["methods"]).map(::objectValue)
         val methodNames = methods.map { it["name"] as String }

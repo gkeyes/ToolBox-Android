@@ -101,7 +101,7 @@ fun SettingsScreenshot() {
                 state = PreviewHostFixtures.settings,
                 contentPadding = contentPadding,
                 onThemeSelected = {},
-                onBackgroundEnabled = {},
+                onBackgroundSafeguards = {},
                 onToolPermissions = {},
                 onDeveloperHelp = {},
             )

@@ -45,16 +45,23 @@ class NetworkBoundaryTest {
     }
 
     @Test
-    fun endpointPolicyRequiresAllowlistedHttpsOnPort443AndRejectsIpLiterals() {
+    fun endpointPolicyAllowsDeclaredPublicHttpsPorts() {
         val allowlist = setOf("api.example.com")
         assertNull(NetworkPolicy.validateEndpoint("https://api.example.com/path".toHttpUrl(), allowlist))
+        assertNull(NetworkPolicy.validateEndpoint("https://api.example.com:8443/path".toHttpUrl(), allowlist))
+        assertNull(
+            NetworkPolicy.validateEndpoint(
+                "https://other.example.com:9443/path".toHttpUrl(),
+                setOf("other.example.com"),
+            ),
+        )
         assertEquals(
             "HTTPS_REQUIRED",
             NetworkPolicy.validateEndpoint("http://api.example.com/path".toHttpUrl(), allowlist),
         )
         assertEquals(
-            "PORT_NOT_ALLOWED",
-            NetworkPolicy.validateEndpoint("https://api.example.com:8443/path".toHttpUrl(), allowlist),
+            "NETWORK_HOST_NOT_ALLOWED",
+            NetworkPolicy.validateEndpoint("https://other.example.com/path".toHttpUrl(), allowlist),
         )
         assertEquals(
             "IP_LITERAL_FORBIDDEN",

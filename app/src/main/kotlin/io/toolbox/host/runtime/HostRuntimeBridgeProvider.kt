@@ -64,32 +64,39 @@ internal class HostRuntimeBridgeProvider(
     context: Context,
     repositories: CoreDataRepositories,
     private val m2HandlerFactory: HostRuntimeM2HandlerFactory,
+    private val continuityHandlerFactory: (PreparedToolRuntime) -> HostRuntimeContinuityHandlers,
     private val hostVersion: String = BuildConfig.VERSION_NAME,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : RuntimeBridgeProvider {
     private val applicationContext = context.applicationContext
     private val grantState = RepositoryRuntimeGrantStateSource(repositories.catalog, repositories.grants)
     private val systemPermissions = AndroidRuntimeSystemPermissionChecker(applicationContext)
-    private val quota = HostRuntimeQuotaChecker
     private val keyValues = repositories.keyValues
 
     override fun create(runtime: PreparedToolRuntime): RuntimeBridgeConfiguration {
+        val continuity = continuityHandlerFactory(runtime)
+        val m2Handlers = m2HandlerFactory.createHandlers(runtime).copy(
+            continuousBackground = continuity.background,
+            alarms = continuity.alarms,
+        )
+        val m3Handlers = ForegroundCapabilityBroker.activeHandlers(
+            toolId = runtime.toolId,
+            toolName = runtime.installedManifest.name,
+        ).copy(locationWatch = continuity.locationWatch)
         val authorization = DefaultRuntimeAuthorizationPolicy(
             state = grantState,
             systemPermissions = systemPermissions,
-            quota = quota,
+            quota = HostRuntimeQuotaChecker(runtime.maxBridgePayloadBytes),
             clockMillis = SystemClock::elapsedRealtime,
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
             handlers = createM1Handlers(runtime.toolId),
-            m2Handlers = m2HandlerFactory.createHandlers(runtime),
-            m3Handlers = ForegroundCapabilityBroker.activeHandlers(
-                toolId = runtime.toolId,
-                toolName = runtime.installedManifest.name,
-            ),
+            m2Handlers = m2Handlers,
+            m3Handlers = m3Handlers,
             hostVersion = hostVersion,
             generation = "${runtime.toolId}:${runtime.versionCode}:${UUID.randomUUID()}",
+            maxPayloadBytes = runtime.maxBridgePayloadBytes,
         )
     }
 
@@ -151,18 +158,18 @@ internal suspend fun clearRuntimeSecureStorage(
     }
 }
 
-private object HostRuntimeQuotaChecker : RuntimeQuotaChecker {
+private class HostRuntimeQuotaChecker(
+    private val maxRpcBytes: Int,
+) : RuntimeQuotaChecker {
     override suspend fun admit(
         identity: RuntimeSessionIdentity,
         method: MethodDescriptor,
         encodedBytes: Int,
-    ): RuntimePolicyDecision = if (encodedBytes <= MAX_RPC_BYTES) {
+    ): RuntimePolicyDecision = if (encodedBytes <= maxRpcBytes) {
         RuntimePolicyDecision.Allowed
     } else {
         RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "ToolBox request is too large")
     }
-
-    private const val MAX_RPC_BYTES = 256 * 1024
 }
 
 private class AndroidToastHandler(

@@ -79,7 +79,7 @@
     },
     "permissions": {
       "type": "array",
-      "maxItems": 15,
+      "maxItems": 18,
       "allOf": [
         {"contains":{"properties":{"name":{"const":"storage"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"storage.secure"}},"required":["name"]},"minContains":0,"maxContains":1},
@@ -95,7 +95,10 @@
         {"contains":{"properties":{"name":{"const":"shortcuts"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"camera"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"location"}},"required":["name"]},"minContains":0,"maxContains":1},
-        {"contains":{"properties":{"name":{"const":"background.tasks"}},"required":["name"]},"minContains":0,"maxContains":1}
+        {"contains":{"properties":{"name":{"const":"background.tasks"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"background.runtime"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"location.background"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"alarms"}},"required":["name"]},"minContains":0,"maxContains":1}
       ],
       "items": {
         "type": "object",
@@ -121,7 +124,10 @@
               "shortcuts",
               "camera",
               "location",
-              "background.tasks"
+              "background.tasks",
+              "background.runtime",
+              "location.background",
+              "alarms"
             ]
           },
           "reason": {
@@ -157,19 +163,19 @@
         },
         "allowRedirects": {
           "type": "boolean",
-          "default": false
+          "default": true
         },
         "maxResponseBytes": {
           "type": "integer",
           "minimum": 1024,
-          "maximum": 10485760,
-          "default": 1048576
+          "maximum": 67108864,
+          "default": 4194304
         },
         "timeoutMs": {
           "type": "integer",
           "minimum": 1000,
-          "maximum": 30000,
-          "default": 15000
+          "maximum": 600000,
+          "default": 30000
         }
       }
     },

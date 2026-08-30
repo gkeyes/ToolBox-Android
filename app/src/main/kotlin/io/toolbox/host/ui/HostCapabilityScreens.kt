@@ -16,10 +16,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -35,9 +31,6 @@ import io.toolbox.core.ui.component.ToolBoxRuntimeTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
-import io.toolbox.tool.runtime.HardenedRuntimeWebView
-import io.toolbox.tool.runtime.RuntimeWebViewCallbacks
-import io.toolbox.tool.runtime.RuntimeWebViewCreationResult
 
 @Composable
 internal fun RuntimeShellScreen(
@@ -46,11 +39,11 @@ internal fun RuntimeShellScreen(
     onPresentationReady: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var activeWebView by remember { mutableStateOf<android.webkit.WebView?>(null) }
     val ready = state as? RuntimeUiState.Ready
 
     LaunchedEffect(state) {
         if (state is RuntimeUiState.Error) onPresentationReady()
+        if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
 
     BackHandler(onBack = onBack)
@@ -69,14 +62,7 @@ internal fun RuntimeShellScreen(
                     ToolBoxIconButton(
                         icon = ToolBoxIconKey.Refresh,
                         contentDescription = "重新加载工具",
-                        onClick = {
-                            val webView = activeWebView
-                            if (webView == null) {
-                                viewModel.retry()
-                            } else {
-                                webView.reload()
-                            }
-                        },
+                        onClick = viewModel::reload,
                     )
                 },
             )
@@ -90,35 +76,24 @@ internal fun RuntimeShellScreen(
             when (val current = state) {
                 RuntimeUiState.Loading -> RuntimeCenteredState("正在打开工具", "正在准备页面。")
                 is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
-                is RuntimeUiState.Ready -> key(current.runtime.toolId, current.runtime.versionCode) {
+                is RuntimeUiState.Ready -> {
                     AndroidView(
                         factory = { context ->
-                            when (val result = HardenedRuntimeWebView.create(
-                                context = context,
-                                runtime = current.runtime,
-                                creationPermit = current.creationPermit,
-                                callbacks = RuntimeWebViewCallbacks(
-                                    onMainEntryLoaded = onPresentationReady,
-                                    onMainEntryFailed = viewModel::mainEntryFailed,
-                                    onRendererGone = viewModel::rendererGone,
-                                ),
-                                bridgeProvider = viewModel.bridgeProvider,
-                            )) {
-                                is RuntimeWebViewCreationResult.Created -> result.webView.also { webView ->
-                                    activeWebView = webView
-                                }
-
-                                is RuntimeWebViewCreationResult.Failed -> android.widget.FrameLayout(context).also {
-                                    viewModel.runtimeCreationFailed(result.message)
-                                }
+                            android.widget.FrameLayout(context).also { container ->
+                                (current.webView.parent as? android.view.ViewGroup)?.removeView(current.webView)
+                                container.addView(
+                                    current.webView,
+                                    android.widget.FrameLayout.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ),
+                                )
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
                         onRelease = { releasedView ->
-                            (releasedView as? android.webkit.WebView)?.let { webView ->
-                                if (activeWebView === webView) activeWebView = null
-                                HardenedRuntimeWebView.release(webView)
-                            }
+                            (releasedView as? android.view.ViewGroup)?.removeAllViews()
+                            viewModel.detached()
                         },
                     )
                 }

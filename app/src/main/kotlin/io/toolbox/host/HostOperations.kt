@@ -49,6 +49,7 @@ internal interface HostBackgroundOperations {
     fun observeResult(taskId: String): Flow<TaskRunResult?>
     suspend fun cancel(toolId: String, taskId: String): Boolean
     suspend fun cancelTool(toolId: String)
+    suspend fun releaseRuntime(toolId: String) = cancelTool(toolId)
     suspend fun cancelAll(toolIds: Collection<String>)
 }
 

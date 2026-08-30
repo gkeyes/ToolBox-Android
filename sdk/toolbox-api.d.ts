@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "aad95df52b9265d15bee16cbd003b39500788d16d7b082aa1b5e0748b219ddbd";
+export type ToolBoxContractSha256 = "25ce65e4e13f8e0ff588bac12b7c904f627538399a961a521c735768440d4c7b";
 
 export type ToolBoxCapability =
   | "storage"
@@ -15,7 +15,10 @@ export type ToolBoxCapability =
   | "shortcuts"
   | "camera"
   | "location"
-  | "background.tasks";
+  | "background.tasks"
+  | "background.runtime"
+  | "location.background"
+  | "alarms";
 
 export type ToolBoxMethodName =
   | "ready"
@@ -34,12 +37,22 @@ export type ToolBoxMethodName =
   | "clipboard.writeText"
   | "network.request"
   | "notifications.post"
+  | "notifications.update"
   | "notifications.cancel"
+  | "notifications.focus.start"
+  | "notifications.focus.update"
+  | "notifications.focus.end"
   | "background.enqueue"
   | "background.schedulePeriodic"
+  | "background.start"
+  | "background.stop"
+  | "background.status"
   | "background.list"
+  | "background.listSessions"
   | "background.getResult"
   | "background.cancel"
+  | "background.setTimer"
+  | "background.cancelTimer"
   | "clipboard.readText"
   | "share.text"
   | "files.open"
@@ -47,7 +60,12 @@ export type ToolBoxMethodName =
   | "files.save"
   | "shortcuts.pin"
   | "camera.capture"
-  | "location.getCurrent";
+  | "location.getCurrent"
+  | "location.watch"
+  | "location.clearWatch"
+  | "alarms.schedule"
+  | "alarms.list"
+  | "alarms.cancel";
 
 export type ToolBoxErrorCode =
   | "UNSUPPORTED"
@@ -98,14 +116,31 @@ export interface BasicDeviceInfo {
 export type HapticEffect = "click" | "confirm" | "reject";
 
 export interface NetworkRequest {
-  url: string;
-  method?: "GET";
+  readonly url: string;
+  readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string | JsonValue | Uint8Array;
+  readonly timeoutMs?: number;
+  readonly maxResponseBytes?: number;
 }
 
 export interface NetworkResponse {
-  status: number;
-  headers: Record<string, string>;
-  body: string;
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+  readonly bodyEncoding: "text" | "base64";
+}
+
+export interface FocusNotificationRequest {
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly progress?: number;
+}
+
+export interface FocusNotificationResult {
+  readonly mode: "ENHANCEMENT_REQUESTED" | "STANDARD";
+  readonly protocolVersion: number;
 }
 
 export interface FileToken {
@@ -150,11 +185,34 @@ export type TaskState = "QUEUED" | "RUNNING" | "COMPLETED" | "CANCELLED";
 export type RunOutcome = "SUCCEEDED" | "FAILED" | "CANCELLED";
 
 export interface TaskSummary {
-  taskId: string;
-  key: string;
-  state: TaskState;
-  periodic: boolean;
-  nextRunAt?: number;
+  readonly kind?: "task";
+  readonly taskId: string;
+  readonly key: string;
+  readonly state: TaskState;
+  readonly periodic: boolean;
+  readonly nextRunAt?: number;
+}
+
+export interface BackgroundStartOptions {
+  readonly restoreAfterProcessDeath?: boolean;
+  readonly restoreAfterReboot?: boolean;
+}
+
+export interface BackgroundSessionSummary {
+  readonly sessionId: string;
+  readonly startedAt: number;
+  readonly restoreAfterProcessDeath: boolean;
+  readonly restoreAfterReboot: boolean;
+}
+
+export interface BackgroundRestoreEvent {
+  readonly reason: "process" | "reboot";
+  readonly restoredAt: number;
+}
+
+export interface BackgroundTimerEvent {
+  readonly key: string;
+  readonly firedAt: number;
 }
 
 export interface TaskRunResult {
@@ -164,6 +222,37 @@ export interface TaskRunResult {
   status?: number;
   body?: string;
   error?: ToolBoxApiError;
+}
+
+export interface LocationResult {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly accuracyMeters: number;
+  readonly capturedAt: number;
+}
+
+export interface LocationWatchOptions {
+  readonly accuracy?: "coarse" | "precise";
+  readonly intervalMs?: number;
+  readonly minDistanceMeters?: number;
+  readonly allowBackground?: boolean;
+}
+
+export interface LocationChangedEvent extends LocationResult {
+  readonly watchId: string;
+}
+
+export interface AlarmScheduleOptions {
+  readonly id: string;
+  readonly triggerAt: number;
+}
+
+export interface AlarmSummary extends AlarmScheduleOptions {
+  readonly scheduledAt: number;
+}
+
+export interface AlarmEvent extends AlarmSummary {
+  readonly firedAt: number;
 }
 
 export interface ToolBoxApi {
@@ -201,14 +290,28 @@ export interface ToolBoxApi {
   };
   notifications: {
     post(id: string, title: string, body: string): Promise<void>;
+    update(id: string, title: string, body: string): Promise<void>;
     cancel(id: string): Promise<void>;
+    focus: {
+      start(request: FocusNotificationRequest): Promise<FocusNotificationResult>;
+      update(request: FocusNotificationRequest): Promise<FocusNotificationResult>;
+      end(id: string): Promise<void>;
+    };
   };
   background: {
     enqueue(spec: BackgroundTaskSpec): Promise<string>;
     schedulePeriodic(spec: PeriodicTaskSpec): Promise<string>;
+    start(options?: BackgroundStartOptions): Promise<BackgroundSessionSummary>;
+    stop(sessionId: string): Promise<void>;
+    status(sessionId: string): Promise<BackgroundSessionSummary | null>;
     list(): Promise<TaskSummary[]>;
+    listSessions(): Promise<BackgroundSessionSummary[]>;
     getResult(taskId: string): Promise<TaskRunResult | null>;
     cancel(taskId: string): Promise<void>;
+    setTimer(key: string, intervalMs: number): Promise<void>;
+    cancelTimer(key: string): Promise<void>;
+    onRestore(listener: (event: BackgroundRestoreEvent) => void): () => void;
+    onTimer(listener: (event: BackgroundTimerEvent) => void): () => void;
   };
   share: {
     text(text: string): Promise<void>;
@@ -225,12 +328,16 @@ export interface ToolBoxApi {
     capture(): Promise<FileToken | null>;
   };
   location: {
-    getCurrent(accuracy?: "coarse" | "precise", timeoutMs?: number): Promise<{
-      latitude: number;
-      longitude: number;
-      accuracyMeters: number;
-      capturedAt: number;
-    }>;
+    getCurrent(accuracy?: "coarse" | "precise", timeoutMs?: number): Promise<LocationResult>;
+    watch(options?: LocationWatchOptions): Promise<string>;
+    clearWatch(watchId: string): Promise<void>;
+    onChanged(listener: (event: LocationChangedEvent) => void): () => void;
+  };
+  alarms: {
+    schedule(options: AlarmScheduleOptions): Promise<AlarmSummary>;
+    list(): Promise<AlarmSummary[]>;
+    cancel(id: string): Promise<void>;
+    onAlarm(listener: (event: AlarmEvent) => void): () => void;
   };
 }
 
