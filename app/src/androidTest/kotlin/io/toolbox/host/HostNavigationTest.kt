@@ -33,7 +33,7 @@ class HostNavigationTest {
         composeRule.onNodeWithContentDescription("管理后台任务演示").performClick()
         waitForVisibleText("权限")
         composeRule.onNodeWithText("权限").performClick()
-        waitForVisibleText("后台任务演示权限")
+        waitForVisibleText("后台任务演示 · 权限")
 
         val networkPermission = composeRule.onNodeWithTag(
             HostTestTags.PermissionRowPrefix + "network",
@@ -60,8 +60,7 @@ class HostNavigationTest {
         composeRule.onNodeWithContentDescription("返回").performClick()
         waitForVisibleText("打开工具")
         composeRule.onNodeWithContentDescription("更多操作").performClick()
-        waitForVisibleText("删除")
-        composeRule.onNodeWithText("删除").performClick()
+        composeRule.onNodeWithContentDescription("从菜单删除后台任务演示").performClick()
         waitForVisibleText("确认删除")
         composeRule.onNodeWithText("确认删除").performClick()
         waitForVisibleText("该工具已不存在")

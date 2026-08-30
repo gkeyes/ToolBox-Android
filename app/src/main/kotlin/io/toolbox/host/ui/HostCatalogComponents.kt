@@ -21,17 +21,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import io.toolbox.core.ui.component.ToolBoxCard
+import io.toolbox.core.ui.component.ToolBoxIcon
+import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
-internal fun ToolGlyph(symbol: String, size: Dp = ToolBoxThemeTokens.sizes.toolGlyph) {
+internal fun ToolGlyph(
+    icon: ToolBoxIconKey,
+    accent: Color,
+    size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
+) {
     Box(
-        modifier = Modifier.size(size).clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-            .background(ToolBoxThemeTokens.colors.softPrimary),
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
+            .background(accent),
         contentAlignment = Alignment.Center,
     ) {
-        AppText(symbol, color = ToolBoxThemeTokens.colors.primary, weight = FontWeight.Bold)
+        ToolBoxIcon(
+            icon = icon,
+            contentDescription = null,
+            tint = Color.White,
+        )
     }
 }
 

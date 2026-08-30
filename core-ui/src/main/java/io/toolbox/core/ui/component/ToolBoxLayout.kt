@@ -1,26 +1,34 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.NavigationBar
@@ -28,6 +36,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TextButton
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -117,19 +126,16 @@ fun ToolBoxTopBar(
             )
         }
     }
-    val appBarModifier = modifier
-        .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-        .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-        .semantics(mergeDescendants = true) { heading() }
     SmallTopAppBar(
         title = title,
-        modifier = appBarModifier,
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
         color = ToolBoxThemeTokens.colors.background,
         titleColor = ToolBoxThemeTokens.colors.textPrimary,
         subtitle = subtitle,
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
         navigationIcon = navigationSlot,
         actions = actions,
+        defaultWindowInsetsPadding = true,
     )
 }
 
@@ -159,11 +165,17 @@ fun ToolBoxNavigationBar(
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val usesIconOnlyLayout = LocalDensity.current.fontScale >= 1.5f
     NavigationBar(
         modifier = modifier,
         color = ToolBoxThemeTokens.colors.surface,
+        showDivider = false,
         defaultWindowInsetsPadding = true,
-        mode = NavigationBarDisplayMode.IconAndText,
+        mode = if (usesIconOnlyLayout) {
+            NavigationBarDisplayMode.IconOnly
+        } else {
+            NavigationBarDisplayMode.IconAndText
+        },
     ) {
         items.forEach { item ->
             val isSelected = item.id == selectedId
@@ -226,18 +238,84 @@ fun ToolBoxCard(
 }
 
 @Composable
+fun ToolBoxGroupedSurface(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        cornerRadius = ToolBoxThemeTokens.radii.denseSurface,
+        insideMargin = PaddingValues(0.dp),
+        content = content,
+    )
+}
+
+@Composable
+fun ToolBoxGroupDivider(
+    modifier: Modifier = Modifier,
+    startPadding: Dp = 60.dp,
+    endPadding: Dp = 0.dp,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = startPadding, end = endPadding)
+            .height(ToolBoxThemeTokens.sizes.divider)
+            .background(ToolBoxThemeTokens.colors.divider),
+    )
+}
+
+@Composable
 fun ToolBoxPrimaryButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    destructive: Boolean = false,
 ) {
+    val colors = ToolBoxThemeTokens.colors
+    val containerColor = if (destructive) colors.danger else colors.primary
     Button(
         onClick = onClick,
         modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
         minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        colors = ButtonDefaults.buttonColorsPrimary(
+            color = containerColor,
+            contentColor = colors.onPrimary,
+        ),
     ) {
-        ToolBoxText(text = label, style = ToolBoxThemeTokens.textStyles.body)
+        ToolBoxText(
+            text = label,
+            style = ToolBoxThemeTokens.textStyles.body.copy(
+                color = colors.onPrimary.copy(alpha = if (enabled) 1f else 0.46f),
+            ),
+        )
     }
+}
+
+@Composable
+fun ToolBoxTextButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentColor: Color = ToolBoxThemeTokens.colors.primary,
+) {
+    TextButton(
+        text = label,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        enabled = enabled,
+        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        colors = ButtonDefaults.textButtonColors(
+            color = Color.Transparent,
+            disabledColor = Color.Transparent,
+            textColor = contentColor,
+            disabledTextColor = contentColor.copy(alpha = 0.46f),
+        ),
+        textStyle = ToolBoxThemeTokens.textStyles.body.copy(
+            color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
+        ),
+    )
 }

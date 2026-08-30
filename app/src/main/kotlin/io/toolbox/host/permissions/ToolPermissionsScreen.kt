@@ -12,6 +12,8 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.InstalledTool
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxCard
+import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxText
@@ -59,9 +61,10 @@ internal fun ToolPermissionsScreen(
                 }
             } else {
                 item("installed-tools") {
-                    ToolBoxCard(contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.half)) {
-                        tools.forEach { tool ->
+                    ToolBoxGroupedSurface {
+                        tools.forEachIndexed { index, tool ->
                             ToolPermissionSelectionRow(tool, onSelectTool)
+                            if (index != tools.lastIndex) ToolBoxGroupDivider()
                         }
                     }
                 }
@@ -78,6 +81,7 @@ private fun ToolPermissionSelectionRow(
     ToolBoxSettingRow(
         title = tool.metadata.name,
         summary = "版本 ${tool.currentVersion.version}",
+        icon = ToolBoxIconKey.Tools,
         onClick = { onSelectTool(tool.metadata.id) },
     )
 }

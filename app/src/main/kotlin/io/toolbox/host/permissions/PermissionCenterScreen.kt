@@ -5,12 +5,15 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,10 +21,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
+import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTopBar
@@ -30,6 +36,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SurfaceCard
+import io.toolbox.host.ui.CatalogStatusState
 
 @Composable
 internal fun PermissionCenterScreen(viewModel: PermissionCenterViewModel, onBack: () -> Unit) {
@@ -51,56 +58,108 @@ internal fun PermissionCenterScreen(viewModel: PermissionCenterViewModel, onBack
             launcher.launch(request.permissions.toTypedArray())
         }
     }
+    PermissionCenterContent(
+        state = state,
+        onBack = onBack,
+        onSetEnabled = viewModel::setEnabled,
+        onOpenSystemSettings = {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(
+                    Uri.fromParts("package", context.packageName, null),
+                ),
+            )
+        },
+    )
+}
+
+@Composable
+internal fun PermissionCenterContent(
+    state: PermissionCenterUiState,
+    onBack: () -> Unit,
+    onSetEnabled: (String, Boolean) -> Unit,
+    onOpenSystemSettings: () -> Unit,
+) {
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             ToolBoxTopBar(
-                title = "${state.toolName}权限",
+                title = "${state.toolName} · 权限",
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
             )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = ToolBoxThemeTokens.spacing.two,
-                top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
-                end = ToolBoxThemeTokens.spacing.two,
-                bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
-            ),
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .align(Alignment.TopCenter),
+                contentPadding = PaddingValues(
+                    start = ToolBoxThemeTokens.spacing.two,
+                    top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
+                    end = ToolBoxThemeTokens.spacing.two,
+                    bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
+                ),
+            ) {
+            item("explanation") {
+                AppText(
+                    text = "只管理此工具已声明的能力。关闭后，对应功能会立即不可用。",
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                )
+            }
+            item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
             state.message?.let { message ->
                 item("message") {
                     SurfaceCard {
                         AppText(message)
                         if (state.showSystemSettings) {
-                            ToolBoxPrimaryButton("前往系统设置", {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(
-                                        Uri.fromParts("package", context.packageName, null),
-                                    ),
-                                )
-                            })
+                            ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
+                        }
+                    }
+                }
+                item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+            }
+            if (!state.loaded) {
+                item("loading") { CatalogStatusState("正在读取权限") }
+            } else if (state.items.isEmpty()) {
+                item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
+            } else {
+                item("permission-group") {
+                    ToolBoxGroupedSurface {
+                        state.items.forEachIndexed { index, item ->
+                            ToolBoxSwitchSettingRow(
+                                title = item.title,
+                                summary = item.reason,
+                                checked = item.enabled,
+                                onCheckedChange = { onSetEnabled(item.capability, it) },
+                                icon = item.capability.capabilityIcon(),
+                                modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
+                            )
+                            if (index != state.items.lastIndex) ToolBoxGroupDivider()
                         }
                     }
                 }
             }
-            if (state.loaded && state.items.isEmpty()) {
-                item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
-            }
-            items(state.items, key = PermissionItem::capability) { item ->
-                SurfaceCard(contentPadding = ToolBoxThemeTokens.spacing.half) {
-                    ToolBoxSwitchSettingRow(
-                        title = item.title,
-                        summary = item.reason,
-                        checked = item.enabled,
-                        onCheckedChange = { viewModel.setEnabled(item.capability, it) },
-                        modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
-                    )
-                }
             }
         }
     }
+}
+
+private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
+    "storage", "files.open", "files.save" -> ToolBoxIconKey.Folder
+    "storage.secure" -> ToolBoxIconKey.Lock
+    "clipboard.write", "clipboard.read" -> ToolBoxIconKey.Clipboard
+    "share" -> ToolBoxIconKey.Share
+    "network" -> ToolBoxIconKey.Globe
+    "device.basic" -> ToolBoxIconKey.Device
+    "haptics" -> ToolBoxIconKey.Haptics
+    "notifications" -> ToolBoxIconKey.Notifications
+    "shortcuts" -> ToolBoxIconKey.Tools
+    "camera" -> ToolBoxIconKey.Camera
+    "location" -> ToolBoxIconKey.Location
+    "background.tasks" -> ToolBoxIconKey.Clock
+    else -> ToolBoxIconKey.Shield
 }

@@ -28,10 +28,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
+import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
@@ -145,10 +146,10 @@ private fun DestinationItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        AppText(
-            destination.symbol,
-            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-            color = color,
+        ToolBoxIcon(
+            icon = destination.icon,
+            contentDescription = null,
+            tint = color,
         )
         AppText(
             destination.label,
@@ -202,24 +203,14 @@ private fun TopBar(selected: MainDestination, title: String, onImport: (() -> Un
         title = title,
         actions = {
             if (onImport != null) {
-                Box(
+                ToolBoxTextButton(
+                    label = "导入",
+                    onClick = onImport,
                     modifier = Modifier
-                        .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.full))
-                        .background(ToolBoxThemeTokens.colors.softPrimary)
-                        .clickable(role = Role.Button, onClick = onImport)
-                        .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf)
                         .testTag(HostTestTags.ImportFab)
                         .semantics { contentDescription = "导入 .tbx 工具包" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AppText(
-                        "导入",
-                        textStyle = ToolBoxThemeTokens.textStyles.label,
-                        color = ToolBoxThemeTokens.colors.primary,
-                        weight = FontWeight.SemiBold,
-                    )
-                }
+                    contentColor = ToolBoxThemeTokens.colors.primary,
+                )
             }
         },
     )
@@ -229,13 +220,16 @@ private val mainNavigationItems = MainDestination.entries.map { destination ->
     ToolBoxNavigationItem(
         id = destination.name,
         label = destination.label,
-        icon = when (destination) {
-            MainDestination.Tools -> ToolBoxIconKey.Tools
-            MainDestination.Settings -> ToolBoxIconKey.Settings
-        },
+        icon = destination.icon,
         testTag = destination.testTag,
     )
 }
+
+private val MainDestination.icon: ToolBoxIconKey
+    get() = when (this) {
+        MainDestination.Tools -> ToolBoxIconKey.Tools
+        MainDestination.Settings -> ToolBoxIconKey.Settings
+    }
 
 private val MainDestination.testTag: String
     get() = when (this) {

@@ -4,8 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,8 +21,10 @@ import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
+import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostBackgroundOperations
@@ -79,23 +82,28 @@ internal fun BackgroundTasksScreen(
                     }
                 }
             } else {
-                items(tasks, key = BackgroundTask::taskId) { task ->
-                    BackgroundTaskCard(
-                        task = task,
-                        operations = operations,
-                        cancelling = cancellingTaskId == task.taskId,
-                        onCancel = {
-                            cancellingTaskId = task.taskId
-                            message = null
-                            scope.launch {
-                                val cancelled = operations.cancel(toolId, task.taskId)
-                                cancellingTaskId = null
-                                if (!cancelled) {
-                                    message = "任务已结束或不存在。"
+                item("tasks") {
+                    ToolBoxGroupedSurface {
+                        tasks.forEachIndexed { index, task ->
+                            BackgroundTaskCard(
+                                task = task,
+                                operations = operations,
+                                cancelling = cancellingTaskId == task.taskId,
+                                onCancel = {
+                                    cancellingTaskId = task.taskId
+                                    message = null
+                                    scope.launch {
+                                        val cancelled = operations.cancel(toolId, task.taskId)
+                                        cancellingTaskId = null
+                                        if (!cancelled) {
+                                            message = "任务已结束或不存在。"
+                                        }
+                                    }
                                 }
-                            }
-                        },
-                    )
+                            )
+                            if (index != tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        }
+                    }
                 }
             }
         }
@@ -112,7 +120,12 @@ private fun BackgroundTaskCard(
     val result by operations.observeResult(task.taskId).collectAsStateWithLifecycle(null)
     val cancellable = task.state == TaskState.QUEUED || task.state == TaskState.RUNNING
 
-    SurfaceCard {
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+    ) {
         AppText(task.key, textStyle = ToolBoxThemeTokens.textStyles.title)
         AppText(
             task.operation.displayName(),
@@ -133,11 +146,12 @@ private fun BackgroundTaskCard(
         }
         TaskResultSummary(result)
         if (cancellable) {
-            ToolBoxPrimaryButton(
+            ToolBoxTextButton(
                 label = if (cancelling) "正在取消…" else "取消任务",
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !cancelling,
+                contentColor = ToolBoxThemeTokens.colors.danger,
             )
         }
     }

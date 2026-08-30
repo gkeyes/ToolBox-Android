@@ -40,6 +40,13 @@ import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
+import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
+
+private val PrimaryTabFadeTransition = navGraphicsTransition(
+    scrim = { 0f },
+) { scope ->
+    alpha = 1f - kotlin.math.abs(scope.relativeDepth).coerceIn(0f, 1f)
+}
 
 @Composable
 internal fun ToolBoxNavigation(
@@ -101,7 +108,7 @@ internal fun ToolBoxNavigation(
             blockInputDuringTransition = true,
         ),
     ) {
-        entry<ToolManagerRoute> {
+        entry<ToolManagerRoute>(transition = PrimaryTabFadeTransition) {
             ToolManagerScreen(
                 state = catalogState,
                 importState = importState,
@@ -149,7 +156,7 @@ internal fun ToolBoxNavigation(
             }
             RuntimeShellScreen(runtimeViewModel, onBack = ::goBack)
         }
-        entry<SettingsRoute> {
+        entry<SettingsRoute>(transition = PrimaryTabFadeTransition) {
             PrimaryScreen(
                 selected = MainDestination.Settings,
                 onDestination = ::navigateMain,

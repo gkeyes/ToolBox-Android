@@ -34,6 +34,7 @@ data class ToolBoxColorScheme(
     val onPrimary: Color,
     val background: Color,
     val surface: Color,
+    val surfaceMuted: Color,
     val textPrimary: Color,
     val textSecondary: Color,
     val success: Color,
@@ -95,6 +96,7 @@ data class ToolBoxSizes(
     val mediumNavigationItemWidth: Dp = 80.dp,
     val mediumNavigationWidth: Dp = 96.dp,
     val contentMaxWidth: Dp = 1040.dp,
+    val detailContentMaxWidth: Dp = 720.dp,
 )
 
 private val LightToolBoxColors = ToolBoxColorScheme(
@@ -102,8 +104,9 @@ private val LightToolBoxColors = ToolBoxColorScheme(
     onPrimary = Color.White,
     background = Color(0xFFF2F2F7),
     surface = Color.White,
+    surfaceMuted = Color(0xFFEAEAEE),
     textPrimary = Color(0xFF111827),
-    textSecondary = Color(0xFF8E8E93),
+    textSecondary = Color(0xFF6D6D72),
     success = Color(0xFF34C759),
     warning = Color(0xFFFF9500),
     danger = Color(0xFFFF3B30),
@@ -119,6 +122,7 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
     onPrimary = Color.White,
     background = Color.Black,
     surface = Color(0xFF1C1C1E),
+    surfaceMuted = Color(0xFF2C2C2E),
     textPrimary = Color(0xFFF5F5F7),
     textSecondary = Color(0xFF98989D),
     success = Color(0xFF75E395),
@@ -132,8 +136,8 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
 )
 
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    sectionTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    screenTitle = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
+    sectionTitle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
     title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
     body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
     metadata = TextStyle(fontSize = 13.sp, lineHeight = 17.sp),
@@ -153,7 +157,7 @@ fun ToolBoxTheme(
         ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> isSystemInDarkTheme()
         ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> false
     }
-    val colors = if (usesDarkColors) {
+    val baseColors = if (usesDarkColors) {
         DarkToolBoxColors
     } else {
         LightToolBoxColors
@@ -164,31 +168,42 @@ fun ToolBoxTheme(
             lightColors = lightColorScheme(
                 primary = LightToolBoxColors.primary,
                 onPrimary = LightToolBoxColors.onPrimary,
+                primaryContainer = LightToolBoxColors.softPrimary,
+                onPrimaryContainer = LightToolBoxColors.primary,
                 background = LightToolBoxColors.background,
                 onBackground = LightToolBoxColors.textPrimary,
                 surface = LightToolBoxColors.surface,
                 onSurface = LightToolBoxColors.textPrimary,
-                surfaceVariant = LightToolBoxColors.surface,
+                surfaceVariant = LightToolBoxColors.surfaceMuted,
                 onSurfaceSecondary = LightToolBoxColors.textSecondary,
                 onSurfaceVariantSummary = LightToolBoxColors.textSecondary,
                 onSurfaceVariantActions = LightToolBoxColors.textSecondary,
+                surfaceContainer = LightToolBoxColors.surface,
+                surfaceContainerHigh = LightToolBoxColors.surfaceMuted,
                 dividerLine = LightToolBoxColors.divider,
+                errorContainer = LightToolBoxColors.softDanger,
+                onErrorContainer = LightToolBoxColors.danger,
                 error = LightToolBoxColors.danger,
             ),
             darkColors = darkColorScheme(
                 primary = DarkToolBoxColors.primary,
                 onPrimary = DarkToolBoxColors.onPrimary,
+                primaryContainer = DarkToolBoxColors.softPrimary,
+                onPrimaryContainer = DarkToolBoxColors.primary,
                 background = DarkToolBoxColors.background,
                 onBackground = DarkToolBoxColors.textPrimary,
                 surface = DarkToolBoxColors.surface,
                 onSurface = DarkToolBoxColors.textPrimary,
-                surfaceVariant = DarkToolBoxColors.surface,
+                surfaceVariant = DarkToolBoxColors.surfaceMuted,
                 onSurfaceSecondary = DarkToolBoxColors.textSecondary,
                 onSurfaceVariantSummary = DarkToolBoxColors.textSecondary,
                 onSurfaceVariantActions = DarkToolBoxColors.textSecondary,
                 surfaceContainer = DarkToolBoxColors.surface,
                 onSurfaceContainer = DarkToolBoxColors.textPrimary,
+                surfaceContainerHigh = DarkToolBoxColors.surfaceMuted,
                 dividerLine = DarkToolBoxColors.divider,
+                errorContainer = DarkToolBoxColors.softDanger,
+                onErrorContainer = DarkToolBoxColors.danger,
                 error = DarkToolBoxColors.danger,
             ),
             keyColor = LightToolBoxColors.primary,
@@ -196,6 +211,20 @@ fun ToolBoxTheme(
     }
 
     MiuixTheme(controller = controller) {
+        val miuixColors = MiuixTheme.colorScheme
+        val colors = baseColors.copy(
+            primary = miuixColors.primary,
+            onPrimary = miuixColors.onPrimary,
+            background = miuixColors.background,
+            surface = miuixColors.surface,
+            surfaceMuted = miuixColors.surfaceVariant,
+            textPrimary = miuixColors.onBackground,
+            textSecondary = miuixColors.onSurfaceVariantSummary,
+            danger = miuixColors.error,
+            divider = miuixColors.dividerLine,
+            softPrimary = miuixColors.primaryContainer,
+            softDanger = miuixColors.errorContainer,
+        )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,
             LocalToolBoxTextStyles provides DefaultTextStyles,

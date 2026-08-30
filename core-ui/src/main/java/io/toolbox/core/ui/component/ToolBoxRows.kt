@@ -1,20 +1,13 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,58 +16,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
-
-enum class ToolBoxRiskLevel {
-    Trusted,
-    Low,
-    Medium,
-    High,
-    Blocked,
-    Unsigned,
-}
-
-@Composable
-fun ToolBoxRiskBadge(
-    level: ToolBoxRiskLevel,
-    modifier: Modifier = Modifier,
-    label: String = level.defaultLabel(),
-) {
-    val colors = ToolBoxThemeTokens.colors
-    val radii = ToolBoxThemeTokens.radii
-    val sizes = ToolBoxThemeTokens.sizes
-    val spacing = ToolBoxThemeTokens.spacing
-    val (container, content, icon) = when (level) {
-        ToolBoxRiskLevel.Trusted, ToolBoxRiskLevel.Low -> Triple(colors.softSuccess, colors.success, ToolBoxIconKey.Shield)
-        ToolBoxRiskLevel.Medium, ToolBoxRiskLevel.Unsigned -> Triple(colors.softWarning, colors.warning, ToolBoxIconKey.Shield)
-        ToolBoxRiskLevel.High, ToolBoxRiskLevel.Blocked -> Triple(colors.softDanger, colors.danger, ToolBoxIconKey.Shield)
-    }
-    Row(
-        modifier = modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(radii.badge))
-            .background(container)
-            .padding(horizontal = spacing.one, vertical = spacing.half)
-            .semantics { contentDescription = label },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(spacing.half),
-    ) {
-        ToolBoxIcon(icon = icon, contentDescription = null, modifier = Modifier.size(sizes.badgeIcon), tint = content)
-        ToolBoxText(text = label, style = ToolBoxThemeTokens.textStyles.label.copy(color = content), maxLines = 1)
-    }
-}
 
 @Composable
 fun ToolBoxSearchField(
@@ -103,109 +57,11 @@ fun ToolBoxSearchField(
 internal fun toolBoxSearchFieldMinHeight() = ToolBoxThemeTokens.sizes.touchTarget
 
 @Composable
-fun ToolBoxPermissionRow(
-    title: String,
-    summary: String,
-    riskLevel: ToolBoxRiskLevel,
-    modifier: Modifier = Modifier,
-    statusLabel: String = riskLevel.defaultLabel(),
-    icon: ToolBoxIconKey = ToolBoxIconKey.Shield,
-    onClick: (() -> Unit)? = null,
-    contained: Boolean = true,
-) {
-    val sizes = ToolBoxThemeTokens.sizes
-    val spacing = ToolBoxThemeTokens.spacing
-    if (contained) {
-        ToolBoxCard(
-            modifier = modifier.fillMaxWidth(),
-            onClick = onClick,
-            contentPadding = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PermissionRowContent(title, summary, riskLevel, statusLabel, icon)
-            }
-        }
-    } else {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
-                .then(
-                    if (onClick != null) {
-                        Modifier.clickable(role = Role.Button, onClick = onClick)
-                    } else {
-                        Modifier
-                    },
-                )
-                .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PermissionRowContent(title, summary, riskLevel, statusLabel, icon)
-        }
-    }
-}
-
-@Composable
-private fun RowScope.PermissionRowContent(
-    title: String,
-    summary: String,
-    riskLevel: ToolBoxRiskLevel,
-    statusLabel: String,
-    icon: ToolBoxIconKey,
-) {
-    val sizes = ToolBoxThemeTokens.sizes
-    val spacing = ToolBoxThemeTokens.spacing
-    ToolBoxIcon(
-        icon = icon,
-        contentDescription = null,
-        modifier = Modifier
-            .clip(androidx.compose.foundation.shape.CircleShape)
-            .background(ToolBoxThemeTokens.colors.softPrimary)
-            .padding(spacing.one)
-            .size(sizes.rowIcon),
-        tint = ToolBoxThemeTokens.colors.primary,
-    )
-    Spacer(Modifier.width(spacing.one))
-    Column(modifier = Modifier.weight(1f)) {
-        ToolBoxText(text = title, style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
-        Spacer(Modifier.height(sizes.divider))
-        ToolBoxText(
-            text = summary,
-            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-    Spacer(Modifier.width(spacing.half))
-    ToolBoxRiskBadge(level = riskLevel, label = statusLabel)
-}
-
-@Composable
-fun ToolBoxStatusRow(
-    title: String,
-    summary: String,
-    status: ToolBoxRiskLevel,
-    modifier: Modifier = Modifier,
-    statusLabel: String = status.defaultLabel(),
-    onClick: (() -> Unit)? = null,
-    contained: Boolean = true,
-) {
-    ToolBoxPermissionRow(
-        title = title,
-        summary = summary,
-        riskLevel = status,
-        statusLabel = statusLabel,
-        modifier = modifier,
-        onClick = onClick,
-        contained = contained,
-    )
-}
-
-@Composable
 fun ToolBoxSettingRow(
     title: String,
     modifier: Modifier = Modifier,
     summary: String? = null,
+    icon: ToolBoxIconKey? = null,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
@@ -213,6 +69,7 @@ fun ToolBoxSettingRow(
     ArrowPreference(
         title = title,
         summary = summary,
+        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
@@ -230,6 +87,7 @@ fun ToolBoxSwitchSettingRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     summary: String? = null,
+    icon: ToolBoxIconKey? = null,
     enabled: Boolean = true,
 ) {
     val sizes = ToolBoxThemeTokens.sizes
@@ -239,6 +97,7 @@ fun ToolBoxSwitchSettingRow(
         onCheckedChange = onCheckedChange,
         title = title,
         summary = summary,
+        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
@@ -265,6 +124,7 @@ fun ToolBoxChoiceSettingRow(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     summary: String? = null,
+    icon: ToolBoxIconKey? = null,
     enabled: Boolean = true,
 ) {
     val sizes = ToolBoxThemeTokens.sizes
@@ -277,6 +137,7 @@ fun ToolBoxChoiceSettingRow(
     ArrowPreference(
         title = title,
         summary = combinedSummary.ifBlank { null },
+        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
@@ -310,11 +171,20 @@ fun ToolBoxChoiceSettingRow(
     }
 }
 
-private fun ToolBoxRiskLevel.defaultLabel(): String = when (this) {
-    ToolBoxRiskLevel.Trusted -> "可信"
-    ToolBoxRiskLevel.Low -> "低"
-    ToolBoxRiskLevel.Medium -> "中"
-    ToolBoxRiskLevel.High -> "高"
-    ToolBoxRiskLevel.Blocked -> "已阻止"
-    ToolBoxRiskLevel.Unsigned -> "未签名"
+@Composable
+private fun ToolBoxPreferenceIcon(icon: ToolBoxIconKey) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .background(ToolBoxThemeTokens.colors.softPrimary),
+        contentAlignment = Alignment.Center,
+    ) {
+        ToolBoxIcon(
+            icon = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = ToolBoxThemeTokens.colors.primary,
+        )
+    }
 }

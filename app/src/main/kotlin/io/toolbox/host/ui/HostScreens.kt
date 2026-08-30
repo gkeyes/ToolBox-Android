@@ -18,9 +18,9 @@ object HostTestTags {
     const val ToolCardPrefix = "tool_card:"
 }
 
-enum class MainDestination(val label: String, val symbol: String) {
-    Tools("工具", "▦"),
-    Settings("设置", "⚙"),
+enum class MainDestination(val label: String) {
+    Tools("工具"),
+    Settings("设置"),
 }
 
 internal data class HostRouteLayout(

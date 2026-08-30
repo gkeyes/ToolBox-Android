@@ -5,21 +5,31 @@ import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.foundation.Image
@@ -59,6 +69,16 @@ enum class ToolBoxIconKey {
     Text,
     Clock,
     Check,
+    Close,
+    Delete,
+    Note,
+    Palette,
+    Device,
+    Haptics,
+    Notifications,
+    Share,
+    Camera,
+    Location,
 }
 
 @Composable
@@ -120,4 +140,14 @@ internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
     ToolBoxIconKey.Text -> Icons.Outlined.TextFields
     ToolBoxIconKey.Clock -> Icons.Outlined.AccessTime
     ToolBoxIconKey.Check -> Icons.Outlined.Check
+    ToolBoxIconKey.Close -> Icons.Outlined.Close
+    ToolBoxIconKey.Delete -> Icons.Outlined.DeleteOutline
+    ToolBoxIconKey.Note -> Icons.Outlined.Description
+    ToolBoxIconKey.Palette -> Icons.Outlined.Palette
+    ToolBoxIconKey.Device -> Icons.Outlined.Devices
+    ToolBoxIconKey.Haptics -> Icons.Outlined.TouchApp
+    ToolBoxIconKey.Notifications -> Icons.Outlined.NotificationsNone
+    ToolBoxIconKey.Share -> Icons.Outlined.Share
+    ToolBoxIconKey.Camera -> Icons.Outlined.CameraAlt
+    ToolBoxIconKey.Location -> Icons.Outlined.LocationOn
 }

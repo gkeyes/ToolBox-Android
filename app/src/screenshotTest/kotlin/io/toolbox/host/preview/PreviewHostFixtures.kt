@@ -1,130 +1,44 @@
 package io.toolbox.host.preview
 
-import io.toolbox.core.data.GrantScope
-import io.toolbox.core.data.GrantSource
-import io.toolbox.core.data.GrantState
-import io.toolbox.core.data.LaunchState
-import io.toolbox.core.data.SignatureState
+import io.toolbox.core.data.HostSettings
+import io.toolbox.core.data.ThemeMode
 import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
-import io.toolbox.host.importflow.ImportGrantChoice
-import io.toolbox.host.importflow.ImportPermissionFact
-import io.toolbox.host.importflow.ImportReviewFacts
-import io.toolbox.host.importflow.ImportReviewPhase
-import io.toolbox.host.importflow.ImportReviewUiState
 import io.toolbox.host.permissions.PermissionCenterUiState
-import io.toolbox.host.permissions.PermissionGrantItem
-import io.toolbox.tool.packagekit.RiskFinding
-import io.toolbox.tool.packagekit.RiskFindingCode
-import io.toolbox.tool.packagekit.SecurityProfile
-import io.toolbox.tool.packagekit.SignatureEvidence
-import io.toolbox.tool.packagekit.SignatureState as PackageSignatureState
+import io.toolbox.host.permissions.PermissionItem
+import io.toolbox.host.settings.SettingsUiState
 
-object PreviewHostFixtures {
+internal object PreviewHostFixtures {
     val catalog = CatalogUiState(
         isLoaded = true,
         tools = listOf(
-            tool(
-                id = "io.toolbox.preview.calculator",
-                name = "多市场仓位风险预算与分批止盈止损策略组合回测计算器",
-                signature = SignatureState.VERIFIED_TRUSTED,
-                version = "1.2.0",
-                bytes = 8_388_608L,
-                openedAt = 1_700_000_000_000L,
-                category = "计算",
-                pinnedOrder = 0,
-            ),
-            tool(
-                id = "io.toolbox.preview.json",
-                name = "JSON 格式化",
-                signature = SignatureState.UNSIGNED,
-                version = "1.0.3",
-                bytes = 6_186_598L,
-                openedAt = 1_699_000_000_000L,
-                category = "开发",
-                pinnedOrder = null,
-            ),
+            tool("io.toolbox.positioncalculator", "仓位计算器", "1.0.0", 7_324L),
+            tool("io.toolbox.quicknote", "快速笔记", "1.0.0", 6_128L),
+            tool("io.toolbox.backgrounddemo", "后台任务演示", "1.0.0", 5_120L),
         ),
     )
 
     val permissionCenter = PermissionCenterUiState(
-        toolId = "io.toolbox.preview.calculator",
-        isLoaded = true,
-        grants = listOf(
-            PermissionGrantItem(
-                permission = "storage",
-                title = "专属存储",
-                state = GrantState.GRANTED,
-                scope = GrantScope.SESSION,
-                expiresAt = null,
-                source = GrantSource.INSTALL,
-            ),
+        toolName = "仓位计算器",
+        loaded = true,
+        items = listOf(
+            PermissionItem("storage", "工具存储", "保存计算输入与配置", true, emptyList()),
+            PermissionItem("clipboard.write", "写入剪贴板", "复制计算结果", true, emptyList()),
+            PermissionItem("haptics", "触感反馈", "计算完成时提供轻触反馈", true, emptyList()),
         ),
     )
 
-    val importReview = ImportReviewUiState(
-        phase = ImportReviewPhase.REVIEW,
-        selectedName = "preview-position-calculator.tbx",
-        review = ImportReviewFacts(
-            sessionId = "preview-inspection-session",
-            sourceName = "preview-position-calculator.tbx",
-            toolId = "io.toolbox.preview.calculator",
-            toolName = "仓位计算器",
-            version = "1.2.0",
-            versionCode = 12,
-            entry = "index.html",
-            apiVersion = "1.0",
-            securityProfile = SecurityProfile.STRICT,
-            signature = SignatureEvidence(
-                state = PackageSignatureState.UNSIGNED,
-                detail = "未提供签名",
-            ),
-            publisherName = null,
-            publisherKeyId = null,
-            compressedBytes = 1_572_864L,
-            extractedBytes = 2_621_440L,
-            fileCount = 48,
-            files = listOf("manifest.json", "index.html", "app.js"),
-            permissions = listOf(
-                ImportPermissionFact("storage", "保存计算配置", required = true),
-                ImportPermissionFact("network", "访问明确的行情域名", required = false),
-            ),
-            networkDomains = listOf("api.example.com"),
-            riskFindings = listOf(
-                RiskFinding(
-                    code = RiskFindingCode.INLINE_SCRIPT,
-                    file = "index.html",
-                    detail = "内联脚本需要审核",
-                ),
-            ),
-            blockers = emptyList(),
-            installable = true,
-        ),
-        grants = mapOf(
-            "storage" to ImportGrantChoice.ALLOW_SESSION,
-            "network" to ImportGrantChoice.DENY,
-        ),
+    val settings = SettingsUiState(
+        settings = HostSettings(theme = ThemeMode.SYSTEM, backgroundEnabled = true),
+        loaded = true,
     )
 
-    private fun tool(
-        id: String,
-        name: String,
-        signature: SignatureState,
-        version: String,
-        bytes: Long,
-        openedAt: Long,
-        category: String,
-        pinnedOrder: Int?,
-    ) = CatalogTool(
+    private fun tool(id: String, name: String, version: String, bytes: Long) = CatalogTool(
         toolId = id,
         name = name,
-        signatureState = signature,
-        activeVersionCode = 1,
-        activeVersionName = version,
+        versionCode = 1,
+        versionName = version,
         bundleBytes = bytes,
-        launchState = LaunchState.STABLE,
-        lastOpenedAt = openedAt,
-        categoryId = category,
-        pinnedOrder = pinnedOrder,
+        lastOpenedAt = null,
     )
 }
