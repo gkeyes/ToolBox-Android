@@ -96,14 +96,10 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           script: |
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.HostNavigationTest
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.M3BrokerLifecycleInstrumentedTest
-            ./gradlew --no-daemon :core-data:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.core.data.FreshPersistenceContractTest
-            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.HardenedRuntimeWebViewInstrumentationTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.HostNavigationTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.M3BrokerLifecycleInstrumentedTest
+            ./gradlew --no-daemon :core-data:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.core.data.FreshPersistenceContractTest
+            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.HardenedRuntimeWebViewInstrumentationTest
 
   delivery:
     name: Package verified v0.2.0 delivery
