@@ -8,6 +8,8 @@ plugins {
     alias(libs.plugins.screenshot)
 }
 
+val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
+
 val packageBundledExamples by tasks.registering(Exec::class) {
     group = "build"
     description = "Packages the three shipped ToolBox examples for Android assets."
@@ -15,8 +17,9 @@ val packageBundledExamples by tasks.registering(Exec::class) {
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/quick-notes"))
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/background-task-demo"))
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
-    outputs.dir(rootProject.layout.buildDirectory.dir("examples"))
+    outputs.dir(bundledExamplesDir)
     workingDir = rootProject.projectDir
+    environment("TOOLBOX_EXAMPLE_OUTPUT_DIR", bundledExamplesDir.get().asFile.absolutePath)
     commandLine("bash", rootProject.layout.projectDirectory.file("scripts/package-examples.sh").asFile.absolutePath)
 }
 
@@ -28,8 +31,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -65,7 +68,7 @@ android {
     }
 
     sourceSets.getByName("main").assets.directories.add(
-        rootProject.layout.buildDirectory.dir("examples").get().asFile.absolutePath,
+        bundledExamplesDir.get().asFile.absolutePath,
     )
 }
 
@@ -105,6 +108,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.miuix.nav)
     implementation(libs.okhttp)
+    implementation(libs.focus.api)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

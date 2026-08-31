@@ -1,6 +1,6 @@
 # ToolBox Android：功能优先技术方案
 
-> 版本：3.0-dev
+> 版本：3.1-dev
 > 目标：Android 13+，优先 Xiaomi / HyperOS
 > 设计系统：Miuix `0.9.4-rc01`
 
@@ -33,7 +33,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 - 任意 shell、Dex、JNI、APK、JAR、class、动态原生代码、Root 命令接口或 WebAssembly JIT。
 - `MANAGE_EXTERNAL_STORAGE`、`QUERY_ALL_PACKAGES`、无障碍、短信或联系人权限。
 - Service Worker、无用户启动会话的后台 WebView，或没有持续通知和停止入口的无界后台执行。
-- 0.3 不增加行情、轨迹、行程、Token 专用表、业务通知判断或任何新 `.tbx` 范例。
+- 宿主不增加行情、轨迹、行程、Token 专用表或业务通知判断；独立 `.tbx` 的业务状态仍由工具自己保存和解释。
 
 ## 2. 不可协商安全边界
 
@@ -252,12 +252,21 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
 其 `httpGet` 仍要求工具原有 allowlist，仅 2xx 成功；4xx 不重试，5xx/网络/超时最多退避三次。
 每工具 8 个活动任务、4 个周期任务和 15 分钟周期下限只属于 legacy task，不适用于持续 runtime。
 
-### 7.5 普通通知与 HyperOS 增强
+### 7.5 实时通知与 HyperOS 增强
 
 普通 Android Notification 是 canonical 结果；`notifications.post/update/cancel` 始终使用它。
-`notifications.focus.start/update/end` 运行时查询焦点通知协议与应用权限，支持时尝试附加
-`miui.focus.param`；不维护 ROM 指纹白名单，也不按股票、行程或其他业务内容过滤。协议不存在、
-权限不足或系统不展示时，普通通知仍然成立，宿主不声称能够可靠观察超级岛最终展示结果。
+工具先用 `background.start` 获得当前工具和 generation 的 sessionId，再通过
+`notifications.live.start/update/end` 为该持续会话维护一个实时展示。`LiveNotificationCoordinator`
+只在内存中保存最新标题、主值、辅助信息、正文、短文本、更新时间、进度、强调色和 tone；500ms
+合并窗口只减少 SystemUI 刷新，不限制页面计算或网络请求。停止会话、关闭通知授权、关闭后台总开关、
+更新或删除工具时同步清理展示状态；进程恢复先显示通用占位，页面收到 `background.restore` 后重新发布。
+
+前台 Service 使用固定通知 ID 和 `toolbox.runtime.live.v1` 稳定通道。单会话直接显示工具数据；多会话
+由最近更新项作为主展示，展开正文列出其他会话。通知的打开、停止当前和全部停止操作均由宿主构造，
+工具不能传入 PendingIntent。Android 16+ 在系统允许时请求 promoted ongoing；HyperOS 检测到焦点协议
+就使用 Apache-2.0 `focus-api:1.4` 附加完整 Focus V3 ticker、AOD、焦点文本与大小岛数据，且
+`filterWhenNoPermission=false`。`canShowFocus=false` 只作为返回状态，不阻止提交。增强接口的
+`REQUESTED` 仅表示数据已交给系统；协议不存在、权限不足或系统不展示时，普通持续通知仍然成立。
 
 ## 8. Miuix 页面与布局
 
@@ -276,7 +285,7 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
   由保留的原生源页面覆盖运行层后释放 WebView。系统关闭动画时禁用非必要动效。
 
 设置最终只显示真实功能：主题、后台保障、工具权限、Developer Help。后台保障集中管理总开关、
-持续会话、通知、后台定位、精确闹钟、电池策略、HyperOS 自启动/省电入口和焦点通知协议状态。
+持续会话、通知、后台定位、精确闹钟、电池策略、HyperOS 自启动/省电入口和实时通知增强状态。
 Developer Help 是离线原生页面，
 从 API v1 合同和三个实际范例派生，说明包目录、manifest、permissions、API、打包、导入、
 后台限制和错误码；首页空状态与帮助页可触发“安装三个范例”，走同一导入器。
@@ -290,8 +299,8 @@ Developer Help 是离线原生页面，
    `https://api.github.com/repos/gkeyes/ToolBox-Android`，allowlist 仅 `api.github.com`，使用
    固定 host User-Agent；使用 `background.tasks`、`network`、`notifications`。
 
-三个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，0.3 不
-修改其 API 用法，也不把它们作为本轮独立交付物。
+三个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，不修改其
+API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 0.3.1 工具，不加入 APK assets。
 
 ## 10. 最小验证与交付
 
@@ -307,8 +316,9 @@ Developer Help 是离线原生页面，
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、三个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试 →
-APK 产物。最终只上传 `toolbox-v0.3.0-debug.apk`、`SHA256SUMS.txt` 和构建/测试回执；APK 内仍
-含三个未修改范例。自动交付流程不启动模拟器；回执必须明确设备测试未执行。相机、SAF、
+APK/TBX 产物。0.3.1 上传 `toolbox-v0.3.1-debug.apk`、`stock-monitor-v1.1.0.tbx`、
+`SHA256SUMS.txt` 和构建/测试回执；APK 内仍含三个未修改范例。自动交付流程不启动模拟器；
+回执必须明确设备测试和超级岛展示未执行。相机、SAF、
 Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由用户在候选 APK 上真机验证。
 
 ## 11. 完成条件
@@ -318,4 +328,4 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 - 三个范例可由干净安装的候选 APK 导入并完成各自声明功能。
 - WebView、消息桥、包检查和网络代理符合第 2 节不变量。
 - 每项保留测试有理由/方法/预期；静态候选门禁结果与用户真机结果分开记录。
-- GitHub 只在静态门禁通过后发布 0.3 APK、SHA256 和同提交回执，不伪造设备验证结论。
+- GitHub 只在静态门禁通过后发布 0.3.1 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。

@@ -65,7 +65,9 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
    清理和后台总开关，三个现有范例保持原样。
 5. **0.3 通用运行宿主**：先建立 host → web 事件通道，再实现持续运行环境、恢复、计时器、
    位置 watch、精确闹钟、通用公网 HTTPS 请求以及普通通知上的 HyperOS 增强适配。
-6. **交付门**：协议一致性、安全静态检查、Kotlin 编译和最小单元测试通过后由 GitHub
+6. **0.3.1 实时展示**：`notifications.live` 绑定当前后台 session，普通持续通知为可靠基础，
+   Android 实时更新与 HyperOS Focus V3 为尽力增强；不加入 Root、Shizuku 或白名单绕过。
+7. **交付门**：协议一致性、安全静态检查、Kotlin 编译和最小单元测试通过后由 GitHub
    Actions 上传 APK、`SHA256SUMS.txt` 与同提交测试回执；不启动模拟器。
 
 ## API 与后台合同
@@ -87,6 +89,8 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 - `network.request` 允许访问 manifest 精确声明的公网 HTTPS 域名及合法 HTTPS 端口，支持常用
   方法、Header、文本/JSON/二进制请求体、超时和响应上限；私网、回环、保留地址、
   IP 字面量、危险协议 Header 与未复验重定向仍被阻止。
+- `notifications.live.start/update/end` 只接受当前工具 `background.start` 返回的 sessionId；每个
+  会话一个实时状态，停止会话或关闭通知权限时清理。`REQUESTED` 只代表增强数据已提交给系统。
 
 ## UI、帮助和范例
 
@@ -94,11 +98,10 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
   手势 inset 仅消费一次；字体放大不整体放大容器。
 - 权限页使用完整行可点击的 Miuix switch setting；设置只显示主题、后台保障、工具权限和
   Developer Help。后台保障集中展示总开关、运行会话、通知、后台定位、精确闹钟、电池策略、
-  HyperOS 自启动入口与超级岛/焦点通知支持状态。
+  HyperOS 自启动入口与实时通知/超级岛支持状态。
 - Developer Help 是离线原生页面，从 canonical API 和实际示例生成：目录、manifest、权限、
   JS API、打包、导入、后台限制和错误码。
-- 仓位计算器、快速笔记和后台任务演示三个现有范例保持原样；0.3 不开发新范例，也不把
-  `.tbx` 作为本轮独立交付物。
+- 仓位计算器、快速笔记和后台任务演示三个现有范例保持原样并继续内置；独立行情哨兵不加入 APK assets。
 
 ## 验证与汇报
 
@@ -108,4 +111,5 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 
 每阶段汇报：改动文件、运行方式、每项测试的理由/方法/预期/实际结果、证据路径和剩余风险。
 0.3 继续采用开发期干净安装基线，Room schema 没有变化并保持 v1；不新增迁移或兼容代码。
-最终候选只交付 `toolbox-v0.3.0-debug.apk`、`SHA256SUMS.txt`、构建提交号和测试回执。
+0.3.1 候选交付 `toolbox-v0.3.1-debug.apk`、`stock-monitor-v1.1.0.tbx`、`SHA256SUMS.txt`、
+构建提交号和测试回执；回执必须明确真机超级岛验证未在 CI 执行。

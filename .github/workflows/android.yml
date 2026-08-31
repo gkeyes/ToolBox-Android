@@ -56,7 +56,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package statically verified v0.3.0 delivery
+    name: Package statically verified v0.3.1 delivery
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -89,6 +89,7 @@ jobs:
         run: |
           first_sums="$RUNNER_TEMP/toolbox-example-sums-first.txt"
           second_sums="$RUNNER_TEMP/toolbox-example-sums-second.txt"
+          bash scripts/package-examples.sh
           shasum -a 256 \
             build/examples/position-calculator.tbx \
             build/examples/quick-notes.tbx \
@@ -107,6 +108,27 @@ jobs:
           grep -Fx 'assets/position-calculator.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
           grep -Fx 'assets/quick-notes.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
           grep -Fx 'assets/background-task-demo.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+          ! grep -Fx 'assets/stock-monitor.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+
+      - name: Verify stock monitor package is reproducible and uses the public API
+        run: |
+          node --check examples/stock-monitor/app.js
+          ! grep -R --line-number --fixed-strings 'notifications.focus' examples/stock-monitor
+          first_sum="$RUNNER_TEMP/stock-monitor-first.sha256"
+          second_sum="$RUNNER_TEMP/stock-monitor-second.sha256"
+          bash examples/stock-monitor/package.sh
+          shasum -a 256 build/examples/stock-monitor.tbx | awk '{print $1}' > "$first_sum"
+          bash examples/stock-monitor/package.sh
+          shasum -a 256 build/examples/stock-monitor.tbx | awk '{print $1}' > "$second_sum"
+          diff -u "$first_sum" "$second_sum"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("examples/stock-monitor/manifest.json").read_text())
+          assert manifest["version"] == "1.1.0"
+          assert manifest["versionCode"] == 2
+          assert manifest["minHostVersion"] == "0.3.1"
+          PY
 
       - name: Assemble checksummed delivery
         env:
@@ -120,34 +142,43 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.3.0-debug.apk"
+          stock_path="$GITHUB_WORKSPACE/build/examples/stock-monitor.tbx"
+          [[ -f "$stock_path" ]]
+          cp "$apk_path" "$delivery_dir/toolbox-v0.3.1-debug.apk"
+          cp "$stock_path" "$delivery_dir/stock-monitor-v1.1.0.tbx"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.3.0\n'
-            printf 'VERSION_CODE=3\n'
+            printf 'VERSION_NAME=0.3.1\n'
+            printf 'VERSION_CODE=4\n'
+            printf 'STOCK_MONITOR_VERSION=1.1.0\n'
+            printf 'STOCK_MONITOR_VERSION_CODE=2\n'
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
+            printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
+            printf 'STOCK_MONITOR_SOURCE=build/examples/stock-monitor.tbx\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx\n'
-            printf 'DELIVERY_FILES=toolbox-v0.3.0-debug.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.3.1-debug.apk,stock-monitor-v1.1.0.tbx,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.3.0-debug.apk \
+              toolbox-v0.3.1-debug.apk \
+              stock-monitor-v1.1.0.tbx \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.3.0 delivery
+      - name: Upload verified v0.3.1 delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.3.0-${{ github.sha }}
+          name: toolbox-v0.3.1-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.3.0-debug.apk
+            build/ci-delivery/toolbox-v0.3.1-debug.apk
+            build/ci-delivery/stock-monitor-v1.1.0.tbx
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

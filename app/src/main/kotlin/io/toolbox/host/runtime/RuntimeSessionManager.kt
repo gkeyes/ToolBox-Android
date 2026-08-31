@@ -17,6 +17,8 @@ import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
 import io.toolbox.host.MainActivity
 import io.toolbox.host.R
+import io.toolbox.host.background.AndroidNotificationGateway
+import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.tool.runtime.HardenedRuntimeWebView
 import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RpcValue
@@ -30,6 +32,10 @@ import io.toolbox.tool.runtime.RuntimeCreationPermitResult
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeLocationWatchHandler
 import io.toolbox.tool.runtime.RuntimeLocationWatchOptions
+import io.toolbox.tool.runtime.RuntimeAndroidLiveStatus
+import io.toolbox.tool.runtime.RuntimeHyperOsIslandStatus
+import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
+import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
 import io.toolbox.tool.runtime.RuntimePermitProvider
 import io.toolbox.tool.runtime.RuntimePreparationResult
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
@@ -112,6 +118,9 @@ internal class RuntimeSessionManager(
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
+    private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
+        refreshForegroundService()
+    }
     private var recovered = false
 
     val sessions: StateFlow<List<RuntimeBackgroundSessionUi>> = mutableSessions.asStateFlow()
@@ -161,6 +170,7 @@ internal class RuntimeSessionManager(
     )
 
     suspend fun recover(reason: String) {
+        if (withContext(Dispatchers.Main.immediate) { recovered }) return
         val recovery = withContext(Dispatchers.IO) { readPersistedState() }
         withContext(Dispatchers.Main.immediate) {
             if (recovered) return@withContext
@@ -198,6 +208,7 @@ internal class RuntimeSessionManager(
     suspend fun stopTool(toolId: String, removeAlarms: Boolean = true) = withContext(Dispatchers.Main.immediate) {
         val removedSessionIds = sessionsByTool.remove(toolId)?.keys.orEmpty()
         removedSessionIds.forEach(::cancelReminder)
+        liveNotifications.clearSessions(removedSessionIds)
         timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
         clearAllWatches(toolId)
         cancelRuntimeNotifications(removedSessionIds)
@@ -226,6 +237,10 @@ internal class RuntimeSessionManager(
     suspend fun onCapabilityDisabled(toolId: String, capability: String) {
         when (capability) {
             "background.runtime" -> stopTool(toolId, removeAlarms = false)
+            "notifications" -> withContext(Dispatchers.Main.immediate) {
+                val sessionIds = sessionsByTool[toolId].orEmpty().keys
+                liveNotifications.clearSessions(sessionIds)
+            }
             "location" -> withContext(Dispatchers.Main.immediate) { clearAllWatches(toolId) }
             "location.background" -> withContext(Dispatchers.Main.immediate) { clearBackgroundWatches(toolId) }
             "alarms" -> withContext(Dispatchers.Main.immediate) {
@@ -268,6 +283,57 @@ internal class RuntimeSessionManager(
 
     fun hasBackgroundLocationWatch(): Boolean = watchesByTool.values.any { watches ->
         watches.values.any(ActiveLocationWatch::allowBackground)
+    }
+
+    fun foregroundNotificationSnapshot(): RuntimeForegroundNotificationSnapshot {
+        val activeSessions = mutableSessions.value
+        val activeIds = activeSessions.mapTo(hashSetOf(), RuntimeBackgroundSessionUi::sessionId)
+        return RuntimeForegroundNotificationSnapshot(
+            sessions = activeSessions,
+            presentations = liveNotifications.snapshot().filter { it.request.sessionId in activeIds },
+            usesLocation = hasBackgroundLocationWatch(),
+        )
+    }
+
+    suspend fun startLiveNotification(
+        toolId: String,
+        versionCode: Int,
+        request: RuntimeLiveNotificationRequest,
+    ): RuntimeLiveNotificationResult {
+        withContext(Dispatchers.Main.immediate) {
+            requireLiveSessionOwner(toolId, versionCode, request.sessionId)
+        }
+        val support = notificationSupport()
+        return withContext(Dispatchers.Main.immediate) {
+            val host = requireLiveSessionOwner(toolId, versionCode, request.sessionId)
+            liveNotifications.start(toolId, host.runtime.toolName, request)
+            support.toRuntimeResult()
+        }
+    }
+
+    suspend fun updateLiveNotification(
+        toolId: String,
+        versionCode: Int,
+        request: RuntimeLiveNotificationRequest,
+    ): RuntimeLiveNotificationResult {
+        withContext(Dispatchers.Main.immediate) {
+            requireLiveSessionOwner(toolId, versionCode, request.sessionId)
+        }
+        val support = notificationSupport()
+        return withContext(Dispatchers.Main.immediate) {
+            val host = requireLiveSessionOwner(toolId, versionCode, request.sessionId)
+            if (!liveNotifications.update(toolId, host.runtime.toolName, request)) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "实时展示尚未开始")
+            }
+            support.toRuntimeResult()
+        }
+    }
+
+    suspend fun endLiveNotification(toolId: String, versionCode: Int, sessionId: String) {
+        withContext(Dispatchers.Main.immediate) {
+            requireLiveSessionOwner(toolId, versionCode, sessionId)
+            liveNotifications.end(toolId, sessionId)
+        }
     }
 
     private suspend fun ensureRuntime(toolId: String, restoreReason: String?) {
@@ -614,6 +680,7 @@ internal class RuntimeSessionManager(
     private suspend fun stopSession(toolId: String, sessionId: String): Boolean {
         val removed = sessionsByTool[toolId]?.remove(sessionId) ?: return false
         cancelReminder(removed.sessionId)
+        liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
             timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
             clearBackgroundWatches(toolId)
@@ -632,6 +699,41 @@ internal class RuntimeSessionManager(
             throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "工具运行环境已改变")
         }
     }
+
+    private fun requireLiveSessionOwner(toolId: String, versionCode: Int, sessionId: String): RuntimeHost {
+        ensureCurrentRuntime(toolId, versionCode)
+        if (sessionsByTool[toolId]?.containsKey(sessionId) != true) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "后台运行会话不属于当前工具")
+        }
+        return checkNotNull(hosts[toolId])
+    }
+
+    private suspend fun notificationSupport(): LiveNotificationSupportState {
+        val liveChannelBlocked = notificationManager
+            .getNotificationChannel(RuntimeLiveNotificationRenderer.CHANNEL_ID)
+            ?.importance == NotificationManager.IMPORTANCE_NONE
+        if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ||
+            !notificationManager.areNotificationsEnabled() || liveChannelBlocked
+        ) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统通知未开启")
+        }
+        return AndroidNotificationGateway(appContext).liveSupport()
+    }
+
+    private fun LiveNotificationSupportState.toRuntimeResult() = RuntimeLiveNotificationResult(
+        androidLive = when {
+            !androidLiveAvailable -> RuntimeAndroidLiveStatus.UNAVAILABLE
+            androidLiveAllowed -> RuntimeAndroidLiveStatus.REQUESTED
+            else -> RuntimeAndroidLiveStatus.NOT_ALLOWED
+        },
+        hyperOsIsland = if (hyperOsSupported) {
+            RuntimeHyperOsIslandStatus.REQUESTED
+        } else {
+            RuntimeHyperOsIslandStatus.UNAVAILABLE
+        },
+        hyperOsProtocolVersion = hyperOsProtocolVersion,
+        hyperOsPermissionReported = hyperOsPermissionReported,
+    )
 
     private fun emitLocation(toolId: String, watchId: String, location: Location) {
         val host = hosts[toolId] ?: return

@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "25ce65e4e13f8e0ff588bac12b7c904f627538399a961a521c735768440d4c7b";
+export type ToolBoxContractSha256 = "02de7340d7a5d18231ddcbe224d4adbfa24f30c690d63c9f43bb29df7f42cb57";
 
 export type ToolBoxCapability =
   | "storage"
@@ -39,9 +39,9 @@ export type ToolBoxMethodName =
   | "notifications.post"
   | "notifications.update"
   | "notifications.cancel"
-  | "notifications.focus.start"
-  | "notifications.focus.update"
-  | "notifications.focus.end"
+  | "notifications.live.start"
+  | "notifications.live.update"
+  | "notifications.live.end"
   | "background.enqueue"
   | "background.schedulePeriodic"
   | "background.start"
@@ -131,16 +131,27 @@ export interface NetworkResponse {
   readonly bodyEncoding: "text" | "base64";
 }
 
-export interface FocusNotificationRequest {
-  readonly id: string;
+export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
+
+export interface LiveNotificationRequest {
+  readonly sessionId: string;
   readonly title: string;
-  readonly body: string;
+  readonly primaryText: string;
+  readonly secondaryText?: string;
+  readonly body?: string;
+  readonly shortText?: string;
+  readonly updatedAt?: number;
   readonly progress?: number;
+  readonly accentColor?: string;
+  readonly tone?: LiveNotificationTone;
 }
 
-export interface FocusNotificationResult {
-  readonly mode: "ENHANCEMENT_REQUESTED" | "STANDARD";
-  readonly protocolVersion: number;
+export interface LiveNotificationResult {
+  readonly standard: "POSTED";
+  readonly androidLive: "REQUESTED" | "UNAVAILABLE" | "NOT_ALLOWED";
+  readonly hyperOsIsland: "REQUESTED" | "UNAVAILABLE";
+  readonly hyperOsProtocolVersion: number;
+  readonly hyperOsPermissionReported: boolean;
 }
 
 export interface FileToken {
@@ -292,10 +303,10 @@ export interface ToolBoxApi {
     post(id: string, title: string, body: string): Promise<void>;
     update(id: string, title: string, body: string): Promise<void>;
     cancel(id: string): Promise<void>;
-    focus: {
-      start(request: FocusNotificationRequest): Promise<FocusNotificationResult>;
-      update(request: FocusNotificationRequest): Promise<FocusNotificationResult>;
-      end(id: string): Promise<void>;
+    live: {
+      start(request: LiveNotificationRequest): Promise<LiveNotificationResult>;
+      update(request: LiveNotificationRequest): Promise<LiveNotificationResult>;
+      end(sessionId: string): Promise<void>;
     };
   };
   background: {

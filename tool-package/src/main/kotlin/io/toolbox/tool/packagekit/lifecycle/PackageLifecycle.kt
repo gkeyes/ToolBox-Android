@@ -47,7 +47,7 @@ object ToolPackageManagers {
         transactions: InstallTransactionRepository,
         limits: PackageLimits = PackageLimits(),
         supportedCapabilities: Set<String> = SupportedToolCapabilities.All,
-        hostVersion: String = "0.3.0",
+        hostVersion: String = "0.3.1",
     ): ToolPackageManager = DefaultToolPackageManager(
         filesRoot = privateFilesDirectory.toPath(),
         catalog = catalog,

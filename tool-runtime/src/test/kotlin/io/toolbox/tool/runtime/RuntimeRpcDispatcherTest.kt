@@ -176,23 +176,94 @@ class RuntimeRpcDispatcherTest {
         assertTrue(notification is RuntimeRpcResponse.Success)
         assertEquals("sync-ready", recorder.postedNotificationId)
 
-        val focus = dispatcher.dispatch(
+        val liveStart = dispatcher.dispatch(
             request(
-                method = "notifications.focus.start",
+                method = "notifications.live.start",
                 params = RpcValue.ObjectValue(
                     mapOf(
-                        "id" to RpcValue.StringValue("sync-focus"),
-                        "title" to RpcValue.StringValue("Running"),
-                        "body" to RpcValue.StringValue("Standard notification fallback"),
+                        "sessionId" to RpcValue.StringValue("runtime-session"),
+                        "title" to RpcValue.StringValue("Example Corp · TEST"),
+                        "primaryText" to RpcValue.StringValue("12.34"),
+                        "secondaryText" to RpcValue.StringValue("+1.25% · 10:30"),
+                        "body" to RpcValue.StringValue("Market data updated"),
+                        "shortText" to RpcValue.StringValue("12.34"),
+                        "updatedAt" to RpcValue.Number(1_700_000_000_000.0),
+                        "progress" to RpcValue.Number(100.0),
+                        "accentColor" to RpcValue.StringValue("#E53935"),
+                        "tone" to RpcValue.StringValue("positive"),
                     ),
                 ),
             ),
             inbound,
         ) as RuntimeRpcResponse.Success
+        val liveResult = (liveStart.result as RpcValue.ObjectValue).value
+        assertEquals("POSTED", (liveResult.getValue("standard") as RpcValue.StringValue).value)
+        assertEquals("NOT_ALLOWED", (liveResult.getValue("androidLive") as RpcValue.StringValue).value)
+        assertEquals("REQUESTED", (liveResult.getValue("hyperOsIsland") as RpcValue.StringValue).value)
         assertEquals(
-            "STANDARD",
-            ((focus.result as RpcValue.ObjectValue).value.getValue("mode") as RpcValue.StringValue).value,
+            "12.34",
+            recorder.liveNotification?.primaryText,
         )
+
+        val liveUpdate = dispatcher.dispatch(
+            request(
+                method = "notifications.live.update",
+                params = RpcValue.ObjectValue(
+                    mapOf(
+                        "sessionId" to RpcValue.StringValue("runtime-session"),
+                        "title" to RpcValue.StringValue("Example Corp · TEST"),
+                        "primaryText" to RpcValue.StringValue("12.56"),
+                    ),
+                ),
+            ),
+            inbound,
+        )
+        assertTrue(liveUpdate is RuntimeRpcResponse.Success)
+        assertEquals("12.56", recorder.liveNotification?.primaryText)
+
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            dispatcher.dispatch(
+                request(
+                    method = "notifications.live.update",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "sessionId" to RpcValue.StringValue("runtime-session"),
+                            "title" to RpcValue.StringValue("Example Corp · TEST"),
+                            "primaryText" to RpcValue.StringValue("12.56"),
+                            "accentColor" to RpcValue.StringValue("red"),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_SESSION,
+            dispatcher.dispatch(
+                request(
+                    method = "notifications.live.start",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "sessionId" to RpcValue.StringValue("other-session"),
+                            "title" to RpcValue.StringValue("Wrong owner"),
+                            "primaryText" to RpcValue.StringValue("0"),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+
+        val liveEnd = dispatcher.dispatch(
+            request(
+                method = "notifications.live.end",
+                params = RpcValue.ObjectValue(mapOf("sessionId" to RpcValue.StringValue("runtime-session"))),
+            ),
+            inbound,
+        )
+        assertTrue(liveEnd is RuntimeRpcResponse.Success)
+        assertEquals("runtime-session", recorder.endedLiveSessionId)
 
         val notificationCancelled = dispatcher.dispatch(
             request(
@@ -619,6 +690,8 @@ class RuntimeRpcDispatcherTest {
         var periodicSpec: RuntimeBackgroundTaskSpec? = null
         var periodicIntervalMinutes: Long? = null
         var cancelledTaskId: String? = null
+        var liveNotification: RuntimeLiveNotificationRequest? = null
+        var endedLiveSessionId: String? = null
 
         fun handlers() = RuntimeM2Handlers(
             network = RuntimeNetworkHandler { request ->
@@ -638,12 +711,24 @@ class RuntimeRpcDispatcherTest {
                     cancelledNotificationId = notificationId
                 }
 
-                override suspend fun focus(
-                    notificationId: String,
-                    title: String,
-                    body: String,
-                    progress: Int?,
-                ) = RuntimeFocusNotificationResult(enhancementRequested = false, protocolVersion = 0)
+                override suspend fun startLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult {
+                    if (request.sessionId != "runtime-session") {
+                        throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "Wrong session")
+                    }
+                    liveNotification = request
+                    return RuntimeLiveNotificationResult(
+                        androidLive = RuntimeAndroidLiveStatus.NOT_ALLOWED,
+                        hyperOsIsland = RuntimeHyperOsIslandStatus.REQUESTED,
+                        hyperOsProtocolVersion = 3,
+                        hyperOsPermissionReported = false,
+                    )
+                }
+
+                override suspend fun updateLive(request: RuntimeLiveNotificationRequest) = startLive(request)
+
+                override suspend fun endLive(sessionId: String) {
+                    endedLiveSessionId = sessionId
+                }
             },
             background = object : RuntimeBackgroundTaskHandler {
                 override suspend fun enqueue(spec: RuntimeBackgroundTaskSpec): String {

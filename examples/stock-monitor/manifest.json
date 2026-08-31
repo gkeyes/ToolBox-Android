@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.stockmonitor",
+  "name": "行情哨兵",
+  "shortName": "行情哨兵",
+  "description": "A 股与全球股票价格监控、阈值提醒和后台持续刷新。",
+  "version": "1.1.0",
+  "versionCode": 2,
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.3.1",
+  "categories": ["金融", "监控"],
+  "permissions": [
+    {"name": "storage", "reason": "保存自选股票、提醒阈值和最近行情。", "required": false},
+    {"name": "storage.secure", "reason": "加密保存可选的 Twelve Data API Token。", "required": false},
+    {"name": "network", "reason": "通过宿主 HTTPS 代理获取声明数据源的行情。", "required": false},
+    {"name": "notifications", "reason": "显示持续更新的行情状态，并在价格越过阈值时发送普通提醒。", "required": false},
+    {"name": "background.runtime", "reason": "离开页面后继续按用户设置的间隔检查行情。", "required": false}
+  ],
+  "network": {
+    "allowDomains": ["web.ifzq.gtimg.cn", "api.twelvedata.com"],
+    "allowRedirects": false,
+    "maxResponseBytes": 262144,
+    "timeoutMs": 20000
+  },
+  "securityProfile": "strict",
+  "ui": {
+    "orientation": "portrait",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  },
+  "limits": {
+    "storageBytes": 1048576,
+    "maxBridgePayloadBytes": 262144
+  }
+}

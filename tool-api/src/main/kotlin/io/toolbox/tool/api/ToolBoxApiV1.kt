@@ -47,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "25ce65e4e13f8e0ff588bac12b7c904f627538399a961a521c735768440d4c7b"
+    const val CANONICAL_SHA256: String = "02de7340d7a5d18231ddcbe224d4adbfa24f30c690d63c9f43bb29df7f42cb57"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -89,9 +89,9 @@ object ToolBoxApiV1 {
         MethodDescriptor("notifications.post", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.cancel", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),
-        MethodDescriptor("notifications.focus.start", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "FocusNotificationRequest", "FocusNotificationResult"),
-        MethodDescriptor("notifications.focus.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "FocusNotificationRequest", "FocusNotificationResult"),
-        MethodDescriptor("notifications.focus.end", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),
+        MethodDescriptor("notifications.live.start", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "LiveNotificationRequest", "LiveNotificationResult"),
+        MethodDescriptor("notifications.live.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "LiveNotificationRequest", "LiveNotificationResult"),
+        MethodDescriptor("notifications.live.end", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "BackgroundSessionIdRequest", "void"),
         MethodDescriptor("background.enqueue", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "BackgroundTaskSpec", "TaskIdResult"),
         MethodDescriptor("background.schedulePeriodic", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "PeriodicTaskSpec", "TaskIdResult"),
         MethodDescriptor("background.start", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundStartOptions", "BackgroundSessionSummary"),

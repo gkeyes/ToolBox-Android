@@ -54,6 +54,8 @@ import io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding
 import io.toolbox.tool.runtime.RuntimeNetworkRequest
 import io.toolbox.tool.runtime.RuntimeNetworkResponse
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
+import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
+import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.RuntimeDataCleaner
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
@@ -301,27 +303,28 @@ internal class ProductionHostBackgroundOperations(
                 }
             }
 
-            override suspend fun focus(
-                notificationId: String,
-                title: String,
-                body: String,
-                progress: Int?,
-            ): io.toolbox.tool.runtime.RuntimeFocusNotificationResult = when (
-                val result = notifications.postFocus(runtime.toolId, notificationId, title, body, progress)
-            ) {
-                is io.toolbox.host.background.FocusDeliveryResult.Posted ->
-                    io.toolbox.tool.runtime.RuntimeFocusNotificationResult(
-                        result.enhancementRequested,
-                        result.protocolVersion,
-                    )
-                is io.toolbox.host.background.FocusDeliveryResult.Rejected -> throw RuntimeHandlerException(
-                    result.errorCode.toRuntimeErrorCode(),
-                    "焦点通知未能发送。",
+            override suspend fun startLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult {
+                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
+                    RuntimeRpcErrorCode.UNSUPPORTED,
+                    "持续运行环境不可用",
                 )
+                return sessions.startLiveNotification(runtime.toolId, runtime.versionCode, request)
             }
 
-            override suspend fun endFocus(notificationId: String) {
-                notifications.cancel(runtime.toolId, notificationId)
+            override suspend fun updateLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult {
+                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
+                    RuntimeRpcErrorCode.UNSUPPORTED,
+                    "持续运行环境不可用",
+                )
+                return sessions.updateLiveNotification(runtime.toolId, runtime.versionCode, request)
+            }
+
+            override suspend fun endLive(sessionId: String) {
+                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
+                    RuntimeRpcErrorCode.UNSUPPORTED,
+                    "持续运行环境不可用",
+                )
+                sessions.endLiveNotification(runtime.toolId, runtime.versionCode, sessionId)
             }
         },
         background = RuntimeBackgroundTaskAdapter(runtime, coordinator),

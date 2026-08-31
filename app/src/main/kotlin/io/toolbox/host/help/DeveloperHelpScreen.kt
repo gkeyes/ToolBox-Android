@@ -85,7 +85,7 @@ internal fun DeveloperHelpScreen(
             item("manifest") {
                 HelpSection(
                     title = "2. manifest.json",
-                    body = "声明工具身份、入口、版本和所需能力。只有声明过的能力才会出现在这个工具的权限页；使用 0.3 新能力时，minHostVersion 至少为 0.3.0。",
+                    body = "声明工具身份、入口、版本和所需能力。只有声明过的能力才会出现在这个工具的权限页；使用实时通知时，minHostVersion 至少为 0.3.1。",
                     code = manifestExample,
                 )
             }
@@ -155,6 +155,24 @@ internal fun DeveloperHelpScreen(
                 HelpSection(
                     title = "6. 持续运行与后台任务",
                     body = "0.3 的 background.start 会把当前运行页面提升为持续环境。离开页面后 WebView 与桥接会从界面分离但不销毁，再次打开会挂回同一环境；重复 start 返回同一 sessionId。页面可用 setTimer 接收 background.timer，并在进程或重启恢复后通过 background.restore 自行恢复状态。连续运行每 12 小时会提醒一次，Android 仍可能回收进程，因此这是可恢复的尽力运行，不是永久存活保证。\n\nbackground.listSessions 只列持续环境；旧 background.list 仍列 WorkManager 任务。旧任务继续保持每工具 8 个活动任务、4 个周期任务和最短 15 分钟周期，三个现有范例无需修改。",
+                )
+            }
+            item("live-notifications") {
+                HelpSection(
+                    title = "实时通知",
+                    body = "先用 background.start 获得 sessionId，再调用 notifications.live.start。后续 update 会原位更新普通持续通知，并在系统支持时请求 Android 实时更新与 HyperOS 超级岛；REQUESTED 只表示已提交给系统。end 只结束实时展示，不停止后台会话。停止会话、关闭授权、更新或删除工具时宿主会自动清理。",
+                    code = """
+                        const session = await ToolBox.background.start()
+                        await ToolBox.notifications.live.start({
+                          sessionId: session.sessionId,
+                          title: "示例状态",
+                          primaryText: "12.34",
+                          secondaryText: "+1.25% · 10:30",
+                          shortText: "12.34",
+                          tone: "positive",
+                          accentColor: "#E53935"
+                        })
+                    """,
                 )
             }
             item("network") {
@@ -353,7 +371,7 @@ private val manifestExample = """
       "versionCode": 1,
       "entry": "index.html",
       "apiVersion": "1.0",
-      "minHostVersion": "0.3.0",
+      "minHostVersion": "0.3.1",
       "permissions": [
         { "name": "storage", "reason": "保存工具数据" }
       ],

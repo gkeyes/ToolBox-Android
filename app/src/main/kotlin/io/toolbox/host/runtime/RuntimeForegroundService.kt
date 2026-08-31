@@ -1,8 +1,5 @@
 package io.toolbox.host.runtime
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -11,8 +8,9 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import io.toolbox.host.MainActivity
-import io.toolbox.host.R
 import io.toolbox.host.ToolBoxApplication
+import io.toolbox.host.background.AndroidNotificationGateway
+import io.toolbox.host.background.LiveNotificationSupportState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +23,16 @@ internal class RuntimeForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        promote(sessionCount = 0, usesLocation = false)
+        promote(
+            RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false),
+            LiveNotificationSupportState(
+                hyperOsProtocolVersion = 0,
+                hyperOsSupported = false,
+                hyperOsPermissionReported = false,
+                androidLiveAvailable = Build.VERSION.SDK_INT >= 36,
+                androidLiveAllowed = false,
+            ),
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -41,12 +48,12 @@ internal class RuntimeForegroundService : Service() {
                 ACTION_RESTORE_REBOOT -> dependencies.runtimeSessions.recover(RESTORE_REBOOT)
                 else -> dependencies.runtimeSessions.recover(RESTORE_PROCESS)
             }
-            val count = dependencies.runtimeSessions.activeSessionCount()
-            if (count == 0) {
+            val snapshot = dependencies.runtimeSessions.foregroundNotificationSnapshot()
+            if (snapshot.sessions.isEmpty()) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             } else {
-                promote(count, dependencies.runtimeSessions.hasBackgroundLocationWatch())
+                promote(snapshot, AndroidNotificationGateway(this@RuntimeForegroundService).liveSupport())
             }
         }
         return START_STICKY
@@ -59,47 +66,41 @@ internal class RuntimeForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun promote(sessionCount: Int, usesLocation: Boolean) {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "ToolBox 后台运行", NotificationManager.IMPORTANCE_LOW),
-        )
+    private fun promote(
+        snapshot: RuntimeForegroundNotificationSnapshot,
+        support: LiveNotificationSupportState,
+    ) {
+        val renderer = RuntimeLiveNotificationRenderer(this)
+        renderer.createChannel()
+        val openIntent = snapshot.primarySession?.toolId?.let { toolId ->
+            MainActivity.openToolIntent(this, toolId)
+        } ?: Intent(this, MainActivity::class.java)
+            .setAction(Intent.ACTION_MAIN)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val open = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java)
-                .setAction(Intent.ACTION_MAIN)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getService(
+        val stopAll = PendingIntent.getService(
             this,
             1,
             Intent(this, RuntimeForegroundService::class.java).setAction(ACTION_STOP_ALL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox)
-            .setContentTitle(if (sessionCount == 0) "正在准备后台工具" else "$sessionCount 个工具正在后台运行")
-            .setContentText("点击可返回 ToolBox，或随时停止后台环境")
-            .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "打开", open).build())
-            .addAction(Notification.Action.Builder(null, "全部停止", stop).build())
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build()
+        val stopCurrent = snapshot.primarySession?.sessionId?.let { stopSessionPendingIntent(this, it) }
+        val notification = renderer.build(snapshot, support, open, stopCurrent, stopAll)
         if (Build.VERSION.SDK_INT >= 34) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                if (usesLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
-            startForeground(NOTIFICATION_ID, notification, types)
+                if (snapshot.usesLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+            startForeground(RuntimeLiveNotificationRenderer.NOTIFICATION_ID, notification, types)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(RuntimeLiveNotificationRenderer.NOTIFICATION_ID, notification)
         }
     }
 
     companion object {
-        private const val CHANNEL_ID = "toolbox.runtime.service.v1"
-        private const val NOTIFICATION_ID = 0x544258
         private const val ACTION_REFRESH = "io.toolbox.host.runtime.REFRESH"
         private const val ACTION_RESTORE_REBOOT = "io.toolbox.host.runtime.RESTORE_REBOOT"
         private const val ACTION_STOP_SESSION = "io.toolbox.host.runtime.STOP_SESSION"

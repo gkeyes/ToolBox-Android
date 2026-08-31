@@ -328,10 +328,10 @@ class RuntimeBridgeSession internal constructor(
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
                   update: (id, title, body) => call('notifications.update', { id, title, body }),
                   cancel: id => call('notifications.cancel', { id }),
-                  focus: {
-                    start: request => call('notifications.focus.start', request),
-                    update: request => call('notifications.focus.update', request),
-                    end: id => call('notifications.focus.end', { id })
+                  live: {
+                    start: request => call('notifications.live.start', request),
+                    update: request => call('notifications.live.update', request),
+                    end: sessionId => call('notifications.live.end', { sessionId })
                   }
                 },
                 background: {

@@ -176,22 +176,43 @@ interface RuntimeNotificationHandler {
     suspend fun post(notificationId: String, title: String, body: String)
     suspend fun update(notificationId: String, title: String, body: String) = post(notificationId, title, body)
     suspend fun cancel(notificationId: String)
-    suspend fun focus(
-        notificationId: String,
-        title: String,
-        body: String,
-        progress: Int?,
-    ): RuntimeFocusNotificationResult = throw RuntimeHandlerException(
+    suspend fun startLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult = throw RuntimeHandlerException(
         RuntimeRpcErrorCode.UNSUPPORTED,
-        "Focus notifications are unavailable",
+        "Live notifications are unavailable",
     )
 
-    suspend fun endFocus(notificationId: String) = cancel(notificationId)
+    suspend fun updateLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult = startLive(request)
+
+    suspend fun endLive(sessionId: String): Unit = throw RuntimeHandlerException(
+        RuntimeRpcErrorCode.UNSUPPORTED,
+        "Live notifications are unavailable",
+    )
 }
 
-data class RuntimeFocusNotificationResult(
-    val enhancementRequested: Boolean,
-    val protocolVersion: Int,
+enum class RuntimeLiveNotificationTone { NEUTRAL, POSITIVE, NEGATIVE, WARNING }
+
+data class RuntimeLiveNotificationRequest(
+    val sessionId: String,
+    val title: String,
+    val primaryText: String,
+    val secondaryText: String?,
+    val body: String?,
+    val shortText: String?,
+    val updatedAt: Long?,
+    val progress: Int?,
+    val accentColor: String?,
+    val tone: RuntimeLiveNotificationTone,
+)
+
+enum class RuntimeAndroidLiveStatus { REQUESTED, UNAVAILABLE, NOT_ALLOWED }
+
+enum class RuntimeHyperOsIslandStatus { REQUESTED, UNAVAILABLE }
+
+data class RuntimeLiveNotificationResult(
+    val androidLive: RuntimeAndroidLiveStatus,
+    val hyperOsIsland: RuntimeHyperOsIslandStatus,
+    val hyperOsProtocolVersion: Int,
+    val hyperOsPermissionReported: Boolean,
 )
 
 sealed interface RuntimeBackgroundTaskOperation {
@@ -545,21 +566,19 @@ class RuntimeRpcDispatcher(
             )
             RpcValue.Null
         }
-        "notifications.focus.start", "notifications.focus.update" -> {
-            params.requireOnly("id", "title", "body", "progress")
-            val result = requireHandler(m2Handlers.notifications).focus(
-                notificationId = params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
-                title = params.requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
-                body = params.requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
-                progress = params.optionalInt("progress", 0, 100),
-            )
-            result.toRpcValue()
+        "notifications.live.start" -> {
+            requireHandler(m2Handlers.notifications)
+                .startLive(params.toLiveNotificationRequest())
+                .toRpcValue()
         }
-        "notifications.focus.end" -> {
-            params.requireOnly("id")
-            requireHandler(m2Handlers.notifications).endFocus(
-                params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
-            )
+        "notifications.live.update" -> {
+            requireHandler(m2Handlers.notifications)
+                .updateLive(params.toLiveNotificationRequest())
+                .toRpcValue()
+        }
+        "notifications.live.end" -> {
+            params.requireOnly("sessionId")
+            requireHandler(m2Handlers.notifications).endLive(params.requiredSessionId())
             RpcValue.Null
         }
         "background.enqueue" -> RpcValue.StringValue(
@@ -811,12 +830,15 @@ class RuntimeRpcDispatcher(
         )
     }
 
-    private fun RuntimeFocusNotificationResult.toRpcValue(): RpcValue.ObjectValue {
-        require(protocolVersion >= 0)
+    private fun RuntimeLiveNotificationResult.toRpcValue(): RpcValue.ObjectValue {
+        require(hyperOsProtocolVersion >= 0)
         return RpcValue.ObjectValue(
             mapOf(
-                "mode" to RpcValue.StringValue(if (enhancementRequested) "ENHANCEMENT_REQUESTED" else "STANDARD"),
-                "protocolVersion" to RpcValue.Number(protocolVersion.toDouble()),
+                "standard" to RpcValue.StringValue("POSTED"),
+                "androidLive" to RpcValue.StringValue(androidLive.name),
+                "hyperOsIsland" to RpcValue.StringValue(hyperOsIsland.name),
+                "hyperOsProtocolVersion" to RpcValue.Number(hyperOsProtocolVersion.toDouble()),
+                "hyperOsPermissionReported" to RpcValue.Bool(hyperOsPermissionReported),
             ),
         )
     }
@@ -1060,6 +1082,48 @@ class RuntimeRpcDispatcher(
         )
     }
 
+    private fun RpcValue.ObjectValue.toLiveNotificationRequest(): RuntimeLiveNotificationRequest {
+        requireOnly(
+            "sessionId",
+            "title",
+            "primaryText",
+            "secondaryText",
+            "body",
+            "shortText",
+            "updatedAt",
+            "progress",
+            "accentColor",
+            "tone",
+        )
+        val accentColor = optionalString("accentColor", 7)
+        require(accentColor == null || LIVE_NOTIFICATION_COLOR.matches(accentColor))
+        val tone = when (optionalString("tone", 8) ?: "neutral") {
+            "neutral" -> RuntimeLiveNotificationTone.NEUTRAL
+            "positive" -> RuntimeLiveNotificationTone.POSITIVE
+            "negative" -> RuntimeLiveNotificationTone.NEGATIVE
+            "warning" -> RuntimeLiveNotificationTone.WARNING
+            else -> throw IllegalArgumentException("tone")
+        }
+        return RuntimeLiveNotificationRequest(
+            sessionId = requiredSessionId(),
+            title = requiredDisplayText("title", MAX_NOTIFICATION_TITLE_CHARS),
+            primaryText = requiredDisplayText("primaryText", MAX_LIVE_PRIMARY_CHARS),
+            secondaryText = optionalDisplayText("secondaryText", MAX_LIVE_SECONDARY_CHARS),
+            body = optionalDisplayText("body", MAX_NOTIFICATION_BODY_CHARS),
+            shortText = optionalDisplayText("shortText", MAX_LIVE_SHORT_TEXT_CHARS),
+            updatedAt = optionalLong("updatedAt", 0, MAX_SAFE_INTEGER),
+            progress = optionalInt("progress", 0, 100),
+            accentColor = accentColor,
+            tone = tone,
+        )
+    }
+
+    private fun RpcValue.ObjectValue.requiredDisplayText(name: String, maxChars: Int): String =
+        requiredString(name, maxChars).also { require(it.isNotBlank() && it.none(Char::isISOControl)) }
+
+    private fun RpcValue.ObjectValue.optionalDisplayText(name: String, maxChars: Int): String? =
+        optionalString(name, maxChars)?.also { require(it.none(Char::isISOControl)) }
+
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
         val allowed = if (periodic) {
             arrayOf("key", "operation", "constraints", "intervalMinutes")
@@ -1131,6 +1195,7 @@ class RuntimeRpcDispatcher(
             "transfer-encoding", "upgrade",
         )
         val MIME_TYPE = Regex("^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+*\\-]+$")
+        val LIVE_NOTIFICATION_COLOR = Regex("^#[0-9A-Fa-f]{6}$")
         const val MAX_KEY_CHARS = 128
         const val MAX_TOAST_CHARS = 200
         const val MAX_HASH_BYTES = 1024 * 1024
@@ -1160,6 +1225,9 @@ class RuntimeRpcDispatcher(
         const val MAX_NOTIFICATION_ID_CHARS = 64
         const val MAX_NOTIFICATION_TITLE_CHARS = 64
         const val MAX_NOTIFICATION_BODY_CHARS = 256
+        const val MAX_LIVE_PRIMARY_CHARS = 32
+        const val MAX_LIVE_SECONDARY_CHARS = 96
+        const val MAX_LIVE_SHORT_TEXT_CHARS = 12
         const val MAX_TASK_ID_CHARS = 128
         const val MAX_TASK_KEY_CHARS = 64
         const val MAX_TIMER_KEY_CHARS = 128

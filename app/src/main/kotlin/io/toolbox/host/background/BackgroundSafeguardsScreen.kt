@@ -77,10 +77,16 @@ internal fun BackgroundSafeguardsScreen(
 
     val systemState = remember(refreshGeneration) { readBackgroundSystemState(context) }
     val focusState by produceState(
-        initialValue = FocusSupportState(protocolVersion = 0, supported = false, permissionGranted = false),
+        initialValue = LiveNotificationSupportState(
+            hyperOsProtocolVersion = 0,
+            hyperOsSupported = false,
+            hyperOsPermissionReported = false,
+            androidLiveAvailable = false,
+            androidLiveAllowed = false,
+        ),
         key1 = refreshGeneration,
     ) {
-        value = AndroidNotificationGateway(context).focusSupport()
+        value = AndroidNotificationGateway(context).liveSupport()
     }
     val openAppSettings = { context.openFirstSupported(appDetailsIntent(context)) }
     val backgroundLocationLauncher = rememberLauncherForActivityResult(
@@ -242,7 +248,7 @@ internal fun BackgroundSafeguardsScreen(
                     )
                     ToolBoxGroupDivider()
                     SystemStatusRow(
-                        title = "超级岛",
+                        title = "实时通知与超级岛",
                         summary = focusState.summary(),
                     )
                 }
@@ -315,12 +321,19 @@ private fun readBackgroundSystemState(context: Context): BackgroundSystemState {
     )
 }
 
-private fun FocusSupportState.summary(): String = when {
-    protocolVersion >= 3 && permissionGranted -> "超级岛可用 · 协议 $protocolVersion"
-    protocolVersion >= 3 -> "支持超级岛 · 焦点通知权限未开启"
-    supported && permissionGranted -> "焦点通知可用 · 协议 $protocolVersion；超级岛需要 OS3"
-    supported -> "支持焦点通知 · 当前会使用普通通知"
-    else -> "未检测到支持 · 使用普通通知"
+private fun LiveNotificationSupportState.summary(): String {
+    val android = when {
+        !androidLiveAvailable -> "Android 实时更新不可用"
+        androidLiveAllowed -> "Android 实时更新可请求"
+        else -> "Android 实时更新未获系统允许"
+    }
+    val hyperOs = if (hyperOsSupported) {
+        val permission = if (hyperOsPermissionReported) "系统报告焦点权限已开" else "系统未报告焦点权限"
+        "检测到超级岛协议 $hyperOsProtocolVersion，仍会提交完整数据（$permission）"
+    } else {
+        "未检测到超级岛协议"
+    }
+    return "$android；$hyperOs。普通持续通知始终作为基础显示。"
 }
 
 private fun Context.openHyperOsAutoStart() {

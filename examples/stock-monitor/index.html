@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f7fa" />
+  <title>行情哨兵</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell" aria-labelledby="page-title">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">行情哨兵</h1>
+        <p id="runtime-caption">正在连接 ToolBox</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="monitor-state" class="monitor-state" data-active="false"><span aria-hidden="true"></span>未监控</span>
+        <button id="refresh" class="icon-button" type="button" aria-label="刷新全部行情" title="刷新全部行情">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.7-2.5L20 9M4 15l2.2 2.5A7 7 0 0 0 18 15" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="status-line" aria-live="polite">
+      <span id="status-dot" class="status-dot" data-tone="neutral" aria-hidden="true"></span>
+      <p id="status">准备就绪</p>
+    </section>
+
+    <section class="watch-section" aria-labelledby="watch-title">
+      <div class="section-heading">
+        <h2 id="watch-title">自选监控</h2>
+        <span id="watch-count">0 只</span>
+      </div>
+      <div id="watchlist" class="watchlist"></div>
+      <div id="empty" class="empty-state" hidden>
+        <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M5 24 12 17l5 4 10-12M22 9h5v5" /></svg>
+        <h3>还没有监控股票</h3>
+        <p>添加代码和价格条件，刷新后即可看到真实行情。</p>
+      </div>
+    </section>
+
+    <footer class="action-dock">
+      <div class="primary-actions">
+        <button id="add-stock" class="button secondary" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+          添加股票
+        </button>
+        <button id="toggle-monitor" class="button primary" type="button">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path class="play-path" d="m9 7 8 5-8 5Z" /><path class="stop-path" d="M8 8h8v8H8z" /></svg>
+          <span>后台监控</span>
+        </button>
+      </div>
+      <div class="source-status">
+        <span id="provider-summary">数据源：腾讯行情</span>
+        <span id="last-refresh">尚未更新</span>
+      </div>
+    </footer>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="stock-form" class="sheet" novalidate>
+      <header class="sheet-header">
+        <button id="cancel-editor" class="icon-button" type="button" aria-label="取消">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
+        </button>
+        <h2 id="editor-title">添加监控</h2>
+        <span aria-hidden="true"></span>
+      </header>
+
+      <div class="form-group">
+        <label class="form-row">
+          <span>股票代码</span>
+          <input id="symbol" name="symbol" type="text" maxlength="32" autocomplete="off" placeholder="如 600550 或 AAPL" required />
+        </label>
+        <label class="form-row">
+          <span>股票名称</span>
+          <input id="stock-name" name="name" type="text" maxlength="40" autocomplete="off" placeholder="可留空自动识别" />
+        </label>
+        <fieldset class="provider-fieldset">
+          <legend>数据源</legend>
+          <div class="provider-options">
+            <label><input type="radio" name="provider" value="tencent" checked /><span>腾讯行情<small>A 股实时/最近行情</small></span></label>
+            <label><input type="radio" name="provider" value="twelve" /><span>Twelve Data<small>全球市场，需 Token</small></span></label>
+          </div>
+        </fieldset>
+        <div id="token-panel" class="token-panel" hidden>
+          <label class="form-row token-row">
+            <span>API Token</span>
+            <input id="api-token" name="apiToken" type="password" maxlength="256" autocomplete="new-password" placeholder="输入后安全保存" />
+          </label>
+          <div class="token-actions">
+            <span id="token-state">尚未保存</span>
+            <button id="clear-token" type="button">清除 Token</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-row">
+          <span>高于此价提醒</span>
+          <input id="upper-price" name="upper" type="number" inputmode="decimal" min="0" step="0.001" placeholder="不填则关闭" />
+        </label>
+        <label class="form-row">
+          <span>低于此价提醒</span>
+          <input id="lower-price" name="lower" type="number" inputmode="decimal" min="0" step="0.001" placeholder="不填则关闭" />
+        </label>
+        <label class="form-row">
+          <span>监控间隔</span>
+          <select id="interval" name="interval">
+            <option value="60000">1 分钟</option>
+            <option value="300000" selected>5 分钟</option>
+            <option value="900000">15 分钟</option>
+            <option value="1800000">30 分钟</option>
+          </select>
+        </label>
+        <label class="switch-row">
+          <span><strong>启用这只股票</strong><small>关闭后保留设置，但不再请求行情</small></span>
+          <input id="enabled" name="enabled" type="checkbox" checked />
+        </label>
+      </div>
+
+      <p id="form-error" class="form-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button id="delete-stock" class="button danger" type="button" hidden>删除</button>
+        <button class="button primary" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="quote-template">
+    <article class="quote-row">
+      <button class="quote-summary" type="button" aria-label="编辑股票">
+        <span class="identity"><strong class="quote-name"></strong><small class="quote-symbol"></small></span>
+        <span class="metric"><small>最新价</small><strong class="quote-price">--</strong></span>
+        <span class="metric"><small>涨跌幅</small><strong class="quote-change">--</strong></span>
+      </button>
+      <div class="quote-meta">
+        <span class="quote-updated">尚未更新</span>
+        <span class="quote-source"></span>
+      </div>
+      <div class="alert-rows">
+        <span class="upper-alert"></span>
+        <span class="lower-alert"></span>
+      </div>
+      <div class="quote-tools">
+        <label class="inline-switch"><span>参与监控</span><input class="enabled-toggle" type="checkbox" /></label>
+        <button class="edit-button" type="button">编辑</button>
+      </div>
+      <p class="quote-error" role="status" hidden></p>
+    </article>
+  </template>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
