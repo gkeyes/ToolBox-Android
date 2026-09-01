@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="后台任务演示"><rect width="128" height="128" rx="28" fill="#0b8c78"/><path fill="#fff" d="M64 26a38 38 0 1 0 38 38A38 38 0 0 0 64 26m4 18v19l15 9-4 7-19-12V44z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="后台任务演示">
+  <defs>
+    <linearGradient id="bg" x1="15" y1="12" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#253E4E"/>
+      <stop offset="1" stop-color="#317F87"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="25" y1="34" x2="105" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DB6D0"/>
+      <stop offset="1" stop-color="#58F2C2"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
+  <circle cx="64" cy="65" r="42" fill="none" stroke="#A9C4D4" stroke-width="7" opacity=".42"/>
+  <path d="M36 34a42 42 0 0 1 62 12" fill="none" stroke="url(#orbit)" stroke-linecap="round" stroke-width="8"/>
+  <path d="M94 90a42 42 0 0 1-61 7" fill="none" stroke="url(#orbit)" stroke-linecap="round" stroke-width="8"/>
+  <circle cx="31" cy="39" r="8" fill="#55EBC0" stroke="#D8FFF5" stroke-width="3"/>
+  <rect x="47" y="43" width="18" height="49" rx="9" transform="rotate(-27 47 43)" fill="#7999AC" opacity=".7"/>
+  <rect x="56" y="36" width="19" height="57" rx="9.5" fill="#A3C2D4" opacity=".84"/>
+  <rect x="62" y="58" width="50" height="22" rx="11" transform="rotate(-16 62 58)" fill="#66D8C1"/>
+  <circle cx="61" cy="82" r="15" fill="#4D7184" stroke="#B5F7E5" stroke-width="2"/>
+  <circle cx="61" cy="82" r="6" fill="#7CFFE0"/>
+</svg>

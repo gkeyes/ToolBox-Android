@@ -22,7 +22,7 @@ manifest、grant、Android 权限、手势、速率和配额。
    伪造为成功。
 4. bridge 仍唯一使用 `WebViewCompat.addWebMessageListener`，继续遵守全部 AGENTS 安全
    不变量；本 ADR 不允许 `addJavascriptInterface`、`file://`、localhost 或弱化检查。
-5. Developer Help 与三个范例直接从 API v1 合同同步，避免文档与运行时分叉。
+5. Developer Help 与四个范例直接从 API v1 合同同步，避免文档与运行时分叉。
 
 ## 后果
 

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>通知实验室</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <div class="hero-mark" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="hero-copy">
+        <p class="eyebrow">ToolBox 通知能力测试台</p>
+        <h1>通知实验室</h1>
+        <p id="host-caption" class="caption">正在连接宿主…</p>
+      </div>
+      <span id="runtime-state" class="state-pill" data-state="idle">未启动</span>
+    </header>
+
+    <section class="panel" aria-labelledby="channel-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">CHANNEL RECEIPT</p>
+          <h2 id="channel-heading">渠道回执</h2>
+        </div>
+        <button id="refresh-session" class="text-button" type="button">同步</button>
+      </div>
+      <div class="receipt-grid">
+        <article class="receipt-item">
+          <span>普通通知</span>
+          <strong id="standard-result">未测试</strong>
+        </article>
+        <article class="receipt-item">
+          <span>Android Live</span>
+          <strong id="android-result">未测试</strong>
+        </article>
+        <article class="receipt-item">
+          <span>HyperOS 超级岛</span>
+          <strong id="hyperos-result">未测试</strong>
+        </article>
+        <article class="receipt-item">
+          <span>Focus 协议 / 权限</span>
+          <strong id="focus-result">未测试</strong>
+        </article>
+      </div>
+      <p class="footnote">REQUESTED 代表数据已提交给系统，最终是否展示由当前系统决定。</p>
+      <p class="footnote permission-note">所有样本均通过 ToolBox App 的通知权限与公开接口发送，不直接访问 Android 通知服务。</p>
+    </section>
+
+    <section class="panel" aria-labelledby="sample-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">DYNAMIC SAMPLE</p>
+          <h2 id="sample-heading">动态样本</h2>
+        </div>
+        <span id="update-count" class="counter">第 0 次</span>
+      </div>
+      <div class="preset-row" role="group" aria-label="选择通知样本">
+        <button class="preset active" data-preset="market" type="button">行情</button>
+        <button class="preset" data-preset="countdown" type="button">倒计时</button>
+        <button class="preset" data-preset="trip" type="button">行程</button>
+      </div>
+      <article id="sample-preview" class="sample-preview" data-tone="positive">
+        <div class="sample-icon" aria-hidden="true"></div>
+        <div class="sample-content">
+          <p id="sample-title" class="sample-title">行情动态样本</p>
+          <strong id="sample-primary" class="sample-primary">¥10.88</strong>
+          <p id="sample-secondary" class="sample-secondary">+0.00% · 等待更新</p>
+        </div>
+        <span id="sample-short" class="sample-short">10.88</span>
+        <div class="progress-track" aria-hidden="true"><span id="sample-progress"></span></div>
+      </article>
+      <label class="select-row" for="interval">
+        <span>后台自动更新间隔</span>
+        <select id="interval">
+          <option value="1000">1 秒</option>
+          <option value="2000" selected>2 秒</option>
+          <option value="5000">5 秒</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="panel" aria-labelledby="standard-heading">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">STANDARD</p>
+          <h2 id="standard-heading">普通通知</h2>
+        </div>
+      </div>
+      <div class="button-grid three">
+        <button id="standard-post" class="button primary" type="button">发布</button>
+        <button id="standard-update" class="button" type="button">原位更新</button>
+        <button id="standard-cancel" class="button danger" type="button">取消</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="live-heading">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">LIVE + HYPEROS</p>
+          <h2 id="live-heading">实时通知与超级岛</h2>
+        </div>
+      </div>
+      <div class="button-grid two">
+        <button id="live-start" class="button primary" type="button">开始实时展示</button>
+        <button id="live-update" class="button" type="button">更新一次</button>
+        <button id="auto-toggle" class="button" type="button">开始自动更新</button>
+        <button id="live-end" class="button danger" type="button">结束实时展示</button>
+      </div>
+      <button id="stop-background" class="button full ghost" type="button">停止后台环境并清理</button>
+    </section>
+
+    <section class="panel log-panel" aria-labelledby="log-heading">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">EVENT LOG</p>
+          <h2 id="log-heading">调用记录</h2>
+        </div>
+        <button id="clear-log" class="text-button" type="button">清空</button>
+      </div>
+      <ol id="event-log" class="event-log" aria-live="polite"></ol>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

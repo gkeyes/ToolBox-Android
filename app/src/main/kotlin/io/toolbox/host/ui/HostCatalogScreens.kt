@@ -45,6 +45,7 @@ import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.R
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.CatalogFeedback
 import io.toolbox.host.catalog.CatalogTool
@@ -325,6 +326,7 @@ private fun CatalogToolRow(
                     icon = visual.icon,
                     accent = visual.accent,
                     size = ToolBoxThemeTokens.sizes.compactToolGlyph,
+                    imageResource = visual.imageResource,
                 )
                 Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
                 Column(Modifier.weight(1f)) {
@@ -354,7 +356,11 @@ private fun ToolIdentity(tool: CatalogTool) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolGlyph(icon = visual.icon, accent = visual.accent)
+        ToolGlyph(
+            icon = visual.icon,
+            accent = visual.accent,
+            imageResource = visual.imageResource,
+        )
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
         Column(Modifier.weight(1f)) {
             AppText(
@@ -445,14 +451,14 @@ internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Un
             align = androidx.compose.ui.text.style.TextAlign.Center,
         )
         AppText(
-            text = "先安装三个可直接使用的范例，或导入自己的 .tbx。",
+            text = "先安装四个可直接使用的范例，或导入自己的 .tbx。",
             modifier = Modifier.fillMaxWidth(),
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
             color = ToolBoxThemeTokens.colors.textSecondary,
             align = androidx.compose.ui.text.style.TextAlign.Center,
         )
         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-        ToolBoxPrimaryButton("安装三个范例", onInstallExamples, Modifier.fillMaxWidth())
+        ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
         ToolBoxTextButton("导入 .tbx", onImport, Modifier.fillMaxWidth())
     }
 }
@@ -471,9 +477,25 @@ internal fun CatalogStatusState(message: String) {
     }
 }
 
-private data class ToolVisual(val icon: ToolBoxIconKey, val accent: Color)
+private data class ToolVisual(
+    val icon: ToolBoxIconKey,
+    val accent: Color,
+    val imageResource: Int? = null,
+)
 
-private fun CatalogTool.visual(primary: Color): ToolVisual = when {
+private fun CatalogTool.visual(primary: Color): ToolVisual = when (toolId) {
+    "io.toolbox.positioncalculator" ->
+        ToolVisual(ToolBoxIconKey.Calculator, primary, R.drawable.example_position_calculator)
+    "io.toolbox.quicknotes" ->
+        ToolVisual(ToolBoxIconKey.Note, Color(0xFF6A78B7), R.drawable.example_quick_notes)
+    "io.toolbox.backgroundtaskdemo" ->
+        ToolVisual(ToolBoxIconKey.Code, Color(0xFF317F87), R.drawable.example_background_tasks)
+    "io.toolbox.notificationlab" ->
+        ToolVisual(ToolBoxIconKey.Notifications, Color(0xFF526A9C), R.drawable.example_notification_lab)
+    else -> fallbackVisual(primary)
+}
+
+private fun CatalogTool.fallbackVisual(primary: Color): ToolVisual = when {
     toolId.contains("position", ignoreCase = true) || name.contains("计算") ->
         ToolVisual(ToolBoxIconKey.Calculator, primary)
     toolId.contains("note", ignoreCase = true) || name.contains("笔记") ->

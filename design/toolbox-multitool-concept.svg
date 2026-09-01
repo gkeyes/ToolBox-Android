@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7F8A97"/>
+      <stop offset="0.5" stop-color="#56616E"/>
+      <stop offset="1" stop-color="#303A47"/>
+    </linearGradient>
+    <linearGradient id="rearModule" x1="250" y1="210" x2="390" y2="670" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C7DAEB" stop-opacity="0.66"/>
+      <stop offset="1" stop-color="#7694AF" stop-opacity="0.56"/>
+    </linearGradient>
+    <linearGradient id="middleModule" x1="270" y1="180" x2="430" y2="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A7D6F5" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#4A91C7" stop-opacity="0.78"/>
+    </linearGradient>
+    <linearGradient id="frontModule" x1="250" y1="160" x2="440" y2="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D4F0FF" stop-opacity="0.98"/>
+      <stop offset="0.48" stop-color="#82C9ED" stop-opacity="0.94"/>
+      <stop offset="1" stop-color="#4E9ECD" stop-opacity="0.9"/>
+    </linearGradient>
+    <radialGradient id="hubOuter" cx="38%" cy="30%" r="78%">
+      <stop offset="0" stop-color="#BFE8FF" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#4C82AA" stop-opacity="0.96"/>
+    </radialGradient>
+    <linearGradient id="hubInner" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E2F5FF"/>
+      <stop offset="1" stop-color="#78B8DD"/>
+    </linearGradient>
+    <filter id="layerShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#17212B" flood-opacity="0.16"/>
+    </filter>
+    <filter id="hubShadow" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="10" flood-color="#17212B" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#background)"/>
+
+  <g transform="translate(-40 -120) scale(1.25)">
+  <g filter="url(#layerShadow)">
+    <rect x="276" y="320" width="76" height="382" rx="38"
+          transform="rotate(-5 314 698)"
+          fill="url(#rearModule)" stroke="#EAF7FF" stroke-opacity="0.24" stroke-width="3"/>
+
+    <rect x="266" y="278" width="96" height="424" rx="48"
+          transform="rotate(34 314 698)"
+          fill="url(#middleModule)" stroke="#EAF7FF" stroke-opacity="0.3" stroke-width="3"/>
+
+    <rect x="219" y="326" width="190" height="424" rx="86"
+          transform="rotate(78 314 698)"
+          fill="url(#frontModule)" stroke="#F2FBFF" stroke-opacity="0.4" stroke-width="3"/>
+  </g>
+
+  <g filter="url(#hubShadow)">
+    <circle cx="314" cy="698" r="82" fill="url(#hubOuter)"/>
+    <circle cx="314" cy="698" r="42" fill="url(#hubInner)"/>
+  </g>
+  </g>
+</svg>

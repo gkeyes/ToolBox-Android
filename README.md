@@ -30,8 +30,8 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 4. **通用宿主能力**：声明域名内的公网 HTTPS 请求、会话绑定的实时通知与 HyperOS 增强、前后台位置
    watch、精确闹钟，以及剪贴板、分享、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
 
-仓位计算器、快速笔记、后台任务演示三个现有范例保持原样并继续内置。行情哨兵作为独立 `.tbx`
-交付，不加入 APK assets；0.3.2 GitHub 产物包含 APK、行情哨兵、SHA256 清单和同提交测试回执。
+仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
+交付，不加入 APK assets；0.3.3 GitHub 产物包含 APK、行情哨兵、SHA256 清单和同提交测试回执。
 
 ## 本地运行
 
@@ -65,7 +65,7 @@ tool-package/                     `.tbx` 检查、签名/完整性、原子安�
 tool-runtime/                     exact-origin AssetLoader 与硬化 WebView
 tool-api/                         API v1 合同、bridge、handler 与后台协调
 docs/ToolBox_Android_技术方案.md   当前产品与安全架构基线
-examples/                         三个范例源码、打包脚本与 `.tbx`
+examples/                         四个内置范例及独立工具的源码与打包脚本
 ```
 
 ## 安全边界

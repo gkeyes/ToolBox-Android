@@ -27,7 +27,7 @@ class HostNavigationTest {
         composeRule.waitUntil(timeoutMillis = 10_000) { emptyState.isDisplayed() }
         emptyState.assertIsDisplayed()
 
-        composeRule.onNodeWithText("安装三个范例").performClick()
+        composeRule.onNodeWithText("安装四个范例").performClick()
         waitForVisibleText("后台任务演示", timeoutMillis = 20_000)
 
         composeRule.onNodeWithContentDescription("管理后台任务演示").performClick()
@@ -72,6 +72,7 @@ class HostNavigationTest {
         composeRule.onAllNodesWithText("后台任务演示").assertCountEquals(0)
         composeRule.onNodeWithText("仓位计算器").assertIsDisplayed()
         composeRule.onNodeWithText("快速笔记").assertIsDisplayed()
+        composeRule.onNodeWithText("通知实验室").assertIsDisplayed()
     }
 
     private fun waitForVisibleText(text: String, timeoutMillis: Long = 10_000) {

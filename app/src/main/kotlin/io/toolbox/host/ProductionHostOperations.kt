@@ -214,6 +214,7 @@ internal class ProductionHostPackageOperations(
             "position-calculator.tbx",
             "quick-notes.tbx",
             "background-task-demo.tbx",
+            "notification-lab.tbx",
         )
     }
 }

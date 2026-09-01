@@ -93,12 +93,14 @@ The authoritative non-negotiable rules remain in `AGENTS.md`.
 
 ## Shipped examples and developer help
 
-`scripts/package-examples.sh` produces the three importable API 1.0 examples:
+`scripts/package-examples.sh` produces the four importable API 1.0 examples:
 
 1. `position-calculator.tbx` — persisted inputs, result copy and haptics.
 2. `quick-notes.tbx` — create/edit/delete/persist/copy notes.
 3. `background-task-demo.tbx` — GitHub HTTP and notification tasks, task list,
    cancellation and latest result.
+4. `notification-lab.tbx` — standard notifications, live updates, background timers,
+   Android Live status and HyperOS island status.
 
 The in-app offline Developer Help is generated from this API contract and the
 examples. It documents package layout, manifest declarations, permissions,
@@ -107,8 +109,8 @@ JavaScript calls, packaging, import, background limits and errors.
 ## Remaining delivery boundary
 
 The 0.3 workflow runs protocol, security, compile and admitted-unit gates, then
-uploads only the APK, SHA-256 sums and same-commit receipt. The three unchanged
-examples remain embedded in the APK. It does not start an emulator or claim
+uploads the APK, independent stock-monitor package, SHA-256 sums and same-commit
+receipt. All four shipped examples remain embedded in the APK. It does not start an emulator or claim
 device validation in the delivery receipt.
 
 Real Android system surfaces remain device-specific: SAF, camera, Sharesheet,

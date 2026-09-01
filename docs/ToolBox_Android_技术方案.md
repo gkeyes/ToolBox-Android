@@ -287,10 +287,10 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
 设置最终只显示真实功能：主题、后台保障、工具权限、Developer Help。后台保障集中管理总开关、
 持续会话、通知、后台定位、精确闹钟、电池策略、HyperOS 自启动/省电入口和实时通知增强状态。
 Developer Help 是离线原生页面，
-从 API v1 合同和三个实际范例派生，说明包目录、manifest、permissions、API、打包、导入、
-后台限制和错误码；首页空状态与帮助页可触发“安装三个范例”，走同一导入器。
+从 API v1 合同和四个实际范例派生，说明包目录、manifest、permissions、API、打包、导入、
+后台限制和错误码；首页空状态与帮助页可触发“安装四个范例”，走同一导入器。
 
-## 9. 三个示例
+## 9. 四个示例
 
 1. **仓位计算器**：真实计算、保存输入、复制结果、触觉反馈与 toast；使用 `storage`、
    `clipboard.write`、`haptics`。
@@ -298,9 +298,11 @@ Developer Help 是离线原生页面，
 3. **后台任务演示**：创建/查看/取消受控 HTTP 与通知任务、显示最近结果；固定 URL 为
    `https://api.github.com/repos/gkeyes/ToolBox-Android`，allowlist 仅 `api.github.com`，使用
    固定 host User-Agent；使用 `background.tasks`、`network`、`notifications`。
+4. **通知实验室**：验证普通通知发布/更新/取消、会话绑定实时通知、后台计时原位更新、
+   Android Live 状态与 HyperOS 超级岛状态；使用 `storage`、`notifications`、`background.runtime`。
 
-三个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，不修改其
-API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 0.3.2 工具，不加入 APK assets。
+四个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，不把它们
+作为本轮独立交付物。行情哨兵要求至少 0.3.2 宿主，继续独立交付且不加入 APK assets。
 
 ## 10. 最小验证与交付
 
@@ -310,14 +312,14 @@ API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 
 | 场景 | 理由 | 方法 | 预期 |
 |---|---|---|---|
 | 新鲜数据基线 | 防止无用兼容代码残留。 | 创建/重开 production Room/DataStore，写工具、grant、KV、任务、结果并检查 schema/keys。 | 真实状态持久化；没有 audit/publisher/旧设置/迁移。 |
-| 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入三个有效例子、损坏包与现有恶意 ZIP 矩阵，再从菜单删除。 | 有效包可打开；无效零残留；删除完整清理。 |
+| 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入四个有效例子、损坏包与现有恶意 ZIP 矩阵，再从菜单删除。 | 有效包可打开；无效零残留；删除完整清理。 |
 | 权限与 RPC | 防止开关和功能脱节。 | 逐 capability 调 production dispatcher，并关闭每一个授权层。 | 开启有真实结果；任一层缺失稳定拒绝。 |
 | 后台与代理 | 防止持续环境丢失、旧 API 冲突或 SSRF。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；无 SSRF、孤儿资源或协议回退。 |
-| Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、三个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
+| Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试 →
-APK/TBX 产物。0.3.2 上传 `toolbox-v0.3.2-debug.apk`、`stock-monitor-v1.1.1.tbx`、
-`SHA256SUMS.txt` 和构建/测试回执；APK 内仍含三个未修改范例。自动交付流程不启动模拟器；
+APK/TBX 产物。0.3.3 上传 `toolbox-v0.3.3-debug.apk`、`stock-monitor-v1.1.1.tbx`、
+`SHA256SUMS.txt` 和构建/测试回执；APK 内含四个范例。自动交付流程不启动模拟器；
 回执必须明确设备测试和超级岛展示未执行。相机、SAF、
 Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由用户在候选 APK 上真机验证。
 
@@ -325,7 +327,7 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 
 - 一步导入、工具列表、打开、权限切换、持续运行、旧后台任务和删除均为真实功能，无审核/审计/签名 UI
   或无效按钮。
-- 三个范例可由干净安装的候选 APK 导入并完成各自声明功能。
+- 四个范例可由干净安装的候选 APK 导入并完成各自声明功能。
 - WebView、消息桥、包检查和网络代理符合第 2 节不变量。
 - 每项保留测试有理由/方法/预期；静态候选门禁结果与用户真机结果分开记录。
-- GitHub 只在静态门禁通过后发布 0.3.2 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。
+- GitHub 只在静态门禁通过后发布 0.3.3 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。

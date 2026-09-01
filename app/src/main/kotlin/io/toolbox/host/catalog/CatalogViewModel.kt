@@ -9,13 +9,12 @@ import io.toolbox.core.data.DataResult
 import io.toolbox.host.HostDeleteResult
 import io.toolbox.host.HostPackageOperations
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 internal class CatalogViewModel(
@@ -27,8 +26,9 @@ internal class CatalogViewModel(
     private val mutableState = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
 
-    private val mutableNavigation = MutableSharedFlow<CatalogNavigationIntent>(extraBufferCapacity = 1)
-    val navigation: SharedFlow<CatalogNavigationIntent> = mutableNavigation.asSharedFlow()
+    private val mutableNavigation = Channel<CatalogNavigationIntent>(Channel.BUFFERED)
+    val navigation = mutableNavigation.receiveAsFlow()
+    private var pendingRuntimeLaunchToolId: String? = null
 
     init {
         viewModelScope.launch {
@@ -42,8 +42,8 @@ internal class CatalogViewModel(
                     }
                 }
                 .collect { entries ->
+                    val tools = entries.map(CatalogEntry::toCatalogTool)
                     update { state ->
-                        val tools = entries.map(CatalogEntry::toCatalogTool)
                         state.copy(
                             isLoaded = true,
                             tools = tools,
@@ -51,6 +51,10 @@ internal class CatalogViewModel(
                                 tools.any { it.toolId == confirmation.toolId }
                             },
                         )
+                    }
+                    pendingRuntimeLaunchToolId?.let { toolId ->
+                        pendingRuntimeLaunchToolId = null
+                        if (tools.any { it.toolId == toolId }) openInstalled(toolId)
                     }
                 }
         }
@@ -68,10 +72,18 @@ internal class CatalogViewModel(
     }
 
     private fun open(toolId: String) {
+        if (!state.value.isLoaded) {
+            pendingRuntimeLaunchToolId = toolId
+            return
+        }
         if (state.value.tools.none { it.toolId == toolId }) return
+        openInstalled(toolId)
+    }
+
+    private fun openInstalled(toolId: String) {
         viewModelScope.launch {
             when (organization.recordOpened(toolId, now())) {
-                is DataResult.Success -> mutableNavigation.emit(CatalogNavigationIntent.RequestRuntimeLaunch(toolId))
+                is DataResult.Success -> mutableNavigation.send(CatalogNavigationIntent.RequestRuntimeLaunch(toolId))
                 is DataResult.Failure -> showFailure("OPEN_FAILED", "工具暂时无法打开。")
             }
         }

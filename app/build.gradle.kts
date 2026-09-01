@@ -12,10 +12,11 @@ val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples
 
 val packageBundledExamples by tasks.registering(Exec::class) {
     group = "build"
-    description = "Packages the three shipped ToolBox examples for Android assets."
+    description = "Packages the four shipped ToolBox examples for Android assets."
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/position-calculator"))
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/quick-notes"))
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/background-task-demo"))
+    inputs.dir(rootProject.layout.projectDirectory.dir("examples/notification-lab"))
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
     outputs.dir(bundledExamplesDir)
     workingDir = rootProject.projectDir
@@ -31,8 +32,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.3.2"
+        versionCode = 6
+        versionName = "0.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -213,7 +213,7 @@ class ToolNetworkProxy private constructor(
     }
 
     private companion object {
-        const val USER_AGENT = "ToolBox/0.3.2 (Android)"
+        const val USER_AGENT = "ToolBox/0.3.3 (Android)"
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
         const val MAX_TIMEOUT_MILLIS = 600_000L

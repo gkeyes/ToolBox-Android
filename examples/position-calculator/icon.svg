@@ -1,1 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="仓位计算器"><rect width="128" height="128" rx="28" fill="#2878ed"/><path fill="#fff" d="M34 33h60a7 7 0 0 1 7 7v48a7 7 0 0 1-7 7H34a7 7 0 0 1-7-7V40a7 7 0 0 1 7-7m6 12v16h16V45zm0 28v10h16V73zm28-28v16h20V45zm0 28v10h20V73z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="仓位计算器">
+  <defs>
+    <linearGradient id="bg" x1="18" y1="12" x2="112" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#293B50"/>
+      <stop offset="1" stop-color="#4A86B8"/>
+    </linearGradient>
+    <linearGradient id="meter" x1="31" y1="52" x2="98" y2="91" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B8CDE0"/>
+      <stop offset="1" stop-color="#65DDF2"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
+  <path d="M26 65 18 45c-2-6 2-12 8-14 6-1 11 2 14 8l8 19" fill="#ADC3D6" opacity=".52"/>
+  <path d="M48 54V29c0-7 5-12 12-12s12 5 12 12v25" fill="#C4D7E7" opacity=".6"/>
+  <path d="m72 58 11-22c3-6 10-8 16-5s8 10 5 16L94 67" fill="#7CC7EA" opacity=".72"/>
+  <path d="M21 78a45 45 0 0 1 86 0L64 94Z" fill="url(#meter)"/>
+  <g stroke="#EDF8FF" stroke-linecap="round" stroke-width="4" opacity=".9">
+    <path d="m34 70-6-4"/>
+    <path d="m47 58-3-7"/>
+    <path d="M64 54v-8"/>
+    <path d="m81 58 3-7"/>
+    <path d="m94 70 6-4"/>
+  </g>
+  <circle cx="64" cy="88" r="23" fill="#526F8B" stroke="#BDEBFA" stroke-width="2"/>
+  <circle cx="54" cy="88" r="3.5" fill="#74F4F1"/>
+  <circle cx="64" cy="88" r="3.5" fill="#A8F8F5"/>
+  <circle cx="74" cy="88" r="3.5" fill="#74F4F1"/>
+</svg>

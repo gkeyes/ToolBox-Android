@@ -1,10 +1,12 @@
 package io.toolbox.host.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -31,19 +35,29 @@ internal fun ToolGlyph(
     icon: ToolBoxIconKey,
     accent: Color,
     size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
+    imageResource: Int? = null,
 ) {
     Box(
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
-            .background(accent),
+            .background(if (imageResource == null) accent else Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
-        ToolBoxIcon(
-            icon = icon,
-            contentDescription = null,
-            tint = Color.White,
-        )
+        if (imageResource != null) {
+            Image(
+                painter = painterResource(imageResource),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            ToolBoxIcon(
+                icon = icon,
+                contentDescription = null,
+                tint = Color.White,
+            )
+        }
     }
 }
 

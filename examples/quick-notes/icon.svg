@@ -1,1 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="快速笔记"><rect width="128" height="128" rx="28" fill="#7c4ce0"/><path fill="#fff" d="M39 26h39l15 15v61H39zm35 6v14h14zM49 62h30v7H49zm0 15h30v7H49zm0 15h20v7H49z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="快速笔记">
+  <defs>
+    <linearGradient id="bg" x1="16" y1="10" x2="112" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#323C57"/>
+      <stop offset="1" stop-color="#6A78B7"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="45" y1="25" x2="93" y2="106" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDF5FF"/>
+      <stop offset="1" stop-color="#8FC9EE"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
+  <rect x="24" y="31" width="65" height="79" rx="14" transform="rotate(-8 24 31)" fill="#8292B8" opacity=".58"/>
+  <rect x="31" y="25" width="68" height="82" rx="15" transform="rotate(-3 31 25)" fill="#AEBBD4" opacity=".72"/>
+  <rect x="37" y="23" width="70" height="84" rx="16" fill="url(#paper)"/>
+  <path d="M89 107h2c9 0 16-7 16-16v-3Z" fill="#71A9D5" opacity=".85"/>
+  <g fill="#527BA0" opacity=".72">
+    <rect x="51" y="43" width="39" height="5" rx="2.5"/>
+    <rect x="51" y="58" width="31" height="5" rx="2.5"/>
+    <rect x="51" y="73" width="35" height="5" rx="2.5"/>
+  </g>
+  <path d="m92 35-30 39" fill="none" stroke="#61D8FF" stroke-linecap="round" stroke-width="11"/>
+  <path d="m56 82 4-13 9 7Z" fill="#E9FBFF"/>
+</svg>

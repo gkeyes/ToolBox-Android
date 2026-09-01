@@ -59,7 +59,7 @@ internal fun DeveloperHelpScreen(
                         color = ToolBoxThemeTokens.colors.textSecondary,
                     )
                     ToolBoxPrimaryButton(
-                        label = "安装三个范例",
+                        label = "安装四个范例",
                         onClick = onInstallExamples,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -154,7 +154,7 @@ internal fun DeveloperHelpScreen(
             item("background") {
                 HelpSection(
                     title = "6. 持续运行与后台任务",
-                    body = "0.3 的 background.start 会把当前运行页面提升为持续环境。离开页面后 WebView 与桥接会从界面分离但不销毁，再次打开会挂回同一环境；重复 start 返回同一 sessionId。页面可用 setTimer 接收 background.timer，并在进程或重启恢复后通过 background.restore 自行恢复状态。连续运行每 12 小时会提醒一次，Android 仍可能回收进程，因此这是可恢复的尽力运行，不是永久存活保证。\n\nbackground.listSessions 只列持续环境；旧 background.list 仍列 WorkManager 任务。旧任务继续保持每工具 8 个活动任务、4 个周期任务和最短 15 分钟周期，三个现有范例无需修改。",
+                    body = "0.3 的 background.start 会把当前运行页面提升为持续环境。离开页面后 WebView 与桥接会从界面分离但不销毁，再次打开会挂回同一环境；重复 start 返回同一 sessionId。页面可用 setTimer 接收 background.timer，并在进程或重启恢复后通过 background.restore 自行恢复状态。连续运行每 12 小时会提醒一次，Android 仍可能回收进程，因此这是可恢复的尽力运行，不是永久存活保证。\n\nbackground.listSessions 只列持续环境；旧 background.list 仍列 WorkManager 任务。旧任务继续保持每工具 8 个活动任务、4 个周期任务和最短 15 分钟周期。",
                 )
             }
             item("live-notifications") {
@@ -189,9 +189,9 @@ internal fun DeveloperHelpScreen(
             }
             item("examples") {
                 HelpContractSection(
-                    title = "三个内置范例",
+                    title = "四个内置范例",
                     rows = exampleRows,
-                    footer = "范例源码与各自 manifest 位于项目的 examples 目录；帮助页的“安装三个范例”与外部 .tbx 使用同一安装路径。",
+                    footer = "范例源码与各自 manifest 位于项目的 examples 目录；帮助页的“安装四个范例”与外部 .tbx 使用同一安装路径。",
                 )
             }
         }
@@ -398,4 +398,5 @@ private val exampleRows = listOf(
     HelpRow("仓位计算器", "保存输入、计算仓位、复制结果与触觉反馈；声明 storage、clipboard.write、haptics。"),
     HelpRow("快速笔记", "创建、编辑、删除、重开恢复和复制笔记；声明 storage、clipboard.write。"),
     HelpRow("后台任务演示", "创建、查看和取消 GitHub HTTP 与通知任务；仅允许 api.github.com，声明 background.tasks、network、notifications。"),
+    HelpRow("通知实验室", "验证普通通知、实时通知、后台原位更新、Android Live 回执与 HyperOS 超级岛；声明 storage、notifications、background.runtime。"),
 )
