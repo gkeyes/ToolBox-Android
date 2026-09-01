@@ -406,6 +406,7 @@ private fun SecondaryRouteContent(
         is BackgroundTasksRoute -> BackgroundTasksScreen(
             toolId = route.toolId,
             operations = dependencies.backgroundOperations,
+            runtimeSessions = dependencies.runtimeSessions,
             onBack = onBack,
         )
 

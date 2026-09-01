@@ -371,7 +371,7 @@ private val manifestExample = """
       "versionCode": 1,
       "entry": "index.html",
       "apiVersion": "1.0",
-      "minHostVersion": "0.3.1",
+      "minHostVersion": "0.3.2",
       "permissions": [
         { "name": "storage", "reason": "保存工具数据" }
       ],

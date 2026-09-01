@@ -65,7 +65,7 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
    清理和后台总开关，三个现有范例保持原样。
 5. **0.3 通用运行宿主**：先建立 host → web 事件通道，再实现持续运行环境、恢复、计时器、
    位置 watch、精确闹钟、通用公网 HTTPS 请求以及普通通知上的 HyperOS 增强适配。
-6. **0.3.1 实时展示**：`notifications.live` 绑定当前后台 session，普通持续通知为可靠基础，
+6. **0.3.2 实时展示修复**：`notifications.live` 绑定当前后台 session，普通持续通知为可靠基础，
    Android 实时更新与 HyperOS Focus V3 为尽力增强；不加入 Root、Shizuku 或白名单绕过。
 7. **交付门**：协议一致性、安全静态检查、Kotlin 编译和最小单元测试通过后由 GitHub
    Actions 上传 APK、`SHA256SUMS.txt` 与同提交测试回执；不启动模拟器。
@@ -111,5 +111,5 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 
 每阶段汇报：改动文件、运行方式、每项测试的理由/方法/预期/实际结果、证据路径和剩余风险。
 0.3 继续采用开发期干净安装基线，Room schema 没有变化并保持 v1；不新增迁移或兼容代码。
-0.3.1 候选交付 `toolbox-v0.3.1-debug.apk`、`stock-monitor-v1.1.0.tbx`、`SHA256SUMS.txt`、
+0.3.2 候选交付 `toolbox-v0.3.2-debug.apk`、`stock-monitor-v1.1.1.tbx`、`SHA256SUMS.txt`、
 构建提交号和测试回执；回执必须明确真机超级岛验证未在 CI 执行。

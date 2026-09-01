@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
 import com.xzakota.hyper.notification.focus.FocusNotification
+import com.xzakota.hyper.notification.focus.model.TextAndColorInfo
 import io.toolbox.host.R
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
@@ -65,6 +66,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setWhen(updatedAt)
             .setShowWhen(true)
             .setColor(accent)
+            .setColorized(false)
             .setCategory(Notification.CATEGORY_STATUS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -114,10 +116,10 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         baseInfo {
             type = 1
             title = request.primaryText
-            colorTitle = accentHex
-            colorTitleDark = accentHex
+            applyAdaptiveFocusTextColors(this, accentHex)
             content = request.title
             subTitle = request.secondaryText
+            subContent = request.body
             extraTitle = request.updatedAt?.let(::formatTime)
             showDivider = false
             showContentDivider = false
@@ -125,10 +127,10 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         iconTextInfo {
             type = 1
             title = request.primaryText
-            colorTitle = accentHex
-            colorTitleDark = accentHex
+            applyAdaptiveFocusTextColors(this, accentHex)
             content = request.title
             subTitle = request.secondaryText
+            subContent = request.body
         }
         island {
             business = "toolbox_live"
@@ -176,4 +178,44 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         private const val GROUP_KEY = "io.toolbox.host.runtime.live"
         private val DEFAULT_ACCENT = Color.rgb(10, 132, 255)
     }
+}
+
+internal fun applyAdaptiveFocusTextColors(info: TextAndColorInfo, accentHex: String) {
+    info.colorTitle = accentHex
+    info.colorTitleDark = accentForDarkSurface(accentHex)
+    info.colorContent = "#1C1C1E"
+    info.colorContentDark = "#FFFFFF"
+    info.colorSubTitle = "#636366"
+    info.colorSubTitleDark = "#D1D1D6"
+    info.colorExtraTitle = "#636366"
+    info.colorExtraTitleDark = "#D1D1D6"
+    info.colorSubContent = "#636366"
+    info.colorSubContentDark = "#D1D1D6"
+}
+
+internal fun accentForDarkSurface(accentHex: String): String {
+    val color = accentHex.removePrefix("#").takeIf { it.length == 6 }?.toIntOrNull(16) ?: 0xFFFFFF
+    var red = ((color shr 16) and 0xFF).toDouble()
+    var green = ((color shr 8) and 0xFF).toDouble()
+    var blue = (color and 0xFF).toDouble()
+    repeat(8) {
+        if (relativeLuminance(red, green, blue) >= 0.36) return String.format(
+            "#%02X%02X%02X",
+            red.toInt(),
+            green.toInt(),
+            blue.toInt(),
+        )
+        red += (255.0 - red) * 0.22
+        green += (255.0 - green) * 0.22
+        blue += (255.0 - blue) * 0.22
+    }
+    return "#FFFFFF"
+}
+
+private fun relativeLuminance(red: Double, green: Double, blue: Double): Double {
+    fun channel(value: Double): Double {
+        val normalized = value / 255.0
+        return if (normalized <= 0.03928) normalized / 12.92 else Math.pow((normalized + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
 }

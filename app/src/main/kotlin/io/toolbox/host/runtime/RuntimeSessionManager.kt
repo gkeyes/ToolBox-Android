@@ -82,6 +82,18 @@ internal data class RuntimeBackgroundSessionUi(
     val startedAt: Long,
 )
 
+internal data class RuntimeForegroundDetachPlan(
+    val destroyHost: Boolean,
+    val refreshNotification: Boolean,
+)
+
+internal fun runtimeForegroundDetachPlan(hasBackgroundSession: Boolean): RuntimeForegroundDetachPlan =
+    if (hasBackgroundSession) {
+        RuntimeForegroundDetachPlan(destroyHost = false, refreshNotification = true)
+    } else {
+        RuntimeForegroundDetachPlan(destroyHost = true, refreshNotification = false)
+    }
+
 internal data class HostRuntimeContinuityHandlers(
     val background: RuntimeContinuousBackgroundHandler,
     val locationWatch: RuntimeLocationWatchHandler,
@@ -153,13 +165,15 @@ internal class RuntimeSessionManager(
 
     fun detachForeground(toolId: String) {
         scope.launch {
-            visibleTools -= toolId
+            if (!visibleTools.remove(toolId)) return@launch
             clearForegroundOnlyWatches(toolId)
-            if (sessionsByTool[toolId].isNullOrEmpty()) {
+            val plan = runtimeForegroundDetachPlan(!sessionsByTool[toolId].isNullOrEmpty())
+            if (plan.destroyHost) {
                 destroyHost(toolId)
             } else {
                 hosts[toolId]?.state = RuntimeHostState.BACKGROUND_DETACHED
             }
+            if (plan.refreshNotification) refreshForegroundService()
         }
     }
 

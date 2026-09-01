@@ -2,10 +2,11 @@
   "schemaVersion": 1,
   "algorithm": "SHA-256",
   "files": {
-    "manifest.json": "81cd39e7ebe950b4d5adf581924946ccc636fa42ff873fa4370f806b3dbc41fd",
-    "index.html": "82038b9ddc254eecf6399dac682cb9e5ce63f6cf727f241eeb6710649fbbb8d5",
+    "manifest.json": "a7d9f0d71894c94a496188a3761c4d59a3957afd0ad5453d7ababdd1cf73b7c2",
+    "index.html": "d051d4e3ca14f5c65e4dc2ecb496cdae4b44514b75cf6789d36a7e4dd93b332e",
     "style.css": "f631349d7d87ecdf8f3dc839c492246a69fe13461f2f9f753b516e915b4b3738",
-    "app.js": "cccc155a66b2b21f206a129c0bbdd4336a3bb06411bf3520ded065522c9546ff",
+    "live-summary.js": "c8c0303dac8d7e9a158827e0846cab76203bb85949e12400e5939db3b77ebb76",
+    "app.js": "b9fa71ed2a3f6ee267a197f1bd4ea2f6b0074361b5aff9246c744fc6212488c0",
     "icon.svg": "744cce8805eda443ab4bc36bfafa800e2654b6cd5d7327c9c791b5aacf3a491c"
   }
 }

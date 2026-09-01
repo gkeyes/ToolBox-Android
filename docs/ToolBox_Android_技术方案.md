@@ -300,7 +300,7 @@ Developer Help 是离线原生页面，
    固定 host User-Agent；使用 `background.tasks`、`network`、`notifications`。
 
 三个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，不修改其
-API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 0.3.1 工具，不加入 APK assets。
+API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 0.3.2 工具，不加入 APK assets。
 
 ## 10. 最小验证与交付
 
@@ -316,7 +316,7 @@ API 用法，也不把它们作为本轮独立交付物。行情哨兵是独立 
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、三个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试 →
-APK/TBX 产物。0.3.1 上传 `toolbox-v0.3.1-debug.apk`、`stock-monitor-v1.1.0.tbx`、
+APK/TBX 产物。0.3.2 上传 `toolbox-v0.3.2-debug.apk`、`stock-monitor-v1.1.1.tbx`、
 `SHA256SUMS.txt` 和构建/测试回执；APK 内仍含三个未修改范例。自动交付流程不启动模拟器；
 回执必须明确设备测试和超级岛展示未执行。相机、SAF、
 Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由用户在候选 APK 上真机验证。
@@ -328,4 +328,4 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 - 三个范例可由干净安装的候选 APK 导入并完成各自声明功能。
 - WebView、消息桥、包检查和网络代理符合第 2 节不变量。
 - 每项保留测试有理由/方法/预期；静态候选门禁结果与用户真机结果分开记录。
-- GitHub 只在静态门禁通过后发布 0.3.1 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。
+- GitHub 只在静态门禁通过后发布 0.3.2 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。

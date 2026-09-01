@@ -28,19 +28,27 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostBackgroundOperations
+import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
+import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.SurfaceCard
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 internal fun BackgroundTasksScreen(
     toolId: String,
     operations: HostBackgroundOperations,
+    runtimeSessions: RuntimeSessionManager,
     onBack: () -> Unit,
 ) {
     val tasks by operations.observeTasks(toolId).collectAsStateWithLifecycle(emptyList())
+    val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
+    val page = backgroundTasksPageModel(toolId, tasks, sessions)
     val scope = rememberCoroutineScope()
     var cancellingTaskId by remember { mutableStateOf<String?>(null) }
+    var stoppingSessionId by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
     ToolBoxAppScaffold(
@@ -70,7 +78,7 @@ internal fun BackgroundTasksScreen(
                     }
                 }
             }
-            if (tasks.isEmpty()) {
+            if (page.isEmpty) {
                 item("empty") {
                     SurfaceCard {
                         AppText("没有后台任务")
@@ -82,9 +90,31 @@ internal fun BackgroundTasksScreen(
                     }
                 }
             } else {
-                item("tasks") {
+                if (page.runtimeSessions.isNotEmpty()) item("runtime-sessions") {
                     ToolBoxGroupedSurface {
-                        tasks.forEachIndexed { index, task ->
+                        page.runtimeSessions.forEachIndexed { index, session ->
+                            RuntimeSessionCard(
+                                session = session,
+                                stopping = stoppingSessionId == session.sessionId,
+                                onStop = {
+                                    stoppingSessionId = session.sessionId
+                                    message = null
+                                    scope.launch {
+                                        val stopped = runtimeSessions.stopSession(session.sessionId)
+                                        stoppingSessionId = null
+                                        message = if (stopped) "后台环境已停止。" else "后台环境已结束或不存在。"
+                                    }
+                                },
+                            )
+                            if (index != page.runtimeSessions.lastIndex) {
+                                ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                            }
+                        }
+                    }
+                }
+                if (page.tasks.isNotEmpty()) item("tasks") {
+                    ToolBoxGroupedSurface {
+                        page.tasks.forEachIndexed { index, task ->
                             BackgroundTaskCard(
                                 task = task,
                                 operations = operations,
@@ -101,12 +131,56 @@ internal fun BackgroundTasksScreen(
                                     }
                                 }
                             )
-                            if (index != tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                            if (index != page.tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+internal data class BackgroundTasksPageModel(
+    val tasks: List<BackgroundTask>,
+    val runtimeSessions: List<RuntimeBackgroundSessionUi>,
+) {
+    val isEmpty: Boolean get() = tasks.isEmpty() && runtimeSessions.isEmpty()
+}
+
+internal fun backgroundTasksPageModel(
+    toolId: String,
+    tasks: List<BackgroundTask>,
+    sessions: List<RuntimeBackgroundSessionUi>,
+): BackgroundTasksPageModel = BackgroundTasksPageModel(
+    tasks = tasks,
+    runtimeSessions = sessions.filter { it.toolId == toolId },
+)
+
+@Composable
+private fun RuntimeSessionCard(
+    session: RuntimeBackgroundSessionUi,
+    stopping: Boolean,
+    onStop: () -> Unit,
+) {
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+    ) {
+        AppText("持续运行环境", textStyle = ToolBoxThemeTokens.textStyles.title)
+        AppText(
+            "启动于 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.startedAt))}",
+            color = ToolBoxThemeTokens.colors.textSecondary,
+            textStyle = ToolBoxThemeTokens.textStyles.metadata,
+        )
+        ToolBoxTextButton(
+            label = if (stopping) "正在停止…" else "停止后台运行",
+            onClick = onStop,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !stopping,
+            contentColor = ToolBoxThemeTokens.colors.danger,
+        )
     }
 }
 

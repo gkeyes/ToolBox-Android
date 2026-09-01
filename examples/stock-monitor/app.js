@@ -157,46 +157,22 @@
     return value > 0 ? "up" : "down";
   }
 
-  function firstEnabledItem() {
-    return state.items.find((item) => item.enabled) || null;
-  }
-
-  function liveTone(item) {
-    if (!Number.isFinite(item?.changePct) || item.changePct === 0) {
-      return { tone: "neutral", accentColor: "#0A84FF" };
-    }
-    return item.changePct > 0
-      ? { tone: "positive", accentColor: "#E53935" }
-      : { tone: "negative", accentColor: "#00A870" };
-  }
-
-  function liveRequest(item, loading = false) {
-    const target = item || { name: "行情哨兵", symbol: "", provider: "tencent" };
-    const displayName = target.name || target.symbol || "行情哨兵";
-    const title = target.symbol ? `${displayName} · ${target.symbol}` : displayName;
-    const updatedAt = target.quoteAt || target.fetchedAt || Date.now();
-    const price = loading ? "正在获取行情" : formatPrice(target.price, target.currency);
-    const change = loading ? "等待最新报价" : `${formatPercent(target.changePct)} · ${quoteTimeLabel(target)}`;
-    const shortText = loading || !Number.isFinite(target.price)
-      ? "获取中"
-      : Number(target.price).toLocaleString("zh-CN", { maximumFractionDigits: 4 }).slice(0, 12);
-    const tone = liveTone(target);
-    return {
+  function liveRequest(loading = false) {
+    return window.StockMonitorLive.buildLiveRequest({
+      items: state.items,
       sessionId: state.sessionId,
-      title: title.slice(0, 64),
-      primaryText: price.slice(0, 32),
-      secondaryText: change.slice(0, 96),
-      body: `${sourceLabel(target.provider)} · ${title} · ${price} · ${change}`.slice(0, 256),
-      shortText,
-      updatedAt,
-      accentColor: tone.accentColor,
-      tone: tone.tone
-    };
+      loading,
+      now: Date.now,
+      formatPrice,
+      formatPercent,
+      quoteTimeLabel,
+      sourceLabel
+    });
   }
 
-  async function publishLiveState(item, mode = "update", loading = false) {
+  async function publishLiveState(mode = "update", loading = false) {
     if (!state.monitoring || !state.sessionId) return true;
-    const request = liveRequest(item, loading);
+    const request = liveRequest(loading);
     try {
       if (mode === "start") await toolbox().notifications.live.start(request);
       else await toolbox().notifications.live.update(request);
@@ -452,7 +428,7 @@
       state.lastRefreshAt = Date.now();
       try { await persist(); }
       catch (error) { setStatus(errorMessage(error, "行情已更新，但状态保存失败。"), "warning"); return; }
-      const liveUpdated = await publishLiveState(firstEnabledItem());
+      const liveUpdated = await publishLiveState();
       const failedCount = enabled.length - successCount;
       if (!liveUpdated) setStatus("行情已更新；实时展示失败，后台监控仍继续。", "warning");
       else if (failedCount === 0) setStatus(`${successCount} 只股票已更新。`, "success");
@@ -473,7 +449,7 @@
       session = await toolbox().background.start({ restoreAfterProcessDeath: true, restoreAfterReboot: true });
       state.monitoring = true;
       state.sessionId = session.sessionId;
-      const liveStarted = await publishLiveState(firstEnabledItem(), "start", true);
+      const liveStarted = await publishLiveState("start", true);
       await toolbox().background.setTimer(TIMER_KEY, state.intervalMs);
       await persist();
       render();
@@ -681,7 +657,7 @@
   async function boot() {
     render();
     if (!toolbox()?.ready) {
-      setStatus("请在 ToolBox 0.3.1 或更高版本中运行。", "error");
+      setStatus("请在 ToolBox 0.3.2 或更高版本中运行。", "error");
       $("runtime-caption").textContent = "宿主 API 不可用";
       return;
     }
@@ -707,7 +683,7 @@
       }
       render();
       setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
-      if (state.monitoring) await publishLiveState(firstEnabledItem(), "start");
+      if (state.monitoring) await publishLiveState("start");
       await refreshAll();
     } catch (error) {
       setStatus(errorMessage(error, "初始化失败，请检查工具权限。"), "error");
@@ -729,7 +705,7 @@
         tokenPresent = Boolean(tokenValue);
         await reconcileMonitoring();
         render();
-        if (state.monitoring) await publishLiveState(firstEnabledItem(), "start");
+        if (state.monitoring) await publishLiveState("start");
         await refreshAll({ background: true });
       } catch (error) {
         setStatus(errorMessage(error, "后台环境恢复失败。"), "error");
