@@ -154,7 +154,7 @@ jobs:
           )"
           actual_cert="$(
             "$apksigner" verify --print-certs "$apk_path" |
-              awk -F': ' '/certificate SHA-256 digest/{print $2; exit}'
+              awk '/certificate SHA-256 digest: / {sub(/^.*certificate SHA-256 digest: /, ""); if (!found++) print}'
           )"
           printf 'Keystore certificate SHA-256: %s\n' "$expected_cert"
           printf 'APK certificate SHA-256: %s\n' "$actual_cert"
