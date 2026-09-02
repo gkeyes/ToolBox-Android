@@ -132,6 +132,7 @@ fun SettingsScreenshot() {
             selected = MainDestination.Settings,
             onDestination = {},
             title = "设置",
+            subtitle = "外观、后台与开发支持",
             onImport = null,
         ) { contentPadding, _ ->
             SettingsContent(

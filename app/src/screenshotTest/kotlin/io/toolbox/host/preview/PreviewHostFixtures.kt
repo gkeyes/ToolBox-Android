@@ -18,11 +18,13 @@ import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.settings.SettingsUiState
 
 internal object PreviewHostFixtures {
+    private const val PreviewNow = 1_788_246_000_000L
+
     private val tools = listOf(
-        tool("io.toolbox.positioncalculator", "仓位计算器", "1.0.0", 7_324L, 1_800L),
-        tool("io.toolbox.quicknotes", "快速笔记", "1.0.0", 6_128L, 1_600L),
+        tool("io.toolbox.positioncalculator", "仓位计算器", "1.0.0", 7_324L, PreviewNow - 120_000L),
+        tool("io.toolbox.quicknotes", "快速笔记", "1.0.0", 6_128L, PreviewNow - 300_000L),
         tool("io.toolbox.backgroundtaskdemo", "后台任务演示", "1.0.0", 5_120L, null),
-        tool("io.toolbox.notificationlab", "通知实验室", "1.0.0", 8_420L, 2_000L),
+        tool("io.toolbox.notificationlab", "通知实验室", "1.0.0", 8_420L, PreviewNow),
     )
 
     val catalog = CatalogUiState(
@@ -60,7 +62,7 @@ internal object PreviewHostFixtures {
             sessionId = "preview-session",
             toolId = "io.toolbox.notificationlab",
             toolName = "通知实验室",
-            startedAt = 1_788_246_000_000L,
+            startedAt = PreviewNow,
         ),
     )
 
@@ -86,7 +88,7 @@ internal object PreviewHostFixtures {
         "preview-notify" to TaskRunResult(
             taskId = "preview-notify",
             outcome = RunOutcome.SUCCEEDED,
-            completedAt = 1_788_246_060_000L,
+            completedAt = PreviewNow + 60_000L,
             payloadJson = "{\"message\":\"通知已发布\"}",
             errorCode = null,
             attemptCount = 1,
@@ -132,8 +134,8 @@ internal object PreviewHostFixtures {
         periodic = false,
         intervalMinutes = null,
         state = state,
-        createdAt = 1_788_246_000_000L,
-        updatedAt = 1_788_246_060_000L,
+        createdAt = PreviewNow,
+        updatedAt = PreviewNow + 60_000L,
         nextRunAt = null,
         runAttempt = 1,
     )
