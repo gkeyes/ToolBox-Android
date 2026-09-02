@@ -10,6 +10,22 @@ plugins {
 
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
 
+val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
+val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
+val stableSigningKeyAlias = providers.environmentVariable("TOOLBOX_SIGNING_KEY_ALIAS").orNull
+val stableSigningKeyPassword = providers.environmentVariable("TOOLBOX_SIGNING_KEY_PASSWORD").orNull
+val stableSigningValueCount =
+    listOf(
+        stableSigningStoreFile,
+        stableSigningStorePassword,
+        stableSigningKeyAlias,
+        stableSigningKeyPassword,
+    ).count { !it.isNullOrBlank() }
+
+check(stableSigningValueCount == 0 || stableSigningValueCount == 4) {
+    "Stable APK signing requires store file, store password, key alias and key password together."
+}
+
 val packageBundledExamples by tasks.registering(Exec::class) {
     group = "build"
     description = "Packages the four shipped ToolBox examples for Android assets."
@@ -37,9 +53,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val stableSigningConfig =
+        if (stableSigningValueCount == 4) {
+            signingConfigs.create("stable") {
+                storeFile = file(requireNotNull(stableSigningStoreFile))
+                storePassword = stableSigningStorePassword
+                keyAlias = stableSigningKeyAlias
+                keyPassword = stableSigningKeyPassword
+            }
+        } else {
+            null
+        }
+
     buildTypes {
+        debug {
+            stableSigningConfig?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = true
+            stableSigningConfig?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -47,7 +79,7 @@ android {
         }
         create("candidate") {
             initWith(getByName("release"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = stableSigningConfig ?: signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
         }
     }
