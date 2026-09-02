@@ -30,6 +30,34 @@ import org.junit.Test
 
 class DirectPackageLifecycleTest {
     @Test
+    fun standalonePackageUnderTestPassesProductionImportLifecycle() = runBlocking {
+        val packagePath = System.getenv("TOOLBOX_PACKAGE_UNDER_TEST")?.let(Path::of)
+            ?: return@runBlocking
+        val root = Files.createTempDirectory("tool-package-standalone")
+        try {
+            val repositories = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+                hostVersion = "0.3.3",
+            )
+
+            val result = manager.importAndInstall(FileInput(packagePath))
+
+            assertEquals(
+                PackageInstallResult.Installed("io.toolbox.githubactionswatcher", 1, false),
+                result,
+            )
+            assertNoTransientFiles(root)
+            assertNoPendingCleanup(root)
+        } finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
     fun importUpdateVersionGateAndUninstallAreOneStepAndAtomic() = runBlocking {
         val root = Files.createTempDirectory("tool-package-lifecycle")
         try {
@@ -376,6 +404,11 @@ class DirectPackageLifecycleTest {
 
     private data class ByteInput(override val displayName: String, val bytes: ByteArray) : PackageInput {
         override fun openStream() = ByteArrayInputStream(bytes)
+    }
+
+    private data class FileInput(val path: Path) : PackageInput {
+        override val displayName: String = path.fileName.toString()
+        override fun openStream() = Files.newInputStream(path)
     }
 
     private class FailingCommitLifecycle(

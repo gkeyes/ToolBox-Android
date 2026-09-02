@@ -77,6 +77,30 @@ jobs:
                   assert hashlib.sha256(archive.read(name)).hexdigest() == digest
           PY
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK 37
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            build-tools;37.0.0
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+
+      - name: Verify production importer accepts the TBX
+        env:
+          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx
+        run: >-
+          ./gradlew --no-daemon :tool-package:testDebugUnitTest
+          --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle
+
       - name: Assemble checksummed standalone delivery
         run: |
           set -euo pipefail
@@ -93,6 +117,7 @@ jobs:
             printf 'NODE_TESTS=PASSED\n'
             printf 'REPRODUCIBLE_PACKAGE=PASSED\n'
             printf 'INTEGRITY_CHECK=PASSED\n'
+            printf 'PRODUCTION_IMPORTER=PASSED\n'
             printf 'APK_BUILD=NOT_REQUESTED\n'
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
