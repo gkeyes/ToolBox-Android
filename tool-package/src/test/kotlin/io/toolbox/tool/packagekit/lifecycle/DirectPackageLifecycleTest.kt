@@ -165,6 +165,10 @@ class DirectPackageLifecycleTest {
             "nested-archive" to packageBytes(extra = mapOf("payload.bin" to byteArrayOf(0x50, 0x4b, 0x03, 0x04))),
             "bad-integrity" to packageBytes(corruptIntegrity = true),
             "bad-signature" to packageBytes(signed = true, corruptSignature = true),
+            "bad-utf8-short" to packageBytes(entryHtml = HTML + byteArrayOf(0xe4.toByte())),
+            "bad-utf8-exact-boundary" to packageBytes(
+                entryHtml = HTML + "a".repeat(4095 - HTML.size).toByteArray() + byteArrayOf(0xe4.toByte()),
+            ),
         )
         cases.forEach { (name, bytes) ->
             val root = Files.createTempDirectory("tool-package-rejected")
@@ -181,6 +185,12 @@ class DirectPackageLifecycleTest {
                 if (name == "bad-signature") {
                     assertEquals(
                         PackageRejectionCode.SIGNATURE_INVALID,
+                        (result as PackageInstallResult.Rejected).rejection.code,
+                    )
+                }
+                if (name.startsWith("bad-utf8-")) {
+                    assertEquals(
+                        PackageRejectionCode.ENTRY_MIME_INVALID,
                         (result as PackageInstallResult.Rejected).rejection.code,
                     )
                 }

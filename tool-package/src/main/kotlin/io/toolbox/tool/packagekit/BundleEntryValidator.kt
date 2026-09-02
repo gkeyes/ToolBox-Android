@@ -21,13 +21,17 @@ internal object BundleEntryValidator {
             bundleDirectory.resolve(manifest.entry),
             StandardOpenOption.READ,
             LinkOption.NOFOLLOW_LINKS,
-        ).use { it.readNBytes(4096) }
+        ).use { it.readNBytes(4097) }
         val text = try {
             val decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
             val characters = CharBuffer.allocate(prefix.size)
-            val result = decoder.decode(ByteBuffer.wrap(prefix), characters, false)
+            val result = decoder.decode(
+                ByteBuffer.wrap(prefix, 0, minOf(prefix.size, 4096)),
+                characters,
+                prefix.size <= 4096,
+            )
             if (result.isError) result.throwException()
             characters.flip().toString()
         } catch (_: Exception) {

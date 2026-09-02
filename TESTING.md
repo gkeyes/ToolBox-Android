@@ -47,6 +47,10 @@
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
 
+## 导入边界补充
+
+- `DirectPackageLifecycleTest.rejectedSecurityMatrixLeavesNoCatalogOrFiles` 同时覆盖短 HTML 和恰好 4096 字节 HTML 在真实文件结尾缺失 UTF-8 后续字节的情况。理由：不能把嗅探截断与损坏文件混为一谈；方法：读取一个前瞻字节以确认是否真正到达 EOF，再由生产导入器验证两种损坏结尾；预期：均返回 `ENTRY_MIME_INVALID` 且无残留，而合法跨 4096 字节字符仍可安装。只在 GitHub 运行 Kotlin 测试。
+
 ## 独立工具执行回执
 
 - `github-actions-watcher-v1.0.1`：本地只运行 JS 语法、Node 模型测试与浏览器界面检查，不运行 Gradle、模拟器或 APK 构建；正式包由 GitHub CI 两次打包比对，并使用 production `ToolPackageManager` 验证实际 `.tbx` 可导入，把结果、提交号和产物哈希写入独立 artifact 内的 `BUILD_AND_TEST_RECEIPT.txt` 与 `SHA256SUMS.txt`。浏览器通过生产页面事件与固定 GitHub 响应验证页内展开三个分支、点击选择、清除旧手填值、切换全部分支和恢复选择，以及键盘打开与 Escape 收起；17 项 Node 模型测试通过。不把浏览器结果当作 Android WebView 验收。真机后台、锁屏和 HyperOS 超级岛状态保持 `NOT_RUN_USER_OWNED`，由用户验收后补充证据。
