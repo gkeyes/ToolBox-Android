@@ -45,6 +45,20 @@ jobs:
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
+      - name: Render the redesigned host preview matrix
+        run: ./gradlew --no-daemon :app:updateDebugScreenshotTest
+
+      - name: Upload rendered host previews
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: host-previews-${{ github.run_id }}
+          path: |
+            app/src/screenshotTestDebug/reference
+            app/build/reports/screenshotTest
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload host gate evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

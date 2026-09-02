@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
+import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -44,14 +45,18 @@ import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.R
 import io.toolbox.host.catalog.CatalogAction
+import io.toolbox.host.catalog.COMPACT_RECENT_TOOL_COUNT
 import io.toolbox.host.catalog.CatalogFeedback
 import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 internal fun ToolManagerScreen(
@@ -65,7 +70,16 @@ internal fun ToolManagerScreen(
     onDismissImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
-    PrimaryScreen(MainDestination.Tools, onDestination, "工具", onImport) { padding ->
+    val subtitle = if (state.tools.isEmpty()) "轻量网页工具架" else "${state.tools.size} 个已安装工具"
+    PrimaryScreen(
+        selected = MainDestination.Tools,
+        onDestination = onDestination,
+        title = "工具",
+        subtitle = subtitle,
+        onImport = onImport,
+    ) { padding, layout ->
+        val recentLimit = if (layout.isCompact) COMPACT_RECENT_TOOL_COUNT else 3
+        val recentTools = state.recentTools.take(recentLimit)
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -111,11 +125,33 @@ internal fun ToolManagerScreen(
                 !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }
                 state.tools.isEmpty() -> item("empty") { EmptyCatalogState(onImport, onInstallExamples) }
                 state.visibleTools.isEmpty() -> {
-                    item("installed-title") { SectionHeader("已安装 · ${state.tools.size}") }
+                    item("installed-title") { SectionHeader("搜索结果") }
                     item("no-match") { CatalogStatusState("没有匹配的工具") }
                 }
                 else -> {
-                    item("installed-title") { SectionHeader("已安装 · ${state.tools.size}") }
+                    if (!state.isSearching && recentTools.isNotEmpty()) {
+                        item("recent-title") { SectionHeader("最近使用") }
+                        item("before-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                        item("recent-tools", contentType = "recent-tools") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+                            ) {
+                                recentTools.forEach { tool ->
+                                    CatalogRecentCard(
+                                        tool = tool,
+                                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                repeat(recentLimit - recentTools.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                        item("after-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                    }
+                    item("installed-title") {
+                        SectionHeader(if (state.isSearching) "搜索结果 · ${state.visibleTools.size}" else "全部工具")
+                    }
                     item("before-tools") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                     itemsIndexed(
                         items = state.visibleTools,
@@ -172,16 +208,20 @@ internal fun ToolDetailScreen(
             if (tool == null) {
                 item("missing") { CatalogStatusState("该工具已不存在") }
             } else {
-                item("identity") { ToolIdentity(tool) }
-                item("before-open") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-                item("open") {
-                    ToolBoxPrimaryButton(
-                        label = "打开工具",
-                        onClick = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                item("identity") {
+                    SurfaceCard {
+                        ToolIdentity(tool)
+                        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
+                        ToolBoxPrimaryButton(
+                            label = "打开工具",
+                            onClick = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.twoHalf)) }
+                item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                item("management-title") { SectionHeader("管理") }
+                item("management-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("management") {
                     ToolBoxGroupedSurface {
                         ToolBoxSettingRow(
@@ -199,7 +239,19 @@ internal fun ToolDetailScreen(
                         )
                     }
                 }
-                item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+                item("before-information") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                item("information-title") { SectionHeader("信息") }
+                item("information-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                item("information") {
+                    ToolBoxGroupedSurface {
+                        ToolBoxValueRow(title = "版本", value = tool.versionName)
+                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        ToolBoxValueRow(title = "工具大小", value = tool.bundleBytes.fileSizeLabel())
+                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        ToolBoxValueRow(title = "最近打开", value = tool.lastOpenedAt.lastOpenedLabel())
+                    }
+                }
+                item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("delete") {
                     ToolBoxTextButton(
                         label = "删除工具",
@@ -343,9 +395,47 @@ private fun CatalogToolRow(
                     )
                 }
             }
-            ToolBoxIconButton(ToolBoxIconKey.More, "管理${tool.name}", onDetails)
+            ToolBoxIconButton(ToolBoxIconKey.ChevronRight, "管理${tool.name}", onDetails)
         }
         if (!isLast) ToolBoxGroupDivider(startPadding = 68.dp)
+    }
+}
+
+@Composable
+private fun CatalogRecentCard(
+    tool: CatalogTool,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
+    ToolBoxCard(
+        modifier = modifier.semantics { contentDescription = "打开最近使用的${tool.name}" },
+        onClick = onOpen,
+        contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.oneHalf),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ToolGlyph(
+                icon = visual.icon,
+                accent = visual.accent,
+                size = 38.dp,
+                imageResource = visual.imageResource,
+            )
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
+            Column(Modifier.weight(1f)) {
+                AppText(
+                    text = tool.name,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    weight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                AppText(
+                    text = tool.versionName,
+                    textStyle = ToolBoxThemeTokens.textStyles.label,
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -515,4 +605,9 @@ private fun Long.fileSizeLabel(): String = when {
     this < 1024L -> "$this B"
     this < 1024L * 1024L -> "${this / 1024L} KB"
     else -> "${this / (1024L * 1024L)} MB"
+}
+
+private fun Long?.lastOpenedLabel(): String = when (this) {
+    null -> "尚未打开"
+    else -> DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(this))
 }

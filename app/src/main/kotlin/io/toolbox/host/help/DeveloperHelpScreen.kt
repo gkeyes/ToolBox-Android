@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -35,14 +38,20 @@ internal object DeveloperHelpTestTags {
 internal fun DeveloperHelpScreen(
     onBack: () -> Unit,
     onInstallExamples: () -> Unit,
+    onReady: () -> Unit = {},
 ) {
+    LaunchedEffect(Unit) { onReady() }
     DetailScreen(
         title = "开发帮助",
         onBack = onBack,
         modifier = Modifier.testTag(DeveloperHelpTestTags.Screen),
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                .fillMaxWidth()
+                .fillMaxSize()
+                .align(Alignment.TopCenter),
             contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.two),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {

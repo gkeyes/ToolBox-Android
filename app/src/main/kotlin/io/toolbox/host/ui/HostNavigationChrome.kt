@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxLargeTopBar
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -41,8 +45,9 @@ internal fun PrimaryScreen(
     selected: MainDestination,
     onDestination: (MainDestination) -> Unit,
     title: String,
+    subtitle: String = "",
     onImport: (() -> Unit)?,
-    content: @Composable (PaddingValues) -> Unit,
+    content: @Composable (PaddingValues, HostRouteLayout) -> Unit,
 ) {
     BoxWithConstraints(
         Modifier
@@ -51,33 +56,37 @@ internal fun PrimaryScreen(
             .testTag(selected.screenTestTag),
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
-        ToolBoxAppScaffold(
-            modifier = Modifier.fillMaxSize(),
-            topBar = if (layout.isCompact) ({ TopBar(selected, title, onImport) }) else null,
-            bottomBar = if (layout.isCompact) ({ DestinationBar(selected, onDestination, compact = true) }) else null,
-        ) { scaffoldPadding ->
-            Box(
+        if (layout.isCompact) {
+            ToolBoxAppScaffold(
+                modifier = Modifier.fillMaxSize(),
+                topBar = { TopBar(title, subtitle, onImport) },
+                bottomBar = { DestinationBar(selected, onDestination, compact = true) },
+            ) { scaffoldPadding ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(scaffoldPadding)
+                        .consumeWindowInsets(scaffoldPadding),
+                ) {
+                    content(layout.contentPadding(), layout)
+                }
+            }
+        } else {
+            Row(
                 Modifier
                     .fillMaxSize()
-                    .padding(scaffoldPadding)
-                    .consumeWindowInsets(scaffoldPadding),
+                    .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
-                if (layout.isCompact) {
-                    content(layout.contentPadding())
-                } else {
-                    Row(Modifier.fillMaxSize()) {
-                        DestinationBar(selected, onDestination, compact = false)
-                        Column(Modifier.weight(1f)) {
-                            TopBar(selected, title, onImport)
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
-                                    .align(Alignment.CenterHorizontally),
-                            ) {
-                                content(layout.contentPadding())
-                            }
-                        }
+                DestinationBar(selected, onDestination, compact = false)
+                Column(Modifier.weight(1f)) {
+                    TopBar(title, subtitle, onImport, defaultWindowInsetsPadding = false)
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
+                            .align(Alignment.CenterHorizontally),
+                    ) {
+                        content(layout.contentPadding(), layout)
                     }
                 }
             }
@@ -198,13 +207,20 @@ internal fun DetailScreen(
 }
 
 @Composable
-private fun TopBar(selected: MainDestination, title: String, onImport: (() -> Unit)?) {
-    ToolBoxTopBar(
+private fun TopBar(
+    title: String,
+    subtitle: String,
+    onImport: (() -> Unit)?,
+    defaultWindowInsetsPadding: Boolean = true,
+) {
+    ToolBoxLargeTopBar(
         title = title,
+        subtitle = subtitle,
+        defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         actions = {
             if (onImport != null) {
                 ToolBoxTextButton(
-                    label = "导入",
+                    label = "＋ 导入",
                     onClick = onImport,
                     modifier = Modifier
                         .testTag(HostTestTags.ImportFab)

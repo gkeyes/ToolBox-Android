@@ -2,36 +2,41 @@ package io.toolbox.host.background
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
-import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
-import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxTextButton
-import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.DetailScreen
+import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -42,8 +47,13 @@ internal fun BackgroundTasksScreen(
     operations: HostBackgroundOperations,
     runtimeSessions: RuntimeSessionManager,
     onBack: () -> Unit,
+    onReady: () -> Unit = {},
 ) {
-    val tasks by operations.observeTasks(toolId).collectAsStateWithLifecycle(emptyList())
+    var tasksLoaded by remember(toolId, operations) { mutableStateOf(false) }
+    val tasksFlow = remember(toolId, operations) {
+        operations.observeTasks(toolId).onEach { tasksLoaded = true }
+    }
+    val tasks by tasksFlow.collectAsStateWithLifecycle(emptyList())
     val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
     val page = backgroundTasksPageModel(toolId, tasks, sessions)
     val scope = rememberCoroutineScope()
@@ -51,24 +61,60 @@ internal fun BackgroundTasksScreen(
     var stoppingSessionId by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
-    ToolBoxAppScaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            ToolBoxTopBar(
-                title = "后台任务",
-                navigationIcon = ToolBoxIconKey.Back,
-                onNavigationClick = onBack,
-            )
+    LaunchedEffect(tasksLoaded) {
+        if (tasksLoaded) onReady()
+    }
+
+    BackgroundTasksContent(
+        page = page,
+        message = message,
+        cancellingTaskId = cancellingTaskId,
+        stoppingSessionId = stoppingSessionId,
+        onBack = onBack,
+        resultFor = { task ->
+            val result by operations.observeResult(task.taskId).collectAsStateWithLifecycle(null)
+            result
         },
-    ) { padding ->
+        onStopSession = { session ->
+            stoppingSessionId = session.sessionId
+            message = null
+            scope.launch {
+                val stopped = runtimeSessions.stopSession(session.sessionId)
+                stoppingSessionId = null
+                message = if (stopped) "后台环境已停止。" else "后台环境已结束或不存在。"
+            }
+        },
+        onCancelTask = { task ->
+            cancellingTaskId = task.taskId
+            message = null
+            scope.launch {
+                val cancelled = operations.cancel(toolId, task.taskId)
+                cancellingTaskId = null
+                if (!cancelled) message = "任务已结束或不存在。"
+            }
+        },
+    )
+}
+
+@Composable
+internal fun BackgroundTasksContent(
+    page: BackgroundTasksPageModel,
+    message: String?,
+    cancellingTaskId: String?,
+    stoppingSessionId: String?,
+    onBack: () -> Unit,
+    resultFor: @Composable (BackgroundTask) -> TaskRunResult?,
+    onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
+    onCancelTask: (BackgroundTask) -> Unit,
+) {
+    DetailScreen(title = "后台任务", onBack = onBack) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = ToolBoxThemeTokens.spacing.two,
-                top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
-                end = ToolBoxThemeTokens.spacing.two,
-                bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
-            ),
+            modifier = Modifier
+                .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                .fillMaxWidth()
+                .fillMaxSize()
+                .align(Alignment.TopCenter),
+            contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.two),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             message?.let { text ->
@@ -90,21 +136,16 @@ internal fun BackgroundTasksScreen(
                     }
                 }
             } else {
+                if (page.runtimeSessions.isNotEmpty()) {
+                    item("runtime-title") { SectionHeader("持续运行 · ${page.runtimeSessions.size}") }
+                }
                 if (page.runtimeSessions.isNotEmpty()) item("runtime-sessions") {
                     ToolBoxGroupedSurface {
                         page.runtimeSessions.forEachIndexed { index, session ->
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
-                                onStop = {
-                                    stoppingSessionId = session.sessionId
-                                    message = null
-                                    scope.launch {
-                                        val stopped = runtimeSessions.stopSession(session.sessionId)
-                                        stoppingSessionId = null
-                                        message = if (stopped) "后台环境已停止。" else "后台环境已结束或不存在。"
-                                    }
-                                },
+                                onStop = { onStopSession(session) },
                             )
                             if (index != page.runtimeSessions.lastIndex) {
                                 ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
@@ -112,24 +153,20 @@ internal fun BackgroundTasksScreen(
                         }
                     }
                 }
+                if (page.runtimeSessions.isNotEmpty() && page.tasks.isNotEmpty()) {
+                    item("tasks-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                }
+                if (page.tasks.isNotEmpty()) {
+                    item("tasks-title") { SectionHeader("已登记任务 · ${page.tasks.size}") }
+                }
                 if (page.tasks.isNotEmpty()) item("tasks") {
                     ToolBoxGroupedSurface {
                         page.tasks.forEachIndexed { index, task ->
                             BackgroundTaskCard(
                                 task = task,
-                                operations = operations,
+                                result = resultFor(task),
                                 cancelling = cancellingTaskId == task.taskId,
-                                onCancel = {
-                                    cancellingTaskId = task.taskId
-                                    message = null
-                                    scope.launch {
-                                        val cancelled = operations.cancel(toolId, task.taskId)
-                                        cancellingTaskId = null
-                                        if (!cancelled) {
-                                            message = "任务已结束或不存在。"
-                                        }
-                                    }
-                                }
+                                onCancel = { onCancelTask(task) },
                             )
                             if (index != page.tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         }
@@ -187,11 +224,10 @@ private fun RuntimeSessionCard(
 @Composable
 private fun BackgroundTaskCard(
     task: BackgroundTask,
-    operations: HostBackgroundOperations,
+    result: TaskRunResult?,
     cancelling: Boolean,
     onCancel: () -> Unit,
 ) {
-    val result by operations.observeResult(task.taskId).collectAsStateWithLifecycle(null)
     val cancellable = task.state == TaskState.QUEUED || task.state == TaskState.RUNNING
 
     androidx.compose.foundation.layout.Column(

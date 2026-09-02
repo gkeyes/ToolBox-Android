@@ -44,13 +44,7 @@ internal class CatalogViewModel(
                 .collect { entries ->
                     val tools = entries.map(CatalogEntry::toCatalogTool)
                     update { state ->
-                        state.copy(
-                            isLoaded = true,
-                            tools = tools,
-                            uninstallConfirmation = state.uninstallConfirmation?.takeIf { confirmation ->
-                                tools.any { it.toolId == confirmation.toolId }
-                            },
-                        )
+                        state.withCatalogTools(tools).copy(isLoaded = true)
                     }
                     pendingRuntimeLaunchToolId?.let { toolId ->
                         pendingRuntimeLaunchToolId = null
@@ -62,7 +56,7 @@ internal class CatalogViewModel(
 
     fun dispatch(action: CatalogAction) {
         when (action) {
-            is CatalogAction.SetQuery -> update { it.copy(query = action.query) }
+            is CatalogAction.SetQuery -> update { it.withCatalogQuery(action.query) }
             is CatalogAction.RequestRuntimeLaunch -> open(action.toolId)
             is CatalogAction.RequestUninstall -> requestUninstall(action.toolId)
             CatalogAction.CancelUninstall -> update { it.copy(uninstallConfirmation = null) }

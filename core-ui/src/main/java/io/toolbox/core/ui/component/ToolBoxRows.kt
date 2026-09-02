@@ -4,10 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +25,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
@@ -48,10 +52,11 @@ fun ToolBoxSearchField(
         label = placeholder,
         useLabelAsPlaceholder = true,
         leadingIcon = {
-            Box(Modifier.padding(start = ToolBoxThemeTokens.spacing.two)) {
+            Box(Modifier.padding(start = ToolBoxThemeTokens.spacing.oneHalf)) {
                 ToolBoxIcon(icon = ToolBoxIconKey.Search, contentDescription = null)
             }
         },
+        cornerRadius = ToolBoxThemeTokens.radii.control,
         singleLine = true,
     )
 }
@@ -110,6 +115,56 @@ fun ToolBoxSwitchSettingRow(
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         enabled = enabled,
     )
+}
+
+@Composable
+fun ToolBoxValueRow(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    icon: ToolBoxIconKey? = null,
+    valueColor: androidx.compose.ui.graphics.Color = ToolBoxThemeTokens.colors.textSecondary,
+) {
+    val spacing = ToolBoxThemeTokens.spacing
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+            .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let {
+            ToolBoxPreferenceIcon(it)
+            Spacer(Modifier.width(spacing.oneHalf))
+        }
+        Column(Modifier.weight(1f)) {
+            ToolBoxText(
+                text = title,
+                style = ToolBoxThemeTokens.textStyles.title.copy(
+                    color = ToolBoxThemeTokens.colors.textPrimary,
+                    fontWeight = FontWeight.Medium,
+                ),
+            )
+            summary?.let {
+                ToolBoxText(
+                    text = it,
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    ),
+                )
+            }
+        }
+        Spacer(Modifier.width(spacing.one))
+        ToolBoxText(
+            text = value,
+            style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                color = valueColor,
+                fontWeight = FontWeight.Medium,
+            ),
+            maxLines = 2,
+        )
+    }
 }
 
 data class ToolBoxSettingChoice(

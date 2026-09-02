@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ enum class ToolBoxIconKey {
     Search,
     More,
     Back,
+    ChevronRight,
     Shield,
     Refresh,
     OpenInNew,
@@ -126,6 +128,7 @@ internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
     ToolBoxIconKey.Search -> Icons.Outlined.Search
     ToolBoxIconKey.More -> Icons.Outlined.MoreVert
     ToolBoxIconKey.Back -> Icons.AutoMirrored.Outlined.ArrowBack
+    ToolBoxIconKey.ChevronRight -> Icons.AutoMirrored.Outlined.KeyboardArrowRight
     ToolBoxIconKey.Shield -> Icons.Outlined.Shield
     ToolBoxIconKey.Refresh -> Icons.Outlined.Refresh
     ToolBoxIconKey.OpenInNew -> Icons.AutoMirrored.Outlined.OpenInNew

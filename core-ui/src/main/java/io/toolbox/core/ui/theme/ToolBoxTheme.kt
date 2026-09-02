@@ -74,9 +74,10 @@ data class ToolBoxSpacing(
 
 @Immutable
 data class ToolBoxRadii(
+    val control: Dp = 12.dp,
     val badge: Dp = 12.dp,
     val denseSurface: Dp = 16.dp,
-    val card: Dp = 18.dp,
+    val card: Dp = 16.dp,
     val full: Dp = 999.dp,
 )
 
@@ -100,44 +101,44 @@ data class ToolBoxSizes(
 )
 
 private val LightToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF007AFF),
+    primary = Color(0xFF1677E8),
     onPrimary = Color.White,
-    background = Color(0xFFF2F2F7),
+    background = Color(0xFFF7F7F7),
     surface = Color.White,
-    surfaceMuted = Color(0xFFEAEAEE),
-    textPrimary = Color(0xFF111827),
-    textSecondary = Color(0xFF6D6D72),
-    success = Color(0xFF34C759),
-    warning = Color(0xFFFF9500),
-    danger = Color(0xFFFF3B30),
-    divider = Color(0xFFE5E5EA),
-    softPrimary = Color(0xFFE9F2FF),
-    softSuccess = Color(0xFFEAF9EF),
-    softWarning = Color(0xFFFFF4DE),
-    softDanger = Color(0xFFFFECEA),
+    surfaceMuted = Color(0xFFF0F0F2),
+    textPrimary = Color(0xFF17181A),
+    textSecondary = Color(0xFF77797E),
+    success = Color(0xFF24A865),
+    warning = Color(0xFFD48718),
+    danger = Color(0xFFE34B4B),
+    divider = Color(0xFFEDEDEF),
+    softPrimary = Color(0xFFEAF3FF),
+    softSuccess = Color(0xFFEAF8F0),
+    softWarning = Color(0xFFFFF4E2),
+    softDanger = Color(0xFFFFEEEE),
 )
 
 private val DarkToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF0A84FF),
+    primary = Color(0xFF4A9BFF),
     onPrimary = Color.White,
-    background = Color.Black,
-    surface = Color(0xFF1C1C1E),
-    surfaceMuted = Color(0xFF2C2C2E),
-    textPrimary = Color(0xFFF5F5F7),
-    textSecondary = Color(0xFF98989D),
+    background = Color(0xFF111214),
+    surface = Color(0xFF1C1D20),
+    surfaceMuted = Color(0xFF2C2D31),
+    textPrimary = Color(0xFFF3F4F6),
+    textSecondary = Color(0xFFA2A4AA),
     success = Color(0xFF75E395),
     warning = Color(0xFFFFC165),
     danger = Color(0xFFFF8B83),
-    divider = Color(0xFF38383A),
-    softPrimary = Color(0xFF1B365A),
+    divider = Color(0xFF303136),
+    softPrimary = Color(0xFF183A63),
     softSuccess = Color(0xFF173D27),
     softWarning = Color(0xFF493414),
     softDanger = Color(0xFF4B2524),
 )
 
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    sectionTitle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    screenTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    sectionTitle = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
     title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
     body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
     metadata = TextStyle(fontSize = 13.sp, lineHeight = 17.sp),

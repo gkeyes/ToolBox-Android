@@ -25,6 +25,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -63,16 +65,76 @@ class CatalogViewModelTest {
         )
         assertEquals(listOf(TOOL_ID to 123L), organization.opened)
     }
+
+    @Test
+    fun catalogPresentationSortsRecentToolsAndCapsTheMediumLayoutAtThree() = runTest(mainDispatcher) {
+        val catalog = FakeCatalogRepository()
+        val viewModel = CatalogViewModel(
+            catalog = catalog,
+            organization = RecordingCatalogOrganizationRepository(),
+            packageOperations = UnusedHostPackageOperations,
+        )
+
+        catalog.entries.emit(
+            listOf(
+                catalogEntry("io.toolbox.one", "工具一", 10L),
+                catalogEntry("io.toolbox.two", "工具二", 40L),
+                catalogEntry("io.toolbox.three", "工具三", 20L),
+                catalogEntry("io.toolbox.four", "工具四", 30L),
+                catalogEntry("io.toolbox.never", "未打开", null),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(MAX_RECENT_TOOL_COUNT, viewModel.state.value.recentTools.size)
+        assertEquals(
+            listOf("io.toolbox.two", "io.toolbox.four", "io.toolbox.three"),
+            viewModel.state.value.recentTools.map(CatalogTool::toolId),
+        )
+        assertEquals(2, COMPACT_RECENT_TOOL_COUNT)
+    }
+
+    @Test
+    fun searchFiltersThePreparedListAndMarksRecentToolsHidden() = runTest(mainDispatcher) {
+        val catalog = FakeCatalogRepository()
+        val viewModel = CatalogViewModel(
+            catalog = catalog,
+            organization = RecordingCatalogOrganizationRepository(),
+            packageOperations = UnusedHostPackageOperations,
+        )
+        catalog.entries.emit(
+            listOf(
+                catalogEntry("io.toolbox.notes", "快速笔记", 30L),
+                catalogEntry("io.toolbox.notify", "通知实验室", 20L),
+                catalogEntry("io.toolbox.calc", "仓位计算器", 10L),
+            ),
+        )
+        advanceUntilIdle()
+
+        viewModel.dispatch(CatalogAction.SetQuery("  note  "))
+
+        assertTrue(viewModel.state.value.isSearching)
+        assertEquals(listOf("io.toolbox.notes"), viewModel.state.value.visibleTools.map(CatalogTool::toolId))
+
+        viewModel.dispatch(CatalogAction.SetQuery(""))
+
+        assertFalse(viewModel.state.value.isSearching)
+        assertEquals(3, viewModel.state.value.visibleTools.size)
+    }
 }
 
 private const val TOOL_ID = "io.toolbox.notificationlab"
 
-private fun catalogEntry() = CatalogEntry(
-    toolId = TOOL_ID,
-    name = "通知实验室",
+private fun catalogEntry(
+    toolId: String = TOOL_ID,
+    name: String = "通知实验室",
+    lastOpenedAt: Long? = null,
+) = CatalogEntry(
+    toolId = toolId,
+    name = name,
     securityProfile = SecurityProfile.STRICT,
     installedAt = 1L,
-    lastOpenedAt = null,
+    lastOpenedAt = lastOpenedAt,
     pinnedOrder = null,
     categoryId = null,
     versionCode = 1,

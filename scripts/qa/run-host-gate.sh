@@ -114,6 +114,8 @@ run_gate admitted-unit \
     :tool-package:testDebugUnitTest \
     :tool-runtime:testDebugUnitTest \
     --tests 'io.toolbox.host.importflow.ToolBoxOpenDocumentTest' \
+    --tests 'io.toolbox.host.catalog.CatalogViewModelTest' \
+    --tests 'io.toolbox.host.ui.HostScreenLayoutContractTest' \
     --tests 'io.toolbox.host.permissions.PermissionCenterViewModelTest' \
     --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
     --tests 'io.toolbox.host.background.NetworkBoundaryTest' \

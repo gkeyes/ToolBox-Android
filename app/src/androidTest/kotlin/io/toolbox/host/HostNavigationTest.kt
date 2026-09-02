@@ -33,7 +33,7 @@ class HostNavigationTest {
         composeRule.onNodeWithContentDescription("管理后台任务演示").performClick()
         waitForVisibleText("权限")
         composeRule.onNodeWithText("权限").performClick()
-        waitForVisibleText("后台任务演示 · 权限")
+        waitForVisibleText("工具权限")
 
         val networkPermission = composeRule.onNodeWithTag(
             HostTestTags.PermissionRowPrefix + "network",

@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
@@ -38,7 +39,6 @@ import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.background.BackgroundTasksScreen
 import io.toolbox.host.background.BackgroundSafeguardsScreen
 import io.toolbox.host.catalog.CatalogNavigationIntent
-import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.help.DeveloperHelpScreen
 import io.toolbox.host.importflow.ContentResolverPackageInputFactory
@@ -98,8 +98,6 @@ internal fun ToolBoxNavigation(
 ) {
     val primaryBackStack = rememberNavBackStack<ToolBoxRoute>(ToolManagerRoute)
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
-    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
-    val importState by importViewModel.state.collectAsStateWithLifecycle()
     val toolsListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
@@ -143,7 +141,7 @@ internal fun ToolBoxNavigation(
     val runtimeRoute = allSecondaryRoutes.lastOrNull() as? RuntimeRoute
     val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
     val runtimeTitle = runtimeRoute?.let { route ->
-        catalogState.tools.firstOrNull { it.toolId == route.toolId }?.name
+        catalogViewModel.state.value.tools.firstOrNull { it.toolId == route.toolId }?.name
     } ?: "工具"
     val entryProgress = remember(runtimeRoute) { Animatable(if (runtimeRoute == null) 0f else 1f) }
     val sourceReturnProgress = remember(runtimeRoute) { Animatable(0f) }
@@ -152,11 +150,12 @@ internal fun ToolBoxNavigation(
     var sourceAboveRuntime by remember(runtimeRoute) { mutableStateOf(false) }
     var runtimePresentationReady by remember(runtimeRoute) { mutableStateOf(false) }
     var runtimeLeaving by remember(runtimeRoute) { mutableStateOf(false) }
+    var entryCoverMeasured by remember(runtimeRoute) { mutableStateOf(false) }
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
 
-    LaunchedEffect(runtimeRoute) {
-        if (runtimeRoute != null) {
+    LaunchedEffect(runtimeRoute, entryCoverMeasured) {
+        if (runtimeRoute != null && entryCoverMeasured) {
             withFrameNanos { }
             entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
             runtimeLayerEnabled = true
@@ -234,15 +233,12 @@ internal fun ToolBoxNavigation(
                 ),
             ) {
                 entry<ToolManagerRoute>(transition = PrimaryTabFadeTransition) {
-                    ToolManagerScreen(
-                        state = catalogState,
-                        importState = importState,
+                    ToolManagerRouteContent(
+                        catalogViewModel = catalogViewModel,
+                        importViewModel = importViewModel,
                         listState = toolsListState,
-                        onAction = catalogViewModel::dispatch,
                         onDestination = ::navigateMain,
                         onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
-                        onInstallExamples = importViewModel::installBundledExamples,
-                        onDismissImport = importViewModel::dismissMessage,
                         onOpenDetails = { navigate(ToolDetailRoute(it)) },
                     )
                 }
@@ -251,8 +247,9 @@ internal fun ToolBoxNavigation(
                         selected = MainDestination.Settings,
                         onDestination = ::navigateMain,
                         title = "设置",
+                        subtitle = "外观、后台与开发支持",
                         onImport = null,
-                    ) { padding ->
+                    ) { padding, _ ->
                         SettingsScreen(
                             viewModel = settingsViewModel,
                             contentPadding = padding,
@@ -275,16 +272,16 @@ internal fun ToolBoxNavigation(
                                 secondaryBackStack.removeLastOrNull()
                             }
                         },
-                    ) { requestBack ->
+                    ) { requestBack, signalReady ->
                         SecondaryRouteContent(
                             route = route,
                             dependencies = dependencies,
                             viewModelStoreOwner = viewModelStoreOwner,
                             catalogViewModel = catalogViewModel,
-                            catalogState = catalogState,
                             importViewModel = importViewModel,
                             settingsViewModel = settingsViewModel,
                             onBack = requestBack,
+                            onReady = signalReady,
                             onNavigate = ::navigate,
                         )
                     }
@@ -311,6 +308,11 @@ internal fun ToolBoxNavigation(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(3f)
+                    .onGloballyPositioned { coordinates ->
+                        if (coordinates.size.width > 0 && coordinates.size.height > 0) {
+                            entryCoverMeasured = true
+                        }
+                    }
                     .graphicsLayer {
                         translationX = trailingDirection * entryProgress.value * size.width
                     },
@@ -334,15 +336,18 @@ private fun RetainedSecondaryPage(
     isTop: Boolean,
     modifier: Modifier = Modifier,
     onRemove: () -> Unit,
-    content: @Composable (() -> Unit) -> Unit,
+    content: @Composable (() -> Unit, () -> Unit) -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
     val progress = remember(route) { Animatable(1f) }
     val coroutineScope = rememberCoroutineScope()
     var leaving by remember(route) { mutableStateOf(false) }
+    var presentationReady by remember(route) { mutableStateOf(false) }
+    var contentReady by remember(route) { mutableStateOf(false) }
 
-    LaunchedEffect(route) {
+    LaunchedEffect(route, presentationReady, contentReady) {
+        if (!presentationReady || !contentReady) return@LaunchedEffect
         withFrameNanos { }
         progress.animateTo(0f, animationSpec = RetainedPageMotion)
     }
@@ -361,13 +366,18 @@ private fun RetainedSecondaryPage(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                if (coordinates.size.width > 0 && coordinates.size.height > 0) {
+                    presentationReady = true
+                }
+            }
             .graphicsLayer {
                 translationX = trailingDirection * progress.value * size.width
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         NavigationInputBlocker()
-        content(requestBack)
+        content(requestBack) { contentReady = true }
     }
 }
 
@@ -377,18 +387,18 @@ private fun SecondaryRouteContent(
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
     catalogViewModel: CatalogViewModel,
-    catalogState: CatalogUiState,
     importViewModel: ImportViewModel,
     settingsViewModel: SettingsViewModel,
     onBack: () -> Unit,
+    onReady: () -> Unit,
     onNavigate: (ToolBoxRoute) -> Unit,
 ) {
     when (route) {
-        is ToolDetailRoute -> ToolDetailScreen(
+        is ToolDetailRoute -> ToolDetailRouteContent(
             toolId = route.toolId,
-            state = catalogState,
-            onAction = catalogViewModel::dispatch,
+            catalogViewModel = catalogViewModel,
             onBack = onBack,
+            onReady = onReady,
             onPermissions = { onNavigate(PermissionCenterRoute(it)) },
             onBackground = { onNavigate(BackgroundTasksRoute(it)) },
         )
@@ -400,7 +410,7 @@ private fun SecondaryRouteContent(
                     PermissionCenterViewModelFactory(route.toolId, dependencies),
                 ).get("permission:${route.toolId}", PermissionCenterViewModel::class.java)
             }
-            PermissionCenterScreen(permissionViewModel, onBack = onBack)
+            PermissionCenterScreen(permissionViewModel, onBack = onBack, onReady = onReady)
         }
 
         is BackgroundTasksRoute -> BackgroundTasksScreen(
@@ -408,23 +418,27 @@ private fun SecondaryRouteContent(
             operations = dependencies.backgroundOperations,
             runtimeSessions = dependencies.runtimeSessions,
             onBack = onBack,
+            onReady = onReady,
         )
 
         ToolPermissionsRoute -> ToolPermissionsScreen(
             catalog = dependencies.repositories.catalog,
             onBack = onBack,
             onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
+            onReady = onReady,
         )
 
         BackgroundSafeguardsRoute -> BackgroundSafeguardsScreen(
             viewModel = settingsViewModel,
             runtimeSessions = dependencies.runtimeSessions,
             onBack = onBack,
+            onReady = onReady,
         )
 
         DeveloperHelpRoute -> DeveloperHelpScreen(
             onBack = onBack,
             onInstallExamples = importViewModel::installBundledExamples,
+            onReady = onReady,
         )
 
         ToolManagerRoute,
@@ -432,6 +446,53 @@ private fun SecondaryRouteContent(
         is RuntimeRoute,
         -> error("Route is not a retained secondary page: $route")
     }
+}
+
+@Composable
+private fun ToolManagerRouteContent(
+    catalogViewModel: CatalogViewModel,
+    importViewModel: ImportViewModel,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    onDestination: (MainDestination) -> Unit,
+    onImport: () -> Unit,
+    onOpenDetails: (String) -> Unit,
+) {
+    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+    val importState by importViewModel.state.collectAsStateWithLifecycle()
+    ToolManagerScreen(
+        state = catalogState,
+        importState = importState,
+        listState = listState,
+        onAction = catalogViewModel::dispatch,
+        onDestination = onDestination,
+        onImport = onImport,
+        onInstallExamples = importViewModel::installBundledExamples,
+        onDismissImport = importViewModel::dismissMessage,
+        onOpenDetails = onOpenDetails,
+    )
+}
+
+@Composable
+private fun ToolDetailRouteContent(
+    toolId: String,
+    catalogViewModel: CatalogViewModel,
+    onBack: () -> Unit,
+    onReady: () -> Unit,
+    onPermissions: (String) -> Unit,
+    onBackground: (String) -> Unit,
+) {
+    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(catalogState.isLoaded) {
+        if (catalogState.isLoaded) onReady()
+    }
+    ToolDetailScreen(
+        toolId = toolId,
+        state = catalogState,
+        onAction = catalogViewModel::dispatch,
+        onBack = onBack,
+        onPermissions = onPermissions,
+        onBackground = onBackground,
+    )
 }
 
 @Composable

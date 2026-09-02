@@ -37,6 +37,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TopAppBar
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -136,6 +137,28 @@ fun ToolBoxTopBar(
         navigationIcon = navigationSlot,
         actions = actions,
         defaultWindowInsetsPadding = true,
+    )
+}
+
+@Composable
+fun ToolBoxLargeTopBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String = "",
+    defaultWindowInsetsPadding: Boolean = true,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    TopAppBar(
+        title = title,
+        largeTitle = title,
+        subtitle = subtitle,
+        modifier = modifier,
+        color = ToolBoxThemeTokens.colors.background,
+        titleColor = ToolBoxThemeTokens.colors.textPrimary,
+        largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
+        subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
+        actions = actions,
+        defaultWindowInsetsPadding = defaultWindowInsetsPadding,
     )
 }
 

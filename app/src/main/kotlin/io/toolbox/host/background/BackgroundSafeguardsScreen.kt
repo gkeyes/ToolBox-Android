@@ -13,6 +13,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -21,9 +22,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
@@ -31,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -59,6 +63,7 @@ internal fun BackgroundSafeguardsScreen(
     viewModel: SettingsViewModel,
     runtimeSessions: RuntimeSessionManager,
     onBack: () -> Unit,
+    onReady: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -66,6 +71,10 @@ internal fun BackgroundSafeguardsScreen(
     val settings by viewModel.state.collectAsStateWithLifecycle()
     val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
     var refreshGeneration by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(settings.loaded) {
+        if (settings.loaded) onReady()
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -107,6 +116,74 @@ internal fun BackgroundSafeguardsScreen(
         ActivityResultContracts.RequestPermission(),
     ) { refreshGeneration += 1 }
 
+    BackgroundSafeguardsContent(
+        settings = settings,
+        sessions = sessions,
+        systemState = systemState,
+        focusState = focusState,
+        onBack = onBack,
+        onSetBackgroundEnabled = viewModel::setBackgroundEnabled,
+        onStopSession = { session -> scope.launch { runtimeSessions.stopSession(session.sessionId) } },
+        onOpenNotifications = {
+            if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                context.openFirstSupported(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                    appDetailsIntent(context),
+                )
+            }
+        },
+        onOpenBackgroundLocation = {
+            val hasForeground = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED ||
+                context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasForeground) {
+                backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            } else {
+                foregroundLocationLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                    ),
+                )
+            }
+        },
+        onOpenExactAlarms = {
+            context.openFirstSupported(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                    .setData(Uri.parse("package:${context.packageName}")),
+                appDetailsIntent(context),
+            )
+        },
+        onOpenBatteryOptimization = {
+            context.openFirstSupported(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                appDetailsIntent(context),
+            )
+        },
+        onOpenHyperOsAutoStart = context::openHyperOsAutoStart,
+        onOpenHyperOsBatteryPolicy = context::openHyperOsBatteryPolicy,
+    )
+}
+
+@Composable
+internal fun BackgroundSafeguardsContent(
+    settings: io.toolbox.host.settings.SettingsUiState,
+    sessions: List<RuntimeBackgroundSessionUi>,
+    systemState: BackgroundSystemState,
+    focusState: LiveNotificationSupportState,
+    onBack: () -> Unit,
+    onSetBackgroundEnabled: (Boolean) -> Unit,
+    onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
+    onOpenNotifications: () -> Unit,
+    onOpenBackgroundLocation: () -> Unit,
+    onOpenExactAlarms: () -> Unit,
+    onOpenBatteryOptimization: () -> Unit,
+    onOpenHyperOsAutoStart: () -> Unit,
+    onOpenHyperOsBatteryPolicy: () -> Unit,
+) {
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -117,16 +194,21 @@ internal fun BackgroundSafeguardsScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = ToolBoxThemeTokens.spacing.two,
-                top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
-                end = ToolBoxThemeTokens.spacing.two,
-                bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
-            ),
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-        ) {
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .align(Alignment.TopCenter),
+                contentPadding = PaddingValues(
+                    start = ToolBoxThemeTokens.spacing.two,
+                    top = padding.calculateTopPadding() + ToolBoxThemeTokens.spacing.one,
+                    end = ToolBoxThemeTokens.spacing.two,
+                    bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
+                ),
+                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+            ) {
             item("master-title") { SectionHeader("运行") }
             item("master") {
                 ToolBoxGroupedSurface {
@@ -134,7 +216,7 @@ internal fun BackgroundSafeguardsScreen(
                         title = "允许后台运行",
                         summary = "关闭会停止持续环境、计时器、后台任务和对应通知",
                         checked = settings.settings.backgroundEnabled,
-                        onCheckedChange = viewModel::setBackgroundEnabled,
+                        onCheckedChange = onSetBackgroundEnabled,
                         icon = ToolBoxIconKey.Clock,
                         enabled = settings.loaded,
                     )
@@ -151,7 +233,7 @@ internal fun BackgroundSafeguardsScreen(
                         sessions.forEachIndexed { index, session ->
                             ActiveSessionRow(
                                 session = session,
-                                onStop = { scope.launch { runtimeSessions.stopSession(session.sessionId) } },
+                                onStop = { onStopSession(session) },
                             )
                             if (index != sessions.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         }
@@ -167,64 +249,28 @@ internal fun BackgroundSafeguardsScreen(
                         title = "通知",
                         summary = if (systemState.notificationsAllowed) "已允许" else "未允许",
                         icon = ToolBoxIconKey.Notifications,
-                        onClick = {
-                            if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                context.openFirstSupported(
-                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                                    appDetailsIntent(context),
-                                )
-                            }
-                        },
+                        onClick = onOpenNotifications,
                     )
                     ToolBoxGroupDivider()
                     ToolBoxSettingRow(
                         title = "后台定位",
                         summary = if (systemState.backgroundLocationAllowed) "已允许始终访问" else "未允许始终访问",
                         icon = ToolBoxIconKey.Location,
-                        onClick = {
-                            val hasForeground = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
-                                PackageManager.PERMISSION_GRANTED ||
-                                context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
-                                PackageManager.PERMISSION_GRANTED
-                            if (hasForeground) {
-                                backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                            } else {
-                                foregroundLocationLauncher.launch(
-                                    arrayOf(
-                                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                    ),
-                                )
-                            }
-                        },
+                        onClick = onOpenBackgroundLocation,
                     )
                     ToolBoxGroupDivider()
                     ToolBoxSettingRow(
                         title = "精确闹钟",
                         summary = if (systemState.exactAlarmsAllowed) "已允许" else "未允许",
                         icon = ToolBoxIconKey.Clock,
-                        onClick = {
-                            context.openFirstSupported(
-                                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-                                    .setData(Uri.parse("package:${context.packageName}")),
-                                appDetailsIntent(context),
-                            )
-                        },
+                        onClick = onOpenExactAlarms,
                     )
                     ToolBoxGroupDivider()
                     ToolBoxSettingRow(
                         title = "电池优化",
                         summary = if (systemState.ignoresBatteryOptimizations) "不受限制" else "受系统限制",
                         icon = ToolBoxIconKey.Device,
-                        onClick = {
-                            context.openFirstSupported(
-                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-                                appDetailsIntent(context),
-                            )
-                        },
+                        onClick = onOpenBatteryOptimization,
                     )
                 }
             }
@@ -237,14 +283,14 @@ internal fun BackgroundSafeguardsScreen(
                         title = "自启动设置",
                         summary = "由系统决定重启后能否自动恢复",
                         icon = ToolBoxIconKey.Refresh,
-                        onClick = { context.openHyperOsAutoStart() },
+                        onClick = onOpenHyperOsAutoStart,
                     )
                     ToolBoxGroupDivider()
                     ToolBoxSettingRow(
                         title = "后台省电设置",
                         summary = "允许系统为 ToolBox 调整后台策略",
                         icon = ToolBoxIconKey.Device,
-                        onClick = { context.openHyperOsBatteryPolicy() },
+                        onClick = onOpenHyperOsBatteryPolicy,
                     )
                     ToolBoxGroupDivider()
                     SystemStatusRow(
@@ -252,6 +298,7 @@ internal fun BackgroundSafeguardsScreen(
                         summary = focusState.summary(),
                     )
                 }
+            }
             }
         }
     }
@@ -300,7 +347,7 @@ private fun SystemStatusRow(title: String, summary: String) {
     }
 }
 
-private data class BackgroundSystemState(
+internal data class BackgroundSystemState(
     val notificationsAllowed: Boolean,
     val backgroundLocationAllowed: Boolean,
     val exactAlarmsAllowed: Boolean,

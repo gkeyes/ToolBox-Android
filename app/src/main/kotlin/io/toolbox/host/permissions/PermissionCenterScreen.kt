@@ -37,9 +37,14 @@ import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.CatalogStatusState
+import io.toolbox.host.ui.SectionHeader
 
 @Composable
-internal fun PermissionCenterScreen(viewModel: PermissionCenterViewModel, onBack: () -> Unit) {
+internal fun PermissionCenterScreen(
+    viewModel: PermissionCenterViewModel,
+    onBack: () -> Unit,
+    onReady: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var pending by remember { mutableStateOf("") }
@@ -57,6 +62,9 @@ internal fun PermissionCenterScreen(viewModel: PermissionCenterViewModel, onBack
             pending = request.capability
             launcher.launch(request.permissions.toTypedArray())
         }
+    }
+    LaunchedEffect(state.loaded, state.message) {
+        if (state.loaded || state.message != null) onReady()
     }
     PermissionCenterContent(
         state = state,
@@ -79,11 +87,13 @@ internal fun PermissionCenterContent(
     onSetEnabled: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
 ) {
+    val permissionGroups = remember(state.items) { state.items.permissionGroups() }
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             ToolBoxTopBar(
-                title = "${state.toolName} · 权限",
+                title = "工具权限",
+                subtitle = state.toolName.takeUnless { it == "权限" }.orEmpty(),
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
             )
@@ -103,49 +113,73 @@ internal fun PermissionCenterContent(
                     bottom = padding.calculateBottomPadding() + ToolBoxThemeTokens.spacing.one,
                 ),
             ) {
-            item("explanation") {
-                AppText(
-                    text = "只管理此工具已声明的能力。关闭后，对应功能会立即不可用。",
-                    color = ToolBoxThemeTokens.colors.textSecondary,
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                )
-            }
-            item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
-            state.message?.let { message ->
-                item("message") {
-                    SurfaceCard {
-                        AppText(message)
-                        if (state.showSystemSettings) {
-                            ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
+                item("explanation") {
+                    AppText(
+                        text = "只管理此工具已声明的能力。关闭后，对应功能会立即不可用。",
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    )
+                }
+                item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+                state.message?.let { message ->
+                    item("message") {
+                        SurfaceCard {
+                            AppText(message)
+                            if (state.showSystemSettings) {
+                                ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
+                            }
+                        }
+                    }
+                    item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+                }
+                if (!state.loaded) {
+                    item("loading") { CatalogStatusState("正在读取权限") }
+                } else if (state.items.isEmpty()) {
+                    item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
+                } else {
+                    permissionGroups.forEachIndexed { groupIndex, (title, items) ->
+                        item("permission-title:$title") { SectionHeader("$title · ${items.size}") }
+                        item("permission-title-gap:$title") {
+                            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                        }
+                        item("permission-group:$title") {
+                            ToolBoxGroupedSurface {
+                                items.forEachIndexed { index, item ->
+                                    ToolBoxSwitchSettingRow(
+                                        title = item.title,
+                                        summary = item.reason,
+                                        checked = item.enabled,
+                                        onCheckedChange = { onSetEnabled(item.capability, it) },
+                                        icon = item.capability.capabilityIcon(),
+                                        modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
+                                    )
+                                    if (index != items.lastIndex) ToolBoxGroupDivider()
+                                }
+                            }
+                        }
+                        if (groupIndex != permissionGroups.lastIndex) {
+                            item("permission-group-gap:$title") {
+                                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+                            }
                         }
                     }
                 }
-                item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
-            }
-            if (!state.loaded) {
-                item("loading") { CatalogStatusState("正在读取权限") }
-            } else if (state.items.isEmpty()) {
-                item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
-            } else {
-                item("permission-group") {
-                    ToolBoxGroupedSurface {
-                        state.items.forEachIndexed { index, item ->
-                            ToolBoxSwitchSettingRow(
-                                title = item.title,
-                                summary = item.reason,
-                                checked = item.enabled,
-                                onCheckedChange = { onSetEnabled(item.capability, it) },
-                                icon = item.capability.capabilityIcon(),
-                                modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
-                            )
-                            if (index != state.items.lastIndex) ToolBoxGroupDivider()
-                        }
-                    }
-                }
-            }
             }
         }
     }
+}
+
+private fun List<PermissionItem>.permissionGroups(): List<Pair<String, List<PermissionItem>>> {
+    val grouped = groupBy { it.category() }
+    return listOf("基础能力", "内容与文件", "网络与系统", "后台与位置")
+        .mapNotNull { title -> grouped[title]?.takeIf { it.isNotEmpty() }?.let { title to it } }
+}
+
+private fun PermissionItem.category(): String = when (capability) {
+    "storage", "storage.secure", "device.basic", "haptics" -> "基础能力"
+    "clipboard.write", "clipboard.read", "share", "files.open", "files.save", "camera" -> "内容与文件"
+    "network", "notifications", "shortcuts" -> "网络与系统"
+    else -> "后台与位置"
 }
 
 private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
