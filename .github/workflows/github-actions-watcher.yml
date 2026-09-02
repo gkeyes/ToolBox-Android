@@ -97,9 +97,15 @@ jobs:
       - name: Verify production importer accepts the TBX
         env:
           TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx
-        run: >-
-          ./gradlew --no-daemon :tool-package:testDebugUnitTest
-          --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle
+        run: |
+          set +e
+          ./gradlew --no-daemon :tool-package:testDebugUnitTest \
+            --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle
+          status=$?
+          if [[ "$status" -ne 0 ]]; then
+            find tool-package/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -print -exec sed -n '1,180p' {} \;
+          fi
+          exit "$status"
 
       - name: Assemble checksummed standalone delivery
         run: |
