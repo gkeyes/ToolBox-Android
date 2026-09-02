@@ -3,7 +3,15 @@ name: Android CI
 on:
   push:
     branches: [main, "codex/**"]
+    paths-ignore:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/github-actions-watcher.yml"
+      - "TESTING.md"
   pull_request:
+    paths-ignore:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/github-actions-watcher.yml"
+      - "TESTING.md"
   workflow_dispatch:
 
 permissions:
