@@ -1,6 +1,7 @@
 package io.toolbox.tool.packagekit
 
 import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -22,11 +23,13 @@ internal object BundleEntryValidator {
             LinkOption.NOFOLLOW_LINKS,
         ).use { it.readNBytes(4096) }
         val text = try {
-            StandardCharsets.UTF_8.newDecoder()
+            val decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(prefix))
-                .toString()
+            val characters = CharBuffer.allocate(prefix.size)
+            val result = decoder.decode(ByteBuffer.wrap(prefix), characters, false)
+            if (result.isError) result.throwException()
+            characters.flip().toString()
         } catch (_: Exception) {
             reject(PackageRejectionCode.ENTRY_MIME_INVALID, "Manifest entry is not UTF-8 HTML")
         }

@@ -30,6 +30,35 @@ import org.junit.Test
 
 class DirectPackageLifecycleTest {
     @Test
+    fun validUtf8EntrySplitAtSniffBoundaryIsAccepted() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-utf8-boundary")
+        try {
+            val opening = "<!doctype html><html><body>"
+            val boundaryHtml = (
+                opening + "a".repeat(4095 - opening.toByteArray().size) + "中</body></html>"
+            ).toByteArray()
+            assertEquals(0xe4.toByte(), boundaryHtml[4095])
+            val repositories = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+            )
+
+            val result = manager.importAndInstall(
+                ByteInput("utf8-boundary.tbx", packageBytes(entryHtml = boundaryHtml)),
+            )
+
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), result)
+            assertNoTransientFiles(root)
+            assertNoPendingCleanup(root)
+        } finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
     fun standalonePackageUnderTestPassesProductionImportLifecycle() = runBlocking {
         val packagePath = System.getenv("TOOLBOX_PACKAGE_UNDER_TEST")?.let(Path::of)
             ?: return@runBlocking
@@ -328,6 +357,7 @@ class DirectPackageLifecycleTest {
     private fun packageBytes(
         versionCode: Int = 1,
         minHostVersion: String = "0.2.0",
+        entryHtml: ByteArray = HTML,
         signed: Boolean = false,
         corruptIntegrity: Boolean = false,
         corruptSignature: Boolean = false,
@@ -335,7 +365,7 @@ class DirectPackageLifecycleTest {
     ): ByteArray {
         val content = linkedMapOf(
             "manifest.json" to manifest(versionCode, minHostVersion).toByteArray(),
-            "index.html" to HTML,
+            "index.html" to entryHtml,
         ).apply { putAll(extra) }
         val integrity = integrity(content, corruptIntegrity).toByteArray()
         val entries = linkedMapOf<String, ByteArray>().apply {
