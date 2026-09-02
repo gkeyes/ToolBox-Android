@@ -1,0 +1,117 @@
+name: GitHub Actions Watcher TBX
+
+on:
+  push:
+    branches: [main, "codex/**"]
+    paths:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/github-actions-watcher.yml"
+      - "TESTING.md"
+  pull_request:
+    paths:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/github-actions-watcher.yml"
+      - "TESTING.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-actions-watcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Test and package standalone TBX
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Check JavaScript and progress model
+        run: |
+          set -euo pipefail
+          node --check examples/github-actions-watcher/github-model.js
+          node --check examples/github-actions-watcher/app.js
+          node --test examples/github-actions-watcher/github-model.test.js
+
+      - name: Verify deterministic package and contract
+        run: |
+          set -euo pipefail
+          first_sum="$RUNNER_TEMP/github-actions-watcher-first.sha256"
+          second_sum="$RUNNER_TEMP/github-actions-watcher-second.sha256"
+          bash examples/github-actions-watcher/package.sh
+          shasum -a 256 build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx | awk '{print $1}' > "$first_sum"
+          bash examples/github-actions-watcher/package.sh
+          shasum -a 256 build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx | awk '{print $1}' > "$second_sum"
+          diff -u "$first_sum" "$second_sum"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import zipfile
+          from pathlib import Path
+
+          root = Path("examples/github-actions-watcher")
+          manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+          assert manifest["version"] == "1.0.0"
+          assert manifest["versionCode"] == 1
+          assert manifest["apiVersion"] == "1.0"
+          assert manifest["minHostVersion"] == "0.3.2"
+          assert manifest["network"]["allowDomains"] == ["api.github.com"]
+          assert [item["name"] for item in manifest["permissions"]] == [
+              "storage", "storage.secure", "network", "notifications", "background.runtime"
+          ]
+
+          package = Path("build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx")
+          expected = {
+              "manifest.json", "index.html", "style.css", "github-model.js", "app.js", "icon.svg", "integrity.json"
+          }
+          with zipfile.ZipFile(package) as archive:
+              assert set(archive.namelist()) == expected
+              integrity = json.loads(archive.read("integrity.json"))
+              assert set(integrity["files"]) == expected - {"integrity.json"}
+              for name, digest in integrity["files"].items():
+                  assert hashlib.sha256(archive.read(name)).hexdigest() == digest
+          PY
+
+      - name: Assemble checksummed standalone delivery
+        run: |
+          set -euo pipefail
+          delivery_dir="$GITHUB_WORKSPACE/build/github-actions-watcher-delivery"
+          mkdir -p "$delivery_dir"
+          cp build/github-actions-watcher/github-actions-watcher-v1.0.0.tbx "$delivery_dir/"
+          {
+            printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
+            printf 'BUILD_REF=%s\n' "$GITHUB_REF"
+            printf 'TOOL_ID=io.toolbox.githubactionswatcher\n'
+            printf 'TOOL_VERSION=1.0.0\n'
+            printf 'MIN_HOST_VERSION=0.3.2\n'
+            printf 'JS_CHECK=PASSED\n'
+            printf 'NODE_TESTS=PASSED\n'
+            printf 'REPRODUCIBLE_PACKAGE=PASSED\n'
+            printf 'INTEGRITY_CHECK=PASSED\n'
+            printf 'APK_BUILD=NOT_REQUESTED\n'
+            printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
+            printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
+            printf 'DELIVERY_FILES=github-actions-watcher-v1.0.0.tbx,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+          } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
+          (
+            cd "$delivery_dir"
+            LC_ALL=C shasum -a 256 \
+              github-actions-watcher-v1.0.0.tbx \
+              BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
+          )
+
+      - name: Upload standalone TBX
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: github-actions-watcher-v1.0.0-${{ github.sha }}
+          path: |
+            build/github-actions-watcher-delivery/github-actions-watcher-v1.0.0.tbx
+            build/github-actions-watcher-delivery/SHA256SUMS.txt
+            build/github-actions-watcher-delivery/BUILD_AND_TEST_RECEIPT.txt
+          if-no-files-found: error
+          retention-days: 14

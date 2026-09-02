@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.githubactionswatcher",
+  "name": "GitHub 构建守望",
+  "shortName": "构建守望",
+  "description": "守望选定的 GitHub Actions 工作流，估算构建进度并通过实时通知持续更新。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.3.2",
+  "categories": ["开发", "效率"],
+  "permissions": [
+    {"name": "storage", "reason": "保存仓库、工作流选择、构建快照和历史耗时模型。", "required": false},
+    {"name": "storage.secure", "reason": "可选保存只读 GitHub Token。", "required": false},
+    {"name": "network", "reason": "只读访问 GitHub Actions 官方 API。", "required": false},
+    {"name": "notifications", "reason": "显示构建进度、结果通知和 HyperOS 实时增强。", "required": false},
+    {"name": "background.runtime", "reason": "离开页面后继续发现和跟踪构建。", "required": false}
+  ],
+  "network": {
+    "allowDomains": ["api.github.com"],
+    "allowRedirects": false,
+    "timeoutMs": 30000,
+    "maxResponseBytes": 1048576
+  },
+  "securityProfile": "strict",
+  "ui": {
+    "orientation": "portrait",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  },
+  "limits": {
+    "storageBytes": 2097152,
+    "maxBridgePayloadBytes": 1048576
+  }
+}

@@ -36,6 +36,7 @@
 | 真机组合 | `manual-xiaomi-toolbox-v1` | 自动门禁不能证明 WebView detach/reattach、后台位置、精确闹钟、前台服务、Android 实时更新、HyperOS 超级岛和系统回收恢复；导航丝滑度也依赖真实设备。 | 安装 0.3.3 后安装四例，使用通知实验室验证普通/实时通知、锁屏、超级岛更新、打开所属工具和停止当前；同时覆盖 timer/location/alarm、重启恢复和关键进入/返回路径帧数据。 | 同一 runtime 状态连续，恢复事件不丢；通知内容、进度和色调原位更新，普通通知始终存在，超级岛仅在系统实际支持时增强；“打开”直达所属工具，“停止当前”释放对应会话；授权关闭/更新/删除无残留；关键页面无可见停顿或残影。 |
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
+| GitHub 构建守望 | `github-model.test.js`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，必须保护历史样本选择、算术平均、rerun/并行边界、只读 API 解析、后台摘要和独立交付完整性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查、Node 单测及两次可重复打包，逐文件复核 integrity 与 ZIP 集合。 | 所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；产物仅包含声明文件；CI 回执明确 APK、真机和超级岛未执行。 |
 | CI 交付 | `artifact-gate-receipt` | 防止协议/安全/编译/最小测试未过就发布 APK/TBX，也防止把未执行的设备测试写成通过。 | Actions 按 verify → delivery 的 `needs` 关系运行，检查 `toolbox-v0.3.3-debug.apk`、`stock-monitor-v1.1.1.tbx`、`SHA256SUMS.txt`、提交回执及 `DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED`、`HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED`。 | 任一静态门禁失败时没有交付产物；成功 APK/TBX 来自同一提交并可按 SHA256 复验，回执明确真机与超级岛验证由用户执行。 |
 
 ## 执行原则
@@ -45,3 +46,7 @@
   instrumentation 或真实系统表面证据；前者不能替代后者。
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
+
+## 独立工具执行回执
+
+- `github-actions-watcher-v1.0.0`：本地只运行 JS 语法、Node 模型测试、manifest/integrity/ZIP 与可重复打包检查，不运行 Gradle、模拟器或 APK 构建；GitHub CI 的实际结果、提交号和产物哈希写入独立 artifact 内的 `BUILD_AND_TEST_RECEIPT.txt` 与 `SHA256SUMS.txt`。真机后台、锁屏和 HyperOS 超级岛状态保持 `NOT_RUN_USER_OWNED`，由用户验收后补充证据。
