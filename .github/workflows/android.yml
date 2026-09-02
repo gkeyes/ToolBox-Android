@@ -45,8 +45,8 @@ jobs:
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
-      - name: Render the redesigned host preview matrix
-        run: ./gradlew --no-daemon :app:updateDebugScreenshotTest
+      - name: Validate the redesigned host preview matrix
+        run: ./gradlew --no-daemon :app:validateDebugScreenshotTest
 
       - name: Upload rendered host previews
         if: ${{ always() }}
