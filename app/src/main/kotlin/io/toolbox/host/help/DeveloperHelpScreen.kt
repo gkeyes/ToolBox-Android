@@ -77,7 +77,7 @@ internal fun DeveloperHelpScreen(
                         ├── index.html
                         ├── style.css
                         ├── app.js
-                        ├── icon.svg
+                        ├── icon.png
                         └── integrity.json
                     """,
                 )

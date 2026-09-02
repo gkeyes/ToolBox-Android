@@ -7,7 +7,7 @@
   "version": "1.0.0",
   "versionCode": 1,
   "entry": "index.html",
-  "icon": "icon.svg",
+  "icon": "icon.png",
   "apiVersion": "1.0",
   "minHostVersion": "0.2.0",
   "categories": ["开发", "后台"],

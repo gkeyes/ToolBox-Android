@@ -6,7 +6,7 @@ repo_root="$(cd -- "${source_dir}/../.." && pwd)"
 output_dir="${repo_root}/build/examples"
 output_path="${output_dir}/notification-lab.tbx"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-notification-lab.XXXXXX")"
-entries=(manifest.json index.html style.css app.js icon.svg)
+entries=(manifest.json index.html style.css app.js icon.png)
 trap 'rm -rf -- "${stage_dir}"' EXIT
 
 for entry in "${entries[@]}"; do
