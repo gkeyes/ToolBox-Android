@@ -145,19 +145,19 @@ jobs:
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
           apksigner="$ANDROID_HOME/build-tools/37.0.0/apksigner"
           expected_cert="$(
-            keytool -list -v \
+            keytool -exportcert \
               -keystore "$TOOLBOX_SIGNING_STORE_FILE" \
               -storepass "$SIGNING_STORE_PASSWORD" \
               -alias "$SIGNING_KEY_ALIAS" 2>/dev/null |
-              sed -n 's/.*SHA256: //p' |
-              head -1 |
-              tr -d ':' |
-              tr '[:upper:]' '[:lower:]'
+              sha256sum |
+              awk '{print $1}'
           )"
           actual_cert="$(
             "$apksigner" verify --print-certs "$apk_path" |
-              sed -n 's/^Signer #1 certificate SHA-256 digest: //p'
+              awk -F': ' '/certificate SHA-256 digest/{print $2; exit}'
           )"
+          printf 'Keystore certificate SHA-256: %s\n' "$expected_cert"
+          printf 'APK certificate SHA-256: %s\n' "$actual_cert"
           [[ -n "$expected_cert" ]]
           [[ "$actual_cert" == "$expected_cert" ]]
           printf 'TOOLBOX_APK_CERT_SHA256=%s\n' "$actual_cert" >> "$GITHUB_ENV"
