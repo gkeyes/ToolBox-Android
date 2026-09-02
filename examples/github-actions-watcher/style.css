@@ -96,7 +96,6 @@ summary:focus-visible {
   width: 58px;
   height: 58px;
   border-radius: 18px;
-  box-shadow: var(--shadow);
 }
 
 .identity-copy {
@@ -194,6 +193,68 @@ h3 {
   margin-top: 10px;
 }
 
+.branch-field-label {
+  margin-top: 10px;
+}
+
+.branch-count {
+  margin: 6px 2px 0;
+  font-size: 0.78rem;
+}
+
+.branch-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.branch-chevron {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.branch-select[aria-expanded="true"] .branch-chevron {
+  transform: rotate(225deg);
+}
+
+.branch-options {
+  max-height: 260px;
+  margin-top: 6px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.branch-option {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.branch-option[aria-pressed="true"] {
+  background: var(--surface-muted);
+  color: var(--accent);
+  font-weight: 740;
+}
+
 .token-row,
 .section-heading,
 .hero-topline,
@@ -251,7 +312,8 @@ h3 {
 .primary-button:disabled,
 .secondary-button:disabled,
 .danger-button:disabled,
-.text-button:disabled {
+.text-button:disabled,
+.branch-select:disabled {
   cursor: default;
   opacity: 0.45;
 }

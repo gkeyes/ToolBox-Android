@@ -62,6 +62,18 @@ test("poll cadence follows authentication and active state", () => {
   assert.equal(model.pollInterval(false, false), 300_000);
 });
 
+test("branch candidates include repository branches before recent run fallbacks", () => {
+  assert.deepEqual(
+    model.branchCandidates(
+      "main",
+      [{ name: "main" }, { name: "release/v1" }, { name: "feature/ui" }],
+      [{ head_branch: "feature/ui" }, { head_branch: "hotfix" }],
+      4
+    ),
+    ["main", "release/v1", "feature/ui", "hotfix"]
+  );
+});
+
 test("uses first nonempty history bucket and latest ten samples", () => {
   const target = { workflow_id: 9, head_branch: "main", event: "push" };
   const runs = [];

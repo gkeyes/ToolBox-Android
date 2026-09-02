@@ -62,6 +62,9 @@ class DirectPackageLifecycleTest {
     fun standalonePackageUnderTestPassesProductionImportLifecycle() = runBlocking {
         val packagePath = System.getenv("TOOLBOX_PACKAGE_UNDER_TEST")?.let(Path::of)
             ?: return@runBlocking
+        val expectedVersionCode = requireNotNull(System.getenv("TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE")) {
+            "TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE is required for the standalone package gate."
+        }.toInt()
         val root = Files.createTempDirectory("tool-package-standalone")
         try {
             val repositories = InMemoryCoreData.create()
@@ -76,7 +79,7 @@ class DirectPackageLifecycleTest {
             val result = manager.importAndInstall(FileInput(packagePath))
 
             assertEquals(
-                PackageInstallResult.Installed("io.toolbox.githubactionswatcher", 1, false),
+                PackageInstallResult.Installed("io.toolbox.githubactionswatcher", expectedVersionCode, false),
                 result,
             )
             assertNoTransientFiles(root)

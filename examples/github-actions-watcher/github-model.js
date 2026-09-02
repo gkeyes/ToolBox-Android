@@ -93,6 +93,24 @@
     return active ? 180_000 : 300_000;
   }
 
+  function branchCandidates(defaultBranch, repositoryBranches, runs, limit = 100) {
+    const values = [
+      defaultBranch,
+      ...(repositoryBranches || []).map((branch) => branch?.name),
+      ...(runs || []).map((run) => run?.head_branch)
+    ];
+    const result = [];
+    const seen = new Set();
+    for (const value of values) {
+      const branch = String(value || "").trim();
+      if (!branch || seen.has(branch)) continue;
+      seen.add(branch);
+      result.push(branch);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
   function selectedRuns(runs, workflowIds, branchMode, branch) {
     const ids = new Set((workflowIds || []).map(Number));
     return (runs || []).filter((run) => {
@@ -313,6 +331,7 @@
 
   return {
     ACTIVE_STATUSES,
+    branchCandidates,
     buildNotificationSummary,
     buildTimingModel,
     classifyApiStatus,

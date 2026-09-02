@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.0";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.1";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -22,6 +22,7 @@
     repository: null,
     workflows: [],
     branches: [],
+    branchCatalogComplete: false,
     discoveryRuns: [],
     config: null,
     runs: [],
@@ -100,6 +101,7 @@
     document.querySelectorAll("button").forEach((button) => {
       button.disabled = value || button.dataset.forceDisabled === "true";
     });
+    $("branch-select").disabled = value || document.querySelector('input[name="branch-mode"]:checked')?.value === "all";
     updateStartButton();
   }
 
@@ -187,6 +189,7 @@
         repository: state.repository,
         workflows: state.workflows,
         branches: state.branches,
+        branchCatalogComplete: state.branchCatalogComplete,
         config: state.config,
         monitoring: state.monitoring,
         sessionId: state.sessionId,
@@ -214,6 +217,7 @@
     if (saved.repository && typeof saved.repository === "object") state.repository = saved.repository;
     if (Array.isArray(saved.workflows)) state.workflows = saved.workflows;
     if (Array.isArray(saved.branches)) state.branches = saved.branches;
+    state.branchCatalogComplete = saved.branchCatalogComplete === true;
     if (saved.config && typeof saved.config === "object") state.config = saved.config;
     state.monitoring = saved.monitoring === true;
     state.sessionId = typeof saved.sessionId === "string" ? saved.sessionId : null;
@@ -311,8 +315,8 @@
     let page = 0;
     while (url && page < maxPages) {
       const response = await apiRequest(url, tokenOverride);
-      const pageItems = response.data?.[collectionKey];
-      if (!Array.isArray(pageItems)) throw createError("github", `GitHub 响应缺少 ${collectionKey}`);
+      const pageItems = collectionKey ? response.data?.[collectionKey] : response.data;
+      if (!Array.isArray(pageItems)) throw createError("github", `GitHub 响应缺少 ${collectionKey || "列表"}`);
       items.push(...pageItems);
       url = model.parseNextLink(headerValue(response.headers, "link"));
       page += 1;
@@ -336,13 +340,21 @@
     const typedToken = $("token-input").value.trim();
     const candidateToken = typedToken || state.token;
     setBusy(true);
-    setLoading(true, "读取仓库", "正在验证仓库、workflow 和近期分支");
+    setLoading(true, "读取仓库", "正在验证仓库、workflow、分支和近期构建");
     try {
       const base = `${API_ROOT}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
       const repositoryResponse = await apiRequest(base, candidateToken);
       const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", candidateToken, 5);
       const runsResponse = await apiRequest(`${base}/actions/runs?per_page=100`, candidateToken);
       const runs = Array.isArray(runsResponse.data?.workflow_runs) ? runsResponse.data.workflow_runs : [];
+      let repositoryBranches = [];
+      let branchCatalogComplete = false;
+      try {
+        repositoryBranches = await fetchPaged(`${base}/branches?per_page=100`, null, candidateToken, 5);
+        branchCatalogComplete = true;
+      } catch (_error) {
+        repositoryBranches = [];
+      }
       const activeWorkflows = workflows.filter((workflow) => workflow.state === "active");
       if (!activeWorkflows.length) throw createError("github", "仓库没有启用中的 GitHub Actions workflow");
       if (typedToken) {
@@ -366,7 +378,8 @@
         path: cleanText(workflow.path || "", 220)
       }));
       state.discoveryRuns = runs;
-      state.branches = [...new Set([state.repository.defaultBranch, ...runs.map((run) => run.head_branch).filter(Boolean)])].slice(0, 100);
+      state.branches = model.branchCandidates(state.repository.defaultBranch, repositoryBranches, runs, 100);
+      state.branchCatalogComplete = branchCatalogComplete;
       state.warning = null;
       state.warningMessage = "";
       renderTokenState();
@@ -407,21 +420,47 @@
 
   function renderBranchChoices() {
     const select = $("branch-select");
-    select.replaceChildren();
+    const options = $("branch-options");
+    options.replaceChildren();
     const chosen = state.config?.branch || state.repository?.defaultBranch || "main";
-    for (const branch of state.branches) {
-      const option = document.createElement("option");
+    const branches = state.branches.includes(chosen) ? state.branches : [chosen, ...state.branches];
+    select.value = chosen;
+    $("branch-selected-text").textContent = chosen;
+    setBranchPickerOpen(false);
+    for (const branch of branches) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "branch-option";
       option.value = branch;
       option.textContent = branch;
-      option.selected = branch === chosen;
-      select.append(option);
+      option.setAttribute("aria-pressed", String(branch === chosen));
+      option.addEventListener("click", () => {
+        select.value = branch;
+        $("branch-selected-text").textContent = branch;
+        $("branch-manual").value = "";
+        options.querySelectorAll("button").forEach((item) => {
+          item.setAttribute("aria-pressed", String(item.value === branch));
+        });
+        setBranchPickerOpen(false);
+        select.focus();
+        updateStartButton();
+      });
+      options.append(option);
     }
+    $("branch-count").textContent = state.branchCatalogComplete
+      ? `下拉列表已读取 ${state.branches.length} 个仓库分支`
+      : `下拉列表含默认及近期构建分支，其他分支可手动输入`;
     const mode = state.config?.branchMode || "branch";
     document.querySelectorAll('input[name="branch-mode"]').forEach((input) => {
       input.checked = input.value === mode;
     });
     $("branch-select").disabled = mode === "all";
     $("branch-manual").disabled = mode === "all";
+  }
+
+  function setBranchPickerOpen(open) {
+    $("branch-options").hidden = !open;
+    $("branch-select").setAttribute("aria-expanded", String(open));
   }
 
   function renderSetup() {
@@ -1063,6 +1102,7 @@
     state.repository = null;
     state.workflows = [];
     state.branches = [];
+    state.branchCatalogComplete = false;
     state.discoveryRuns = [];
     state.config = null;
     $("repo-input").value = "";
@@ -1075,10 +1115,27 @@
       const all = input.value === "all" && input.checked;
       $("branch-select").disabled = all;
       $("branch-manual").disabled = all;
+      setBranchPickerOpen(false);
       updateStartButton();
     });
   });
-  $("branch-select").addEventListener("change", updateStartButton);
+  $("branch-select").addEventListener("click", () => {
+    setBranchPickerOpen($("branch-options").hidden);
+  });
+  $("branch-picker").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setBranchPickerOpen(false);
+      $("branch-select").focus();
+    }
+    if (event.key === "ArrowDown" && event.target === $("branch-select")) {
+      event.preventDefault();
+      setBranchPickerOpen(true);
+      $("branch-options").querySelector('[aria-pressed="true"]')?.focus();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!$("branch-picker").contains(event.target)) setBranchPickerOpen(false);
+  });
   $("branch-manual").addEventListener("input", updateStartButton);
   $("start-watching").addEventListener("click", startWatching);
   $("refresh-now").addEventListener("click", () => pollGitHub(true));

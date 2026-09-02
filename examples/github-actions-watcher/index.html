@@ -57,7 +57,15 @@
             <input type="radio" name="branch-mode" value="branch" checked>
             <span>指定分支</span>
           </label>
-          <select id="branch-select" class="text-field" aria-label="选择分支"></select>
+          <label id="branch-picker-label" class="field-label branch-field-label" for="branch-select">从仓库分支选择</label>
+          <div id="branch-picker" class="branch-picker">
+            <button id="branch-select" class="text-field branch-select" type="button" aria-labelledby="branch-picker-label branch-selected-text" aria-expanded="false" aria-controls="branch-options">
+              <span id="branch-selected-text">选择分支</span>
+              <span class="branch-chevron" aria-hidden="true"></span>
+            </button>
+            <div id="branch-options" class="branch-options" role="group" aria-label="仓库分支" hidden></div>
+          </div>
+          <p id="branch-count" class="supporting branch-count"></p>
           <input id="branch-manual" class="text-field compact-field" type="text" autocomplete="off" placeholder="或手动输入分支名">
           <label class="radio-row">
             <input type="radio" name="branch-mode" value="all">
