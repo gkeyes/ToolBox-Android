@@ -262,79 +262,79 @@ internal fun ToolDetailScreen(
                 }
             }
         }
-    }
 
-    OverlayDialog(
-        show = menuVisible,
-        title = "工具操作",
-        onDismissRequest = { menuVisible = false },
-    ) {
-        Column {
-            tool?.let {
-                ToolBoxSettingRow(
-                    title = "打开",
-                    icon = ToolBoxIconKey.OpenInNew,
-                    onClick = {
-                        menuVisible = false
-                        onAction(CatalogAction.RequestRuntimeLaunch(it.toolId))
-                    },
-                )
-                ToolBoxGroupDivider()
-                ToolBoxSettingRow(
-                    title = "权限",
-                    icon = ToolBoxIconKey.Shield,
-                    onClick = {
-                        menuVisible = false
-                        onPermissions(it.toolId)
-                    },
-                )
-                ToolBoxGroupDivider()
-                ToolBoxSettingRow(
-                    title = "后台任务",
-                    icon = ToolBoxIconKey.Clock,
-                    onClick = {
-                        menuVisible = false
-                        onBackground(it.toolId)
-                    },
-                )
-                ToolBoxGroupDivider()
-                ToolBoxTextButton(
-                    label = "删除工具",
-                    onClick = {
-                        menuVisible = false
-                        onAction(CatalogAction.RequestUninstall(it.toolId))
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "从菜单删除${it.name}" },
-                    contentColor = ToolBoxThemeTokens.colors.danger,
-                )
+        OverlayDialog(
+            show = menuVisible,
+            title = "工具操作",
+            onDismissRequest = { menuVisible = false },
+        ) {
+            Column {
+                tool?.let {
+                    ToolBoxSettingRow(
+                        title = "打开",
+                        icon = ToolBoxIconKey.OpenInNew,
+                        onClick = {
+                            menuVisible = false
+                            onAction(CatalogAction.RequestRuntimeLaunch(it.toolId))
+                        },
+                    )
+                    ToolBoxGroupDivider()
+                    ToolBoxSettingRow(
+                        title = "权限",
+                        icon = ToolBoxIconKey.Shield,
+                        onClick = {
+                            menuVisible = false
+                            onPermissions(it.toolId)
+                        },
+                    )
+                    ToolBoxGroupDivider()
+                    ToolBoxSettingRow(
+                        title = "后台任务",
+                        icon = ToolBoxIconKey.Clock,
+                        onClick = {
+                            menuVisible = false
+                            onBackground(it.toolId)
+                        },
+                    )
+                    ToolBoxGroupDivider()
+                    ToolBoxTextButton(
+                        label = "删除工具",
+                        onClick = {
+                            menuVisible = false
+                            onAction(CatalogAction.RequestUninstall(it.toolId))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = "从菜单删除${it.name}" },
+                        contentColor = ToolBoxThemeTokens.colors.danger,
+                    )
+                }
             }
         }
-    }
 
-    OverlayDialog(
-        show = confirmation != null,
-        title = confirmation?.let { "删除 ${it.toolName}？" },
-        summary = "工具文件、权限、存储和后台任务都会一并删除。",
-        onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+        OverlayDialog(
+            show = confirmation != null,
+            title = confirmation?.let { "删除 ${it.toolName}？" },
+            summary = "工具文件、权限、存储和后台任务都会一并删除。",
+            onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
         ) {
-            ToolBoxTextButton(
-                label = "取消",
-                onClick = { onAction(CatalogAction.CancelUninstall) },
-                modifier = Modifier.weight(1f),
-                contentColor = ToolBoxThemeTokens.colors.textPrimary,
-            )
-            ToolBoxPrimaryButton(
-                label = "确认删除",
-                onClick = { onAction(CatalogAction.ConfirmUninstall) },
-                modifier = Modifier.weight(1f),
-                destructive = true,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+            ) {
+                ToolBoxTextButton(
+                    label = "取消",
+                    onClick = { onAction(CatalogAction.CancelUninstall) },
+                    modifier = Modifier.weight(1f),
+                    contentColor = ToolBoxThemeTokens.colors.textPrimary,
+                )
+                ToolBoxPrimaryButton(
+                    label = "确认删除",
+                    onClick = { onAction(CatalogAction.ConfirmUninstall) },
+                    modifier = Modifier.weight(1f),
+                    destructive = true,
+                )
+            }
         }
     }
 }
