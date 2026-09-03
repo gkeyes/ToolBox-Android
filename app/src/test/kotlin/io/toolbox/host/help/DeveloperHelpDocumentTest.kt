@@ -13,9 +13,12 @@ class DeveloperHelpDocumentTest {
         val document = parseHelpDocument(source)
         assertEquals(source, document.source)
         assertEquals(7, document.chapters.size)
-        assertEquals(27, document.chapters.sumOf { it.articles.size })
+        assertEquals(28, document.chapters.sumOf { it.articles.size })
         assertTrue(document.chapters.all { it.summary.isNotBlank() })
         assertTrue(document.search("background.setTimer").isNotEmpty())
+        assertTrue(document.search("manifest 图标").flatMap { it.articles }.any {
+            it.title == "同一图标用于列表、通知和超级岛"
+        })
         val sdk = document.chapters.flatMap { it.articles }.flatMap { it.blocks }
             .single { it.label == "ts sdk/toolbox-api.d.ts" }
         assertTrue(sdk.code)

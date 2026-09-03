@@ -159,3 +159,9 @@
 - 修改与方法：只把这两个宿主 UI 符号设为模块内 `internal`，不增加公开 API。由 GitHub 复跑既有 `:app:compileDebugKotlin`、Android 测试源码编译和最小单元测试集合；编译器直接覆盖该跨文件引用，不增加只检查源码字样的重复测试。
 - 预期：跨文件反馈复用通过编译，既有首页停止失败/重试用例保持通过。编译、截图校验与 APK 打包结果分别核验；不把重新推送当作构建成功。
 - 当前边界：本机不运行 Gradle、Kotlin 编译或模拟器；真实交互和小米通知展示仍由真机验收。修复后的 GitHub 结果待本轮重跑后记录。
+
+### GitHub 重跑与帮助章节回归
+
+- Actions `33747821490`（`aeed43647ea25b71ab1c6e0de57845cd0aac2c47`）：协议、安全、生产 Kotlin 与 Android 测试源码编译通过，原来的文件私有错误消失。App 的 49 项 JVM 检查中仅帮助文档检查失败；新增图标小节后已有 28 节，旧断言仍要求 27 节。
+- 继续使用 `DeveloperHelpDocumentTest.shippedManualParsesWithReachableChaptersAndCopyableSdk`，精确期望改为 28，增加按文档原文关键词 `manifest 图标` 搜索能够找到“同一图标用于列表、通知和超级岛”的断言。保留 7 章、摘要、源码完整复制、SDK 代码块和后台接口可搜索性检查，不删除或放宽既有保护。
+- 方法与预期：本地仅运行帮助文档静态/模拟桥检查；GitHub 重新执行生产解析器的 JVM 测试，确认新增小节实际可达，随后继续截图校验和 APK 打包。此处不把静态检查当作 Kotlin 测试通过。
