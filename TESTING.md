@@ -151,3 +151,11 @@
 - 当前 17 张 Compose 截图基线尚未重新渲染；详情、后台保障和后台任务的按钮外观是预期变化。下一次 GitHub 原生截图渲染后审图更新，不能把现有基线、源码检查或 HTML 图当作本轮真机通过。
 - 必须真机确认：同一工具列表/通知内容图/超级岛一致；双工具不串图；升级后换图、停止后无迟到通知；浅/深/2× 字体的删除与停止可辨识、可点，点击取消不删除。Android 状态栏来源图标和 ToolBox 启动图标仍是宿主身份。
 - 协议核对实际通过：canonical、Kotlin 和 SDK 的 SHA-256 均为 `a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352`，manifest 的 18 个能力枚举一致。新危险按钮 `onSoftDanger/softDanger` 的浅/深色计算对比度为 5.83:1、7.78:1；这仍不是最终屏幕或 TalkBack 实测。
+
+## 首页共享反馈组件编译回归（2026-09-03）
+
+- 理由：新增 `CatalogRunningTools` 从另一文件调用 `FeedbackSurface` 和 `FeedbackTone`，二者仍为文件私有，导致生产 Kotlin 编译失败。
+- 失败证据：GitHub Actions `33747051358`，提交 `0695339f42e806a3aa9f11249b61133fb139fb85`；`host-gate.compile.log` 第 136–138 行报告 `it is private in file`，最小单元测试阶段也被同一编译错误阻断。协议、安全和帮助检查已通过。
+- 修改与方法：只把这两个宿主 UI 符号设为模块内 `internal`，不增加公开 API。由 GitHub 复跑既有 `:app:compileDebugKotlin`、Android 测试源码编译和最小单元测试集合；编译器直接覆盖该跨文件引用，不增加只检查源码字样的重复测试。
+- 预期：跨文件反馈复用通过编译，既有首页停止失败/重试用例保持通过。编译、截图校验与 APK 打包结果分别核验；不把重新推送当作构建成功。
+- 当前边界：本机不运行 Gradle、Kotlin 编译或模拟器；真实交互和小米通知展示仍由真机验收。修复后的 GitHub 结果待本轮重跑后记录。

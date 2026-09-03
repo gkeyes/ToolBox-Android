@@ -414,10 +414,10 @@ private fun ToolIdentity(tool: CatalogTool) {
     }
 }
 
-private enum class FeedbackTone { Progress, Success, Error }
+internal enum class FeedbackTone { Progress, Success, Error }
 
 @Composable
-private fun FeedbackSurface(
+internal fun FeedbackSurface(
     message: String,
     tone: FeedbackTone,
     dismissible: Boolean,
