@@ -8,6 +8,9 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import com.xzakota.hyper.notification.focus.FocusNotification
 import com.xzakota.hyper.notification.focus.model.TextAndColorInfo
 import io.toolbox.host.R
@@ -59,9 +62,9 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setContentTitle(whiteLiveText(title))
+            .setContentText(whiteLiveText(content))
+            .setStyle(Notification.BigTextStyle().bigText(whiteLiveText(body)))
             .setContentIntent(open)
             .setWhen(updatedAt)
             .setShowWhen(true)
@@ -72,11 +75,14 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setOnlyAlertOnce(true)
             .setGroup(GROUP_KEY)
             .setGroupSummary(sessionCount > 1)
-            .setSubText(if (sessionCount > 1) "$sessionCount 个后台环境" else primary?.request?.secondaryText)
-            .addAction(Notification.Action.Builder(null, "打开", open).build())
+            .setSubText(
+                (if (sessionCount > 1) "$sessionCount 个后台环境" else primary?.request?.secondaryText)
+                    ?.let(::whiteLiveText),
+            )
+            .addAction(Notification.Action.Builder(null, whiteLiveText("打开"), open).build())
             .apply {
-                stopCurrent?.let { addAction(Notification.Action.Builder(null, "停止当前", it).build()) }
-                if (sessionCount > 0) addAction(Notification.Action.Builder(null, "全部停止", stopAll).build())
+                stopCurrent?.let { addAction(Notification.Action.Builder(null, whiteLiveText("停止当前"), it).build()) }
+                if (sessionCount > 0) addAction(Notification.Action.Builder(null, whiteLiveText("全部停止"), stopAll).build())
                 primary?.request?.progress?.let { setProgress(100, it, false) }
             }
 
@@ -116,7 +122,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         baseInfo {
             type = 1
             title = request.primaryText
-            applyAdaptiveFocusTextColors(this, accentHex)
+            applyWhiteFocusTextColors(this)
             content = request.title
             subTitle = request.secondaryText
             subContent = request.body
@@ -127,7 +133,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         iconTextInfo {
             type = 1
             title = request.primaryText
-            applyAdaptiveFocusTextColors(this, accentHex)
+            applyWhiteFocusTextColors(this)
             content = request.title
             subTitle = request.secondaryText
             subContent = request.body
@@ -151,7 +157,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
                     title = request.primaryText
                     frontTitle = request.title.take(16)
                     content = request.secondaryText
-                    showHighlightColor = true
+                    showHighlightColor = false
                     narrowFont = true
                     isTitleDigit = request.primaryText.any(Char::isDigit)
                     turnAnim = true
@@ -180,42 +186,21 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
     }
 }
 
-internal fun applyAdaptiveFocusTextColors(info: TextAndColorInfo, accentHex: String) {
-    info.colorTitle = accentHex
-    info.colorTitleDark = accentForDarkSurface(accentHex)
-    info.colorContent = "#1C1C1E"
+internal fun applyWhiteFocusTextColors(info: TextAndColorInfo) {
+    info.colorTitle = "#FFFFFF"
+    info.colorTitleDark = "#FFFFFF"
+    info.colorContent = "#FFFFFF"
     info.colorContentDark = "#FFFFFF"
-    info.colorSubTitle = "#636366"
-    info.colorSubTitleDark = "#D1D1D6"
-    info.colorExtraTitle = "#636366"
-    info.colorExtraTitleDark = "#D1D1D6"
-    info.colorSubContent = "#636366"
-    info.colorSubContentDark = "#D1D1D6"
+    info.colorSubTitle = "#FFFFFF"
+    info.colorSubTitleDark = "#FFFFFF"
+    info.colorExtraTitle = "#FFFFFF"
+    info.colorExtraTitleDark = "#FFFFFF"
+    info.colorSubContent = "#FFFFFF"
+    info.colorSubContentDark = "#FFFFFF"
 }
 
-internal fun accentForDarkSurface(accentHex: String): String {
-    val color = accentHex.removePrefix("#").takeIf { it.length == 6 }?.toIntOrNull(16) ?: 0xFFFFFF
-    var red = ((color shr 16) and 0xFF).toDouble()
-    var green = ((color shr 8) and 0xFF).toDouble()
-    var blue = (color and 0xFF).toDouble()
-    repeat(8) {
-        if (relativeLuminance(red, green, blue) >= 0.36) return String.format(
-            "#%02X%02X%02X",
-            red.toInt(),
-            green.toInt(),
-            blue.toInt(),
-        )
-        red += (255.0 - red) * 0.22
-        green += (255.0 - green) * 0.22
-        blue += (255.0 - blue) * 0.22
+private fun whiteLiveText(text: String): CharSequence = SpannableString(text).apply {
+    if (isNotEmpty()) {
+        setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
-    return "#FFFFFF"
-}
-
-private fun relativeLuminance(red: Double, green: Double, blue: Double): Double {
-    fun channel(value: Double): Double {
-        val normalized = value / 255.0
-        return if (normalized <= 0.03928) normalized / 12.92 else Math.pow((normalized + 0.055) / 1.055, 2.4)
-    }
-    return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
 }
