@@ -65,6 +65,16 @@
 - 本地手册检查、JS 测试与安全扫描执行；Android Kotlin、原生交互测试源码和截图只由 GitHub 编译/校验，实际构建与测试结果绑定同提交的 Actions 和交付回执。未操作手机、未本机编译、未运行模拟器。
 - GitHub 首轮 `33722368430`（提交 `4b09491bb5b27c6ed16278632df10350ab37fa9d`）：合同、安全、Kotlin/Android 测试源码编译与最小 JVM 测试通过；17 张预览仅设置浅色/中等屏深色两张存在版本数字 `0.3.4 → 0.3.5` 差异。检查实际渲染与差异图后，以该次 GitHub 原始渲染更新两张基线，不改变像素阈值或页面断言。守望流程 `33722368426` 的 18 项 JS 测试、重复打包和实际导入通过。
 
+## 权限页误报回归（2026-09-03，本地修复）
+
+- 理由：权限页曾使用过期的默认宿主版本，将仍安装着的工具误报为不存在，并叠加没有权限的空状态。原权限测试只提供已经读取好的假 manifest，不能覆盖这条生产路径。
+- 方法：在现有 `PermissionCenterViewModelTest` 中使用 production `ToolPackageManager`、临时 ZIP/文件目录和 `InMemoryCoreData` 安装最低版本等于 `BuildConfig.VERSION_NAME` 的五权限工具，再通过与 App 相同的 `HostInstalledManifestReader` 和真实 ViewModel 读取；比较读取前后 grants，并实际打开网络 grant。参数化改写安装后的 manifest 为更高最低版本或损坏内容，另覆盖真正未安装和合法空声明。
+- 预期：正常路径得到五个真实开关且不擅自开启权限；显式切换可保存；版本及文件校验失败保留 typed 原因，工具记录与 grants 不丢；只有真正未安装才显示不存在，只有读取成功且声明为空才显示无权限。生产页面按互斥读取状态渲染，不把失败当空列表。
+- GitHub 执行入口：现有门禁已包含 `:app:testDebugUnitTest --tests io.toolbox.host.permissions.PermissionCenterViewModelTest`；没有新增依赖、模拟器或交付任务。`ToolRuntimeSecurityBoundaryTest` 仅改为显式传入测试宿主版本，原安全断言保持不变。
+- 本轮实际结果：回归用例已补齐，尚未编译或执行；遵守不在本机编译的要求，没有运行 Gradle、启动模拟器或操作手机，不把源码检查记为 Kotlin、界面或真机验证通过。
+- 本地静态检查：`bash scripts/verify-security-invariants.sh /Users/jianchen/Downloads/ToolBox_Codex_Package` 返回 `Security invariants verified.`，`git diff --check` 无错误；读取器所有生产构造点均显式使用当前 App 版本。Kotlin LSP daemon 不可达，因此类型检查、上述 JVM 回归及权限页真机显示仍待 GitHub/用户验证。本轮未提交或推送 GitHub。
+- 后续 GitHub 交付：用户确认后按 `0.3.5 (9)` 构建权限页修复版，继续使用固定签名，不改变 `.tbx`、API 或数据库。上述用例由既有 GitHub 门禁执行，成功产物的同提交回执增加 `PERMISSION_MANIFEST_REGRESSION=PASS`；实际 Actions 结果与手机上的最终显示分开报告，不进行本地 Android 编译或代用户安装。
+
 ## 导入边界补充
 
 - `DirectPackageLifecycleTest.rejectedSecurityMatrixLeavesNoCatalogOrFiles` 同时覆盖短 HTML 和恰好 4096 字节 HTML 在真实文件结尾缺失 UTF-8 后续字节的情况。理由：不能把嗅探截断与损坏文件混为一谈；方法：读取一个前瞻字节以确认是否真正到达 EOF，再由生产导入器验证两种损坏结尾；预期：均返回 `ENTRY_MIME_INVALID` 且无残留，而合法跨 4096 字节字符仍可安装。只在 GitHub 运行 Kotlin 测试。

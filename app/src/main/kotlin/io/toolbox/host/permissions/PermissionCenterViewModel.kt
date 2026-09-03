@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
+import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostPermissionSideEffects
+import io.toolbox.tool.runtime.RuntimePreparationCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +16,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 internal data class PermissionItem(
@@ -25,13 +26,22 @@ internal data class PermissionItem(
     val androidPermissions: List<String>,
 )
 
+internal sealed interface PermissionLoadState {
+    data object Loading : PermissionLoadState
+    data object Ready : PermissionLoadState
+    data object NotInstalled : PermissionLoadState
+    data class Failed(val code: RuntimePreparationCode, val message: String) : PermissionLoadState
+}
+
 internal data class PermissionCenterUiState(
     val toolName: String = "权限",
     val items: List<PermissionItem> = emptyList(),
-    val loaded: Boolean = false,
+    val loadState: PermissionLoadState = PermissionLoadState.Loading,
     val message: String? = null,
     val showSystemSettings: Boolean = false,
-)
+) {
+    val loaded: Boolean get() = loadState != PermissionLoadState.Loading
+}
 
 internal data class SystemPermissionRequest(val capability: String, val permissions: List<String>)
 
@@ -49,16 +59,24 @@ internal class PermissionCenterViewModel(
 
     init {
         viewModelScope.launch {
-            val manifest = packages.installedManifest(toolId)
-            if (manifest == null) {
-                mutableState.value = PermissionCenterUiState(loaded = true, message = "工具已不存在。")
-                return@launch
+            val manifest = when (val result = packages.installedManifest(toolId)) {
+                is HostInstalledManifestResult.Found -> result.manifest
+                HostInstalledManifestResult.NotInstalled -> {
+                    mutableState.value = PermissionCenterUiState(loadState = PermissionLoadState.NotInstalled)
+                    return@launch
+                }
+                is HostInstalledManifestResult.Failed -> {
+                    mutableState.value = PermissionCenterUiState(
+                        loadState = PermissionLoadState.Failed(result.code, result.message),
+                    )
+                    return@launch
+                }
             }
             grants.observeGrants(toolId).collect { stored ->
                 val values = stored.associateBy(PermissionGrant::capability)
                 mutableState.value = mutableState.value.copy(
                     toolName = manifest.toolName,
-                    loaded = true,
+                    loadState = PermissionLoadState.Ready,
                     items = manifest.permissions.map { permission ->
                         PermissionItem(
                             capability = permission.capability,

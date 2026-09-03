@@ -5,6 +5,7 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RuntimeM2Handlers
+import io.toolbox.tool.runtime.RuntimePreparationCode
 import kotlinx.coroutines.flow.Flow
 
 internal data class HostManifestPermission(
@@ -20,6 +21,12 @@ internal data class HostInstalledManifest(
     val versionName: String,
     val permissions: List<HostManifestPermission>,
 )
+
+internal sealed interface HostInstalledManifestResult {
+    data class Found(val manifest: HostInstalledManifest) : HostInstalledManifestResult
+    data object NotInstalled : HostInstalledManifestResult
+    data class Failed(val code: RuntimePreparationCode, val message: String) : HostInstalledManifestResult
+}
 
 internal sealed interface HostImportResult {
     data class Installed(val toolId: String, val toolName: String) : HostImportResult
@@ -39,7 +46,7 @@ internal sealed interface HostExampleInstallResult {
 
 internal interface HostPackageOperations {
     suspend fun importPackage(input: PackageInput): HostImportResult
-    suspend fun installedManifest(toolId: String): HostInstalledManifest?
+    suspend fun installedManifest(toolId: String): HostInstalledManifestResult
     suspend fun deleteTool(toolId: String): HostDeleteResult
     suspend fun installBundledExamples(): HostExampleInstallResult
 }

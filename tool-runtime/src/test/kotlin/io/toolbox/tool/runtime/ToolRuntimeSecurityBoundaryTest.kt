@@ -54,7 +54,7 @@ class ToolRuntimeSecurityBoundaryTest {
         Files.writeString(bundle.resolve("app.js"), "document.body.textContent = 'ok'")
 
         val tool = installedTool(toolId, "Alpha", 7)
-        val preparer = ToolRuntimePreparer(filesRoot)
+        val preparer = ToolRuntimePreparer(filesRoot, hostVersion = "0.3.3")
         val prepared = preparer.prepare(toolId, tool)
         assertTrue(prepared is RuntimePreparationResult.Prepared)
 

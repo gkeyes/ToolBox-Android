@@ -9,7 +9,7 @@ import io.toolbox.core.data.SecurityProfile
 import io.toolbox.host.HostDeleteResult
 import io.toolbox.host.HostExampleInstallResult
 import io.toolbox.host.HostImportResult
-import io.toolbox.host.HostInstalledManifest
+import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.tool.packagekit.PackageInput
 import kotlinx.coroutines.Dispatchers
@@ -167,7 +167,7 @@ private class RecordingCatalogOrganizationRepository : CatalogOrganizationReposi
 
 private object UnusedHostPackageOperations : HostPackageOperations {
     override suspend fun importPackage(input: PackageInput): HostImportResult = error("not used")
-    override suspend fun installedManifest(toolId: String): HostInstalledManifest? = error("not used")
+    override suspend fun installedManifest(toolId: String): HostInstalledManifestResult = error("not used")
     override suspend fun deleteTool(toolId: String): HostDeleteResult = error("not used")
     override suspend fun installBundledExamples(): HostExampleInstallResult = error("not used")
 }

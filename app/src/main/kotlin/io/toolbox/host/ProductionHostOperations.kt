@@ -26,7 +26,6 @@ import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
-import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageRejection
 import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
@@ -75,7 +74,7 @@ internal class ProductionHostPackageOperations(
         transactions = repositories.installs,
         hostVersion = BuildConfig.VERSION_NAME,
     )
-    private val runtimePreparer = ToolRuntimePreparer(application.filesDir)
+    private val manifestReader = HostInstalledManifestReader(application.filesDir, repositories.catalog)
     private val cleanup = object : ToolStateCleanup {
         override suspend fun beforeVersionReplacement(
             toolId: String,
@@ -128,13 +127,7 @@ internal class ProductionHostPackageOperations(
         )
     }
 
-    override suspend fun installedManifest(toolId: String): HostInstalledManifest? = withContext(Dispatchers.IO) {
-        val tool = repositories.catalog.observeTool(toolId).first() ?: return@withContext null
-        val runtime = (runtimePreparer.prepare(toolId, tool) as? io.toolbox.tool.runtime.RuntimePreparationResult.Prepared)
-            ?.runtime
-            ?: return@withContext null
-        runtime.installedManifest.toHostManifest(tool.currentVersion.version)
-    }
+    override suspend fun installedManifest(toolId: String): HostInstalledManifestResult = manifestReader.read(toolId)
 
     override suspend fun deleteTool(toolId: String): HostDeleteResult = when (val result = packages.uninstall(toolId, cleanup)) {
         is PackageUninstallResult.Uninstalled -> HostDeleteResult.Deleted
@@ -181,16 +174,6 @@ internal class ProductionHostPackageOperations(
             is RuntimeDataCleanupExecution.Rejected -> error("Runtime state cleanup could not be completed")
         }
     }
-
-    private fun InstalledManifest.toHostManifest(versionName: String) = HostInstalledManifest(
-        toolId = id,
-        toolName = name,
-        versionCode = versionCode,
-        versionName = versionName,
-        permissions = permissionDeclarations.map {
-            HostManifestPermission(it.name, it.reason, it.required)
-        },
-    )
 
     private fun importFailureMessage(rejection: PackageRejection): String = when (rejection.code.name) {
         "SIGNATURE_INVALID" -> "工具包签名无效，无法安装。"
@@ -352,7 +335,7 @@ private class ActiveBundleBackgroundManifestResolver(
     context: Context,
     private val catalog: CatalogRepository,
 ) : BackgroundManifestPolicyResolver {
-    private val preparer = ToolRuntimePreparer(context.applicationContext.filesDir)
+    private val preparer = ToolRuntimePreparer(context.applicationContext.filesDir, BuildConfig.VERSION_NAME)
 
     override suspend fun resolve(toolId: String, versionCode: Int): BackgroundManifestPolicy? = withContext(Dispatchers.IO) {
         val installed = catalog.observeTool(toolId).first() ?: return@withContext null

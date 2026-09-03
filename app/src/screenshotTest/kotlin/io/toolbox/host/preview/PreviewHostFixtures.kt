@@ -14,6 +14,7 @@ import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.permissions.PermissionCenterUiState
 import io.toolbox.host.permissions.PermissionItem
+import io.toolbox.host.permissions.PermissionLoadState
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.settings.SettingsUiState
 
@@ -42,7 +43,7 @@ internal object PreviewHostFixtures {
 
     val permissionCenter = PermissionCenterUiState(
         toolName = "仓位计算器",
-        loaded = true,
+        loadState = PermissionLoadState.Ready,
         items = listOf(
             PermissionItem("storage", "工具存储", "保存计算输入与配置", true, emptyList()),
             PermissionItem("storage.secure", "安全存储", "保存敏感配置", true, emptyList()),

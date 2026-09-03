@@ -241,7 +241,7 @@ jobs:
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
             printf 'VERSION_NAME=0.3.5\n'
-            printf 'VERSION_CODE=8\n'
+            printf 'VERSION_CODE=9\n'
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$TOOLBOX_APK_CERT_SHA256"
             printf 'STOCK_MONITOR_VERSION=1.1.1\n'
             printf 'STOCK_MONITOR_VERSION_CODE=3\n'
@@ -251,6 +251,7 @@ jobs:
             printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
             printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'
             printf 'NETWORK_GATEWAY_REGRESSION=PASS\n'
+            printf 'PERMISSION_MANIFEST_REGRESSION=PASS\n'
             printf 'DETAIL_DIALOG_REGRESSION=COMPILED_NOT_RUN_USER_OWNED\n'
             printf 'LIVE_NOTIFICATION_COLOR_REGRESSION=COMPILED_NOT_RUN_USER_OWNED\n'
             printf 'ANDROID_INSTRUMENTATION_COMPILE=PASS\n'

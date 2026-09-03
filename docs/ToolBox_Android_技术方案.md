@@ -135,6 +135,11 @@ effective capability = manifest declaration
 Miuix `ToolBoxSwitchSettingRow`，整行与开关都可操作。只在 handler 已实现时显示开关；
 未实现或系统不支持的 optional capability 显示为不可用，`required=true` 则令安装失败。
 
+安装、权限读取、前台运行和旧后台任务校验均使用当前 App 的 `BuildConfig.VERSION_NAME`；
+运行准备器必须显式接收宿主版本，不提供可能过期的默认版本。权限页区分正在读取、读取成功、
+工具未安装和读取失败：只有目录确实没有工具记录才显示不存在，只有成功读取且声明为空才显示
+没有权限；版本不满足、manifest 损坏等失败保留具体原因，不改动工具数据或 grant。
+
 默认打开：`storage`、`storage.secure`、`device.basic`、`clipboard.write`、`haptics`。
 `network`、`notifications`、`background.tasks`、`background.runtime`、`location.background`、
 `alarms`、文件、分享、读取剪贴板、相机、定位和快捷方式默认关闭。切换系统型能力时使用 Activity Result API 请求真实系统授权；拒绝就不

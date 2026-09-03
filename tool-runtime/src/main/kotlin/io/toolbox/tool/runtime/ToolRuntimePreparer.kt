@@ -49,7 +49,7 @@ sealed interface RuntimePreparationResult {
 
 class ToolRuntimePreparer(
     privateFilesDirectory: File,
-    private val hostVersion: String = "0.3.3",
+    private val hostVersion: String,
 ) {
     private val filesRoot = privateFilesDirectory.toPath().toAbsolutePath().normalize()
 

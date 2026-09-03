@@ -132,12 +132,20 @@ internal fun PermissionCenterContent(
                     }
                     item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
                 }
-                if (!state.loaded) {
-                    item("loading") { CatalogStatusState("正在读取权限") }
-                } else if (state.items.isEmpty()) {
-                    item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
-                } else {
-                    permissionGroups.forEachIndexed { groupIndex, (title, items) ->
+                when (val loadState = state.loadState) {
+                    PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限") }
+                    PermissionLoadState.NotInstalled -> item("not-installed") {
+                        SurfaceCard { AppText("工具已不存在。") }
+                    }
+                    is PermissionLoadState.Failed -> item("load-failed") {
+                        SurfaceCard {
+                            AppText("无法读取工具权限")
+                            AppText(loadState.message, color = ToolBoxThemeTokens.colors.textSecondary)
+                        }
+                    }
+                    PermissionLoadState.Ready -> if (state.items.isEmpty()) {
+                        item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
+                    } else permissionGroups.forEachIndexed { groupIndex, (title, items) ->
                         item("permission-title:$title") { SectionHeader("$title · ${items.size}") }
                         item("permission-title-gap:$title") {
                             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
