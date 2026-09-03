@@ -90,17 +90,26 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             primary?.request?.shortText?.takeIf(String::isNotBlank)?.let(builder::setShortCriticalText)
             if (support.androidLiveAllowed) runCatching { builder.setRequestPromotedOngoing(true) }
         }
-        if (support.hyperOsSupported && primary != null) {
-            runCatching { buildHyperOsV3(primary, accent) }.getOrNull()?.let(builder::addExtras)
+        if (support.hyperOsSupported) {
+            runCatching { buildHyperOsV3(snapshot, title, content, body, updatedAt, accent) }
+                .getOrNull()?.let(builder::addExtras)
         }
         return builder.build()
     }
 
     private fun buildHyperOsV3(
-        live: RuntimeLiveNotificationUi,
+        snapshot: RuntimeForegroundNotificationSnapshot,
+        notificationTitle: String,
+        notificationContent: String,
+        notificationBody: String,
+        updatedAt: Long,
         accent: Int,
     ) = FocusNotification.buildV3 {
-        val request = live.request
+        val live = snapshot.primaryPresentation
+        val request = live?.request
+        val displayValue = request?.primaryText ?: notificationTitle
+        val displayTitle = request?.title ?: "ToolBox 后台运行"
+        val displaySecondary = request?.secondaryText ?: if (request == null) notificationContent else null
         val accentHex = String.format("#%06X", 0xFFFFFF and accent)
         val icon = createPicture(
             "toolbox-live-icon",
@@ -109,34 +118,34 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         business = "toolbox_live"
         notifyId = "toolbox-runtime-live"
         orderId = "toolbox-runtime-live"
-        sequence = live.sequence
+        sequence = live?.sequence ?: updatedAt
         updatable = true
         isShowNotification = true
         filterWhenNoPermission = false
         reopen = "reopen"
-        ticker = request.shortText ?: request.primaryText.take(12)
+        ticker = request?.shortText ?: request?.primaryText?.take(12) ?: "正在恢复"
         tickerPic = icon
         tickerPicDark = icon
-        aodTitle = request.primaryText
+        aodTitle = displayValue
         aodPic = icon
         baseInfo {
             type = 1
-            title = request.primaryText
+            title = displayValue
             applyWhiteFocusTextColors(this)
-            content = request.title
-            subTitle = request.secondaryText
-            subContent = request.body
-            extraTitle = request.updatedAt?.let(::formatTime)
+            content = displayTitle
+            subTitle = displaySecondary
+            subContent = notificationBody
+            extraTitle = request?.updatedAt?.let(::formatTime)
             showDivider = false
             showContentDivider = false
         }
         iconTextInfo {
             type = 1
-            title = request.primaryText
+            title = displayValue
             applyWhiteFocusTextColors(this)
-            content = request.title
-            subTitle = request.secondaryText
-            subContent = request.body
+            content = displayTitle
+            subTitle = displaySecondary
+            subContent = notificationBody
         }
         island {
             business = "toolbox_live"
@@ -149,17 +158,17 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
                 picInfo {
                     type = 0
                     pic = icon
-                    contentDescription = request.title
+                    contentDescription = notificationTitle
                 }
             }
             bigIslandArea {
                 textInfo = com.xzakota.hyper.notification.island.model.TextInfo().apply {
-                    title = request.primaryText
-                    frontTitle = request.title.take(16)
-                    content = request.secondaryText
+                    title = displayValue
+                    frontTitle = displayTitle.take(16)
+                    content = displaySecondary
                     showHighlightColor = false
                     narrowFont = true
-                    isTitleDigit = request.primaryText.any(Char::isDigit)
+                    isTitleDigit = displayValue.any(Char::isDigit)
                     turnAnim = true
                 }
             }
