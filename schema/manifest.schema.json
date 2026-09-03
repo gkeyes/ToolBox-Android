@@ -228,7 +228,7 @@
         "maxBridgePayloadBytes": {
           "type": "integer",
           "minimum": 4096,
-          "maximum": 1048576,
+          "maximum": 8388608,
           "default": 262144
         }
       }

@@ -243,8 +243,11 @@ alarmId、triggerAt、scheduledAt；开机和精确闹钟授权变化后重新�
 Content-Length、Transfer-Encoding、Upgrade 与 Proxy 系列协议 Header 由传输层控制；Authorization、
 Cookie、X-API-Key、Accept、Content-Type 等可由工具提供。每次 DNS 与每跳重定向都重新验证
 HTTPS、manifest allowlist 和解析地址；loopback、link-local、private、CGNAT、multicast、保留地址、
-IP 字面量、IPv4-mapped 私网 IPv6 和 NAT64 私网映射均阻断。响应有效上限是请求值、manifest
-值、WebMessage 预算和宿主防 OOM 上限的最小值。
+IP 字面量、IPv4-mapped 私网 IPv6 和 NAT64 私网映射均阻断。读取响应的有效上限是请求值、manifest
+网络值、WebMessage 上限和宿主防 OOM 上限的最小值，不为文本预扣 Base64 膨胀空间。
+0.3.5 允许 manifest 将消息上限从默认 256 KiB 提高到最多 8 MiB；返回前仍检查实际编码后的
+完整消息。响应或消息过大返回 `QUOTA_EXCEEDED`，连接/读取失败与超时分别返回
+`NETWORK_UNAVAILABLE`、`NETWORK_TIMEOUT`；只有地址或重定向策略拒绝才返回 `NETWORK_BLOCKED`。
 
 ### 7.4 旧后台任务兼容
 

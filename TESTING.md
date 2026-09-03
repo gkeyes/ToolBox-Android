@@ -50,6 +50,20 @@
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
 
+## 0.3.5 三项问题回归
+
+| 测试 | 理由 | 方法 | 预期与实际边界 |
+|---|---|---|---|
+| `HostNavigationTest` 的详情操作 | 更多与底部删除曾把弹层注册在 Miuix Scaffold 之外，点击后不可见。 | 生产详情页点击底部删除、取消，再点击更多中的删除并确认。 | 两条入口都显示实际弹层，取消保留工具，确认才删除。源码由 GitHub 编译，交互由用户真机验证，不启动模拟器。 |
+| `RuntimeLiveNotificationRendererTest` | 已有实时内容的白字配置没有覆盖恢复占位。 | 在无 Focus 与 Focus V3 已支持但报告权限未允许两种状态下构建准备、恢复、单/多会话通知，Parcel 往返检查普通文本，以及实际 `miui.focus.param` 内两组全部明暗文字字段；同时检查未启用 colorized。 | 全状态均携带白色配置，仍保留 Android promoted ongoing 资格。只证明生产通知数据与编译，不将其视为小米 SystemUI 颜色验证。 |
+| `RuntimeNetworkGatewayTest` | 文本被错误扣除 Base64 膨胀预算，且配额、连接错误被伪装为网络阻止。 | 通过宿主实际使用的 gateway 和生产 proxy 注入 800000/1500000 字节 JSON、超限响应、未声明域名、连接及正文读取阶段的 IO/超时异常。 | 预算内 JSON 完整返回；超限为 `QUOTA_EXCEEDED`，只有地址策略拒绝为 `NETWORK_BLOCKED`，连接/超时分别返回 `NETWORK_UNAVAILABLE`/`NETWORK_TIMEOUT`；错误不含底层敏感细节。GitHub 运行 JVM 测试。 |
+| `examples/github-actions-watcher/app.test.js` | 原生错误不能再次被网页包装为普通断网。 | 启动生产 app.js，点击已注册的仓库读取回调，参数化注入配额、超时、连接、域名及权限错误。 | 请求使用 4 MiB 响应预算，五类原生错误完整到达提示，结束加载并可重试；测试使用模拟桥，不代表 Android 宿主执行。 |
+| 守望 1.0.2 生产导入与包验证 | 扩大的消息上限必须能通过真正的安装器，不能只让 ZIP 校验通过。 | GitHub 运行 18 项 Node 测试、两次打包和完整性校验，production `ToolPackageManager` 按宿主 0.3.5 导入实际产物。 | 版本为 1.0.2 (3)、最低宿主 0.3.5、网络 4 MiB、消息 8 MiB，安装器返回 `Installed(io.toolbox.githubactionswatcher, 3, false)` 且无残留。 |
+
+- 本次只读访问真实仓库 `gkeyes/ToolBox-Android`：仓库/工作流/运行列表均 HTTP 200；64 条运行列表解压后为 788287 字节，超过旧 785664 字节预扣上限，但其 JSON 包装仍小于原 1 MiB 消息上限。只记录状态与长度，不记录响应正文或 Token。
+- 内置浏览器使用生产 HTML/JS 加独立测试适配器，同一份真实 GitHub 响应重放旧预算时复现 `NETWORK_BLOCKED`；改用修正预算后显示两个 workflow、两个仓库分支，选中 main 和 Android CI 后开始按钮可用，无页面异常。此验证不替代 Android 网络代理 JVM 测试或真机后台验证。
+- 本地手册检查、JS 测试与安全扫描执行；Android Kotlin、原生交互测试源码和截图只由 GitHub 编译/校验，实际构建与测试结果绑定同提交的 Actions 和交付回执。未操作手机、未本机编译、未运行模拟器。
+
 ## 导入边界补充
 
 - `DirectPackageLifecycleTest.rejectedSecurityMatrixLeavesNoCatalogOrFiles` 同时覆盖短 HTML 和恰好 4096 字节 HTML 在真实文件结尾缺失 UTF-8 后续字节的情况。理由：不能把嗅探截断与损坏文件混为一谈；方法：读取一个前瞻字节以确认是否真正到达 EOF，再由生产导入器验证两种损坏结尾；预期：均返回 `ENTRY_MIME_INVALID` 且无残留，而合法跨 4096 字节字符仍可安装。只在 GitHub 运行 Kotlin 测试。

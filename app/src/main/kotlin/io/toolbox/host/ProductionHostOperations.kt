@@ -20,9 +20,8 @@ import io.toolbox.host.background.BackgroundNotificationPermissionChecker
 import io.toolbox.host.background.BackgroundTaskCoordinator
 import io.toolbox.host.background.BackgroundTaskRequest
 import io.toolbox.host.background.EnqueueResult
-import io.toolbox.host.background.NetworkExecution
-import io.toolbox.host.background.NetworkRequestMethod
 import io.toolbox.host.background.RepositoryBackgroundAuthorization
+import io.toolbox.host.background.RuntimeNetworkGateway
 import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
@@ -49,10 +48,6 @@ import io.toolbox.tool.runtime.RuntimeBackgroundTaskSummary
 import io.toolbox.tool.runtime.RuntimeBridgeConfiguration
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeM2Handlers
-import io.toolbox.tool.runtime.RuntimeNetworkHandler
-import io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding
-import io.toolbox.tool.runtime.RuntimeNetworkRequest
-import io.toolbox.tool.runtime.RuntimeNetworkResponse
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
@@ -278,7 +273,7 @@ internal class ProductionHostBackgroundOperations(
     override suspend fun reconcile() = coordinator.reconcile()
 
     override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
-        network = RuntimeNetworkHandler { request -> networkRequest(runtime, request) },
+        network = RuntimeNetworkGateway(network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes),
         notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) {
                 when (val result = notifications.post(runtime.toolId, notificationId, title, body)) {
@@ -330,69 +325,6 @@ internal class ProductionHostBackgroundOperations(
         },
         background = RuntimeBackgroundTaskAdapter(runtime, coordinator),
     )
-
-    private suspend fun networkRequest(
-        runtime: PreparedToolRuntime,
-        request: RuntimeNetworkRequest,
-    ): RuntimeNetworkResponse {
-        val policy = runtime.installedManifest.network
-            ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "工具未声明网络域名")
-        val rpcRawBudget = ((runtime.maxBridgePayloadBytes - 1_024).coerceAtLeast(1_024) / 4) * 3
-        val requestedTimeout = request.timeoutMillis ?: 30_000L
-        val effectiveTimeout = minOf(requestedTimeout, policy.timeoutMs.toLong())
-        val requestedResponseLimit = request.maxResponseBytes ?: minOf(4 * 1_024 * 1_024, rpcRawBudget)
-        val effectiveResponseLimit = minOf(
-            requestedResponseLimit,
-            policy.maxResponseBytes,
-            rpcRawBudget,
-        )
-        return when (
-            val result = network.request(
-                url = request.url,
-                method = when (request.method) {
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.GET -> NetworkRequestMethod.GET
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.POST -> NetworkRequestMethod.POST
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.PUT -> NetworkRequestMethod.PUT
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.PATCH -> NetworkRequestMethod.PATCH
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.DELETE -> NetworkRequestMethod.DELETE
-                    io.toolbox.tool.runtime.RuntimeNetworkMethod.HEAD -> NetworkRequestMethod.HEAD
-                },
-                headers = request.headers,
-                body = request.body,
-                bodyIsJson = request.bodyIsJson,
-                allowedHosts = policy.allowDomains.toSet(),
-                allowRedirects = policy.allowRedirects,
-                timeoutMillis = effectiveTimeout,
-                maxResponseBytes = effectiveResponseLimit,
-            )
-        ) {
-            is NetworkExecution.Success -> RuntimeNetworkResponse(
-                status = result.statusCode,
-                headers = buildMap {
-                    putAll(result.headers)
-                    if (keys.none { it.equals("content-type", ignoreCase = true) }) {
-                        result.contentType?.let { put("content-type", it) }
-                    }
-                    put("x-toolbox-final-url", result.finalUrl)
-                },
-                body = result.body,
-                bodyEncoding = when (result.bodyEncoding) {
-                    io.toolbox.host.background.NetworkBodyEncoding.TEXT -> RuntimeNetworkBodyEncoding.TEXT
-                    io.toolbox.host.background.NetworkBodyEncoding.BASE64 -> RuntimeNetworkBodyEncoding.BASE64
-                },
-            )
-
-            is NetworkExecution.RetryableFailure -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.NETWORK_BLOCKED,
-                "网络请求暂时不可用。",
-            )
-
-            is NetworkExecution.TerminalFailure -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.NETWORK_BLOCKED,
-                "网络请求被阻止。",
-            )
-        }
-    }
 }
 
 internal fun createBackgroundWorkerDependencies(

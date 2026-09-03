@@ -47,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "02de7340d7a5d18231ddcbe224d4adbfa24f30c690d63c9f43bb29df7f42cb57"
+    const val CANONICAL_SHA256: String = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),

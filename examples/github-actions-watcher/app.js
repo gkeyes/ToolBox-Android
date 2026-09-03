@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.1";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.2";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -281,10 +281,10 @@
         method: "GET",
         headers,
         timeoutMs: 30_000,
-        maxResponseBytes: 1_048_576
+        maxResponseBytes: 4_194_304
       });
     } catch (error) {
-      if (error?.code === "NETWORK_BLOCKED" || error?.code === "PERMISSION_DENIED") throw error;
+      if (error?.code) throw error;
       throw createError("offline", "GitHub API 网络请求失败");
     }
     updateRateState(response.headers);
@@ -1058,7 +1058,7 @@
   async function boot() {
     renderAll();
     if (!toolbox()?.ready || !model) {
-      $("host-caption").textContent = "需要 ToolBox 0.3.2 或更高版本";
+      $("host-caption").textContent = "需要 ToolBox 0.3.5 或更高版本";
       renderRuntimeChip();
       return;
     }

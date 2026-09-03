@@ -4,7 +4,7 @@ set -euo pipefail
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${source_dir}/../.." && pwd)"
 output_dir="${repo_root}/build/github-actions-watcher"
-output_path="${output_dir}/github-actions-watcher-v1.0.1.tbx"
+output_path="${output_dir}/github-actions-watcher-v1.0.2.tbx"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-github-actions-watcher.XXXXXX")"
 entries=(manifest.json index.html style.css github-model.js app.js icon.svg)
 trap 'rm -rf -- "${stage_dir}"' EXIT

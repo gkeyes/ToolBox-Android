@@ -311,7 +311,7 @@ document.getElementById("copy").addEventListener("click", async () => {
 
 network.request 接受 url、method、headers、body、timeoutMs、maxResponseBytes。method 默认为 GET，另支持 POST、PUT、PATCH、DELETE、HEAD；GET/HEAD 不带请求体。
 
-timeoutMs 可为 1000–600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB，但这不是最终可返回给 JS 的大小。最终还受请求值、manifest、RPC 消息预算和宿主实现上限共同约束；消息默认 256 KiB，可通过 limits.maxBridgePayloadBytes 声明 4096–1048576 字节。JSON 转义或 Base64 膨胀也占消息空间。
+timeoutMs 可为 1000–600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB；读取上限取请求值、manifest 网络上限与消息上限的最小值，不预先按 Base64 比例缩小文本响应。消息默认 256 KiB，ToolBox 0.3.5 起可通过 limits.maxBridgePayloadBytes 声明 4096–8388608 字节（最高 8 MiB）；使用超过 1 MiB 的消息上限时，minHostVersion 请至少填写 0.3.5。宿主在返回前检查实际 JSON 编码后的总大小，JSON 转义或 Base64 膨胀也占消息空间；超出时返回 QUOTA_EXCEEDED。
 
 不要把可配置的网络上限理解为可以一次把 64 MiB 数据塞回网页。大数据应由服务端分页，或分段请求并逐段处理。
 
@@ -362,7 +362,7 @@ const bytes = Uint8Array.from(atob(response.body), char => char.charCodeAt(0));
 
 只在 bodyEncoding === "base64" 时使用上述解码。不要记录 Header、Token、请求正文或响应正文来排查网络问题；记录错误码、HTTP 状态和操作步骤即可。
 
-NETWORK_BLOCKED：检查域名声明、HTTPS、重定向目标及地址类型。私网、回环、保留地址和 IP 字面量被阻止。HTTP 401/403：检查服务端 Token 与授权；HTTP 429：遵循服务端限额和重试时间。QUOTA_EXCEEDED：缩小响应或分批读取。不要用无限循环即时重试。
+NETWORK_BLOCKED：检查错误提示中的域名声明、HTTPS、重定向目标及地址类型。私网、回环、保留地址和 IP 字面量被阻止。NETWORK_UNAVAILABLE：连接或读取响应失败；NETWORK_TIMEOUT：请求超时。这两类失败可以退避重试，不表示被安全策略阻止。HTTP 401/403：检查服务端 Token 与授权；HTTP 429：遵循服务端限额和重试时间。QUOTA_EXCEEDED：响应或编码后的消息过大，按提示提高对应 manifest 上限或分页读取，不要无限重试相同的超大请求。
 
 ## 后台与通知
 
@@ -883,6 +883,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 - INVALID_SESSION、SESSION_ENDED：会话已失效，重新 ready 并获取当前 sessionId；不要复用旧版本标识。
 - WRONG_ORIGIN、NOT_MAIN_FRAME：只在当前工具顶层页面调用，不要从 iframe、worker 或任意网站调用。
 - NETWORK_BLOCKED：检查 manifest 域名、HTTPS、端口、重定向目标和地址类型。
+- NETWORK_UNAVAILABLE、NETWORK_TIMEOUT：连接、读取失败或请求超时，检查网络并退避重试；与权限或域名阻止不同。
 - RATE_LIMITED：降低调用频率并等待，不要即时无限重试。
 - QUOTA_EXCEEDED：缩小消息、文件或响应，分页处理，并检查普通存储配额。
 - BUSY：当前系统交互或操作尚未完成，等结束后再试。
@@ -911,7 +912,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "02de7340d7a5d18231ddcbe224d4adbfa24f30c690d63c9f43bb29df7f42cb57";
+export type ToolBoxContractSha256 = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352";
 
 export type ToolBoxCapability =
   | "storage"
@@ -998,6 +999,8 @@ export type ToolBoxErrorCode =
   | "NOT_FOUND"
   | "DUPLICATE_TASK"
   | "NETWORK_BLOCKED"
+  | "NETWORK_UNAVAILABLE"
+  | "NETWORK_TIMEOUT"
   | "INTERNAL_ERROR";
 
 export type JsonPrimitive = string | number | boolean | null;

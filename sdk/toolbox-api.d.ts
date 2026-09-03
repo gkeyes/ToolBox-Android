@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "02de7340d7a5d18231ddcbe224d4adbfa24f30c690d63c9f43bb29df7f42cb57";
+export type ToolBoxContractSha256 = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352";
 
 export type ToolBoxCapability =
   | "storage"
@@ -85,6 +85,8 @@ export type ToolBoxErrorCode =
   | "NOT_FOUND"
   | "DUPLICATE_TASK"
   | "NETWORK_BLOCKED"
+  | "NETWORK_UNAVAILABLE"
+  | "NETWORK_TIMEOUT"
   | "INTERNAL_ERROR";
 
 export type JsonPrimitive = string | number | boolean | null;

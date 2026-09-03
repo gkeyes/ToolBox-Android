@@ -2,6 +2,7 @@ package io.toolbox.host.background
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.IDN
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -151,11 +152,7 @@ class ToolNetworkProxy private constructor(
             } catch (_: BlockedAddressException) {
                 return NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
             } catch (error: IOException) {
-                return if (error.hasBlockedAddressCause()) {
-                    NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
-                } else {
-                    NetworkExecution.RetryableFailure("NETWORK_IO")
-                }
+                return error.toNetworkFailure()
             }
             response.use {
                 if (it.code in REDIRECT_CODES) {
@@ -180,8 +177,12 @@ class ToolNetworkProxy private constructor(
                     if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
                     if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
                 }
-                val body = it.body.readBounded(maxResponseBytes)
-                    ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
+                val body = try {
+                    it.body.readBounded(maxResponseBytes)
+                        ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
+                } catch (error: IOException) {
+                    return error.toNetworkFailure()
+                }
                 val text = isTextResponse(it)
                 return NetworkExecution.Success(
                     statusCode = it.code,
@@ -213,7 +214,7 @@ class ToolNetworkProxy private constructor(
     }
 
     private companion object {
-        const val USER_AGENT = "ToolBox/0.3.4 (Android)"
+        const val USER_AGENT = "ToolBox/0.3.5 (Android)"
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
         const val MAX_TIMEOUT_MILLIS = 600_000L
@@ -371,6 +372,12 @@ private class BlockedAddressException : UnknownHostException("Blocked network de
 
 private fun Throwable.hasBlockedAddressCause(): Boolean =
     generateSequence(this) { it.cause }.any { it is BlockedAddressException }
+
+private fun IOException.toNetworkFailure(): NetworkExecution = when {
+    hasBlockedAddressCause() -> NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
+    this is InterruptedIOException -> NetworkExecution.RetryableFailure("NETWORK_TIMEOUT")
+    else -> NetworkExecution.RetryableFailure("NETWORK_IO")
+}
 
 internal fun normalizeHost(value: String): String? = runCatching {
     val wildcard = value.startsWith("*.")

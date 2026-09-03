@@ -71,6 +71,8 @@ enum class RuntimeRpcErrorCode {
     NOT_FOUND,
     DUPLICATE_TASK,
     NETWORK_BLOCKED,
+    NETWORK_UNAVAILABLE,
+    NETWORK_TIMEOUT,
     INTERNAL_ERROR,
 }
 

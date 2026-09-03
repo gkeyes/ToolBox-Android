@@ -122,6 +122,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
     --tests 'io.toolbox.host.background.NetworkBoundaryTest' \
     --tests 'io.toolbox.host.background.ToolNetworkProxyTest' \
+    --tests 'io.toolbox.host.background.RuntimeNetworkGatewayTest' \
     --tests 'io.toolbox.host.background.BackgroundTasksPresentationTest' \
     --tests 'io.toolbox.host.runtime.LiveNotificationCoordinatorTest' \
     --tests 'io.toolbox.host.runtime.RuntimeNotificationRegressionTest' \

@@ -73,7 +73,7 @@ class DirectPackageLifecycleTest {
                 catalog = repositories.catalog,
                 lifecycle = repositories.lifecycle,
                 transactions = repositories.installs,
-                hostVersion = "0.3.3",
+                hostVersion = "0.3.5",
             )
 
             val result = manager.importAndInstall(FileInput(packagePath))

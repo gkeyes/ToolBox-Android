@@ -4,12 +4,12 @@
   "name": "GitHub 构建守望",
   "shortName": "构建守望",
   "description": "守望选定的 GitHub Actions 工作流，估算构建进度并通过实时通知持续更新。",
-  "version": "1.0.1",
-  "versionCode": 2,
+  "version": "1.0.2",
+  "versionCode": 3,
   "entry": "index.html",
   "icon": "icon.svg",
   "apiVersion": "1.0",
-  "minHostVersion": "0.3.2",
+  "minHostVersion": "0.3.5",
   "categories": ["开发", "效率"],
   "permissions": [
     {"name": "storage", "reason": "保存仓库、工作流选择、构建快照和历史耗时模型。", "required": false},
@@ -22,7 +22,7 @@
     "allowDomains": ["api.github.com"],
     "allowRedirects": false,
     "timeoutMs": 30000,
-    "maxResponseBytes": 1048576
+    "maxResponseBytes": 4194304
   },
   "securityProfile": "strict",
   "ui": {
@@ -33,6 +33,6 @@
   },
   "limits": {
     "storageBytes": 2097152,
-    "maxBridgePayloadBytes": 1048576
+    "maxBridgePayloadBytes": 8388608
   }
 }

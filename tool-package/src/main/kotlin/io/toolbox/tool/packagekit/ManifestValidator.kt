@@ -164,7 +164,7 @@ internal object ManifestValidator {
                 requireIntValue(it, "limits.storageBytes", 65_536, 52_428_800)
             } ?: 2_097_152,
             maxBridgePayloadBytes = limits["maxBridgePayloadBytes"]?.let {
-                requireIntValue(it, "limits.maxBridgePayloadBytes", 4096, 1_048_576)
+                requireIntValue(it, "limits.maxBridgePayloadBytes", 4096, 8_388_608)
             } ?: 262_144,
         )
     }

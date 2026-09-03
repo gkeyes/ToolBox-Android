@@ -26,7 +26,10 @@ val verifyToolBoxApiContract by tasks.registering {
     val validatorFile = rootProject.layout.projectDirectory.file(
         "tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt",
     )
-    inputs.files(contractFile, kotlinFile, sdkFile, schemaFile, validatorFile)
+    val rpcFile = rootProject.layout.projectDirectory.file(
+        "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt",
+    )
+    inputs.files(contractFile, kotlinFile, sdkFile, schemaFile, validatorFile, rpcFile)
 
     doLast {
         @Suppress("UNCHECKED_CAST")
@@ -81,6 +84,12 @@ val verifyToolBoxApiContract by tasks.registering {
         check(sdkCapabilityIds == capabilityIds) { "TypeScript capabilities do not match the canonical order" }
         val sdkMethodNames = unionValues("ToolBoxMethodName")
         check(sdkMethodNames == methodNames) { "TypeScript methods do not match the canonical order" }
+        val errorCodes = arrayValue(contract["errorCodes"]).map { it as String }
+        check(unionValues("ToolBoxErrorCode") == errorCodes) { "TypeScript error codes drifted from the canonical contract" }
+        val rpcErrors = Regex("enum class RuntimeRpcErrorCode \\{([^}]+)}")
+            .find(rpcFile.asFile.readText())?.groupValues?.get(1)
+            ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
+        check(rpcErrors == errorCodes) { "Runtime error codes drifted from the canonical contract" }
 
         val schema = objectValue(JsonSlurper().parseText(schemaFile.asFile.readText()))
         val properties = objectValue(schema["properties"])

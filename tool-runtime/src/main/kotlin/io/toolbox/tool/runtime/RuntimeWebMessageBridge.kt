@@ -43,7 +43,7 @@ data class RuntimeBridgeConfiguration(
     companion object {
         const val DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES = 256 * 1024
         const val MIN_BRIDGE_PAYLOAD_BYTES = 4 * 1024
-        const val MAX_BRIDGE_PAYLOAD_BYTES = 1024 * 1024
+        const val MAX_BRIDGE_PAYLOAD_BYTES = 8 * 1024 * 1024
     }
 }
 
@@ -216,7 +216,10 @@ class RuntimeBridgeSession internal constructor(
             RuntimeRpcJson.encodeResponse(
                 RuntimeRpcResponse.Failure(
                     response.id,
-                    RuntimeRpcError(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge response is too large"),
+                    RuntimeRpcError(
+                        RuntimeRpcErrorCode.QUOTA_EXCEEDED,
+                        "响应编码后超过 $maxPayloadBytes 字节消息上限；请减少单页数据或提高 manifest 的 limits.maxBridgePayloadBytes。",
+                    ),
                 ),
             )
         }

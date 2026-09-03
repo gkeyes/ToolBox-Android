@@ -2,6 +2,8 @@
 
 独立交付的 ToolBox `.tbx`，只读监控一个 GitHub 仓库中手动选择的 Actions workflow。
 
+1.0.2 需要 ToolBox 0.3.5 或更新版本。使用 4 MiB 网络响应与 8 MiB 消息上限容纳 GitHub 的完整构建列表；响应过大、超时、连接失败与域名阻止会显示不同错误，不把它们统一描述为断网。更新工具后按宿主规则重新开启网络、通知和后台权限；安全存储中的 Token 如被清理，需要重新填写。
+
 ## 能力
 
 - 支持仓库、Actions 和具体 workflow 页面链接。
@@ -16,11 +18,11 @@
 ```sh
 node --check examples/github-actions-watcher/github-model.js
 node --check examples/github-actions-watcher/app.js
-node --test examples/github-actions-watcher/github-model.test.js
+node --test examples/github-actions-watcher/github-model.test.js examples/github-actions-watcher/app.test.js
 bash examples/github-actions-watcher/package.sh
 ```
 
-产物位于 `build/github-actions-watcher/github-actions-watcher-v1.0.1.tbx`。
+产物位于 `build/github-actions-watcher/github-actions-watcher-v1.0.2.tbx`。
 
 ## 图标来源
 
