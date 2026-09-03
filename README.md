@@ -10,9 +10,8 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 
 ## 开发基线
 
-这是尚未发布的全新数据基线。现有安装、权限和设置不保留：最终 Room schema 从
-`version = 1` 新建，没有 database migration、兼容读取或旧字段回退。候选 APK 以卸载
-`io.toolbox.host` 后的干净安装验证。
+当前候选为 `0.3.6 (10)`，由 GitHub 使用同一签名密钥构建，可覆盖安装并保留工具、权限和设置。
+本次不改变 Room `version = 1` 的表结构，不新增数据库迁移。
 
 设置只保留真实主题、后台保障、工具权限和 Developer Help。工具详情提供打开、权限、后台任务和
 删除；权限是每工具的虚拟 grant，仍必须通过 manifest、宿主 Android 权限、用户手势、配额
@@ -26,12 +25,13 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
    高负载前台计算，ServiceWorker 与远程 Worker 仍禁用。
 3. **持续运行环境**：应用级管理器拥有 WebView、permit、bridge、timer 和位置监听；运行页只
    挂载显示层。工具主动 `background.start()` 后可在离开页面时继续工作，并在进程/重启恢复后
-   接收事件；一个 `specialUse` 前台服务提供持续通知和停止入口。
+   接收事件；一个 `specialUse` 前台服务承载，每个会话独立通知卡，分别更新、打开和停止。
+   隐藏遵循手机默认机制，超级岛实际展示和排序由系统决定。
 4. **通用宿主能力**：声明域名内的公网 HTTPS 请求、会话绑定的实时通知与 HyperOS 增强、前后台位置
    watch、精确闹钟，以及剪贴板、分享、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
 
 仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
-交付，不加入 APK assets；0.3.4 候选版 GitHub 产物包含 APK、行情哨兵、SHA256 清单和同提交测试回执。
+交付，不加入 APK assets；0.3.6 候选版仅交付 APK、SHA256 清单和同提交测试回执，不重新发布独立小工具。
 
 ## 本地运行
 

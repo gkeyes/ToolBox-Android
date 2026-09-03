@@ -31,33 +31,20 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
     }
 
     fun build(
-        snapshot: RuntimeForegroundNotificationSnapshot,
+        card: RuntimeNotificationCard,
         support: LiveNotificationSupportState,
         open: PendingIntent,
-        stopCurrent: PendingIntent?,
-        stopAll: PendingIntent,
+        stopCurrent: PendingIntent,
     ): Notification {
-        val primary = snapshot.primaryPresentation
-        val sessionCount = snapshot.sessions.size
-        val title = primary?.request?.title
-            ?: snapshot.primarySession?.toolName?.let { "正在恢复 $it" }
-            ?: "正在准备后台工具"
-        val content = primary?.request?.let { request ->
+        val live = card.presentation
+        val title = live?.request?.title ?: card.session.toolName
+        val content = live?.request?.let { request ->
             listOfNotNull(request.primaryText, request.secondaryText).joinToString(" · ")
-        } ?: "页面恢复后会重新发布实时状态"
-        val body = if (sessionCount > 1) {
-            snapshot.sessions.joinToString("\n") { session ->
-                val presentation = snapshot.presentations.firstOrNull { it.request.sessionId == session.sessionId }
-                presentation?.request?.let { request ->
-                    "${request.title}：${request.primaryText}${request.secondaryText?.let { " · $it" }.orEmpty()}"
-                } ?: "${session.toolName}：正在恢复"
-            }
-        } else {
-            primary?.request?.body ?: content
-        }
-        val updatedAt = primary?.request?.updatedAt ?: primary?.receivedAt ?: System.currentTimeMillis()
-        val accent = primary?.request?.accentColor?.let(::parseColor)
-            ?: primary?.request?.tone?.let(::toneColor)
+        } ?: "后台环境运行中，可打开工具或停止当前会话"
+        val body = live?.request?.body ?: content
+        val updatedAt = live?.request?.updatedAt ?: live?.receivedAt ?: card.session.startedAt
+        val accent = live?.request?.accentColor?.let(::parseColor)
+            ?: live?.request?.tone?.let(::toneColor)
             ?: DEFAULT_ACCENT
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
@@ -73,57 +60,49 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setCategory(Notification.CATEGORY_STATUS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setGroup(GROUP_KEY)
-            .setGroupSummary(sessionCount > 1)
-            .setSubText(
-                (if (sessionCount > 1) "$sessionCount 个后台环境" else primary?.request?.secondaryText)
-                    ?.let(::whiteLiveText),
-            )
+            .setSubText(live?.request?.secondaryText?.let(::whiteLiveText))
             .addAction(Notification.Action.Builder(null, whiteLiveText("打开"), open).build())
+            .addAction(Notification.Action.Builder(null, whiteLiveText("停止当前"), stopCurrent).build())
             .apply {
-                stopCurrent?.let { addAction(Notification.Action.Builder(null, whiteLiveText("停止当前"), it).build()) }
-                if (sessionCount > 0) addAction(Notification.Action.Builder(null, whiteLiveText("全部停止"), stopAll).build())
-                primary?.request?.progress?.let { setProgress(100, it, false) }
+                live?.request?.progress?.let { setProgress(100, it, false) }
             }
 
-        if (Build.VERSION.SDK_INT >= 36) {
-            primary?.request?.shortText?.takeIf(String::isNotBlank)?.let(builder::setShortCriticalText)
+        if (live != null && Build.VERSION.SDK_INT >= 36) {
+            live.request.shortText?.takeIf(String::isNotBlank)?.let(builder::setShortCriticalText)
             if (support.androidLiveAllowed) runCatching { builder.setRequestPromotedOngoing(true) }
         }
-        if (support.hyperOsSupported) {
-            runCatching { buildHyperOsV3(snapshot, title, content, body, updatedAt, accent) }
+        if (live != null && support.hyperOsSupported) {
+            runCatching { buildHyperOsV3(card, title, body, accent) }
                 .getOrNull()?.let(builder::addExtras)
         }
         return builder.build()
     }
 
     private fun buildHyperOsV3(
-        snapshot: RuntimeForegroundNotificationSnapshot,
+        card: RuntimeNotificationCard,
         notificationTitle: String,
-        notificationContent: String,
         notificationBody: String,
-        updatedAt: Long,
         accent: Int,
     ) = FocusNotification.buildV3 {
-        val live = snapshot.primaryPresentation
-        val request = live?.request
-        val displayValue = request?.primaryText ?: notificationTitle
-        val displayTitle = request?.title ?: "ToolBox 后台运行"
-        val displaySecondary = request?.secondaryText ?: if (request == null) notificationContent else null
+        val live = requireNotNull(card.presentation)
+        val request = live.request
+        val displayValue = request.primaryText
+        val displayTitle = request.title
+        val displaySecondary = request.secondaryText
         val accentHex = String.format("#%06X", 0xFFFFFF and accent)
         val icon = createPicture(
             "toolbox-live-icon",
             Icon.createWithResource(appContext, R.drawable.ic_toolbox),
         )
         business = "toolbox_live"
-        notifyId = "toolbox-runtime-live"
-        orderId = "toolbox-runtime-live"
-        sequence = live?.sequence ?: updatedAt
+        notifyId = card.notificationId.toString()
+        orderId = "${card.session.toolId}:${card.session.sessionId}"
+        sequence = live.sequence
         updatable = true
         isShowNotification = true
         filterWhenNoPermission = false
-        reopen = "reopen"
-        ticker = request?.shortText ?: request?.primaryText?.take(12) ?: "正在恢复"
+        reopen = "close"
+        ticker = request.shortText ?: request.primaryText.take(12)
         tickerPic = icon
         tickerPicDark = icon
         aodTitle = displayValue
@@ -135,7 +114,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             content = displayTitle
             subTitle = displaySecondary
             subContent = notificationBody
-            extraTitle = request?.updatedAt?.let(::formatTime)
+            extraTitle = request.updatedAt?.let(::formatTime)
             showDivider = false
             showContentDivider = false
         }
@@ -152,7 +131,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             islandProperty = 1
             islandPriority = 1
             islandTimeout = 43_200
-            islandOrder = true
+            islandOrder = false
             highlightColor = accentHex
             smallIslandArea {
                 picInfo {
@@ -189,8 +168,6 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
 
     companion object {
         const val CHANNEL_ID = "toolbox.runtime.live.v1"
-        const val NOTIFICATION_ID = 0x544258
-        private const val GROUP_KEY = "io.toolbox.host.runtime.live"
         private val DEFAULT_ACCENT = Color.rgb(10, 132, 255)
     }
 }

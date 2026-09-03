@@ -20,10 +20,10 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 这是未发布产品的重构，不保留当前数据库、DataStore、工具、授权或设置。
-- 新的 Room schema 是最终新建 schema，`version = 1`；不写 `Migration`、`AutoMigration`、
-  `DataMigration`、`fallbackToDestructiveMigration`、旧字段读取或兼容适配器。
-- 候选 APK 安装前卸载 `io.toolbox.host`，或明确清除其应用数据；不支持覆盖升级保留数据。
+- 当前候选为 `0.3.6 (10)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
+  `DataMigration` 或 `fallbackToDestructiveMigration`。
+- 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
 - 删除审计、发布者信任、安装审核会话、恢复审核和虚假设置的模型、repository、界面、
   文档与测试。
 
@@ -72,7 +72,7 @@ Room 只包含：`tools`、`tool_versions`、`permission_grants`、`tool_kv`、
 密钥材料留在 Android Keystore，不落为明文表。
 
 0.3 不改变 Room schema，继续为 v1。持续会话与闹钟仅保存宿主恢复所需的最小描述符，并复用
-现有 KV 物理存储；会话只保存 sessionId、启动时间和恢复选项，闹钟只保存 id 与调度时间，
+现有 KV 物理存储；会话只保存 sessionId、启动/提醒时间、恢复选项和独立通知编号，闹钟只保存 id 与调度时间，
 不保存轨迹、行情、行程、通知正文或其他业务 payload。
 
 DataStore 只包含 `theme` 和 `backgroundEnabled`。工具数量、KV 限额、速率、任务数量与
@@ -219,7 +219,7 @@ JS 监听器尚未注册，document-start shim 还会保留有限早到事件，
 `background.listSessions()` 与旧任务 `background.list()` 分开。
 
 所有持续环境由一个 `specialUse` 前台 Service 统一保障；存在后台位置 watch 时叠加 `location`
-类型。Service 使用持续通知提供打开、停止单个环境和全部停止入口。系统回收后根据持久化描述符
+类型。每个会话自己的持续通知提供打开与停止当前入口；全部停止由后台保障的总开关控制。系统回收后根据持久化描述符
 重建页面并发送 restore 事件，重启恢复是 best effort；系统拒绝后台启动时使用普通通知引导用户
 打开应用。每个连续会话运行 12 小时提醒一次，之后每 12 小时重复。不设置宿主固定会话数量，
 但仍受 Android 内存、前台服务和权限规则约束。
@@ -267,19 +267,31 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
 `notifications.live.start/update/end` 为该持续会话维护一个实时展示。`LiveNotificationCoordinator`
 只在内存中保存最新标题、主值、辅助信息、正文、短文本、更新时间、进度、强调色和 tone；500ms
 合并窗口只减少 SystemUI 刷新，不限制页面计算或网络请求。停止会话、关闭通知授权、关闭后台总开关、
-更新或删除工具时同步清理展示状态；进程恢复先显示通用占位，页面收到 `background.restore` 后重新发布。
+更新或删除工具时同步清理展示状态；进程恢复使用该工具原编号显示工具占位，页面收到 `background.restore` 后重新发布。
 
-前台 Service 使用固定通知 ID 和 `toolbox.runtime.live.v1` 稳定通道。单会话直接显示工具数据；多会话
-由最近更新项作为主展示，展开正文列出其他会话。通知的打开、停止当前和全部停止操作均由宿主构造，
-工具不能传入 PendingIntent。Android 16+ 在系统允许时请求 promoted ongoing；HyperOS 检测到焦点协议
+0.3.6 起每个会话使用独立、非零、不冲突且可恢复的通知 ID，共用 `toolbox.runtime.live.v1` 稳定通道。
+`RuntimeNotificationController` 只发布变化的卡片；500ms 合并后不重发其他工具的卡片。一个前台 Service
+稳定选取一张工具卡承载，其余卡片按各自编号发布，不增加宿主提示卡、不构造分组摘要。
+承载会话停止时先移交给最早启动的剩余会话，再清理旧卡；最后一个会话停止后清理并停止服务。
+`live.end()` 只结束该卡的增强，持续会话尚在运行时以同一编号退回普通后台通知。
+
+打开与停止的 PendingIntent 使用工具、会话和动作组成的独立 identity，且不可变；停止前复核会话归属，
+旧会话回调不能停止新的会话。工具不能传入 PendingIntent。划掉、隐藏、降级由手机默认通知机制处理，
+不保存隐藏状态、不增加恢复显示入口或 `SUPPRESSED` 回执，也不因为划掉卡片暂停后台。
+
+Android 16+ 在系统允许时请求 promoted ongoing；每张卡不带 `GROUP_SUMMARY` 标记，符合
+[Android 实时通知模板要求](https://developer.android.com/develop/ui/views/notifications/live-update)。HyperOS 检测到焦点协议
 就使用 Apache-2.0 `focus-api:1.4` 附加完整 Focus V3 ticker、AOD、焦点文本与大小岛数据，且
-`filterWhenNoPermission=false`。`canShowFocus=false` 只作为返回状态，不阻止提交。增强接口的
+`filterWhenNoPermission=false`。各卡使用自己的 notifyId、orderId 和更新序号；按
+[小米参数默认行为](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2131) 设置 `reopen=close`、
+`islandOrder=false`，普通刷新不强制重开或重排岛。`canShowFocus=false` 只作为返回状态，不阻止提交。增强接口的
 `REQUESTED` 仅表示数据已交给系统；协议不存在、权限不足或系统不展示时，普通持续通知仍然成立。
 
-实时活动使用深色展示面，宿主可控制的标题、主值、辅助信息、正文和操作文字固定为白色；
-该规则同样覆盖准备中、进程恢复占位和多会话摘要。原生通知通过文字颜色 span 显式指定，Focus V3
+实时活动的标题、主值、辅助信息、正文和操作文字继续请求白色；
+该配置同样覆盖每工具后台占位。原生通知通过文字颜色 span 显式指定，Focus V3
 的明暗两套文字字段均为 `#FFFFFF`，大岛文本不继承强调色。普通非实时通知仍遵循系统主题，
-本规则不修改权限、通知内容或 API 合同；系统自绘的时间及其他装饰仍由 SystemUI 控制。
+本规则不修改权限、通知内容或 API 合同；实际颜色仍由 SystemUI 绘制。浅色系统主题下出现黑字
+是独立待验证问题，不能把本次多卡修复或白色字段测试当作该问题已解决。
 
 ## 8. Miuix 页面与布局
 

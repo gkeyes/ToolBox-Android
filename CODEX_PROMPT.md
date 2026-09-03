@@ -16,8 +16,8 @@ ToolBox 是 Android 13+ 的轻量本地 HTML/CSS/JavaScript 小工具宿主。�
 
 ## 固定产品决策
 
-- 当前仍是开发期，清空现有工具、授权和设置，按全新数据库建立最终结构；不写迁移、
-  兼容读取、回退兼容或旧字段保留代码。Room 保持最终 `version = 1`，不使用
+- 0.3.6 使用固定签名覆盖安装，保留现有工具、授权和设置。Room 表结构不变，保持
+  `version = 1`；持续会话的独立通知编号保存在已有 KV 描述符中。不使用
   `Migration`、`AutoMigration`、`DataMigration` 或 `fallbackToDestructiveMigration`。
 - 删除审计日志、发布者信任库、安装审核会话和虚假设置。DataStore 只保存主题和后台
   总开关；配额是内部常量。
@@ -90,7 +90,11 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
   方法、Header、文本/JSON/二进制请求体、超时和响应上限；私网、回环、保留地址、
   IP 字面量、危险协议 Header 与未复验重定向仍被阻止。
 - `notifications.live.start/update/end` 只接受当前工具 `background.start` 返回的 sessionId；每个
-  会话一个实时状态，停止会话或关闭通知权限时清理。`REQUESTED` 只代表增强数据已提交给系统。
+  会话一个实时状态、一张独立编号的通知卡，只刷新自身变化，不合并为跨工具摘要。一个前台服务
+  稳定承载其中一张工具卡，停止承载会话时移交给剩余会话；不增加宿主提示卡。打开与停止动作
+  按工具、会话及动作隔离。隐藏交给手机默认机制，不实现隐藏记录、暂停或手动恢复 UI。
+  停止会话或关闭通知权限时清理增强，`live.end()` 后仍运行的会话使用原卡显示普通后台状态。
+  公开 API 1.0 与现有回执不变，`REQUESTED` 只代表增强数据已提交给系统。
 
 ## UI、帮助和范例
 

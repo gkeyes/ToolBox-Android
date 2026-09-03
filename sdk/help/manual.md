@@ -384,6 +384,8 @@ background.setTimer(key, intervalMs) 创建或更新同名计时器；key 最多
 
 先通过 background.start 获取当前工具的 sessionId，再调用 notifications.live.start(request)。重复 start 幂等；update(request) 更新同一展示，但请求仍需包含 sessionId、title、primaryText，不是只提交变化字段。end(sessionId) 仅结束实时展示，不停止后台环境。
 
+ToolBox 0.3.6 起，不同工具的持续会话分别显示独立通知卡，独立更新、打开和停止，不再合成一张卡。end 后后台仍在运行时，同一张卡退回普通后台状态。划掉、隐藏和降级遵循手机默认机制；超级岛实际同时展示的数量与排序由系统决定。公开调用和回执不变，现有工具不需要提高 minHostVersion 或重新打包。
+
 必填：
 - sessionId：当前工具、当前运行版本的会话。
 - title：标题，最多 64 个字符。

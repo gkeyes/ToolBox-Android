@@ -64,6 +64,7 @@ internal object PreviewHostFixtures {
             toolId = "io.toolbox.notificationlab",
             toolName = "通知实验室",
             startedAt = PreviewNow,
+            notificationId = 0x550000,
         ),
     )
 

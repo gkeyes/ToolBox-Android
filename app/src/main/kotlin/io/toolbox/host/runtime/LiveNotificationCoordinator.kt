@@ -19,11 +19,18 @@ internal data class RuntimeForegroundNotificationSnapshot(
     val presentations: List<RuntimeLiveNotificationUi>,
     val usesLocation: Boolean,
 ) {
-    val primaryPresentation: RuntimeLiveNotificationUi? get() = presentations.firstOrNull()
-    val primarySession: RuntimeBackgroundSessionUi?
-        get() = primaryPresentation?.request?.sessionId?.let { sessionId ->
-            sessions.firstOrNull { it.sessionId == sessionId }
-        } ?: sessions.singleOrNull()
+    fun cards(): List<RuntimeNotificationCard> {
+        val bySession = presentations.associateBy { it.request.sessionId }
+        return sessions.sortedWith(compareBy(RuntimeBackgroundSessionUi::startedAt, RuntimeBackgroundSessionUi::sessionId))
+            .map { session -> RuntimeNotificationCard(session, bySession[session.sessionId]) }
+    }
+}
+
+internal data class RuntimeNotificationCard(
+    val session: RuntimeBackgroundSessionUi,
+    val presentation: RuntimeLiveNotificationUi?,
+) {
+    val notificationId: Int get() = session.notificationId
 }
 
 internal class LiveNotificationCoordinator(
@@ -69,8 +76,7 @@ internal class LiveNotificationCoordinator(
         }
     }
 
-    fun snapshot(): List<RuntimeLiveNotificationUi> =
-        presentations.values.sortedByDescending(RuntimeLiveNotificationUi::sequence)
+    fun snapshot(): List<RuntimeLiveNotificationUi> = presentations.values.toList()
 
     private fun scheduleRefresh(immediate: Boolean = false) {
         val now = nowMillis()

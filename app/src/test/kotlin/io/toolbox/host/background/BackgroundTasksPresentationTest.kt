@@ -17,12 +17,14 @@ class BackgroundTasksPresentationTest {
                     toolId = "io.toolbox.stockmonitor",
                     toolName = "行情哨兵",
                     startedAt = 1_000,
+                    notificationId = 0x550000,
                 ),
                 RuntimeBackgroundSessionUi(
                     sessionId = "other-session",
                     toolId = "io.toolbox.other",
                     toolName = "其他工具",
                     startedAt = 2_000,
+                    notificationId = 0x550001,
                 ),
             ),
         )

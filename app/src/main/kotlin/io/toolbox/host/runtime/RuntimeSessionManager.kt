@@ -80,6 +80,7 @@ internal data class RuntimeBackgroundSessionUi(
     val toolId: String,
     val toolName: String,
     val startedAt: Long,
+    val notificationId: Int,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -122,11 +123,16 @@ internal class RuntimeSessionManager(
     private val openingTools = mutableSetOf<String>()
     private val visibleTools = mutableSetOf<String>()
     private val sessionsByTool = mutableMapOf<String, MutableMap<String, StoredRuntimeSession>>()
+    private val notificationIds = RuntimeNotificationIds()
+    private val restoredToolNames = mutableMapOf<String, String>()
     private val timersByTool = mutableMapOf<String, MutableMap<String, Job>>()
     private val watchesByTool = mutableMapOf<String, MutableMap<String, ActiveLocationWatch>>()
     private val alarmsByTool = mutableMapOf<String, MutableMap<String, StoredAlarm>>()
     private val reminderJobs = mutableMapOf<String, Job>()
     private val mutableSessions = MutableStateFlow<List<RuntimeBackgroundSessionUi>>(emptyList())
+    private val mutableNotificationSnapshots = MutableStateFlow(
+        RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false),
+    )
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
@@ -136,6 +142,7 @@ internal class RuntimeSessionManager(
     private var recovered = false
 
     val sessions: StateFlow<List<RuntimeBackgroundSessionUi>> = mutableSessions.asStateFlow()
+    val notificationSnapshots: StateFlow<RuntimeForegroundNotificationSnapshot> = mutableNotificationSnapshots.asStateFlow()
 
     fun state(toolId: String): StateFlow<RuntimeUiState> =
         stateByTool.getOrPut(toolId) { MutableStateFlow(RuntimeUiState.Loading) }.asStateFlow()
@@ -190,26 +197,35 @@ internal class RuntimeSessionManager(
             if (recovered) return@withContext
             recovered = true
             val restoreReason = if (reason == RESTORE_REASON_REBOOT) RESTORE_REASON_REBOOT else RESTORE_REASON_PROCESS
+            recovery.flatMap(PersistedToolState::sessions).filter { it.notificationId > 0 }.forEach {
+                notificationIds.claim(it.sessionId, it.notificationId)
+            }
             recovery.forEach { persisted ->
+                restoredToolNames[persisted.toolId] = persisted.toolName
                 val restorable = persisted.sessions.filter { session ->
                     if (restoreReason == RESTORE_REASON_REBOOT) session.restoreAfterReboot else session.restoreAfterProcessDeath
-                }
+                }.map { it.copy(notificationId = notificationIds.claim(it.sessionId, it.notificationId)) }
+                (persisted.sessions.map(StoredRuntimeSession::sessionId) - restorable.map(StoredRuntimeSession::sessionId).toSet())
+                    .forEach(notificationIds::release)
                 if (restorable.isNotEmpty()) {
                     sessionsByTool.getOrPut(persisted.toolId, ::linkedMapOf).putAll(
                         restorable.associateBy(StoredRuntimeSession::sessionId),
                     )
                     updateSessionProjection()
                     restorable.forEach(::scheduleReminder)
-                    ensureRuntime(persisted.toolId, restoreReason)
                 }
                 alarmsByTool.getOrPut(persisted.toolId, ::linkedMapOf).putAll(
                     persisted.alarms.associateBy(StoredAlarm::alarmId),
                 )
                 persisted.alarms.forEach { scheduleAlarm(persisted.toolId, persisted.versionCode, it) }
-                if (restorable.size != persisted.sessions.size) persistSessions(persisted.toolId)
+                if (restorable != persisted.sessions) persistSessions(persisted.toolId)
             }
+            refreshForegroundService()
             if (sessionsByTool.values.any(MutableMap<String, StoredRuntimeSession>::isNotEmpty)) {
-                RuntimeForegroundService.ensureRunning(appContext)
+                RuntimeForegroundService.ensureRunning(appContext, foregroundNotificationSnapshot())
+                sessionsByTool.keys.toList().forEach { toolId ->
+                    scope.launch { ensureRuntime(toolId, restoreReason) }
+                }
             }
         }
     }
@@ -222,6 +238,7 @@ internal class RuntimeSessionManager(
     suspend fun stopTool(toolId: String, removeAlarms: Boolean = true) = withContext(Dispatchers.Main.immediate) {
         val removedSessionIds = sessionsByTool.remove(toolId)?.keys.orEmpty()
         removedSessionIds.forEach(::cancelReminder)
+        removedSessionIds.forEach(notificationIds::release)
         liveNotifications.clearSessions(removedSessionIds)
         timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
         clearAllWatches(toolId)
@@ -300,7 +317,7 @@ internal class RuntimeSessionManager(
     }
 
     fun foregroundNotificationSnapshot(): RuntimeForegroundNotificationSnapshot {
-        val activeSessions = mutableSessions.value
+        val activeSessions = sessionProjection()
         val activeIds = activeSessions.mapTo(hashSetOf(), RuntimeBackgroundSessionUi::sessionId)
         return RuntimeForegroundNotificationSnapshot(
             sessions = activeSessions,
@@ -487,7 +504,8 @@ internal class RuntimeSessionManager(
                         sessionsByTool.getValue(toolId)[existing.sessionId] = existing
                         throw failure
                     }
-                    if (!RuntimeForegroundService.ensureRunning(appContext)) {
+                    updateSessionProjection()
+                    if (!RuntimeForegroundService.ensureRunning(appContext, foregroundNotificationSnapshot())) {
                         throw RuntimeHandlerException(
                             RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED,
                             "系统未允许继续后台运行环境",
@@ -495,23 +513,30 @@ internal class RuntimeSessionManager(
                     }
                     return@withContext updated.toRuntimeSummary()
                 }
+                val sessionId = UUID.randomUUID().toString()
                 val record = StoredRuntimeSession(
-                    sessionId = UUID.randomUUID().toString(),
+                    sessionId = sessionId,
                     startedAt = nowMillis(),
                     restoreAfterProcessDeath = options.restoreAfterProcessDeath,
                     restoreAfterReboot = options.restoreAfterReboot,
                     lastReminderAt = null,
+                    notificationId = notificationIds.claim(sessionId),
                 )
                 sessionsByTool.getOrPut(toolId, ::linkedMapOf)[record.sessionId] = record
                 try {
                     persistSessions(toolId)
                 } catch (failure: Exception) {
                     sessionsByTool[toolId]?.remove(record.sessionId)
+                    notificationIds.release(record.sessionId)
                     throw failure
                 }
-                if (!RuntimeForegroundService.ensureRunning(appContext)) {
+                updateSessionProjection()
+                if (!RuntimeForegroundService.ensureRunning(appContext, foregroundNotificationSnapshot())) {
                     sessionsByTool[toolId]?.remove(record.sessionId)
+                    notificationIds.release(record.sessionId)
                     persistSessions(toolId)
+                    updateSessionProjection()
+                    refreshForegroundService()
                     throw RuntimeHandlerException(
                         RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED,
                         "系统未允许启动后台运行环境",
@@ -693,6 +718,7 @@ internal class RuntimeSessionManager(
 
     private suspend fun stopSession(toolId: String, sessionId: String): Boolean {
         val removed = sessionsByTool[toolId]?.remove(sessionId) ?: return false
+        notificationIds.release(sessionId)
         cancelReminder(removed.sessionId)
         liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
@@ -794,14 +820,19 @@ internal class RuntimeSessionManager(
     }
 
     private fun updateSessionProjection() {
+        mutableSessions.value = sessionProjection()
+    }
+
+    private fun sessionProjection(): List<RuntimeBackgroundSessionUi> {
         val hostNames = hosts.mapValues { it.value.runtime.toolName }
-        mutableSessions.value = sessionsByTool.flatMap { (toolId, sessions) ->
+        return sessionsByTool.flatMap { (toolId, sessions) ->
             sessions.values.map { record ->
                 RuntimeBackgroundSessionUi(
                     sessionId = record.sessionId,
                     toolId = toolId,
-                    toolName = hostNames[toolId] ?: toolId,
+                    toolName = hostNames[toolId] ?: restoredToolNames[toolId] ?: toolId,
                     startedAt = record.startedAt,
+                    notificationId = record.notificationId,
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
@@ -836,7 +867,7 @@ internal class RuntimeSessionManager(
             MainActivity.openToolIntent(appContext, toolId),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, sessionId)
+        val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox)
             .setContentTitle("ToolBox 后台运行提醒")
@@ -954,6 +985,7 @@ internal class RuntimeSessionManager(
                 ?.let(::parseAlarms).orEmpty()
             if (sessions.isEmpty() && alarms.isEmpty()) null else PersistedToolState(
                 toolId = toolId,
+                toolName = tool.metadata.name,
                 versionCode = tool.currentVersion.versionCode,
                 sessions = sessions,
                 alarms = alarms,
@@ -981,8 +1013,7 @@ internal class RuntimeSessionManager(
     }.getOrDefault(emptyList())
 
     private fun refreshForegroundService() {
-        if (activeSessionCount() == 0) RuntimeForegroundService.stop(appContext)
-        else RuntimeForegroundService.refresh(appContext)
+        mutableNotificationSnapshots.value = foregroundNotificationSnapshot()
     }
 
     private data class RuntimeHost(
@@ -1008,6 +1039,7 @@ internal class RuntimeSessionManager(
         val restoreAfterProcessDeath: Boolean,
         val restoreAfterReboot: Boolean,
         val lastReminderAt: Long?,
+        val notificationId: Int,
     ) {
         fun toRuntimeSummary() = RuntimeBackgroundSessionSummary(
             sessionId,
@@ -1021,6 +1053,7 @@ internal class RuntimeSessionManager(
             .put("startedAt", startedAt)
             .put("restoreAfterProcessDeath", restoreAfterProcessDeath)
             .put("restoreAfterReboot", restoreAfterReboot)
+            .put("notificationId", notificationId)
             .apply { lastReminderAt?.let { put("lastReminderAt", it) } }
 
         companion object {
@@ -1030,6 +1063,7 @@ internal class RuntimeSessionManager(
                 restoreAfterProcessDeath = value.optBoolean("restoreAfterProcessDeath", true),
                 restoreAfterReboot = value.optBoolean("restoreAfterReboot", false),
                 lastReminderAt = value.optLong("lastReminderAt").takeIf { value.has("lastReminderAt") },
+                notificationId = value.optInt("notificationId", 0),
             )
         }
     }
@@ -1066,6 +1100,7 @@ internal class RuntimeSessionManager(
 
     private data class PersistedToolState(
         val toolId: String,
+        val toolName: String,
         val versionCode: Int,
         val sessions: List<StoredRuntimeSession>,
         val alarms: List<StoredAlarm>,

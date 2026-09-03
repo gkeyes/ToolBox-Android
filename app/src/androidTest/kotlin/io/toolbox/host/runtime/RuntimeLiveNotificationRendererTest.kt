@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Parcel
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -15,6 +16,8 @@ import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,7 +27,7 @@ import org.json.JSONObject
 @RunWith(AndroidJUnit4::class)
 class RuntimeLiveNotificationRendererTest {
     @Test
-    fun preparingRestoringLiveAndSummaryTextStayWhiteAcrossNotificationParceling() {
+    fun independentBackgroundAndLiveCardTextRetainsWhiteSpansAcrossNotificationParceling() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val renderer = RuntimeLiveNotificationRenderer(context)
         val intent = PendingIntent.getActivity(
@@ -33,8 +36,10 @@ class RuntimeLiveNotificationRendererTest {
             Intent(context, MainActivity::class.java).setAction("io.toolbox.host.TEST_LIVE_TEXT"),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val session = RuntimeBackgroundSessionUi("session-1", "io.example.tool", "测试工具", 1L)
-        val other = session.copy(sessionId = "session-2", toolId = "io.example.other", toolName = "其他工具")
+        val session = RuntimeBackgroundSessionUi("session-1", "io.example.tool", "测试工具", 1L, 0x550000)
+        val other = session.copy(
+            sessionId = "session-2", toolId = "io.example.other", toolName = "其他工具", notificationId = 0x550001,
+        )
         val live = RuntimeLiveNotificationUi(
             toolId = session.toolId,
             toolName = session.toolName,
@@ -53,11 +58,15 @@ class RuntimeLiveNotificationRendererTest {
             receivedAt = 1L,
             sequence = 1L,
         )
-        val snapshots = listOf(
-            RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false),
-            RuntimeForegroundNotificationSnapshot(listOf(session), emptyList(), usesLocation = false),
-            RuntimeForegroundNotificationSnapshot(listOf(session), listOf(live), usesLocation = false),
-            RuntimeForegroundNotificationSnapshot(listOf(session, other), listOf(live), usesLocation = false),
+        val cards = listOf(
+            RuntimeNotificationCard(session, null),
+            RuntimeNotificationCard(session, live),
+            RuntimeNotificationCard(other, live.copy(
+                toolId = other.toolId,
+                toolName = other.toolName,
+                request = live.request.copy(sessionId = other.sessionId, title = "其他进度", primaryText = "20%"),
+                sequence = 2L,
+            )),
         )
         val supportStates = listOf(
             LiveNotificationSupportState(0, false, false, false, false),
@@ -65,8 +74,8 @@ class RuntimeLiveNotificationRendererTest {
         )
         try {
             supportStates.forEach { support ->
-                snapshots.forEach { snapshot ->
-                    val notification = renderer.build(snapshot, support, intent, intent, intent)
+                cards.forEach { card ->
+                    val notification = renderer.build(card, support, intent, intent)
                     val parcel = Parcel.obtain()
                     try {
                         notification.writeToParcel(parcel, 0)
@@ -74,13 +83,32 @@ class RuntimeLiveNotificationRendererTest {
                         val restored = Notification.CREATOR.createFromParcel(parcel)
                         listOf(Notification.EXTRA_TITLE, Notification.EXTRA_TEXT, Notification.EXTRA_BIG_TEXT)
                             .forEach { key -> assertWhite(restored.extras.getCharSequence(key)) }
-                        if (snapshot.presentations.isNotEmpty()) {
+                        if (card.presentation != null) {
                             assertWhite(restored.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
                         }
+                        assertEquals(2, restored.actions.size)
+                        assertEquals(listOf("打开", "停止当前"), restored.actions.map { it.title.toString() })
                         restored.actions.forEach { action -> assertWhite(action.title) }
                         assertFalse(restored.extras.getBoolean("android.colorized"))
-                        if (support.hyperOsSupported) {
-                            assertWhiteFocusPayload(JSONObject(checkNotNull(restored.extras.getString("miui.focus.param"))))
+                        assertNull(restored.group)
+                        assertEquals(0, restored.flags and Notification.FLAG_GROUP_SUMMARY)
+                        assertNull(restored.deleteIntent)
+                        assertEquals(
+                            card.presentation?.request?.title ?: card.session.toolName,
+                            restored.extras.getCharSequence(Notification.EXTRA_TITLE).toString(),
+                        )
+                        if (support.hyperOsSupported && card.presentation != null) {
+                            val payload = JSONObject(checkNotNull(restored.extras.getString("miui.focus.param")))
+                            assertWhiteFocusPayload(payload)
+                            assertTrue(payload.toString().contains(card.notificationId.toString()))
+                            assertTrue(payload.toString().contains("${card.session.toolId}:${card.session.sessionId}"))
+                            assertTrue(payload.toString().contains("\"reopen\":\"close\""))
+                            assertTrue(payload.toString().contains("\"islandOrder\":false"))
+                        } else {
+                            assertNull(restored.extras.getString("miui.focus.param"))
+                        }
+                        if (Build.VERSION.SDK_INT >= 36 && support.androidLiveAllowed && card.presentation != null) {
+                            assertTrue(restored.hasPromotableCharacteristics())
                         }
                     } finally {
                         parcel.recycle()
@@ -89,6 +117,27 @@ class RuntimeLiveNotificationRendererTest {
             }
         } finally {
             intent.cancel()
+        }
+    }
+
+    @Test
+    fun openAndStopPendingIntentsHaveSeparateImmutableIdentitiesForEverySession() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val openA = RuntimeForegroundService.openSessionPendingIntent(context, "tool-a", "Aa")
+        val openB = RuntimeForegroundService.openSessionPendingIntent(context, "tool-b", "BB")
+        val replacement = RuntimeForegroundService.openSessionPendingIntent(context, "tool-a", "new-session")
+        val stopA = RuntimeForegroundService.stopSessionPendingIntent(context, "tool-a", "Aa")
+        val stopB = RuntimeForegroundService.stopSessionPendingIntent(context, "tool-b", "BB")
+        val pending = listOf(openA, openB, replacement, stopA, stopB)
+        try {
+            assertEquals("Aa".hashCode(), "BB".hashCode())
+            assertEquals(5, pending.toSet().size)
+            assertNotEquals(openA, replacement)
+            assertEquals(openA, RuntimeForegroundService.openSessionPendingIntent(context, "tool-a", "Aa"))
+            assertEquals(stopA, RuntimeForegroundService.stopSessionPendingIntent(context, "tool-a", "Aa"))
+            if (Build.VERSION.SDK_INT >= 31) pending.forEach { assertTrue(it.isImmutable) }
+        } finally {
+            pending.forEach(PendingIntent::cancel)
         }
     }
 
