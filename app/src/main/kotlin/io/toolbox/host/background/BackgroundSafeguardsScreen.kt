@@ -46,7 +46,7 @@ import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
-import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
@@ -321,11 +321,10 @@ private fun ActiveSessionRow(
             color = ToolBoxThemeTokens.colors.textSecondary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
-        ToolBoxTextButton(
+        ToolBoxDestructiveButton(
             label = "停止此环境",
             onClick = onStop,
             modifier = Modifier.fillMaxWidth(),
-            contentColor = ToolBoxThemeTokens.colors.danger,
         )
     }
 }

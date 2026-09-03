@@ -27,7 +27,7 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
-import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
@@ -211,12 +211,11 @@ private fun RuntimeSessionCard(
             color = ToolBoxThemeTokens.colors.textSecondary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
-        ToolBoxTextButton(
+        ToolBoxDestructiveButton(
             label = if (stopping) "正在停止…" else "停止后台运行",
             onClick = onStop,
             modifier = Modifier.fillMaxWidth(),
             enabled = !stopping,
-            contentColor = ToolBoxThemeTokens.colors.danger,
         )
     }
 }
@@ -256,12 +255,11 @@ private fun BackgroundTaskCard(
         }
         TaskResultSummary(result)
         if (cancellable) {
-            ToolBoxTextButton(
+            ToolBoxDestructiveButton(
                 label = if (cancelling) "正在取消…" else "取消任务",
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !cancelling,
-                contentColor = ToolBoxThemeTokens.colors.danger,
             )
         }
     }

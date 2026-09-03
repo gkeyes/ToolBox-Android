@@ -33,6 +33,7 @@ class HostNavigationTest {
 
         composeRule.onNodeWithContentDescription("管理后台任务演示").performClick()
         waitForVisibleText("权限")
+        composeRule.onNodeWithContentDescription("更多操作").assertDoesNotExist()
         composeRule.onNodeWithText("权限").performClick()
         waitForVisibleText("工具权限")
 
@@ -67,9 +68,7 @@ class HostNavigationTest {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("确认删除").fetchSemanticsNodes().isEmpty()
         }
-        composeRule.onNodeWithContentDescription("更多操作").performClick()
-        waitForVisibleText("工具操作")
-        composeRule.onNodeWithContentDescription("从菜单删除后台任务演示").performClick()
+        composeRule.onNodeWithText("删除工具").performScrollTo().performClick()
         waitForVisibleText("确认删除")
         composeRule.onNodeWithText("确认删除").performClick()
         waitForVisibleText("该工具已不存在")

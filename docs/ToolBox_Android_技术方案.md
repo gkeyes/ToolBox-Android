@@ -115,7 +115,7 @@ DataStore 只包含 `theme` 和 `backgroundEnabled`。工具数量、KV 限额�
 - 仅更高版本可更新；同版本或低版本显示简短失败，不写入任何状态。
 - 更新原子替换 active version。普通 KV 保留；旧 generation 的 secure-storage key、临时
   file token、runtime session、后台任务/结果和后台通知清理。首版没有回滚。
-- 卸载从真实详情菜单触发，并清理代码、KV、grants、Keystore key、WebView Profile/无状态
+- 卸载从工具详情的删除按钮与确认弹层触发，并清理代码、KV、grants、Keystore key、WebView Profile/无状态
   记录、会话、后台 Work、任务结果、后台通知与快捷方式。
 
 ## 5. App 式每工具权限
@@ -308,6 +308,8 @@ Android 16+ 在系统允许时请求 promoted ongoing；每张卡不带 `GROUP_S
   缩略图等比归一到 256px，由工具版本键和 4MiB 内存 LRU 复用，替换/删除失效。列表、最近、详情、
   首页运行区和通知共用；普通通知使用 largeIcon，HyperOS ticker/AOD/岛图使用同一位图，smallIcon 保留宿主身份。
   前台服务先用默认图完成承载，再按会话异步补图；只更新当前仍存活会话，补图推进展示序号且不切换承载卡。
+- 工具详情只有一套管理入口，不再重复提供“工具操作”弹层。删除/停止/任务取消统一使用有底色的
+  Miuix 危险按钮，删除确认保持原有不可逆提示；不改变删除、权限、后台运行行为或路由集合。
 - 普通行 64–80dp、搜索框 48dp、最小触控目标 48dp。字体可换行/自然增高，禁止把顶栏、
   搜索框或底栏乘以 `fontScale`。
 - 每页状态栏、cutout、IME、导航/手势 inset 只能消费一次；IME 只由有输入焦点的内容区处理。
@@ -348,7 +350,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 | 场景 | 理由 | 方法 | 预期 |
 |---|---|---|---|
 | 新鲜数据基线 | 防止无用兼容代码残留。 | 创建/重开 production Room/DataStore，写工具、grant、KV、任务、结果并检查 schema/keys。 | 真实状态持久化；没有 audit/publisher/旧设置/迁移。 |
-| 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入四个有效例子、损坏包与现有恶意 ZIP 矩阵，再从菜单删除。 | 有效包可打开；无效零残留；删除完整清理。 |
+| 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入四个有效例子、损坏包与现有恶意 ZIP 矩阵，再从详情删除按钮确认删除。 | 有效包可打开；无效零残留；删除完整清理。 |
 | 权限与 RPC | 防止开关和功能脱节。 | 逐 capability 调 production dispatcher，并关闭每一个授权层。 | 开启有真实结果；任一层缺失稳定拒绝。 |
 | 后台与代理 | 防止持续环境丢失、旧 API 冲突或 SSRF。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；无 SSRF、孤儿资源或协议回退。 |
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |

@@ -46,6 +46,7 @@ data class ToolBoxColorScheme(
     val onSoftSuccess: Color,
     val softWarning: Color,
     val softDanger: Color,
+    val onSoftDanger: Color,
 )
 
 @Immutable
@@ -118,6 +119,7 @@ private val LightToolBoxColors = ToolBoxColorScheme(
     onSoftSuccess = Color(0xFF197B48),
     softWarning = Color(0xFFFFF4E2),
     softDanger = Color(0xFFFFEEEE),
+    onSoftDanger = Color(0xFFB3261E),
 )
 
 private val DarkToolBoxColors = ToolBoxColorScheme(
@@ -137,6 +139,7 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
     onSoftSuccess = Color(0xFF75E395),
     softWarning = Color(0xFF493414),
     softDanger = Color(0xFF4B2524),
+    onSoftDanger = Color(0xFFFFB4AB),
 )
 
 private val DefaultTextStyles = ToolBoxTextStyles(
@@ -186,7 +189,7 @@ fun ToolBoxTheme(
                 surfaceContainerHigh = LightToolBoxColors.surfaceMuted,
                 dividerLine = LightToolBoxColors.divider,
                 errorContainer = LightToolBoxColors.softDanger,
-                onErrorContainer = LightToolBoxColors.danger,
+                onErrorContainer = LightToolBoxColors.onSoftDanger,
                 error = LightToolBoxColors.danger,
             ),
             darkColors = darkColorScheme(
@@ -207,7 +210,7 @@ fun ToolBoxTheme(
                 surfaceContainerHigh = DarkToolBoxColors.surfaceMuted,
                 dividerLine = DarkToolBoxColors.divider,
                 errorContainer = DarkToolBoxColors.softDanger,
-                onErrorContainer = DarkToolBoxColors.danger,
+                onErrorContainer = DarkToolBoxColors.onSoftDanger,
                 error = DarkToolBoxColors.danger,
             ),
             keyColor = LightToolBoxColors.primary,
@@ -228,6 +231,7 @@ fun ToolBoxTheme(
             divider = miuixColors.dividerLine,
             softPrimary = miuixColors.primaryContainer,
             softDanger = miuixColors.errorContainer,
+            onSoftDanger = miuixColors.onErrorContainer,
         )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,

@@ -21,10 +21,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +38,7 @@ import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -186,14 +183,10 @@ internal fun ToolDetailScreen(
 ) {
     val tool = state.tools.firstOrNull { it.toolId == toolId }
     val confirmation = state.uninstallConfirmation?.takeIf { it.toolId == toolId }
-    var menuVisible by rememberSaveable(toolId) { mutableStateOf(false) }
 
     DetailScreen(
         title = "工具详情",
         onBack = onBack,
-        actions = {
-            ToolBoxIconButton(ToolBoxIconKey.More, "更多操作", { menuVisible = true })
-        },
     ) {
         LazyColumn(
             modifier = Modifier
@@ -256,60 +249,10 @@ internal fun ToolDetailScreen(
                 }
                 item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("delete") {
-                    ToolBoxTextButton(
+                    ToolBoxDestructiveButton(
                         label = "删除工具",
                         onClick = { onAction(CatalogAction.RequestUninstall(tool.toolId)) },
                         modifier = Modifier.fillMaxWidth(),
-                        contentColor = ToolBoxThemeTokens.colors.danger,
-                    )
-                }
-            }
-        }
-
-        OverlayDialog(
-            show = menuVisible,
-            title = "工具操作",
-            onDismissRequest = { menuVisible = false },
-        ) {
-            Column {
-                tool?.let {
-                    ToolBoxSettingRow(
-                        title = "打开",
-                        icon = ToolBoxIconKey.OpenInNew,
-                        onClick = {
-                            menuVisible = false
-                            onAction(CatalogAction.RequestRuntimeLaunch(it.toolId))
-                        },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
-                        title = "权限",
-                        icon = ToolBoxIconKey.Shield,
-                        onClick = {
-                            menuVisible = false
-                            onPermissions(it.toolId)
-                        },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
-                        title = "后台任务",
-                        icon = ToolBoxIconKey.Clock,
-                        onClick = {
-                            menuVisible = false
-                            onBackground(it.toolId)
-                        },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxTextButton(
-                        label = "删除工具",
-                        onClick = {
-                            menuVisible = false
-                            onAction(CatalogAction.RequestUninstall(it.toolId))
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentDescription = "从菜单删除${it.name}" },
-                        contentColor = ToolBoxThemeTokens.colors.danger,
                     )
                 }
             }

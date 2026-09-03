@@ -324,6 +324,33 @@ fun ToolBoxPrimaryButton(
 }
 
 @Composable
+fun ToolBoxDestructiveButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        enabled = enabled,
+        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        colors = ButtonDefaults.buttonColorsPrimary(
+            color = colors.softDanger,
+            contentColor = colors.onSoftDanger,
+        ),
+    ) {
+        ToolBoxText(
+            text = label,
+            style = ToolBoxThemeTokens.textStyles.body.copy(
+                color = colors.onSoftDanger.copy(alpha = if (enabled) 1f else 0.46f),
+            ),
+        )
+    }
+}
+
+@Composable
 fun ToolBoxTextButton(
     label: String,
     onClick: () -> Unit,
