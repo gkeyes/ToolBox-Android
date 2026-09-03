@@ -13,6 +13,7 @@ data class InstalledManifest(
     val permissionDeclarations: List<InstalledManifestPermission>,
     val network: InstalledManifestNetwork?,
     val maxBridgePayloadBytes: Int,
+    val icon: String? = null,
 )
 
 data class InstalledManifestPermission(
@@ -84,6 +85,7 @@ object InstalledManifestVerifier {
                     )
                 },
                 maxBridgePayloadBytes = parsed.limits.maxBridgePayloadBytes,
+                icon = parsed.icon,
             ),
         )
     }

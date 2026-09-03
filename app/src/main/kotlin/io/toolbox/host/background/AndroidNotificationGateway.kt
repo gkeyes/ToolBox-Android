@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.content.Context
 import android.content.pm.PackageManager
 import io.toolbox.host.R
+import io.toolbox.host.ToolBoxApplication
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,8 +45,12 @@ class AndroidNotificationGateway(
         manager.createNotificationChannel(
             NotificationChannel(channelId, "ToolBox · $toolId", NotificationManager.IMPORTANCE_DEFAULT),
         )
+        val toolIcon = withContext(Dispatchers.IO) {
+            (appContext as? ToolBoxApplication)?.hostDependencies()?.toolIcons?.load(toolId)
+        }
         val notification = Notification.Builder(appContext, channelId)
             .setSmallIcon(R.drawable.ic_toolbox)
+            .apply { toolIcon?.let { setLargeIcon(it) } }
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))

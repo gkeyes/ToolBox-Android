@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -14,6 +15,7 @@ import io.toolbox.host.MainActivity
 import io.toolbox.host.ToolBoxApplication
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.host.background.LiveNotificationSupportState
+import io.toolbox.host.icons.ToolIconLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +34,9 @@ internal class RuntimeForegroundService : Service() {
     private var snapshots: Job? = null
     private var startupDeadline: Job? = null
     private var latestStartId = 0
+    private val toolIcons = mutableMapOf<String, Bitmap?>()
+    private val iconLoads = mutableMapOf<String, Job>()
+    private var activeIconSessions = emptySet<String>()
     private lateinit var renderer: RuntimeLiveNotificationRenderer
     private lateinit var notificationManager: NotificationManager
     private var support = LiveNotificationSupportState(0, false, false, Build.VERSION.SDK_INT >= 36, false)
@@ -115,6 +120,7 @@ internal class RuntimeForegroundService : Service() {
                             }
                             val current = sessions.foregroundNotificationSnapshot()
                             notifications.render(current)
+                            synchronizeIcons(current, dependencies.toolIcons, sessions)
                             if (current.sessions.isEmpty()) stopSelfResult(latestStartId)
                         }
                     }
@@ -128,6 +134,8 @@ internal class RuntimeForegroundService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        iconLoads.clear()
+        toolIcons.clear()
         notifications.clear()
         super.onDestroy()
     }
@@ -137,7 +145,36 @@ internal class RuntimeForegroundService : Service() {
         support,
         openSessionPendingIntent(this, card.session.toolId, card.session.sessionId),
         stopSessionPendingIntent(this, card.session.toolId, card.session.sessionId),
+        toolIcon = toolIcons[card.session.sessionId],
     )
+
+    private fun synchronizeIcons(
+        snapshot: RuntimeForegroundNotificationSnapshot,
+        loader: ToolIconLoader,
+        sessions: RuntimeSessionManager,
+    ) {
+        activeIconSessions = snapshot.sessions.mapTo(hashSetOf()) { it.sessionId }
+        (iconLoads.keys - activeIconSessions).forEach { iconLoads.remove(it)?.cancel() }
+        toolIcons.keys.retainAll(activeIconSessions)
+        snapshot.sessions.forEach { session ->
+            val id = session.sessionId
+            if (!toolIcons.containsKey(id) && id !in iconLoads) {
+                iconLoads[id] = scope.launch {
+                    try {
+                        val bitmap = loader.load(session.toolId)
+                        if (id in activeIconSessions && sessions.sessions.value.any {
+                            it.sessionId == id && it.toolId == session.toolId
+                        }) {
+                            toolIcons[id] = bitmap
+                            if (bitmap != null) notifications.refreshArtwork(id)
+                        }
+                    } finally {
+                        iconLoads.remove(id)
+                    }
+                }
+            }
+        }
+    }
 
     private fun bootstrapSession(intent: Intent?): RuntimeBackgroundSessionUi? {
         val sessionId = intent?.getStringExtra(EXTRA_SESSION_ID) ?: return null

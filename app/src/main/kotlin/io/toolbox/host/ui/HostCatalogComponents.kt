@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
@@ -36,15 +37,23 @@ internal fun ToolGlyph(
     accent: Color,
     size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
     imageResource: Int? = null,
+    imageBitmap: ImageBitmap? = null,
 ) {
     Box(
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
-            .background(if (imageResource == null) accent else Color.Transparent),
+            .background(if (imageResource == null && imageBitmap == null) accent else Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
-        if (imageResource != null) {
+        if (imageBitmap != null) {
+            Image(
+                bitmap = imageBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        } else if (imageResource != null) {
             Image(
                 painter = painterResource(imageResource),
                 contentDescription = null,

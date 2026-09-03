@@ -3,7 +3,9 @@ package io.toolbox.host.runtime
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Parcel
 import android.text.Spanned
@@ -75,12 +77,16 @@ class RuntimeLiveNotificationRendererTest {
         try {
             supportStates.forEach { support ->
                 cards.forEach { card ->
-                    val notification = renderer.build(card, support, intent, intent)
+                    val toolColor = if (card.session.sessionId == other.sessionId) Color.BLUE else Color.RED
+                    val artwork = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(toolColor) }
+                    val notification = renderer.build(card, support, intent, intent, toolIcon = artwork)
                     val parcel = Parcel.obtain()
                     try {
                         notification.writeToParcel(parcel, 0)
                         parcel.setDataPosition(0)
                         val restored = Notification.CREATOR.createFromParcel(parcel)
+                        val largeIcon = requireNotNull(restored.getLargeIcon()).loadDrawable(context) as BitmapDrawable
+                        assertEquals(toolColor, largeIcon.bitmap.getPixel(largeIcon.bitmap.width / 2, largeIcon.bitmap.height / 2))
                         listOf(Notification.EXTRA_TITLE, Notification.EXTRA_TEXT, Notification.EXTRA_BIG_TEXT)
                             .forEach { key -> assertWhite(restored.extras.getCharSequence(key)) }
                         if (card.presentation != null) {
@@ -102,6 +108,10 @@ class RuntimeLiveNotificationRendererTest {
                             assertWhiteFocusPayload(payload)
                             assertTrue(payload.toString().contains(card.notificationId.toString()))
                             assertTrue(payload.toString().contains("${card.session.toolId}:${card.session.sessionId}"))
+                            assertTrue(payload.toString().contains("tool-icon-${card.session.sessionId}"))
+                            val placeholder = renderer.build(card, support, intent, intent)
+                            assertNull(placeholder.getLargeIcon())
+                            assertNotEquals(placeholder.extras.getString("miui.focus.param"), restored.extras.getString("miui.focus.param"))
                             assertTrue(payload.toString().contains("\"reopen\":\"close\""))
                             assertTrue(payload.toString().contains("\"islandOrder\":false"))
                         } else {

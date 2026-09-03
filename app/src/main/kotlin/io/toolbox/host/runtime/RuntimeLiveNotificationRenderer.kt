@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
@@ -35,6 +36,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         support: LiveNotificationSupportState,
         open: PendingIntent,
         stopCurrent: PendingIntent,
+        toolIcon: Bitmap? = null,
     ): Notification {
         val live = card.presentation
         val title = live?.request?.title ?: card.session.toolName
@@ -49,6 +51,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox)
+            .apply { toolIcon?.let { setLargeIcon(it) } }
             .setContentTitle(whiteLiveText(title))
             .setContentText(whiteLiveText(content))
             .setStyle(Notification.BigTextStyle().bigText(whiteLiveText(body)))
@@ -72,7 +75,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             if (support.androidLiveAllowed) runCatching { builder.setRequestPromotedOngoing(true) }
         }
         if (live != null && support.hyperOsSupported) {
-            runCatching { buildHyperOsV3(card, title, body, accent) }
+            runCatching { buildHyperOsV3(card, title, body, accent, toolIcon) }
                 .getOrNull()?.let(builder::addExtras)
         }
         return builder.build()
@@ -83,6 +86,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         notificationTitle: String,
         notificationBody: String,
         accent: Int,
+        toolIcon: Bitmap?,
     ) = FocusNotification.buildV3 {
         val live = requireNotNull(card.presentation)
         val request = live.request
@@ -91,13 +95,13 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         val displaySecondary = request.secondaryText
         val accentHex = String.format("#%06X", 0xFFFFFF and accent)
         val icon = createPicture(
-            "toolbox-live-icon",
-            Icon.createWithResource(appContext, R.drawable.ic_toolbox),
+            "tool-icon-${card.session.sessionId}",
+            toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.drawable.ic_toolbox),
         )
         business = "toolbox_live"
         notifyId = card.notificationId.toString()
         orderId = "${card.session.toolId}:${card.session.sessionId}"
-        sequence = live.sequence
+        sequence = live.sequence * 2 + if (toolIcon != null) 1 else 0
         updatable = true
         isShowNotification = true
         filterWhenNoPermission = false

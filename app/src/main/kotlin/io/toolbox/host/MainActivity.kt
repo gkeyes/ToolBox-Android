@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +27,7 @@ import io.toolbox.host.navigation.ToolBoxNavigation
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.ui.HostBootstrapScreen
+import io.toolbox.host.ui.LocalToolIconLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
@@ -86,14 +88,16 @@ class MainActivity : ComponentActivity() {
                     val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
                     ToolBoxTheme(mode = themeMode) {
                         ApplySystemBarAppearance(themeMode)
-                        ToolBoxNavigation(
-                            dependencies = state.dependencies,
-                            viewModelStoreOwner = this,
-                            catalogViewModel = catalogViewModel,
-                            importViewModel = importViewModel,
-                            settingsViewModel = settingsViewModel,
-                            contentResolver = contentResolver,
-                        )
+                        CompositionLocalProvider(LocalToolIconLoader provides state.dependencies.toolIcons) {
+                            ToolBoxNavigation(
+                                dependencies = state.dependencies,
+                                viewModelStoreOwner = this,
+                                catalogViewModel = catalogViewModel,
+                                importViewModel = importViewModel,
+                                settingsViewModel = settingsViewModel,
+                                contentResolver = contentResolver,
+                            )
+                        }
                         LaunchedEffect(pendingShortcutIntent) {
                             val launchIntent = pendingShortcutIntent ?: return@LaunchedEffect
                             val requestedToolId = launchIntent.takeIf { it.action == ACTION_OPEN_TOOL }

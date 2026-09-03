@@ -193,6 +193,31 @@ class LiveNotificationCoordinatorTest {
         assertNotEquals(a, restored.claim("replacement"))
     }
 
+    @Test
+    fun asynchronousArtworkRefreshIsIsolatedAndCannotResurrectAStoppedSession() {
+        val a = session("a", 0x550000, 1)
+        val b = session("b", 0x550001, 2)
+        val sink = RecordingSink()
+        val controller = RuntimeNotificationController(sink)
+        controller.render(snapshot(listOf(a, b)))
+        sink.events.clear()
+
+        controller.refreshArtwork(b.sessionId)
+        assertEquals(listOf("post:${b.notificationId}"), sink.events)
+        assertEquals(a.notificationId, sink.carrier)
+
+        controller.render(snapshot(listOf(a)))
+        sink.events.clear()
+        controller.refreshArtwork(b.sessionId)
+        assertTrue(sink.events.isEmpty())
+        assertEquals(setOf(a.notificationId), sink.visible.keys)
+
+        controller.clear()
+        sink.events.clear()
+        controller.refreshArtwork(a.sessionId)
+        assertTrue(sink.events.isEmpty())
+    }
+
     private fun session(name: String, notificationId: Int, startedAt: Long) = RuntimeBackgroundSessionUi(
         sessionId = "session-$name",
         toolId = "tool-$name",

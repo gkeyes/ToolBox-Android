@@ -11,6 +11,7 @@ import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.CoreDataStores
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.importflow.ImportViewModel
+import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.runtime.RuntimeSessionManager
@@ -45,6 +46,8 @@ internal class HostDependencies(
     ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
     private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
 ) {
+    val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
+
     private val deferredRuntimeProfileManager = lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
         runtimeProfileManagerFactory,
@@ -114,6 +117,7 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
                     repositories = stores.repositories,
                     runtimeDataCleaner = runtimeDataCleaner,
                     background = background,
+                    invalidateToolIcon = dependencies.toolIcons::invalidate,
                 )
             },
             backgroundOperations = backgroundOperations,

@@ -43,6 +43,11 @@ internal class RuntimeNotificationController(private val sink: RuntimeNotificati
         }
     }
 
+    fun refreshArtwork(sessionId: String) {
+        val card = published.values.firstOrNull { it.session.sessionId == sessionId } ?: return
+        sink.post(card)
+    }
+
     fun clear() {
         if (carrierId != null) sink.stopForeground()
         published.keys.toList().forEach(sink::cancel)

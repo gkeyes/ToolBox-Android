@@ -374,11 +374,11 @@ private fun CatalogToolRow(
                     .padding(start = ToolBoxThemeTokens.spacing.oneHalf, end = ToolBoxThemeTokens.spacing.half),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToolGlyph(
-                    icon = visual.icon,
-                    accent = visual.accent,
+                CatalogToolGlyph(
+                    toolId = tool.toolId,
+                    versionCode = tool.versionCode,
+                    visual = visual,
                     size = ToolBoxThemeTokens.sizes.compactToolGlyph,
-                    imageResource = visual.imageResource,
                 )
                 Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
                 Column(Modifier.weight(1f)) {
@@ -414,11 +414,11 @@ private fun CatalogRecentCard(
         contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.oneHalf),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolGlyph(
-                icon = visual.icon,
-                accent = visual.accent,
+            CatalogToolGlyph(
+                toolId = tool.toolId,
+                versionCode = tool.versionCode,
+                visual = visual,
                 size = 38.dp,
-                imageResource = visual.imageResource,
             )
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             Column(Modifier.weight(1f)) {
@@ -446,10 +446,10 @@ private fun ToolIdentity(tool: CatalogTool) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolGlyph(
-            icon = visual.icon,
-            accent = visual.accent,
-            imageResource = visual.imageResource,
+        CatalogToolGlyph(
+            toolId = tool.toolId,
+            versionCode = tool.versionCode,
+            visual = visual,
         )
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
         Column(Modifier.weight(1f)) {
@@ -567,13 +567,13 @@ internal fun CatalogStatusState(message: String) {
     }
 }
 
-private data class ToolVisual(
+internal data class ToolVisual(
     val icon: ToolBoxIconKey,
     val accent: Color,
     val imageResource: Int? = null,
 )
 
-private fun CatalogTool.visual(primary: Color): ToolVisual = when (toolId) {
+internal fun CatalogTool.visual(primary: Color): ToolVisual = when (toolId) {
     "io.toolbox.positioncalculator" ->
         ToolVisual(ToolBoxIconKey.Calculator, primary, R.drawable.example_position_calculator)
     "io.toolbox.quicknotes" ->

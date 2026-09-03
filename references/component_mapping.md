@@ -26,6 +26,7 @@ implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 | 工具列表 | surface/card、menu、search | `GroupedSurface`、`ToolRow`、`ToolSearchField` | 48dp 搜索、72–80dp 行、stable key、整行打开。 |
 | 导入反馈 | progress、snackbar、dialog | `ImportFeedback` | 选择 → 内部检查 → 成功/失败；没有审核卡/风险徽标。 |
 | 工具详情 | grouped surface、menu、dialog | `ToolDetailSection` | 打开、权限、后台任务、删除必须真实。 |
+| 工具身份图 | Compose `Image`、Android `Bitmap` | `CatalogToolGlyph`、`ToolIconLoader` | 从当前版本 `manifest.icon` 异步加载；列表/详情/运行区、通知内容图及超级岛同源，来源小图标仍是宿主。 |
 | 工具权限 | preference switch | `ToolBoxSwitchSettingRow` | 整行与开关可点；映射实际 manifest + handler。 |
 | 后台任务 | grouped rows、status、dialog | `TaskRow` | 显示真实任务、结果和取消，不展示审计/恢复。 |
 | 设置 | arrow preference | `SettingsSection` | 主题、后台保障、工具权限、Developer Help。 |

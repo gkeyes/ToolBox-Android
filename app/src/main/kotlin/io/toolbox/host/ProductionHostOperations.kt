@@ -66,6 +66,7 @@ internal class ProductionHostPackageOperations(
     private val repositories: CoreDataRepositories,
     private val runtimeDataCleaner: RuntimeDataCleaner,
     private val background: HostBackgroundOperations,
+    private val invalidateToolIcon: suspend (String) -> Unit = {},
 ) : HostPackageOperations, HostPackageMaintenance {
     private val packages: ToolPackageManager = ToolPackageManagers.create(
         privateFilesDirectory = application.filesDir,
@@ -163,6 +164,7 @@ internal class ProductionHostPackageOperations(
     }
 
     private suspend fun clearRuntimeState(toolId: String, removeShortcut: Boolean) {
+        invalidateToolIcon(toolId)
         background.cancelTool(toolId)
         if (removeShortcut) ForegroundCapabilityBroker.clearToolShortcut(application, toolId)
         when (

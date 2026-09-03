@@ -302,6 +302,12 @@ Android 16+ 在系统允许时请求 promoted ongoing；每张卡不带 `GROUP_S
   inset 只由一个 surface 消费一次，保留设备自己的手势小白条。
 - 工具列表使用 stable key/content type；一个滚动轴只有一个 Lazy 容器；图标/文件/数据库
   和网络不在主线程；Tab 切换保留页面滚动状态。
+- `ToolIconLoader` 在 IO dispatcher 读取已安装 catalog 对应的 bundle 与经身份校验的 manifest.icon；
+  路径不可逃逸、不可经符号链接读取，图片有编码大小、源像素及 SVG 静态复杂度保护。PNG/JPEG/WebP
+  使用系统 ImageDecoder，静态 SVG 使用固定 AndroidSVG 1.4；禁止实体和外部解析器，不创建 WebView。
+  缩略图等比归一到 256px，由工具版本键和 4MiB 内存 LRU 复用，替换/删除失效。列表、最近、详情、
+  首页运行区和通知共用；普通通知使用 largeIcon，HyperOS ticker/AOD/岛图使用同一位图，smallIcon 保留宿主身份。
+  前台服务先用默认图完成承载，再按会话异步补图；只更新当前仍存活会话，补图推进展示序号且不切换承载卡。
 - 普通行 64–80dp、搜索框 48dp、最小触控目标 48dp。字体可换行/自然增高，禁止把顶栏、
   搜索框或底栏乘以 `fontScale`。
 - 每页状态栏、cutout、IME、导航/手势 inset 只能消费一次；IME 只由有输入焦点的内容区处理。

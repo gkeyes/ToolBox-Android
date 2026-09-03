@@ -148,6 +148,7 @@ dependencies {
     implementation(libs.miuix.nav)
     implementation(libs.okhttp)
     implementation(libs.focus.api)
+    implementation(libs.androidsvg)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
