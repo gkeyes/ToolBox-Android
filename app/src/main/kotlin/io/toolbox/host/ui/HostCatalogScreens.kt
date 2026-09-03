@@ -69,6 +69,7 @@ internal fun ToolManagerScreen(
     onInstallExamples: () -> Unit,
     onDismissImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
+    runningTools: @Composable () -> Unit = {},
 ) {
     val subtitle = if (state.tools.isEmpty()) "轻量网页工具架" else "${state.tools.size} 个已安装工具"
     PrimaryScreen(
@@ -120,6 +121,8 @@ internal fun ToolManagerScreen(
                     )
                 }
             }
+
+            item("running-tools", contentType = "running-tools") { runningTools() }
 
             when {
                 !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }

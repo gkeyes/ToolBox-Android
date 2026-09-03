@@ -34,12 +34,15 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostDependencies
+import io.toolbox.host.HostFeatureViewModelFactory
 import io.toolbox.host.PermissionCenterViewModelFactory
 import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.background.BackgroundTasksScreen
 import io.toolbox.host.background.BackgroundSafeguardsScreen
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogViewModel
+import io.toolbox.host.catalog.CatalogAction
+import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.help.DeveloperHelpScreen
 import io.toolbox.host.importflow.ContentResolverPackageInputFactory
 import io.toolbox.host.importflow.ImportViewModel
@@ -52,6 +55,7 @@ import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.MainDestination
+import io.toolbox.host.ui.CatalogRunningTools
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellPreviewContent
 import io.toolbox.host.ui.RuntimeShellScreen
@@ -234,6 +238,8 @@ internal fun ToolBoxNavigation(
             ) {
                 entry<ToolManagerRoute>(transition = PrimaryTabFadeTransition) {
                     ToolManagerRouteContent(
+                        dependencies = dependencies,
+                        viewModelStoreOwner = viewModelStoreOwner,
                         catalogViewModel = catalogViewModel,
                         importViewModel = importViewModel,
                         listState = toolsListState,
@@ -450,6 +456,8 @@ private fun SecondaryRouteContent(
 
 @Composable
 private fun ToolManagerRouteContent(
+    dependencies: HostDependencies,
+    viewModelStoreOwner: ViewModelStoreOwner,
     catalogViewModel: CatalogViewModel,
     importViewModel: ImportViewModel,
     listState: androidx.compose.foundation.lazy.LazyListState,
@@ -457,6 +465,10 @@ private fun ToolManagerRouteContent(
     onImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
 ) {
+    val runningToolsViewModel = remember(dependencies, viewModelStoreOwner) {
+        ViewModelProvider(viewModelStoreOwner, HostFeatureViewModelFactory(dependencies))
+            .get("host.running-tools", RunningToolsViewModel::class.java)
+    }
     val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
     val importState by importViewModel.state.collectAsStateWithLifecycle()
     ToolManagerScreen(
@@ -469,6 +481,13 @@ private fun ToolManagerRouteContent(
         onInstallExamples = importViewModel::installBundledExamples,
         onDismissImport = importViewModel::dismissMessage,
         onOpenDetails = onOpenDetails,
+        runningTools = {
+            CatalogRunningTools(
+                viewModel = runningToolsViewModel,
+                tools = catalogState.tools,
+                onOpen = { catalogViewModel.dispatch(CatalogAction.RequestRuntimeLaunch(it)) },
+            )
+        },
     )
 }
 

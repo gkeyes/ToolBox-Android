@@ -119,6 +119,20 @@
 
 - `github-actions-watcher-v1.0.1`：本地只运行 JS 语法、Node 模型测试与浏览器界面检查，不运行 Gradle、模拟器或 APK 构建；正式包由 GitHub CI 两次打包比对，并使用 production `ToolPackageManager` 验证实际 `.tbx` 可导入，把结果、提交号和产物哈希写入独立 artifact 内的 `BUILD_AND_TEST_RECEIPT.txt` 与 `SHA256SUMS.txt`。浏览器通过生产页面事件与固定 GitHub 响应验证页内展开三个分支、点击选择、清除旧手填值、切换全部分支和恢复选择，以及键盘打开与 Escape 收起；17 项 Node 模型测试通过。不把浏览器结果当作 Android WebView 验收。真机后台、锁屏和 HyperOS 超级岛状态保持 `NOT_RUN_USER_OWNED`，由用户验收后补充证据。
 
+## 首页正在运行（2026-09-03，本地实现）
+
+| 测试/检查 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `RunningToolsViewModelTest` | 防止停止误伤其他会话、重复执行或过期弹层停止新环境。 | 生产 ViewModel 接入可控会话流和停止函数，覆盖取消、重复确认、源状态消失、同工具新 session 替换、失败后重试。加入既有 host gate 的最小 JVM 测试集合。 | 只有确认的当前 sessionId 被停止；列表只随真实来源移除；旧弹层失效；错误不泄漏内部信息。 |
+| `CatalogRunningToolsTest` | 确认入口位置与两个独立操作，而不是只有静态状态标签。 | 生产首页、分组和 ViewModel，回放零会话到两会话、点击名称、取消停止、逐个确认停止；另外以 2× 字体检查名称和状态按钮的独立语义及至少 48dp 目标。 | 运行区位于最近使用上方；名称只打开；确认只停止所选；最后一个停止后分组隐藏。 |
+| `HomeRunningToolsPreviews` | 为原生浅色、深色、2× 字体、中等屏幕和停止确认提供一致的审图入口。 | 使用生产 `ToolManagerScreen` 与 `CatalogRunningToolsContent` 的 Compose Preview；原 17 项截图测试不改动、不替换。 | 真实背景会话与目录夹具一致；长名称可换行，状态按钮清晰；不得把 HTML 示意图当作原生截图。 |
+| 静态边界 | 新入口不得改变后台生命周期、通知、权限或 API。 | 安全不变量扫描、门禁脚本语法及差异检查；核对页面只调用现有 `RuntimeSessionManager.stopSession(sessionId)` 和目录打开操作。 | 未新增网络/数据库/通知机制，安全扫描通过，新增状态不在导航根收集。 |
+
+- 本轮没有运行 Gradle、Kotlin 编译、模拟器、真机或 GitHub Actions；新增 JVM/Compose 测试尚未执行，原生 Preview 尚未渲染。它们属于待 GitHub 编译和真机验收项目，不能记为通过。
+- 本地 Kotlin LSP daemon 不可达；未通过安装开发环境或本机编译绕过用户约束。静态扫描不等同于 Kotlin 类型检查或原生交互验证。
+- 首页继续复用已安装列表的图标策略：四个内置范例使用既有图片，外部工具使用既有分类图标；本轮不扩大到包内图标加载。
+- 已执行：生产源码安全不变量扫描、门禁 shell 语法检查和差异空白检查均退出成功。运行按钮浅/深色文字与背景 Token 的计算对比度分别为 4.83:1、7.60:1；这不是最终屏幕渲染或 TalkBack 实测结果。
+
 ## 工具图标贯通（2026-09-03，本地实现）
 
 图标来自当前安装包 manifest.icon，列表、通知内容图和 HyperOS 岛图共用异步加载结果。

@@ -4,18 +4,24 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -341,4 +347,38 @@ fun ToolBoxTextButton(
             color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
         ),
     )
+}
+
+@Composable
+fun ToolBoxRunningStatusButton(
+    stopping: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    Button(
+        onClick = onClick,
+        modifier = modifier.sizeIn(
+            minWidth = ToolBoxThemeTokens.sizes.touchTarget,
+            minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        ),
+        enabled = enabled,
+        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        colors = ButtonDefaults.buttonColorsPrimary(
+            color = colors.softSuccess,
+            contentColor = colors.onSoftSuccess,
+        ),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!stopping) {
+                Box(Modifier.size(ToolBoxThemeTokens.spacing.compact).background(colors.onSoftSuccess, CircleShape))
+                Spacer(Modifier.width(ToolBoxThemeTokens.spacing.compact))
+            }
+            ToolBoxText(
+                text = if (stopping) "停止中" else "运行中",
+                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.onSoftSuccess),
+            )
+        }
+    }
 }

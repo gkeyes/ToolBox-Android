@@ -10,6 +10,7 @@ import io.toolbox.core.data.CoreDataInitializationException
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.CoreDataStores
 import io.toolbox.host.catalog.CatalogViewModel
+import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.permissions.PermissionCenterViewModel
@@ -294,6 +295,10 @@ internal class HostFeatureViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
+        RunningToolsViewModel::class.java.isAssignableFrom(modelClass) -> RunningToolsViewModel(
+            sessions = dependencies.runtimeSessions.sessions,
+            stopSession = dependencies.runtimeSessions::stopSession,
+        ) as T
         CatalogViewModel::class.java.isAssignableFrom(modelClass) -> CatalogViewModel(
             catalog = dependencies.repositories.catalog,
             organization = dependencies.repositories.organization,

@@ -43,6 +43,7 @@ data class ToolBoxColorScheme(
     val divider: Color,
     val softPrimary: Color,
     val softSuccess: Color,
+    val onSoftSuccess: Color,
     val softWarning: Color,
     val softDanger: Color,
 )
@@ -114,6 +115,7 @@ private val LightToolBoxColors = ToolBoxColorScheme(
     divider = Color(0xFFEDEDEF),
     softPrimary = Color(0xFFEAF3FF),
     softSuccess = Color(0xFFEAF8F0),
+    onSoftSuccess = Color(0xFF197B48),
     softWarning = Color(0xFFFFF4E2),
     softDanger = Color(0xFFFFEEEE),
 )
@@ -132,6 +134,7 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
     divider = Color(0xFF303136),
     softPrimary = Color(0xFF183A63),
     softSuccess = Color(0xFF173D27),
+    onSoftSuccess = Color(0xFF75E395),
     softWarning = Color(0xFF493414),
     softDanger = Color(0xFF4B2524),
 )
