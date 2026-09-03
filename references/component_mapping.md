@@ -30,7 +30,7 @@ implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 | 后台任务 | grouped rows、status、dialog | `TaskRow` | 显示真实任务、结果和取消，不展示审计/恢复。 |
 | 设置 | arrow preference | `SettingsSection` | 主题、后台保障、工具权限、Developer Help。 |
 | 后台保障 | preference switch、grouped rows | `BackgroundSafeguardsScreen` | 总开关、持续会话停止按钮和真实系统设置入口。 |
-| Developer Help | top bar、grouped list、text | `DeveloperHelpScreen` | 离线内容来自 API v1 和三个范例。 |
+| Developer Help | top bar、search、grouped list、text button | `DeveloperHelpScreen`、`ToolBoxDisclosureRow` | 同一份离线 Markdown；章节/主题折叠、搜索、代码复制与四个范例入口。 |
 | 运行容器 | `SmallTopAppBar`、menu、snackbar | `RuntimeToolBar`、`MiniAppWebView` | 顶部约 48dp；无底栏/安全条，WebView 填满其余空间。 |
 
 ## 3. ToolBox 适配层

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>我的工具</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>我的工具</h1>
+    <label for="draft">内容</label>
+    <textarea id="draft" rows="5" placeholder="写下一段内容"></textarea>
+    <div class="actions">
+      <button id="save" type="button" disabled>保存</button>
+      <button id="copy" type="button" disabled>复制</button>
+    </div>
+    <p id="status" role="status" aria-live="polite">正在连接 ToolBox…</p>
+  </main>
+</body>
+</html>

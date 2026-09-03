@@ -1,63 +1,28 @@
-# ToolBox JS API 使用示例
+# ToolBox 小工具开发
 
-```js
-await ToolBox.ready();
-await ToolBox.ui.toast("ToolBox 已连接");
+[完整开发手册](help/manual.md) 是 App「设置 → 开发帮助」离线读取的同一份内容，包含分层教程、
+完整最小工程、权限、网络、后台与通知、系统能力、打包和错误排查。
+
+## 从零开始
+
+1. 复制 [最小工程](templates/minimal) 到自己的目录，修改 `manifest.json` 中的工具身份。
+2. 在仓库根目录执行下面的通用打包命令。只需要 Python 3.9+，不编译 APK。
+3. 在 ToolBox 导入生成的 `.tbx`，按手册验证保存、重开恢复和复制。
+
+```sh
+python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 ```
 
-## 存储
+自己的目录也使用同一命令；输出要放在源目录之外。输出已存在时默认拒绝覆盖。
+`scripts/package-examples.sh` 仅用于四个内置范例，不是任意目录打包器。
 
-```js
-await ToolBox.storage.set("draft", { value: 12.5, updatedAt: Date.now() });
-const draft = await ToolBox.storage.get("draft");
-```
+## 接口与维护
 
-## 权限与剪贴板
+- [TypeScript 接口](toolbox-api.d.ts)：参数、返回值和事件订阅的当前合同。
+- [manifest schema](../schema/manifest.schema.json)：声明字段及约束。
+- [通用打包器](../scripts/package-tool.py)：递归包含静态资源，重新生成完整性清单。
+- `node scripts/check-developer-help.mjs`：静态检查手册、嵌入源码与接口覆盖，不启动 Gradle。
 
-工具只能调用 manifest 已声明、且用户已在宿主权限页开启的能力。ToolBox API 不提供绕过宿主
-权限页的请求方法；缺少授权时调用会返回 `PERMISSION_DENIED`。
-
-```js
-await ToolBox.clipboard.writeText("结果：12.50");
-```
-
-## 文件
-
-```js
-const input = await ToolBox.files.open(["text/plain"]);
-if (input) {
-  const bytes = await ToolBox.files.read(input.token);
-}
-
-await ToolBox.files.save("result.txt", "text/plain", "done");
-```
-
-## 受控网络
-
-manifest 必须声明 `network` 权限和目标域名：
-
-```js
-const response = await ToolBox.network.request({
-  url: "https://api.example.com/v1/data",
-  method: "GET"
-});
-```
-
-首版网络代理只支持 GET，不接受请求体、认证或 cookie。页面自身的 `fetch`、远程 script、
-iframe 和 WebSocket 默认被 CSP 与宿主拦截。
-
-## 后台任务
-
-```js
-const taskId = await ToolBox.background.enqueue({
-  key: `refresh-${Date.now()}`,
-  operation: {
-    type: "httpGet",
-    url: "https://api.example.com/v1/data"
-  },
-  constraints: { network: "connected" }
-});
-```
-
-后台任务只支持 `httpGet` 和 `notify`。周期任务最短 15 分钟；不支持指定运行时间、充电条件或
-低电量条件。
+网络已支持 GET、POST、PUT、PATCH、DELETE、HEAD、普通认证 Header 和请求体；始终受
+manifest 域名、HTTPS、地址检查及消息预算约束。持续运行使用 `background.start/listSessions`；
+`background.list` 仍表示 WorkManager 任务。具体示例均在完整手册中。

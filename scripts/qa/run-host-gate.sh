@@ -107,6 +107,7 @@ run_gate api-contract :tool-api:verifyToolBoxApiContract || overall_exit=1
 run_gate security verifySecurityInvariants || overall_exit=1
 run_gate compile \
     :app:compileDebugKotlin \
+    :app:compileDebugAndroidTestKotlin \
     :tool-runtime:compileDebugAndroidTestKotlin || overall_exit=1
 run_gate admitted-unit \
     :app:testDebugUnitTest \
@@ -116,6 +117,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.importflow.ToolBoxOpenDocumentTest' \
     --tests 'io.toolbox.host.catalog.CatalogViewModelTest' \
     --tests 'io.toolbox.host.ui.HostScreenLayoutContractTest' \
+    --tests 'io.toolbox.host.help.DeveloperHelpDocumentTest' \
     --tests 'io.toolbox.host.permissions.PermissionCenterViewModelTest' \
     --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
     --tests 'io.toolbox.host.background.NetworkBoundaryTest' \

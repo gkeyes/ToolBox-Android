@@ -48,6 +48,11 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
+      - name: Verify offline developer help and generic packager
+        run: |
+          node scripts/check-developer-help.mjs
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
+
       - name: Verify protocol, security, compile and admitted unit suite
         run: >-
           bash scripts/qa/run-host-gate.sh
@@ -64,6 +69,7 @@ jobs:
           path: |
             app/src/screenshotTestDebug/reference
             app/build/reports/screenshotTest
+            app/build/outputs/screenshotTest-results
           if-no-files-found: warn
           retention-days: 14
 
@@ -78,7 +84,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package statically verified v0.3.3 delivery
+    name: Package statically verified v0.3.4 delivery
     needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
@@ -188,6 +194,8 @@ jobs:
           grep -Fx 'assets/quick-notes.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
           grep -Fx 'assets/background-task-demo.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
           grep -Fx 'assets/notification-lab.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
+          grep -Fx 'assets/manual.md' "$RUNNER_TEMP/toolbox-apk-files.txt"
+          unzip -p "$apk_path" assets/manual.md | cmp - sdk/help/manual.md
           ! grep -Fx 'assets/stock-monitor.tbx' "$RUNNER_TEMP/toolbox-apk-files.txt"
 
       - name: Verify stock monitor package is reproducible and uses the public API
@@ -226,41 +234,46 @@ jobs:
           [[ -f "$apk_path" ]]
           stock_path="$GITHUB_WORKSPACE/build/examples/stock-monitor.tbx"
           [[ -f "$stock_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.3.3-debug.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.3.4-debug.apk"
           cp "$stock_path" "$delivery_dir/stock-monitor-v1.1.1.tbx"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.3.3\n'
-            printf 'VERSION_CODE=6\n'
+            printf 'VERSION_NAME=0.3.4\n'
+            printf 'VERSION_CODE=7\n'
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$TOOLBOX_APK_CERT_SHA256"
             printf 'STOCK_MONITOR_VERSION=1.1.1\n'
             printf 'STOCK_MONITOR_VERSION_CODE=3\n'
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
+            printf 'DEVELOPER_HELP_CHECK=PASS\n'
+            printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
+            printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'
+            printf 'ANDROID_INSTRUMENTATION_COMPILE=PASS\n'
+            printf 'ANDROID_INSTRUMENTATION_EXECUTION=NOT_RUN_USER_OWNED\n'
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
             printf 'STOCK_MONITOR_SOURCE=build/examples/stock-monitor.tbx\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
-            printf 'DELIVERY_FILES=toolbox-v0.3.3-debug.apk,stock-monitor-v1.1.1.tbx,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.3.4-debug.apk,stock-monitor-v1.1.1.tbx,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.3.3-debug.apk \
+              toolbox-v0.3.4-debug.apk \
               stock-monitor-v1.1.1.tbx \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.3.3 delivery
+      - name: Upload verified v0.3.4 delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.3.3-${{ github.sha }}
+          name: toolbox-v0.3.4-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.3.3-debug.apk
+            build/ci-delivery/toolbox-v0.3.4-debug.apk
             build/ci-delivery/stock-monitor-v1.1.1.tbx
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt

@@ -31,7 +31,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
    watch、精确闹钟，以及剪贴板、分享、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
 
 仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
-交付，不加入 APK assets；0.3.3 GitHub 产物包含 APK、行情哨兵、SHA256 清单和同提交测试回执。
+交付，不加入 APK assets；0.3.4 候选版 GitHub 产物包含 APK、行情哨兵、SHA256 清单和同提交测试回执。
 
 ## 本地运行
 

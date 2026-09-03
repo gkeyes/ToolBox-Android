@@ -48,8 +48,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.3.3"
+        versionCode = 7
+        versionName = "0.3.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -102,6 +102,12 @@ android {
 
     sourceSets.getByName("main").assets.directories.add(
         bundledExamplesDir.get().asFile.absolutePath,
+    )
+    sourceSets.getByName("main").assets.directories.add(
+        rootProject.layout.projectDirectory.dir("sdk/help").asFile.absolutePath,
+    )
+    sourceSets.getByName("test").resources.srcDir(
+        rootProject.layout.projectDirectory.dir("sdk/help"),
     )
 }
 

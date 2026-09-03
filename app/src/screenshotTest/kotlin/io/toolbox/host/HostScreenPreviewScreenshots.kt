@@ -2,6 +2,8 @@ package io.toolbox.host
 
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import io.toolbox.core.ui.theme.ToolBoxTheme
@@ -10,7 +12,9 @@ import io.toolbox.host.background.BackgroundSafeguardsContent
 import io.toolbox.host.background.BackgroundTasksContent
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
-import io.toolbox.host.help.DeveloperHelpScreen
+import io.toolbox.host.help.DeveloperHelpPage
+import io.toolbox.host.help.HelpLoadState
+import io.toolbox.host.help.parseHelpDocument
 import io.toolbox.host.permissions.PermissionCenterContent
 import io.toolbox.host.preview.PreviewHostFixtures
 import io.toolbox.host.settings.SettingsContent
@@ -224,8 +228,42 @@ fun MediumSettingsDarkScreenshot() {
 @Composable
 fun DeveloperHelpScreenshot() {
     ToolBoxTheme {
-        DeveloperHelpScreen(onBack = {}, onInstallExamples = {})
+        DeveloperHelpPreview()
     }
+}
+
+@PreviewTest
+@Preview(name = "Developer help dark", showBackground = true, device = CompactPhone)
+@Composable
+fun DeveloperHelpDarkScreenshot() {
+    ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
+        DeveloperHelpPreview()
+    }
+}
+
+@PreviewTest
+@Preview(name = "Developer help large text", showBackground = true, device = CompactPhone, fontScale = 2f)
+@Composable
+fun DeveloperHelpLargeTextScreenshot() {
+    ToolBoxTheme {
+        DeveloperHelpPreview()
+    }
+}
+
+@Composable
+private fun DeveloperHelpPreview() {
+    val context = LocalContext.current
+    val document = remember(context) {
+        context.assets.open("manual.md").bufferedReader(Charsets.UTF_8).use {
+            parseHelpDocument(it.readText())
+        }
+    }
+    DeveloperHelpPage(
+        state = HelpLoadState.Loaded(document),
+        onBack = {},
+        onInstallExamples = {},
+        onRetry = {},
+    )
 }
 
 @PreviewTest

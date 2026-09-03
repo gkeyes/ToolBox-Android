@@ -268,6 +268,11 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
 `filterWhenNoPermission=false`。`canShowFocus=false` 只作为返回状态，不阻止提交。增强接口的
 `REQUESTED` 仅表示数据已交给系统；协议不存在、权限不足或系统不展示时，普通持续通知仍然成立。
 
+实时活动使用深色展示面，宿主可控制的标题、主值、辅助信息、正文和操作文字固定为白色；
+该规则同样覆盖准备中、进程恢复占位和多会话摘要。原生通知通过文字颜色 span 显式指定，Focus V3
+的明暗两套文字字段均为 `#FFFFFF`，大岛文本不继承强调色。普通非实时通知仍遵循系统主题，
+本规则不修改权限、通知内容或 API 合同；系统自绘的时间及其他装饰仍由 SystemUI 控制。
+
 ## 8. Miuix 页面与布局
 
 - 使用 Miuix `0.9.4-rc01` 与 `miuix-nav`，所有业务页面只依赖 ToolBox 适配组件。一级页面使用
@@ -286,9 +291,14 @@ WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结�
 
 设置最终只显示真实功能：主题、后台保障、工具权限、Developer Help。后台保障集中管理总开关、
 持续会话、通知、后台定位、精确闹钟、电池策略、HyperOS 自启动/省电入口和实时通知增强状态。
-Developer Help 是离线原生页面，
-从 API v1 合同和四个实际范例派生，说明包目录、manifest、permissions、API、打包、导入、
-后台限制和错误码；首页空状态与帮助页可触发“安装四个范例”，走同一导入器。
+Developer Help 是离线原生页面，使用 `sdk/help/manual.md` 作为 App 与仓库共用的正文来源。
+章节、主题默认折叠且同级互斥展开，搜索匹配标题、正文和代码；代码可复制，隐藏内容不参与
+组合。读取与解析在 IO dispatcher 完成，不引入 Markdown UI 框架。手册覆盖完整最小工程、
+manifest、权限、网络、后台生命周期、普通/实时通知、系统能力、打包、导入和错误排查。
+`scripts/check-developer-help.mjs` 校验嵌入源码与模板、通用打包器和 TypeScript SDK 一致，
+并通过模拟桥执行基础与后台代码示例；它不替代 Android 验证。`scripts/package-tool.py`
+独立打包任意静态工具目录，四个内置范例仍使用原打包路径。首页空状态与帮助页继续提供
+“安装四个范例”，走同一导入器。
 
 ## 9. 四个示例
 
@@ -318,7 +328,7 @@ Developer Help 是离线原生页面，
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试 →
-APK/TBX 产物。0.3.3 上传 `toolbox-v0.3.3-debug.apk`、`stock-monitor-v1.1.1.tbx`、
+APK/TBX 产物。0.3.4 上传 `toolbox-v0.3.4-debug.apk`、`stock-monitor-v1.1.1.tbx`、
 `SHA256SUMS.txt` 和构建/测试回执；APK 内含四个范例。自动交付流程不启动模拟器；
 回执必须明确设备测试和超级岛展示未执行。相机、SAF、
 Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由用户在候选 APK 上真机验证。
@@ -330,4 +340,4 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 - 四个范例可由干净安装的候选 APK 导入并完成各自声明功能。
 - WebView、消息桥、包检查和网络代理符合第 2 节不变量。
 - 每项保留测试有理由/方法/预期；静态候选门禁结果与用户真机结果分开记录。
-- GitHub 只在静态门禁通过后发布 0.3.3 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。
+- GitHub 只在静态门禁通过后发布 0.3.4 APK、独立行情哨兵、SHA256 和同提交回执，不伪造设备验证结论。

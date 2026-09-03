@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "io.example.mytool",
+  "name": "我的工具",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.3.2",
+  "permissions": [
+    { "name": "storage", "reason": "保存输入内容" },
+    { "name": "clipboard.write", "reason": "点击按钮复制内容" }
+  ],
+  "securityProfile": "strict"
+}
