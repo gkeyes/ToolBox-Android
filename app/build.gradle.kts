@@ -70,7 +70,9 @@ android {
             stableSigningConfig?.let { signingConfig = it }
         }
         release {
+            isDebuggable = false
             isMinifyEnabled = true
+            isShrinkResources = true
             stableSigningConfig?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

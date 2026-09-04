@@ -40,7 +40,7 @@
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
 | GitHub 构建守望 | `github-model.test.js`；`DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，且独立打包检查不能替代宿主真实导入链路，必须保护历史样本、仓库分支选择、只读 API、后台摘要和最终 `.tbx` 可安装性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、仓库分支候选与近期 run 回退、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查与两次可重复打包，校验入口前 4096 字节可由当前已安装宿主完整解码，再把实际产物交给 production `ToolPackageManager` 以宿主 0.3.4 完成一次原子导入。 | 默认分支、仓库分支和近期 run 分支按顺序去重后进入下拉候选；所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；生产安装器返回 `Installed(io.toolbox.githubactionswatcher, 2, false)` 且无临时残留；CI 回执明确 APK、真机和超级岛未执行。 |
-| CI 交付 | `artifact-gate-receipt` | 防止协议/安全/编译/最小测试未过就发布 APK，也防止临时 Runner 每次生成不同调试签名而破坏覆盖安装。 | Actions 按 verify → delivery 的 `needs` 关系运行；delivery 必须从 GitHub Secrets 恢复固定 keystore，比较 keystore 与 APK 的 SHA-256 证书指纹，再检查 `toolbox-v0.3.6-debug.apk`、`SHA256SUMS.txt`、提交回执及 `DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED`、`HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED`。 | 任一静态门禁、签名密钥缺失或证书不一致时没有交付产物；连续 GitHub 构建的 APK 证书指纹一致；成功 APK 与回执来自同一提交并可按 SHA256 复验，不另交付 `.tbx`，回执明确真机与超级岛验证由用户执行。 |
+| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.3.8-release.apk`、SHA256 与同提交回执。 | 任一既有门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
 
 ## 执行原则
 
@@ -49,6 +49,14 @@
   instrumentation 或真实系统表面证据；前者不能替代后者。
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
+
+## 0.3.8 同签名 release 与体积优化（2026-09-04）
+
+- 理由：此前 APK 为 debug，已交付文件为 80,421,766 字节，其中 DEX 为 79,113,816 字节；主要体积不在四个范例。改用不可调试的 release，并开启已有 R8 配置对应的资源裁剪，不删功能、图标、ABI 或范例，不升级依赖。
+- 方法：保留全部现有协议、安全、JVM 与 17 项截图门禁；仅 GitHub 执行 `:app:assembleRelease`。核对实际 APK 的包名、0.3.8 (12)、非调试标记、固定证书、R8 输出及 Worker 原类名；对 APK 中四个 `.tbx` 和离线帮助逐字节比对。混淆映射按提交独立保存，便于还原后续真机异常。
+- 预期：新的 release 比已交付 debug 更小，沿用同一证书以支持覆盖安装；版本、数据库、公开 API 和权限保持不变。WorkManager 的持久化 Worker 类名由依赖自带 consumer rules 保留；Room 与 Kotlin serialization 复用各自 consumer rules，不加入整个依赖/模块 keep。Focus 当前生产路径使用生成 serializer 和直接构造，不使用模板反射 `copyFrom`。
+- 本地实际结果：帮助文档与模拟桥、安全扫描、workflow YAML 与 11 个 shell 步骤语法、差异空白检查通过；将实际已交付 debug APK 输入新增的 production release 产物校验，按预期以不可调试要求拒绝，不会把 debug 误交付为 release。
+- 结果记录：GitHub 成功后同提交回执记录实际字节数、签名与每项门禁；下载产物后再独立核对大小、哈希和旧 debug 签名。此处的打包检查不证明混淆后真机功能或性能；本轮不运行本机 Gradle、模拟器，也不安装或操作手机，真机与超级岛保持 `NOT_RUN_USER_OWNED`。
 
 ## 0.3.8 小工具更新保留权限（2026-09-04）
 
