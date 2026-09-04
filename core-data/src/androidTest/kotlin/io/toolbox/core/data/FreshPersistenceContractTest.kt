@@ -126,6 +126,76 @@ class FreshPersistenceContractTest {
         scope.coroutineContext[Job]!!.cancelAndJoin()
     }
 
+    @Test
+    fun permissionChoicesSurviveUpdateRollbackAndDatabaseReopen() = runTest {
+        var database = openDatabase()
+        try {
+            var failCommit = false
+            val installs = RoomInstallTransactionRepository(database)
+            val lifecycle = RoomCatalogLifecycleRepository(
+                database,
+                CatalogCommitHook { check(!failCommit) { "injected" } },
+            )
+            val grants = RoomPermissionGrantRepository(database)
+            val first = attempt().copy(initialGrants = listOf(
+                PermissionGrant(TOOL_ID, "storage", true, 1),
+                PermissionGrant(TOOL_ID, "network", false, 1),
+                PermissionGrant(TOOL_ID, "location", false, 1),
+            ))
+            assertEquals(
+                DataResult.Success(Unit),
+                installs.begin(InstallTransaction("tx", TOOL_ID, 1, InstallTransactionState.PREPARING, 1, 1)),
+            )
+            assertEquals(DataResult.Success(CommitInstallOutcome.Committed), lifecycle.commitInstall(first))
+            assertEquals(first.initialGrants.sortedBy(PermissionGrant::capability), grants.observeGrants(TOOL_ID).first())
+            val choices = listOf(
+                PermissionGrant(TOOL_ID, "location", true, 10),
+                PermissionGrant(TOOL_ID, "network", false, 11),
+                PermissionGrant(TOOL_ID, "storage", false, 12),
+            )
+            choices.forEach { assertEquals(DataResult.Success(Unit), grants.put(it)) }
+            val update = first.copy(
+                transactionId = "tx-update",
+                version = first.version.copy(versionCode = 2, version = "2.0.0", installedAt = 20),
+                initialGrants = listOf(
+                    PermissionGrant(TOOL_ID, "storage", true, 20),
+                    PermissionGrant(TOOL_ID, "network", false, 20),
+                    PermissionGrant(TOOL_ID, "notifications", false, 20),
+                    PermissionGrant(TOOL_ID, "device.basic", true, 20),
+                ),
+            )
+            assertEquals(
+                DataResult.Success(Unit),
+                installs.begin(InstallTransaction("tx-update", TOOL_ID, 2, InstallTransactionState.PREPARING, 20, 20)),
+            )
+            failCommit = true
+            assertEquals(DataResult.Failure.StorageFailure("commitInstall"), lifecycle.commitInstall(update))
+            assertEquals(choices, grants.observeGrants(TOOL_ID).first())
+            assertEquals(1, RoomCatalogRepository(database).observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+            assertEquals(InstallTransactionState.PREPARING, (installs.get("tx-update") as DataResult.Success).value!!.state)
+
+            val latest = PermissionGrant(TOOL_ID, "network", true, 21)
+            assertEquals(DataResult.Success(Unit), grants.put(latest))
+            failCommit = false
+            assertEquals(DataResult.Success(CommitInstallOutcome.Committed), lifecycle.commitInstall(update))
+            val expected = listOf(
+                PermissionGrant(TOOL_ID, "device.basic", false, 20),
+                latest,
+                PermissionGrant(TOOL_ID, "notifications", false, 20),
+                choices.last(),
+            )
+            assertEquals(expected, grants.observeGrants(TOOL_ID).first())
+            assertEquals(DataResult.Success(CommitInstallOutcome.AlreadyCommitted), lifecycle.commitInstall(update))
+            assertEquals(expected, grants.observeGrants(TOOL_ID).first())
+            database.close()
+            database = openDatabase()
+            assertEquals(expected, RoomPermissionGrantRepository(database).observeGrants(TOOL_ID).first())
+            assertEquals(2, RoomCatalogRepository(database).observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openDatabase() = Room.databaseBuilder(context, ToolBoxDatabase::class.java, DATABASE_NAME).build()
 
     private fun attempt() = CatalogInstallAttempt(

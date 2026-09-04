@@ -6,6 +6,7 @@ import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.CommittedInstall
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
+import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.memory.InMemoryCoreData
 import io.toolbox.tool.packagekit.PackageInput
@@ -103,6 +104,11 @@ class DirectPackageLifecycleTest {
             val first = manager.importAndInstall(ByteInput("v1.tbx", packageBytes(versionCode = 1)))
             assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), first)
             assertTrue(repositories.keyValues.put(TOOL_ID, "draft", "1", 1) is DataResult.Success)
+            val savedGrants = listOf(
+                PermissionGrant(TOOL_ID, "network", true, 10),
+                PermissionGrant(TOOL_ID, "storage", false, 11),
+            )
+            savedGrants.forEach { assertEquals(DataResult.Success(Unit), repositories.grants.put(it)) }
 
             val released = mutableListOf<String>()
             val replaced = mutableListOf<Pair<Int, Int>>()
@@ -138,6 +144,7 @@ class DirectPackageLifecycleTest {
             assertEquals(listOf("update:1:2"), released)
             assertEquals(listOf(1 to 2), replaced)
             assertEquals(ToolKvValue("draft", "1", 1), repositories.keyValues.observe(TOOL_ID, "draft").first())
+            assertEquals(savedGrants, repositories.grants.observeGrants(TOOL_ID).first())
 
             val duplicate = manager.importAndInstall(ByteInput("same.tbx", packageBytes(versionCode = 2)))
             assertTrue(
@@ -145,11 +152,13 @@ class DirectPackageLifecycleTest {
                     duplicate.failure.code == PackageOperationFailureCode.VERSION_NOT_NEWER,
             )
             assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+            assertEquals(savedGrants, repositories.grants.observeGrants(TOOL_ID).first())
 
             assertEquals(PackageUninstallResult.Uninstalled(TOOL_ID), manager.uninstall(TOOL_ID, cleanup))
             assertEquals(listOf("update:1:2", "uninstall"), released)
             assertNull(repositories.catalog.observeTool(TOOL_ID).first())
             assertNull(repositories.keyValues.observe(TOOL_ID, "draft").first())
+            assertEquals(emptyList<PermissionGrant>(), repositories.grants.observeGrants(TOOL_ID).first())
             assertFalse(Files.exists(root.resolve("miniapps/$TOOL_ID")))
             assertNoTransientFiles(root)
             assertNoPendingCleanup(root)

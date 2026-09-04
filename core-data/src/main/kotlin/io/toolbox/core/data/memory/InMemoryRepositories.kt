@@ -160,8 +160,15 @@ private class InMemoryCatalogLifecycleRepository(
                 categoryId = existing.metadata.categoryId,
             )
             val nextTool = InstalledTool(nextMetadata, attempt.version, existing?.lastOpenedAt)
+            val installedGrants = if (existing == null) {
+                attempt.initialGrants
+            } else {
+                attempt.initialGrants.map { declared ->
+                    state.grants.value[declared.toolId to declared.capability] ?: declared.copy(granted = false)
+                }
+            }
             val nextGrants = state.grants.value.filterKeys { it.first != attempt.metadata.id } +
-                attempt.initialGrants.associateBy { it.toolId to it.capability }
+                installedGrants.associateBy { it.toolId to it.capability }
             val replacedTaskIds = if (existing == null) {
                 emptySet()
             } else {

@@ -84,7 +84,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package statically verified v0.3.7 delivery
+    name: Package statically verified v0.3.8 delivery
     needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
@@ -232,13 +232,13 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.3.7-debug.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.3.8-debug.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.3.7\n'
-            printf 'VERSION_CODE=11\n'
+            printf 'VERSION_NAME=0.3.8\n'
+            printf 'VERSION_CODE=12\n'
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$TOOLBOX_APK_CERT_SHA256"
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
@@ -247,6 +247,8 @@ jobs:
             printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'
             printf 'NETWORK_GATEWAY_REGRESSION=PASS\n'
             printf 'PERMISSION_MANIFEST_REGRESSION=PASS\n'
+            printf 'PERMISSION_UPDATE_RETENTION_JVM=PASS\n'
+            printf 'PERMISSION_UPDATE_RETENTION_ROOM=COMPILED_NOT_RUN_USER_OWNED\n'
             printf 'INDEPENDENT_LIVE_NOTIFICATION_REGRESSION=PASS\n'
             printf 'LIVE_NOTIFICATION_HIDING=SYSTEM_DEFAULT\n'
             printf 'LIVE_NOTIFICATION_MULTI_CARD_SYSTEM_UI=NOT_RUN_USER_OWNED\n'
@@ -258,22 +260,22 @@ jobs:
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/debug/app-debug.apk\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
-            printf 'DELIVERY_FILES=toolbox-v0.3.7-debug.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.3.8-debug.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.3.7-debug.apk \
+              toolbox-v0.3.8-debug.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.3.7 delivery
+      - name: Upload verified v0.3.8 delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.3.7-${{ github.sha }}
+          name: toolbox-v0.3.8-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.3.7-debug.apk
+            build/ci-delivery/toolbox-v0.3.8-debug.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

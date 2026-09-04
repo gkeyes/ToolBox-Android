@@ -69,6 +69,9 @@ internal interface PermissionGrantDao {
     @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY capability")
     fun observeForTool(toolId: String): Flow<List<PermissionGrantEntity>>
 
+    @Query("SELECT * FROM permission_grants WHERE toolId = :toolId ORDER BY capability")
+    suspend fun getForTool(toolId: String): List<PermissionGrantEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: PermissionGrantEntity)
 

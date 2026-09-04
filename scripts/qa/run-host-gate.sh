@@ -108,6 +108,7 @@ run_gate security verifySecurityInvariants || overall_exit=1
 run_gate compile \
     :app:compileDebugKotlin \
     :app:compileDebugAndroidTestKotlin \
+    :core-data:compileDebugAndroidTestKotlin \
     :tool-runtime:compileDebugAndroidTestKotlin || overall_exit=1
 run_gate admitted-unit \
     :app:testDebugUnitTest \

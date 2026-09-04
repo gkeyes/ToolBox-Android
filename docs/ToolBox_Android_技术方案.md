@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.3.6 (10)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.3.8 (12)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   `DataMigration` 或 `fallbackToDestructiveMigration`。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
@@ -102,7 +102,8 @@ DataStore 只包含 `theme` 和 `backgroundEnabled`。工具数量、KV 限额�
 
 1. `ACTION_OPEN_DOCUMENT` 选择单个 `.tbx`，拷贝到私有导入临时目录。
 2. 在后台完成检查并生成仅供安装器使用的不可变结果。
-3. 按 manifest 和默认策略生成初始工具 grants。
+3. 首次安装按 manifest 和默认策略生成工具 grants；更新时在同一个 Room 事务内保留仍声明能力的
+   原有开启/关闭状态及授权时间，新增能力默认关闭，已移除能力的 grant 清理。
 4. 在文件 staged 目录与 Room 事务都成功后才切换为 active version。
 5. 成功时回到工具列表并显示简短成功反馈；失败显示可操作原因，删除 staged 目录、临时
    文件和未提交记录。
@@ -113,7 +114,7 @@ DataStore 只包含 `theme` 和 `backgroundEnabled`。工具数量、KV 限额�
 ### 4.3 版本、卸载与清理
 
 - 仅更高版本可更新；同版本或低版本显示简短失败，不写入任何状态。
-- 更新原子替换 active version。普通 KV 保留；旧 generation 的 secure-storage key、临时
+- 更新原子替换 active version。普通 KV 与新 manifest 仍声明的原有 grant 保留；旧 generation 的 secure-storage key、临时
   file token、runtime session、后台任务/结果和后台通知清理。首版没有回滚。
 - 卸载从工具详情的删除按钮与确认弹层触发，并清理代码、KV、grants、Keystore key、WebView Profile/无状态
   记录、会话、后台 Work、任务结果、后台通知与快捷方式。
@@ -140,10 +141,15 @@ Miuix `ToolBoxSwitchSettingRow`，整行与开关都可操作。只在 handler �
 工具未安装和读取失败：只有目录确实没有工具记录才显示不存在，只有成功读取且声明为空才显示
 没有权限；版本不满足、manifest 损坏等失败保留具体原因，不改动工具数据或 grant。
 
-默认打开：`storage`、`storage.secure`、`device.basic`、`clipboard.write`、`haptics`。
+首次安装默认打开：`storage`、`storage.secure`、`device.basic`、`clipboard.write`、`haptics`。
 `network`、`notifications`、`background.tasks`、`background.runtime`、`location.background`、
 `alarms`、文件、分享、读取剪贴板、相机、定位和快捷方式默认关闭。切换系统型能力时使用 Activity Result API 请求真实系统授权；拒绝就不
 写工具 grant，并提供前往系统设置的明确路径。回到前台和每次副作用调用前重算系统状态。
+
+更新同一工具不重置已有选择：读取提交时的当前 grant，只保留新 manifest 仍声明的能力，
+包括用户已关闭的能力；新增或移除后重新加入的能力一律关闭，不套用首次安装的默认开启值。
+合并与版本切换共用一个事务，失败回滚不改变授权；重复提交不会覆盖之后的用户选择。
+这只保留工具级开关，不绕过 Android 系统权限、声明、域名白名单或运行时校验；也不恢复旧版已清除的授权记录。
 
 关闭 grant 立即停止新调用；关闭 `storage.secure` 同时销毁该工具 generation 的 key/数据；
 关闭后台总开关会取消旧任务并停止所有持续环境、计时器、后台位置监听和对应通知；关闭

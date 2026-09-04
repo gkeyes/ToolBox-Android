@@ -26,7 +26,7 @@
 | 开发帮助 | `scripts/check-developer-help.mjs`；`DeveloperHelpDocumentTest`；`DeveloperHelpScreenTest` | 防止帮助页复制出的源码、声明与实际接口不同步，或折叠/搜索让正文与复制功能不可达。 | Node 静态检查手册层级、嵌入源码、JS/JSON 与 SDK；模拟桥执行最小工程保存/重开/复制，以及后台显式启动、timer、restore、停止清理；JVM 读取与 APK 同源的完整手册并测试生产解析和跨层搜索；Compose 测试同级互斥折叠、搜索、复制与范例入口。 | 源码与合同一致；复制内容保持原文；基础与后台模拟路径真实调用对应 API；未展开正文不出现，搜索可定位主题，折叠不改变正文；不把模拟桥结果当成 Android 后台或通知验证。 |
 | 通用工具打包 | `scripts/tests/test_package_tool.py` | 帮助手册必须能打包用户自己的目录，且不能意外覆盖文件或漏打额外静态资源。 | Python 标准库测试从最小模板复制临时工程，加入嵌套资源和 Worker，两次打包比较原始 ZIP/哈希并复算完整性；验证显式覆盖、错误入口、嵌套归档、文件/目录符号链接与源目录内输出拒绝。 | ZIP 根目录与完整性正确，两次结果相同；默认不覆盖既有文件；无效输入不留下输出或临时文件；测试不修改四个内置范例。 |
 | 导入 | `DirectPackageLifecycleTest`；`ToolBoxOpenDocumentTest` | 核心导入必须只有成功或失败，且失败不能残留；运行中的旧页面不能跨越包替换或删除继续持有文件；文件选择输入必须是一次性、无歧义的 `.tbx` 来源。 | 用有效包完成安装、更新与卸载，在 catalog 切换及版本目录删除前观察运行时释放钩子；以 Zip Slip、嵌套压缩包、完整性损坏、错误包签名和较高 `minHostVersion` 构成拒绝矩阵；用中文字符恰好跨越 4096 字节嗅探边界的合法 HTML 验证增量 UTF-8；并验证取消、非法/双向文件名和一次性输入。 | 有效包及跨嗅探边界的 UTF-8 HTML 均原子可见；更新和卸载先释放运行环境，再切换 catalog 或移除版本文件；上述无效包没有 DB、目录或临时文件残留；非法来源被拒绝且输入流不能重复打开。 |
-| 更新/删除 | `CatalogAndStorageRepositoryTest` | 更新和卸载必须清理完整状态，不留下后台或敏感数据。 | 安装后写普通 KV、grant、后台 task/result，再提交更高版本并删除目录。 | 更新仅保留普通 KV 且以新 manifest grants 替换旧 grant；任务/结果消失；删除清理全部数据库工具状态。 |
+| 更新/删除 | `CatalogAndStorageRepositoryTest`；`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` | 更新不能重置用户权限选择，也不能自动授权新增能力或留下后台资源。 | 安装后写普通 KV、grant、后台 task/result，再提交更高版本并删除；用内存仓库和生产 Room 事务覆盖开启/关闭、提交前修改、新增/移除、重复提交、失败回滚及重开数据库。 | 保留普通 KV 及仍声明能力的原有 grant/时间；新增能力关闭、移除清理、其他工具不受影响；更新失败旧状态不变；任务/结果消失，删除清理全部数据库工具状态。 |
 | 权限与运行时 API | `PermissionCenterViewModelTest`；`RuntimeRpcDispatcherTest` | 防止“有开关没能力”、0.3 新接口覆盖旧 API，或跳过声明、授权、系统权限、手势和配额层。 | 对已支持 capability 用 production dispatcher 分别关闭 declaration、grant、system、gesture、quota 条件；验证公网 POST/Header/JSON 请求与协议级 Header 拒绝、`background.list` 的旧任务语义、`background.listSessions` 的持续环境语义、`notifications.live.start/update/end` 字段边界和错误 session、仅含调度元数据的 alarm、位置 watch 参数及文件一次性令牌。 | 全部条件满足时得到真实 handler 结果；实时通知合法调用返回完整增强状态，错误 session/颜色/字段在写入前稳定失败；旧任务与持续环境列表互不混淆；危险 Header 和未公开参数在调用 handler 前稳定失败；任一授权层缺失稳定拒绝；alarm 无业务 payload；文件令牌只能消费一次。 |
 | Bridge | `ToolRuntimeSecurityBoundaryTest`；`HardenedRuntimeWebViewInstrumentationTest` | 保护导入内容的来源与会话边界，同时允许高负载计算离开页面主线程而不放开远程代码或 ServiceWorker。 | JVM 检查 CSP 仅含 `worker-src 'self'` 且不含 wildcard/blob；API 35 WebView 测试 exact origin、main frame、nonce、iframe、导航后的旧 nonce、取消和 ServiceWorker 阻断，并验证被拒 iframe 不能抢占主 frame 完成 `ready` 后的原生事件通道。 | 仅包内 exact-origin 静态 Worker 可加载；远程/blob/data Worker 与 ServiceWorker 被阻断；仅当前主 frame/来源/会话可调用 ToolBox 并接收原生事件，其他请求被拒绝且无副作用。 |
 | M3 API | `RuntimeRpcDispatcherTest.m3FileTokensAndLocationFailClosedThroughTypedHandlers` | 文件和定位会触及用户数据及系统权限，必须保证会话令牌、消息配额、能力授权和稳定错误不会被绕过。 | 通过 production dispatcher 验证文件令牌继承创建它的 `files.open`、`files.save` 或 `camera` 能力、只能消费一次；以含引号的非法 ID 和 128 字节合法 ID 验证令牌读取前的 ID 限制及按实际 ID/Base64/JSON 计算的响应预算；直接验证 bridge 对 UTF-8 编码后超额的任意响应替换为 quota failure；验证位置只在通用层要求粗略权限，并将原生位置不可用映射为 typed `NOT_FOUND`。 | 非 shim ID 在消费令牌前失败；边界合法 ID 的完整响应不超过会话配额；首次读取只返回会话配额内的内容，重复读取失败，其他超额响应由 bridge 返回 `QUOTA_EXCEEDED`；粗略授权可进入 handler，精确请求由 handler 再检查 fine；原生空结果不会被取消通道吞掉。 |
@@ -49,6 +49,15 @@
   instrumentation 或真实系统表面证据；前者不能替代后者。
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
+
+## 0.3.8 小工具更新保留权限（2026-09-04）
+
+- 原因：`DefaultToolPackageManager` 每次按默认值生成完整声明列表，原生产 Room 提交路径会删除全部旧 grant 再插入默认值；内存仓库和旧测试也沿用了该规则。权限页只是读取结果，不是系统自动撤销授权。
+- 方法：扩展 `DirectPackageLifecycleTest.importUpdateVersionGateAndUninstallAreOneStepAndAtomic`，经真实 `.tbx` 检查/安装/更新路径核对已开启的 network 与已关闭的 storage 均保留；拒绝同版本不得改变选择，卸载仍清空。扩展 `CatalogAndStorageRepositoryTest`，覆盖提交前最新选择、原授权时间、新增默认开启/关闭能力均关闭、移除及再次加入、空声明、其他工具隔离、重复提交不覆写、失败回滚和卸载后全新安装。
+- 生产持久化：`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` 直接调用 Room 仓库，提交钩子注入失败后核对 grant、版本和事务状态全部回滚，随后改变用户选择并成功更新、重开数据库。预期：仅同工具且新 manifest 仍声明的旧选择被继承；首次安装默认值不变；更新与授权合并原子完成，无跨工具授权或复活已移除权限。
+- GitHub 验证入口：已有 `:core-data:testDebugUnitTest --tests io.toolbox.core.data.CatalogAndStorageRepositoryTest` 与 `:tool-package:testDebugUnitTest --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest`；既有编译门禁补入 `:core-data:compileDebugAndroidTestKotlin`，只编译真实 Room 测试源码，不启动模拟器。Room 测试运行仍需 Android 环境，编译通过不能记成测试执行通过。
+- 本地实际结果：安全不变量扫描、开发帮助的 7 章/28 主题/27 代码块与模拟桥检查、门禁脚本语法和差异空白检查均通过。因用户要求不本机编译，没有执行本机 Gradle/Kotlin 或 Android 测试；Kotlin LSP daemon 不可达，未安装或重启开发服务绕过限制。
+- 交付：用户确认提交 GitHub 构建，候选递增为 `0.3.8 (12)`，沿用固定签名；现有准入用例与真实 Room 测试源码编译结果写入同提交回执。Room schema、公开 API、四个范例及安全存储清理策略不变，未操作手机。旧版已经重置的授权没有历史记录，不能自动推断恢复；用户重新开启后，修复版的后续工具更新才会保留。现有其他未提交内容保持不变。
 
 ## 0.3.7 长响应网络等待回归
 

@@ -127,8 +127,16 @@ internal class RoomCatalogLifecycleRepository(
                 if (existingVersion != null) {
                     database.backgroundTasks().deleteForTool(attempt.metadata.id)
                 }
+                val nextGrants = if (existingVersion == null) {
+                    attempt.initialGrants.map(PermissionGrant::toEntity)
+                } else {
+                    val previousGrants = database.grants().getForTool(attempt.metadata.id).associateBy { it.capability }
+                    attempt.initialGrants.map { declared ->
+                        previousGrants[declared.capability] ?: declared.copy(granted = false).toEntity()
+                    }
+                }
                 database.grants().deleteAll(attempt.metadata.id)
-                database.grants().insertAll(attempt.initialGrants.map(PermissionGrant::toEntity))
+                database.grants().insertAll(nextGrants)
                 commitHook.beforeCommit()
                 val completed = database.installs().transition(
                     attempt.transactionId,
