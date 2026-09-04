@@ -60,6 +60,12 @@ class ToolNetworkProxy private constructor(
             .build()
     }
 
+    internal fun clientForRequest(timeoutMillis: Long): OkHttpClient = client.newBuilder()
+        .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        .build()
+
     suspend fun httpGet(
         url: String,
         allowedHosts: Set<String>,
@@ -99,9 +105,7 @@ class ToolNetworkProxy private constructor(
         }
         val normalizedAllowlist = allowedHosts.mapTo(linkedSetOf()) { requireNotNull(normalizeHost(it)) }
         val requestClient = if (transport == null) {
-            client.newBuilder()
-                .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
-                .build()
+            clientForRequest(timeoutMillis)
         } else {
             null
         }

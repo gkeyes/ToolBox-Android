@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>健康档案</title>
+  <link rel="icon" href="icon-v1.0.3.png" type="image/png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到内容</a>
+  <div id="app" class="app-shell">
+    <main id="main" tabindex="-1" aria-busy="true">
+      <div class="loading-screen" role="status"><span class="loading-indicator"></span><h1>健康档案</h1><p>正在读取本机记录…</p></div>
+    </main>
+    <nav id="navigation" class="bottom-nav" aria-label="主要导航" hidden></nav>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+  <noscript>健康档案需要启用 JavaScript，请在 ToolBox 中重新打开。</noscript>
+</body>
+</html>

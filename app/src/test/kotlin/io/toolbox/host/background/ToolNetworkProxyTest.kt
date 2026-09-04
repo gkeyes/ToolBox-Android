@@ -15,6 +15,18 @@ import org.junit.Test
 
 class ToolNetworkProxyTest {
     @Test
+    fun effectiveRequestBudgetControlsReadWriteAndCallWithoutExtendingConnectWait() {
+        val proxy = ToolNetworkProxy()
+        for (budget in listOf(1_000L, 30_000L, 300_000L)) {
+            val client = proxy.clientForRequest(budget)
+            assertEquals(budget.toInt(), client.callTimeoutMillis)
+            assertEquals(budget.toInt(), client.readTimeoutMillis)
+            assertEquals(budget.toInt(), client.writeTimeoutMillis)
+            assertEquals(10_000, client.connectTimeoutMillis)
+        }
+    }
+
+    @Test
     fun privateDnsAddressIsRejectedBeforeConnection() = runTest {
         val proxy = ToolNetworkProxy(
             dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) },

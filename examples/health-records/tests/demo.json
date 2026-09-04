@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    { "id": "demo-20260901", "date": "2026-09-01", "type": "blood", "items": [
+      { "name": "白细胞", "value": "6.20", "unit": "10⁹/L", "normal": "4.0–10.0" },
+      { "name": "红细胞", "value": "3.30", "unit": "10¹²/L", "normal": "4.30–5.80" },
+      { "name": "血红蛋白", "value": "135", "unit": "g/L", "normal": "110–150" },
+      { "name": "血小板", "value": "224", "unit": "10⁹/L", "normal": "100–300" },
+      { "name": "中性粒细胞比例", "value": "55", "unit": "%", "normal": "40–75" }
+    ] },
+    { "id": "demo-20260820", "date": "2026-08-20", "type": "blood_bio", "items": [
+      { "name": "白细胞", "value": "4.80", "unit": "10⁹/L", "normal": "4.0–10.0" },
+      { "name": "谷丙转氨酶", "value": "23", "unit": "U/L", "normal": "9–50" },
+      { "name": "肌酐", "value": "70", "unit": "μmol/L", "normal": "53–97" }
+    ] },
+    { "id": "demo-20260612", "date": "2026-06-12", "type": "blood", "items": [
+      { "name": "白细胞", "value": "6.10", "unit": "10⁹/L", "normal": "4.0–10.0" },
+      { "name": "红细胞平均体积", "value": "90", "unit": "fL", "normal": "80–100" }
+    ] }
+  ],
+  "profile": {},
+  "lib": {},
+  "aliasMap": {},
+  "healthSummary": {},
+  "settings": { "theme": "light", "model": "" }
+}

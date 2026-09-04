@@ -122,6 +122,7 @@ export interface NetworkRequest {
   readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string | JsonValue | Uint8Array;
+  /** 1000–600000 ms; defaults to 30000 and is capped by the manifest. Host 0.3.7+ applies this budget to call, read and write waits; connection establishment remains bounded to 10 seconds. */
   readonly timeoutMs?: number;
   readonly maxResponseBytes?: number;
 }

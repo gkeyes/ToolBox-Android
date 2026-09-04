@@ -321,6 +321,8 @@ document.getElementById("copy").addEventListener("click", async () => {
 
 network.request 接受 url、method、headers、body、timeoutMs、maxResponseBytes。method 默认为 GET，另支持 POST、PUT、PATCH、DELETE、HEAD；GET/HEAD 不带请求体。
 
+ToolBox 0.3.7 起，单次 HTTP 调用的总时限、读取等待与写入等待均采用请求 timeoutMs 和 manifest timeoutMs 中的较小值；请求未填时仍为 30000 毫秒。连接建立仍以 10 秒为上限，也受较短的调用总时限约束。需要等待 AI 等长响应时，同时声明并传入例如 300000（5 分钟），minHostVersion 至少填写 0.3.7；服务器主动报错或网络断开不会继续等待满 5 分钟。域名、重定向、地址与大小检查不变。
+
 timeoutMs 可为 1000–600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB；读取上限取请求值、manifest 网络上限与消息上限的最小值，不预先按 Base64 比例缩小文本响应。消息默认 256 KiB，ToolBox 0.3.5 起可通过 limits.maxBridgePayloadBytes 声明 4096–8388608 字节（最高 8 MiB）；使用超过 1 MiB 的消息上限时，minHostVersion 请至少填写 0.3.5。宿主在返回前检查实际 JSON 编码后的总大小，JSON 转义或 Base64 膨胀也占消息空间；超出时返回 QUOTA_EXCEEDED。
 
 不要把可配置的网络上限理解为可以一次把 64 MiB 数据塞回网页。大数据应由服务端分页，或分段请求并逐段处理。
@@ -1048,6 +1050,7 @@ export interface NetworkRequest {
   readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string | JsonValue | Uint8Array;
+  /** 1000–600000 ms; defaults to 30000 and is capped by the manifest. Host 0.3.7+ applies this budget to call, read and write waits; connection establishment remains bounded to 10 seconds. */
   readonly timeoutMs?: number;
   readonly maxResponseBytes?: number;
 }

@@ -25,6 +25,28 @@ import org.junit.Test
 
 class RuntimeNetworkGatewayTest {
     @Test
+    fun longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault() = runTest {
+        for ((declared, requested, expected) in listOf(
+            Triple(300_000, 300_000L, 300_000L),
+            Triple(90_000, 300_000L, 90_000L),
+            Triple(300_000, 1_000L, 1_000L),
+            Triple(300_000, null, 30_000L),
+        )) {
+            var actualTimeout = 0L
+            val gateway = RuntimeNetworkGateway(
+                proxy = ToolNetworkProxy(ToolNetworkTransport { request, timeout ->
+                    actualTimeout = timeout
+                    response(request, "{}".toResponseBody("application/json".toMediaType()))
+                }),
+                policy = InstalledManifestNetwork(setOf("api.github.com"), false, 4_096, declared),
+                bridgePayloadBytes = 4_096,
+            )
+            assertEquals(200, gateway.request(request(4_096).copy(timeoutMillis = requested)).status)
+            assertEquals(expected, actualTimeout)
+        }
+    }
+
+    @Test
     fun jsonBetweenTheOldBase64BudgetAndTheDeclaredLimitIsReturnedIntact() = runTest {
         for (size in listOf(800_000, 1_500_000)) {
             val body = "{\"data\":\"${"x".repeat(size)}\"}"

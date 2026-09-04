@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.healthrecords",
+  "name": "健康档案",
+  "shortName": "健康档案",
+  "description": "离线保存检验报告、查看指标趋势，支持旧站数据和 Excel 备份，可选 MiniMax 或 Gemini 报告识别与资料整理。",
+  "version": "1.0.7",
+  "versionCode": 8,
+  "entry": "index.html",
+  "icon": "icon-v1.0.3.png",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.3.7",
+  "categories": ["健康", "记录"],
+  "permissions": [
+    { "name": "storage", "reason": "在本机保存检验记录、档案和偏好", "required": true },
+    { "name": "storage.secure", "reason": "仅在启用 AI 时分别安全保存你输入的 MiniMax 或 Gemini 密钥", "required": false },
+    { "name": "files.open", "reason": "由你选择旧备份、Excel 或报告图片", "required": false },
+    { "name": "files.save", "reason": "将不含密钥的备份保存到你选择的位置", "required": false },
+    { "name": "network", "reason": "经你逐次确认后向所选的 MiniMax 或 Gemini 发送指定报告或指标", "required": false }
+  ],
+  "network": {
+    "allowDomains": ["generativelanguage.googleapis.com", "api.minimax.cn"],
+    "allowRedirects": false,
+    "timeoutMs": 300000,
+    "maxResponseBytes": 524288
+  },
+  "securityProfile": "strict",
+  "ui": { "orientation": "unspecified", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true },
+  "limits": { "storageBytes": 2097152, "maxBridgePayloadBytes": 8388608 }
+}
