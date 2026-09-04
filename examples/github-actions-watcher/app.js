@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.2";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.6";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -40,7 +40,9 @@
     warningMessage: "",
     hasToken: false,
     token: null,
+    tokenError: "",
     pollInFlight: false,
+    pollStartedAt: null,
     liveInFlight: false
   };
 
@@ -239,19 +241,46 @@
     try {
       const saved = await toolbox().storage.secure.get(TOKEN_KEY);
       state.token = typeof saved === "string" && saved.trim() ? saved.trim() : null;
+      state.tokenError = "";
     } catch (error) {
-      if (!["PERMISSION_DENIED", "NOT_DECLARED"].includes(error?.code)) throw error;
       state.token = null;
+      state.tokenError = ["PERMISSION_DENIED", "NOT_DECLARED"].includes(error?.code)
+        ? "无法读取已保存 Token：请在小工具权限中开启安全存储后重新打开"
+        : "无法读取已保存 Token，请稍后重新打开重试";
     }
     state.hasToken = Boolean(state.token);
     renderTokenState();
   }
 
   function renderTokenState() {
-    $("token-state").textContent = state.hasToken
-      ? "已安全保存 Token；留空将继续使用"
-      : "公共仓库可不填；私有仓库需 Actions: read";
+    $("token-state").textContent = state.tokenError || (state.hasToken
+      ? "已安全保存 Token；下次打开自动复用，留空无需重填"
+      : "公共仓库可不填；Token 保存一次即可复用");
+    $("token-input").placeholder = state.hasToken ? "已保存，留空继续使用；填写可替换" : "私有仓库或快速刷新时使用";
     $("clear-token").hidden = !state.hasToken;
+  }
+
+  async function saveEnteredToken() {
+    const token = $("token-input").value.trim();
+    if (!token) return false;
+    try {
+      await toolbox().storage.secure.set(TOKEN_KEY, token);
+    } catch (error) {
+      state.tokenError = error?.code === "PERMISSION_DENIED"
+        ? "Token 未保存：请在小工具权限中开启安全存储后重试"
+        : "Token 未保存：安全存储写入失败，请重试";
+      renderTokenState();
+      throw createError("secure_storage", state.tokenError);
+    }
+    state.token = token;
+    state.hasToken = true;
+    state.tokenError = "";
+    state.rateRemaining = null;
+    state.rateResetAt = null;
+    $("token-input").value = "";
+    renderTokenState();
+    await persist();
+    return true;
   }
 
   function updateRateState(headers) {
@@ -337,32 +366,25 @@
       showToast(error.message);
       return;
     }
-    const typedToken = $("token-input").value.trim();
-    const candidateToken = typedToken || state.token;
     setBusy(true);
     setLoading(true, "读取仓库", "正在验证仓库、workflow、分支和近期构建");
     try {
+      await saveEnteredToken();
       const base = `${API_ROOT}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
-      const repositoryResponse = await apiRequest(base, candidateToken);
-      const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", candidateToken, 5);
-      const runsResponse = await apiRequest(`${base}/actions/runs?per_page=100`, candidateToken);
+      const repositoryResponse = await apiRequest(base);
+      const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", undefined, 5);
+      const runsResponse = await apiRequest(`${base}/actions/runs?per_page=100`);
       const runs = Array.isArray(runsResponse.data?.workflow_runs) ? runsResponse.data.workflow_runs : [];
       let repositoryBranches = [];
       let branchCatalogComplete = false;
       try {
-        repositoryBranches = await fetchPaged(`${base}/branches?per_page=100`, null, candidateToken, 5);
+        repositoryBranches = await fetchPaged(`${base}/branches?per_page=100`, null, undefined, 5);
         branchCatalogComplete = true;
       } catch (_error) {
         repositoryBranches = [];
       }
       const activeWorkflows = workflows.filter((workflow) => workflow.state === "active");
       if (!activeWorkflows.length) throw createError("github", "仓库没有启用中的 GitHub Actions workflow");
-      if (typedToken) {
-        await toolbox().storage.secure.set(TOKEN_KEY, typedToken);
-        state.token = typedToken;
-        state.hasToken = true;
-        $("token-input").value = "";
-      }
       const repo = repositoryResponse.data;
       state.repository = {
         owner: parsed.owner,
@@ -500,10 +522,11 @@
 
   async function configureTimers() {
     if (!state.monitoring) return;
-    const interval = currentPollInterval();
+    const interval = Math.max(currentPollInterval(), state.rateRemaining === 0 && state.rateResetAt
+      ? state.rateResetAt - Date.now() : 0);
     await toolbox().background.setTimer(POLL_TIMER, interval);
-    await toolbox().background.setTimer(CLOCK_TIMER, CLOCK_INTERVAL_MS);
     state.nextPollAt = Date.now() + interval;
+    await toolbox().background.setTimer(CLOCK_TIMER, CLOCK_INTERVAL_MS);
   }
 
   async function ensureSession() {
@@ -599,7 +622,18 @@
       10
     );
     state.jobsByRun[key] = jobs;
+    const terminal = state.terminalStates[key];
+    if (run.status === "completed" && terminal) {
+      terminal.jobsSynced = jobs.every((job) => job.status === "completed"
+        && (job.steps || []).every((step) => step.status === "completed"));
+    }
     return jobs;
+  }
+
+  function finalJobsPending(run) {
+    if (run.status !== "completed") return false;
+    const key = model.runKey(run);
+    return !state.terminalStates[key]?.jobsSynced || !Array.isArray(state.jobsByRun[key]);
   }
 
   async function ensureTimingModel(run) {
@@ -629,7 +663,7 @@
   function calculateEstimate(run, now = Date.now()) {
     const key = model.runKey(run);
     const timing = state.timingModels[timingKey(run)] || null;
-    const jobs = state.jobsByRun[key] || [];
+    const jobs = finalJobsPending(run) ? [] : state.jobsByRun[key] || [];
     const previous = state.progressByRun[key] || 0;
     const estimate = model.estimateRunProgress(run, jobs, timing, now, previous);
     state.progressByRun[key] = estimate.progress;
@@ -665,7 +699,7 @@
     for (const run of watchedRuns()) {
       const key = model.runKey(run);
       if (run.status === "completed" && !state.terminalStates[key]) {
-        state.terminalStates[key] = { holdUntil: now + TERMINAL_HOLD_MS, posted: false };
+        state.terminalStates[key] = { holdUntil: now + TERMINAL_HOLD_MS, posted: false, jobsSynced: false };
       }
     }
   }
@@ -679,7 +713,8 @@
       return;
     }
     state.pollInFlight = true;
-    if (manual) setLoading(true, "同步构建", "正在读取 workflow runs、jobs 和 step 状态");
+    state.pollStartedAt = Date.now();
+    renderDashboard();
     try {
       const response = await apiRequest(repoUrl("/actions/runs?per_page=100"));
       const allRuns = Array.isArray(response.data?.workflow_runs) ? response.data.workflow_runs : [];
@@ -687,23 +722,23 @@
         .sort((a, b) => (Date.parse(b.created_at || "") || 0) - (Date.parse(a.created_at || "") || 0));
       trackDiscoveredRuns(filtered);
       state.runs = filtered;
+      registerTerminalRuns();
       const active = state.runs.filter(isActiveRun);
-      for (const run of active) {
+      const pendingTerminalRuns = watchedRuns().filter((run) => finalJobsPending(run)
+        && !state.terminalStates[model.runKey(run)]?.posted);
+      for (const run of [...active, ...pendingTerminalRuns]) {
         await fetchJobs(run);
       }
       for (const run of active) {
         await ensureTimingModel(run);
         calculateEstimate(run);
       }
-      registerTerminalRuns();
       state.warning = null;
       state.warningMessage = "";
       state.lastPollAt = Date.now();
       state.rateResetAt = state.rateRemaining === 0 ? state.rateResetAt : null;
-      await configureTimers();
       await updateLiveNotification();
       await processTerminalResults();
-      await persist();
     } catch (error) {
       state.warning = error?.kind === "rate_limit" ? "rate_limit" : "offline";
       state.warningMessage = errorLabel(error);
@@ -712,10 +747,17 @@
       }
       await updateLiveNotification();
       if (manual) showToast(errorLabel(error));
-      await persist();
     } finally {
+      try {
+        await configureTimers();
+      } catch (error) {
+        state.nextPollAt = null;
+        state.warning = "timer";
+        state.warningMessage = `自动刷新安排失败：${errorLabel(error)}；可点击立即同步`;
+      }
       state.pollInFlight = false;
-      if (manual) setLoading(false);
+      state.pollStartedAt = null;
+      await persist();
       renderDashboard();
     }
   }
@@ -895,9 +937,15 @@
       list.append(emptyNode("发现运行中的构建后，将显示 job 与 step。"));
       return;
     }
+    if (finalJobsPending(run)) {
+      list.append(emptyNode("构建已结束，等待同步最终步骤。"));
+      return;
+    }
     const jobs = state.jobsByRun[model.runKey(run)] || [];
     if (!jobs.length) {
-      list.append(emptyNode(run.status === "queued" ? "构建仍在排队，GitHub 尚未生成 job。" : "尚未读取到 job 详情。"));
+      const message = run.status === "completed" ? "本次构建未生成 job。"
+        : run.status === "queued" ? "构建仍在排队，GitHub 尚未生成 job。" : "尚未读取到 job 详情。";
+      list.append(emptyNode(message));
       return;
     }
     for (const job of jobs) {
@@ -1009,6 +1057,7 @@
 
   function renderDashboard() {
     if (!state.monitoring) return;
+    renderRuntimeChip();
     const run = chooseDisplayedRun() || model.choosePrimaryRun(state.runs.filter(isActiveRun));
     renderHero(run);
     renderWarning();
@@ -1018,6 +1067,21 @@
     const interval = currentPollInterval();
     const tokenLabel = state.hasToken ? "认证" : "匿名";
     const rate = Number.isFinite(state.rateRemaining) ? ` · 剩余额度 ${state.rateRemaining}` : "";
+    const now = Date.now();
+    let countdown;
+    if (state.pollInFlight) {
+      countdown = `正在同步 · 已等待 ${formatDuration(Math.max(0, now - state.pollStartedAt), true)}`;
+    } else if (!state.nextPollAt) {
+      countdown = "自动刷新未就绪，请立即同步";
+    } else if (state.nextPollAt <= now) {
+      countdown = `刷新已延迟 ${formatDuration(now - state.nextPollAt, true)} · 可立即同步`;
+    } else {
+      const waitingForQuota = state.rateRemaining === 0 && state.rateResetAt > now;
+      const label = waitingForQuota ? "额度恢复后刷新" : state.warning ? "下次重试" : "下次刷新";
+      countdown = `${label} · ${formatDuration(Math.ceil((state.nextPollAt - now) / 1000) * 1000, true)}`;
+    }
+    $("poll-countdown").textContent = countdown;
+    $("refresh-now").disabled = state.busy || state.pollInFlight;
     $("poll-caption").textContent = state.lastPollAt
       ? `上次同步 ${formatClock(state.lastPollAt)} · ${tokenLabel}轮询 ${formatDuration(interval, true)}${rate}`
       : `等待首次同步 · ${tokenLabel}轮询 ${formatDuration(interval, true)}`;
@@ -1086,16 +1150,36 @@
   $("repo-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter") readRepository();
   });
+  $("save-token").addEventListener("click", async () => {
+    if (!state.ready || state.busy) return;
+    setBusy(true);
+    try {
+      const saved = await saveEnteredToken();
+      showToast(saved ? "Token 已安全保存，下次打开自动复用" : state.hasToken ? "将继续使用已保存的 Token" : "请先输入 Token");
+    } catch (error) {
+      showToast(errorLabel(error));
+    } finally {
+      setBusy(false);
+    }
+  });
   $("clear-token").addEventListener("click", async () => {
+    if (!state.ready || state.busy) return;
+    setBusy(true);
     try {
       await toolbox().storage.secure.remove(TOKEN_KEY);
       state.token = null;
       state.hasToken = false;
+      state.tokenError = "";
+      state.rateRemaining = null;
+      state.rateResetAt = null;
       $("token-input").value = "";
       renderTokenState();
+      await persist();
       showToast("已清除保存的 Token");
     } catch (error) {
       showToast(errorLabel(error));
+    } finally {
+      setBusy(false);
     }
   });
   $("change-repository").addEventListener("click", () => {
@@ -1164,6 +1248,7 @@
   }
 
   function startForegroundClock() {
+    clockTick(false);
     if (!foregroundClock) foregroundClock = setInterval(() => clockTick(false), 1000);
   }
 

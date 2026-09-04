@@ -86,19 +86,32 @@ summary:focus-visible {
 
 .tool-identity {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: 58px minmax(0, 1fr);
   gap: 14px;
   align-items: center;
-  padding: 10px 2px 22px;
+  padding: 10px 2px 14px;
 }
 
 .tool-icon {
   width: 58px;
   height: 58px;
   border-radius: 18px;
+  background: #000;
 }
 
 .identity-copy {
+  min-width: 0;
+}
+
+.title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.title-row h1 {
   min-width: 0;
 }
 
@@ -268,6 +281,29 @@ h3 {
 
 .token-row {
   min-height: 48px;
+  flex-wrap: wrap;
+}
+
+.sync-surface {
+  padding: 8px 18px 14px;
+}
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+#poll-countdown {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#poll-caption {
+  margin-top: 0;
+  font-size: 0.78rem;
 }
 
 .primary-button,
@@ -794,6 +830,7 @@ input[type="radio"] {
   }
 
   #watch-screen > .hero,
+  #watch-screen > .sync-surface,
   #watch-screen > .network-banner,
   #watch-screen > .action-bar,
   #watch-screen > .footer-caption {
@@ -823,9 +860,14 @@ input[type="radio"] {
     height: 52px;
   }
 
-  .tool-identity > .status-chip {
-    grid-column: 2;
-    justify-self: start;
+  .title-row {
+    gap: 5px 8px;
+  }
+
+  .title-row .status-chip {
+    min-height: 28px;
+    padding: 5px 9px;
+    font-size: 0.72rem;
   }
 
   .surface,

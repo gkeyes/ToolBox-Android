@@ -10,13 +10,15 @@
 <body>
   <main class="app-shell" aria-labelledby="app-title">
     <header class="tool-identity" aria-labelledby="app-title">
-      <img class="tool-icon" src="icon.svg" alt="">
+      <img class="tool-icon" src="icon.png" alt="">
       <div class="identity-copy">
         <p class="eyebrow">GITHUB ACTIONS WATCHER</p>
-        <h1 id="app-title">构建守望</h1>
+        <div class="title-row">
+          <h1 id="app-title">构建守望</h1>
+          <span id="runtime-chip" class="status-chip" data-state="idle">未配置</span>
+        </div>
         <p id="host-caption" class="muted">正在连接 ToolBox…</p>
       </div>
-      <span id="runtime-chip" class="status-chip" data-state="idle">未配置</span>
     </header>
 
     <section id="setup-screen" aria-labelledby="setup-title">
@@ -27,9 +29,10 @@
         <label class="field-label" for="repo-input">GitHub 仓库链接</label>
         <input id="repo-input" class="text-field" type="url" inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repo">
         <label class="field-label" for="token-input">Fine-grained Token（可选）</label>
-        <input id="token-input" class="text-field" type="password" autocomplete="off" placeholder="私有仓库或快速刷新时使用">
+        <input id="token-input" class="text-field" type="password" autocomplete="off" aria-describedby="token-state" placeholder="私有仓库或快速刷新时使用">
+        <p id="token-state" class="supporting" role="status">公共仓库可不填；Token 保存一次即可复用</p>
         <div class="token-row">
-          <span id="token-state" class="supporting">公共仓库可不填</span>
+          <button id="save-token" class="text-button" type="button">保存 Token</button>
           <button id="clear-token" class="text-button" type="button" hidden>清除已保存 Token</button>
         </div>
         <button id="load-repository" class="primary-button full-width" type="button">读取仓库</button>
@@ -78,6 +81,13 @@
     </section>
 
     <section id="watch-screen" aria-labelledby="watch-title" hidden>
+      <div class="surface sync-surface" aria-label="GitHub 同步状态">
+        <div class="sync-row">
+          <strong id="poll-countdown" role="timer" aria-live="off">等待首次同步</strong>
+          <button id="refresh-now" class="text-button" type="button">立即同步</button>
+        </div>
+        <p id="poll-caption" class="supporting">尚未同步</p>
+      </div>
       <div class="hero" id="hero-card" data-tone="neutral">
         <div class="hero-topline">
           <div>
@@ -147,10 +157,8 @@
       </section>
 
       <div class="action-bar">
-        <button id="refresh-now" class="secondary-button" type="button">立即同步</button>
         <button id="stop-watching" class="danger-button" type="button">停止守望</button>
       </div>
-      <p id="poll-caption" class="footer-caption">尚未同步</p>
     </section>
   </main>
 
