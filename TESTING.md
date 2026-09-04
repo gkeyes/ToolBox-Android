@@ -57,6 +57,7 @@
 - 生产持久化：`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` 直接调用 Room 仓库，提交钩子注入失败后核对 grant、版本和事务状态全部回滚，随后改变用户选择并成功更新、重开数据库。预期：仅同工具且新 manifest 仍声明的旧选择被继承；首次安装默认值不变；更新与授权合并原子完成，无跨工具授权或复活已移除权限。
 - GitHub 验证入口：已有 `:core-data:testDebugUnitTest --tests io.toolbox.core.data.CatalogAndStorageRepositoryTest` 与 `:tool-package:testDebugUnitTest --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest`；既有编译门禁补入 `:core-data:compileDebugAndroidTestKotlin`，只编译真实 Room 测试源码，不启动模拟器。Room 测试运行仍需 Android 环境，编译通过不能记成测试执行通过。
 - 本地实际结果：安全不变量扫描、开发帮助的 7 章/28 主题/27 代码块与模拟桥检查、门禁脚本语法和差异空白检查均通过。因用户要求不本机编译，没有执行本机 Gradle/Kotlin 或 Android 测试；Kotlin LSP daemon 不可达，未安装或重启开发服务绕过限制。
+- 首次 GitHub 结果：提交 `d17cb74483c609b18b6c1f10b5db6e96a0814f8a` 的 Actions `33848318514` 中，协议、安全、编译（含真实 Room 测试源码）和准入 JVM 用例全部退出 0。17 项截图只有浅色设置和中等屏深色设置失败；已检查 GitHub 实际渲染与差异图，唯一可见变化是版本文字 `0.3.7` → `0.3.8`。仅采用该次构建的两张实际图更新对应基准，其他 15 张、截图阈值和门禁保持不变；后续由新提交重新验证完整流程。
 - 交付：用户确认提交 GitHub 构建，候选递增为 `0.3.8 (12)`，沿用固定签名；现有准入用例与真实 Room 测试源码编译结果写入同提交回执。Room schema、公开 API、四个范例及安全存储清理策略不变，未操作手机。旧版已经重置的授权没有历史记录，不能自动推断恢复；用户重新开启后，修复版的后续工具更新才会保留。现有其他未提交内容保持不变。
 
 ## 0.3.7 长响应网络等待回归
