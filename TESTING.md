@@ -48,8 +48,8 @@
 这不是 Compose 截图或 Kotlin 测试执行结果。JVM 测试接入 GitHub gate；主题截图、字体缩放、
 真实列表帧数据和不同 WebView/设备行为未运行，不声称测得了启动或滚动提速。
 初始 UI 提交保留旧配色 reference，导致后续 14/17 张截图差异。后续处理见下方 Release 收尾记录。
-截图阈值、用例和原校验任务保持不变。当前模型不能读取图像，不能声称完成人工视觉复核；本次以
-旧配色/旧基准隔离对照核实配色变化的影响，再验证新配色/新基准。人工视觉和真实设备验收仍单独标明未执行。
+截图阈值、用例和原校验任务保持不变。历史配色隔离对照使用了错误的验证模型，已移除，原因见下方
+CI #76 记录。验收使用当前代码与当前 reference 的严格比较；人工视觉和真实设备验收仍标明未执行。
 保留既有大字体导航与首页结构；Macrobenchmark/Baseline Profile 留待具备设备基线后单独实施。
 
 ## CI 编译故障跟进（2026-09-05）
@@ -96,25 +96,27 @@
 |---|---|---|---|
 | `optimized_compile` | Debug 源码编译不能证明 Release 源码、R8 与优化 APK 打包成功；视觉门禁不应遮蔽这些失败。 | GitHub 使用 JDK 21/SDK 37 编译 Release 源码并组装已有 candidate；检查真实 APK 身份和非调试标记、mapping/Worker 保留规则，保存产物摘要而非分发 APK。 | Gradle 退出 0，APK 与优化输出均真实存在；仍须独立通过原截图及正式签名 release 门禁。编译不代替视觉、真机运行或性能验收。 |
 
-## Release 收尾：严格配色对照
+## CI #76：移除错误的历史配色控制
 
-- 恢复此前因用户要求先编译而暂缓的截图收尾。仅更新 14 张有预期配色变化的参考 PNG；3 张一致图像保留。
-  候选 PNG 逐字节来自 run `33961698287` 的实际渲染，未重新调色。`docs/qa/palette-reference-refresh.json`
-  记录渲染提交/run、17 张旧/新 SHA-256 和五个预期颜色角色。已下载 run `33964696585` 独立复核，
-  两次 CI 的全部 17 张渲染图及 17 张旧基准逐字节一致，排除这两次运行间的渲染漂移。
-- 原 RGB 差值分析有 8720 个字体边缘像素不能直接解释，因此不以该模型或无法完成的看图声称通过。
-  `palette-reference-control.mjs` 校验来源哈希后创建 detached 临时 worktree，保留所有当前代码修复，
-  仅将五个颜色角色和 reference 恢复为 `081794441bf0d76f81c47e24743c7ae59f638efc` 的旧值。
-  在隔离目录运行原 `:app:validateDebugScreenshotTest`，必须得到 17 项、0 错误/失败/跳过。
-- 主 checkout 不被修改；对照失败或隔离目录清理失败均阻断后续步骤。对照通过后仍运行主 checkout 的
-  新配色严格截图校验。没有降低阈值、删除用例或绕过门禁。控制记录只在其发生变更的提交上触发，
-  不会永久阻止后续正常布局变更。对照日志、报告、图像及回执保存在 host-gate artifact 的 `palette-control/`。
-- 本次目标是全部 CI 及正式签名 Release 构建通过后交付 APK；不将 candidate、局部编译成功或未执行的
-  真机/人工视觉测试当作完整验收。正式签名沿用已有四项仓库密钥配置，不创建新签名身份。
-
-| 检查 | 理由 | 方法 | 预期 |
-|---|---|---|---|
-| `scripts/tests/palette-reference-control.test.mjs` | 对照不能污染主源码、接受错误图片来源，或把空/跳过报告当作通过。 | 5 项测试覆盖限定颜色恢复/过期输入拒绝、完整报告计数、隔离 Git 工作树成功/失败清理、主文件不变、一次性触发及哈希不匹配提前拒绝。使用明确标注的假渲染器，仅测试脚本编排。 | 5 项通过；实际 Android 渲染仍由 CI 原严格截图任务执行，假渲染器不作 Android 通过证据。 |
+- run `33968122178`（`0eda7dd355cd28353cab30a7cc8c5b4b9546ef98`）失败于
+  `Verify recorded palette-only reference refresh`，错误为 `Old-palette strict screenshot control failed (1)`。
+  Developer tooling、host gate 和 optimized candidate 已通过；主 checkout 的正常截图校验尚未运行。
+- 旧脚本仅恢复五个 palette role 和历史 PNG，却保留当前 `readableForeground` 对比度算法。
+  旧颜色与新算法的组合不是历史视觉行为，不能要求它复现历史截图。删除这个无效验证模型及其一次性
+  Node 编排测试，不扩大历史回滚范围，不更改当前主题、UI、fixtures 或生产逻辑。
+- 移除 workflow 的历史控制步骤与对应测试调用。确认 verify 及其直接执行脚本没有父提交依赖后，
+  移除仅服务于历史控制的 `fetch-depth: 2`。其他 job、依赖关系和测试命令保持不变。
+- 继续运行 host gate → 当前代码/当前 reference 的 `:app:validateDebugScreenshotTest`；必须验证完整
+  17 项、零失败/错误/跳过。没有修改阈值、减少用例、允许失败或重新生成 PNG reference。
+- `docs/qa/palette-reference-refresh.json` 保留原字节，仅作历史迁移审计材料，不再被 CI、Gradle、
+  production 或 Node 测试读取。此前 14 张更新图像来自 run `33961698287`，3 张一致图像保留；
+  run `33964696585` 的全部 17 张渲染图和 17 张旧基准已独立核对为逐字节一致。
+- 本轮不拆分 CI job。静态检查和本地 developer tooling 不能替代 Android 验收；host gate、完整截图、
+  optimized candidate 与正式签名 release 以修复提交的新 GitHub Actions 结果验收，未执行的真机/人工
+  视觉测试仍不声称通过。
+- 本地 `bash -n scripts/qa/run-host-gate.sh`、`git diff --check` 和 actionlint 的 YAML/表达式/依赖检查通过。
+  完整默认 actionlint（含新安装的 ShellCheck 0.11）则报告既有 delivery 的 `! grep` 写法 `SC2251`；
+  对未修改的 `0eda7dd` workflow 重跑得到相同告警。本轮不越界修改该步骤，不将完整默认 lint 声称为通过。
 
 ## 阶段性最小测试矩阵
 
