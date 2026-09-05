@@ -59,21 +59,6 @@ jobs:
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
-      - name: Validate the redesigned host preview matrix
-        run: ./gradlew --no-daemon :app:validateDebugScreenshotTest
-
-      - name: Upload rendered host previews
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: host-previews-${{ github.run_id }}
-          path: |
-            app/src/screenshotTestDebug/reference
-            app/build/reports/screenshotTest
-            app/build/outputs/screenshotTest-results
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Upload host gate evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -140,7 +125,7 @@ jobs:
             printf 'APK_VARIANT=candidate\nAPK_DEBUGGABLE=false\nR8_MAPPING=PASS\n'
             printf 'RESOURCE_SHRINKING=ENABLED\nWORKER_CLASS_NAME_RETENTION=PASS\n'
             printf 'SIGNING=DIAGNOSTIC_ONLY\nAPK_DELIVERY=NOT_AUTHORIZED\n'
-            printf 'SCREENSHOT_VALIDATION=SEPARATE_REQUIRED_GATE\nDEVICE_TEST=NOT_RUN\n'
+            printf 'SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\nDEVICE_TEST=NOT_RUN\n'
             printf 'APK_SIZE_BYTES=%s\n' "$(stat -c '%s' "$apk_path")"
           } >> "$evidence/receipt.txt"
 
@@ -358,7 +343,7 @@ jobs:
             printf 'OPTIMIZED_CANDIDATE_BUILD=%s\n' "$OPTIMIZED_COMPILE_RESULT"
             printf 'DEVELOPER_HELP_CHECK=PASS\n'
             printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
-            printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'
+            printf 'HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\n'
             printf 'NETWORK_GATEWAY_REGRESSION=PASS\n'
             printf 'PERMISSION_MANIFEST_REGRESSION=PASS\n'
             printf 'PERMISSION_UPDATE_RETENTION_JVM=PASS\n'

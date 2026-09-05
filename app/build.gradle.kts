@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.screenshot)
 }
 
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
@@ -96,8 +95,6 @@ android {
         buildConfig = true
     }
 
-    experimentalProperties["android.experimental.enableScreenshotTest"] = true
-
     testOptions {
         animationsDisabled = true
     }
@@ -163,8 +160,4 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
-
-    screenshotTestImplementation(platform(libs.androidx.compose.bom))
-    screenshotTestImplementation(libs.androidx.compose.ui.tooling)
-    screenshotTestImplementation(libs.screenshot.validation.api)
 }

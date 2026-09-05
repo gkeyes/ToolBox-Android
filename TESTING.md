@@ -4,6 +4,26 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 当前决策：永久移除自动截图测试（用户明确要求）
+
+- 用户明确要求“把这个门禁删了，以后不要这个测试了”。本批删除整个自动截图测试接入，
+  不是降低阈值、允许失败或把 FAIL 改成 PASS。今后不再运行/维护它；不要因历史计划自行恢复。
+- 删除 CI 的截图 validate 与 `host-previews` 上传，删除 Gradle 插件/依赖/实验开关、
+  `PreviewTest` 注解和 17 张历史 PNG reference。原页面/运行中 fixtures 迁至 `app/src/debug`，
+  仅供 Android Studio 手动 Preview；不新增截图任务，不进入 candidate/release 源集。
+- 协议、安全、准入 JVM 测试、App/仪器源码编译、optimized candidate、正式签名、R8/资源/版本
+  与内置示例检查保持。保留 `HostAdaptiveScrollTest` 的真实指针行为断言，不把它作为截图测试删除。
+- 新回执的截图字段为 `REMOVED_BY_USER_REQUEST`；未执行的设备、交互和视觉检查不能标 PASS。
+- 历史结果保持事实：UI `e981b6f` 的 [CI #79](https://github.com/gkeyes/ToolBox-Android/actions/runs/33982615650)
+  编译/host gate 成功，截图 19 项中 8 失败（6 变化、2 缺 reference），11 张逐字节不变，release 跳过。
+  本次策略变更不追溯地把 #79 改为成功，也不声称新 UI 已审图。
+- 下文带旧 SHA/run 的截图/基线条款是历史检查点，已被本节决策取代，不是当前准入条件。
+
+| 保留检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| 构建配置与 CI 静态检查 | 移除插件不能留下无效 accessor/source set；交付不得继续宣称截图 PASS。 | 检查 YAML/Gradle/TOML、workflow 回执和无残留测试接入；复用 actionlint、Shell 语法检查与安全不变量脚本。 | 本地 actionlint（关闭外部 ShellCheck/pyflakes）、全部12个 workflow run 块及 host gate 的 Bash 语法、安全不变量、TOML 解析/截图接入残留扫描、diff 检查通过。只证明配置/源码合同，不替代 Gradle。 |
+| 原 host gate + optimized_compile + delivery | debug Preview 迁移仍需编译，其他安全/行为/签名门禁不能丢。 | 按新提交 SHA 在 GitHub 运行原有三项 job；确认不再有截图任务/产物，回执标记已移除。 | Android 编译/单元/交付结果待新 CI；仪器执行仍 NOT_RUN。 |
+
 ## 准入规则
 
 仅保留保护以下任一边界的测试：
@@ -14,8 +34,8 @@
 4. 与候选 APK/提交绑定的构建、产物和真机证据链。
 
 不测试 data class getter、框架默认行为、静态文案、删除的审核/审计/发布者/迁移功能，或已经
-由更低层真实测试覆盖的同一行为。相同边界的输入优先用参数化矩阵。截图只保护指定渲染状态，
-不替代交互、系统 UI、WebView 或安全验证。
+由更低层真实测试覆盖的同一行为。相同边界的输入优先用参数化矩阵。自动截图测试已退出准入；
+手动预览或图片均不替代交互、系统 UI、WebView 或安全验证。
 
 ## 运行时与权限修复回归
 
@@ -126,12 +146,11 @@ CI #76 记录。验收使用当前代码与当前 reference 的严格比较；�
   “管理”改为独立文字按钮。固定图标尺寸与列表 key/contentType 保持；名称换行而非固定行数裁切。
 - 原问题 → 具体修改 → 前后图证据：重复统计/元数据与含义不清的箭头 → 上述收敛；基准为 P1
   的截图 reference，新图必须来自 Compose 实际渲染。此提交不自动覆盖 reference、不修改差异阈值。
-  首次 CI 若报告预期视觉差异/缺少新增 reference，保留失败与 diff 产物；人工审阅后再提交对应基线。
+  首次 CI 的实际失败与 diff 产物保留。后续用户明确撤销整个截图测试，不再要求更新对应基线，见顶部策略。
 
 | 检查 | 理由 | 方法 | 预期与当前状态 |
 |---|---|---|---|
 | 扩展 `HostAdaptiveScrollTest` | 文字管理入口变宽后，大字窄屏不能挤掉打开区或产生双重触发。 | 360dp、2倍字、浅/深主题；生产页面提供长名称 fixture，校验两块可见目标均至少48dp且不重叠，向各自中心注入真实指针点击，核对仅对应动作被触发。 | 每次管理不打开，每次打开不管理。保留原空目录/底栏大字测试。仪器执行 NOT_RUN，不用语义 performClick 冒充真实触控验证。 |
-| 扩展既有 screenshot 矩阵 | 原矩阵缺少已安装列表的360dp大字状态；运行中预览缺少 PreviewTest，未被门禁发现。 | 新增一个长名称/360dp/2倍字的生产目录预览；仅将现有深色运行中预览纳入截图发现，复用原 fixtures/页面。其余已安装/搜索/空态/中屏/详情/运行壳等继续 validate。 | 管理可见、名称换行、运行区与最近使用/列表无重叠；不把其他普通 Preview 自动全收，也不把总数永久固定为17。真实渲染与 reference 审阅待 CI。 |
 | 既有 `DestructiveButtonTest`、详情确认与导航回归 | 信息重新分组不能丢失删除确认、权限/后台入口或返回状态。 | 使用原有 Android 编译/仪器测试入口，不重建业务测试假实现。 | 行为断言不变；仪器执行按用户要求暂不等待，仍标 NOT_RUN。 |
 
 本地 `git diff --check` 通过；4 个修改后的 Kotlin 文件通过第三方语法筛查（不代表类型检查或编译），
@@ -200,12 +219,11 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 | 实时通知对象与操作 | `RuntimeLiveNotificationRendererTest` | 防止独立卡遗漏占位文本、携带摘要标记失去增强资格，或 PendingIntent 串到其他会话。 | production renderer 构建每工具普通占位与两张独立实时卡，Android Parcel 往返后检查文本白色 span、无分组摘要、两项操作、独立 Focus 编号/序号和默认隐藏参数；构造可发生字符串哈希碰撞的不同会话，检查打开/停止 PendingIntent 身份。 | 每张卡只含自身数据，只有打开与停止当前，Android 36+ 实时对象具有 promoted 特征；无自定义 deleteIntent；PendingIntent 跨工具/会话/动作不同且不可变，重复生成同一动作不新增身份。仅证明对象数据，不替代 HyperOS SystemUI 真机显示。 |
 | 网络 | `NetworkBoundaryTest`；`ToolNetworkProxyTest` | 在扩展网络方法后仍保护 manifest 域名边界，防止代理退化为内网扫描器或 OOM 入口，并保持旧任务重试合同。 | `NetworkBoundaryTest` 直接验证 HTTPS、精确/通配域名 allowlist、IP literal、重定向开关及私网/保留 IPv4、IPv6、IPv4-mapped IPv6 和 NAT64；`ToolNetworkProxyTest` 用生产代理验证私网 DNS、第二跳复验、响应上限，并向已声明域名的非 443 HTTPS 端口发送 POST、Authorization/JSON body、自定义超时，观察 401 正文返回；另以 503 验证 legacy `httpGet` 重试分类。 | manifest 声明的公网 HTTPS 主机和合法端口可访问；4xx/5xx 作为直接请求响应返回；未声明域名、私网、回环、保留/IP literal 与危险跳转被阻断；超限响应失败；旧任务 5xx 仍为可重试失败。 |
 | Miuix 宿主 | `CatalogViewModelTest`；`HostNavigationTest`；`HostAdaptiveScrollTest`；`HostScreenLayoutContractTest` | 保护通知/超级岛冷启动时直达所属工具，以及最近使用、搜索、紧凑/中等布局、有效按钮、后台保障入口、稳定滚动和单次 inset。 | JVM 测试先发出工具打开请求、再提供目录数据，并在导航订阅晚于事件时读取结果；验证 `lastOpenedAt` 倒序、紧凑屏最多两个/中等屏最多三个、搜索时隐藏最近使用且只过滤一次准备列表；Compose 流程以真实内置 `.tbx` 安装器安装四个范例，进入详情与运行壳、权限、旧后台任务和后台保障页面，再从详情菜单删除工具；普通和 200% 字体；JVM 层验证紧凑/中等宽度间距。 | 冷启动打开请求不会因目录未加载或导航订阅竞态丢失，并直达对应运行页；最近使用与搜索规则稳定；四个范例走生产安装路径后可管理；权限开关真实持久化；运行壳、旧后台页与后台保障可达；删除完整；无双 inset、裁剪或固定无效文本。 |
-| Miuix 静态视觉 | `HostScreenPreviewScreenshots` | 保护已确认的紧凑 grouped-list、浅深主题、空/搜索/已安装状态、后台页面、2 倍字体、中等屏和内容优先运行壳，防止旧审核/签名界面重新进入基线。 | 使用 Android Compose Preview Screenshot 的真实生产 Composable 渲染浅色与深色工具列表、搜索、2 倍字体空状态、工具详情、普通与 2 倍字体权限、设置、后台保障、后台任务、浅色/深色/2 倍字体开发帮助、浅深运行壳以及中等屏工具/设置；GitHub 生成并校验截图，不启动本地 Gradle 或模拟器。 | 十七个状态均可稳定渲染；无旧审核/风险/发布者内容；最近使用、分组层级和中等屏适配符合当前视觉契约；2 倍字体时主导航转为保留 TalkBack 标签的图标模式且无文字裁剪；运行壳无宿主底栏。 |
 | 真机组合 | `manual-xiaomi-toolbox-v1` | 自动门禁不能证明 WebView detach/reattach、后台位置、精确闹钟、前台服务、Android 实时更新、HyperOS 超级岛和系统回收恢复；导航丝滑度也依赖真实设备。 | 安装 0.3.4 后安装四例，使用通知实验室验证普通/实时通知、锁屏、超级岛更新、打开所属工具和停止当前；同时覆盖 timer/location/alarm、重启恢复和关键进入/返回路径帧数据。 | 同一 runtime 状态连续，恢复事件不丢；通知内容、进度和色调原位更新，普通通知始终存在，超级岛仅在系统实际支持时增强；“打开”直达所属工具，“停止当前”释放对应会话；授权关闭/更新/删除无残留；关键页面无可见停顿或残影。 |
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
 | GitHub 构建守望 | `github-model.test.js`；`DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，且独立打包检查不能替代宿主真实导入链路，必须保护历史样本、仓库分支选择、只读 API、后台摘要和最终 `.tbx` 可安装性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、仓库分支候选与近期 run 回退、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查与两次可重复打包，校验入口前 4096 字节可由当前已安装宿主完整解码，再把实际产物交给 production `ToolPackageManager` 以宿主 0.3.4 完成一次原子导入。 | 默认分支、仓库分支和近期 run 分支按顺序去重后进入下拉候选；所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；生产安装器返回 `Installed(io.toolbox.githubactionswatcher, 2, false)` 且无临时残留；CI 回执明确 APK、真机和超级岛未执行。 |
-| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.3.8-release.apk`、SHA256 与同提交回执。 | 任一既有门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
+| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.3.8-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
 
 ## 执行原则
 

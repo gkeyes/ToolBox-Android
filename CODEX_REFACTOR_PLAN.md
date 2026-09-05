@@ -1,5 +1,9 @@
 # ToolBox Android 轻量化重构、性能治理与 Codex 执行计划
 
+> 最新用户决策：自动截图测试及门禁已删除，下文旧的 screenshot/golden 测试要求已撤销，
+> 不得据此恢复插件、图片基线或自动比较任务。其余构建、安全与行为测试不受影响。
+> 当前执行策略以 `AGENTS.md`、`TESTING.md` 为准；历史分析不代表当前 CI 配置。
+
 > 可直接交给 Codex 执行。
 > 审核仓库：`gkeyes/ToolBox-Android`
 > 审核基线：`main@c0742c46de95d132b4591864dfbc429b9cd84015`
@@ -413,7 +417,7 @@ TbxInstallTransaction
 建议：
 
 - `pull_request/push`：安全扫描、assemble、unit test、lint；
-- `workflow_dispatch/release/nightly`：截图、instrumentation、真实 WebView；
+- `workflow_dispatch/release/nightly`：instrumentation、真实 WebView（按执行环境与授权）；
 - 保留包攻击矩阵与运行时边界测试；
 - 精简 `TESTING.md` 为测试矩阵，不为每个普通 getter 编写说明。
 
@@ -697,7 +701,7 @@ position
 - `core-ui/.../ToolBoxInsets.kt`
 - `core-ui/.../ToolBoxRows.kt`
 - `app/.../HostNavigationChrome.kt`
-- 相关布局测试和截图测试
+- 相关布局与行为测试（不再使用自动截图比较）
 
 ## 任务
 
@@ -956,7 +960,7 @@ data class OwnerTrustSettings(
 
 - 迁移到 `app/.../designsystem`；
 - 删除 `core-ui` module；
-- 只保留必要 component tests 和 5–7 张代表性截图。
+- 只保留必要 component tests；手动预览可辅助检查，不维护自动截图用例。
 
 ## 不做
 
@@ -1010,7 +1014,6 @@ build: fold compact design system into app module
 
 ```bash
 ./gradlew --no-daemon \
-  validateDebugScreenshotTest \
   :app:connectedDebugAndroidTest \
   :core-data:connectedDebugAndroidTest \
   :tool-runtime:connectedDebugAndroidTest
@@ -1091,7 +1094,7 @@ build: fold compact design system into app module
 - 自动授权哪些能力；
 - 私钥是否由本机生成或外部签名；
 - 是否彻底移除深色/Monet 某些模式；
-- 是否保留 screenshot test 模块。
+- 自动截图测试已按用户要求移除，不保留 screenshot test 模块。
 
 ---
 

@@ -46,6 +46,12 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 5. Add delegated background work, network, notifications and the remaining app-like capabilities, plus Developer Help and three functional examples.
 6. Add integrity/signature validation, uninstall cleanup, SSRF and hardening tests. Do not add audit-log, publisher-trust, migration or compatibility features.
 
+## Test policy
+
+- By explicit user request, automated screenshot tests and their CI gate are retired. Do not reintroduce screenshot plugins, golden/reference PNG comparisons or screenshot test jobs unless the user requests them again.
+- Ordinary IDE-only Compose previews may remain in `app/src/debug`; they are not automated tests or visual acceptance evidence.
+- Keep compilation, API/security checks, admitted unit tests and behavioral instrumentation tests. Receipts must state screenshot validation was removed, never PASS. Historical plans/results do not override this policy.
+
 ## Definition of done for each change
 
 - Code compiles with warnings reviewed.

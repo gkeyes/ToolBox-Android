@@ -3,7 +3,6 @@ package io.toolbox.host
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
-import com.android.tools.screenshot.PreviewTest
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.host.catalog.CatalogTool
@@ -21,7 +20,6 @@ fun RunningToolsLightPreview() {
     ToolBoxTheme { RunningHomePreview() }
 }
 
-@PreviewTest
 @Preview(name = "Running tools dark", device = "spec:width=411dp,height=891dp,dpi=420")
 @Composable
 fun RunningToolsDarkPreview() {

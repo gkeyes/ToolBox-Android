@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import com.android.tools.screenshot.PreviewTest
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.host.background.BackgroundSafeguardsContent
@@ -27,25 +26,23 @@ import io.toolbox.host.ui.ToolManagerScreen
 private const val CompactPhone = "spec:width=411dp,height=891dp,dpi=420"
 private const val MediumDevice = "spec:width=840dp,height=900dp,dpi=320"
 
-@PreviewTest
+// IDE-only previews; screenshot tests and their Gradle plugin were removed by request.
 @Preview(name = "Installed tools light", showBackground = true, device = CompactPhone)
 @Composable
-fun InstalledToolsLightScreenshot() {
+fun InstalledToolsLightPreview() {
     ToolBoxTheme {
         InstalledToolsPreview()
     }
 }
 
-@PreviewTest
 @Preview(name = "Installed tools dark", showBackground = true, device = CompactPhone)
 @Composable
-fun InstalledToolsDarkScreenshot() {
+fun InstalledToolsDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
         InstalledToolsPreview()
     }
 }
 
-@PreviewTest
 @Preview(
     name = "Installed tools narrow large text",
     showBackground = true,
@@ -53,7 +50,7 @@ fun InstalledToolsDarkScreenshot() {
     fontScale = 2f,
 )
 @Composable
-fun InstalledToolsNarrowLargeTextScreenshot() {
+fun InstalledToolsNarrowLargeTextPreview() {
     val tools = PreviewHostFixtures.catalog.tools.mapIndexed { index, tool ->
         if (index == 0) tool.copy(name = "用于大字体换行验证的工具") else tool
     }
@@ -72,10 +69,9 @@ fun InstalledToolsNarrowLargeTextScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Tool search", showBackground = true, device = CompactPhone)
 @Composable
-fun ToolSearchScreenshot() {
+fun ToolSearchPreview() {
     ToolBoxTheme {
         ToolManagerScreen(
             state = PreviewHostFixtures.searchCatalog,
@@ -91,10 +87,9 @@ fun ToolSearchScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Empty tools large text", showBackground = true, device = CompactPhone, fontScale = 2f)
 @Composable
-fun EmptyToolsLargeTextScreenshot() {
+fun EmptyToolsLargeTextPreview() {
     ToolBoxTheme {
         ToolManagerScreen(
             state = CatalogUiState(isLoaded = true),
@@ -110,10 +105,9 @@ fun EmptyToolsLargeTextScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Tool detail", showBackground = true, device = CompactPhone)
 @Composable
-fun ToolDetailScreenshot() {
+fun ToolDetailPreview() {
     ToolBoxTheme {
         ToolDetailScreen(
             toolId = PreviewHostFixtures.catalog.tools.first().toolId,
@@ -126,10 +120,9 @@ fun ToolDetailScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Permission center", showBackground = true, device = CompactPhone)
 @Composable
-fun PermissionCenterScreenshot() {
+fun PermissionCenterPreview() {
     ToolBoxTheme {
         PermissionCenterContent(
             state = PreviewHostFixtures.permissionCenter,
@@ -140,10 +133,9 @@ fun PermissionCenterScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Permission center large text", showBackground = true, device = CompactPhone, fontScale = 2f)
 @Composable
-fun PermissionCenterLargeTextScreenshot() {
+fun PermissionCenterLargeTextPreview() {
     ToolBoxTheme {
         PermissionCenterContent(
             state = PreviewHostFixtures.permissionCenter,
@@ -154,10 +146,9 @@ fun PermissionCenterLargeTextScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Settings", showBackground = true, device = CompactPhone)
 @Composable
-fun SettingsScreenshot() {
+fun SettingsPreview() {
     ToolBoxTheme {
         PrimaryScreen(
             selected = MainDestination.Settings,
@@ -178,10 +169,9 @@ fun SettingsScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Background safeguards", showBackground = true, device = CompactPhone)
 @Composable
-fun BackgroundSafeguardsScreenshot() {
+fun BackgroundSafeguardsPreview() {
     ToolBoxTheme {
         BackgroundSafeguardsContent(
             settings = PreviewHostFixtures.settings,
@@ -201,10 +191,9 @@ fun BackgroundSafeguardsScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Background tasks", showBackground = true, device = CompactPhone)
 @Composable
-fun BackgroundTasksScreenshot() {
+fun BackgroundTasksPreview() {
     ToolBoxTheme {
         BackgroundTasksContent(
             page = PreviewHostFixtures.backgroundTasks,
@@ -219,17 +208,15 @@ fun BackgroundTasksScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Medium tools", showBackground = true, device = MediumDevice)
 @Composable
-fun MediumToolsScreenshot() {
+fun MediumToolsPreview() {
     ToolBoxTheme { InstalledToolsPreview() }
 }
 
-@PreviewTest
 @Preview(name = "Medium settings dark", showBackground = true, device = MediumDevice)
 @Composable
-fun MediumSettingsDarkScreenshot() {
+fun MediumSettingsDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
         PrimaryScreen(
             selected = MainDestination.Settings,
@@ -250,28 +237,25 @@ fun MediumSettingsDarkScreenshot() {
     }
 }
 
-@PreviewTest
 @Preview(name = "Developer help", showBackground = true, device = CompactPhone)
 @Composable
-fun DeveloperHelpScreenshot() {
+fun DeveloperHelpLightPreview() {
     ToolBoxTheme {
         DeveloperHelpPreview()
     }
 }
 
-@PreviewTest
 @Preview(name = "Developer help dark", showBackground = true, device = CompactPhone)
 @Composable
-fun DeveloperHelpDarkScreenshot() {
+fun DeveloperHelpDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
         DeveloperHelpPreview()
     }
 }
 
-@PreviewTest
 @Preview(name = "Developer help large text", showBackground = true, device = CompactPhone, fontScale = 2f)
 @Composable
-fun DeveloperHelpLargeTextScreenshot() {
+fun DeveloperHelpLargeTextPreview() {
     ToolBoxTheme {
         DeveloperHelpPreview()
     }
@@ -293,19 +277,17 @@ private fun DeveloperHelpPreview() {
     )
 }
 
-@PreviewTest
 @Preview(name = "Runtime shell", showBackground = true, device = CompactPhone)
 @Composable
-fun RuntimeShellScreenshot() {
+fun RuntimeShellPreview() {
     ToolBoxTheme {
         RuntimeShellPreviewContent(onBack = {})
     }
 }
 
-@PreviewTest
 @Preview(name = "Runtime shell dark", showBackground = true, device = CompactPhone)
 @Composable
-fun RuntimeShellDarkScreenshot() {
+fun RuntimeShellDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
         RuntimeShellPreviewContent(title = "通知实验室", onBack = {})
     }

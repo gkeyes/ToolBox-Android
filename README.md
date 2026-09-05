@@ -53,11 +53,15 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 离线帮助保留。`candidate` 使用相同优化；没有配置固定签名时会使用本机 debug key，因此不能
 用它覆盖 GitHub 同签名版本。不要用 debug 构建评价页面帧性能。
 
-GitHub Actions 在安全不变量、API 合同、静态编译、最小单元与现有截图门禁通过后上传
+GitHub Actions 在安全不变量、API 合同、静态编译、最小单元与优化构建通过后上传
 `toolbox-v0.3.8-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
 版本、后台任务类名与内置资源；R8 映射独立归档以便排查崩溃，不放进安装包。
 系统权限、SAF、相机、通知、持续运行、后台位置、精确闹钟和 HyperOS 增强通知由用户在小米真机
 上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。
+
+按用户要求，自动截图测试及其插件、PNG 基线和 CI 门禁已删除，今后不运行该测试。
+`app/src/debug` 仅保留 Android Studio 手动 Compose 预览，不比较图片、不影响交付；
+回执明确记录 `HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`，不是视觉验收通过。
 
 ## 工程结构
 

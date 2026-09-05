@@ -377,8 +377,10 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 | 后台与代理 | 防止持续环境丢失、旧 API 冲突或 SSRF。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；无 SSRF、孤儿资源或协议回退。 |
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
-GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试与截图验证 →
-release APK。0.3.8 (12) 上传 `toolbox-v0.3.8-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
+它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
+明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
+0.3.8 (12) 上传 `toolbox-v0.3.8-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

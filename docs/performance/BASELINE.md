@@ -5,6 +5,15 @@
 > has been measured. Debug is for diagnosis only; compare optimized, non-debuggable
 > builds with the same profiling/instrumentation configuration.
 
+## Current screenshot-test policy
+
+The user subsequently requested permanent removal of automated screenshot tests,
+their Gradle plugin, reference PNGs and CI gate. Only IDE-only debug previews remain.
+New receipts report `HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`, not PASS.
+The P0/P1 screenshot results below are historical evidence; they must not reinstate
+this retired test or imply later UI acceptance. Performance/device requirements
+and the retained compilation, security and behavioral tests are unchanged.
+
 ## P0 identity and evidence
 
 The plan reviewed `0eda7dd355cd28353cab30a7cc8c5b4b9546ef98`. Current P0 is
@@ -29,7 +38,8 @@ validation, production UI, dependencies and security boundaries were retained.
   [Android CI 33981424797](https://github.com/gkeyes/ToolBox-Android/actions/runs/33981424797),
   verified through the Actions API. This is P1 build/test evidence, not a device
   performance result or approval of later UI changes. P1 retained the original
-  reference images; the separate catalog UI sample requires its own render review.
+  reference images. The separate catalog UI sample was not visually approved;
+  later removal of screenshot tests is a user-requested policy change, not visual approval.
 
 A for subsequent optimization comparisons must be the **P1 instrumented candidate
 before performance/UI changes**, B the individual optimization. Rebuild both

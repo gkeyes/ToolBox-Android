@@ -1,5 +1,9 @@
 # Codex 主执行提示词：ToolBox Android V2 轻量化重构
 
+> 最新用户决策：自动截图测试及门禁已删除，本文旧的截图/golden 测试要求不再适用，
+> 不得自行恢复。手动查看界面不等于自动截图测试；其余编译、安全和行为测试仍保留。
+> 当前测试策略以 `AGENTS.md`、`TESTING.md` 为准。
+
 你正在修改现有仓库：
 
 ```text
@@ -225,7 +229,7 @@ build: fold compact design system into app module
 ### Phase 7：CI、测试和最终证据
 
 - 快速 CI：security scan、assemble、unit、lint；
-- 完整 CI：截图、instrumentation、WebView、安全矩阵、benchmark；
+- 完整验证：instrumentation、WebView、安全矩阵、benchmark（依各自执行环境与授权）；
 - 保留高价值安全测试；
 - 删除旧 UI screenshot golden 和重复低价值测试；
 - 生成 Baseline Profile；
@@ -269,7 +273,6 @@ cold start 中位数 <= 900ms 或较基线改善 >= 30%
 
 ```bash
 ./gradlew --no-daemon \
-  validateDebugScreenshotTest \
   :app:connectedDebugAndroidTest \
   :core-data:connectedDebugAndroidTest \
   :tool-runtime:connectedDebugAndroidTest
