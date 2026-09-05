@@ -81,8 +81,17 @@
 - 只保留 `optimized-compile-<sha>` 日志、badging、APK SHA-256、mapping 与编译回执，不上传诊断 APK、
   不注入正式签名密钥。正式 delivery 现在同时依赖 verify 和 optimized_compile；没有绕过截图或其他发布门禁。
 - 本地仅验证工作流：官方 checksum 校验的 actionlint 1.7.7 通过语法/上下文/依赖检查（未运行外部 shellcheck/
-  pyflakes）；两个新增命令块通过 shell 语法检查，`git diff --check` 通过。实际 Gradle/APK 成败等待新 CI，
-  不以这些静态检查冒充编译成功。
+  pyflakes）；两个新增命令块通过 shell 语法检查，`git diff --check` 通过。这些静态检查不是编译成功证据。
+- **真实构建结果：PASS。** 提交 `ce140dc8ad178a8b263cef5ec533fe042605841c` 的 run `33964696585` 中，
+  [optimized_compile job 101302646482](https://github.com/gkeyes/ToolBox-Android/actions/runs/33964696585/job/101302646482)
+  全部步骤成功。日志显示 `compileReleaseKotlin`、`compileCandidateKotlin`、`minifyCandidateWithR8`、
+  `optimizeCandidateResources`、`packageCandidate` 和 `assembleCandidate` 均实际执行，
+  `BUILD SUCCESSFUL in 3m 34s`。APK 大小 `4,968,798` 字节；SHA-256
+  `e09ce3b3fa3565945124d84ce8fde86e972def929861c08e144aeb7fcb57653e`。
+  已下载诊断 artifact 核对构建日志、APK 摘要和回执；mapping 为 `50,558,273` 字节，APK 身份、
+  非 debuggable 标记与 Worker 类名保留检查通过。没有分发该诊断签名 APK。
+- **不能称为整条 CI 或正式发布通过。** 同一 run 的 verify 唯一失败步骤仍为截图矩阵校验；
+  signed-release delivery 被正确跳过。人工视觉、真实设备运行和性能验收未执行。本次仅确认完整优化 APK 编译成功。
 
 | 检查 | 理由 | 方法 | 预期 |
 |---|---|---|---|
