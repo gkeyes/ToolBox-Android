@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType
+import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import okio.Source
 import okio.Timeout
@@ -53,7 +54,8 @@ class ToolNetworkProxyTest {
         }
         val response = Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
             .code(200).message("OK").body(body).build()
-        val call = object : Call {
+        // Delegate metadata (including OkHttp's tag API); all execution stays in this fake.
+        val call = object : Call by OkHttpClient().newCall(request) {
             override fun request() = request
             override fun timeout() = Timeout.NONE
             override fun isExecuted() = true
