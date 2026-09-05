@@ -18,8 +18,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal class ToolIconLoader(
@@ -27,22 +25,22 @@ internal class ToolIconLoader(
     privateFilesRoot: () -> Path,
 ) {
     private val reader = InstalledToolIconReader(privateFilesRoot)
-    private val lock = Mutex()
+    private val loads = ToolIconLoadCoordinator()
     private data class Cached(val bitmap: Bitmap?)
     private val cache = object : LruCache<ToolVersion, Cached>(4 * 1024 * 1024) {
         override fun sizeOf(key: ToolVersion, value: Cached): Int = value.bitmap?.allocationByteCount ?: 64 * 1024
     }
 
     suspend fun load(toolId: String, expectedVersionCode: Int? = null): Bitmap? = withContext(Dispatchers.IO) {
-        lock.withLock {
+        loads.withTool(toolId) {
             try {
-                val tool = catalog.observeTool(toolId).first() ?: return@withLock null
+                val tool = catalog.observeTool(toolId).first() ?: return@withTool null
                 val version = tool.currentVersion
-                if (expectedVersionCode != null && version.versionCode != expectedVersionCode) return@withLock null
-                cache.get(version)?.let { return@withLock it.bitmap }
-                val bitmap = reader.read(tool)?.let(ToolIconDecoder::decode)
+                if (expectedVersionCode != null && version.versionCode != expectedVersionCode) return@withTool null
+                cache.get(version)?.let { return@withTool it.bitmap }
+                val bitmap = loads.decode { reader.read(tool)?.let(ToolIconDecoder::decode) }
                 ensureActive()
-                if (catalog.observeTool(toolId).first()?.currentVersion != version) return@withLock null
+                if (catalog.observeTool(toolId).first()?.currentVersion != version) return@withTool null
                 cache.put(version, Cached(bitmap))
                 bitmap
             } catch (cancelled: CancellationException) {
@@ -54,7 +52,7 @@ internal class ToolIconLoader(
     }
 
     suspend fun invalidate(toolId: String) = withContext(Dispatchers.IO) {
-        lock.withLock { cache.snapshot().keys.filter { it.toolId == toolId }.forEach(cache::remove) }
+        loads.withTool(toolId) { cache.snapshot().keys.filter { it.toolId == toolId }.forEach(cache::remove) }
     }
 }
 
@@ -100,10 +98,17 @@ internal object ToolIconDecoder {
     private fun normalize(source: Bitmap): Bitmap {
         val pixels = IntArray(source.width * source.height)
         source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        val visible = pixels.filter { Color.alpha(it) >= 128 }
-        // White transparent marks (e.g. GitHub's logo) need the same legible backing on every surface.
-        val needsBacking = pixels.any { Color.alpha(it) < 128 } && visible.isNotEmpty() &&
-            visible.count { Color.red(it) > 220 && Color.green(it) > 220 && Color.blue(it) > 220 } > visible.size * 0.9
+        var visible = 0
+        var white = 0
+        var transparent = false
+        for (pixel in pixels) {
+            if (Color.alpha(pixel) < 128) transparent = true else {
+                visible += 1
+                if (Color.red(pixel) > 220 && Color.green(pixel) > 220 && Color.blue(pixel) > 220) white += 1
+            }
+        }
+        // Count in-place instead of boxing every visible pixel into a temporary List<Int>.
+        val needsBacking = transparent && visible > 0 && white > visible * 0.9
         return Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).also { result ->
             val canvas = Canvas(result)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)

@@ -110,6 +110,7 @@ run_gate compile \
     :app:compileDebugAndroidTestKotlin \
     :core-data:compileDebugAndroidTestKotlin \
     :tool-runtime:compileDebugAndroidTestKotlin || overall_exit=1
+run_gate ui-contrast :core-ui:testDebugUnitTest --tests 'io.toolbox.core.ui.theme.ToolBoxContrastTest' || overall_exit=1
 run_gate admitted-unit \
     :app:testDebugUnitTest \
     :core-data:testDebugUnitTest \
@@ -120,6 +121,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.catalog.RunningToolsViewModelTest' \
     --tests 'io.toolbox.host.icons.InstalledToolIconReaderTest' \
     --tests 'io.toolbox.host.icons.StaticSvgPolicyTest' \
+    --tests 'io.toolbox.host.icons.ToolIconLoadCoordinatorTest' \
     --tests 'io.toolbox.host.ui.HostScreenLayoutContractTest' \
     --tests 'io.toolbox.host.help.DeveloperHelpDocumentTest' \
     --tests 'io.toolbox.host.permissions.PermissionCenterViewModelTest' \

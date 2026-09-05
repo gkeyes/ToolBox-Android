@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -40,6 +41,7 @@ data class ToolBoxColorScheme(
     val success: Color,
     val warning: Color,
     val danger: Color,
+    val onDanger: Color,
     val divider: Color,
     val softPrimary: Color,
     val softSuccess: Color,
@@ -102,17 +104,18 @@ data class ToolBoxSizes(
     val detailContentMaxWidth: Dp = 720.dp,
 )
 
-private val LightToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF1677E8),
+internal val LightToolBoxColors = ToolBoxColorScheme(
+    primary = Color(0xFF1264CC),
     onPrimary = Color.White,
     background = Color(0xFFF7F7F7),
     surface = Color.White,
     surfaceMuted = Color(0xFFF0F0F2),
     textPrimary = Color(0xFF17181A),
-    textSecondary = Color(0xFF77797E),
+    textSecondary = Color(0xFF676A70),
     success = Color(0xFF24A865),
     warning = Color(0xFFD48718),
-    danger = Color(0xFFE34B4B),
+    danger = Color(0xFFBA252C),
+    onDanger = Color.White,
     divider = Color(0xFFEDEDEF),
     softPrimary = Color(0xFFEAF3FF),
     softSuccess = Color(0xFFEAF8F0),
@@ -122,9 +125,9 @@ private val LightToolBoxColors = ToolBoxColorScheme(
     onSoftDanger = Color(0xFFB3261E),
 )
 
-private val DarkToolBoxColors = ToolBoxColorScheme(
+internal val DarkToolBoxColors = ToolBoxColorScheme(
     primary = Color(0xFF4A9BFF),
-    onPrimary = Color.White,
+    onPrimary = Color(0xFF10243A),
     background = Color(0xFF111214),
     surface = Color(0xFF1C1D20),
     surfaceMuted = Color(0xFF2C2D31),
@@ -133,6 +136,7 @@ private val DarkToolBoxColors = ToolBoxColorScheme(
     success = Color(0xFF75E395),
     warning = Color(0xFFFFC165),
     danger = Color(0xFFFF8B83),
+    onDanger = Color(0xFF30100F),
     divider = Color(0xFF303136),
     softPrimary = Color(0xFF183A63),
     softSuccess = Color(0xFF173D27),
@@ -221,13 +225,17 @@ fun ToolBoxTheme(
         val miuixColors = MiuixTheme.colorScheme
         val colors = baseColors.copy(
             primary = miuixColors.primary,
-            onPrimary = miuixColors.onPrimary,
+            onPrimary = readableForeground(miuixColors.onPrimary, miuixColors.primary),
             background = miuixColors.background,
             surface = miuixColors.surface,
             surfaceMuted = miuixColors.surfaceVariant,
             textPrimary = miuixColors.onBackground,
-            textSecondary = miuixColors.onSurfaceVariantSummary,
+            textSecondary = readableForeground(
+                miuixColors.onSurfaceVariantSummary,
+                miuixColors.background, miuixColors.surface, miuixColors.surfaceVariant,
+            ),
             danger = miuixColors.error,
+            onDanger = readableForeground(baseColors.onDanger, miuixColors.error),
             divider = miuixColors.dividerLine,
             softPrimary = miuixColors.primaryContainer,
             softDanger = miuixColors.errorContainer,
@@ -239,6 +247,20 @@ fun ToolBoxTheme(
             content = content,
         )
     }
+}
+
+internal fun contrastRatio(first: Color, second: Color): Float {
+    val a = first.luminance()
+    val b = second.luminance()
+    return (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
+}
+
+/** Preserve the palette when readable, including Monet; otherwise use the safer neutral. */
+internal fun readableForeground(preferred: Color, vararg backgrounds: Color): Color {
+    require(backgrounds.isNotEmpty())
+    fun minimumContrast(color: Color) = backgrounds.minOf { contrastRatio(color, it) }
+    if (minimumContrast(preferred) >= 4.5f) return preferred
+    return if (minimumContrast(Color.Black) >= minimumContrast(Color.White)) Color.Black else Color.White
 }
 
 object ToolBoxThemeTokens {

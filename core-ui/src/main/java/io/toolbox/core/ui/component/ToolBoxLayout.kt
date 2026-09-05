@@ -304,6 +304,7 @@ fun ToolBoxPrimaryButton(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val containerColor = if (destructive) colors.danger else colors.primary
+    val contentColor = if (destructive) colors.onDanger else colors.onPrimary
     Button(
         onClick = onClick,
         modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
@@ -311,13 +312,13 @@ fun ToolBoxPrimaryButton(
         minHeight = ToolBoxThemeTokens.sizes.touchTarget,
         colors = ButtonDefaults.buttonColorsPrimary(
             color = containerColor,
-            contentColor = colors.onPrimary,
+            contentColor = contentColor,
         ),
     ) {
         ToolBoxText(
             text = label,
             style = ToolBoxThemeTokens.textStyles.body.copy(
-                color = colors.onPrimary.copy(alpha = if (enabled) 1f else 0.46f),
+                color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
             ),
         )
     }
