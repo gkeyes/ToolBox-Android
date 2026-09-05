@@ -154,6 +154,10 @@ Miuix `ToolBoxSwitchSettingRow`，整行与开关都可操作。只在 handler �
 关闭 grant 立即停止新调用；关闭 `storage.secure` 同时销毁该工具 generation 的 key/数据；
 关闭后台总开关会取消旧任务并停止所有持续环境、计时器、后台位置监听和对应通知；关闭
 `background.runtime`、`location.background` 或 `alarms` 只清理对应运行资源。
+权限页观察安装版本并重读声明，版本切换丢弃旧系统授权回调；版本检查和 grant 写入在同一个
+Room 事务内完成，旧页面不能复活更新后已移除的授权。撤权先持久化关闭，再清理资源。
+安全存储在清除确认后，与读写共用每工具锁；锁内再次检查 grant。清理失败保持关闭，重新开启
+前重试清理，不能让残留的旧安全数据恢复可读。
 
 ## 6. ToolBox API v1 与运行时
 
@@ -185,12 +189,20 @@ nonce 绑定消息接口。iframe、错误 source origin、非 main-frame、导�
 方法、过期版本和缺失手势都必须被拒绝。真实手势由宿主记录 WebView `MotionEvent`，不是
 JS 传入字段。没有持续会话时，工具切换或界面销毁会关闭运行时；存在持续会话时，Compose
 仅卸载显示层，WebView、permit、bridge、generation、timer 与位置监听继续由应用级管理器拥有。
+前台原生能力在每次调用时解析当前 resumed Activity，不在 bridge 创建时冻结 Activity 处理器；
+无界面恢复的 runtime 也可在返回前台后获得这些能力。文件令牌与相机缓存属于 runtime session，
+Activity 重建不主动销毁它们；系统 URI 授权仍是短期的，不做持久授权。会话关闭拒绝迟到的文件结果。
 
 耗时计算使用随 `.tbx` 安装的同源静态 Web Worker，不占用页面的 DOM/渲染线程；CSP 仅允许
 `worker-src 'self'`，远程、`blob:`、`data:` Worker 和 ServiceWorker 继续阻断。Worker 不暴露
 ToolBox bridge，结果经 `postMessage` 返回顶层页面后再调用原生能力。宿主 RPC 的 UTF-8 计量、
 JSON 解码、摘要与 handler 调度离开 UI 回调线程，并以保留系统渲染余量的有限并发执行；文件、
-数据库和网络 handler 继续切换到 IO dispatcher。工具计算量不由该 RPC 并发上限约束。
+数据库 handler 继续切换到 IO dispatcher。网络正文由 OkHttp 的回调线程有界读取，取消绑定覆盖
+响应头及整个正文，且每个响应都关闭。工具计算量不由该 RPC 并发上限约束。
+RPC 在解析/创建协程前限制每会话 32 个、全局 128 个排队/在途请求；按 UTF-16 字符串保守计量，
+分别限制为 16 MiB/64 MiB。这是保留请求的预算，不是宿主总堆内存上限；响应仍有独立编码配额。
+满载返回 `BUSY`，不排入另一条等待队列；回复送达主线程后才归还准入名额。协程执行前取消同样
+释放预算。JS shim 的 pending 表也限制为 32，并在序列化或发送失败时删除对应请求。
 
 运行容器不使用宿主底栏：顶部约 48dp，只放返回、标题、刷新/更多；其余区域由 WebView
 占满，不显示 origin/API/安全技术副标题。仍必须保留 CSP、安全响应头、危险 scheme 和导航

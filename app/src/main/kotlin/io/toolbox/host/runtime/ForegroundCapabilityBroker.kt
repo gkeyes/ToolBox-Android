@@ -42,7 +42,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,37 +65,50 @@ internal data class RuntimeFileHandle(
 internal class RuntimeFileSessionResources(
     private val deleteFiles: (Set<File>) -> Unit,
 ) {
-    private val handles = ConcurrentHashMap<String, RuntimeFileHandle>()
-    private val temporaryFiles = ConcurrentHashMap.newKeySet<File>()
+    private val lock = Any()
+    private val handles = mutableMapOf<String, RuntimeFileHandle>()
+    private val temporaryFiles = mutableSetOf<File>()
+    private var closed = false
 
-    fun trackTemporary(file: File) {
+    fun ensureOpen() = synchronized(lock) {
+        if (closed) throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "File session ended")
+    }
+
+    fun trackTemporary(file: File) = synchronized(lock) {
+        if (closed) deleteFiles(setOf(file))
+        ensureOpen()
         temporaryFiles += file
     }
 
-    fun removeTemporary(file: File) {
+    fun removeTemporary(file: File) = synchronized(lock) {
         temporaryFiles -= file
     }
 
-    fun register(token: String, handle: RuntimeFileHandle) {
-        check(handles.putIfAbsent(token, handle) == null)
+    fun register(token: String, handle: RuntimeFileHandle) = synchronized(lock) {
+        if (closed) handle.temporaryFile?.let { deleteFiles(setOf(it)) }
+        ensureOpen()
+        check(!handles.containsKey(token))
+        handles[token] = handle
     }
 
-    fun capabilityFor(token: String): ToolBoxCapabilityId? = handles[token]?.capability
+    fun capabilityFor(token: String): ToolBoxCapabilityId? = synchronized(lock) { handles[token]?.capability }
 
-    fun take(token: String): RuntimeFileHandle? = handles.remove(token)
+    fun take(token: String): RuntimeFileHandle? = synchronized(lock) { handles.remove(token) }
 
     fun close() {
-        val files = buildSet {
-            addAll(temporaryFiles)
-            handles.values.mapNotNullTo(this) { it.temporaryFile }
+        val files = synchronized(lock) {
+            if (closed) return
+            closed = true
+            val owned = temporaryFiles + handles.values.mapNotNull { it.temporaryFile }
+            temporaryFiles.clear()
+            handles.clear()
+            owned
         }
-        temporaryFiles.clear()
-        handles.clear()
         deleteFiles(files)
     }
 
-    internal fun handleCount(): Int = handles.size
-    internal fun temporaryFileCount(): Int = temporaryFiles.size
+    internal fun handleCount(): Int = synchronized(lock) { handles.size }
+    internal fun temporaryFileCount(): Int = synchronized(lock) { temporaryFiles.size }
 }
 
 internal fun locationResult(value: android.location.Location?): Result<android.location.Location> =
@@ -111,7 +124,6 @@ internal class ForegroundCapabilityBroker private constructor(
     private var saveResult: CompletableDeferred<Uri?>? = null
     private var cameraResult: CompletableDeferred<Boolean>? = null
     private var pendingCameraFile: File? = null
-    private val sessions = ConcurrentHashMap.newKeySet<ToolFilesHandler>()
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val openLauncher = activity.registerForActivityResult(OpenDocumentContract()) { uri ->
@@ -127,19 +139,6 @@ internal class ForegroundCapabilityBroker private constructor(
         cameraResult = null
     }
 
-    fun handlers(toolId: String, toolName: String): RuntimeM3Handlers {
-        val files = ToolFilesHandler().also(sessions::add)
-        return RuntimeM3Handlers(
-            clipboardRead = RuntimeClipboardReadHandler { readClipboardAfterConfirmation() },
-            shareText = RuntimeShareTextHandler(::shareText),
-            files = files,
-            shortcuts = RuntimeShortcutHandler { name -> pinShortcut(toolId, name ?: toolName) },
-            camera = files,
-            location = RuntimeLocationHandler(::getCurrentLocation),
-            sessionCleanup = files,
-        )
-    }
-
     fun close() {
         if (!active.compareAndSet(true, false)) return
         val failure = RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "The host activity closed")
@@ -147,8 +146,6 @@ internal class ForegroundCapabilityBroker private constructor(
         saveResult?.completeExceptionally(failure)
         cameraResult?.completeExceptionally(failure)
         val filesToDelete = listOfNotNull(pendingCameraFile)
-        sessions.toList().forEach(ToolFilesHandler::close)
-        sessions.clear()
         openResult = null
         saveResult = null
         cameraResult = null
@@ -171,10 +168,11 @@ internal class ForegroundCapabilityBroker private constructor(
                 .setPositiveButton("允许") { _, _ -> if (continuation.isActive) continuation.resume(true) }
                 .setOnCancelListener { if (continuation.isActive) continuation.resume(false) }
                 .create()
-            continuation.invokeOnCancellation { dialog.dismiss() }
+            continuation.invokeOnCancellation { activity.runOnUiThread { dialog.dismiss() } }
             dialog.show()
         }
         if (!confirmed) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "Clipboard read was cancelled")
+        ensureActive()
         val clipboard = activity.getSystemService(ClipboardManager::class.java)
             ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Clipboard is unavailable")
         if (!clipboard.hasPrimaryClip() || clipboard.primaryClipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) != true) {
@@ -230,31 +228,30 @@ internal class ForegroundCapabilityBroker private constructor(
             val captureDirectory = File(activity.cacheDir, "toolbox-captures").apply { mkdirs() }
             File.createTempFile("capture-", ".jpg", captureDirectory)
         }
-        owner.trackTemporary(file)
-        pendingCameraFile = file
-        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
-        val deferred = CompletableDeferred<Boolean>()
-        cameraResult = deferred
-        withContext(Dispatchers.Main.immediate) { cameraLauncher.launch(uri) }
-        val saved = try {
-            deferred.await()
-        } finally {
-            cameraResult = null
-            pendingCameraFile = null
-        }
-        if (!saved) {
-            owner.removeTemporary(file)
-            file.delete()
-            null
-        } else {
+        var retained = false
+        try {
+            owner.trackTemporary(file)
+            pendingCameraFile = file
+            val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+            val deferred = CompletableDeferred<Boolean>()
+            cameraResult = deferred
+            cameraLauncher.launch(uri)
+            if (!deferred.await()) return@withLock null
             owner.fileToken(
                 uri = uri,
                 fallbackName = file.name,
                 fallbackMimeType = "image/jpeg",
-                fallbackSize = file.length(),
+                fallbackSize = withContext(Dispatchers.IO) { file.length() },
                 capability = ToolBoxCapabilityId.CAMERA,
                 temporaryFile = file,
-            )
+            ).also { retained = true }
+        } finally {
+            cameraResult = null
+            pendingCameraFile = null
+            if (!retained) {
+                owner.removeTemporary(file)
+                withContext(NonCancellable + Dispatchers.IO) { file.delete() }
+            }
         }
     }
 
@@ -296,51 +293,65 @@ internal class ForegroundCapabilityBroker private constructor(
         )
     }
 
-    private inner class ToolFilesHandler : RuntimeFilesHandler, RuntimeCameraHandler, RuntimeSessionCleanupHandler {
+    private suspend fun openDocument(mimeTypes: List<String>): Uri? = pickerMutex.withLock {
+        ensureActive()
+        val deferred = CompletableDeferred<Uri?>()
+        openResult = deferred
+        try {
+            openLauncher.launch(mimeTypes)
+            deferred.await()
+        } finally {
+            openResult = null
+        }
+    }
+
+    private suspend fun saveDocument(name: String, mimeType: String): Uri? = pickerMutex.withLock {
+        ensureActive()
+        val deferred = CompletableDeferred<Uri?>()
+        saveResult = deferred
+        try {
+            saveLauncher.launch(CreateDocumentRequest(name, mimeType))
+            deferred.await()
+        } finally {
+            saveResult = null
+        }
+    }
+
+    // Tokens and camera files belong to the runtime session, never to an Activity.
+    private class ToolFilesHandler(private val context: Context) : RuntimeFilesHandler, RuntimeCameraHandler, RuntimeSessionCleanupHandler {
         private val resources = RuntimeFileSessionResources { files ->
-            cleanupScope.launch { files.forEach(File::delete) }
+            fileCleanupScope.launch { files.forEach(File::delete) }
         }
 
-        override suspend fun capture(): RuntimeFileToken? = capturePhoto(this)
+        override suspend fun capture(): RuntimeFileToken? {
+            resources.ensureOpen()
+            return withForeground { it.capturePhoto(this) }
+        }
 
-        override suspend fun open(mimeTypes: List<String>): RuntimeFileToken? = pickerMutex.withLock {
-            ensureActive()
-            val deferred = CompletableDeferred<Uri?>()
-            openResult = deferred
-            withContext(Dispatchers.Main.immediate) { openLauncher.launch(mimeTypes) }
-            val uri = try {
-                deferred.await()
-            } finally {
-                openResult = null
-            } ?: return@withLock null
+        override suspend fun open(mimeTypes: List<String>): RuntimeFileToken? {
+            resources.ensureOpen()
+            val uri = withForeground { it.openDocument(mimeTypes) } ?: return null
             withContext(Dispatchers.IO) {
-                activity.contentResolver.openInputStream(uri)?.use { input ->
+                context.contentResolver.openInputStream(uri)?.use { input ->
                     val probe = ByteArray(1)
                     input.read(probe)
                 } ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "The selected file cannot be opened")
             }
-            fileToken(uri, capability = ToolBoxCapabilityId.FILES_OPEN)
+            return fileToken(uri, capability = ToolBoxCapabilityId.FILES_OPEN)
         }
 
         override suspend fun save(
             suggestedName: String,
             mimeType: String,
             content: ByteArray,
-        ): RuntimeFileToken? = pickerMutex.withLock {
-            ensureActive()
-            val deferred = CompletableDeferred<Uri?>()
-            saveResult = deferred
-            withContext(Dispatchers.Main.immediate) { saveLauncher.launch(CreateDocumentRequest(suggestedName, mimeType)) }
-            val uri = try {
-                deferred.await()
-            } finally {
-                saveResult = null
-            } ?: return@withLock null
+        ): RuntimeFileToken? {
+            resources.ensureOpen()
+            val uri = withForeground { it.saveDocument(suggestedName, mimeType) } ?: return null
             withContext(Dispatchers.IO) {
-                activity.contentResolver.openOutputStream(uri, "w")?.use { it.write(content) }
+                context.contentResolver.openOutputStream(uri, "w")?.use { it.write(content) }
                     ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "The selected file cannot be written")
             }
-            fileToken(
+            return fileToken(
                 uri = uri,
                 fallbackName = suggestedName,
                 fallbackMimeType = mimeType,
@@ -359,19 +370,18 @@ internal class ForegroundCapabilityBroker private constructor(
                 ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "File token is missing or already used")
             return try {
                 withContext(Dispatchers.IO) {
-                    activity.contentResolver.openInputStream(handle.uri)?.use { readBounded(it, maxBytes) }
+                    context.contentResolver.openInputStream(handle.uri)?.use { readBounded(it, maxBytes) }
                         ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "The selected file cannot be opened")
                 }
             } finally {
                 handle.temporaryFile?.let {
                     resources.removeTemporary(it)
-                    withContext(Dispatchers.IO) { it.delete() }
+                    withContext(NonCancellable + Dispatchers.IO) { it.delete() }
                 }
             }
         }
 
         override fun close() {
-            sessions.remove(this)
             resources.close()
         }
 
@@ -391,7 +401,7 @@ internal class ForegroundCapabilityBroker private constructor(
             capability: ToolBoxCapabilityId,
             temporaryFile: File? = null,
         ): RuntimeFileToken = withContext(Dispatchers.IO) {
-            val metadata = activity.contentResolver.query(
+            val metadata = context.contentResolver.query(
                 uri,
                 arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
                 null,
@@ -403,7 +413,7 @@ internal class ForegroundCapabilityBroker private constructor(
             RuntimeFileToken(
                 token = token,
                 name = metadata?.first ?: fallbackName,
-                mimeType = activity.contentResolver.getType(uri) ?: fallbackMimeType,
+                mimeType = context.contentResolver.getType(uri) ?: fallbackMimeType,
                 size = metadata?.second ?: fallbackSize,
             )
         }
@@ -423,15 +433,6 @@ internal class ForegroundCapabilityBroker private constructor(
             }
             return output.toByteArray()
         }
-    }
-
-    private fun readMetadata(cursor: Cursor): Pair<String, Long>? {
-        if (!cursor.moveToFirst()) return null
-        val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
-        val name = if (nameColumn >= 0) cursor.getString(nameColumn) else null
-        val size = if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) cursor.getLong(sizeColumn) else null
-        return (name ?: "file") to (size ?: 0L)
     }
 
     private fun ensureActive() {
@@ -483,8 +484,36 @@ internal class ForegroundCapabilityBroker private constructor(
             ForegroundCapabilityBroker(activity).also { activeBroker = WeakReference(it) }
         }
 
-        fun activeHandlers(toolId: String, toolName: String): RuntimeM3Handlers = synchronized(companionLock) {
-            activeBroker.get()?.handlers(toolId, toolName) ?: RuntimeM3Handlers()
+        private val fileCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        fun activeHandlers(context: Context, toolId: String, toolName: String): RuntimeM3Handlers {
+            val files = ToolFilesHandler(context.applicationContext)
+            return RuntimeM3Handlers(
+                clipboardRead = RuntimeClipboardReadHandler { withForeground { it.readClipboardAfterConfirmation() } },
+                shareText = RuntimeShareTextHandler { text -> withForeground { it.shareText(text) } },
+                files = files,
+                shortcuts = RuntimeShortcutHandler { name -> withForeground { it.pinShortcut(toolId, name ?: toolName) } },
+                camera = files,
+                location = RuntimeLocationHandler { precise, timeout -> withForeground { it.getCurrentLocation(precise, timeout) } },
+                sessionCleanup = files,
+            )
+        }
+
+        private suspend fun <T> withForeground(action: suspend (ForegroundCapabilityBroker) -> T): T =
+            withContext(Dispatchers.Main.immediate) {
+                val broker = synchronized(companionLock) { activeBroker.get() }
+                    ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground host activity is available")
+                broker.ensureActive()
+                action(broker)
+            }
+
+        private fun readMetadata(cursor: Cursor): Pair<String, Long>? {
+            if (!cursor.moveToFirst()) return null
+            val nameColumn = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
+            val name = if (nameColumn >= 0) cursor.getString(nameColumn) else null
+            val size = if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) cursor.getLong(sizeColumn) else null
+            return (name ?: "file") to (size ?: 0L)
         }
 
         fun resolveShortcutToolId(context: Context, intent: Intent?): String? {

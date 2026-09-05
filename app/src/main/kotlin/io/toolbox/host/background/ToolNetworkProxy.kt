@@ -12,6 +12,8 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.Locale
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -46,7 +48,7 @@ class ToolNetworkProxy private constructor(
         maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
     ) : this(dns, maxRedirects, transport)
 
-    private val client by lazy(LazyThreadSafetyMode.NONE) {
+    private val client by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         OkHttpClient.Builder()
             .cache(null)
             .cookieJar(CookieJar.NO_COOKIES)
@@ -151,20 +153,28 @@ class ToolNetworkProxy private constructor(
                         }
                     }
                     .build()
-                transport?.execute(request, timeoutMillis)
-                    ?: requireNotNull(requestClient).newCall(request).await()
+                if (transport != null) {
+                    val received = transport.execute(request, timeoutMillis)
+                    try {
+                        runInterruptible(Dispatchers.IO) { received.readResponse(maxResponseBytes, acceptHttpErrors) }
+                    } finally {
+                        received.close()
+                    }
+                } else {
+                    requireNotNull(requestClient).newCall(request).awaitResponse(maxResponseBytes, acceptHttpErrors)
+                }
             } catch (_: BlockedAddressException) {
                 return NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
             } catch (error: IOException) {
                 return error.toNetworkFailure()
             }
-            response.use {
+            response.let {
                 if (it.code in REDIRECT_CODES) {
                     NetworkPolicy.redirectError(allowRedirects)?.let {
                         return NetworkExecution.TerminalFailure(it)
                     }
                     if (redirects >= maxRedirects) return NetworkExecution.TerminalFailure("TOO_MANY_REDIRECTS")
-                    val location = it.header("Location")
+                    val location = it.location
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location)
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
@@ -181,30 +191,18 @@ class ToolNetworkProxy private constructor(
                     if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
                     if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
                 }
-                val body = try {
-                    it.body.readBounded(maxResponseBytes)
-                        ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
-                } catch (error: IOException) {
-                    return error.toNetworkFailure()
-                }
-                val text = isTextResponse(it)
+                val body = it.body ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
+                val text = it.isText
                 return NetworkExecution.Success(
                     statusCode = it.code,
                     finalUrl = current.toString(),
-                    contentType = it.header("Content-Type")?.substringBefore(';'),
+                    contentType = it.contentType,
                     body = if (text) body.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(body),
                     bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
-                    headers = it.exposedHeaders(),
+                    headers = it.headers,
                 )
             }
         }
-    }
-
-    private fun isTextResponse(response: Response): Boolean {
-        val mediaType = response.body.contentType() ?: return true
-        val subtype = mediaType.subtype.lowercase(Locale.ROOT)
-        return mediaType.type.equals("text", ignoreCase = true) ||
-            subtype == "json" || subtype.endsWith("+json")
     }
 
     private class ValidatingDns(private val delegate: Dns) : Dns {
@@ -429,17 +427,55 @@ private fun ResponseBody.readBounded(maxBytes: Int): ByteArray? {
     }
 }
 
-private suspend fun Call.await(): Response = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-    continuation.invokeOnCancellation { cancel() }
-    enqueue(
-        object : okhttp3.Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resumeWith(Result.failure(e))
-            }
+internal data class BufferedNetworkResponse(
+    val code: Int,
+    val location: String?,
+    val contentType: String?,
+    val isText: Boolean,
+    val headers: Map<String, String>,
+    val body: ByteArray?,
+)
 
-            override fun onResponse(call: Call, response: Response) {
-                if (continuation.isActive) continuation.resumeWith(Result.success(response)) else response.close()
-            }
+private fun Response.readResponse(maxBytes: Int, acceptHttpErrors: Boolean): BufferedNetworkResponse {
+    val mediaType = body.contentType()
+    val subtype = mediaType?.subtype?.lowercase(Locale.ROOT)
+    val isText = mediaType == null || mediaType.type.equals("text", ignoreCase = true) ||
+        subtype == "json" || subtype?.endsWith("+json") == true
+    return BufferedNetworkResponse(
+        code = code,
+        location = header("Location"),
+        contentType = header("Content-Type")?.substringBefore(';'),
+        isText = isText,
+        headers = exposedHeaders(),
+        // Redirect/error bodies are not consumed; the next endpoint still gets full validation.
+        body = if (code in setOf(301, 302, 303, 307, 308) || (!acceptHttpErrors && code !in 200..299)) {
+            ByteArray(0)
+        } else {
+            body.readBounded(maxBytes)
         },
     )
 }
+
+// Keep the continuation (and its Call.cancel hook) alive until the body has been consumed.
+// OkHttp's worker reads the stream; no blocking network read occupies the RPC dispatcher.
+internal suspend fun Call.awaitResponse(maxBytes: Int, acceptHttpErrors: Boolean): BufferedNetworkResponse =
+    kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : okhttp3.Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    val result = runCatching {
+                        response.use {
+                            if (!continuation.isActive) throw IOException("Request cancelled")
+                            it.readResponse(maxBytes, acceptHttpErrors)
+                        }
+                    }
+                    if (continuation.isActive) continuation.resumeWith(result)
+                }
+            },
+        )
+    }

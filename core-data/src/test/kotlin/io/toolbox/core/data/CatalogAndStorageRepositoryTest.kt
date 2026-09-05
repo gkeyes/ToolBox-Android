@@ -134,7 +134,7 @@ class CatalogAndStorageRepositoryTest {
         ))
         assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(update)))
         val lateChoice = PermissionGrant(TOOL_ID, "notifications", true, 13)
-        assertEquals(DataResult.Success(Unit), repositories.grants.put(lateChoice))
+        assertEquals(DataResult.Success(Unit), repositories.grants.putForVersion(lateChoice, 1))
         assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(update))
         val expected = (choices.take(2) + lateChoice + listOf(
             PermissionGrant(TOOL_ID, "background.runtime", false, 2),
@@ -142,6 +142,11 @@ class CatalogAndStorageRepositoryTest {
         )).sortedBy(PermissionGrant::capability)
         assertEquals(expected, repositories.grants.observeGrants(TOOL_ID).first())
         assertEquals(other.initialGrants, repositories.grants.observeGrants(otherId).first())
+        assertEquals(
+            DataResult.Failure.InvalidInput("versionCode"),
+            repositories.grants.putForVersion(PermissionGrant(TOOL_ID, "location", true, 99), 1),
+        )
+        assertEquals(expected, repositories.grants.observeGrants(TOOL_ID).first())
 
         val revoked = PermissionGrant(TOOL_ID, "network", false, 14)
         assertEquals(DataResult.Success(Unit), repositories.grants.put(revoked))

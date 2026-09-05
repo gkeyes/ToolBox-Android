@@ -23,6 +23,8 @@ interface CatalogOrganizationRepository {
 interface PermissionGrantRepository {
     fun observeGrants(toolId: String): Flow<List<PermissionGrant>>
     suspend fun put(grant: PermissionGrant): DataResult<Unit>
+    /** Version check and grant write share the same transaction as package updates. */
+    suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit>
     suspend fun revoke(toolId: String, capability: String): DataResult<Unit>
 }
 

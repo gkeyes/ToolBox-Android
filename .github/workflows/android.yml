@@ -51,6 +51,7 @@ jobs:
       - name: Verify offline developer help and generic packager
         run: |
           node scripts/check-developer-help.mjs
+          node --test scripts/tests/runtime-bridge.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
 
       - name: Verify protocol, security, compile and admitted unit suite

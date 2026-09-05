@@ -3,6 +3,11 @@ package io.toolbox.tool.runtime
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
@@ -71,6 +76,43 @@ class RuntimeRpcDispatcherTest {
         assertEquals("1.0", (result.getValue("apiVersion") as RpcValue.StringValue).value)
         assertEquals("0.3.0", (result.getValue("hostVersion") as RpcValue.StringValue).value)
         assertEquals(identity.generation, (result.getValue("generation") as RpcValue.StringValue).value)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun admissionBoundsQueuedBytesAndReleasesEvenBeforeCoroutineStarts() = runTest {
+        val shared = RuntimeRequestBudget(2, 10)
+        val first = RuntimeSessionJobs(StandardTestDispatcher(testScheduler), RuntimeRequestBudget(1, 8), shared)
+        val second = RuntimeSessionJobs(StandardTestDispatcher(testScheduler), RuntimeRequestBudget(2, 10), shared)
+        var executions = 0
+        try {
+            val queued = checkNotNull(first.launch(8) { executions += 1 })
+            assertNull(first.launch(0) { error("Count quota bypassed") })
+            assertNull(second.launch(3) { error("Global byte quota bypassed") })
+            queued.cancel()
+            runCurrent()
+            assertEquals(0, executions)
+            val a = checkNotNull(first.launch(5) { awaitCancellation() })
+            val b = checkNotNull(second.launch(5) { awaitCancellation() })
+            assertNull(second.launch(0) { error("Global count quota bypassed") })
+            runCurrent()
+            a.cancel(); b.cancel()
+            runCurrent()
+            assertNotNull(second.launch(10) { executions += 1 })
+            runCurrent()
+            assertEquals(1, executions)
+            first.close()
+            assertNull(first.launch { error("Closed session accepted a request") })
+        } finally {
+            first.close(); second.close()
+        }
+    }
+
+    @Test
+    fun overloadCorrelationOnlyReadsBoundedSafeLeadingId() {
+        assertEquals("safe-12", runtimeRejectedRequestId("""{"id":"safe-12","params":"${"x".repeat(1_000)}"}"""))
+        assertEquals("", runtimeRejectedRequestId("""{"id":"unsafe\\\"id"}"""))
+        assertEquals("", runtimeRejectedRequestId(" ".repeat(512) + """{"id":"late"}"""))
     }
 
     @Test

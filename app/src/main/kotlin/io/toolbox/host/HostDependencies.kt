@@ -328,6 +328,7 @@ internal class PermissionCenterViewModelFactory(
         return PermissionCenterViewModel(
             toolId = toolId,
             packages = dependencies.packageOperations,
+            catalog = dependencies.repositories.catalog,
             grants = dependencies.repositories.grants,
             sideEffects = dependencies.permissionSideEffects,
         ) as T

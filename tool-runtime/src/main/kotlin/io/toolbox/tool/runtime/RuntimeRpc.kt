@@ -11,11 +11,6 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 sealed interface RpcValue {
     data object Null : RpcValue
@@ -1261,16 +1256,3 @@ internal fun runtimeFileReadEncodedUpperBound(requestId: String, rawBytes: Int):
 }
 
 private const val FILE_READ_RESPONSE_FIXED_BYTES = 42
-
-internal class RuntimeSessionJobs {
-    private val rpcParallelism = (java.lang.Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4)
-    private val scope = CoroutineScope(
-        SupervisorJob() + Dispatchers.Default.limitedParallelism(rpcParallelism),
-    )
-
-    fun launch(block: suspend () -> Unit) = scope.launch { block() }
-
-    fun close() {
-        scope.cancel(CancellationException("ToolBox runtime session ended"))
-    }
-}

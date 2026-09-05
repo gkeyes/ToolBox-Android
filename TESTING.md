@@ -17,6 +17,25 @@
 由更低层真实测试覆盖的同一行为。相同边界的输入优先用参数化矩阵。截图只保护指定渲染状态，
 不替代交互、系统 UI、WebView 或安全验证。
 
+## 运行时与权限修复回归
+
+本轮不改变公开 ToolBox API、安装安全边界或应用版本号。
+
+| 测试 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `PermissionCenterViewModelTest` 扩展 | 保留页面不能缓存旧声明；安全撤权不能因清理失败而重新开放旧数据。 | 真实安装后更新声明、删除工具，并向同一 VM 发送旧系统回调；注入清理失败，观察 grant 在副作用前关闭、再次开启重试清理。 | 更新/删除即时刷新，无越版本授权；清理失败仍关闭，成功后才能开启。 |
+| `CatalogAndStorageRepositoryTest` / `FreshPersistenceContractTest` 扩展 | 防止 manifest 检查后更新与 grant 写入竞态。 | 生产内存/Room 仓库在更新前按当前版本写 grant，更新后以旧版本尝试复活已删除能力。 | 当前版本写入成功，旧版本原子拒绝，其他 grant 不变。 |
+| `RuntimeSecureStorageTest` | 撤权须与在途读写协调，不能只在 dispatcher 检查一次。 | 使用生产存储访问锁和清理函数，可控在途 writer、关闭的 grant、KV/密钥删除失败；Keystore 删除用注入结果。 | writer 完成后才删除文档/密钥；排队的关闭权限调用无副作用；部分清理返回失败。不冒充真实 Keystore 测试。 |
+| `M3BrokerLifecycleInstrumentedTest` 扩展 | 只有 Android 生命周期才能证明 foreground broker 重新绑定。 | Activity 创建前取得 production handlers；启动并 recreate MainActivity，再调用同一个 share handler，以 Instrumentation monitor 拦截系统 chooser；关闭 Activity 再调用。关闭文件资源后注入迟到文件。 | 两次前台调用均到达 chooser，关闭后 typed 拒绝；不发送内容、不启动真实分享目标；迟到临时文件被删除、句柄不复活。 |
+| `RuntimeRpcDispatcherTest` 扩展 | 限制并行线程不能限制排队内存，取消前未执行的任务也必须释放名额。 | 控制 dispatcher，测试会话/全局数量与字节上限、调度前取消、关闭及有界错误 ID 提取。 | 超限同步拒绝，取消后可再次准入，已关闭会话不能启动任务；错误 ID 不能成为授权来源。 |
+| `ToolNetworkProxyTest` 扩展 | 只取消等待响应头会留下慢正文连接。 | 生产 `Call.awaitResponse` 配合异步 fake Call 与阻塞正文，在头已到达后取消；既有 DNS/重定向/响应大小矩阵保持。 | `Call.cancel` 被调用、正文读取结束并关闭 Response，不占 RPC dispatcher 阻塞读取。不是公网或真机网络测试。 |
+| `scripts/tests/runtime-bridge.test.mjs` | 原生有界准入还需要保护 JS pending 表及重试。 | Node 提取并执行生产 Kotlin 内的 document-start JS，不复制 shim；覆盖 32 个在途上限、相关 BUSY 回复、序列化/传输异常后的名额回收。 | 3 个行为用例通过；发送失败不泄漏 pending，请求完成后可继续调用。仅验证 JS，不替代原生准入或 WebView 测试。 |
+
+本地验证：新增 Node bridge 3 项、离线帮助/示例 mock bridge、行情摘要测试通过；`git diff --check` 通过。
+当前 Android/Alpine 环境没有 Bash、JDK 21 与 Android SDK 37，未执行 Gradle、Kotlin 单测、Android
+仪器测试或 APK 构建。新测试纳入既有 GitHub gate，提交不等同于 CI 通过；真实 Keystore、系统 URI
+授权与前台服务恢复仍需设备验收。Python 打包器既有 1 项受环境硬链接权限限制，本轮未改打包器。
+
 ## 阶段性最小测试矩阵
 
 | 阶段 | 测试 | 测试理由 | 测试方法 | 预期结果 |

@@ -208,7 +208,7 @@ private class AssetPackageInput(
 
 internal class ProductionHostBackgroundOperations(
     context: Context,
-    repositories: CoreDataRepositories,
+    private val repositories: CoreDataRepositories,
 ) : HostBackgroundOperations,
     HostPermissionSideEffects,
     HostBackgroundMaintenance,
@@ -251,6 +251,9 @@ internal class ProductionHostBackgroundOperations(
     }
 
     override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
+        if (capability == "storage.secure") {
+            check(clearRuntimeSecureStorage(toolId, repositories.keyValues)) { "Secure storage cleanup failed" }
+        }
         delegate.onCapabilityDisabled(toolId, capability)
         runtimeSessions?.onCapabilityDisabled(toolId, capability)
     }

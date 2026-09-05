@@ -74,6 +74,7 @@ class PermissionCenterViewModelTest {
         val viewModel = PermissionCenterViewModel(
             toolId = TOOL_ID,
             packages = FakeHostPackageOperations,
+            catalog = InMemoryCoreData.create().catalog,
             grants = grants,
             sideEffects = sideEffects,
             now = { 200L },
@@ -109,6 +110,7 @@ class PermissionCenterViewModelTest {
         val viewModel = PermissionCenterViewModel(
             toolId = TOOL_ID,
             packages = FakeHostPackageOperations,
+            catalog = InMemoryCoreData.create().catalog,
             grants = grants,
             sideEffects = RecordingPermissionSideEffects(),
         )
@@ -187,6 +189,66 @@ class PermissionCenterViewModelTest {
         assertNull(empty.message)
     }
 
+    @Test
+    fun retainedViewModelReloadsDeclarationsOnUpdateAndRemoval() = runTest(mainDispatcher) {
+        val filesRoot = temporaryFolder.newFolder()
+        val repositories = InMemoryCoreData.create()
+        installFixture(filesRoot, repositories)
+        val viewModel = installedPermissionViewModel(filesRoot, repositories)
+        viewModel.state.first { it.loaded }
+
+        val next = listOf("network", "clipboard.read")
+        installFixture(filesRoot, repositories, permissions = next, versionCode = 2)
+        val updated = viewModel.state.first { it.items.map(PermissionItem::capability) == next }
+        assertTrue(updated.items.none { it.enabled })
+        // A delayed Android permission callback from an earlier version must not grant anything.
+        viewModel.systemPermissionResult("notifications", true)
+        advanceUntilIdle()
+        assertTrue(repositories.grants.observeGrants(TOOL_ID).first().none { it.capability == "notifications" })
+        repositories.lifecycle.deleteToolCatalog(TOOL_ID)
+        assertTrue(viewModel.state.first { it.loadState == PermissionLoadState.NotInstalled }.items.isEmpty())
+    }
+
+    @Test
+    fun secureRevocationDeniesBeforeCleanupAndFailedWipeCannotBeReenabled() = runTest(mainDispatcher) {
+        val grants = FakePermissionGrantRepository(PermissionGrant(TOOL_ID, "storage.secure", true, 1L))
+        var failCleanup = true
+        var cleanups = 0
+        val viewModel = PermissionCenterViewModel(
+            toolId = TOOL_ID,
+            packages = object : HostPackageOperations by FakeHostPackageOperations {
+                override suspend fun installedManifest(toolId: String): HostInstalledManifestResult {
+                    val base = FakeHostPackageOperations.installedManifest(toolId) as HostInstalledManifestResult.Found
+                    return HostInstalledManifestResult.Found(base.manifest.copy(
+                        permissions = listOf(HostManifestPermission("storage.secure", "保存密钥", false)),
+                    ))
+                }
+            },
+            catalog = InMemoryCoreData.create().catalog,
+            grants = grants,
+            sideEffects = object : HostPermissionSideEffects {
+                override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
+                    assertFalse(grants.observeGrants(toolId).first().single().granted)
+                    cleanups += 1
+                    if (failCleanup) error("wipe unavailable")
+                }
+            },
+        )
+        advanceUntilIdle()
+        viewModel.setEnabled("storage.secure", false)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.items.single().enabled)
+        assertNotNull(viewModel.state.value.message)
+        viewModel.setEnabled("storage.secure", true)
+        advanceUntilIdle()
+        assertFalse(grants.observeGrants(TOOL_ID).first().single().granted)
+        failCleanup = false
+        viewModel.setEnabled("storage.secure", true)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.items.single().enabled)
+        assertEquals(3, cleanups)
+    }
+
     private fun installedPermissionViewModel(filesRoot: File, repositories: CoreDataRepositories): PermissionCenterViewModel {
         val reader = HostInstalledManifestReader(filesRoot, repositories.catalog)
         return PermissionCenterViewModel(
@@ -194,6 +256,7 @@ class PermissionCenterViewModelTest {
             packages = object : HostPackageOperations by FakeHostPackageOperations {
                 override suspend fun installedManifest(toolId: String) = reader.read(toolId)
             },
+            catalog = repositories.catalog,
             grants = repositories.grants,
             sideEffects = RecordingPermissionSideEffects(),
         )
@@ -203,11 +266,12 @@ class PermissionCenterViewModelTest {
         filesRoot: File,
         repositories: CoreDataRepositories,
         permissions: List<String> = FIXTURE_CAPABILITIES,
+        versionCode: Int = 1,
     ) {
         val bytes = ByteArrayOutputStream().use { output ->
             ZipOutputStream(output).use { archive ->
                 mapOf(
-                    "manifest.json" to fixtureManifest(permissions = permissions),
+                    "manifest.json" to fixtureManifest(permissions = permissions, versionCode = versionCode),
                     "index.html" to "<!doctype html><html><body>Permission fixture</body></html>",
                 ).forEach { (name, content) ->
                     archive.putNextEntry(ZipEntry(name))
@@ -228,7 +292,7 @@ class PermissionCenterViewModelTest {
             override val displayName = "permission-fixture.tbx"
             override fun openStream() = ByteArrayInputStream(bytes)
         }
-        assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), manager.importAndInstall(input))
+        assertEquals(PackageInstallResult.Installed(TOOL_ID, versionCode, versionCode > 1), manager.importAndInstall(input))
     }
 }
 
@@ -238,11 +302,12 @@ private val FIXTURE_CAPABILITIES = listOf("storage", "storage.secure", "network"
 private fun fixtureManifest(
     minHostVersion: String = BuildConfig.VERSION_NAME,
     permissions: List<String> = FIXTURE_CAPABILITIES,
+    versionCode: Int = 1,
 ): String {
     val declarations = permissions.joinToString(",") { """{"name":"$it","reason":"Fixture permission"}""" }
     val network = if ("network" in permissions) ""","network":{"allowDomains":["api.github.com"]}""" else ""
     return """
-        {"schemaVersion":1,"id":"$TOOL_ID","name":"工具示例","version":"1.0.0","versionCode":1,"entry":"index.html","apiVersion":"1.0","minHostVersion":"$minHostVersion","permissions":[$declarations],"securityProfile":"strict"$network}
+        {"schemaVersion":1,"id":"$TOOL_ID","name":"工具示例","version":"1.0.$versionCode","versionCode":$versionCode,"entry":"index.html","apiVersion":"1.0","minHostVersion":"$minHostVersion","permissions":[$declarations],"securityProfile":"strict"$network}
     """.trimIndent()
 }
 
@@ -291,6 +356,11 @@ private class FakePermissionGrantRepository(vararg initial: PermissionGrant) : P
         putCalls += grant
         values.value = values.value.filterNot { it.toolId == grant.toolId && it.capability == grant.capability } + grant
         return DataResult.Success(Unit)
+    }
+
+    override suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit> {
+        assertEquals(1, expectedVersionCode)
+        return put(grant)
     }
 
     override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> =

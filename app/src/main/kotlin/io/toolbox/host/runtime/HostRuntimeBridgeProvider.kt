@@ -80,6 +80,7 @@ internal class HostRuntimeBridgeProvider(
             alarms = continuity.alarms,
         )
         val m3Handlers = ForegroundCapabilityBroker.activeHandlers(
+            context = applicationContext,
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
         ).copy(locationWatch = continuity.locationWatch)
@@ -115,6 +116,7 @@ internal class HostRuntimeBridgeProvider(
                 namespace = ToolStorageNamespace.Secure,
                 nowMillis = nowMillis,
                 cipher = AndroidKeyStoreCipher(toolId),
+                canAccess = { grantState.isGranted(toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
             )
         },
         deviceBasic = AndroidBasicDeviceHandler(applicationContext),
@@ -140,21 +142,24 @@ internal class RepositoryRuntimeGrantStateSource(
 internal suspend fun clearRuntimeSecureStorage(
     toolId: String,
     repository: ToolKvRepository,
+    deleteKey: () -> Boolean = { AndroidKeyStoreCipher.deleteForTool(toolId) },
 ): Boolean = withContext(Dispatchers.IO) {
-    try {
-        when (repository.remove(toolId, ToolStorageNamespace.Secure.documentKey)) {
-            is DataResult.Success,
-            is DataResult.Failure.NotFound,
-            -> Unit
+    ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Secure).withLock {
+        try {
+            when (repository.remove(toolId, ToolStorageNamespace.Secure.documentKey)) {
+                is DataResult.Success,
+                is DataResult.Failure.NotFound,
+                -> Unit
 
-            is DataResult.Failure -> error("secure storage cleanup failed")
+                is DataResult.Failure -> error("secure storage cleanup failed")
+            }
+            check(deleteKey())
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
         }
-        check(AndroidKeyStoreCipher.deleteForTool(toolId))
-        true
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        false
     }
 }
 
@@ -233,7 +238,7 @@ private class AndroidClipboardWriteHandler(
     }
 }
 
-private enum class ToolStorageNamespace(val documentKey: String) {
+internal enum class ToolStorageNamespace(val documentKey: String) {
     Standard("toolbox.runtime.v1.standard.values"),
     Secure("toolbox.runtime.v1.secure.values"),
 }
@@ -244,32 +249,34 @@ private class JsonToolKvStorageHandler(
     private val namespace: ToolStorageNamespace,
     private val nowMillis: () -> Long,
     private val cipher: AndroidKeyStoreCipher? = null,
+    private val canAccess: suspend () -> Boolean = { true },
 ) : RuntimeStorageHandler {
-    private val mutex = ToolRuntimeStorageLocks.mutexFor(toolId, namespace)
-
-    override suspend fun get(key: String): RpcValue? = mutex.withLock {
+    override suspend fun get(key: String): RpcValue? = withAccess {
         validateLogicalKey(key)
         loadDocument()[key]
     }
 
-    override suspend fun set(key: String, value: RpcValue) = mutex.withLock {
+    override suspend fun set(key: String, value: RpcValue) = withAccess {
         validateLogicalKey(key)
         val document = loadDocument()
         document[key] = value
         saveDocument(document)
     }
 
-    override suspend fun remove(key: String) = mutex.withLock {
+    override suspend fun remove(key: String) = withAccess {
         validateLogicalKey(key)
         val document = loadDocument()
         if (document.remove(key) != null) saveDocument(document)
     }
 
-    override suspend fun keys(): List<String> = mutex.withLock { loadDocument().keys.toList() }
+    override suspend fun keys(): List<String> = withAccess { loadDocument().keys.toList() }
 
-    override suspend fun clear() = mutex.withLock {
+    override suspend fun clear() = withAccess {
         deletePhysical(namespace.documentKey)
     }
+
+    private suspend fun <T> withAccess(action: suspend () -> T): T =
+        withRuntimeStorageAccess(toolId, namespace, canAccess, action)
 
     private suspend fun loadDocument(): LinkedHashMap<String, RpcValue> {
         val encoded = repository.observe(toolId, namespace.documentKey).first()?.valueJson ?: return linkedMapOf()
@@ -337,7 +344,18 @@ private class JsonToolKvStorageHandler(
     }
 }
 
-private object ToolRuntimeStorageLocks {
+internal suspend fun <T> withRuntimeStorageAccess(
+    toolId: String,
+    namespace: ToolStorageNamespace,
+    canAccess: suspend () -> Boolean,
+    action: suspend () -> T,
+): T = ToolRuntimeStorageLocks.mutexFor(toolId, namespace).withLock {
+    // Recheck under the same lock used by revocation, not only before RPC dispatch.
+    if (!canAccess()) throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Storage permission is disabled")
+    action()
+}
+
+internal object ToolRuntimeStorageLocks {
     private val locks = ConcurrentHashMap<String, Mutex>()
 
     fun mutexFor(toolId: String, namespace: ToolStorageNamespace): Mutex =

@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +31,8 @@ import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxTextButton
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -88,6 +92,26 @@ internal fun PermissionCenterContent(
     onOpenSystemSettings: () -> Unit,
 ) {
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
+    var confirmSecureWipe by remember { mutableStateOf(false) }
+    LaunchedEffect(state.loadState) {
+        if (state.loadState != PermissionLoadState.Ready) confirmSecureWipe = false
+    }
+    OverlayDialog(
+        show = confirmSecureWipe,
+        title = "关闭并清除安全存储？",
+        summary = "将删除此工具保存的密钥、令牌等安全数据，重新开启也无法恢复。普通工具数据不受影响。",
+        onDismissRequest = { confirmSecureWipe = false },
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+            ToolBoxTextButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
+            ToolBoxPrimaryButton(
+                "关闭并清除",
+                { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
+                modifier = Modifier.weight(1f),
+                destructive = true,
+            )
+        }
+    }
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -157,7 +181,13 @@ internal fun PermissionCenterContent(
                                         title = item.title,
                                         summary = item.reason,
                                         checked = item.enabled,
-                                        onCheckedChange = { onSetEnabled(item.capability, it) },
+                                        onCheckedChange = { enabled ->
+                                            if (item.capability == "storage.secure" && !enabled) {
+                                                confirmSecureWipe = true
+                                            } else {
+                                                onSetEnabled(item.capability, enabled)
+                                            }
+                                        }
                                         icon = item.capability.capabilityIcon(),
                                         modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
                                     )

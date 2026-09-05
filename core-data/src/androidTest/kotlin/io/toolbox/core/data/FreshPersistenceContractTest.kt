@@ -175,9 +175,13 @@ class FreshPersistenceContractTest {
             assertEquals(InstallTransactionState.PREPARING, (installs.get("tx-update") as DataResult.Success).value!!.state)
 
             val latest = PermissionGrant(TOOL_ID, "network", true, 21)
-            assertEquals(DataResult.Success(Unit), grants.put(latest))
+            assertEquals(DataResult.Success(Unit), grants.putForVersion(latest, 1))
             failCommit = false
             assertEquals(DataResult.Success(CommitInstallOutcome.Committed), lifecycle.commitInstall(update))
+            assertEquals(
+                DataResult.Failure.InvalidInput("versionCode"),
+                grants.putForVersion(PermissionGrant(TOOL_ID, "location", true, 99), 1),
+            )
             val expected = listOf(
                 PermissionGrant(TOOL_ID, "device.basic", false, 20),
                 latest,

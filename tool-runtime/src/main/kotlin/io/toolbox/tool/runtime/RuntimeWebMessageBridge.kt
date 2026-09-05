@@ -1,6 +1,7 @@
 package io.toolbox.tool.runtime
 
 import android.net.Uri
+import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -105,34 +107,34 @@ class RuntimeBridgeSession internal constructor(
         if (!active.get()) return
         val encoded = message.data ?: return
         if (encoded.length > maxPayloadBytes) {
-            reply(webView, replyProxy, invalidRequest("", RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"))
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"))
             return
         }
         val exactSourceOrigin = sourceOrigin.toString()
         val now = clockMillis()
         val touchedAt = gestureAtMillis.get()
         val touchAge = if (touchedAt == NO_GESTURE) null else now - touchedAt
-        jobs.launch {
+        val admitted = jobs.launch(retainedBytes = encoded.length * 2) {
             if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) {
-                reply(
+                replyAndAwaitDelivery(
                     webView,
                     replyProxy,
-                    invalidRequest("", RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"),
+                    invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"),
                 )
                 return@launch
             }
             val request = try {
                 RuntimeRpcJson.decodeRequest(encoded)
             } catch (_: Exception) {
-                reply(
+                replyAndAwaitDelivery(
                     webView,
                     replyProxy,
-                    invalidRequest("", RuntimeRpcErrorCode.INVALID_REQUEST, "Malformed ToolBox request"),
+                    invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.INVALID_REQUEST, "Malformed ToolBox request"),
                 )
                 return@launch
             }
             if (!inFlightIds.add(request.id)) {
-                reply(
+                replyAndAwaitDelivery(
                     webView,
                     replyProxy,
                     invalidRequest(request.id, RuntimeRpcErrorCode.BUSY, "Request id is already active"),
@@ -144,7 +146,7 @@ class RuntimeBridgeSession internal constructor(
                     request,
                     RuntimeInboundContext(exactSourceOrigin, isMainFrame, touchAge),
                 )
-                reply(webView, replyProxy, response)
+                replyAndAwaitDelivery(webView, replyProxy, response)
                 if (request.method == "ready" && response is RuntimeRpcResponse.Success) {
                     eventProxy.set(replyProxy)
                     eventReady.set(true)
@@ -154,6 +156,9 @@ class RuntimeBridgeSession internal constructor(
             } finally {
                 inFlightIds.remove(request.id)
             }
+        }
+        if (admitted == null) {
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Too many pending ToolBox requests"))
         }
     }
 
@@ -209,8 +214,22 @@ class RuntimeBridgeSession internal constructor(
         }
     }
 
-    private fun reply(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
-        if (!active.get()) return
+    private suspend fun replyAndAwaitDelivery(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
+        val delivered = CompletableDeferred<Unit>()
+        reply(webView, proxy, response) { delivered.complete(Unit) }
+        delivered.await()
+    }
+
+    private fun reply(
+        webView: WebView,
+        proxy: JavaScriptReplyProxy,
+        response: RuntimeRpcResponse,
+        onDelivered: () -> Unit = {},
+    ) {
+        if (!active.get()) {
+            onDelivered()
+            return
+        }
         val candidate = RuntimeRpcJson.encodeResponse(response)
         val encoded = enforceRuntimeResponseLimit(candidate, maxPayloadBytes) {
             RuntimeRpcJson.encodeResponse(
@@ -223,9 +242,16 @@ class RuntimeBridgeSession internal constructor(
                 ),
             )
         }
-        webView.post {
-            if (active.get()) runCatching { proxy.postMessage(encoded) }
+        val deliver = Runnable {
+            try {
+                if (active.get()) runCatching { proxy.postMessage(encoded) }
+            } finally {
+                onDelivered()
+            }
         }
+        // Admission failures already arrive on Main: don't create an unbounded reply queue.
+        if (Looper.myLooper() == Looper.getMainLooper()) deliver.run()
+        else if (!webView.post(deliver)) onDelivered()
     }
 
     private fun invalidRequest(id: String, code: RuntimeRpcErrorCode, message: String) =
@@ -276,12 +302,21 @@ class RuntimeBridgeSession internal constructor(
                 response.ok ? waiter.resolve(response.result) : waiter.reject(Object.assign(new Error(response.error.message), response.error));
               };
               const call = (method, params = {}) => new Promise((resolve, reject) => {
+                if (pending.size >= 32) {
+                  reject(Object.assign(new Error('Too many pending ToolBox requests'), { code: 'BUSY' }));
+                  return;
+                }
                 const id = `${'$'}{Date.now().toString(36)}-${'$'}{(++sequence).toString(36)}`;
                 pending.set(id, { resolve, reject });
-                nativeBridge.postMessage(JSON.stringify({
-                  id, method, params, nonce: $nonce, toolId: $toolId,
-                  versionCode: ${identity.versionCode}, generation: $generation
-                }));
+                try {
+                  nativeBridge.postMessage(JSON.stringify({
+                    id, method, params, nonce: $nonce, toolId: $toolId,
+                    versionCode: ${identity.versionCode}, generation: $generation
+                  }));
+                } catch (error) {
+                  pending.delete(id);
+                  reject(error);
+                }
               });
               const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
               const subscribe = (name, listener) => {

@@ -257,9 +257,17 @@ private class InMemoryPermissionGrantRepository(private val state: InMemoryCoreS
         grants.values.filter { it.toolId == toolId }.sortedBy(PermissionGrant::capability)
     }
 
-    override suspend fun put(grant: PermissionGrant): DataResult<Unit> = state.mutex.withLock {
+    override suspend fun put(grant: PermissionGrant): DataResult<Unit> = putChecked(grant, null)
+
+    override suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit> =
+        putChecked(grant, expectedVersionCode)
+
+    private suspend fun putChecked(grant: PermissionGrant, expectedVersionCode: Int?): DataResult<Unit> = state.mutex.withLock {
         if (grant.capability.isBlank()) return@withLock DataResult.Failure.InvalidInput("capability")
         if (grant.toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
+        if (expectedVersionCode != null && state.tools.value[grant.toolId]?.currentVersion?.versionCode != expectedVersionCode) {
+            return@withLock DataResult.Failure.InvalidInput("versionCode")
+        }
         state.grants.value = state.grants.value + ((grant.toolId to grant.capability) to grant)
         DataResult.Success(Unit)
     }

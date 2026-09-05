@@ -207,11 +207,19 @@ internal class RoomPermissionGrantRepository(
     override fun observeGrants(toolId: String): Flow<List<PermissionGrant>> =
         database.grants().observeForTool(toolId).map { rows -> rows.map(PermissionGrantEntity::toDomain) }
 
-    override suspend fun put(grant: PermissionGrant): DataResult<Unit> = try {
+    override suspend fun put(grant: PermissionGrant): DataResult<Unit> = putChecked(grant, null)
+
+    override suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit> =
+        putChecked(grant, expectedVersionCode)
+
+    private suspend fun putChecked(grant: PermissionGrant, expectedVersionCode: Int?): DataResult<Unit> = try {
         database.withTransaction {
             if (grant.capability.isBlank()) return@withTransaction DataResult.Failure.InvalidInput("capability")
             if (database.tools().get(grant.toolId) == null) {
                 return@withTransaction DataResult.Failure.NotFound("tool")
+            }
+            if (expectedVersionCode != null && database.versions().get(grant.toolId)?.versionCode != expectedVersionCode) {
+                return@withTransaction DataResult.Failure.InvalidInput("versionCode")
             }
             database.grants().put(grant.toEntity())
             DataResult.Success(Unit)

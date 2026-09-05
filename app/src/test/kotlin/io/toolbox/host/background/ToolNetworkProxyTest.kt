@@ -1,6 +1,22 @@
 package io.toolbox.host.background
 
+import java.io.IOException
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType
+import okhttp3.ResponseBody
+import okio.Source
+import okio.Timeout
+import okio.buffer
 import kotlinx.coroutines.test.runTest
 import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,6 +30,55 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ToolNetworkProxyTest {
+    @Test
+    fun cancellationAfterHeadersCancelsBodyReadAndClosesResponse() = runBlocking {
+        val reading = CountDownLatch(1)
+        val cancelledRead = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        val cancelled = AtomicBoolean(false)
+        val request = Request.Builder().url("https://api.example.com/slow").build()
+        val body = object : ResponseBody() {
+            private val stream = object : Source {
+                override fun timeout() = Timeout.NONE
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    reading.countDown()
+                    check(cancelledRead.await(5, TimeUnit.SECONDS))
+                    throw IOException("Call cancelled while reading")
+                }
+                override fun close() { closed.countDown() }
+            }.buffer()
+            override fun contentType(): MediaType = "text/plain".toMediaType()
+            override fun contentLength(): Long = -1L
+            override fun source() = stream
+        }
+        val response = Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+            .code(200).message("OK").body(body).build()
+        val call = object : Call {
+            override fun request() = request
+            override fun timeout() = Timeout.NONE
+            override fun isExecuted() = true
+            override fun isCanceled() = cancelled.get()
+            override fun clone(): Call = error("not used")
+            override fun execute(): Response = error("Must not block the calling dispatcher")
+            override fun cancel() { cancelled.set(true); cancelledRead.countDown() }
+            override fun enqueue(responseCallback: Callback) {
+                thread(isDaemon = true, name = "test-network-callback") {
+                    responseCallback.onResponse(this, response)
+                }
+            }
+        }
+        val pending = launch(start = CoroutineStart.UNDISPATCHED) { call.awaitResponse(1024, true) }
+        try {
+            assertTrue(reading.await(5, TimeUnit.SECONDS))
+            pending.cancelAndJoin()
+            assertTrue(cancelled.get())
+            assertTrue(closed.await(5, TimeUnit.SECONDS))
+        } finally {
+            call.cancel()
+            pending.cancelAndJoin()
+        }
+    }
+
     @Test
     fun effectiveRequestBudgetControlsReadWriteAndCallWithoutExtendingConnectWait() {
         val proxy = ToolNetworkProxy()
