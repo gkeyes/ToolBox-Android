@@ -118,7 +118,33 @@ CI #76 记录。验收使用当前代码与当前 reference 的严格比较；�
   完整默认 actionlint（含新安装的 ShellCheck 0.11）则报告既有 delivery 的 `! grep` 写法 `SC2251`；
   对未修改的 `0eda7dd` workflow 重跑得到相同告警。本轮不越界修改该步骤，不将完整默认 lint 声称为通过。
 
+## 后续目录 UI 样板（以 P1 `1646d7f` 为父提交）
+
+- 用户要求先改有用的部分并提交，不等待真机测试。本批只调整工具首页/详情的信息层级与管理入口，
+  不修改数据库、缓存键/容量、最近使用统计、Runtime/后台、权限、动画或依赖版本。
+- 首页数量移入分组标题，最近使用/列表不再重复版本与大小，详情信息区继续保留完整信息；
+  “管理”改为独立文字按钮。固定图标尺寸与列表 key/contentType 保持；名称换行而非固定行数裁切。
+- 原问题 → 具体修改 → 前后图证据：重复统计/元数据与含义不清的箭头 → 上述收敛；基准为 P1
+  的截图 reference，新图必须来自 Compose 实际渲染。此提交不自动覆盖 reference、不修改差异阈值。
+  首次 CI 若报告预期视觉差异/缺少新增 reference，保留失败与 diff 产物；人工审阅后再提交对应基线。
+
+| 检查 | 理由 | 方法 | 预期与当前状态 |
+|---|---|---|---|
+| 扩展 `HostAdaptiveScrollTest` | 文字管理入口变宽后，大字窄屏不能挤掉打开区或产生双重触发。 | 360dp、2倍字、浅/深主题；生产页面提供长名称 fixture，校验两块可见目标均至少48dp且不重叠，向各自中心注入真实指针点击，核对仅对应动作被触发。 | 每次管理不打开，每次打开不管理。保留原空目录/底栏大字测试。仪器执行 NOT_RUN，不用语义 performClick 冒充真实触控验证。 |
+| 扩展既有 screenshot 矩阵 | 原矩阵缺少已安装列表的360dp大字状态；运行中预览缺少 PreviewTest，未被门禁发现。 | 新增一个长名称/360dp/2倍字的生产目录预览；仅将现有深色运行中预览纳入截图发现，复用原 fixtures/页面。其余已安装/搜索/空态/中屏/详情/运行壳等继续 validate。 | 管理可见、名称换行、运行区与最近使用/列表无重叠；不把其他普通 Preview 自动全收，也不把总数永久固定为17。真实渲染与 reference 审阅待 CI。 |
+| 既有 `DestructiveButtonTest`、详情确认与导航回归 | 信息重新分组不能丢失删除确认、权限/后台入口或返回状态。 | 使用原有 Android 编译/仪器测试入口，不重建业务测试假实现。 | 行为断言不变；仪器执行按用户要求暂不等待，仍标 NOT_RUN。 |
+
+本地 `git diff --check` 通过；4 个修改后的 Kotlin 文件通过第三方语法筛查（不代表类型检查或编译），
+没有改动 PNG reference。GitHub 编译/截图结果以此 UI 分支实际 SHA/run 为准，不能复用 P1 的绿灯。
+没有真机前后图/帧指标，不声称性能提升或全路径视觉验收。设置/运行壳进一步重排与 P2 性能实施未包含。
+
 ## P1 性能采集合同（续接 P0，不改性能/UI 行为）
+
+- 后续 GitHub 验证：P1 `1646d7f14608d2dcca0b044b9c105171a37c82f4` 的
+  [Android CI 33981424797](https://github.com/gkeyes/ToolBox-Android/actions/runs/33981424797)
+  经 Actions API 核对已完成且三项 job 全部成功：host gate/截图、optimized candidate、release delivery。
+  以下本地 NOT_RUN 记录保留为提交前检查点；它与后来实际完成的 GitHub 构建阶段区分。
+  设备测量、真实输入/生命周期和 candidate APK profileable 的独立核验仍未完成。
 
 - P0 `3b9747601c389694c1a8622fcacd97de7c35d960` 的 Android CI
   [33977011655](https://github.com/gkeyes/ToolBox-Android/actions/runs/33977011655)

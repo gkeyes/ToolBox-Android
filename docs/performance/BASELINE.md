@@ -24,9 +24,12 @@ validation, production UI, dependencies and security boundaries were retained.
 - Local evidence at continuation: `/workspace/.ci-diagnostics/release-33977011655/`
   and `/workspace/uploads/toolbox-v0.3.8-release-3b97476.apk` (hash independently
   recomputed). Actions artifact digests identify ZIPs, not the APK inside them.
-- P1 working-tree changes have not been submitted/built in CI. Do not reuse P0's
-  green result as evidence for these changes. Current reference images are
-  unchanged; no new native screenshots or manual visual approval are claimed.
+- P1 measurement-preparation commit `1646d7f14608d2dcca0b044b9c105171a37c82f4`
+  subsequently passed all three jobs in
+  [Android CI 33981424797](https://github.com/gkeyes/ToolBox-Android/actions/runs/33981424797),
+  verified through the Actions API. This is P1 build/test evidence, not a device
+  performance result or approval of later UI changes. P1 retained the original
+  reference images; the separate catalog UI sample requires its own render review.
 
 A for subsequent optimization comparisons must be the **P1 instrumented candidate
 before performance/UI changes**, B the individual optimization. Rebuild both
@@ -47,7 +50,8 @@ on the dedicated device. Never install the candidate over the user's app.
 The candidate-only manifest enables shell profiling, leaving release unchanged.
 Before measurement, verify the built/merged candidate manifest is profileable,
 non-debuggable, R8/resource optimized; verify release did not gain profileability.
-That Android build/manifest verification is currently **NOT_RUN**.
+Independent merged-manifest/APK profiling verification is still **NOT_RUN**;
+the subsequent P1 CI compilation result alone does not establish profiling access.
 
 Prerequisites: Bash, Python 3 (standard library), `timeout`, `sha256sum`, ADB,
 a connected dedicated Android device, a current `trace_processor_shell`, the exact
@@ -219,8 +223,9 @@ behavior and real before/after screenshots; that UI work has not started.
 | Return / Tab switching | — | — | — | — | NOT_MEASURED |
 | Repeated open/close objects / PSS | — | — | — | — | NOT_MEASURED |
 
-Still required: P1 Android build and merged-manifest verification; same-config
-baseline/candidate APKs; dedicated device/provider/thermal context; real fixtures
+P1 Android CI build/test is now successful (run above). Still required: independent
+merged-manifest/APK profiling verification; same-config comparison APKs; dedicated
+device/provider/thermal context; real fixtures
 and semantic replay; A–F captures with verified trace coverage; TTID/TTFD/input
 and FrameTimeline extraction; object lifecycle analysis; native screenshots and
 separate visual video. Offline capture tests protect failure/status/filtering

@@ -68,12 +68,10 @@ internal fun ToolManagerScreen(
     onOpenDetails: (String) -> Unit,
     runningTools: @Composable () -> Unit = {},
 ) {
-    val subtitle = if (state.tools.isEmpty()) "轻量网页工具架" else "${state.tools.size} 个已安装工具"
     PrimaryScreen(
         selected = MainDestination.Tools,
         onDestination = onDestination,
         title = "工具",
-        subtitle = subtitle,
         onImport = onImport,
     ) { padding, layout ->
         val recentLimit = if (layout.isCompact) COMPACT_RECENT_TOOL_COUNT else 3
@@ -125,7 +123,7 @@ internal fun ToolManagerScreen(
                 !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }
                 state.tools.isEmpty() -> item("empty") { EmptyCatalogState(onImport, onInstallExamples) }
                 state.visibleTools.isEmpty() -> {
-                    item("installed-title") { SectionHeader("搜索结果") }
+                    item("installed-title") { SectionHeader("搜索结果 · 0") }
                     item("no-match") { CatalogStatusState("没有匹配的工具") }
                 }
                 else -> {
@@ -150,7 +148,10 @@ internal fun ToolManagerScreen(
                         item("after-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
                     }
                     item("installed-title") {
-                        SectionHeader(if (state.isSearching) "搜索结果 · ${state.visibleTools.size}" else "全部工具")
+                        SectionHeader(
+                            if (state.isSearching) "搜索结果 · ${state.visibleTools.size}"
+                            else "全部工具 · ${state.tools.size}",
+                        )
                     }
                     item("before-tools") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                     itemsIndexed(
@@ -222,14 +223,12 @@ internal fun ToolDetailScreen(
                     ToolBoxGroupedSurface {
                         ToolBoxSettingRow(
                             title = "权限",
-                            summary = "管理此工具已声明的能力",
                             icon = ToolBoxIconKey.Shield,
                             onClick = { onPermissions(tool.toolId) },
                         )
                         ToolBoxGroupDivider()
                         ToolBoxSettingRow(
                             title = "后台任务",
-                            summary = "查看运行状态、结果与取消操作",
                             icon = ToolBoxIconKey.Clock,
                             onClick = { onBackground(tool.toolId) },
                         )
@@ -316,8 +315,13 @@ private fun CatalogToolRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
-                    .clickable(role = Role.Button, onClick = onOpen)
-                    .padding(start = ToolBoxThemeTokens.spacing.oneHalf, end = ToolBoxThemeTokens.spacing.half),
+                    .clickable(role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen)
+                    .padding(
+                        start = ToolBoxThemeTokens.spacing.oneHalf,
+                        end = ToolBoxThemeTokens.spacing.half,
+                        top = ToolBoxThemeTokens.spacing.one,
+                        bottom = ToolBoxThemeTokens.spacing.one,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CatalogToolGlyph(
@@ -327,21 +331,21 @@ private fun CatalogToolRow(
                     size = ToolBoxThemeTokens.sizes.compactToolGlyph,
                 )
                 Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
-                Column(Modifier.weight(1f)) {
-                    AppText(
-                        text = tool.name,
-                        textStyle = ToolBoxThemeTokens.textStyles.title,
-                        weight = FontWeight.SemiBold,
-                        maxLines = 2,
-                    )
-                    AppText(
-                        text = "${tool.versionName} · ${tool.bundleBytes.fileSizeLabel()}",
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                    )
-                }
+                AppText(
+                    text = tool.name,
+                    modifier = Modifier.weight(1f),
+                    textStyle = ToolBoxThemeTokens.textStyles.title,
+                    weight = FontWeight.SemiBold,
+                )
             }
-            ToolBoxIconButton(ToolBoxIconKey.ChevronRight, "管理${tool.name}", onDetails)
+            // Sibling targets: managing a tool must never bubble into the open action.
+            ToolBoxTextButton(
+                label = "管理",
+                onClick = onDetails,
+                modifier = Modifier
+                    .widthIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                    .semantics { contentDescription = "管理${tool.name}" },
+            )
         }
         if (!isLast) ToolBoxGroupDivider(startPadding = 68.dp)
     }
@@ -367,20 +371,12 @@ private fun CatalogRecentCard(
                 size = 38.dp,
             )
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-            Column(Modifier.weight(1f)) {
-                AppText(
-                    text = tool.name,
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                    weight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-                AppText(
-                    text = tool.versionName,
-                    textStyle = ToolBoxThemeTokens.textStyles.label,
-                    color = ToolBoxThemeTokens.colors.textSecondary,
-                    maxLines = 1,
-                )
-            }
+            AppText(
+                text = tool.name,
+                modifier = Modifier.weight(1f),
+                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                weight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -398,19 +394,12 @@ private fun ToolIdentity(tool: CatalogTool) {
             visual = visual,
         )
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
-        Column(Modifier.weight(1f)) {
-            AppText(
-                text = tool.name,
-                textStyle = ToolBoxThemeTokens.textStyles.screenTitle,
-                weight = FontWeight.Bold,
-                maxLines = 2,
-            )
-            AppText(
-                text = "${tool.versionName} · ${tool.bundleBytes.fileSizeLabel()}",
-                textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                color = ToolBoxThemeTokens.colors.textSecondary,
-            )
-        }
+        AppText(
+            text = tool.name,
+            modifier = Modifier.weight(1f),
+            textStyle = ToolBoxThemeTokens.textStyles.screenTitle,
+            weight = FontWeight.Bold,
+        )
     }
 }
 

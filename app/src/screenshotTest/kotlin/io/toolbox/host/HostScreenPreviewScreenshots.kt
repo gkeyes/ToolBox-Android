@@ -46,6 +46,33 @@ fun InstalledToolsDarkScreenshot() {
 }
 
 @PreviewTest
+@Preview(
+    name = "Installed tools narrow large text",
+    showBackground = true,
+    device = "spec:width=360dp,height=800dp,dpi=320",
+    fontScale = 2f,
+)
+@Composable
+fun InstalledToolsNarrowLargeTextScreenshot() {
+    val tools = PreviewHostFixtures.catalog.tools.mapIndexed { index, tool ->
+        if (index == 0) tool.copy(name = "用于大字体换行验证的工具") else tool
+    }
+    ToolBoxTheme {
+        ToolManagerScreen(
+            state = CatalogUiState(isLoaded = true, tools = tools, visibleTools = tools),
+            importState = ImportUiState(),
+            listState = rememberLazyListState(),
+            onAction = {},
+            onDestination = {},
+            onImport = {},
+            onInstallExamples = {},
+            onDismissImport = {},
+            onOpenDetails = {},
+        )
+    }
+}
+
+@PreviewTest
 @Preview(name = "Tool search", showBackground = true, device = CompactPhone)
 @Composable
 fun ToolSearchScreenshot() {

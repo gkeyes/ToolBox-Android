@@ -23,10 +23,10 @@ implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 | App 根与主题 | `MiuixTheme`、`Scaffold` | `ToolBoxAppShell` | 全局 token、system bar/inset 单一归属。 |
 | 主导航 | `NavigationBar`、`NavigationBarItem` | `MainDestinationBar` | 仅工具/设置；约 56dp 视觉区，手势 inset 只消费一次。 |
 | 顶栏 | `SmallTopAppBar`、`IconButton` | `ToolBoxTopBar` | 普通页 48–52dp 内容区；大字体自然增高。 |
-| 工具列表 | surface/card、menu、search | `GroupedSurface`、`ToolRow`、`ToolSearchField` | 48dp 搜索、72–80dp 行、stable key、整行打开。 |
+| 工具列表 | surface/card、menu、search | `GroupedSurface`、`ToolRow`、`ToolSearchField` | 48dp 搜索、72–80dp 起且大字自然增长、stable key；主区域打开，独立 48dp“管理”文字按钮进入详情。 |
 | 首页正在运行 | `Card`、`Button`、`OverlayDialog` | `ToolBoxGroupedSurface`、`ToolBoxRunningStatusButton`、`CatalogRunningTools` | 最近使用上方；每会话独立行，名称打开、状态按钮确认停止，零会话隐藏。 |
 | 导入反馈 | progress、snackbar、dialog | `ImportFeedback` | 选择 → 内部检查 → 成功/失败；没有审核卡/风险徽标。 |
-| 工具详情 | grouped surface、button、dialog | `ToolDetailSection`、`ToolBoxDestructiveButton` | 打开、权限、后台任务、删除各保留一处入口；无重复“工具操作”弹层，删除仍需确认。 |
+| 工具详情 | grouped surface、button、dialog | `ToolDetailSection`、`ToolBoxDestructiveButton` | 身份块保留名称/图标/打开，信息区单独显示版本/大小；权限、后台任务、删除各一处入口，删除仍需确认。 |
 | 工具身份图 | Compose `Image`、Android `Bitmap` | `CatalogToolGlyph`、`ToolIconLoader` | 从当前版本 `manifest.icon` 异步加载；列表/详情/运行区、通知内容图及超级岛同源，来源小图标仍是宿主。 |
 | 删除/停止/取消任务 | `Button` | `ToolBoxDestructiveButton` | `softDanger/onSoftDanger` 有色底，浅深主题可读、48dp 目标与禁用反馈；不可逆确认仍用强强调危险按钮。 |
 | 工具权限 | preference switch | `ToolBoxSwitchSettingRow` | 整行与开关可点；映射实际 manifest + handler。 |
