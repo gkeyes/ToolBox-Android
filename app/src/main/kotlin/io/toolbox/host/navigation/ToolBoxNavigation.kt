@@ -37,6 +37,7 @@ import io.toolbox.host.HostDependencies
 import io.toolbox.host.HostFeatureViewModelFactory
 import io.toolbox.host.PermissionCenterViewModelFactory
 import io.toolbox.host.RuntimeViewModelFactory
+import io.toolbox.host.HostTrace
 import io.toolbox.host.background.BackgroundTasksScreen
 import io.toolbox.host.background.BackgroundSafeguardsScreen
 import io.toolbox.host.catalog.CatalogNavigationIntent
@@ -160,8 +161,10 @@ internal fun ToolBoxNavigation(
 
     LaunchedEffect(runtimeRoute, entryCoverMeasured) {
         if (runtimeRoute != null && entryCoverMeasured) {
-            withFrameNanos { }
-            entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
+            HostTrace.bestEffortAsyncSection("tool.shell.enter") {
+                withFrameNanos { }
+                entryProgress.animateTo(0f, animationSpec = RetainedPageMotion)
+            }
             runtimeLayerEnabled = true
         }
     }
@@ -354,16 +357,20 @@ private fun RetainedSecondaryPage(
 
     LaunchedEffect(route, presentationReady, contentReady) {
         if (!presentationReady || !contentReady) return@LaunchedEffect
-        withFrameNanos { }
-        progress.animateTo(0f, animationSpec = RetainedPageMotion)
+        HostTrace.bestEffortAsyncSection("nav.enter") {
+            withFrameNanos { }
+            progress.animateTo(0f, animationSpec = RetainedPageMotion)
+        }
     }
 
     val requestBack: () -> Unit = {
         if (isTop && !leaving) {
             leaving = true
             coroutineScope.launch {
-                progress.animateTo(1f, animationSpec = RetainedPageMotion)
-                onRemove()
+                HostTrace.bestEffortAsyncSection("nav.return") {
+                    progress.animateTo(1f, animationSpec = RetainedPageMotion)
+                    onRemove()
+                }
             }
         }
     }

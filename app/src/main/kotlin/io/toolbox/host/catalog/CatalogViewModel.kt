@@ -8,6 +8,7 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataResult
 import io.toolbox.host.HostDeleteResult
 import io.toolbox.host.HostPackageOperations
+import io.toolbox.host.HostTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,9 +43,10 @@ internal class CatalogViewModel(
                     }
                 }
                 .collect { entries ->
-                    val tools = entries.map(CatalogEntry::toCatalogTool)
-                    update { state ->
-                        state.withCatalogTools(tools).copy(isLoaded = true)
+                    val tools = HostTrace.bestEffortSection("host.catalog.publish") {
+                        entries.map(CatalogEntry::toCatalogTool).also { tools ->
+                            update { state -> state.withCatalogTools(tools).copy(isLoaded = true) }
+                        }
                     }
                     pendingRuntimeLaunchToolId?.let { toolId ->
                         pendingRuntimeLaunchToolId = null
@@ -76,7 +78,10 @@ internal class CatalogViewModel(
 
     private fun openInstalled(toolId: String) {
         viewModelScope.launch {
-            when (organization.recordOpened(toolId, now())) {
+            val result = HostTrace.bestEffortAsyncSection("tool.recordOpened") {
+                organization.recordOpened(toolId, now())
+            }
+            when (result) {
                 is DataResult.Success -> mutableNavigation.send(CatalogNavigationIntent.RequestRuntimeLaunch(toolId))
                 is DataResult.Failure -> showFailure("OPEN_FAILED", "工具暂时无法打开。")
             }

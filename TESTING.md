@@ -118,6 +118,44 @@ CI #76 记录。验收使用当前代码与当前 reference 的严格比较；�
   完整默认 actionlint（含新安装的 ShellCheck 0.11）则报告既有 delivery 的 `! grep` 写法 `SC2251`；
   对未修改的 `0eda7dd` workflow 重跑得到相同告警。本轮不越界修改该步骤，不将完整默认 lint 声称为通过。
 
+## P1 性能采集合同（续接 P0，不改性能/UI 行为）
+
+- P0 `3b9747601c389694c1a8622fcacd97de7c35d960` 的 Android CI
+  [33977011655](https://github.com/gkeyes/ToolBox-Android/actions/runs/33977011655)
+  已通过 verify、optimized candidate 和 release delivery；本轮重新以只读 Actions API 核对。
+  本地 release APK 的字节数及 SHA 与原回执相符，详见 `docs/performance/BASELINE.md`。
+  该结果不覆盖以下未提交的 P1 修改，也不代表真机性能通过。
+- 复用已有 capture Shell 入口与 `HostTrace`，增加 candidate 专用 profileable manifest、固定无内容标签、
+  目标进程 trace 摘要和离线合同回归。同步 helper 改为非挂起 block，跨协程用唯一 cookie + finally。
+  统计写入仍先于导航；图标仍先查目录、同工具锁/两解码/4MiB 不变；WebView 仍在壳动画之后创建；
+  后台生命周期/权限/签名/版本/截图基线不变。没有新增 benchmark 模块或重排 CI。
+
+| 检查 | 理由 | 方法 | 预期与边界 |
+|---|---|---|---|
+| `scripts/tests/test_perf_capture.py` | 采集错过回放、无业务 trace、失败被当成功会污染全部优化结论。 | Python 标准库直接执行生产 capture/summarizer，临时 fake ADB/processor 验证 readiness→reset→replay→dump→stop 顺序、失败/缺 slice/丢失数据/未闭合 slice/错误 PID/清理失败、安装身份/专用环境/隐私输出/不覆盖旧产物；SQLite 实际执行生产 SQL，覆盖线程/进程异步 track、其他进程与非白名单内容过滤和最近秩统计。 | 成功只标记 CAPTURED_NOT_EVALUATED；任何关键失败非零且最终 INVALID，snapshot-only 为 NOT_MEASURED；无真实 adb、APK 或设备操作。fake 字节只存在于临时测试目录，绝不当真机证据。 |
+| `bash -n scripts/perf/capture-host.sh`；`shellcheck scripts/perf/capture-host.sh` | 保证实际 Shell 入口语法与引用/退出码处理基本正确。 | 直接检查修改后的脚本，不扫描并修复无关历史 workflow 警告。 | 退出 0；这不是 ADB/Perfetto 兼容或设备性能验证。 |
+| 既有 `CatalogViewModelTest`、`ToolIconLoadCoordinatorTest`、`HostNavigationTest`、runtime 生命周期测试及 Android 编译 | 埋点不得改变原始动作、取消/异常传播或资源拥有关系。 | 后续 Android 环境运行现有准入 JVM 测试，编译 candidate 与仪器测试；设备核对 trace 成对、版本失效、取消/返回/后台复用以及 candidate/release 合并 manifest。 | 业务回归保持原结果，candidate profileable/non-debuggable，release 不新增 profileable；未运行不能标 PASS。 |
+
+离线命令：
+
+```bash
+bash -n scripts/perf/capture-host.sh
+shellcheck scripts/perf/capture-host.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_perf_capture.py' -v
+git diff --check
+```
+
+实际结果：首次 ShellCheck 发现类别正则中的 `$category[...]` 引用错误（SC1087），在 Python 测试
+启动前退出；修为 `${category}[...]` 后，以上四条命令均退出 0。Python **8 项测试通过**（23.683s，
+含参数化失败场景）；输出：`/workspace/.pi/tasks/session-18034-18034/b9c472946.output`。
+源 manifest 的 XML 解析通过，profileable 只在 candidate 声明；这不是合并 manifest/APK 检查。
+Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace、TTID/TTFD/FrameTimeline、
+对象数量及 UI 截图均 **NOT_RUN / NOT_MEASURED**。
+当前 Alpine 无 ADB/JDK/Android SDK/trace processor；未安装或操作用户手机，未推送/触发 CI。
+独立只读子任务因 `spawn pi ENOENT` 未能运行，没有审阅结论；源码由主代理直接复核。
+第三方 Kotlin 语法筛查不能处理所有现有语法，结果不作为 Kotlin 类型或编译验收。
+固定场景、语义回放和真机仍是 `BASELINE.md` 中明确未完成的阶段出口；不能宣布 P1 实测完成。
+
 ## 阶段性最小测试矩阵
 
 | 阶段 | 测试 | 测试理由 | 测试方法 | 预期结果 |

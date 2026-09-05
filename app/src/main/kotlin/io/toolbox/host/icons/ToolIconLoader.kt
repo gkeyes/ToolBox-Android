@@ -10,6 +10,7 @@ import android.util.LruCache
 import com.caverock.androidsvg.SVG
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.ToolVersion
+import io.toolbox.host.HostTrace
 import java.nio.ByteBuffer
 import java.nio.file.Path
 import kotlin.math.max
@@ -29,18 +30,33 @@ internal class ToolIconLoader(
     private data class Cached(val bitmap: Bitmap?)
     private val cache = object : LruCache<ToolVersion, Cached>(4 * 1024 * 1024) {
         override fun sizeOf(key: ToolVersion, value: Cached): Int = value.bitmap?.allocationByteCount ?: 64 * 1024
+
+        override fun entryRemoved(evicted: Boolean, key: ToolVersion, oldValue: Cached, newValue: Cached?) {
+            if (evicted) HostTrace.bestEffortSection("icon.cache.evict") { }
+        }
     }
 
     suspend fun load(toolId: String, expectedVersionCode: Int? = null): Bitmap? = withContext(Dispatchers.IO) {
         loads.withTool(toolId) {
             try {
-                val tool = catalog.observeTool(toolId).first() ?: return@withTool null
+                val tool = HostTrace.bestEffortAsyncSection("icon.catalog.lookup") {
+                    catalog.observeTool(toolId).first()
+                } ?: return@withTool null
                 val version = tool.currentVersion
                 if (expectedVersionCode != null && version.versionCode != expectedVersionCode) return@withTool null
-                cache.get(version)?.let { return@withTool it.bitmap }
-                val bitmap = loads.decode { reader.read(tool)?.let(ToolIconDecoder::decode) }
+                cache.get(version)?.let {
+                    HostTrace.bestEffortSection("icon.cache.hit") { }
+                    return@withTool it.bitmap
+                }
+                HostTrace.bestEffortSection("icon.cache.miss") { }
+                val bitmap = loads.decode {
+                    HostTrace.bestEffortSection("icon.decode") { reader.read(tool)?.let(ToolIconDecoder::decode) }
+                }
                 ensureActive()
-                if (catalog.observeTool(toolId).first()?.currentVersion != version) return@withTool null
+                val currentVersion = HostTrace.bestEffortAsyncSection("icon.catalog.recheck") {
+                    catalog.observeTool(toolId).first()?.currentVersion
+                }
+                if (currentVersion != version) return@withTool null
                 cache.put(version, Cached(bitmap))
                 bitmap
             } catch (cancelled: CancellationException) {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Measurement-only overlay. Never profile the user's release installation. -->
+    <application>
+        <profileable android:shell="true" />
+    </application>
+</manifest>

@@ -15,6 +15,7 @@ import android.location.LocationManager
 import android.webkit.WebView
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
+import io.toolbox.host.HostTrace
 import io.toolbox.host.MainActivity
 import io.toolbox.host.R
 import io.toolbox.host.background.AndroidNotificationGateway
@@ -149,12 +150,14 @@ internal class RuntimeSessionManager(
 
     fun openForeground(toolId: String) {
         scope.launch {
-            visibleTools += toolId
-            hosts[toolId]?.let { host ->
-                host.state = RuntimeHostState.ATTACHED
-                stateFlow(toolId).value = host.toUiState()
+            HostTrace.bestEffortAsyncSection("runtime.attach") {
+                visibleTools += toolId
+                hosts[toolId]?.let { host ->
+                    host.state = RuntimeHostState.ATTACHED
+                    stateFlow(toolId).value = host.toUiState()
+                }
+                ensureRuntime(toolId, restoreReason = null)
             }
-            ensureRuntime(toolId, restoreReason = null)
         }
     }
 
@@ -173,6 +176,7 @@ internal class RuntimeSessionManager(
     fun detachForeground(toolId: String) {
         scope.launch {
             if (!visibleTools.remove(toolId)) return@launch
+            HostTrace.bestEffortSection("runtime.detach") { }
             clearForegroundOnlyWatches(toolId)
             val plan = runtimeForegroundDetachPlan(!sessionsByTool[toolId].isNullOrEmpty())
             if (plan.destroyHost) {
@@ -374,8 +378,10 @@ internal class RuntimeSessionManager(
         }
         stateFlow(toolId).value = RuntimeUiState.Loading
         try {
-            val installed = withContext(Dispatchers.IO) { repositories.catalog.observeTool(toolId).first() }
-            val prepared = withContext(Dispatchers.IO) { preparer.prepare(toolId, installed) }
+            val prepared = HostTrace.bestEffortAsyncSection("tool.prepare") {
+                val installed = withContext(Dispatchers.IO) { repositories.catalog.observeTool(toolId).first() }
+                withContext(Dispatchers.IO) { preparer.prepare(toolId, installed) }
+            }
             val runtime = (prepared as? RuntimePreparationResult.Prepared)?.runtime
             if (runtime == null) {
                 val failure = prepared as RuntimePreparationResult.Failed
@@ -474,7 +480,7 @@ internal class RuntimeSessionManager(
     private fun destroyHost(toolId: String) {
         hosts.remove(toolId)?.let { host ->
             host.state = RuntimeHostState.STOPPED
-            HardenedRuntimeWebView.release(host.webView)
+            HostTrace.bestEffortSection("runtime.release") { HardenedRuntimeWebView.release(host.webView) }
         }
         stateFlow(toolId).value = RuntimeUiState.Loading
     }
