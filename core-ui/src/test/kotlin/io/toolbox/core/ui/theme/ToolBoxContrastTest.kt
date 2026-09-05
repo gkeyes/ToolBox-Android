@@ -19,10 +19,18 @@ class ToolBoxContrastTest {
 
     @Test
     fun dynamicButtonColorsPreserveReadableChoicesAndRepairLowContrast() {
-        assertEquals(Color.White, readableForeground(Color.White, Color.Black))
+        assertEquals(Color.White, readableForeground(Color.White, listOf(Color.Black)))
         for (r in 0..255 step 51) for (g in 0..255 step 51) for (b in 0..255 step 51) {
             val background = Color(r, g, b)
-            assertTrue(contrastRatio(readableForeground(background, background), background) >= 4.5f)
+            assertTrue(contrastRatio(readableForeground(background, listOf(background)), background) >= 4.5f)
         }
+    }
+
+    @Test
+    fun multipleSurfacesPreserveReadableForegroundOrUseSaferNeutral() {
+        val colors = LightToolBoxColors
+        val surfaces = listOf(colors.background, colors.surface, colors.surfaceMuted)
+        assertEquals(colors.textSecondary, readableForeground(colors.textSecondary, surfaces))
+        assertEquals(Color.Black, readableForeground(Color.White, surfaces))
     }
 }

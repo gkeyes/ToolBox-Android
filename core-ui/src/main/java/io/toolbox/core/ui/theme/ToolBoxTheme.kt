@@ -225,17 +225,17 @@ fun ToolBoxTheme(
         val miuixColors = MiuixTheme.colorScheme
         val colors = baseColors.copy(
             primary = miuixColors.primary,
-            onPrimary = readableForeground(miuixColors.onPrimary, miuixColors.primary),
+            onPrimary = readableForeground(miuixColors.onPrimary, listOf(miuixColors.primary)),
             background = miuixColors.background,
             surface = miuixColors.surface,
             surfaceMuted = miuixColors.surfaceVariant,
             textPrimary = miuixColors.onBackground,
             textSecondary = readableForeground(
                 miuixColors.onSurfaceVariantSummary,
-                miuixColors.background, miuixColors.surface, miuixColors.surfaceVariant,
+                listOf(miuixColors.background, miuixColors.surface, miuixColors.surfaceVariant),
             ),
             danger = miuixColors.error,
-            onDanger = readableForeground(baseColors.onDanger, miuixColors.error),
+            onDanger = readableForeground(baseColors.onDanger, listOf(miuixColors.error)),
             divider = miuixColors.dividerLine,
             softPrimary = miuixColors.primaryContainer,
             softDanger = miuixColors.errorContainer,
@@ -256,7 +256,7 @@ internal fun contrastRatio(first: Color, second: Color): Float {
 }
 
 /** Preserve the palette when readable, including Monet; otherwise use the safer neutral. */
-internal fun readableForeground(preferred: Color, vararg backgrounds: Color): Color {
+internal fun readableForeground(preferred: Color, backgrounds: List<Color>): Color {
     require(backgrounds.isNotEmpty())
     fun minimumContrast(color: Color) = backgrounds.minOf { contrastRatio(color, it) }
     if (minimumContrast(preferred) >= 4.5f) return preferred
