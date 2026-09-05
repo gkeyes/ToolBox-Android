@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "purpose": "One-off old-palette/old-reference control for the intentional contrast refresh; not visual approval.",
+  "baselineCommit": "081794441bf0d76f81c47e24743c7ae59f638efc",
+  "renderedFromCommit": "e25d38103b109b4c696fce27aaff948f688dcb3a",
+  "renderedFromRun": "https://github.com/gkeyes/ToolBox-Android/actions/runs/33961698287",
+  "confirmedByRun": "https://github.com/gkeyes/ToolBox-Android/actions/runs/33964696585",
+  "expectedColors": {
+    "Light": {
+      "primary": "1264CC",
+      "textSecondary": "676A70",
+      "danger": "BA252C"
+    },
+    "Dark": {
+      "onPrimary": "10243A",
+      "onDanger": "30100F"
+    }
+  },
+  "references": [
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/BackgroundSafeguardsScreenshot_Background safeguards_9eeb1709_0.png",
+      "referenceSha256": "3758c6077e8e770c04882fb6caead6d873b35cfc11384ba72fe8a8fe406b3842",
+      "renderedSha256": "6df06140faa9aa72af4aad95c2007f6ed1f10d7c891a8bb363b3e4f9c8d967fc",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/BackgroundTasksScreenshot_Background tasks_fbb8b515_0.png",
+      "referenceSha256": "e56947d4eab494fbbcf786e41fed09ef5a90ae805974688165706fca24359618",
+      "renderedSha256": "a9963da05f80feb1b2f695e80ab10eca84ffa35f56ada1773601fe574cbb91dc",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/DeveloperHelpDarkScreenshot_Developer help dark_8a6579ed_0.png",
+      "referenceSha256": "b1bd4e225fbccfe930087c88ec06b4a59c820c8cd5e2531d337e0dddda26a666",
+      "renderedSha256": "e46d678af3e43090c9d953001be0ae589fb699927fef17861f7a1a62ed7cbedd",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/DeveloperHelpLargeTextScreenshot_Developer help large text_d439788c_0.png",
+      "referenceSha256": "b955089449cc06cd2bbdc38e2ec5f9960a1f51a2d6541cce2a540f879591e9a5",
+      "renderedSha256": "16ff1b583f888f95683e8f70644a5c1019c345234b1d40b638b3872b37bdfc27",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/DeveloperHelpScreenshot_Developer help_9aa7457e_0.png",
+      "referenceSha256": "a7e9e87b90cd0995e421490f1d686e7340ab58a3e73616bb91276cddb4978245",
+      "renderedSha256": "54397911c3cf9bc756284b8f24acd8ab2d909f02fb84c5830a2e99ce32e9aadc",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/EmptyToolsLargeTextScreenshot_Empty tools large text_5c105ad5_0.png",
+      "referenceSha256": "6e592c3fb175ec444f188bf1889137e92f60b3588f65cf61315b2bea16b133a6",
+      "renderedSha256": "3a4fd3c6e74544bf224de6731b46068a661b162903a031e9a9c413c31b3e6926",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/InstalledToolsDarkScreenshot_Installed tools dark_0bb5512c_0.png",
+      "referenceSha256": "492242316c5811b5466a52593f33716a3fb1e7320e8d726231c91c77a90ff3be",
+      "renderedSha256": "492242316c5811b5466a52593f33716a3fb1e7320e8d726231c91c77a90ff3be",
+      "changed": false
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/InstalledToolsLightScreenshot_Installed tools light_9f22f571_0.png",
+      "referenceSha256": "b5c6d6360b298fc4eefa96f54fb9618078889d87bcab62828417672903601040",
+      "renderedSha256": "8e7a5dbc5ddb7a2c83441e9ee57d5fd1a9111ab7a46b134cfff5f8ce2e37a4c4",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/MediumSettingsDarkScreenshot_Medium settings dark_d75888cf_0.png",
+      "referenceSha256": "98338303080cdeb91f1bfbf0985c0a2a6393240d1cf8c6bf6a3df29c5105aff2",
+      "renderedSha256": "98338303080cdeb91f1bfbf0985c0a2a6393240d1cf8c6bf6a3df29c5105aff2",
+      "changed": false
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/MediumToolsScreenshot_Medium tools_6409f3d3_0.png",
+      "referenceSha256": "0a03a5325c5093454ffedd118152f949ac6acdaa490e5e8af40d036c348ebd5d",
+      "renderedSha256": "bad9047f670ebfeb59b656fa573f256d17d89dacb0fc63a23c62f89256b8ba47",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/PermissionCenterLargeTextScreenshot_Permission center large text_b8ea308a_0.png",
+      "referenceSha256": "b7324d972346b2c09e02c8897535737b084cb28fe2d4dc533176255f3939dc4a",
+      "renderedSha256": "a044958af34fa3f48fa158a18d8ab5bf3b1f883a91b6ab3bc1d1fcd92fd39b8c",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/PermissionCenterScreenshot_Permission center_eca6e36e_0.png",
+      "referenceSha256": "356845c156c51e8913b90704923d3d8aed1ce0ec493b0103e3446a521f7c37b2",
+      "renderedSha256": "1c36e0c1398d7230ebd0f16570e8b97c7fed2792c24c97fbddc5e82301907893",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/RuntimeShellDarkScreenshot_Runtime shell dark_45bac2e1_0.png",
+      "referenceSha256": "0635cae39a298a70935090ca9122d9d40e4456857c379baca2b883e727aa4bdf",
+      "renderedSha256": "0635cae39a298a70935090ca9122d9d40e4456857c379baca2b883e727aa4bdf",
+      "changed": false
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/RuntimeShellScreenshot_Runtime shell_f3d0aa7f_0.png",
+      "referenceSha256": "921229cb7db24c0e6cbb64549df8b3458472285da9a8c45e211cd9236e73dda8",
+      "renderedSha256": "5ae58516e3f75197474a4c2eadd8913c77957423c9f59588af19827a9710585c",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/SettingsScreenshot_Settings_57ea56a3_0.png",
+      "referenceSha256": "d687897b2c1f7401b99ba60ddaf5315affd1e46824aeb8c5718ce19dca0d0397",
+      "renderedSha256": "b4104b9f332d6be4c025b090a84019bf3d3bcda54dda3a36d48431ec07074f3a",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/ToolDetailScreenshot_Tool detail_26129234_0.png",
+      "referenceSha256": "7efa785d804da1737e2894c384e5be26e2b6390f4e20ce8c3865d2ee9cc21dcb",
+      "renderedSha256": "3a546230e48c1a41652b4546832ad2e8b11bf269e7fbf0f9c8c111230c10b995",
+      "changed": true
+    },
+    {
+      "file": "io/toolbox/host/HostScreenPreviewScreenshotsKt/ToolSearchScreenshot_Tool search_a1abec55_0.png",
+      "referenceSha256": "535d942f5f989cfa98a71133e158d5b62a4044badf17417eef5412f95814f60d",
+      "renderedSha256": "d9ba68e6f3b430a990128c7f5fc7499f253b2328342c4b8d3e5a0f2ec24166af",
+      "changed": true
+    }
+  ]
+}
