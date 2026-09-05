@@ -84,9 +84,81 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
+  optimized_compile:
+    name: Compile optimized APK (not delivery)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK 37
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            build-tools;37.0.0
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+
+      - name: Compile release sources and assemble optimized candidate
+        run: |
+          set -euo pipefail
+          evidence="$GITHUB_WORKSPACE/.omo/evidence/ci-optimized-compile"
+          mkdir -p "$evidence"
+          printf 'BUILD_COMMIT=%s\nSCOPE=OPTIMIZED_COMPILE_ONLY\n' "$GITHUB_SHA" > "$evidence/receipt.txt"
+          ./gradlew --no-daemon :app:compileReleaseKotlin :app:assembleCandidate --console=plain 2>&1 |
+            tee "$evidence/build.log"
+
+      - name: Verify candidate APK and R8 outputs without publishing it
+        run: |
+          set -euo pipefail
+          evidence="$GITHUB_WORKSPACE/.omo/evidence/ci-optimized-compile"
+          apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/candidate/app-candidate.apk"
+          mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/candidate/mapping.txt"
+          test -s "$apk_path"
+          test -s "$mapping_path"
+          "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$evidence/badging.txt"
+          grep -F "package: name='io.toolbox.host' versionCode='12' versionName='0.3.8'" "$evidence/badging.txt"
+          if grep -q '^application-debuggable' "$evidence/badging.txt"; then
+            printf 'Optimized candidate must not be debuggable.\n' >&2
+            exit 1
+          fi
+          grep -Fx 'io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:' "$mapping_path"
+          sha256sum "$apk_path" > "$evidence/APK_SHA256.txt"
+          {
+            printf 'RELEASE_KOTLIN_COMPILE=PASS\nOPTIMIZED_APK_ASSEMBLY=PASS\n'
+            printf 'APK_VARIANT=candidate\nAPK_DEBUGGABLE=false\nR8_MAPPING=PASS\n'
+            printf 'RESOURCE_SHRINKING=ENABLED\nWORKER_CLASS_NAME_RETENTION=PASS\n'
+            printf 'SIGNING=DIAGNOSTIC_ONLY\nAPK_DELIVERY=NOT_AUTHORIZED\n'
+            printf 'SCREENSHOT_VALIDATION=SEPARATE_REQUIRED_GATE\nDEVICE_TEST=NOT_RUN\n'
+            printf 'APK_SIZE_BYTES=%s\n' "$(stat -c '%s' "$apk_path")"
+          } >> "$evidence/receipt.txt"
+
+      - name: Retain optimized compile diagnostics (no APK)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optimized-compile-${{ github.sha }}
+          path: |
+            .omo/evidence/ci-optimized-compile
+            app/build/outputs/mapping/candidate
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 14
+
   delivery:
     name: Package optimized v0.3.8 release delivery
-    needs: verify
+    needs: [verify, optimized_compile]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -256,9 +328,11 @@ jobs:
       - name: Assemble checksummed delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          OPTIMIZED_COMPILE_RESULT: ${{ needs.optimized_compile.result }}
         run: |
           set -euo pipefail
           [[ "$VERIFY_JOB_RESULT" == "success" ]]
+          [[ "$OPTIMIZED_COMPILE_RESULT" == "success" ]]
 
           delivery_dir="$GITHUB_WORKSPACE/build/ci-delivery"
           mkdir -p "$delivery_dir"
@@ -281,6 +355,7 @@ jobs:
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$TOOLBOX_APK_CERT_SHA256"
             printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
+            printf 'OPTIMIZED_CANDIDATE_BUILD=%s\n' "$OPTIMIZED_COMPILE_RESULT"
             printf 'DEVELOPER_HELP_CHECK=PASS\n'
             printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
             printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'

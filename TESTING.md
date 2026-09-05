@@ -70,6 +70,24 @@
   单测编译发现网络取消测试的 fake Call 未实现当前 OkHttp 的四个 `tag` 重载；改为委托未执行的真实 Call
   提供接口元数据，仍覆盖 fake 的 `enqueue`、`execute`、`cancel` 等执行入口。取消/关闭断言不变，未跳过测试。
 
+## 优化代码编译验证（2026-09-05）
+
+- 用户要求先确认优化后的代码能完整编译：暂停截图基准/隔离对照改动，PNG reference 和原截图门禁保持不变。
+- 已有 run `33961698287`（`e25d381`）证明 Debug 主代码、仪器测试源码和准入 JVM 用例通过；这不是完整优化
+  APK 构建成功的证据。该 run 仍因 14/17 张截图差异失败，正式签名 release 未运行。
+- 新增独立 `optimized_compile` job，让编译失败不再被前面的截图失败遮蔽：执行 `:app:compileReleaseKotlin`
+  与 `:app:assembleCandidate`。已有 candidate 继承 release 的 R8、资源压缩和非 debuggable 配置，只使用
+  诊断签名；未新增变体或修改生产源码。检查真实 APK、包名/版本、非调试标记、非空 mapping 和 Worker 原类名。
+- 只保留 `optimized-compile-<sha>` 日志、badging、APK SHA-256、mapping 与编译回执，不上传诊断 APK、
+  不注入正式签名密钥。正式 delivery 现在同时依赖 verify 和 optimized_compile；没有绕过截图或其他发布门禁。
+- 本地仅验证工作流：官方 checksum 校验的 actionlint 1.7.7 通过语法/上下文/依赖检查（未运行外部 shellcheck/
+  pyflakes）；两个新增命令块通过 shell 语法检查，`git diff --check` 通过。实际 Gradle/APK 成败等待新 CI，
+  不以这些静态检查冒充编译成功。
+
+| 检查 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `optimized_compile` | Debug 源码编译不能证明 Release 源码、R8 与优化 APK 打包成功；视觉门禁不应遮蔽这些失败。 | GitHub 使用 JDK 21/SDK 37 编译 Release 源码并组装已有 candidate；检查真实 APK 身份和非调试标记、mapping/Worker 保留规则，保存产物摘要而非分发 APK。 | Gradle 退出 0，APK 与优化输出均真实存在；仍须独立通过原截图及正式签名 release 门禁。编译不代替视觉、真机运行或性能验收。 |
+
 ## 阶段性最小测试矩阵
 
 | 阶段 | 测试 | 测试理由 | 测试方法 | 预期结果 |
