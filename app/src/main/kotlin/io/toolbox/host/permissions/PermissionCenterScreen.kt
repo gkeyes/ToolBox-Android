@@ -187,7 +187,7 @@ internal fun PermissionCenterContent(
                                             } else {
                                                 onSetEnabled(item.capability, enabled)
                                             }
-                                        }
+                                        },
                                         icon = item.capability.capabilityIcon(),
                                         modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
                                     )
