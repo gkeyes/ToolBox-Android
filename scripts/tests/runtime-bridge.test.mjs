@@ -19,7 +19,7 @@ const source = body
 function fixture() {
   const messages = [];
   const bridge = { postMessage(encoded) { messages.push(JSON.parse(encoded)); } };
-  const context = { __toolboxNative: bridge, queueMicrotask };
+  const context = { __toolboxNative: bridge, queueMicrotask, addEventListener() {} };
   vm.runInNewContext(source, context);
   const reply = (request, result = null) => bridge.onmessage({ data: JSON.stringify({ id: request.id, ok: true, result }) });
   return { api: context.ToolBox, bridge, messages, reply };
