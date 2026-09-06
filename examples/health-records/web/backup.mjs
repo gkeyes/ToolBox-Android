@@ -1,4 +1,5 @@
 import { TYPES, emptyArchive, normalizeArchive, HealthError, localDate } from "./model.mjs";
+import { checkInflatedZipBudget } from "./zip-budget.mjs";
 
 function dateText(value, XLSX, date1904) {
   if (typeof value === "number") {
@@ -95,7 +96,7 @@ export function checkZipBudget(bytes) {
       if (cursor > stop) throw new HealthError("Excel ZIP 扩展字段损坏");
     }
   }
-  const spans = [];
+  const spans = [], files = [];
   let offset = directoryStart, total = 0;
   for (let i = 0; i < entries; i++) {
     if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) throw new HealthError("Excel ZIP 条目损坏");
@@ -118,9 +119,29 @@ export function checkZipBudget(bytes) {
       const actual = view.getUint32(local + position, true);
       if (actual !== expected && !(flags & 8 && actual === 0)) throw new HealthError("Excel ZIP 大小或校验信息不一致");
     }
-    spans.push([local, dataEnd]); offset = nextOffset;
+    const crc = view.getUint32(offset + 16, true);
+    let entryEnd = dataEnd;
+    if (flags & 8) {
+      if (entryEnd + 12 > directoryStart) throw new HealthError("Excel ZIP 数据描述符损坏");
+      if (view.getUint32(entryEnd, true) === 0x08074b50) entryEnd += 4;
+      if (entryEnd + 12 > directoryStart || view.getUint32(entryEnd, true) !== crc || view.getUint32(entryEnd + 4, true) !== compressed || view.getUint32(entryEnd + 8, true) !== size) throw new HealthError("Excel ZIP 数据描述符不一致");
+      entryEnd += 12;
+    }
+    files.push({ method, size, crc, dataStart, dataEnd });
+    spans.push([local, entryEnd]); offset = nextOffset;
   }
   if (offset !== directoryStart + directorySize) throw new HealthError("Excel ZIP 目录长度不匹配");
   spans.sort((a, b) => a[0] - b[0]);
-  for (let i = 1; i < spans.length; i++) if (spans[i][0] < spans[i - 1][1]) throw new HealthError("Excel ZIP 条目重叠");
+  let previousEnd = 0;
+  for (const [start, stop] of spans) {
+    if (start !== previousEnd) throw new HealthError("Excel ZIP 条目重叠或存在目录外数据");
+    previousEnd = stop;
+  }
+  if (previousEnd !== directoryStart) throw new HealthError("Excel ZIP 存在目录外数据");
+  return files;
+}
+
+export async function checkWorkbookBudget(bytes) {
+  const files = checkZipBudget(bytes);
+  if (files) await checkInflatedZipBudget(bytes, files);
 }

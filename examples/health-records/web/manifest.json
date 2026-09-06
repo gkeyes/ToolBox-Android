@@ -4,12 +4,12 @@
   "name": "健康档案",
   "shortName": "健康档案",
   "description": "离线保存检验报告、查看指标趋势，支持旧站数据和 Excel 备份，可选 MiniMax 或 Gemini 报告识别与资料整理。",
-  "version": "1.0.7",
-  "versionCode": 8,
+  "version": "1.0.9",
+  "versionCode": 10,
   "entry": "index.html",
   "icon": "icon-v1.0.3.png",
   "apiVersion": "1.0",
-  "minHostVersion": "0.3.7",
+  "minHostVersion": "0.3.10",
   "categories": ["健康", "记录"],
   "permissions": [
     { "name": "storage", "reason": "在本机保存检验记录、档案和偏好", "required": true },
@@ -22,7 +22,7 @@
     "allowDomains": ["generativelanguage.googleapis.com", "api.minimax.cn"],
     "allowRedirects": false,
     "timeoutMs": 300000,
-    "maxResponseBytes": 524288
+    "maxResponseBytes": 4194304
   },
   "securityProfile": "strict",
   "ui": { "orientation": "unspecified", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true },

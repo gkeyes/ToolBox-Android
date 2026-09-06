@@ -66,7 +66,7 @@ test("AI JSON integer parameters survive the ToolBox message boundary without na
   }
 });
 
-test("name cleanup accepts same-specimen synonyms across units without accepting count, method or specimen conflicts", () => {
+test("name cleanup shows count/method notices across units while retaining the user specimen boundary", () => {
   const archive = emptyArchive(), row = (name, unit = "") => ({ name, unit, value: "1", normal: "0–2" });
   archive.records = [
     { id: "blood", date: "2026-01-01", type: "blood", items: [row("LH"), row("黄体生成激素", "mIU/mL"), row("细胞计数", "10^9/L"), row("细胞比例", "%"), row("甲（方法一）", "U/L"), row("甲（方法二）", "U/L")] },
@@ -75,9 +75,9 @@ test("name cleanup accepts same-specimen synonyms across units without accepting
   const before = structuredClone(archive);
   const validate = (source, target) => ai.validateSuggestions({ suggestions: [{ key: metricKey("blood", source), target, reason: "确认缩写与全称" }] }, archive, "cleanup");
   assert.equal(validate(row("LH"), "黄体生成激素")[0].unit, "");
-  assert.throws(() => validate(row("细胞计数", "10^9/L"), "细胞比例"), /不兼容|跨标本/);
-  assert.throws(() => validate(row("甲（方法一）", "U/L"), "甲（方法二）"), /不兼容|跨标本/);
-  assert.throws(() => validate(row("LH"), "仅尿样项目"), /不兼容|跨标本/);
+  assert.match(validate(row("细胞计数", "10^9/L"), "细胞比例")[0].notice, /数量/);
+  assert.match(validate(row("甲（方法一）", "U/L"), "甲（方法二）")[0].notice, /方法/);
+  assert.throws(() => validate(row("LH"), "仅尿样项目"), /标本/);
   assert.deepEqual(archive, before);
 });
 

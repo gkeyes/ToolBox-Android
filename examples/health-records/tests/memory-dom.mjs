@@ -26,6 +26,7 @@ export class MemoryNode {
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   removeAttribute(name) { this.attributes.delete(name); }
   addEventListener(name, listener) { if (!this.listeners.has(name)) this.listeners.set(name, []); this.listeners.get(name).push(listener); }
+  removeEventListener(name, listener) { this.listeners.set(name, (this.listeners.get(name) || []).filter(value => value !== listener)); }
   isDisabled() { for (let n = this; n; n = n.parentNode) if (n.disabled && (n === this || n.tagName === "FIELDSET")) return true; return false; }
   async fire(type, extras = {}) {
     if (["click", "input", "change"].includes(type) && this.isDisabled()) return;
@@ -57,7 +58,7 @@ export function freshDom(api) {
   const doc = new MemoryNode("document"); doc.body = new MemoryNode("body"); doc.documentElement = new MemoryNode("html"); doc.activeElement = doc.body;
   doc.getElementById = (id) => nodes[id]; doc.createElement = (tag) => new MemoryNode(tag); doc.createElementNS = (_, tag) => new MemoryNode(tag); doc.createTextNode = (text) => new MemoryNode("#text", text);
   doc.body.append(...Object.values(nodes)); globalThis.document = doc; globalThis.Node = MemoryNode;
-  globalThis.window = { ToolBox: api, scrollY: 0, scrollTo() {}, addEventListener() {} };
+  globalThis.window = new MemoryNode("window"); Object.assign(window, { ToolBox: api, scrollY: 0, scrollTo() {} });
   return nodes;
 }
 

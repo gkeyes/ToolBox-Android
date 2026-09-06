@@ -11,7 +11,7 @@ self.addEventListener("message", async ({ data }) => {
         const raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, ""));
         result = model.normalizeArchive(raw, makeId);
       } else {
-        backup.checkZipBudget(bytes);
+        await backup.checkWorkbookBudget(bytes);
         if (!self.XLSX) importScripts("./vendor/xlsx.full.min.js");
         result = backup.workbookToArchive(self.XLSX.read(bytes, { type: "array", cellDates: false, cellFormula: false, cellHTML: false, cellStyles: false, bookVBA: false }), self.XLSX, makeId);
       }

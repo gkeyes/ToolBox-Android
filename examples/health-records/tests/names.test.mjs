@@ -47,7 +47,7 @@ test("canonical directory resolves confirmed aliases without resurrecting obsole
   assert.equal(calls, 1); assert.deepEqual(none.record, source);
 });
 
-test("name alignment rejects invented identifiers, extra fields, repeated sources and cross-context or method suggestions", async () => {
+test("name alignment rejects invalid identifiers/fields and repeated sources but presents method and quantity choices", async () => {
   const catalog = buildNameCatalog(archiveOf([item("标准甲", "10^9/L"), item("标准乙", "%"), item("标准丙（方法甲）")]));
   const source = report([item("原名甲", "10^9/L"), item("原名乙", "%"), item("原名丙（方法甲）")]);
   const invalid = [
@@ -56,18 +56,20 @@ test("name alignment rejects invented identifiers, extra fields, repeated source
     () => ({ matches: [{ sourceId: "i0", targetId: "invented" }] }),
     (payload) => { const valid = matchByName(payload, { "原名甲": "标准甲" }).matches[0]; return { matches: [valid, valid] }; },
     (payload) => { const valid = matchByName(payload, { "原名甲": "标准甲" }).matches[0]; return { matches: [{ ...valid, name: "新造名称" }] }; },
-    (payload) => ({ matches: [{ sourceId: "i0", targetId: payload.groups.flatMap((group) => group.candidates).find((entry) => entry.name === "标准乙").id }] }),
-    (payload) => ({ matches: [{ sourceId: "i0", targetId: payload.groups.flatMap((group) => group.candidates).find((entry) => entry.name === "标准丙（方法甲）").id }] }),
   ];
   for (const makeOutput of invalid) {
     const result = await alignRecordNames(source, catalog, { request: async (_, payload) => makeOutput(payload) });
     assert.deepEqual(result.record, source); assert.ok(result.review.every((entry) => entry.status === "failed"));
   }
+  for (const name of ["标准乙", "标准丙（方法甲）"]) {
+    const result = await alignRecordNames(source, catalog, { request: async (_, payload) => ({ matches: [{ sourceId: "i0", targetId: payload.groups.flatMap(group => group.candidates).find(entry => entry.name === name).id }] }) });
+    assert.equal(result.record.items[0].name, name); assert.match(result.review[0].detail, /核对提示/);
+  }
   const uncertain = report([item("某细胞计数", "%"), item("标准丙（方法乙）"), item("标准甲", "")]);
   const guarded = buildNameCatalog(archiveOf([item("某细胞比例", "%"), item("标准丙（方法甲）"), item("标准甲")]));
   let called = false;
-  const result = await alignRecordNames(uncertain, guarded, { request: async () => { called = true; } });
-  assert.equal(called, false); assert.deepEqual(result.record, uncertain);
+  const result = await alignRecordNames(uncertain, guarded, { request: async () => { called = true; return { matches: [] }; } });
+  assert.equal(called, true); assert.deepEqual(result.record, uncertain);
 });
 
 test("local and AI matches never merge rows or introduce duplicate targets; timeouts and stale results preserve drafts", async () => {
@@ -99,7 +101,7 @@ test("candidate groups are complete and bounded, with explicit review when a gro
   let calls = 0;
   const big = await alignRecordNames(report([item("异名（方法0）", "unit0")]), buildNameCatalog(largeArchive(1, 300)), { request: async () => { calls++; } });
   assert.equal(calls, 0); assert.ok(big.review[0].detail.includes("目录过大"));
-  const limited = await alignRecordNames(report(Array.from({ length: 6 }, (_, g) => item(`异名${g}（方法${g}）`, `unit${g}`))), buildNameCatalog(largeArchive(6, 180)), { request: async (_, payload) => {
+  const limited = await alignRecordNames(report(Array.from({ length: 6 }, (_, g) => item(`异名${g}（方法${g}）`, `unit${g}`))), buildNameCatalog(largeArchive(1, 180)), { request: async (_, payload) => {
     calls++; assert.ok(byteSize(payload) <= NAME_BATCH_BYTES);
     assert.equal(payload.groups.length, 1); assert.equal(payload.groups[0].candidates.length, 180);
     return { matches: [] };
