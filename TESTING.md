@@ -12,11 +12,16 @@
   从该版本已发布 sources JAR 核对 API；解释移入原 OverlayDialog，不升级依赖/另建选择页。
 - `SettingsViewModel`、DataStore、权限和后台停止语义不变；不与前一 P-A 提交混成一个变更。
   debug 的两项普通设置 Preview 同步去掉副标题；不恢复截图测试，不把源码/预览当实际审图。
+- 首次 `2905a93` 的 [CI 34008133886](https://github.com/gkeyes/ToolBox-Android/actions/runs/34008133886)
+  编译失败：生产导航及两个 debug Preview 把 `null` 传给了 `PrimaryScreen.subtitle: String`。
+  host gate 的 API/security/contrast 通过，compile/admitted-unit 未通过，release 跳过；不是单测断言失败。
+  修复仅删除三个实参，使用已有 `subtitle = ""` 默认值，不改组件 API、不恢复副标题。
+  先前语法筛查没有进行类型检查，不能作为此次编译成功的证据；修复后的新 SHA 仍需 CI。
 
 | 扩展既有检查 | 理由 | 方法 | 预期/状态 |
 |---|---|---|---|
 | `HostAdaptiveScrollTest.settingsChoicesErrorsAndDestinationsRemainReachableOnNarrowLargeTextScreens` | 行尾当前值不能挤压主题标题，大字不能让原入口/错误/版本不可达。 | 生产 SettingsContent + 360dp、2倍字体、浅深主题；检查主题/当前值不重叠，以指针打开选择，检查说明和主题选择回调；注入错误状态，滚动点击后台保障/权限/帮助，检查真实 BuildConfig 版本。 | 原入口 ≥48dp 且每次只触发相应回调，错误后仍可操作；仪器执行 NOT_RUN。Fixture 的选择回调不证明 DataStore 保存或系统动态取色。 |
-| 原编译、安全、准入单元与正式交付 | core-ui API 及调用方必须一致，不得破坏其他页面/后台语义。 | GitHub 原 host gate、optimized_compile、delivery；不新设视觉 gate。 | 本地 diff/安全不变量通过，5个修改 Kotlin 文件第三方语法筛查无报错（不是编译）；新 CI 待运行，设备与视觉验收不冒充 PASS。 |
+| 原编译、安全、准入单元与正式交付 | core-ui API 及调用方必须一致，不得破坏其他页面/后台语义。 | GitHub 原 host gate、optimized_compile、delivery；不新设视觉 gate。 | 本地 diff/安全不变量通过，5个修改 Kotlin 文件第三方语法筛查无报错（不是编译）；首次 CI 失败及修复见上，修复后 CI 待运行，设备与视觉验收不冒充 PASS。 |
 
 ## 开发计划续行 P-A：导航与最近使用写入解耦
 
@@ -37,7 +42,7 @@
 | `CatalogViewModelTest` 的慢写/重复/再打开场景 | 统计不是导航资格；合并不能把用户永久锁在第一次打开。 | 生产 VM + 可控仓库，Deferred 暂停首次写入；无订阅时双击，随后接入真实 navigation Flow，再在旧写入悬挂时重新打开并改变 clock。 | 首次写未完成已收到一个导航；双击只有一次写入；再打开不等旧写，最终按 123/456 的请求时间顺序落库且不再次导航。 |
 | 同类测试的失败/恢复/取消矩阵 | 存储异常不能崩溃或误报打开失败；取消与 Mutex 释放必须保持。 | 分别返回 StorageFailure、抛异常、抛 CancellationException，然后重新打开。 | 失败仍发导航并给统计专属提示；成功重试清除该提示；取消无错误反馈，不阻塞下一次写入/导航。 |
 | 同类测试的延迟消费/删除/重装场景 | 不能因导航订阅晚到而打开已知删除的工具，也不能永久去重掉重装后的合法请求。 | 发请求后清空目录，再接入 Flow；拒绝不存在 ID，然后发布新版本并重新请求。 | 旧排队导航被丢弃；删除后没有新增写入；新版本当前投影允许一次新导航。它不替代真实 runtime 的版本安全测试。 |
-| 原 host gate / optimized_compile / delivery | 保留其他行为、安全与正式交付门禁。 | GitHub 编译生产/仪器源并执行原准入 JVM 测试；优化构建、签名、内置资源核验。 | 新提交结果待 CI；真实设备检查仍不冒充 PASS。 |
+| 原 host gate / optimized_compile / delivery | 保留其他行为、安全与正式交付门禁。 | GitHub 编译生产/仪器源并执行原准入 JVM 测试；优化构建、签名、内置资源核验。 | `1a07728` 的 [CI 34007468629](https://github.com/gkeyes/ToolBox-Android/actions/runs/34007468629) 三项 job 均成功，release 已下载并核对哈希；不据此批准后续设置 UI，真实设备检查仍不冒充 PASS。 |
 
 ## 当前决策：永久移除自动截图测试（用户明确要求）
 
