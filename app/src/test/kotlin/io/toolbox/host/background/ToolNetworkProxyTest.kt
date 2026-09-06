@@ -15,6 +15,22 @@ import org.junit.Test
 
 class ToolNetworkProxyTest {
     @Test
+    fun streamCancellationCancelsTheUnderlyingCallEvenBeforeHeaders() {
+        for (cancelBeforeAttach in listOf(false, true)) {
+            val control = ToolNetworkStreamControl()
+            val call = ToolNetworkProxy().clientForRequest(1_000).newCall(Request.Builder().url("https://api.example.com/").build())
+            if (cancelBeforeAttach) {
+                control.cancel()
+                org.junit.Assert.assertThrows(ToolNetworkFailure::class.java) { control.attach(call) }
+            } else {
+                control.attach(call)
+                control.cancel()
+            }
+            assertTrue(call.isCanceled())
+        }
+    }
+
+    @Test
     fun effectiveRequestBudgetControlsReadWriteAndCallWithoutExtendingConnectWait() {
         val proxy = ToolNetworkProxy()
         for (budget in listOf(1_000L, 30_000L, 300_000L)) {

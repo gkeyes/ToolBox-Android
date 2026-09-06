@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352";
+export type ToolBoxContractSha256 = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44";
 
 export type ToolBoxCapability =
   | "storage"
@@ -36,6 +36,9 @@ export type ToolBoxMethodName =
   | "haptics.perform"
   | "clipboard.writeText"
   | "network.request"
+  | "network.openStream"
+  | "network.readStream"
+  | "network.cancelStream"
   | "notifications.post"
   | "notifications.update"
   | "notifications.cancel"
@@ -132,6 +135,24 @@ export interface NetworkResponse {
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string;
   readonly bodyEncoding: "text" | "base64";
+}
+
+export interface NetworkStreamOptions {
+  /** Cancels while waiting for headers and while reading. */
+  readonly signal?: AbortSignal;
+}
+
+export interface NetworkStreamResponse {
+  readonly streamId: string;
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+export interface NetworkStreamChunk {
+  /** An incremental byte chunk. Decode text with TextDecoder's stream option. */
+  readonly data: Uint8Array;
+  readonly done: boolean;
+  readonly receivedBytes: number;
 }
 
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
@@ -301,6 +322,9 @@ export interface ToolBoxApi {
   };
   network: {
     request(request: NetworkRequest): Promise<NetworkResponse>;
+    openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
+    readStream(streamId: string): Promise<NetworkStreamChunk>;
+    cancelStream(streamId: string): Promise<void>;
   };
   notifications: {
     post(id: string, title: string, body: string): Promise<void>;

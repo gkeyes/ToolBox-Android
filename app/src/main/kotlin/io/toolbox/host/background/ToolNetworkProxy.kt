@@ -12,6 +12,8 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.Locale
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -93,31 +95,62 @@ class ToolNetworkProxy private constructor(
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
         acceptHttpErrors: Boolean = true,
-    ): NetworkExecution {
-        if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
-            return NetworkExecution.TerminalFailure("INVALID_TIMEOUT")
+    ): NetworkExecution = withContext(Dispatchers.IO) {
+        val control = ToolNetworkStreamControl()
+        try {
+            val stream = openStream(
+                ToolNetworkRequest(url, method, headers, body, bodyIsJson, allowedHosts, allowRedirects,
+                    timeoutMillis, maxResponseBytes, acceptHttpErrors),
+                control,
+            )
+            stream.response.use { response ->
+                val bytes = response.body.readBounded(maxResponseBytes)
+                    ?: return@withContext NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
+                val text = isTextResponse(response)
+                NetworkExecution.Success(
+                    statusCode = response.code,
+                    finalUrl = stream.finalUrl,
+                    contentType = response.header("Content-Type")?.substringBefore(';'),
+                    body = if (text) bytes.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(bytes),
+                    bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
+                    headers = response.exposedHeaders(),
+                )
+            }
+        } catch (error: ToolNetworkFailure) {
+            if (error.retryable) NetworkExecution.RetryableFailure(error.code)
+            else NetworkExecution.TerminalFailure(error.code)
+        } catch (error: IOException) {
+            error.toNetworkFailure()
+        } finally {
+            control.cancel()
         }
-        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
-            return NetworkExecution.TerminalFailure("INVALID_RESPONSE_LIMIT")
-        }
-        if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) {
-            return NetworkExecution.TerminalFailure("NETWORK_HOST_NOT_ALLOWED")
-        }
+    }
+
+    internal suspend fun openStream(
+        options: ToolNetworkRequest,
+        control: ToolNetworkStreamControl,
+    ): ToolNetworkStream = withContext(Dispatchers.IO) { openResponse(options, control) }
+
+    private suspend fun openResponse(options: ToolNetworkRequest, control: ToolNetworkStreamControl): ToolNetworkStream {
+        val (url, method, headers, body, bodyIsJson, allowedHosts, allowRedirects, timeoutMillis, maxResponseBytes, acceptHttpErrors) = options
+        if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) throw ToolNetworkFailure("INVALID_TIMEOUT")
+        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
+        if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) throw ToolNetworkFailure("NETWORK_HOST_NOT_ALLOWED")
         val normalizedAllowlist = allowedHosts.mapTo(linkedSetOf()) { requireNotNull(normalizeHost(it)) }
         val requestClient = if (transport == null) {
             clientForRequest(timeoutMillis)
         } else {
             null
         }
-        var current = url.toHttpUrlOrNull()
-            ?: return NetworkExecution.TerminalFailure("INVALID_URL")
+        var current = url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
         var currentMethod = method
         var currentBody = body
         var includeCallerHeaders = true
         var redirects = 0
         while (true) {
+            control.requireActive()
             val validation = NetworkPolicy.validateEndpoint(current, normalizedAllowlist)
-            if (validation != null) return NetworkExecution.TerminalFailure(validation)
+            if (validation != null) throw ToolNetworkFailure(validation)
             val response = try {
                 val request = Request.Builder()
                     .url(current)
@@ -152,22 +185,24 @@ class ToolNetworkProxy private constructor(
                     }
                     .build()
                 transport?.execute(request, timeoutMillis)
-                    ?: requireNotNull(requestClient).newCall(request).await()
+                    ?: requireNotNull(requestClient).newCall(request).also(control::attach).await()
             } catch (_: BlockedAddressException) {
-                return NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
+                throw ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
             } catch (error: IOException) {
-                return error.toNetworkFailure()
+                control.requireActive()
+                throw error.toStreamFailure()
             }
-            response.use {
-                if (it.code in REDIRECT_CODES) {
-                    NetworkPolicy.redirectError(allowRedirects)?.let {
-                        return NetworkExecution.TerminalFailure(it)
+            control.attach(response)
+            if (response.code in REDIRECT_CODES) {
+                response.use {
+                    NetworkPolicy.redirectError(allowRedirects)?.let { code ->
+                        throw ToolNetworkFailure(code)
                     }
-                    if (redirects >= maxRedirects) return NetworkExecution.TerminalFailure("TOO_MANY_REDIRECTS")
+                    if (redirects >= maxRedirects) throw ToolNetworkFailure("TOO_MANY_REDIRECTS")
                     val location = it.header("Location")
-                        ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
+                        ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location)
-                        ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
+                        ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
                     if (it.code in setOf(301, 302, 303) && currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)) {
                         currentMethod = NetworkRequestMethod.GET
@@ -175,28 +210,14 @@ class ToolNetworkProxy private constructor(
                     }
                     current = redirected
                     redirects += 1
-                    continue
                 }
-                if (!acceptHttpErrors) {
-                    if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
-                    if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
-                }
-                val body = try {
-                    it.body.readBounded(maxResponseBytes)
-                        ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
-                } catch (error: IOException) {
-                    return error.toNetworkFailure()
-                }
-                val text = isTextResponse(it)
-                return NetworkExecution.Success(
-                    statusCode = it.code,
-                    finalUrl = current.toString(),
-                    contentType = it.header("Content-Type")?.substringBefore(';'),
-                    body = if (text) body.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(body),
-                    bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
-                    headers = it.exposedHeaders(),
-                )
+                continue
             }
+            if (!acceptHttpErrors) {
+                if (response.code in 500..599) throw ToolNetworkFailure("HTTP_${response.code}", retryable = true)
+                if (response.code !in 200..299) throw ToolNetworkFailure("HTTP_${response.code}")
+            }
+            return ToolNetworkStream(response, current.toString(), control, maxResponseBytes)
         }
     }
 
@@ -218,7 +239,7 @@ class ToolNetworkProxy private constructor(
     }
 
     private companion object {
-        const val USER_AGENT = "ToolBox/0.3.5 (Android)"
+        const val USER_AGENT = "ToolBox/0.3.10 (Android)"
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
         const val MAX_TIMEOUT_MILLIS = 600_000L
@@ -383,6 +404,13 @@ private fun IOException.toNetworkFailure(): NetworkExecution = when {
     else -> NetworkExecution.RetryableFailure("NETWORK_IO")
 }
 
+internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
+    this is ToolNetworkFailure -> this
+    hasBlockedAddressCause() -> ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
+    this is InterruptedIOException -> ToolNetworkFailure("NETWORK_TIMEOUT", retryable = true)
+    else -> ToolNetworkFailure("NETWORK_IO", retryable = true)
+}
+
 internal fun normalizeHost(value: String): String? = runCatching {
     val wildcard = value.startsWith("*.")
     val source = if (wildcard) value.substring(2) else value
@@ -402,7 +430,7 @@ internal fun hostMatches(host: String, allowed: String): Boolean =
 private fun isIpLiteralHost(host: String): Boolean =
     host.contains(':') || IPV4_LITERAL.matches(host)
 
-private fun Response.exposedHeaders(): Map<String, String> = headers.names()
+internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
     .asSequence()
     .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
     .mapNotNull { name -> headers[name]?.takeIf { it.length <= 4_096 }?.let { name to it } }
@@ -438,7 +466,7 @@ private suspend fun Call.await(): Response = kotlinx.coroutines.suspendCancellab
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (continuation.isActive) continuation.resumeWith(Result.success(response)) else response.close()
+                continuation.resume(response, onCancellation = { _, value, _ -> value.closeOnIo() })
             }
         },
     )

@@ -47,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352"
+    const val CANONICAL_SHA256: String = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -86,6 +86,9 @@ object ToolBoxApiV1 {
         MethodDescriptor("haptics.perform", ContractPhase.M1, ToolBoxCapabilityId.HAPTICS, "HapticsRequest", "void"),
         MethodDescriptor("clipboard.writeText", ContractPhase.M1, ToolBoxCapabilityId.CLIPBOARD_WRITE, "ClipboardWriteRequest", "void"),
         MethodDescriptor("network.request", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkRequest", "NetworkResponse"),
+        MethodDescriptor("network.openStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamOpenRequest", "NetworkStreamResponse"),
+        MethodDescriptor("network.readStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamIdRequest", "NetworkStreamChunk"),
+        MethodDescriptor("network.cancelStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamIdRequest", "void"),
         MethodDescriptor("notifications.post", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.cancel", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),

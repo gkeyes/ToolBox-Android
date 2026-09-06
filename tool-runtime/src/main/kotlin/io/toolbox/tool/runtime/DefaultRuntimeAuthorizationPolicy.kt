@@ -86,6 +86,7 @@ class DefaultRuntimeAuthorizationPolicy(
     }
 
     private fun methodLimit(method: String): Int = when (method) {
+        "network.readStream" -> 1_000
         "haptics.perform" -> minOf(maxCallsPerMinute, 30)
         "clipboard.writeText" -> minOf(maxCallsPerMinute, 20)
         "ui.toast" -> minOf(maxCallsPerMinute, 30)

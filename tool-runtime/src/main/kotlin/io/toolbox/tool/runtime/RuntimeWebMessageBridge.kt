@@ -72,6 +72,7 @@ class RuntimeBridgeSession internal constructor(
         maxResponseBytes = maxPayloadBytes,
     )
     private val sessionCleanup = m3Handlers.sessionCleanup
+    private val network = m2Handlers.network
 
     internal fun attach(webView: WebView) {
         check(active.get())
@@ -160,6 +161,7 @@ class RuntimeBridgeSession internal constructor(
     internal fun close(webView: WebView) {
         if (!active.compareAndSet(true, false)) return
         jobs.close()
+        runCatching { network?.close() }
         runCatching { sessionCleanup?.close() }
         inFlightIds.clear()
         eventReady.set(false)
@@ -284,6 +286,55 @@ class RuntimeBridgeSession internal constructor(
                 }));
               });
               const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
+              const networkRequest = request => request && request.body instanceof Uint8Array
+                ? { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' } : request;
+              const streams = new Map();
+              const streamCancelled = () => Object.assign(new Error('Network stream cancelled'), { code: 'CANCELLED' });
+              const forgetStream = streamId => {
+                const state = streams.get(streamId);
+                if (state) state.signal?.removeEventListener('abort', state.abort);
+                streams.delete(streamId);
+              };
+              const cancelStream = streamId => {
+                const state = streams.get(streamId);
+                if (state) state.cancelled = true;
+                forgetStream(streamId);
+                return call('network.cancelStream', { streamId });
+              };
+              globalThis.addEventListener('pagehide', () => {
+                for (const streamId of streams.keys()) cancelStream(streamId).catch(() => undefined);
+              });
+              const openStream = async (request, options = {}) => {
+                const streamId = 'stream-' + Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+                const state = { signal: options.signal, cancelled: false, abort: () => cancelStream(streamId).catch(() => undefined) };
+                streams.set(streamId, state);
+                state.signal?.addEventListener('abort', state.abort, { once: true });
+                if (state.signal?.aborted) { forgetStream(streamId); throw streamCancelled(); }
+                try {
+                  const opened = await call('network.openStream', { streamId, request: networkRequest(request) });
+                  if (state.cancelled) {
+                    cancelStream(streamId).catch(() => undefined);
+                    throw streamCancelled();
+                  }
+                  return opened;
+                } catch (error) {
+                  forgetStream(streamId);
+                  if (state.cancelled) throw streamCancelled();
+                  throw error;
+                }
+              };
+              const readStream = async streamId => {
+                const state = streams.get(streamId);
+                try {
+                  const chunk = await call('network.readStream', { streamId });
+                  if (state?.cancelled) throw streamCancelled();
+                  if (chunk.done) forgetStream(streamId);
+                  return { ...chunk, data: Uint8Array.from(atob(chunk.data), character => character.charCodeAt(0)) };
+                } catch (error) {
+                  if (error.code !== 'BUSY') cancelStream(streamId).catch(() => undefined);
+                  throw error;
+                }
+              };
               const subscribe = (name, listener) => {
                 if (typeof listener !== 'function') throw new TypeError('listener must be a function');
                 let callbacks = listeners.get(name);
@@ -321,12 +372,7 @@ class RuntimeBridgeSession internal constructor(
                   writeText: text => call('clipboard.writeText', { text }),
                   readText: () => call('clipboard.readText')
                 },
-                network: { request: request => {
-                  if (request && request.body instanceof Uint8Array) {
-                    return call('network.request', { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' });
-                  }
-                  return call('network.request', request);
-                } },
+                network: { request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
                 notifications: {
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
                   update: (id, title, body) => call('notifications.update', { id, title, body }),
