@@ -4,6 +4,24 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 0.3.9 通知品牌图标修复（2026-09-06）
+
+- 根因：桌面已使用确认后的多工具 Logo，但实时/普通通知、恢复提醒、闹钟、12 小时提醒及
+  快捷方式仍引用最初的蓝色工具箱。原通知 XML 与首版提交的内容完全一致，不仅是系统缓存推测。
+- 修复：删除旧资源；来源 smallIcon 统一使用由原 Logo 轮廓派生的透明白色
+  `ic_toolbox_notification`，通知 largeIcon、HyperOS 缺图和快捷方式回退引用现有 `mipmap/ic_launcher`。
+  已安装工具图仍优先，异步补图、独立通知 ID/序号、动作、白字、权限和运行环境生命周期不变。
+- 版本 `0.3.9 (13)`，GitHub 沿用原固定签名和优化构建；不改四个范例、API、数据库、网络或依赖。
+
+| 检查 | 理由 | 方法 | 预期与实际边界 |
+|---|---|---|---|
+| 扩展 `RuntimeLiveNotificationRendererTest` 的既有 Parcel 用例 | 只替换桌面资源无法阻止通知继续引用旧图，缺图路径也要覆盖。 | 生产 renderer 构建各会话的纯后台占位/实时卡，在有/无 HyperOS 支持及有/无工具图时做 Notification Parcel 往返；检查 smallIcon 资源、largeIcon 资源或像素，读取 `miui.focus.pics` 中真正的 Parcelable Icon。 | 来源为新通知资源；有工具图保持所属工具像素，缺图为新 launcher；Focus 图片同源、序号和操作仍独立。测试由 GitHub 编译，仪器执行与 SystemUI 真机展示仍 NOT_RUN_USER_OWNED。 |
+| 同类 `notificationSmallIconIsTransparentMonochromeWhite` | 彩色桌面图不能直接当作系统来源小图，旧整块蓝色背景必须移除。 | 通过 Android Drawable/Canvas 绘制真实通知资源并检查 alpha 和非透明像素颜色；不保存或比较截图基线。 | 有可见白色轮廓及透明背景；GitHub 仅编译此仪器用例，本机和设备未运行。 |
+| 本地资源复核与既有静态检查 | 推送前发现遗漏引用，保留原品牌与无关改动。 | 临时诊断脚本在修复前得到 4 项 FAIL、修复后 4 项 PASS；检查五个 smallIcon 入口、旧 XML 删除、新图/快捷方式回退、XML 解析和差异；浏览器只渲染实际 XML 转换的矢量资源检查 24/48px 轮廓。 | 资源检查、XML、差异、安全不变量和离线帮助检查 PASS；浏览器资源图形有透明角、纯白前景，不是 Android 通知或超级岛实测。未恢复自动截图门禁，临时诊断材料不提交。 |
+
+- 首次提交时 CI 尚待执行；本机未进行 Gradle/Kotlin/APK 编译，也未操作手机或清除通知/缓存。
+  GitHub 检查结果以该提交的 Actions 为准；源码与资源检查不代替设备体验。
+
 ## 开发计划续行 P-C：权限页生命周期收口（2026-09-06）
 
 - 权限页改用现有 Lifecycle 2.11 的局部 ViewModel owner；保留返回动画完成后的移除时机以及配置

@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.3.8 (12)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.3.9 (13)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   `DataMigration` 或 `fallbackToDestructiveMigration`。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
@@ -332,6 +332,9 @@ Android 16+ 在系统允许时请求 promoted ongoing；每张卡不带 `GROUP_S
   使用系统 ImageDecoder，静态 SVG 使用固定 AndroidSVG 1.4；禁止实体和外部解析器，不创建 WebView。
   缩略图等比归一到 256px，由工具版本键和 4MiB 内存 LRU 复用，替换/删除失效。列表、最近、详情、
   首页运行区和通知共用；普通通知使用 largeIcon，HyperOS ticker/AOD/岛图使用同一位图，smallIcon 保留宿主身份。
+  宿主来源小图使用已确认多工具 Logo 的透明单色轮廓 `ic_toolbox_notification`；彩色通知/岛图缺失
+  时引用当前 `mipmap/ic_launcher`，异步工具图到达后原位替换。快捷方式的宿主图也引用同一 launcher，
+  不保留早期蓝色工具箱资源，不把彩色桌面图直接用作系统通知 smallIcon。
   同工具读取/失效串行，跨工具最多两个 IO 解码并行；LRU 内部短锁不覆盖数据库/文件读取。
   等待者取消会释放工具锁引用和解码名额，版本复查仍在缓存写入前执行；像素分析直接计数，避免装箱列表。
   前台服务先用默认图完成承载，再按会话异步补图；只更新当前仍存活会话，补图推进展示序号且不切换承载卡。
@@ -387,9 +390,9 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.3.8 (12) 上传 `toolbox-v0.3.8-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.3.9 (13) 上传 `toolbox-v0.3.9-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
-代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
+代码优化与资源裁剪，不改变数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug
 后旧任务无法创建，不用整个模块的 keep 规则抵消优化。R8 映射随提交独立归档。
 自动交付流程不启动模拟器；

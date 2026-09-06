@@ -209,7 +209,7 @@ internal class ForegroundCapabilityBroker private constructor(
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             val shortcut = ShortcutInfo.Builder(activity, route.shortcutId)
                 .setShortLabel(label.take(MAX_SHORTCUT_LABEL_CHARS))
-                .setIcon(Icon.createWithResource(activity, R.drawable.ic_toolbox))
+                .setIcon(Icon.createWithResource(activity, R.mipmap.ic_launcher))
                 .setIntent(launchIntent)
                 .build()
             manager.requestPinShortcut(shortcut, null)

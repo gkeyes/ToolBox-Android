@@ -93,7 +93,7 @@ internal class RuntimeRestoreReceiver : BroadcastReceiver() {
         manager.notify(
             NOTIFICATION_ID,
             Notification.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_toolbox)
+                .setSmallIcon(R.drawable.ic_toolbox_notification)
                 .setContentTitle("ToolBox 后台环境等待恢复")
                 .setContentText("系统暂未允许自动启动，点击打开 ToolBox 后继续。")
                 .setContentIntent(open)

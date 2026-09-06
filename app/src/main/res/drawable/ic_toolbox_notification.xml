@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="736"
+    android:viewportHeight="736">
+    <!-- The approved multitool contours, without the launcher background or gradients. -->
+    <group
+        android:translateX="-208"
+        android:translateY="-326"
+        android:scaleX="1.25"
+        android:scaleY="1.25">
+        <clip-path
+            android:fillType="evenOdd"
+            android:pathData="M0,0 H1024 V1024 H0 Z M346,698 A32,32 0,1 0,282 698 A32,32 0,1 0,346 698 Z" />
+        <group android:rotation="-5" android:pivotX="314" android:pivotY="698">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M314,320 A38,38 0,0 1,352 358 V664 A38,38 0,0 1,314 702 A38,38 0,0 1,276 664 V358 A38,38 0,0 1,314 320 Z" />
+        </group>
+        <group android:rotation="34" android:pivotX="314" android:pivotY="698">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M314,278 A48,48 0,0 1,362 326 V654 A48,48 0,0 1,314 702 A48,48 0,0 1,266 654 V326 A48,48 0,0 1,314 278 Z" />
+        </group>
+        <group android:rotation="78" android:pivotX="314" android:pivotY="698">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M305,326 H323 A86,86 0,0 1,409 412 V664 A86,86 0,0 1,323 750 H305 A86,86 0,0 1,219 664 V412 A86,86 0,0 1,305 326 Z" />
+        </group>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M396,698 A82,82 0,1 0,232 698 A82,82 0,1 0,396 698 Z" />
+    </group>
+</vector>

@@ -875,7 +875,7 @@ internal class RuntimeSessionManager(
         )
         val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox)
+            .setSmallIcon(R.drawable.ic_toolbox_notification)
             .setContentTitle("ToolBox 后台运行提醒")
             .setContentText("此工具已连续运行 12 小时")
             .setContentIntent(open)
@@ -894,7 +894,7 @@ internal class RuntimeSessionManager(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox)
+            .setSmallIcon(R.drawable.ic_toolbox_notification)
             .setContentTitle("ToolBox 提醒")
             .setContentText("点击打开对应工具")
             .setContentIntent(open)

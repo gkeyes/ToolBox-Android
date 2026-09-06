@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Parcel
 import android.text.Spanned
@@ -13,6 +15,7 @@ import android.text.style.ForegroundColorSpan
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.host.MainActivity
+import io.toolbox.host.R
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
@@ -85,8 +88,12 @@ class RuntimeLiveNotificationRendererTest {
                         notification.writeToParcel(parcel, 0)
                         parcel.setDataPosition(0)
                         val restored = Notification.CREATOR.createFromParcel(parcel)
+                        assertNotificationSmallIcon(restored)
                         val largeIcon = requireNotNull(restored.getLargeIcon()).loadDrawable(context) as BitmapDrawable
                         assertEquals(toolColor, largeIcon.bitmap.getPixel(largeIcon.bitmap.width / 2, largeIcon.bitmap.height / 2))
+                        val placeholder = parcelCopy(renderer.build(card, support, intent, intent))
+                        assertNotificationSmallIcon(placeholder)
+                        assertLauncherResourceIcon(requireNotNull(placeholder.getLargeIcon()))
                         listOf(Notification.EXTRA_TITLE, Notification.EXTRA_TEXT, Notification.EXTRA_BIG_TEXT)
                             .forEach { key -> assertWhite(restored.extras.getCharSequence(key)) }
                         if (card.presentation != null) {
@@ -109,8 +116,13 @@ class RuntimeLiveNotificationRendererTest {
                             assertTrue(payload.toString().contains(card.notificationId.toString()))
                             assertTrue(payload.toString().contains("${card.session.toolId}:${card.session.sessionId}"))
                             assertTrue(payload.toString().contains("tool-icon-${card.session.sessionId}"))
-                            val placeholder = renderer.build(card, support, intent, intent)
-                            assertNull(placeholder.getLargeIcon())
+                            assertFocusPicture(restored, card.session.sessionId, toolColor)
+                            assertFocusLauncherPicture(placeholder, card.session.sessionId)
+                            val placeholderPayload = JSONObject(checkNotNull(placeholder.extras.getString("miui.focus.param")))
+                            assertNotEquals(
+                                payload.getJSONObject("param_v2").get("sequence"),
+                                placeholderPayload.getJSONObject("param_v2").get("sequence"),
+                            )
                             assertNotEquals(placeholder.extras.getString("miui.focus.param"), restored.extras.getString("miui.focus.param"))
                             assertTrue(payload.toString().contains("\"reopen\":\"close\""))
                             assertTrue(payload.toString().contains("\"islandOrder\":false"))
@@ -151,6 +163,27 @@ class RuntimeLiveNotificationRendererTest {
         }
     }
 
+    @Test
+    fun notificationSmallIconIsTransparentMonochromeWhite() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val icon = requireNotNull(context.getDrawable(R.drawable.ic_toolbox_notification))
+        val bitmap = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).apply {
+            drawColor(Color.TRANSPARENT)
+            icon.setBounds(0, 0, bitmap.width, bitmap.height)
+            icon.draw(this)
+        }
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        assertTrue("Notification icon must retain a transparent background", pixels.any { Color.alpha(it) == 0 })
+        val foreground = pixels.filter { Color.alpha(it) > 0 }
+        assertTrue("Notification icon must draw a visible outline", foreground.isNotEmpty())
+        assertTrue(
+            "Notification icon foreground must be monochrome white",
+            foreground.all { Color.red(it) == 255 && Color.green(it) == 255 && Color.blue(it) == 255 },
+        )
+    }
+
     private fun assertWhiteFocusPayload(payload: JSONObject) {
         val fields = setOf(
             "colorTitle", "colorTitleDark", "colorContent", "colorContentDark",
@@ -171,6 +204,46 @@ class RuntimeLiveNotificationRendererTest {
         }
         visit(payload)
         assertEquals("Both Focus text blocks must specify light and dark foregrounds", 20, checked)
+    }
+
+    private fun assertFocusPicture(notification: Notification, sessionId: String, expectedColor: Int) {
+        val icon = requireNotNull(
+            requireNotNull(notification.extras.getBundle("miui.focus.pics"))
+                .getParcelable("tool-icon-$sessionId", Icon::class.java),
+        )
+        assertEquals(Icon.TYPE_BITMAP, icon.type)
+        val drawable = requireNotNull(icon.loadDrawable(InstrumentationRegistry.getInstrumentation().targetContext)) as BitmapDrawable
+        assertEquals(expectedColor, drawable.bitmap.getPixel(drawable.bitmap.width / 2, drawable.bitmap.height / 2))
+    }
+
+    private fun assertFocusLauncherPicture(notification: Notification, sessionId: String) {
+        val icon = requireNotNull(
+            requireNotNull(notification.extras.getBundle("miui.focus.pics"))
+                .getParcelable("tool-icon-$sessionId", Icon::class.java),
+        )
+        assertLauncherResourceIcon(icon)
+    }
+
+    private fun assertLauncherResourceIcon(icon: Icon) {
+        assertEquals(Icon.TYPE_RESOURCE, icon.type)
+        assertEquals(R.mipmap.ic_launcher, icon.resId)
+    }
+
+    private fun assertNotificationSmallIcon(notification: Notification) {
+        val icon = requireNotNull(notification.smallIcon)
+        assertEquals(Icon.TYPE_RESOURCE, icon.type)
+        assertEquals(R.drawable.ic_toolbox_notification, icon.resId)
+    }
+
+    private fun parcelCopy(notification: Notification): Notification {
+        val parcel = Parcel.obtain()
+        return try {
+            notification.writeToParcel(parcel, 0)
+            parcel.setDataPosition(0)
+            Notification.CREATOR.createFromParcel(parcel)
+        } finally {
+            parcel.recycle()
+        }
     }
 
     private fun assertWhite(text: CharSequence?) {

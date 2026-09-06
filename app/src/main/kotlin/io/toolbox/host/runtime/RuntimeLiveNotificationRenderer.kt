@@ -50,8 +50,8 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             ?: DEFAULT_ACCENT
 
         val builder = Notification.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox)
-            .apply { toolIcon?.let { setLargeIcon(it) } }
+            .setSmallIcon(R.drawable.ic_toolbox_notification)
+            .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
             .setContentTitle(whiteLiveText(title))
             .setContentText(whiteLiveText(content))
             .setStyle(Notification.BigTextStyle().bigText(whiteLiveText(body)))
@@ -96,7 +96,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         val accentHex = String.format("#%06X", 0xFFFFFF and accent)
         val icon = createPicture(
             "tool-icon-${card.session.sessionId}",
-            toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.drawable.ic_toolbox),
+            toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher),
         )
         business = "toolbox_live"
         notifyId = card.notificationId.toString()
