@@ -6,12 +6,10 @@ on:
     paths:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   pull_request:
     paths:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   workflow_dispatch:
 
 permissions:
