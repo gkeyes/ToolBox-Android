@@ -14,6 +14,7 @@ import java.util.Locale
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -205,6 +206,117 @@ class ToolNetworkProxy private constructor(
         }
     }
 
+    internal suspend fun openStream(
+        options: ToolNetworkRequest,
+        control: ToolNetworkStreamControl,
+    ): ToolNetworkStream = withContext(Dispatchers.IO) { openResponse(options, control) }
+
+    private suspend fun openResponse(
+        options: ToolNetworkRequest,
+        control: ToolNetworkStreamControl,
+    ): ToolNetworkStream {
+        val (
+            url,
+            method,
+            headers,
+            body,
+            bodyIsJson,
+            allowedHosts,
+            allowRedirects,
+            timeoutMillis,
+            maxResponseBytes,
+            acceptHttpErrors,
+        ) = options
+        if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
+            throw ToolNetworkFailure("INVALID_TIMEOUT")
+        }
+        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
+            throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
+        }
+        if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) {
+            throw ToolNetworkFailure("NETWORK_HOST_NOT_ALLOWED")
+        }
+        val normalizedAllowlist = allowedHosts.mapTo(linkedSetOf()) { requireNotNull(normalizeHost(it)) }
+        val requestClient = if (transport == null) clientForRequest(timeoutMillis) else null
+        var current = url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
+        var currentMethod = method
+        var currentBody = body
+        var includeCallerHeaders = true
+        var redirects = 0
+        while (true) {
+            control.requireActive()
+            NetworkPolicy.validateEndpoint(current, normalizedAllowlist)?.let { throw ToolNetworkFailure(it) }
+            val response = try {
+                val request = Request.Builder()
+                    .url(current)
+                    .apply {
+                        if (includeCallerHeaders) {
+                            headers.forEach { (name, value) -> header(name, value) }
+                        }
+                        when (currentMethod) {
+                            NetworkRequestMethod.GET -> get()
+                            NetworkRequestMethod.HEAD -> head()
+                            NetworkRequestMethod.POST -> post(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.PUT -> put(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.PATCH -> patch(
+                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                            NetworkRequestMethod.DELETE -> if (currentBody == null) delete() else delete(
+                                currentBody.toRequestBody(requestMediaType(headers, bodyIsJson)),
+                            )
+                        }
+                    }
+                    .apply {
+                        if (!includeCallerHeaders || headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
+                            header("User-Agent", USER_AGENT)
+                        }
+                        if (!includeCallerHeaders || headers.keys.none { it.equals("Accept", ignoreCase = true) }) {
+                            header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8, */*;q=0.5")
+                        }
+                    }
+                    .build()
+                transport?.execute(request, timeoutMillis)
+                    ?: requireNotNull(requestClient).newCall(request).also(control::attach).await()
+            } catch (_: BlockedAddressException) {
+                throw ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
+            } catch (error: IOException) {
+                control.requireActive()
+                throw error.toStreamFailure()
+            }
+            control.attach(response)
+            if (response.code in REDIRECT_CODES) {
+                response.use {
+                    NetworkPolicy.redirectError(allowRedirects)?.let { code -> throw ToolNetworkFailure(code) }
+                    if (redirects >= maxRedirects) throw ToolNetworkFailure("TOO_MANY_REDIRECTS")
+                    val location = it.header("Location") ?: throw ToolNetworkFailure("INVALID_REDIRECT")
+                    val redirected = current.resolve(location) ?: throw ToolNetworkFailure("INVALID_REDIRECT")
+                    includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
+                    if (
+                        it.code in setOf(301, 302, 303) &&
+                        currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)
+                    ) {
+                        currentMethod = NetworkRequestMethod.GET
+                        currentBody = null
+                    }
+                    current = redirected
+                    redirects += 1
+                }
+                continue
+            }
+            if (!acceptHttpErrors) {
+                if (response.code in 500..599) {
+                    throw ToolNetworkFailure("HTTP_${response.code}", retryable = true)
+                }
+                if (response.code !in 200..299) throw ToolNetworkFailure("HTTP_${response.code}")
+            }
+            return ToolNetworkStream(response, current.toString(), control, maxResponseBytes)
+        }
+    }
+
     private class ValidatingDns(private val delegate: Dns) : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             val addresses = delegate.lookup(hostname)
@@ -381,6 +493,13 @@ private fun IOException.toNetworkFailure(): NetworkExecution = when {
     else -> NetworkExecution.RetryableFailure("NETWORK_IO")
 }
 
+internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
+    this is ToolNetworkFailure -> this
+    hasBlockedAddressCause() -> ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
+    this is InterruptedIOException -> ToolNetworkFailure("NETWORK_TIMEOUT", retryable = true)
+    else -> ToolNetworkFailure("NETWORK_IO", retryable = true)
+}
+
 internal fun normalizeHost(value: String): String? = runCatching {
     val wildcard = value.startsWith("*.")
     val source = if (wildcard) value.substring(2) else value
@@ -400,7 +519,7 @@ internal fun hostMatches(host: String, allowed: String): Boolean =
 private fun isIpLiteralHost(host: String): Boolean =
     host.contains(':') || IPV4_LITERAL.matches(host)
 
-private fun Response.exposedHeaders(): Map<String, String> = headers.names()
+internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
     .asSequence()
     .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
     .mapNotNull { name -> headers[name]?.takeIf { it.length <= 4_096 }?.let { name to it } }
@@ -452,6 +571,21 @@ private fun Response.readResponse(maxBytes: Int, acceptHttpErrors: Boolean): Buf
             ByteArray(0)
         } else {
             body.readBounded(maxBytes)
+        },
+    )
+}
+
+private suspend fun Call.await(): Response = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(
+        object : okhttp3.Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response, onCancellation = { _, value, _ -> value.closeOnIo() })
+            }
         },
     )
 }

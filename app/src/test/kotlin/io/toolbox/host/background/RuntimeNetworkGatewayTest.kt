@@ -7,6 +7,17 @@ import io.toolbox.tool.runtime.RuntimeNetworkRequest
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import java.io.IOException
 import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Protocol
@@ -24,6 +35,161 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeNetworkGatewayTest {
+    @Test
+    fun streamOpensWithoutReadingAndReturnsIncrementalBytesBeyondTheBridgeTotal() = runTest {
+        val reads = AtomicInteger()
+        val bytes = "你abc".repeat(2_000).toByteArray()
+        val source = object : Source {
+            val data = Buffer().write(bytes)
+            override fun read(sink: Buffer, byteCount: Long): Long { reads.incrementAndGet(); return data.read(sink, minOf(1_024, byteCount)) }
+            override fun timeout() = Timeout.NONE
+            override fun close() = Unit
+        }
+        val gateway = RuntimeNetworkGateway(
+            ToolNetworkProxy(ToolNetworkTransport { request, _ -> response(request, sourceBody(source)) }),
+            InstalledManifestNetwork(setOf("api.github.com"), false, 32_768, 30_000), 4_096,
+        )
+        try {
+            val opened = gateway.openStream(streamId(1), request(32_768))
+            assertEquals(200, opened.status)
+            assertEquals(0, reads.get())
+            val result = Buffer()
+            while (true) {
+                val chunk = gateway.readStream(opened.streamId, 2_048)
+                assertTrue(chunk.data.size <= 2_048)
+                result.write(chunk.data)
+                assertEquals(result.size, chunk.receivedBytes)
+                if (chunk.done) break
+            }
+            org.junit.Assert.assertArrayEquals(bytes, result.readByteArray())
+            gateway.cancelStream(opened.streamId)
+            assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { gateway.readStream(opened.streamId, 2_048) }.errorCode)
+        } finally { gateway.close() }
+    }
+
+    @Test
+    fun streamLimitsAreCumulativeAndTerminalReadsReleaseTheirSlot() = runTest {
+        val gateway = gateway(4_096, ToolNetworkTransport { request, _ -> response(request, "x".repeat(4_097).toResponseBody()) })
+        try {
+            val first = gateway.openStream(streamId(1), request(4_096))
+            gateway.openStream(streamId(2), request(4_096))
+            assertEquals(RuntimeRpcErrorCode.QUOTA_EXCEEDED, failure { gateway.openStream(streamId(3), request(4_096)) }.errorCode)
+            gateway.readStream(first.streamId, 2_048)
+            gateway.readStream(first.streamId, 2_048)
+            assertEquals(RuntimeRpcErrorCode.QUOTA_EXCEEDED, failure { gateway.readStream(first.streamId, 2_048) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { gateway.readStream(first.streamId, 2_048) }.errorCode)
+            assertEquals(200, gateway.openStream(streamId(3), request(4_096)).status)
+        } finally { gateway.close() }
+    }
+
+    @Test
+    fun cancellationAndSessionCloseInterruptBlockedBodyReads() = runBlocking {
+        for (closeSession in listOf(false, true)) {
+            val entered = CountDownLatch(1)
+            val closed = CountDownLatch(1)
+            val source = object : Source {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    entered.countDown()
+                    check(closed.await(5, TimeUnit.SECONDS))
+                    throw IOException("not-for-logs")
+                }
+                override fun timeout() = Timeout.NONE
+                override fun close() { closed.countDown() }
+            }
+            val gateway = gateway(4_096, ToolNetworkTransport { request, _ -> response(request, sourceBody(source)) })
+            try {
+                gateway.openStream(streamId(1), request(4_096))
+                val reading = async(Dispatchers.IO) { failure { gateway.readStream(streamId(1), 1_024) } }
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                if (closeSession) gateway.close() else gateway.cancelStream(streamId(1))
+                val error = withTimeout(5_000) { reading.await() }
+                assertEquals(RuntimeRpcErrorCode.CANCELLED, error.errorCode)
+                assertFalse(error.message.contains("not-for-logs"))
+            } finally { gateway.close() }
+        }
+    }
+
+    @Test
+    fun cancellationBeforeOpenAndClosingDuringHeadersNeverLeakAResponse() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
+        var calls = 0
+        val gateway = gateway(4_096, ToolNetworkTransport { request, _ ->
+            calls += 1
+            entered.complete(Unit)
+            release.await()
+            response(request, sourceBody(object : Source {
+                override fun read(sink: Buffer, byteCount: Long) = -1L
+                override fun timeout() = Timeout.NONE
+                override fun close() { closed.complete(Unit) }
+            }))
+        })
+        gateway.cancelStream(streamId(1))
+        assertEquals(RuntimeRpcErrorCode.CANCELLED, failure { gateway.openStream(streamId(1), request(4_096)) }.errorCode)
+        assertEquals(0, calls)
+        val opening = async { failure { gateway.openStream(streamId(2), request(4_096)) } }
+        entered.await()
+        gateway.close()
+        release.complete(Unit)
+        assertEquals(RuntimeRpcErrorCode.CANCELLED, opening.await().errorCode)
+        closed.await()
+    }
+
+    @Test
+    fun ordinaryEofAndFinallyCancellationDoNotExhaustTheEarlyCancellationBudget() = runTest {
+        val gateway = gateway(4_096, ToolNetworkTransport { request, _ -> response(request, "".toResponseBody()) })
+        try {
+            repeat(260) { number ->
+                val id = gateway.openStream(streamId(number), request(4_096)).streamId
+                assertTrue(gateway.readStream(id, 1_024).done)
+                gateway.cancelStream(id)
+                gateway.cancelStream(id)
+            }
+        } finally { gateway.close() }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun streamDeadlineReleasesIdleSlotsAndSessionRegistriesAreIsolated() = runTest {
+        val first = RuntimeNetworkStreams(backgroundScope)
+        val second = RuntimeNetworkStreams()
+        try {
+            val firstControl = first.reserve(streamId(1), 1_000)
+            first.reserve(streamId(2), 1_000)
+            second.cancel(streamId(1))
+            firstControl.requireActive()
+            runCurrent()
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { first.get(streamId(1)) }.errorCode)
+            assertEquals("NETWORK_TIMEOUT", org.junit.Assert.assertThrows(ToolNetworkFailure::class.java) { firstControl.requireActive() }.code)
+            first.reserve(streamId(3), 1_000)
+            first.reserve(streamId(4), 1_000)
+        } finally { first.close(); second.close() }
+    }
+
+    @Test
+    fun streamingRetainsEndpointTimeoutAndHeaderBoundaries() = runTest {
+        var calls = 0
+        val gateway = gateway(4_096, ToolNetworkTransport { request, timeout ->
+            calls += 1
+            assertEquals(1_000L, timeout)
+            assertEquals("test-token", request.header("X-API-Key"))
+            response(request, "unauthorized".toResponseBody()).newBuilder().code(401).header("Set-Cookie", "private").build()
+        })
+        try {
+            for ((index, url) in listOf("http://api.github.com/", "https://127.0.0.1/", "https://unknown.example.com/").withIndex()) {
+                assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED,
+                    failure { gateway.openStream(streamId(index), request(4_096).copy(url = url)) }.errorCode)
+            }
+            assertEquals(0, calls)
+            val opened = gateway.openStream(streamId(9), request(4_096).copy(timeoutMillis = 1_000, headers = mapOf("X-API-Key" to "test-token")))
+            assertEquals(401, opened.status)
+            assertFalse(opened.headers.keys.any { it.equals("Set-Cookie", true) })
+        } finally { gateway.close() }
+    }
+
     @Test
     fun longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault() = runTest {
         for ((declared, requested, expected) in listOf(
@@ -127,6 +293,15 @@ class RuntimeNetworkGatewayTest {
         override fun contentLength(): Long = -1L
         override fun contentType() = "application/json".toMediaType()
         override fun source() = failingSource
+    }
+
+    private fun streamId(number: Int) = "stream-" + number.toString(16).padStart(32, '0')
+
+    private fun sourceBody(source: Source) = object : ResponseBody() {
+        private val buffered = source.buffer()
+        override fun contentLength() = -1L
+        override fun contentType() = "text/event-stream".toMediaType()
+        override fun source() = buffered
     }
 
     private suspend fun failure(action: suspend () -> Unit): RuntimeHandlerException {

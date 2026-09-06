@@ -146,6 +146,14 @@ data class RuntimeM1Handlers(
 
 fun interface RuntimeNetworkHandler {
     suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse
+    suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse =
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network streaming is unavailable")
+    suspend fun readStream(streamId: String, maxChunkBytes: Int): RuntimeNetworkStreamChunk =
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network streaming is unavailable")
+    suspend fun cancelStream(streamId: String): Unit =
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network streaming is unavailable")
+    fun cancelStreams() = Unit
+    fun close() = Unit
 }
 
 enum class RuntimeNetworkMethod { GET, POST, PUT, PATCH, DELETE, HEAD }
@@ -411,6 +419,7 @@ class RuntimeRpcDispatcher(
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "ToolBox session identity is stale")
         }
         if (!authorization.isCurrent(identity)) {
+            m2Handlers.network?.cancelStreams()
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
         }
         val method = ToolBoxApiV1.method(request.method)
@@ -437,9 +446,11 @@ class RuntimeRpcDispatcher(
                 return failure(RuntimeRpcErrorCode.NOT_DECLARED, "Capability is not declared by this tool")
             }
             if (!authorization.isGranted(identity, capability)) {
+                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability is disabled for this tool")
             }
             if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
+                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Required Android permission is unavailable")
             }
             if (
@@ -455,14 +466,17 @@ class RuntimeRpcDispatcher(
             is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message)
         }
         if (!authorization.isCurrent(identity)) {
+            m2Handlers.network?.cancelStreams()
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
         }
         if (capability != null) {
             val descriptor = ToolBoxApiV1.capability(capability)
             if (!authorization.isGranted(identity, capability)) {
+                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability was disabled before execution")
             }
             if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
+                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Android permission changed before execution")
             }
         }
@@ -538,6 +552,46 @@ class RuntimeRpcDispatcher(
         "network.request" -> requireHandler(m2Handlers.network)
             .request(params.toNetworkRequest())
             .toRpcValue()
+        "network.openStream" -> {
+            params.requireOnly("streamId", "request")
+            val streamId = params.requiredNetworkStreamId()
+            val networkRequest = (params.required("request") as? RpcValue.ObjectValue
+                ?: throw IllegalArgumentException("request")).toNetworkRequest()
+            val network = requireHandler(m2Handlers.network)
+            val response = network.openStream(streamId, networkRequest)
+            try {
+                require(response.streamId == streamId)
+                requireNetworkStreamAuthorization()
+                val headers = RuntimeNetworkResponse(response.status, response.headers, "").toRpcValue().value.getValue("headers")
+                streamResponseWithinBudget(requestId, RpcValue.ObjectValue(mapOf(
+                    "streamId" to RpcValue.StringValue(streamId),
+                    "status" to RpcValue.Number(response.status.toDouble()),
+                    "headers" to headers,
+                )))
+            } catch (error: Exception) {
+                runCatching { network.cancelStream(streamId) }
+                throw error
+            }
+        }
+        "network.readStream" -> {
+            params.requireOnly("streamId")
+            val streamId = params.requiredNetworkStreamId()
+            val network = requireHandler(m2Handlers.network)
+            val chunk = network.readStream(streamId, runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
+            requireNetworkStreamAuthorization()
+            require(chunk.receivedBytes in 0..MAX_NETWORK_RESPONSE_BYTES.toLong())
+            require(chunk.data.size <= runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
+            streamResponseWithinBudget(requestId, RpcValue.ObjectValue(mapOf(
+                "data" to RpcValue.StringValue(Base64.getEncoder().encodeToString(chunk.data)),
+                "done" to RpcValue.Bool(chunk.done),
+                "receivedBytes" to RpcValue.Number(chunk.receivedBytes.toDouble()),
+            )))
+        }
+        "network.cancelStream" -> {
+            params.requireOnly("streamId")
+            requireHandler(m2Handlers.network).cancelStream(params.requiredNetworkStreamId())
+            RpcValue.Null
+        }
         "notifications.post" -> {
             params.requireOnly("id", "title", "body")
             requireHandler(m2Handlers.notifications).post(
@@ -764,6 +818,30 @@ class RuntimeRpcDispatcher(
         RuntimeRpcErrorCode.UNSUPPORTED,
         "This native capability is unavailable",
     )
+
+    private suspend fun requireNetworkStreamAuthorization() {
+        val code = when {
+            !authorization.isCurrent(identity) -> RuntimeRpcErrorCode.INVALID_SESSION
+            !authorization.isGranted(identity, ToolBoxCapabilityId.NETWORK) -> RuntimeRpcErrorCode.PERMISSION_DENIED
+            !authorization.hasSystemPermissions(identity, ToolBoxApiV1.capability(ToolBoxCapabilityId.NETWORK).systemPermissions) -> RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED
+            else -> return
+        }
+        m2Handlers.network?.cancelStreams()
+        throw RuntimeHandlerException(code, "Network stream authorization changed before delivery")
+    }
+
+    private fun streamResponseWithinBudget(requestId: String, value: RpcValue): RpcValue {
+        val encodedUpperBound = RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+            "id" to RpcValue.StringValue(requestId), "ok" to RpcValue.Bool(true), "result" to value,
+        ))).replace("</", "<\\/")
+        if (encodedUpperBound.toByteArray(StandardCharsets.UTF_8).size > maxResponseBytes) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Network stream response exceeds the bridge message limit")
+        }
+        return value
+    }
+
+    private fun RpcValue.ObjectValue.requiredNetworkStreamId(): String =
+        requiredString("streamId", 39).also { require(isNetworkStreamId(it)) }
 
     private fun RuntimeBasicDeviceInfo.toRpcValue(): RpcValue.ObjectValue {
         require(apiLevel >= 33)

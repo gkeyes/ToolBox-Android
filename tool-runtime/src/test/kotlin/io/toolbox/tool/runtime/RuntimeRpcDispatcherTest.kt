@@ -2,6 +2,7 @@ package io.toolbox.tool.runtime
 
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
+import io.toolbox.tool.api.ToolBoxApiV1
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -18,6 +19,119 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeRpcDispatcherTest {
+    @Test
+    fun streamReadsHaveABoundedIncrementalRateWithoutRaisingOtherMethodLimits() = runTest {
+        var clock = 0L
+        val policy = DefaultRuntimeAuthorizationPolicy(
+            object : RuntimeGrantStateSource {
+                override suspend fun currentVersionCode(toolId: String) = identity.versionCode
+                override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId) = true
+            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> RuntimePolicyDecision.Allowed }, { clock },
+        )
+        for ((methodName, limit) in listOf("network.readStream" to 1_000, "network.request" to 120, "network.cancelStream" to 120)) {
+            val method = checkNotNull(ToolBoxApiV1.method(methodName))
+            repeat(limit) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
+            assertEquals(RuntimeRpcErrorCode.RATE_LIMITED, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).code)
+        }
+        clock = 60_000
+        assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, checkNotNull(ToolBoxApiV1.method("network.readStream")), 256))
+    }
+
+    @Test
+    fun streamsRecheckAuthorizationAfterReadAndRejectForeignCancellationWithoutSideEffects() = runTest {
+        val policy = MutablePolicy()
+        var reads = 0
+        var cancellations = 0
+        var clearances = 0
+        val network = object : RuntimeNetworkHandler {
+            override suspend fun request(request: RuntimeNetworkRequest) = RuntimeNetworkResponse(200, emptyMap(), "")
+            override suspend fun readStream(streamId: String, maxChunkBytes: Int): RuntimeNetworkStreamChunk {
+                reads += 1
+                policy.granted = false
+                return RuntimeNetworkStreamChunk(byteArrayOf(1, 2, 3), false, 3)
+            }
+            override suspend fun cancelStream(streamId: String) { cancellations += 1 }
+            override fun cancelStreams() { clearances += 1 }
+        }
+        val dispatcher = RuntimeRpcDispatcher(identity.copy(declaredCapabilities = setOf("network")), policy,
+            RuntimeM1Handlers(), RuntimeM2Handlers(network = network))
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, null)
+        val params = RpcValue.ObjectValue(mapOf("streamId" to RpcValue.StringValue("stream-" + "a".repeat(32))))
+        assertFailure(RuntimeRpcErrorCode.WRONG_ORIGIN, dispatcher.dispatch(request(method = "network.cancelStream", params = params),
+            inbound.copy(sourceOrigin = "https://foreign.invalid")))
+        assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher.dispatch(request(method = "network.cancelStream", params = params).copy(nonce = "wrong"), inbound))
+        assertEquals(0, cancellations)
+        assertEquals(0, clearances)
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher.dispatch(request(method = "network.readStream", params = params), inbound))
+        assertEquals(1, reads)
+        assertEquals(1, clearances)
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher.dispatch(request(method = "network.readStream", params = params), inbound))
+        assertEquals(1, reads)
+        policy.granted = true
+        assertTrue(dispatcher.dispatch(request(method = "network.cancelStream", params = params), inbound) is RuntimeRpcResponse.Success)
+        assertEquals(1, cancellations)
+    }
+
+    @Test
+    fun streamRpcBudgetIncludesBase64EnvelopeAndRejectsOversizedHeadersWithoutLeakingTheHandle() = runTest {
+        var cancelled = 0
+        var openingBusy = false
+        val network = object : RuntimeNetworkHandler {
+            override suspend fun request(request: RuntimeNetworkRequest) = RuntimeNetworkResponse(200, emptyMap(), "")
+            override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
+                if (openingBusy) throw RuntimeHandlerException(RuntimeRpcErrorCode.BUSY, "Stream is already open")
+                return RuntimeNetworkStreamResponse(streamId, 200, mapOf("x-large" to "中".repeat(2_000)))
+            }
+            override suspend fun readStream(streamId: String, maxChunkBytes: Int) =
+                RuntimeNetworkStreamChunk(ByteArray(maxChunkBytes) { 0xff.toByte() }, false, maxChunkBytes.toLong())
+            override suspend fun cancelStream(streamId: String) { cancelled += 1 }
+        }
+        val dispatcher = RuntimeRpcDispatcher(identity.copy(declaredCapabilities = setOf("network")), MutablePolicy(),
+            RuntimeM1Handlers(), RuntimeM2Handlers(network = network), maxResponseBytes = 4_096)
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, null)
+        val streamId = RpcValue.StringValue("stream-" + "b".repeat(32))
+        val response = dispatcher.dispatch(request(method = "network.readStream", params = RpcValue.ObjectValue(mapOf("streamId" to streamId)))
+            .copy(id = "x".repeat(128)), inbound)
+        assertTrue(response.toString(), response is RuntimeRpcResponse.Success)
+        val payload = (response as RuntimeRpcResponse.Success).result
+        assertTrue(RuntimeRpcJson.encodeValue(payload).toByteArray().size + 160 <= 4_096)
+        val values = (payload as RpcValue.ObjectValue).value
+        assertTrue((values.getValue("data") as RpcValue.StringValue).value.isNotEmpty())
+        assertFailure(RuntimeRpcErrorCode.QUOTA_EXCEEDED, dispatcher.dispatch(request(method = "network.openStream", params = RpcValue.ObjectValue(mapOf(
+            "streamId" to streamId,
+            "request" to RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://api.example.invalid/"))),
+        ))), inbound))
+        assertEquals(1, cancelled)
+        openingBusy = true
+        assertFailure(RuntimeRpcErrorCode.BUSY, dispatcher.dispatch(request(method = "network.openStream", params = RpcValue.ObjectValue(mapOf(
+            "streamId" to streamId,
+            "request" to RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://api.example.invalid/"))),
+        ))), inbound))
+        assertEquals(1, cancelled)
+    }
+
+    @Test
+    fun streamRequestsUseTheSameHeaderAndSessionBoundariesAsBufferedRequests() = runTest {
+        var opened = 0
+        val network = object : RuntimeNetworkHandler {
+            override suspend fun request(request: RuntimeNetworkRequest) = RuntimeNetworkResponse(200, emptyMap(), "")
+            override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
+                opened += 1
+                return RuntimeNetworkStreamResponse(streamId, 200, emptyMap())
+            }
+        }
+        val dispatcher = RuntimeRpcDispatcher(identity.copy(declaredCapabilities = setOf("network")), MutablePolicy(),
+            RuntimeM1Handlers(), RuntimeM2Handlers(network = network))
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, null)
+        val request = request(method = "network.openStream", params = RpcValue.ObjectValue(mapOf(
+            "streamId" to RpcValue.StringValue("stream-" + "c".repeat(32)),
+            "request" to RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://api.example.invalid/"),
+                "headers" to RpcValue.ObjectValue(mapOf("Host" to RpcValue.StringValue("foreign.invalid"))))),
+        )))
+        assertFailure(RuntimeRpcErrorCode.INVALID_REQUEST, dispatcher.dispatch(request, inbound))
+        assertEquals(0, opened)
+    }
+
     private val identity = RuntimeSessionIdentity(
         toolId = "io.toolbox.runtime.test",
         versionCode = 7,

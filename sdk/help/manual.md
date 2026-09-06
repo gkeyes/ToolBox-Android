@@ -327,6 +327,40 @@ timeoutMs 可为 1000–600000 毫秒，maxResponseBytes 可为 1024–67108864 
 
 不要把可配置的网络上限理解为可以一次把 64 MiB 数据塞回网页。大数据应由服务端分页，或分段请求并逐段处理。
 
+### 增量读取与取消
+
+ToolBox 0.3.10 起提供 network.openStream、network.readStream 和 network.cancelStream。它们沿用 network 权限、域名、HTTPS、DNS、重定向与 Header 检查，不开放网页直接 fetch。NetworkRequest 的字段不变；openStream 的第二参数可传入 { signal }，用于在等待响应头或正文时取消。依赖流式接口的工具应声明 minHostVersion 为 0.3.10 或更高。
+
+openStream 在响应头到达时返回 { streamId, status, headers }，不会先读完整正文。每次顺序调用 readStream 返回 { data: Uint8Array, done, receivedBytes }；数据按需从连接增量读取，每块最多 16 KiB，并按当前消息上限自动缩小。receivedBytes 是累计正文原始字节数，累计上限取请求和 manifest 网络上限中的较小值；每个分段及响应头仍须通过完整编码后的消息预算。HTTP 4xx/5xx 仍返回真实状态。
+
+同一会话最多同时打开两个流；同一流的 readStream 不可重叠调用，否则返回 BUSY。readStream 有单独的每分钟 1000 次上限，openStream、cancelStream 及其他接口仍使用原速率上限；页面宜合并小块更新，不要高频空读。总时限从打开开始覆盖响应头、重定向和后续读取，超过时限会释放流，不会因持续收到小块数据而无限延长。EOF、取消、读取失败、撤权和会话结束都会释放连接；取消可中断正在等待的读取。未知或已结束 ID 的读取返回 NOT_FOUND，cancelStream 对已结束 ID 是幂等的；流标识只能用于创建它的会话。
+
+文本编码可能在任意字节处分段，应保留同一个 TextDecoder 并使用 stream 选项。宿主不解析 SSE 或替工具记录响应内容；下面例子只展示增量文本解码，SSE 的事件边界和 JSON 内容仍由工具处理。
+
+```js
+const controller = new AbortController();
+const stream = await ToolBox.network.openStream({
+  url: "https://api.example.com/events",
+  headers: { Accept: "text/event-stream" },
+  timeoutMs: 300000,
+  maxResponseBytes: 524288
+}, { signal: controller.signal });
+const decoder = new TextDecoder();
+try {
+  if (stream.status < 200 || stream.status >= 300) throw new Error("HTTP " + stream.status);
+  while (true) {
+    const chunk = await ToolBox.network.readStream(stream.streamId);
+    const text = decoder.decode(chunk.data, { stream: !chunk.done });
+    if (text) document.querySelector("#output").append(document.createTextNode(text));
+    if (chunk.done) break;
+  }
+} finally {
+  await ToolBox.network.cancelStream(stream.streamId);
+}
+```
+
+取消按钮或工具内路由关闭时调用 controller.abort()；不要只隐藏等待弹窗。宿主页面关闭也会清理对应连接，但工具自己的弹窗关闭不等于宿主会话结束。
+
 ### GET、JSON POST 与返回值
 
 请求返回 { status, headers, body, bodyEncoding }，没有浏览器 Response 的 json() 方法。bodyEncoding 为 text 时 body 是文本，JSON 需自行 JSON.parse；为 base64 时应解码。4xx/5xx 返回真实 HTTP 状态，并不等于 Promise 必然抛错。
@@ -926,7 +960,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "a4753d4287ac9b4a35faee65ef2f06109cb89bfe434c52e8c60cbe3551dea352";
+export type ToolBoxContractSha256 = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44";
 
 export type ToolBoxCapability =
   | "storage"
@@ -964,6 +998,9 @@ export type ToolBoxMethodName =
   | "haptics.perform"
   | "clipboard.writeText"
   | "network.request"
+  | "network.openStream"
+  | "network.readStream"
+  | "network.cancelStream"
   | "notifications.post"
   | "notifications.update"
   | "notifications.cancel"
@@ -1060,6 +1097,24 @@ export interface NetworkResponse {
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string;
   readonly bodyEncoding: "text" | "base64";
+}
+
+export interface NetworkStreamOptions {
+  /** Cancels while waiting for headers and while reading. */
+  readonly signal?: AbortSignal;
+}
+
+export interface NetworkStreamResponse {
+  readonly streamId: string;
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+export interface NetworkStreamChunk {
+  /** An incremental byte chunk. Decode text with TextDecoder's stream option. */
+  readonly data: Uint8Array;
+  readonly done: boolean;
+  readonly receivedBytes: number;
 }
 
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
@@ -1229,6 +1284,9 @@ export interface ToolBoxApi {
   };
   network: {
     request(request: NetworkRequest): Promise<NetworkResponse>;
+    openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
+    readStream(streamId: string): Promise<NetworkStreamChunk>;
+    cancelStream(streamId: string): Promise<void>;
   };
   notifications: {
     post(id: string, title: string, body: string): Promise<void>;
