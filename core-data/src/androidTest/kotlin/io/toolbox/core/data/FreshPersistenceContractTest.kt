@@ -203,6 +203,36 @@ class FreshPersistenceContractTest {
             database = openDatabase()
             assertEquals(expected, RoomPermissionGrantRepository(database).observeGrants(TOOL_ID).first())
             assertEquals(2, RoomCatalogRepository(database).observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+
+            val reopenedInstalls = RoomInstallTransactionRepository(database)
+            val reopenedLifecycle = RoomCatalogLifecycleRepository(database)
+            val downgrade = update.copy(
+                transactionId = "tx-downgrade",
+                version = update.version.copy(versionCode = 1, version = "1.1.0", installedAt = 30),
+            )
+            assertEquals(
+                DataResult.Success(Unit),
+                reopenedInstalls.begin(
+                    InstallTransaction("tx-downgrade", TOOL_ID, 1, InstallTransactionState.PREPARING, 30, 30),
+                ),
+            )
+            assertEquals(DataResult.Success(CommitInstallOutcome.Committed), reopenedLifecycle.commitInstall(downgrade))
+            assertEquals(1, RoomCatalogRepository(database).observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+            assertEquals(expected, RoomPermissionGrantRepository(database).observeGrants(TOOL_ID).first())
+
+            val sameVersion = downgrade.copy(
+                transactionId = "tx-same",
+                version = downgrade.version.copy(version = "1.1.1", installedAt = 31),
+            )
+            assertEquals(
+                DataResult.Success(Unit),
+                reopenedInstalls.begin(
+                    InstallTransaction("tx-same", TOOL_ID, 1, InstallTransactionState.PREPARING, 31, 31),
+                ),
+            )
+            assertEquals(DataResult.Success(CommitInstallOutcome.Committed), reopenedLifecycle.commitInstall(sameVersion))
+            assertEquals("1.1.1", RoomCatalogRepository(database).observeTool(TOOL_ID).first()!!.currentVersion.version)
+            assertEquals(expected, RoomPermissionGrantRepository(database).observeGrants(TOOL_ID).first())
         } finally {
             database.close()
         }

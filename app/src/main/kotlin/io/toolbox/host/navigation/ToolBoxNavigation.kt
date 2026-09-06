@@ -14,7 +14,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -68,32 +67,12 @@ import io.toolbox.host.ui.RuntimeShellScreen
 import io.toolbox.host.ui.ToolDetailScreen
 import io.toolbox.host.ui.ToolManagerScreen
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.runtime.NavProgrammaticEasing
-import top.yukonga.miuix.kmp.nav.transition.NavMotion
-import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
-import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
-
-private const val PrimaryTabMotionDurationMillis = 160
-
-private val PrimaryTabMotion = NavMotion(
-    programmatic = NavSettleSpec.Tween(
-        durationMillis = PrimaryTabMotionDurationMillis,
-        easing = NavProgrammaticEasing,
-    ),
-)
-
-private val PrimaryTabFadeTransition = navGraphicsTransition(
-    motion = PrimaryTabMotion,
-    scrim = { 0f },
-) { scope ->
-    alpha = 1f - kotlin.math.abs(scope.relativeDepth).coerceIn(0f, 1f)
-}
 
 private val RetainedPageMotion = tween<Float>(
     durationMillis = 180,
@@ -113,8 +92,6 @@ internal fun ToolBoxNavigation(
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
     val toolsListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-    var primaryTransitioning by remember { mutableStateOf(false) }
-    var primaryTransitionGeneration by remember { mutableIntStateOf(0) }
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
         coroutineScope.launch {
@@ -138,13 +115,7 @@ internal fun ToolBoxNavigation(
             MainDestination.Settings -> SettingsRoute
         }
         if (primaryBackStack.lastOrNull() != route) {
-            primaryTransitioning = true
-            val generation = ++primaryTransitionGeneration
             primaryBackStack.add(route)
-            coroutineScope.launch {
-                delay(PrimaryTabMotionDurationMillis.toLong())
-                if (generation == primaryTransitionGeneration) primaryTransitioning = false
-            }
         }
     }
 
@@ -240,7 +211,7 @@ internal fun ToolBoxNavigation(
                 ),
         ) {
             ToolBoxGlassActivity(
-                active = retainedRoutes.isEmpty() && runtimeRoute == null && !primaryTransitioning,
+                active = retainedRoutes.isEmpty() && runtimeRoute == null,
             ) {
                 NavDisplay(
                     backStack = primaryBackStack,
@@ -261,7 +232,7 @@ internal fun ToolBoxNavigation(
                     blockInputDuringTransition = true,
                 ),
                 ) {
-                entry<ToolManagerRoute>(transition = PrimaryTabFadeTransition) {
+                entry<ToolManagerRoute>(transition = NavTransitions.None) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -285,7 +256,7 @@ internal fun ToolBoxNavigation(
                         )
                     }
                 }
-                entry<SettingsRoute>(transition = PrimaryTabFadeTransition) {
+                entry<SettingsRoute>(transition = NavTransitions.None) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -552,6 +523,8 @@ private fun ToolManagerRouteContent(
         onImport = onImport,
         onInstallExamples = importViewModel::installBundledExamples,
         onDismissImport = importViewModel::dismissMessage,
+        onConfirmImport = importViewModel::confirmVersionReplacement,
+        onCancelImport = importViewModel::cancelVersionReplacement,
         onOpenDetails = onOpenDetails,
         runningTools = {
             CatalogRunningTools(

@@ -139,21 +139,6 @@ private class InMemoryCatalogLifecycleRepository(
                 return@withLock DataResult.Failure.InvalidState("installTransaction")
             }
             val existing = state.tools.value[attempt.metadata.id]
-            if (existing != null) {
-                when {
-                    attempt.version.versionCode == existing.currentVersion.versionCode ->
-                        return@withLock DataResult.Failure.DuplicateVersion(
-                            attempt.metadata.id,
-                            attempt.version.versionCode,
-                        )
-                    attempt.version.versionCode < existing.currentVersion.versionCode ->
-                        return@withLock DataResult.Failure.NonMonotonicVersion(
-                            attempt.metadata.id,
-                            attempt.version.versionCode,
-                            existing.currentVersion.versionCode,
-                        )
-                }
-            }
             val nextMetadata = if (existing == null) attempt.metadata else attempt.metadata.copy(
                 installedAt = existing.metadata.installedAt,
                 pinnedOrder = existing.metadata.pinnedOrder,

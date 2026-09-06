@@ -78,13 +78,15 @@ class CatalogAndStorageRepositoryTest {
         assertEquals(emptyList<BackgroundTask>(), repositories.backgroundTasks.observeTasks(TOOL_ID).first())
         assertNull(repositories.backgroundTasks.observeResult(task.taskId).first())
 
-        val stale = attempt(transactionId = "tx-stale", versionCode = 1)
-        assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(stale)))
-        assertEquals(
-            DataResult.Failure.NonMonotonicVersion(TOOL_ID, 1, 2),
-            repositories.lifecycle.commitInstall(stale),
-        )
-        assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+        val downgrade = attempt(transactionId = "tx-downgrade", versionCode = 1)
+        assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(downgrade)))
+        assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(downgrade))
+        assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+
+        val sameVersion = attempt(transactionId = "tx-same", versionCode = 1)
+        assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(sameVersion)))
+        assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(sameVersion))
+        assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
 
         assertEquals(
             DataResult.Success(DeleteToolCatalogOutcome.Deleted),

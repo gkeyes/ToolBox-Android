@@ -21,6 +21,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
     private val stagingRoot = miniappsRoot.resolve(".staging")
     private val importsRoot = miniappsRoot.resolve(".imports")
     private val replacementCleanupRoot = lifecycleRoot.resolve("replacement-cleanup")
+    private val replacementBackupRoot = lifecycleRoot.resolve("replacement-backups")
     private val uninstallCleanupRoot = lifecycleRoot.resolve("uninstall-cleanup")
 
     fun acquireMutationLock(): MutationLock? {
@@ -135,33 +136,81 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         previousVersionCode: Int,
         nextVersionCode: Int,
     ) {
-        require(previousVersionCode > 0 && nextVersionCode > previousVersionCode)
-        val marker = replacementCleanupRoot.resolve(requireTransactionId(transactionId))
+        require(previousVersionCode > 0 && nextVersionCode > 0)
+        val safeTransactionId = requireTransactionId(transactionId)
+        val safeToolId = requireToolId(toolId)
+        val marker = replacementCleanupRoot.resolve(safeTransactionId)
         Files.createDirectories(replacementCleanupRoot)
         writeForced(
             marker,
-            listOf(requireToolId(toolId), previousVersionCode.toString(), nextVersionCode.toString())
+            listOf(safeToolId, previousVersionCode.toString(), nextVersionCode.toString())
                 .joinToString("\n", postfix = "\n")
                 .toByteArray(StandardCharsets.UTF_8),
         )
         forceDirectory(replacementCleanupRoot)
+        if (previousVersionCode == nextVersionCode) {
+            val current = versionRoot(safeToolId, previousVersionCode)
+            if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("Current package version is missing")
+            }
+            Files.createDirectories(replacementBackupRoot)
+            val backup = replacementBackupRoot.resolve(safeTransactionId)
+            if (Files.exists(backup, LinkOption.NOFOLLOW_LINKS)) {
+                throw FileAlreadyExistsException(backup.toString())
+            }
+            Files.move(current, backup, StandardCopyOption.ATOMIC_MOVE)
+            forceDirectory(current.parent)
+            forceDirectory(replacementBackupRoot)
+        }
     }
 
-    fun listReplacementCleanups(): List<ReplacementCleanup> = listRegularFiles(replacementCleanupRoot).map { marker ->
+    fun listReplacementCleanups(): List<ReplacementCleanup> =
+        listRegularFiles(replacementCleanupRoot).map(::readReplacementCleanup)
+
+    fun rollbackReplacement(transactionId: String) {
+        val safeTransactionId = requireTransactionId(transactionId)
+        val marker = replacementCleanupRoot.resolve(safeTransactionId)
+        if (!Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) return
+        if (!Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) {
+            throw IOException("Replacement cleanup marker is invalid")
+        }
+        val replacement = readReplacementCleanup(marker)
+        val backup = replacementBackupRoot.resolve(safeTransactionId)
+        if (Files.exists(backup, LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isDirectory(backup, LinkOption.NOFOLLOW_LINKS)) {
+                throw IOException("Replacement backup is invalid")
+            }
+            val target = versionRoot(replacement.toolId, replacement.previousVersionCode)
+            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+                throw FileAlreadyExistsException(target.toString())
+            }
+            Files.createDirectories(target.parent)
+            Files.move(backup, target, StandardCopyOption.ATOMIC_MOVE)
+            forceDirectory(target.parent)
+            forceDirectory(replacementBackupRoot)
+        }
+        Files.deleteIfExists(marker)
+        forceDirectory(replacementCleanupRoot)
+    }
+
+    private fun readReplacementCleanup(marker: Path): ReplacementCleanup {
         val transactionId = marker.fileName.toString().also(::requireTransactionId)
         val parts = readMarker(marker).lineSequence().filter(String::isNotEmpty).toList()
         if (parts.size != 3) throw IOException("Replacement cleanup marker is malformed")
         val toolId = requireToolId(parts[0])
         val previousVersionCode = parts[1].toIntOrNull() ?: throw IOException("Replacement cleanup marker is malformed")
         val nextVersionCode = parts[2].toIntOrNull() ?: throw IOException("Replacement cleanup marker is malformed")
-        if (previousVersionCode < 1 || nextVersionCode <= previousVersionCode) {
+        if (previousVersionCode < 1 || nextVersionCode < 1) {
             throw IOException("Replacement cleanup marker is malformed")
         }
-        ReplacementCleanup(transactionId, toolId, previousVersionCode, nextVersionCode)
+        return ReplacementCleanup(transactionId, toolId, previousVersionCode, nextVersionCode)
     }
 
     fun completeReplacementCleanup(transactionId: String) {
-        Files.deleteIfExists(replacementCleanupRoot.resolve(requireTransactionId(transactionId)))
+        val safeTransactionId = requireTransactionId(transactionId)
+        deleteTree(replacementBackupRoot.resolve(safeTransactionId))
+        Files.deleteIfExists(replacementCleanupRoot.resolve(safeTransactionId))
+        forceDirectory(replacementBackupRoot)
         forceDirectory(replacementCleanupRoot)
     }
 

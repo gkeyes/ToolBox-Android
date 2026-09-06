@@ -117,6 +117,7 @@ run_gate admitted-unit \
     :tool-package:testDebugUnitTest \
     :tool-runtime:testDebugUnitTest \
     --tests 'io.toolbox.host.importflow.ToolBoxOpenDocumentTest' \
+    --tests 'io.toolbox.host.importflow.ImportViewModelTest' \
     --tests 'io.toolbox.host.catalog.CatalogViewModelTest' \
     --tests 'io.toolbox.host.catalog.RunningToolsViewModelTest' \
     --tests 'io.toolbox.host.icons.InstalledToolIconReaderTest' \

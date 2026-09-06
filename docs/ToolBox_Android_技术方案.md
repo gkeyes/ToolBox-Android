@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.4.0 (13)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.4.1 (14)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -103,19 +103,23 @@ DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTran
 
 1. `ACTION_OPEN_DOCUMENT` 选择单个 `.tbx`，拷贝到私有导入临时目录。
 2. 在后台完成检查并生成仅供安装器使用的不可变结果。
-3. 首次安装按 manifest 和默认策略生成工具 grants；更新时在同一个 Room 事务内保留仍声明能力的
+3. 若同一工具的待安装 `versionCode` 等于或低于当前版本，保留这份已检查的私有暂存结果并显示
+   当前/待安装版本确认；取消删除暂存，确认继续同一份内容，不重新读取外部 URI。
+4. 首次安装按 manifest 和默认策略生成工具 grants；更新时在同一个 Room 事务内保留仍声明能力的
    原有开启/关闭状态及授权时间，新增能力默认关闭，已移除能力的 grant 清理。
-4. 在文件 staged 目录与 Room 事务都成功后才切换为 active version。
-5. 成功时回到工具列表并显示简短成功反馈；失败显示可操作原因，删除 staged 目录、临时
+5. 在文件 staged 目录与 Room 事务都成功后才切换为 active version。同版本覆盖先原子保留旧目录，
+   提交失败或中断时恢复旧内容。
+6. 成功时回到工具列表并显示简短成功反馈；失败显示可操作原因，删除 staged 目录、临时
    文件和未提交记录。
 
-没有“确认审核”“选择安装权限”“继续恢复审核”页面。若应用启动时发现未完成安装事务，
-内部清理它；无法恢复的外部 URI 只提示用户重新选择文件。
+没有“确认审核”“选择安装权限”“继续恢复审核”页面；唯一额外确认是用户明确要求的同版本覆盖或
+降级。若应用启动时发现未完成安装事务，内部回滚或清理它；无法恢复的外部 URI 只提示用户重新选择文件。
 
 ### 4.3 版本、卸载与清理
 
-- 仅更高版本可更新；同版本或低版本显示简短失败，不写入任何状态。
-- 更新原子替换 active version。普通 KV 与新 manifest 仍声明的原有 grant 保留；旧 generation 的 secure-storage key、临时
+- 更高版本直接更新；同版本覆盖和低版本安装在完整检查通过后要求用户确认。确认只放开版本顺序，
+  不绕过签名、完整性、最低宿主版本、必要能力或其他包安全检查。
+- 更新、覆盖和降级均原子替换 active version。普通 KV 与新 manifest 仍声明的原有 grant 保留；旧 generation 的 secure-storage key、临时
   file token、runtime session、后台任务/结果和后台通知清理。首版没有回滚。
 - 卸载从工具详情的删除按钮与确认弹层触发，并清理代码、KV、grants、Keystore key、WebView Profile/无状态
   记录、会话、后台 Work、任务结果、后台通知与快捷方式。
@@ -387,7 +391,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.4.0 (13) 上传 `toolbox-v0.4.0-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.4.1 (14) 上传 `toolbox-v0.4.1-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

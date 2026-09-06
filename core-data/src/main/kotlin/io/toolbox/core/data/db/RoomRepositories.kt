@@ -87,22 +87,6 @@ internal class RoomCatalogLifecycleRepository(
                 if ((existingTool == null) != (existingVersion == null)) {
                     return@withTransaction DataResult.Failure.InvalidState("catalog")
                 }
-                if (existingVersion != null) {
-                    when {
-                        attempt.version.versionCode == existingVersion.versionCode ->
-                            return@withTransaction DataResult.Failure.DuplicateVersion(
-                                attempt.metadata.id,
-                                attempt.version.versionCode,
-                            )
-                        attempt.version.versionCode < existingVersion.versionCode ->
-                            return@withTransaction DataResult.Failure.NonMonotonicVersion(
-                                attempt.metadata.id,
-                                attempt.version.versionCode,
-                                existingVersion.versionCode,
-                            )
-                    }
-                }
-
                 if (transaction.state == InstallTransactionState.PREPARING.name) {
                     database.installs().transition(
                         attempt.transactionId,

@@ -27,7 +27,7 @@ implementation("dev.chrisbanes.haze:haze:1.7.3")
 | 顶栏 | `TopAppBar`、`SmallTopAppBar`、Haze | `ToolBoxLargeTopBar`、`ToolBoxTopBar` | Liquid Glass 一级 34sp；普通页 48–56dp 内容区；大字体自然增高。 |
 | 工具列表 | surface/card、menu、search | `GroupedSurface`、`ToolRow`、`ToolSearchField` | 48dp 搜索、72–80dp 起且大字自然增长、stable key；主区域打开，独立 48dp“管理”文字按钮进入详情。 |
 | 首页正在运行 | `Card`、`Button`、`OverlayDialog` | `ToolBoxGroupedSurface`、`ToolBoxRunningStatusButton`、`CatalogRunningTools` | 最近使用上方；每会话独立行，名称打开、状态按钮确认停止，零会话隐藏。 |
-| 导入反馈 | progress、snackbar、dialog | `ImportFeedback` | 选择 → 内部检查 → 成功/失败；没有审核卡/风险徽标。 |
+| 导入反馈 | progress、snackbar、dialog | `ImportFeedback` | 选择 → 内部检查 → 成功/失败；同版本或降级只在检查通过后显示版本确认，没有审核卡/风险徽标。 |
 | 工具详情 | grouped surface、button、dialog | `ToolDetailSection`、`ToolBoxDestructiveButton` | 身份块保留名称/图标/打开，信息区单独显示版本/大小；权限、后台任务、删除各一处入口，删除仍需确认。 |
 | 工具身份图 | Compose `Image`、Android `Bitmap` | `CatalogToolGlyph`、`ToolIconLoader` | 从当前版本 `manifest.icon` 异步加载；列表/详情/运行区、通知内容图及超级岛同源，来源小图标仍是宿主。 |
 | 删除/停止/取消任务 | `Button` | `ToolBoxDestructiveButton` | `softDanger/onSoftDanger` 有色底，浅深主题可读、48dp 目标与禁用反馈；不可逆确认仍用强强调危险按钮。 |
@@ -61,7 +61,8 @@ core-ui/
   重复追加 `systemBars` 或 `ime` padding。
 - 搜索 48dp，常规设置行 64–72dp，工具行 72–80dp，任意交互目标至少 48dp。文字可换行，
   不把容器乘以字体缩放。
-- Tab 使用短淡入；页面转场与返回只使用 `miuix-nav`。系统关闭动画时停用装饰性动效。
+- 一级 Tab 直接切换内容，不对整页做 alpha、位移或缩放；选中反馈留在底栏项内。二级页面转场与返回
+  只使用 `miuix-nav`。系统关闭动画时停用装饰性动效。
 - 运行页无 `MainDestinationBar`、固定权限栏、floating toolbar 或技术状态条；仅运行顶栏。
 - Haze state 每个可见原生页面一个；被覆盖、转场、降低透明度或无硬件加速时不注册采集源，
   使用相同 `glassFallback` 实色。运行页永不注册 WebView 采集源。

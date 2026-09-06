@@ -50,6 +50,7 @@ internal class DefaultToolPackageManager(
 ) : ToolPackageManager {
     private val storage = LifecycleStorage(filesRoot)
     private val inspector = DefaultPackageInspector(filesRoot.resolve("miniapps/.imports"), limits, ioDispatcher)
+    private val pendingConfirmations = mutableMapOf<String, PendingVersionConfirmation>()
 
     override suspend fun recoverPendingMutations(
         cleanup: ToolStateCleanup,
@@ -58,6 +59,7 @@ internal class DefaultToolPackageManager(
             failure(PackageOperationFailureCode.BUSY, "Another package change is running"),
         )
         lock.use {
+            discardPendingConfirmations()?.let { return@withContext PackageRecoveryResult.Failed(it) }
             recoverInterrupted(cleanup)?.let(PackageRecoveryResult::Failed) ?: PackageRecoveryResult.Recovered
         }
     }
@@ -68,11 +70,43 @@ internal class DefaultToolPackageManager(
     ): PackageInstallResult = withContext(ioDispatcher) {
         val lock = acquireLock() ?: return@withContext failed(PackageOperationFailureCode.BUSY, "Another package change is running")
         lock.use {
+            discardPendingConfirmations()?.let { return@withContext PackageInstallResult.Failed(it) }
             recoverInterrupted(cleanup)?.let { return@withContext PackageInstallResult.Failed(it) }
             when (val preparation = inspector.prepare(input)) {
                 is PreparationResult.Rejected -> PackageInstallResult.Rejected(preparation.rejection)
                 is PreparationResult.Prepared -> installPrepared(preparation.value, cleanup)
             }
+        }
+    }
+
+    override suspend fun confirmInstall(
+        confirmationId: String,
+        cleanup: ToolStateCleanup,
+    ): PackageInstallResult = withContext(ioDispatcher) {
+        val lock = acquireLock() ?: return@withContext failed(
+            PackageOperationFailureCode.BUSY,
+            "Another package change is running",
+        )
+        lock.use {
+            val pending = pendingConfirmations.remove(confirmationId) ?: return@withContext failed(
+                PackageOperationFailureCode.CONFIRMATION_EXPIRED,
+                "Package confirmation is no longer available",
+            )
+            installPrepared(
+                prepared = pending.prepared,
+                cleanup = cleanup,
+                confirmedCurrentVersion = pending.installedVersion,
+            )
+        }
+    }
+
+    override suspend fun cancelInstall(confirmationId: String): PackageOperationFailure? = withContext(ioDispatcher) {
+        val lock = acquireLock() ?: return@withContext failure(
+            PackageOperationFailureCode.BUSY,
+            "Another package change is running",
+        )
+        lock.use {
+            pendingConfirmations.remove(confirmationId)?.let { discardPrepared(it.prepared) }
         }
     }
 
@@ -84,6 +118,7 @@ internal class DefaultToolPackageManager(
             failure(PackageOperationFailureCode.BUSY, "Another package change is running"),
         )
         lock.use {
+            discardPendingConfirmations()?.let { return@withContext PackageUninstallResult.Failed(it) }
             recoverInterrupted(cleanup)?.let { return@withContext PackageUninstallResult.Failed(it) }
             try {
                 runInterruptible { storage.beginUninstall(toolId) }
@@ -123,6 +158,7 @@ internal class DefaultToolPackageManager(
     private suspend fun installPrepared(
         prepared: PreparedPackage,
         cleanup: ToolStateCleanup,
+        confirmedCurrentVersion: ToolVersion? = null,
     ): PackageInstallResult {
         val manifest = prepared.manifest
         if (!HostVersionPolicy.supports(hostVersion, manifest.minHostVersion)) {
@@ -140,11 +176,31 @@ internal class DefaultToolPackageManager(
             )
         }
         val previous = catalog.observeTool(manifest.id).first()
-        if (previous != null && manifest.versionCode <= previous.currentVersion.versionCode) {
-            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
-            return failed(
-                PackageOperationFailureCode.VERSION_NOT_NEWER,
-                "Package version must be higher than ${previous.currentVersion.versionCode}",
+        if (
+            previous != null &&
+            manifest.versionCode <= previous.currentVersion.versionCode &&
+            previous.currentVersion != confirmedCurrentVersion
+        ) {
+            val confirmationId = UUID.randomUUID().toString()
+            pendingConfirmations[confirmationId] = PendingVersionConfirmation(
+                prepared = prepared,
+                installedVersion = previous.currentVersion,
+            )
+            return PackageInstallResult.ConfirmationRequired(
+                PackageVersionConfirmation(
+                    id = confirmationId,
+                    toolId = manifest.id,
+                    toolName = manifest.name,
+                    installedVersionName = previous.currentVersion.version,
+                    installedVersionCode = previous.currentVersion.versionCode,
+                    incomingVersionName = manifest.version,
+                    incomingVersionCode = manifest.versionCode,
+                    kind = if (manifest.versionCode == previous.currentVersion.versionCode) {
+                        PackageVersionConfirmationKind.SAME_VERSION
+                    } else {
+                        PackageVersionConfirmationKind.DOWNGRADE
+                    },
+                ),
             )
         }
         val transactionId = UUID.randomUUID().toString()
@@ -164,24 +220,6 @@ internal class DefaultToolPackageManager(
             }
             is DataResult.Success -> Unit
         }
-        if (previous != null) {
-            try {
-                runInterruptible {
-                    storage.recordReplacementCleanup(
-                        transactionId = transactionId,
-                        toolId = manifest.id,
-                        previousVersionCode = previous.currentVersion.versionCode,
-                        nextVersionCode = manifest.versionCode,
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                failAndClean(transaction, prepared, "CANCELLED")
-                throw cancelled
-            } catch (_: Exception) {
-                failAndClean(transaction, prepared, "REPLACEMENT_MARKER_FAILED")
-                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package update could not be prepared safely")
-            }
-        }
         try {
             runInterruptible { storage.stage(transactionId, prepared) }
         } catch (cancelled: CancellationException) {
@@ -195,6 +233,40 @@ internal class DefaultToolPackageManager(
             failAndClean(transaction, prepared, "TEMP_CLEANUP_FAILED")
             return PackageInstallResult.Failed(it)
         }
+        val replacingSameVersion = previous?.currentVersion?.versionCode == manifest.versionCode
+        if (replacingSameVersion) {
+            try {
+                cleanup.beforeVersionReplacement(
+                    manifest.id,
+                    requireNotNull(previous).currentVersion.versionCode,
+                    manifest.versionCode,
+                )
+            } catch (cancelled: CancellationException) {
+                failAndClean(transaction, null, "CANCELLED")
+                throw cancelled
+            } catch (_: Exception) {
+                failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
+                return failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
+            }
+        }
+        if (previous != null) {
+            try {
+                runInterruptible {
+                    storage.recordReplacementCleanup(
+                        transactionId = transactionId,
+                        toolId = manifest.id,
+                        previousVersionCode = previous.currentVersion.versionCode,
+                        nextVersionCode = manifest.versionCode,
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                failAndClean(transaction, null, "CANCELLED")
+                throw cancelled
+            } catch (_: Exception) {
+                failAndClean(transaction, null, "REPLACEMENT_MARKER_FAILED")
+                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package update could not be prepared safely")
+            }
+        }
         try {
             runInterruptible { storage.publish(transactionId, manifest.id, manifest.versionCode) }
         } catch (_: FileAlreadyExistsException) {
@@ -207,7 +279,7 @@ internal class DefaultToolPackageManager(
             failAndClean(transaction, null, "PUBLISH_FAILED")
             return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be published atomically")
         }
-        if (previous != null) {
+        if (previous != null && !replacingSameVersion) {
             try {
                 cleanup.beforeVersionReplacement(
                     manifest.id,
@@ -358,7 +430,7 @@ internal class DefaultToolPackageManager(
                     is DataResult.Failure -> return dataFailure(failed)
                     is DataResult.Success -> runInterruptible {
                         storage.removeUncommitted(transaction.toolId, transaction.versionCode, transaction.id)
-                        storage.completeReplacementCleanup(transaction.id)
+                        storage.rollbackReplacement(transaction.id)
                     }
                 }
             }
@@ -410,10 +482,19 @@ internal class DefaultToolPackageManager(
         runCatching {
             runInterruptible {
                 storage.removeUncommitted(transaction.toolId, transaction.versionCode, transaction.id)
-                storage.completeReplacementCleanup(transaction.id)
+                storage.rollbackReplacement(transaction.id)
             }
         }
         if (prepared != null) runCatching { inspector.cleanup(prepared) }
+    }
+
+    private suspend fun discardPendingConfirmations(): PackageOperationFailure? {
+        val pending = pendingConfirmations.values.toList()
+        pendingConfirmations.clear()
+        for (confirmation in pending) {
+            discardPrepared(confirmation.prepared)?.let { return it }
+        }
+        return null
     }
 
     private suspend fun discardPrepared(prepared: PreparedPackage): PackageOperationFailure? =
@@ -438,12 +519,8 @@ internal class DefaultToolPackageManager(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun dataFailure(result: DataResult.Failure): PackageOperationFailure = when (result) {
-        is DataResult.Failure.DuplicateVersion,
-        is DataResult.Failure.NonMonotonicVersion,
-        -> failure(PackageOperationFailureCode.VERSION_NOT_NEWER, "Package version is not newer")
-        else -> failure(PackageOperationFailureCode.DATA_FAILURE, "Package catalog operation failed")
-    }
+    private fun dataFailure(result: DataResult.Failure): PackageOperationFailure =
+        failure(PackageOperationFailureCode.DATA_FAILURE, "Package catalog operation failed")
 
     private fun failed(code: PackageOperationFailureCode, message: String) =
         PackageInstallResult.Failed(failure(code, message))
@@ -460,3 +537,8 @@ internal class DefaultToolPackageManager(
         )
     }
 }
+
+private data class PendingVersionConfirmation(
+    val prepared: PreparedPackage,
+    val installedVersion: ToolVersion,
+)

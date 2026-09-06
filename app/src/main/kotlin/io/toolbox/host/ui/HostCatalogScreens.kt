@@ -44,6 +44,7 @@ import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.HostImportConfirmationKind
 import io.toolbox.host.R
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.COMPACT_RECENT_TOOL_COUNT
@@ -66,8 +67,11 @@ internal fun ToolManagerScreen(
     onInstallExamples: () -> Unit,
     onDismissImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
+    onConfirmImport: () -> Unit = {},
+    onCancelImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
 ) {
+    val confirmation = importState.confirmation
     PrimaryScreen(
         selected = MainDestination.Tools,
         onDestination = onDestination,
@@ -168,6 +172,42 @@ internal fun ToolManagerScreen(
                         )
                     }
                 }
+            }
+        }
+
+        OverlayDialog(
+            show = confirmation != null,
+            title = when (confirmation?.kind) {
+                HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
+                HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
+                null -> null
+            },
+            summary = confirmation?.let {
+                val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
+                val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
+                if (it.kind == HostImportConfirmationKind.SAME_VERSION) {
+                    "${it.toolName} 当前为 $installed，待安装为 $incoming，两者 versionCode 相同。继续会覆盖现有工具文件，并停止其运行和后台任务；普通存储与仍有效的权限选择会保留。"
+                } else {
+                    "${it.toolName} 当前为 $installed，待安装为 $incoming。较低版本可能无法读取新版数据；继续会停止其运行和后台任务，普通存储与仍有效的权限选择会保留。"
+                }
+            },
+            onDismissRequest = onCancelImport,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+            ) {
+                ToolBoxTextButton(
+                    label = "取消",
+                    onClick = onCancelImport,
+                    modifier = Modifier.weight(1f),
+                    contentColor = ToolBoxThemeTokens.colors.textPrimary,
+                )
+                ToolBoxPrimaryButton(
+                    label = if (confirmation?.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
+                    onClick = onConfirmImport,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }

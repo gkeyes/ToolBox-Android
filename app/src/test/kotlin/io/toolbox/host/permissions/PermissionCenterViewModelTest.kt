@@ -469,6 +469,12 @@ private object FakeHostPackageOperations : HostPackageOperations {
     override suspend fun importPackage(input: PackageInput): io.toolbox.host.HostImportResult =
         error("not used")
 
+    override suspend fun confirmImport(confirmationId: String): io.toolbox.host.HostImportResult = error("not used")
+
+    override suspend fun cancelImport(
+        confirmationId: String,
+    ): io.toolbox.host.HostImportCancellationResult = error("not used")
+
     override suspend fun installedManifest(toolId: String): HostInstalledManifestResult =
         if (toolId == TOOL_ID) {
             HostInstalledManifestResult.Found(
