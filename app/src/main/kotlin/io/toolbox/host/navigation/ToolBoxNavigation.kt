@@ -32,6 +32,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostDependencies
 import io.toolbox.host.HostFeatureViewModelFactory
@@ -420,9 +421,10 @@ private fun SecondaryRouteContent(
         )
 
         is PermissionCenterRoute -> {
-            val permissionViewModel = remember(route.toolId, dependencies) {
+            val permissionOwner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
+            val permissionViewModel = remember(route.toolId, dependencies, permissionOwner) {
                 ViewModelProvider(
-                    viewModelStoreOwner,
+                    permissionOwner,
                     PermissionCenterViewModelFactory(route.toolId, dependencies),
                 ).get("permission:${route.toolId}", PermissionCenterViewModel::class.java)
             }

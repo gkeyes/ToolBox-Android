@@ -14,6 +14,7 @@ import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.permissions.PermissionCenterViewModel
+import io.toolbox.host.permissions.PermissionMutationRunner
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.settings.SettingsViewModel
@@ -87,6 +88,10 @@ internal class HostDependencies(
 
     val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         packageOperationsFactory(runtimeDataCleaner, backgroundOperations)
+    }
+
+    val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects)
     }
 
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
@@ -330,7 +335,7 @@ internal class PermissionCenterViewModelFactory(
             packages = dependencies.packageOperations,
             catalog = dependencies.repositories.catalog,
             grants = dependencies.repositories.grants,
-            sideEffects = dependencies.permissionSideEffects,
+            mutations = dependencies.permissionMutations,
         ) as T
     }
 }

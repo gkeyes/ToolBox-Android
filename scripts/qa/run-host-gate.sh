@@ -125,6 +125,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.ui.HostScreenLayoutContractTest' \
     --tests 'io.toolbox.host.help.DeveloperHelpDocumentTest' \
     --tests 'io.toolbox.host.permissions.PermissionCenterViewModelTest' \
+    --tests 'io.toolbox.host.permissions.PermissionMutationRunnerTest' \
     --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
     --tests 'io.toolbox.host.background.NetworkBoundaryTest' \
     --tests 'io.toolbox.host.background.ToolNetworkProxyTest' \

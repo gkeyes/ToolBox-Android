@@ -49,6 +49,14 @@ class HostNavigationTest {
 
         composeRule.onNodeWithContentDescription("返回").performClick()
         waitForVisibleText("打开工具")
+        composeRule.onNodeWithText("权限").performClick()
+        waitForVisibleText("工具权限")
+        networkPermission.assertIsOn()
+        composeRule.activityRule.scenario.recreate()
+        waitForVisibleText("工具权限")
+        networkPermission.assertIsOn()
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        waitForVisibleText("打开工具")
         composeRule.onNodeWithText("打开工具").performClick()
         val runtimeShell = composeRule.onNodeWithTag(HostTestTags.RuntimeShell)
         composeRule.waitUntil(timeoutMillis = 10_000) { runtimeShell.isDisplayed() }

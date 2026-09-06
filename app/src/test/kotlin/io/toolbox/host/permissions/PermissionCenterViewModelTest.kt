@@ -1,5 +1,10 @@
 package io.toolbox.host.permissions
 
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.PermissionGrant
@@ -23,12 +28,20 @@ import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -71,7 +84,7 @@ class PermissionCenterViewModelTest {
             ),
         )
         val sideEffects = RecordingPermissionSideEffects()
-        val viewModel = PermissionCenterViewModel(
+        val viewModel = permissionViewModel(
             toolId = TOOL_ID,
             packages = FakeHostPackageOperations,
             catalog = InMemoryCoreData.create().catalog,
@@ -107,7 +120,7 @@ class PermissionCenterViewModelTest {
     @Test
     fun unknownCapabilityCannotBeMutated() = runTest(mainDispatcher) {
         val grants = FakePermissionGrantRepository()
-        val viewModel = PermissionCenterViewModel(
+        val viewModel = permissionViewModel(
             toolId = TOOL_ID,
             packages = FakeHostPackageOperations,
             catalog = InMemoryCoreData.create().catalog,
@@ -202,7 +215,7 @@ class PermissionCenterViewModelTest {
         val updated = viewModel.state.first { it.items.map(PermissionItem::capability) == next }
         assertTrue(updated.items.none { it.enabled })
         // A delayed Android permission callback from an earlier version must not grant anything.
-        viewModel.systemPermissionResult("notifications", true)
+        viewModel.systemPermissionResult("expired-request", mapOf("android.permission.POST_NOTIFICATIONS" to true))
         advanceUntilIdle()
         assertTrue(repositories.grants.observeGrants(TOOL_ID).first().none { it.capability == "notifications" })
         repositories.lifecycle.deleteToolCatalog(TOOL_ID)
@@ -214,7 +227,7 @@ class PermissionCenterViewModelTest {
         val grants = FakePermissionGrantRepository(PermissionGrant(TOOL_ID, "storage.secure", true, 1L))
         var failCleanup = true
         var cleanups = 0
-        val viewModel = PermissionCenterViewModel(
+        val viewModel = permissionViewModel(
             toolId = TOOL_ID,
             packages = object : HostPackageOperations by FakeHostPackageOperations {
                 override suspend fun installedManifest(toolId: String): HostInstalledManifestResult {
@@ -251,7 +264,7 @@ class PermissionCenterViewModelTest {
 
     private fun installedPermissionViewModel(filesRoot: File, repositories: CoreDataRepositories): PermissionCenterViewModel {
         val reader = HostInstalledManifestReader(filesRoot, repositories.catalog)
-        return PermissionCenterViewModel(
+        return permissionViewModel(
             toolId = TOOL_ID,
             packages = object : HostPackageOperations by FakeHostPackageOperations {
                 override suspend fun installedManifest(toolId: String) = reader.read(toolId)
@@ -260,6 +273,145 @@ class PermissionCenterViewModelTest {
             grants = repositories.grants,
             sideEffects = RecordingPermissionSideEffects(),
         )
+    }
+
+    @Test
+    fun clearingRouteStopsObserversButAcceptedWriteFinishes() = runTest(mainDispatcher) {
+        var catalogCollectors = 0
+        var grantCollectors = 0
+        val repositories = InMemoryCoreData.create()
+        val catalog = object : CatalogRepository by repositories.catalog {
+            override fun observeTool(toolId: String) = repositories.catalog.observeTool(toolId)
+                .onStart { catalogCollectors += 1 }.onCompletion { catalogCollectors -= 1 }
+        }
+        val stored = FakePermissionGrantRepository(PermissionGrant(TOOL_ID, "storage", true, 1L))
+        val writeEntered = CompletableDeferred<Unit>()
+        val allowWrite = CompletableDeferred<Unit>()
+        val grants = object : PermissionGrantRepository by stored {
+            override fun observeGrants(toolId: String) = stored.observeGrants(toolId)
+                .onStart { grantCollectors += 1 }.onCompletion { grantCollectors -= 1 }
+
+            override suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit> {
+                writeEntered.complete(Unit)
+                allowWrite.await()
+                return stored.putForVersion(grant, expectedVersionCode)
+            }
+        }
+        val sideEffects = RecordingPermissionSideEffects()
+        val viewModel = permissionViewModel(catalog = catalog, grants = grants, sideEffects = sideEffects)
+        val store = storeFor(viewModel)
+        advanceUntilIdle()
+        assertEquals(1, catalogCollectors)
+        assertEquals(1, grantCollectors)
+
+        viewModel.setEnabled("storage", false)
+        store.clear()
+        writeEntered.await()
+        runCurrent()
+        assertEquals(0, catalogCollectors)
+        assertEquals(0, grantCollectors)
+        val oldState = viewModel.state.value
+
+        allowWrite.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf(false), stored.putCalls.map { it.granted })
+        assertEquals(listOf("$TOOL_ID:storage"), sideEffects.disabled)
+        assertEquals(oldState, viewModel.state.value)
+        viewModel.setEnabled("clipboard.write", false)
+        advanceUntilIdle()
+        assertEquals(1, stored.putCalls.size)
+    }
+
+    @Test
+    fun requestIdentitySurvivesNewCollectorButEmptyAndForeignResultsNeverGrant() = runTest(mainDispatcher) {
+        val grants = FakePermissionGrantRepository()
+        val packages = manifestWithPermissions("location", "location.background")
+        val viewModel = permissionViewModel(packages = packages, grants = grants)
+        advanceUntilIdle()
+        val firstRequest = async(start = CoroutineStart.UNDISPATCHED) { viewModel.requests.first() }
+        viewModel.setEnabled("location.background", true)
+        val request = firstRequest.await()
+        viewModel.systemPermissionResult("wrong-id", mapOf(BACKGROUND_LOCATION to true))
+        advanceUntilIdle()
+        assertTrue(grants.putCalls.isEmpty())
+        viewModel.systemPermissionResult(request.id, emptyMap())
+        advanceUntilIdle()
+        assertTrue(grants.putCalls.isEmpty())
+        assertTrue(viewModel.state.value.showSystemSettings)
+
+        val retryRequest = async(start = CoroutineStart.UNDISPATCHED) { viewModel.requests.first() }
+        viewModel.setEnabled("location.background", true)
+        val retry = retryRequest.await()
+        viewModel.systemPermissionResult(request.id, mapOf(BACKGROUND_LOCATION to true))
+        viewModel.systemPermissionResult(retry.id, mapOf("unrequested.permission" to true))
+        advanceUntilIdle()
+        assertTrue(grants.putCalls.isEmpty())
+
+        val validRequest = async(start = CoroutineStart.UNDISPATCHED) { viewModel.requests.first() }
+        viewModel.setEnabled("location", true)
+        val savedRequestId = validRequest.await().id
+        viewModel.systemPermissionResult(savedRequestId, mapOf(COARSE_LOCATION to true))
+        viewModel.systemPermissionResult(savedRequestId, mapOf(COARSE_LOCATION to true))
+        advanceUntilIdle()
+        assertEquals(listOf("location"), grants.putCalls.map { it.capability })
+        assertTrue(grants.putCalls.single().granted)
+    }
+
+    @Test
+    fun pendingSystemRequestCannotCrossToolUpdateOrNewRouteInstance() = runTest(mainDispatcher) {
+        val filesRoot = temporaryFolder.newFolder()
+        val repositories = InMemoryCoreData.create()
+        installFixture(filesRoot, repositories, permissions = listOf("location"))
+        val oldPage = installedPermissionViewModel(filesRoot, repositories)
+        oldPage.state.first { it.loaded }
+        val pending = async(start = CoroutineStart.UNDISPATCHED) { oldPage.requests.first() }
+        oldPage.setEnabled("location", true)
+        val oldRequest = pending.await()
+        installFixture(filesRoot, repositories, permissions = listOf("location", "network"), versionCode = 2)
+        oldPage.state.first { it.items.size == 2 }
+        oldPage.systemPermissionResult(oldRequest.id, mapOf(COARSE_LOCATION to true))
+        assertTrue(repositories.grants.observeGrants(TOOL_ID).first().none { it.granted })
+        storeFor(oldPage).clear()
+        val newPage = installedPermissionViewModel(filesRoot, repositories)
+        newPage.state.first { it.loaded }
+        val current = async(start = CoroutineStart.UNDISPATCHED) { newPage.requests.first() }
+        newPage.setEnabled("location", true)
+        val newRequest = current.await()
+        newPage.systemPermissionResult(oldRequest.id, mapOf(COARSE_LOCATION to true))
+        assertTrue(repositories.grants.observeGrants(TOOL_ID).first().none { it.granted })
+        newPage.systemPermissionResult(newRequest.id, mapOf(COARSE_LOCATION to true))
+        newPage.state.first { it.items.single { item -> item.capability == "location" }.enabled }
+        assertTrue(repositories.grants.observeGrants(TOOL_ID).first().single { it.capability == "location" }.granted)
+    }
+
+    private fun permissionViewModel(
+        toolId: String = TOOL_ID,
+        packages: HostPackageOperations = FakeHostPackageOperations,
+        catalog: CatalogRepository = InMemoryCoreData.create().catalog,
+        grants: PermissionGrantRepository,
+        sideEffects: HostPermissionSideEffects = RecordingPermissionSideEffects(),
+        now: () -> Long = System::currentTimeMillis,
+        mutations: PermissionMutationRunner = PermissionMutationRunner(
+            packages, grants, sideEffects, CoroutineScope(SupervisorJob() + mainDispatcher), now,
+        ),
+    ) = PermissionCenterViewModel(toolId, packages, catalog, grants, mutations)
+
+    private fun storeFor(viewModel: PermissionCenterViewModel): ViewModelStore {
+        val owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
+        ViewModelProvider(owner, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = viewModel as T
+        }).get(PermissionCenterViewModel::class.java)
+        return owner.viewModelStore
+    }
+
+    private fun manifestWithPermissions(vararg capabilities: String) = object : HostPackageOperations by FakeHostPackageOperations {
+        override suspend fun installedManifest(toolId: String): HostInstalledManifestResult {
+            val base = FakeHostPackageOperations.installedManifest(toolId) as HostInstalledManifestResult.Found
+            return HostInstalledManifestResult.Found(base.manifest.copy(
+                permissions = capabilities.map { HostManifestPermission(it, "系统权限测试", false) },
+            ))
+        }
     }
 
     private suspend fun installFixture(
@@ -297,6 +449,8 @@ class PermissionCenterViewModelTest {
 }
 
 private const val TOOL_ID = "io.toolbox.example"
+private const val COARSE_LOCATION = "android.permission.ACCESS_COARSE_LOCATION"
+private const val BACKGROUND_LOCATION = "android.permission.ACCESS_BACKGROUND_LOCATION"
 private val FIXTURE_CAPABILITIES = listOf("storage", "storage.secure", "network", "notifications", "background.runtime")
 
 private fun fixtureManifest(

@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -51,19 +52,18 @@ internal fun PermissionCenterScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var pending by remember { mutableStateOf("") }
+    var pendingRequestId by rememberSaveable { mutableStateOf("") }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-        val granted = if (pending == "location") {
-            results["android.permission.ACCESS_COARSE_LOCATION"] == true ||
-                results["android.permission.ACCESS_FINE_LOCATION"] == true
-        } else {
-            results.values.all { it }
-        }
-        viewModel.systemPermissionResult(pending, granted)
+        viewModel.systemPermissionResult(pendingRequestId, results)
+        pendingRequestId = ""
     }
     LaunchedEffect(viewModel) {
         viewModel.requests.collect { request ->
-            pending = request.capability
+            if (pendingRequestId.isNotEmpty()) {
+                viewModel.systemPermissionResult(request.id, emptyMap())
+                return@collect
+            }
+            pendingRequestId = request.id
             launcher.launch(request.permissions.toTypedArray())
         }
     }

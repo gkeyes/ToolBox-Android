@@ -3,16 +3,12 @@ package io.toolbox.host.permissions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogRepository
-import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
-import io.toolbox.host.HostPermissionSideEffects
 import io.toolbox.tool.runtime.RuntimePreparationCode
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,10 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 internal data class PermissionItem(
     val capability: String,
@@ -52,30 +45,33 @@ internal data class PermissionCenterUiState(
     val loaded: Boolean get() = loadState != PermissionLoadState.Loading
 }
 
-internal data class SystemPermissionRequest(val capability: String, val permissions: List<String>)
+internal data class SystemPermissionRequest(
+    val id: String,
+    val capability: String,
+    val permissions: List<String>,
+    val versionCode: Int,
+)
 
 internal class PermissionCenterViewModel(
     private val toolId: String,
     private val packages: HostPackageOperations,
     private val catalog: CatalogRepository,
     private val grants: PermissionGrantRepository,
-    private val sideEffects: HostPermissionSideEffects,
-    private val now: () -> Long = System::currentTimeMillis,
+    private val mutations: PermissionMutationRunner,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(PermissionCenterUiState())
     val state: StateFlow<PermissionCenterUiState> = mutableState.asStateFlow()
     private val mutableRequests = MutableSharedFlow<SystemPermissionRequest>(extraBufferCapacity = 1)
     val requests: SharedFlow<SystemPermissionRequest> = mutableRequests.asSharedFlow()
 
-    private val mutationLock = Mutex()
     private var manifestVersion: Int? = null
-    private var pendingSystemCapability: String? = null
+    private var pendingSystemRequest: SystemPermissionRequest? = null
+    private var cleared = false
 
     init {
         viewModelScope.launch {
             catalog.observeTool(toolId).map { it?.currentVersion?.versionCode }.distinctUntilChanged().collectLatest {
                 manifestVersion = null
-                pendingSystemCapability = null
                 mutableState.value = PermissionCenterUiState()
                 observeCurrentManifest()
             }
@@ -116,21 +112,38 @@ internal class PermissionCenterViewModel(
     }
 
     fun setEnabled(capability: String, enabled: Boolean) {
+        if (cleared) return
         val item = state.value.items.firstOrNull { it.capability == capability } ?: return
         if (item.enabled == enabled) return
         if (enabled && item.androidPermissions.isNotEmpty()) {
-            if (pendingSystemCapability != null) return
-            pendingSystemCapability = capability
-            mutableRequests.tryEmit(SystemPermissionRequest(capability, item.androidPermissions))
+            if (pendingSystemRequest != null) return
+            val request = SystemPermissionRequest(
+                id = UUID.randomUUID().toString(),
+                capability = capability,
+                permissions = item.androidPermissions,
+                versionCode = manifestVersion ?: return,
+            )
+            pendingSystemRequest = request
+            if (!mutableRequests.tryEmit(request)) pendingSystemRequest = null
         } else {
             save(capability, enabled)
         }
     }
 
-    fun systemPermissionResult(capability: String, granted: Boolean) {
-        if (pendingSystemCapability != capability || state.value.items.none { it.capability == capability }) return
-        pendingSystemCapability = null
-        if (granted) save(capability, true) else {
+    fun systemPermissionResult(requestId: String, results: Map<String, Boolean>) {
+        if (cleared) return
+        val request = pendingSystemRequest ?: return
+        if (request.id != requestId) return
+        pendingSystemRequest = null
+        if (request.versionCode != manifestVersion ||
+            state.value.items.none { it.capability == request.capability }
+        ) return
+        val granted = if (request.capability == "location") {
+            request.permissions.any { results[it] == true }
+        } else {
+            request.permissions.isNotEmpty() && request.permissions.all { results[it] == true }
+        }
+        if (granted) save(request.capability, true) else {
             mutableState.value = mutableState.value.copy(
                 message = "系统权限未授予，工具权限保持关闭。",
                 showSystemSettings = true,
@@ -144,42 +157,26 @@ internal class PermissionCenterViewModel(
 
     private fun save(capability: String, enabled: Boolean) {
         val expectedVersion = manifestVersion ?: return
+        val result = mutations.submit(toolId, capability, enabled, expectedVersion)
         viewModelScope.launch {
-            mutationLock.withLock {
-                try {
-                    val current = packages.installedManifest(toolId) as? HostInstalledManifestResult.Found
-                    if (current == null || current.manifest.versionCode != expectedVersion ||
-                        current.manifest.permissions.none { it.capability == capability }
-                    ) {
-                        mutableState.value = mutableState.value.copy(message = "工具已更新，请在最新权限列表中重试。")
-                        return@withLock
-                    }
-                    if (grants.observeGrants(toolId).first().any { it.capability == capability && it.granted == enabled }) {
-                        return@withLock
-                    }
-                    // Retry a failed secure wipe before making old secrets readable again.
-                    if (enabled && capability == "storage.secure") {
-                        sideEffects.onCapabilityDisabled(toolId, capability)
-                    }
-                    when (grants.putForVersion(PermissionGrant(toolId, capability, enabled, now()), expectedVersion)) {
-                        is DataResult.Success -> {
-                            // Deny new calls before waiting for in-flight work and cleanup.
-                            if (!enabled) withContext(NonCancellable) {
-                                sideEffects.onCapabilityDisabled(toolId, capability)
-                            }
-                            mutableState.value = mutableState.value.copy(message = null, showSystemSettings = false)
-                        }
-                        is DataResult.Failure -> mutableState.value = mutableState.value.copy(message = "权限未保存，请重试。")
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    mutableState.value = mutableState.value.copy(
-                        message = "权限操作未完成，请重试；安全存储清理失败时不会重新开启。",
-                    )
-                }
-            }
+            val outcome = result.await()
+            if (manifestVersion != expectedVersion) return@launch
+            mutableState.value = mutableState.value.copy(
+                message = when (outcome) {
+                    PermissionMutationResult.Saved -> null
+                    PermissionMutationResult.Outdated -> "工具已更新，请在最新权限列表中重试。"
+                    PermissionMutationResult.WriteFailed -> "权限未保存，请重试。"
+                    PermissionMutationResult.CleanupFailed -> "权限操作未完成，请重试；安全存储清理失败时不会重新开启。"
+                },
+                showSystemSettings = false,
+            )
         }
+    }
+
+    override fun onCleared() {
+        cleared = true
+        pendingSystemRequest = null
+        manifestVersion = null
     }
 }
 
