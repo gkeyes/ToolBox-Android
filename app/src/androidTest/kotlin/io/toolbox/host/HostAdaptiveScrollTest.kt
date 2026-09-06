@@ -1,5 +1,6 @@
 package io.toolbox.host
 
+import android.content.res.Configuration
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -23,6 +25,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
@@ -45,6 +48,41 @@ import org.junit.Test
 class HostAdaptiveScrollTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun systemBarsFollowAllThemeModesAndLiveSystemConfiguration() {
+        val theme = mutableStateOf(ToolBoxThemeMode.System)
+        val systemDark = mutableStateOf(false)
+        composeRule.activity.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply {
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (systemDark.value) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                composeRule.activity.ApplySystemBarAppearance(theme.value)
+            }
+        }
+        for (mode in ToolBoxThemeMode.entries) {
+            for (dark in listOf(false, true)) {
+                composeRule.runOnIdle {
+                    theme.value = mode
+                    systemDark.value = dark
+                }
+                composeRule.waitForIdle()
+                composeRule.runOnIdle {
+                    val expectedLightIcons = when (mode) {
+                        ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> true
+                        ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> false
+                        ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> dark
+                    }
+                    val window = composeRule.activity.window
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    assertEquals("status: $mode / systemDark=$dark", !expectedLightIcons, controller.isAppearanceLightStatusBars)
+                    assertEquals("navigation: $mode / systemDark=$dark", !expectedLightIcons, controller.isAppearanceLightNavigationBars)
+                }
+            }
+        }
+    }
 
     @Test
     fun openAndManageRemainSeparateTouchTargetsOnNarrowLargeTextScreens() {

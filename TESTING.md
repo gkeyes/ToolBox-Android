@@ -4,6 +4,23 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 开发计划续行 P-D：启动主题与系统栏（F6 小步修改）
+
+- Loading/Error 使用宿主现有 System 主题，不再硬编码浅色；不提前同步读 DataStore。
+  Ready 仍由原 SettingsViewModel 提供六种主题；自定义存储主题加载前只能跟随系统，不能承诺没有任何主题切换。
+- 系统栏使用 `LaunchedEffect(window, usesDarkIcons)`；同一组合位置中，只有窗口或图标明暗变化才重新配置。
+  Loading/Error/Ready 切换导致重新进入组合时仍初始化；不是跨页面的全局去重缓存。
+- `onHostFirstFrame`、后台 recover/maintenance、快捷方式与前台 broker 的顺序/所有权不改。
+  原生启动窗口与实际显示时序未测；不声称已消除白闪或测得启动提速。
+- 本地 `git diff --check` 和 `bash scripts/verify-security-invariants.sh <repo>` 通过；
+  首次安全脚本调用漏传仓库参数而退出 1，补传后执行成功，不是安全规则失败。
+- 子代理因异步运行环境缺包未启动；用户明确授权主会话继续。本批没有独立子代理审阅结果。
+
+| 保留/扩展检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| `HostAdaptiveScrollTest.systemBarsFollowAllThemeModesAndLiveSystemConfiguration` | 系统主题变化必须更新系统栏，固定浅深主题不能被系统模式反向覆盖。 | 调用生产 MainActivity 的系统栏 effect，六种主题逐项切换模拟 Configuration 的日/夜值，检查真实 WindowInsetsController 的状态栏与导航栏图标属性。 | 两栏明暗均遵循对应模式；仪器执行 NOT_RUN。不是截图、动态取色、首帧白闪或 Activity 重建的测试。 |
+| 原 host gate / optimized_compile / delivery | 少量 Compose effect 修改也必须经类型检查，不以语法筛查冒充编译。 | 沿用 GitHub 生产/仪器源编译、准入 JVM 测试、安全与签名/资源检查。 | 待本提交 CI；本地无 JDK/SDK/ADB，设备与性能 NOT_RUN / NOT_MEASURED。 |
+
 ## 开发计划续行：设置页收敛（独立 UI 提交）
 
 - 原问题：设置页常驻绿色自动保存卡、重复副标题/说明；主题当前值挤在说明行，后台保障与权限分组割裂。
@@ -16,12 +33,14 @@
   编译失败：生产导航及两个 debug Preview 把 `null` 传给了 `PrimaryScreen.subtitle: String`。
   host gate 的 API/security/contrast 通过，compile/admitted-unit 未通过，release 跳过；不是单测断言失败。
   修复仅删除三个实参，使用已有 `subtitle = ""` 默认值，不改组件 API、不恢复副标题。
-  先前语法筛查没有进行类型检查，不能作为此次编译成功的证据；修复后的新 SHA 仍需 CI。
+  先前语法筛查没有进行类型检查，不能作为此次编译成功的证据。
+  修复 `7773220` 的 [CI 34008474117](https://github.com/gkeyes/ToolBox-Android/actions/runs/34008474117)
+  三项 job 均成功；它不批准之后的启动主题修改，也不代表已合并默认分支或执行设备测试。
 
 | 扩展既有检查 | 理由 | 方法 | 预期/状态 |
 |---|---|---|---|
 | `HostAdaptiveScrollTest.settingsChoicesErrorsAndDestinationsRemainReachableOnNarrowLargeTextScreens` | 行尾当前值不能挤压主题标题，大字不能让原入口/错误/版本不可达。 | 生产 SettingsContent + 360dp、2倍字体、浅深主题；检查主题/当前值不重叠，以指针打开选择，检查说明和主题选择回调；注入错误状态，滚动点击后台保障/权限/帮助，检查真实 BuildConfig 版本。 | 原入口 ≥48dp 且每次只触发相应回调，错误后仍可操作；仪器执行 NOT_RUN。Fixture 的选择回调不证明 DataStore 保存或系统动态取色。 |
-| 原编译、安全、准入单元与正式交付 | core-ui API 及调用方必须一致，不得破坏其他页面/后台语义。 | GitHub 原 host gate、optimized_compile、delivery；不新设视觉 gate。 | 本地 diff/安全不变量通过，5个修改 Kotlin 文件第三方语法筛查无报错（不是编译）；首次 CI 失败及修复见上，修复后 CI 待运行，设备与视觉验收不冒充 PASS。 |
+| 原编译、安全、准入单元与正式交付 | core-ui API 及调用方必须一致，不得破坏其他页面/后台语义。 | GitHub 原 host gate、optimized_compile、delivery；不新设视觉 gate。 | 本地 diff/安全不变量通过，5个修改 Kotlin 文件第三方语法筛查无报错（不是编译）；首次 CI 失败及修复见上，修复后 CI 三项 job 成功，设备与视觉验收不冒充 PASS。 |
 
 ## 开发计划续行 P-A：导航与最近使用写入解耦
 

@@ -236,8 +236,19 @@ change. A separate settings-only UI commit removes the persistent saved hint and
 redundant subtitles, groups the existing destinations, and puts the selected theme
 at the row end with explanation in the existing dialog. It does not modify settings
 persistence, grants or background cancellation, and has no measured performance
-result. Startup theme/system-bar behavior and the other investigation items remain
-open. Do not infer visual approval or device readiness from CI.
+result. A subsequent narrow F6/P-D change makes Loading/Error use System theme
+and keys system-bar application by window and icon polarity at each composition
+site. It does not add synchronous settings IO, change six-mode persistence,
+reschedule first-frame recovery/maintenance, or remove branch-entry initialization.
+The saved non-system preference is still unknown before settings arrive; native
+starting-window appearance and actual flash/frame timing are not verified. The
+retained behavioral instrumentation suite gains a six-mode/live-configuration
+window-flag matrix (execution NOT_RUN), not a screenshot or startup measurement.
+Other startup scheduling/readiness and investigation items remain open. The
+preceding settings fix `7773220` passed CI
+[34008474117](https://github.com/gkeyes/ToolBox-Android/actions/runs/34008474117);
+that result does not certify this later startup change. Do not infer visual
+approval or device readiness from CI.
 
 ## Results / remaining gates
 

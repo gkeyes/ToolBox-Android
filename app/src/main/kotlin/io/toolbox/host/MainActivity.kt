@@ -10,7 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -46,16 +45,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             val bootstrapState by dependenciesViewModel.state.collectAsStateWithLifecycle()
             when (val state = bootstrapState) {
-                HostBootstrapState.Loading -> ToolBoxTheme {
-                    ApplySystemBarAppearance(ToolBoxThemeMode.Light)
+                HostBootstrapState.Loading -> ToolBoxTheme(mode = ToolBoxThemeMode.System) {
+                    ApplySystemBarAppearance(ToolBoxThemeMode.System)
                     HostBootstrapScreen(
                         loading = true,
                         message = "正在打开本机工具目录。",
                         onRetry = dependenciesViewModel::retry,
                     )
                 }
-                is HostBootstrapState.Error -> ToolBoxTheme {
-                    ApplySystemBarAppearance(ToolBoxThemeMode.Light)
+                is HostBootstrapState.Error -> ToolBoxTheme(mode = ToolBoxThemeMode.System) {
+                    ApplySystemBarAppearance(ToolBoxThemeMode.System)
                     HostBootstrapScreen(
                         loading = false,
                         message = state.message,
@@ -141,13 +140,15 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun ApplySystemBarAppearance(mode: ToolBoxThemeMode) {
+    internal fun ApplySystemBarAppearance(mode: ToolBoxThemeMode) {
         val usesDarkIcons = when (mode) {
             ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> false
             ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> !isSystemInDarkTheme()
             ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> true
         }
-        SideEffect {
+        // Reapply on a new window or icon polarity, not unrelated recompositions.
+        // Each bootstrap/ready composition entry still initializes its own appearance.
+        LaunchedEffect(window, usesDarkIcons) {
             val transparent = android.graphics.Color.TRANSPARENT
             val style = if (usesDarkIcons) {
                 SystemBarStyle.light(transparent, transparent)
