@@ -4,6 +4,20 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 开发计划续行：设置页收敛（独立 UI 提交）
+
+- 原问题：设置页常驻绿色自动保存卡、重复副标题/说明；主题当前值挤在说明行，后台保障与权限分组割裂。
+- 修改：只整理设置展示与现有 choice row；按外观/运行与权限/支持分组，保留后台状态、失败提示、
+  全部主题选项和目的地。当前主题使用已锁定 Miuix `0.9.4-rc01` 的 `ArrowPreference.endActions`，
+  从该版本已发布 sources JAR 核对 API；解释移入原 OverlayDialog，不升级依赖/另建选择页。
+- `SettingsViewModel`、DataStore、权限和后台停止语义不变；不与前一 P-A 提交混成一个变更。
+  debug 的两项普通设置 Preview 同步去掉副标题；不恢复截图测试，不把源码/预览当实际审图。
+
+| 扩展既有检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| `HostAdaptiveScrollTest.settingsChoicesErrorsAndDestinationsRemainReachableOnNarrowLargeTextScreens` | 行尾当前值不能挤压主题标题，大字不能让原入口/错误/版本不可达。 | 生产 SettingsContent + 360dp、2倍字体、浅深主题；检查主题/当前值不重叠，以指针打开选择，检查说明和主题选择回调；注入错误状态，滚动点击后台保障/权限/帮助，检查真实 BuildConfig 版本。 | 原入口 ≥48dp 且每次只触发相应回调，错误后仍可操作；仪器执行 NOT_RUN。Fixture 的选择回调不证明 DataStore 保存或系统动态取色。 |
+| 原编译、安全、准入单元与正式交付 | core-ui API 及调用方必须一致，不得破坏其他页面/后台语义。 | GitHub 原 host gate、optimized_compile、delivery；不新设视觉 gate。 | 本地 diff/安全不变量通过，5个修改 Kotlin 文件第三方语法筛查无报错（不是编译）；新 CI 待运行，设备与视觉验收不冒充 PASS。 |
+
 ## 开发计划续行 P-A：导航与最近使用写入解耦
 
 - 原问题：已接受的打开请求必须等待 `recordOpened` 成功才发导航；统计失败被误报为打开失败。

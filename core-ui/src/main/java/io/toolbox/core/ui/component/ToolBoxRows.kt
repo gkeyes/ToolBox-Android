@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.TextField
@@ -180,7 +181,7 @@ fun ToolBoxChoiceSettingRow(
     choices: List<ToolBoxSettingChoice>,
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    summary: String? = null,
+    dialogSummary: String? = null,
     icon: ToolBoxIconKey? = null,
     enabled: Boolean = true,
 ) {
@@ -188,16 +189,25 @@ fun ToolBoxChoiceSettingRow(
     val spacing = ToolBoxThemeTokens.spacing
     val selectedLabel = choices.firstOrNull { it.value == selectedValue }?.label.orEmpty()
     var choiceDialogVisible by rememberSaveable(title) { mutableStateOf(false) }
-    val combinedSummary = listOfNotNull(summary, selectedLabel.takeIf(String::isNotBlank))
-        .joinToString(" · ")
 
     ArrowPreference(
         title = title,
-        summary = combinedSummary.ifBlank { null },
         startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
+        endActions = {
+            if (selectedLabel.isNotBlank()) {
+                ToolBoxText(
+                    text = selectedLabel,
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                        textAlign = TextAlign.End,
+                    ),
+                )
+            }
+        },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
+            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
+            .semantics { role = Role.Button },
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         onClick = { if (enabled) choiceDialogVisible = true },
         enabled = enabled,
@@ -209,6 +219,15 @@ fun ToolBoxChoiceSettingRow(
         onDismissRequest = { choiceDialogVisible = false },
     ) {
         Column {
+            dialogSummary?.let { explanation ->
+                ToolBoxText(
+                    text = explanation,
+                    modifier = Modifier.padding(horizontal = spacing.oneHalf, vertical = spacing.one),
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    ),
+                )
+            }
             choices.forEach { choice ->
                 RadioButtonPreference(
                     title = choice.label,

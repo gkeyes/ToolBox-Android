@@ -154,7 +154,7 @@ fun SettingsPreview() {
             selected = MainDestination.Settings,
             onDestination = {},
             title = "设置",
-            subtitle = "外观、后台与开发支持",
+            subtitle = null,
             onImport = null,
         ) { contentPadding, _ ->
             SettingsContent(
@@ -222,7 +222,7 @@ fun MediumSettingsDarkPreview() {
             selected = MainDestination.Settings,
             onDestination = {},
             title = "设置",
-            subtitle = "外观、后台与开发支持",
+            subtitle = null,
             onImport = null,
         ) { contentPadding, _ ->
             SettingsContent(

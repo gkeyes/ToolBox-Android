@@ -31,7 +31,7 @@ implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4-rc01")
 | 删除/停止/取消任务 | `Button` | `ToolBoxDestructiveButton` | `softDanger/onSoftDanger` 有色底，浅深主题可读、48dp 目标与禁用反馈；不可逆确认仍用强强调危险按钮。 |
 | 工具权限 | preference switch | `ToolBoxSwitchSettingRow` | 整行与开关可点；映射实际 manifest + handler。 |
 | 后台任务 | grouped rows、status、dialog | `TaskRow` | 显示真实任务、结果和取消，不展示审计/恢复。 |
-| 设置 | arrow preference | `SettingsSection` | 主题、后台保障、工具权限、Developer Help。 |
+| 设置 | `ArrowPreference`、`RadioButtonPreference`、`OverlayDialog` | `SettingsContent`、`ToolBoxChoiceSettingRow`、`ToolBoxValueRow` | 外观/运行与权限/支持分组；当前主题在行尾自然换行，说明进入原选择对话框；无常驻自动保存卡，失败提示保留；关于版本来自 BuildConfig。 |
 | 后台保障 | preference switch、grouped rows | `BackgroundSafeguardsScreen` | 总开关、持续会话停止按钮和真实系统设置入口。 |
 | Developer Help | top bar、search、grouped list、text button | `DeveloperHelpScreen`、`ToolBoxDisclosureRow` | 同一份离线 Markdown；章节/主题折叠、搜索、代码复制与四个范例入口。 |
 | 运行容器 | `SmallTopAppBar`、menu、snackbar | `RuntimeToolBar`、`MiniAppWebView` | 顶部约 48dp；无底栏/安全条，WebView 填满其余空间。 |

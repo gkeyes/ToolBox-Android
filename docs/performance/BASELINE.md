@@ -231,8 +231,13 @@ lastOpenedAt as an accepted request timestamp, serializes writes to avoid stale
 completion order, and reports statistics failure separately. JVM deferred-write,
 duplicate, cancellation and deletion fixtures are behavioral evidence only, not
 performance data. Safe prepare/animation overlap, version-key icon fast paths,
-route collector scoping and the remaining settings/startup work are not implemented
-by that F1 change. Do not infer visual approval or device readiness from CI.
+route collector scoping and settings/startup work are not implemented by that F1
+change. A separate settings-only UI commit removes the persistent saved hint and
+redundant subtitles, groups the existing destinations, and puts the selected theme
+at the row end with explanation in the existing dialog. It does not modify settings
+persistence, grants or background cancellation, and has no measured performance
+result. Startup theme/system-bar behavior and the other investigation items remain
+open. Do not infer visual approval or device readiness from CI.
 
 ## Results / remaining gates
 

@@ -256,7 +256,7 @@ internal fun ToolBoxNavigation(
                         selected = MainDestination.Settings,
                         onDestination = ::navigateMain,
                         title = "设置",
-                        subtitle = "外观、后台与开发支持",
+                        subtitle = null,
                         onImport = null,
                     ) { padding, _ ->
                         SettingsScreen(
