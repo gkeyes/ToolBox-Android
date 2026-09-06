@@ -9,11 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.Build
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import com.xzakota.hyper.notification.focus.FocusNotification
-import com.xzakota.hyper.notification.focus.model.TextAndColorInfo
 import io.toolbox.host.R
 import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
@@ -52,9 +48,9 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_toolbox_notification)
             .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
-            .setContentTitle(whiteLiveText(title))
-            .setContentText(whiteLiveText(content))
-            .setStyle(Notification.BigTextStyle().bigText(whiteLiveText(body)))
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(Notification.BigTextStyle().bigText(body))
             .setContentIntent(open)
             .setWhen(updatedAt)
             .setShowWhen(true)
@@ -63,9 +59,9 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setCategory(Notification.CATEGORY_STATUS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setSubText(live?.request?.secondaryText?.let(::whiteLiveText))
-            .addAction(Notification.Action.Builder(null, whiteLiveText("打开"), open).build())
-            .addAction(Notification.Action.Builder(null, whiteLiveText("停止当前"), stopCurrent).build())
+            .setSubText(live?.request?.secondaryText)
+            .addAction(Notification.Action.Builder(null, "打开", open).build())
+            .addAction(Notification.Action.Builder(null, "停止当前", stopCurrent).build())
             .apply {
                 live?.request?.progress?.let { setProgress(100, it, false) }
             }
@@ -114,7 +110,6 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         baseInfo {
             type = 1
             title = displayValue
-            applyWhiteFocusTextColors(this)
             content = displayTitle
             subTitle = displaySecondary
             subContent = notificationBody
@@ -125,7 +120,6 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         iconTextInfo {
             type = 1
             title = displayValue
-            applyWhiteFocusTextColors(this)
             content = displayTitle
             subTitle = displaySecondary
             subContent = notificationBody
@@ -173,24 +167,5 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
     companion object {
         const val CHANNEL_ID = "toolbox.runtime.live.v1"
         private val DEFAULT_ACCENT = Color.rgb(10, 132, 255)
-    }
-}
-
-internal fun applyWhiteFocusTextColors(info: TextAndColorInfo) {
-    info.colorTitle = "#FFFFFF"
-    info.colorTitleDark = "#FFFFFF"
-    info.colorContent = "#FFFFFF"
-    info.colorContentDark = "#FFFFFF"
-    info.colorSubTitle = "#FFFFFF"
-    info.colorSubTitleDark = "#FFFFFF"
-    info.colorExtraTitle = "#FFFFFF"
-    info.colorExtraTitleDark = "#FFFFFF"
-    info.colorSubContent = "#FFFFFF"
-    info.colorSubContentDark = "#FFFFFF"
-}
-
-private fun whiteLiveText(text: String): CharSequence = SpannableString(text).apply {
-    if (isNotEmpty()) {
-        setSpan(ForegroundColorSpan(Color.WHITE), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 }

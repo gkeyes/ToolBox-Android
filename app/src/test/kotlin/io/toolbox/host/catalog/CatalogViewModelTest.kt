@@ -317,6 +317,8 @@ private class RecordingCatalogOrganizationRepository(
 
 private object UnusedHostPackageOperations : HostPackageOperations {
     override suspend fun importPackage(input: PackageInput): HostImportResult = error("not used")
+    override suspend fun confirmImport(confirmationId: String): HostImportResult = error("not used")
+    override suspend fun cancelImport(confirmationId: String): io.toolbox.host.HostImportCancellationResult = error("not used")
     override suspend fun installedManifest(toolId: String): HostInstalledManifestResult = error("not used")
     override suspend fun deleteTool(toolId: String): HostDeleteResult = error("not used")
     override suspend fun installBundledExamples(): HostExampleInstallResult = error("not used")

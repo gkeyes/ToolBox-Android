@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -26,6 +27,22 @@ class HostNavigationTest {
     fun bundledExampleCanBeManagedFromInstallThroughDelete() {
         val emptyState = composeRule.onNodeWithTag(HostTestTags.CatalogEmptyState)
         composeRule.waitUntil(timeoutMillis = 10_000) { emptyState.isDisplayed() }
+        emptyState.assertIsDisplayed()
+
+        composeRule.onNodeWithTag(HostTestTags.BottomSettings).performClick()
+        waitForVisibleTag(HostTestTags.SettingsAppearance)
+        composeRule.onNodeWithTag(HostTestTags.SettingsAppearance).performClick()
+        waitForVisibleText("界面风格")
+        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsSelected()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceMiuix).performClick()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass)
+                .fetchSemanticsNode().config[SemanticsProperties.Selected]
+        }
+        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsSelected()
+        composeRule.onNodeWithContentDescription("返回").performClick()
+        composeRule.onNodeWithTag(HostTestTags.BottomTools).performClick()
         emptyState.assertIsDisplayed()
 
         composeRule.onNodeWithText("安装四个范例").performClick()
@@ -93,6 +110,12 @@ class HostNavigationTest {
 
     private fun waitForVisibleText(text: String, timeoutMillis: Long = 10_000) {
         val node = composeRule.onNodeWithText(text)
+        composeRule.waitUntil(timeoutMillis) { node.isDisplayed() }
+        node.assertIsDisplayed()
+    }
+
+    private fun waitForVisibleTag(tag: String, timeoutMillis: Long = 10_000) {
+        val node = composeRule.onNodeWithTag(tag)
         composeRule.waitUntil(timeoutMillis) { node.isDisplayed() }
         node.assertIsDisplayed()
     }

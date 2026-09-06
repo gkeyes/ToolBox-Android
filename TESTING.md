@@ -4,23 +4,80 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
-## 0.3.9 通知品牌图标修复（2026-09-06）
+## 通知品牌图标与系统托管文字颜色（2026-09-06）
 
-- 根因：桌面已使用确认后的多工具 Logo，但实时/普通通知、恢复提醒、闹钟、12 小时提醒及
-  快捷方式仍引用最初的蓝色工具箱。原通知 XML 与首版提交的内容完全一致，不仅是系统缓存推测。
-- 修复：删除旧资源；来源 smallIcon 统一使用由原 Logo 轮廓派生的透明白色
-  `ic_toolbox_notification`，通知 largeIcon、HyperOS 缺图和快捷方式回退引用现有 `mipmap/ic_launcher`。
-  已安装工具图仍优先，异步补图、独立通知 ID/序号、动作、白字、权限和运行环境生命周期不变。
-- 版本 `0.3.9 (13)`，GitHub 沿用原固定签名和优化构建；不改四个范例、API、数据库、网络或依赖。
+- 实时、普通、恢复、闹钟及延时提醒统一使用透明单色通知小图标；实时通知有工具图时继续显示
+  工具图，无工具图与 HyperOS Focus 图片回退到应用 launcher。文字与 Focus V3 明暗颜色不写入
+  固定白色值，交由 Android / HyperOS SystemUI 根据当前界面处理。
+- `RuntimeLiveNotificationRendererTest` 通过真实 `Notification` Parcel 往返检查 small/large icon、
+  工具图与 launcher 回退、Focus 图片、动作身份及无强制前景色；另将真实通知矢量绘制到 Canvas，
+  检查透明背景和单色前景。预期：品牌图标在所有入口一致，工具归属不丢失，系统可自行适配文字颜色。
 
-| 检查 | 理由 | 方法 | 预期与实际边界 |
+## 0.5.0 Liquid Glass 光学升级（2026-09-06）
+
+- 工具与设置改为一个常驻一级外壳，Haze state、背景采集节点、顶栏和底栏在切页时保持身份；
+  页面只替换内容，继续保留搜索、工具列表滚动和 ViewModel 状态。
+- 顶栏增加只作用于实时玻璃的下缘渐隐；底栏增加滑动选中透镜和按压回弹。透镜不重复采样背景，
+  两个目的地继续各占一半宽度，命中区不随动画缩放。降低透明度时顶栏使用稳定实底。
+
+| 检查 | 理由 | 方法 | 预期/状态 |
 |---|---|---|---|
-| 扩展 `RuntimeLiveNotificationRendererTest` 的既有 Parcel 用例 | 只替换桌面资源无法阻止通知继续引用旧图，缺图路径也要覆盖。 | 生产 renderer 构建各会话的纯后台占位/实时卡，在有/无 HyperOS 支持及有/无工具图时做 Notification Parcel 往返；检查 smallIcon 资源、largeIcon 资源或像素，读取 `miui.focus.pics` 中真正的 Parcelable Icon。 | 来源为新通知资源；有工具图保持所属工具像素，缺图为新 launcher；Focus 图片同源、序号和操作仍独立。测试由 GitHub 编译，仪器执行与 SystemUI 真机展示仍 NOT_RUN_USER_OWNED。 |
-| 同类 `notificationSmallIconIsTransparentMonochromeWhite` | 彩色桌面图不能直接当作系统来源小图，旧整块蓝色背景必须移除。 | 通过 Android Drawable/Canvas 绘制真实通知资源并检查 alpha 和非透明像素颜色；不保存或比较截图基线。 | 有可见白色轮廓及透明背景；GitHub 仅编译此仪器用例，本机和设备未运行。 |
-| 本地资源复核与既有静态检查 | 推送前发现遗漏引用，保留原品牌与无关改动。 | 临时诊断脚本在修复前得到 4 项 FAIL、修复后 4 项 PASS；检查五个 smallIcon 入口、旧 XML 删除、新图/快捷方式回退、XML 解析和差异；浏览器只渲染实际 XML 转换的矢量资源检查 24/48px 轮廓。 | 资源检查、XML、差异、安全不变量和离线帮助检查 PASS；浏览器资源图形有透明角、纯白前景，不是 Android 通知或超级岛实测。未恢复自动截图门禁，临时诊断材料不提交。 |
+| `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` | 一级导航由两个页面外壳改为一个常驻外壳，必须继续保护设置、外观、返回、工具生命周期和状态所有权。 | 运行 production 导航旅程，在工具与设置之间切换，再进入外观页并返回，继续安装、权限、运行和删除。 | 两个目的地与二级路由均可达；返回语义和完整工具流程不变。 |
+| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 滑动透镜不能改变目的地的等分布局、64dp 内容高度或 48dp 命中区。 | 在 360dp、200% 字体下读取两个 production 底栏项边界与标签。 | 两项均可达，宽高至少 48dp，内容高度仍为 64dp；动画只改变视觉内容。 |
+| `ToolBoxContrastTest.reduceTransparencyUsesTheSameOpaqueMaterialFallback` 扩展 | 顶栏渐隐只应出现在实时玻璃，降低透明度不能留下透明下缘；选中提示仍需存在。 | 比较正常与降低透明度的 production 材质 token。 | 正常启用实时模糊和渐隐；降低透明度关闭两者并保留同色 opaque fallback、选中透镜和按压反馈。 |
+| `manual-liquid-glass-v3` | JVM/语义测试不能证明真实模糊连续性、渐隐边缘、滑动透镜或按压观感。 | 在 API 35 模拟器操作工具/设置连续切换、按住两个目的地、滚动内容、开关降低透明度，并检查浅深色；HyperOS 真机复查相同路径。 | 外壳不闪白/灰、不出现双标题；透镜在等宽区域之间移动且不推挤图标文字；顶栏边缘自然；实底模式稳定。模拟器结果不代替 OEM 性能数据。 |
 
-- 首次提交时 CI 尚待执行；本机未进行 Gradle/Kotlin/APK 编译，也未操作手机或清除通知/缓存。
-  GitHub 检查结果以该提交的 Actions 为准；源码与资源检查不代替设备体验。
+## 0.4.1 一级页签切换闪烁修正（2026-09-06）
+
+- 工具与设置的稳定顶栏都为白色；原 160ms 整页透明度交叉淡入会在中间帧露出下层
+  `#F2F2F7` 画布，并短暂同时绘制两个大标题。本次取消一级页的整页 alpha 转场，保留同一
+  Activity、导航栈、页面状态和共享玻璃采集状态；二级页与运行页转场不变。
+- 不恢复截图或 golden 自动门禁。现有 `HostNavigationTest` 继续验证工具、设置、外观和返回的
+  真实语义路径；颜色瞬态用录屏逐帧检查，避免把静态终态截图当成无闪烁证明。
+
+| 检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` | 去掉一级页整页转场不能破坏底栏选择、外观页返回及后续工具生命周期。 | 沿用 production 导航旅程，从工具进入设置与外观，切换主题并返回工具，再完成安装、权限、运行和删除。 | 路由和选择语义正确，状态与后续流程不丢；不以语义测试证明视觉瞬态。 |
+| `manual-primary-tab-chrome-stability` | 终态截图看不见 160ms 中间帧，必须观察真实绘制序列。 | 在 API 35 模拟器的暖启动进程中连续切换工具与设置，按帧采样状态栏下方无文字的顶栏区域，并人工检查接触表；真机对同一路径连续切换 20 次。 | 最终候选前本地录制 104 帧，顶栏空白区 YAVG 为 234–235，低于 233 的灰帧为 0，接触表未见双标题；HyperOS 真机仍需复核系统栏、120Hz 动画和手势导航。 |
+
+## 0.4.1 同版本覆盖与降级确认（2026-09-06）
+
+- 首次安装和更高 `versionCode` 继续直接安装；相同或更低版本通过完整包检查后，显示当前与待安装
+  的 `version / versionCode`，用户确认才继续。确认只放开版本顺序，包结构、签名、完整性、最低宿主
+  版本和必要能力仍然是硬门槛。
+- 待确认对象引用已经检查并复制到私有目录的同一份内容，不重开外部输入。同版本替换暂存旧目录，
+  Room 提交失败或进程中断时恢复；取消会清理暂存且不停止旧运行环境。
+
+| 检查 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `DirectPackageLifecycleTest.upgradeAndConfirmedSameVersionOrDowngradeRemainAtomic` | 版本确认不能变成绕过检查的 force 参数，也不能二次读取可变化的 URI。 | 经 production 检查器先装 v1、直接升级 v2；同版本先取消再重新确认覆盖，随后确认降级 v1，核对回调、包内实际 HTML、普通 KV、grant 与临时目录。 | 未确认不写目录/DB、不触发运行清理；确认后同一暂存包原子生效；普通 KV 和保留能力的选择不变，任务/运行清理按替换路径执行。 |
+| `DirectPackageLifecycleTest.failedSameVersionCommitRestoresThePreviouslyInstalledBundle` | 同版本目录路径相同，提交失败时容易丢失原包。 | 安装原包后注入 catalog 提交失败，确认同版本新包，读取当前目录并检查生命周期标记和备份。 | 返回 typed data failure；目录和数据库仍指向原包，无暂存、标记或备份残留。 |
+| `DirectPackageLifecycleTest.interruptedSameVersionReplacementRestoresThePreviouslyInstalledBundle` | 同版本覆盖复用相同目录，进程在目录换位后中断时必须能恢复。 | 安装原包后构造已记录事务、已备份旧目录且新目录带 owner 的中断状态，再由新的 manager 执行生产恢复入口。 | 未提交的新目录被移除，原目录原样恢复，事务退出 incomplete，标记和备份均清空。 |
+| `CatalogAndStorageRepositoryTest`；`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` 扩展 | 确认后的同版本/降级仍要在 Room 事务层提交，不能被旧的单调版本规则再次拒绝。 | 内存仓库和真实 Room 依次提交升级、降级和新事务同版本覆盖，并保留既有失败回滚、权限合并与数据库重开矩阵。 | 三种方向均可由已授权安装器提交；权限、任务、元数据和失败回滚语义与升级一致。 |
+| `ImportViewModelTest` | UI 必须在确认前停住，取消与确认不能串线或误报成功。 | fake operations 返回同版本/降级确认，分别点击确认和取消，检查 confirmation id、工作状态和最终反馈。 | 只有确认调用继续安装并显示成功；取消只丢弃暂存且无成功提示。该测试加入 host gate。 |
+| `ToolManagerImportConfirmationTest.versionReplacementConfirmationRendersAndDispatchesOnlyTheSelectedAction` | 版本确认状态必须出现在 Miuix 弹层宿主内，不能只停留在 ViewModel 而界面没有弹窗。 | 以生产 `ToolManagerScreen` 注入同版本确认，检查标题和操作按钮可见，再分别点击覆盖与取消并核对回调。 | 确认弹窗真实显示；两个操作各触发一次且互不串线。 |
+| `manual-version-replacement-confirmation` | JVM 测试不能证明 Android 弹层文字、返回关闭与真实 SAF 文件路径。 | 真机依次导入更高、同版本、较低版本；同/低版本各覆盖取消与确认，重开工具并检查内容、权限和普通数据。 | 更高版本无额外弹层；同/低版本准确显示两个版本；返回/取消无变化，确认后内容正确且旧运行会话停止。 |
+
+## 0.4.0 双主题与 Liquid Glass（2026-09-06）
+
+- 本批增加 `MIUIX` / `LIQUID_GLASS` 风格、设置中的独立外观页、Haze 1.7.3 原生导航材质及
+  降低透明度回退。新安装默认 Liquid Glass，存在旧数据库或旧设置且尚无风格字段的安装一次性
+  补齐为 Miuix；已有明暗、取色、后台及明确风格选择均保留。换肤沿现有根状态流更新，不重建
+  Activity、导航或运行 WebView。实时通知同时移除原生文字 span 与 Focus V3 明暗字段的固定白色，
+  交回 Android/HyperOS SystemUI 自适应。自动截图测试仍按用户决定保持移除。
+
+| 自动检查 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `HostSettingsRepositoryTest` 扩展 | 首次安装与升级默认值不同，迁移不能覆盖旧选择，损坏设置也要有稳定恢复值。 | 使用 production DataStore 与迁移分别创建空文件、仅含旧 `theme/background_enabled` 的文件、已有全部外观字段的文件及损坏文件，再写入并重开。 | 新文件为 Liquid Glass；旧文件补齐 Miuix；明确选择、颜色与后台值不变；四个字段跨重开保持；损坏数据回到新安装默认值。 |
+| `SettingsViewModelTest` | 连续快速选择和保存失败是异步边界，不能让较早写入反盖最后选择，也不能先改根主题再报失败。 | 可控 repository 记录写入顺序并注入一次失败，连续提交风格/明暗/取色/降低透明度，再执行生产重试入口。 | 写入按选择顺序串行且最终值为最后一次选择；无关设置保持；失败时有效主题不变并显示可重试错误，重试成功后才生效。 |
+| `ToolBoxContrastTest` 扩展 | 玻璃只取系统强调色，浅深模式的中性正文底板、边框和实色回退仍需可读。 | 对多组代表性系统强调色生成 Liquid Glass 浅深配色，检查正文/辅助文字与各清晰底板的对比度，并比较正常与降低透明度的 opaque fallback。 | 小字达到既有 4.5:1 下限；强调色不污染内容底板；降低透明度使用同色不透明材质。 |
+| `HostAdaptiveScrollTest.appearanceChoicesRemainInteractiveAtTwoHundredPercentFontScale` | 外观预览、模式、系统取色、降低透明度与错误重试在 2 倍字体下仍须可达，条件项不能泄漏到 Miuix。 | 360dp、200% 字体运行 production `AppearanceContent`，滚动并操作每个入口，记录回调；切到 Miuix 后查询条件项。 | 所有命中区域至少 48dp、可滚动点击且只触发对应回调；Miuix 下不显示降低透明度；错误可重试。 |
+| `HostAdaptiveScrollTest.themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity` | 根主题重组不能重新创建承载运行内容的 Android View，否则 WebView 输入、页面与会话状态会丢失。 | 在 production `ToolBoxTheme` 内创建一个真实 `AndroidView`，Liquid Glass → Miuix → Liquid Glass 连续切换，记录 factory 次数与 View 对象身份。 | factory 只执行一次，两次换肤后的对象与首次对象相同；该测试保护 Compose 身份边界，不替代真实 WebView 会话操作。 |
+| `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` 扩展 | 即时换肤不能丢失当前外观路由或破坏后续导入、权限、运行和删除流程。 | 新安装进入外观页，断言 Liquid Glass；连续选择 Miuix 再选 Liquid Glass并等待最终状态，保持在原路由后继续完整内置工具生命周期。 | 最后选择生效且页面身份保留；导航栈、权限持久化、运行壳及删除全流程继续可用；测试不把语义状态冒充 WebView 对象或真机动画测量。 |
+
+| 手动检查 | 理由 | 方法 | 预期 |
+|---|---|---|---|
+| `manual-liquid-glass-v1` | 自动测试不能证明真实模糊、系统明暗切换、WebView 会话连续性、TalkBack 或设备动画体验。 | 在实际 Android 设备安装 0.4.1，覆盖两种风格连续切换、重开、系统明暗、工具/后台会话存在时换肤，以及 2 倍字体、窄屏、横屏、TalkBack、键盘和两种导航方式；分别观察正常与降低透明度。空状态再执行覆盖安装，等待系统的 `MY_PACKAGE_REPLACED` 恢复窗口。 | 状态不丢、内容可读、焦点与返回正确；原生导航有受控玻璃，降低透明度和不支持实时模糊时为同色实底；运行顶栏不采集或变换 WebView；没有持久会话时不盲启前台服务或令宿主崩溃。帧率仅在实际采集后判定。 |
 
 ## 开发计划续行 P-C：权限页生命周期收口（2026-09-06）
 
@@ -318,25 +375,25 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 
 | 阶段 | 测试 | 测试理由 | 测试方法 | 预期结果 |
 |---|---|---|---|---|
-| 清洁基线 | `FreshPersistenceContractTest` | 防止开发期重构残留旧 DB、设置或兼容代码。 | 以 production Room/DataStore 创建并重开空基线，写入工具、grant、KV、任务、结果；检查 schema 与 preferences keys。 | 所有真实状态跨重开保持；没有 audit/publisher/旧设置/迁移类或旧表。 |
+| 清洁基线 | `FreshPersistenceContractTest` | 防止开发期重构残留旧 DB、设置或无登记兼容代码，并确保新增外观字段纳入真实持久化合同。 | 以 production Room/DataStore 创建并重开空基线，写入工具、grant、KV、任务、结果和四项设置；检查 schema 与 preferences keys。 | 所有真实状态跨重开保持；外观键完整；没有 audit/publisher/未计划旧设置或旧表。 |
 | 协议 | `:tool-api:verifyToolBoxApiContract` | 防止 Kotlin、JS shim、d.ts 和 manifest capability 枚举漂移。 | 从 canonical API v1 输入运行生成/比对任务。 | 生成物完全一致；任一手工漂移令检查失败。 |
 | 开发帮助 | `scripts/check-developer-help.mjs`；`DeveloperHelpDocumentTest`；`DeveloperHelpScreenTest` | 防止帮助页复制出的源码、声明与实际接口不同步，或折叠/搜索让正文与复制功能不可达。 | Node 静态检查手册层级、嵌入源码、JS/JSON 与 SDK；模拟桥执行最小工程保存/重开/复制，以及后台显式启动、timer、restore、停止清理；JVM 读取与 APK 同源的完整手册并测试生产解析和跨层搜索；Compose 测试同级互斥折叠、搜索、复制与范例入口。 | 源码与合同一致；复制内容保持原文；基础与后台模拟路径真实调用对应 API；未展开正文不出现，搜索可定位主题，折叠不改变正文；不把模拟桥结果当成 Android 后台或通知验证。 |
 | 通用工具打包 | `scripts/tests/test_package_tool.py` | 帮助手册必须能打包用户自己的目录，且不能意外覆盖文件或漏打额外静态资源。 | Python 标准库测试从最小模板复制临时工程，加入嵌套资源和 Worker，两次打包比较原始 ZIP/哈希并复算完整性；验证显式覆盖、错误入口、嵌套归档、文件/目录符号链接与源目录内输出拒绝。 | ZIP 根目录与完整性正确，两次结果相同；默认不覆盖既有文件；无效输入不留下输出或临时文件；测试不修改四个内置范例。 |
-| 导入 | `DirectPackageLifecycleTest`；`ToolBoxOpenDocumentTest` | 核心导入必须只有成功或失败，且失败不能残留；运行中的旧页面不能跨越包替换或删除继续持有文件；文件选择输入必须是一次性、无歧义的 `.tbx` 来源。 | 用有效包完成安装、更新与卸载，在 catalog 切换及版本目录删除前观察运行时释放钩子；以 Zip Slip、嵌套压缩包、完整性损坏、错误包签名和较高 `minHostVersion` 构成拒绝矩阵；用中文字符恰好跨越 4096 字节嗅探边界的合法 HTML 验证增量 UTF-8；并验证取消、非法/双向文件名和一次性输入。 | 有效包及跨嗅探边界的 UTF-8 HTML 均原子可见；更新和卸载先释放运行环境，再切换 catalog 或移除版本文件；上述无效包没有 DB、目录或临时文件残留；非法来源被拒绝且输入流不能重复打开。 |
-| 更新/删除 | `CatalogAndStorageRepositoryTest`；`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` | 更新不能重置用户权限选择，也不能自动授权新增能力或留下后台资源。 | 安装后写普通 KV、grant、后台 task/result，再提交更高版本并删除；用内存仓库和生产 Room 事务覆盖开启/关闭、提交前修改、新增/移除、重复提交、失败回滚及重开数据库。 | 保留普通 KV 及仍声明能力的原有 grant/时间；新增能力关闭、移除清理、其他工具不受影响；更新失败旧状态不变；任务/结果消失，删除清理全部数据库工具状态。 |
+| 导入 | `DirectPackageLifecycleTest`；`ToolBoxOpenDocumentTest`；`ImportViewModelTest` | 核心导入必须得到安装、版本确认或失败，且取消/失败不能残留；运行中的旧页面不能跨越包替换或删除继续持有文件；文件选择输入必须是一次性、无歧义的 `.tbx` 来源。 | 用有效包完成安装、升级、确认同版本、确认降级与卸载，在 catalog 切换及版本目录删除前观察运行时释放钩子；以 Zip Slip、嵌套压缩包、完整性损坏、错误包签名和较高 `minHostVersion` 构成拒绝矩阵；用中文字符恰好跨越 4096 字节嗅探边界的合法 HTML 验证增量 UTF-8；并验证取消、非法/双向文件名和一次性输入。 | 有效包及跨嗅探边界的 UTF-8 HTML 均原子可见；同/低版本确认前无写入，确认后更新和卸载先释放运行环境，再切换 catalog 或移除版本文件；上述无效包没有 DB、目录或临时文件残留；非法来源被拒绝且输入流不能重复打开。 |
+| 更新/删除 | `CatalogAndStorageRepositoryTest`；`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` | 升级、同版本覆盖和降级不能重置用户权限选择，也不能自动授权新增能力或留下后台资源。 | 安装后写普通 KV、grant、后台 task/result，再提交更高、相同及更低版本并删除；用内存仓库和生产 Room 事务覆盖开启/关闭、提交前修改、新增/移除、重复提交、失败回滚及重开数据库。 | 保留普通 KV 及仍声明能力的原有 grant/时间；新增能力关闭、移除清理、其他工具不受影响；替换失败旧状态不变；任务/结果消失，删除清理全部数据库工具状态。 |
 | 权限与运行时 API | `PermissionCenterViewModelTest`；`RuntimeRpcDispatcherTest` | 防止“有开关没能力”、0.3 新接口覆盖旧 API，或跳过声明、授权、系统权限、手势和配额层。 | 对已支持 capability 用 production dispatcher 分别关闭 declaration、grant、system、gesture、quota 条件；验证公网 POST/Header/JSON 请求与协议级 Header 拒绝、`background.list` 的旧任务语义、`background.listSessions` 的持续环境语义、`notifications.live.start/update/end` 字段边界和错误 session、仅含调度元数据的 alarm、位置 watch 参数及文件一次性令牌。 | 全部条件满足时得到真实 handler 结果；实时通知合法调用返回完整增强状态，错误 session/颜色/字段在写入前稳定失败；旧任务与持续环境列表互不混淆；危险 Header 和未公开参数在调用 handler 前稳定失败；任一授权层缺失稳定拒绝；alarm 无业务 payload；文件令牌只能消费一次。 |
 | Bridge | `ToolRuntimeSecurityBoundaryTest`；`HardenedRuntimeWebViewInstrumentationTest` | 保护导入内容的来源与会话边界，同时允许高负载计算离开页面主线程而不放开远程代码或 ServiceWorker。 | JVM 检查 CSP 仅含 `worker-src 'self'` 且不含 wildcard/blob；API 35 WebView 测试 exact origin、main frame、nonce、iframe、导航后的旧 nonce、取消和 ServiceWorker 阻断，并验证被拒 iframe 不能抢占主 frame 完成 `ready` 后的原生事件通道。 | 仅包内 exact-origin 静态 Worker 可加载；远程/blob/data Worker 与 ServiceWorker 被阻断；仅当前主 frame/来源/会话可调用 ToolBox 并接收原生事件，其他请求被拒绝且无副作用。 |
 | M3 API | `RuntimeRpcDispatcherTest.m3FileTokensAndLocationFailClosedThroughTypedHandlers` | 文件和定位会触及用户数据及系统权限，必须保证会话令牌、消息配额、能力授权和稳定错误不会被绕过。 | 通过 production dispatcher 验证文件令牌继承创建它的 `files.open`、`files.save` 或 `camera` 能力、只能消费一次；以含引号的非法 ID 和 128 字节合法 ID 验证令牌读取前的 ID 限制及按实际 ID/Base64/JSON 计算的响应预算；直接验证 bridge 对 UTF-8 编码后超额的任意响应替换为 quota failure；验证位置只在通用层要求粗略权限，并将原生位置不可用映射为 typed `NOT_FOUND`。 | 非 shim ID 在消费令牌前失败；边界合法 ID 的完整响应不超过会话配额；首次读取只返回会话配额内的内容，重复读取失败，其他超额响应由 bridge 返回 `QUOTA_EXCEEDED`；粗略授权可进入 handler，精确请求由 handler 再检查 fine；原生空结果不会被取消通道吞掉。 |
 | M3 生命周期 | `M3BrokerLifecycleInstrumentedTest` | Dispatcher 假对象不能证明宿主实际使用的临时句柄表和相机缓存会在运行会话结束时清理，也不能证明 Android `Location` 空回调采用 typed failure。 | 在 Android instrumentation 中使用生产 `RuntimeFileSessionResources` 注册真实缓存文件、content URI 与 camera capability，调用会话 `close`；同时调用生产位置回调适配器的 null 与非 null 分支。 | 关闭后令牌、句柄和临时文件计数均为零且真实缓存文件消失；null 结果为非取消型 `RuntimeHandlerException(NOT_FOUND)`，有效 `Location` 成功返回。 |
-| 后台 | `BackgroundTaskRepositoryTest`；`BackgroundTaskPolicyTest`；`RuntimeReminderPolicyTest`；`LiveNotificationCoordinatorTest`；`RuntimeNotificationRegressionTest`；`BackgroundTasksPresentationTest`；`manual-xiaomi-toolbox-v1` 的后台步骤 | 同时保护冻结的 WorkManager 任务语义、持续 runtime 的 12 小时提醒和独立实时卡生命周期；防止工具争用一张卡、返回宿主页后通知消失和持续会话被后台任务页漏掉。 | JVM 合同测试验证旧任务状态与提醒；production live coordinator/controller 配合 fake clock 和发布器验证多卡合并、移交与清理；回归测试验证 runtime detach 保留宿主、Focus 明暗两套文字字段均为白色、后台页按工具显示持续会话；真机启动两个工具，返回宿主页、锁屏、分别停止。 | 旧任务语义不变；返回宿主页后持续通知保留；各卡独立更新与停止。文字请求仍为白色，SystemUI 实际颜色单独验收；后台任务页可停止当前工具的持续会话；停止后对应 WebView、timer、位置和通知释放，其他工具不受影响。 |
-| 实时通知对象与操作 | `RuntimeLiveNotificationRendererTest` | 防止独立卡遗漏占位文本、携带摘要标记失去增强资格，或 PendingIntent 串到其他会话。 | production renderer 构建每工具普通占位与两张独立实时卡，Android Parcel 往返后检查文本白色 span、无分组摘要、两项操作、独立 Focus 编号/序号和默认隐藏参数；构造可发生字符串哈希碰撞的不同会话，检查打开/停止 PendingIntent 身份。 | 每张卡只含自身数据，只有打开与停止当前，Android 36+ 实时对象具有 promoted 特征；无自定义 deleteIntent；PendingIntent 跨工具/会话/动作不同且不可变，重复生成同一动作不新增身份。仅证明对象数据，不替代 HyperOS SystemUI 真机显示。 |
+| 后台 | `BackgroundTaskRepositoryTest`；`BackgroundTaskPolicyTest`；`RuntimeReminderPolicyTest`；`LiveNotificationCoordinatorTest`；`RuntimeNotificationRegressionTest`；`BackgroundTasksPresentationTest`；`manual-xiaomi-toolbox-v1` 的后台步骤 | 同时保护冻结的 WorkManager 任务语义、持续 runtime 的 12 小时提醒和独立实时卡生命周期；防止工具争用一张卡、返回宿主页后通知消失和持续会话被后台任务页漏掉。 | JVM 合同测试验证旧任务状态与提醒；production live coordinator/controller 配合 fake clock 和发布器验证多卡合并、移交与清理；回归测试验证 runtime detach 保留宿主、Focus 文字颜色保持系统默认、后台页按工具显示持续会话；真机启动两个工具，返回宿主页、锁屏、分别停止。 | 旧任务语义不变；返回宿主页后持续通知保留；各卡独立更新与停止。文字颜色由 SystemUI 适配；后台任务页可停止当前工具的持续会话；停止后对应 WebView、timer、位置和通知释放，其他工具不受影响。 |
+| 实时通知对象与操作 | `RuntimeLiveNotificationRendererTest` | 防止独立卡遗漏占位文本、重新写入固定文字色、携带摘要标记失去增强资格，或 PendingIntent 串到其他会话。 | production renderer 构建每工具普通占位与两张独立实时卡，Android Parcel 往返后检查文本没有固定前景 span、Focus 文字字段没有固定白色、无分组摘要、两项操作、独立 Focus 编号/序号和默认隐藏参数；构造可发生字符串哈希碰撞的不同会话，检查打开/停止 PendingIntent 身份。 | 每张卡只含自身数据，文字色交给 SystemUI，只有打开与停止当前，Android 36+ 实时对象具有 promoted 特征；无自定义 deleteIntent；PendingIntent 跨工具/会话/动作不同且不可变，重复生成同一动作不新增身份。仅证明对象数据，不替代 HyperOS SystemUI 真机显示。 |
 | 网络 | `NetworkBoundaryTest`；`ToolNetworkProxyTest` | 在扩展网络方法后仍保护 manifest 域名边界，防止代理退化为内网扫描器或 OOM 入口，并保持旧任务重试合同。 | `NetworkBoundaryTest` 直接验证 HTTPS、精确/通配域名 allowlist、IP literal、重定向开关及私网/保留 IPv4、IPv6、IPv4-mapped IPv6 和 NAT64；`ToolNetworkProxyTest` 用生产代理验证私网 DNS、第二跳复验、响应上限，并向已声明域名的非 443 HTTPS 端口发送 POST、Authorization/JSON body、自定义超时，观察 401 正文返回；另以 503 验证 legacy `httpGet` 重试分类。 | manifest 声明的公网 HTTPS 主机和合法端口可访问；4xx/5xx 作为直接请求响应返回；未声明域名、私网、回环、保留/IP literal 与危险跳转被阻断；超限响应失败；旧任务 5xx 仍为可重试失败。 |
-| Miuix 宿主 | `CatalogViewModelTest`；`HostNavigationTest`；`HostAdaptiveScrollTest`；`HostScreenLayoutContractTest` | 保护通知/超级岛冷启动时直达所属工具，以及最近使用、搜索、紧凑/中等布局、有效按钮、后台保障入口、稳定滚动和单次 inset。 | JVM 测试先发出工具打开请求、再提供目录数据，并在导航订阅晚于事件时读取结果；验证 `lastOpenedAt` 倒序、紧凑屏最多两个/中等屏最多三个、搜索时隐藏最近使用且只过滤一次准备列表；Compose 流程以真实内置 `.tbx` 安装器安装四个范例，进入详情与运行壳、权限、旧后台任务和后台保障页面，再从详情菜单删除工具；普通和 200% 字体；JVM 层验证紧凑/中等宽度间距。 | 冷启动打开请求不会因目录未加载或导航订阅竞态丢失，并直达对应运行页；最近使用与搜索规则稳定；四个范例走生产安装路径后可管理；权限开关真实持久化；运行壳、旧后台页与后台保障可达；删除完整；无双 inset、裁剪或固定无效文本。 |
+| 双主题宿主 | `CatalogViewModelTest`；`HostNavigationTest`；`HostAdaptiveScrollTest`；`HostScreenLayoutContractTest`；`SettingsViewModelTest` | 保护通知/超级岛冷启动时直达所属工具，以及换肤、最近使用、搜索、紧凑/中等布局、有效按钮、后台保障入口、稳定滚动和单次 inset。 | JVM 测试覆盖目录投影和外观写入顺序；Compose 流程先连续换肤，再以真实内置 `.tbx` 安装器安装四个范例，进入详情与运行壳、权限、旧后台任务和后台保障页面，再从详情菜单删除工具；普通和 200% 字体；JVM 层验证紧凑/中等宽度间距。 | 最后选择的主题生效且当前路由保持；冷启动打开请求不丢失；最近使用与搜索规则稳定；权限开关真实持久化；运行壳、旧后台页与后台保障可达；删除完整；无双 inset、裁剪或固定无效文本。 |
 | 真机组合 | `manual-xiaomi-toolbox-v1` | 自动门禁不能证明 WebView detach/reattach、后台位置、精确闹钟、前台服务、Android 实时更新、HyperOS 超级岛和系统回收恢复；导航丝滑度也依赖真实设备。 | 安装 0.3.4 后安装四例，使用通知实验室验证普通/实时通知、锁屏、超级岛更新、打开所属工具和停止当前；同时覆盖 timer/location/alarm、重启恢复和关键进入/返回路径帧数据。 | 同一 runtime 状态连续，恢复事件不丢；通知内容、进度和色调原位更新，普通通知始终存在，超级岛仅在系统实际支持时增强；“打开”直达所属工具，“停止当前”释放对应会话；授权关闭/更新/删除无残留；关键页面无可见停顿或残影。 |
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
 | GitHub 构建守望 | `github-model.test.js`；`DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，且独立打包检查不能替代宿主真实导入链路，必须保护历史样本、仓库分支选择、只读 API、后台摘要和最终 `.tbx` 可安装性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、仓库分支候选与近期 run 回退、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查与两次可重复打包，校验入口前 4096 字节可由当前已安装宿主完整解码，再把实际产物交给 production `ToolPackageManager` 以宿主 0.3.4 完成一次原子导入。 | 默认分支、仓库分支和近期 run 分支按顺序去重后进入下拉候选；所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；生产安装器返回 `Installed(io.toolbox.githubactionswatcher, 2, false)` 且无临时残留；CI 回执明确 APK、真机和超级岛未执行。 |
-| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.3.8-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
+| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.5.0-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
 
 ## 执行原则
 
@@ -357,7 +414,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 ## 0.3.8 小工具更新保留权限（2026-09-04）
 
 - 原因：`DefaultToolPackageManager` 每次按默认值生成完整声明列表，原生产 Room 提交路径会删除全部旧 grant 再插入默认值；内存仓库和旧测试也沿用了该规则。权限页只是读取结果，不是系统自动撤销授权。
-- 方法：扩展 `DirectPackageLifecycleTest.importUpdateVersionGateAndUninstallAreOneStepAndAtomic`，经真实 `.tbx` 检查/安装/更新路径核对已开启的 network 与已关闭的 storage 均保留；拒绝同版本不得改变选择，卸载仍清空。扩展 `CatalogAndStorageRepositoryTest`，覆盖提交前最新选择、原授权时间、新增默认开启/关闭能力均关闭、移除及再次加入、空声明、其他工具隔离、重复提交不覆写、失败回滚和卸载后全新安装。
+- 方法：当前用例名为 `DirectPackageLifecycleTest.upgradeAndConfirmedSameVersionOrDowngradeRemainAtomic`；经真实 `.tbx` 检查/安装/替换路径核对已开启的 network 与已关闭的 storage 均保留。0.3.8 当时拒绝同版本，0.4.1 起改为确认后覆盖或降级；未确认仍不得改变选择，卸载仍清空。扩展 `CatalogAndStorageRepositoryTest`，覆盖提交前最新选择、原授权时间、新增默认开启/关闭能力均关闭、移除及再次加入、空声明、其他工具隔离、重复提交不覆写、失败回滚和卸载后全新安装。
 - 生产持久化：`FreshPersistenceContractTest.permissionChoicesSurviveUpdateRollbackAndDatabaseReopen` 直接调用 Room 仓库，提交钩子注入失败后核对 grant、版本和事务状态全部回滚，随后改变用户选择并成功更新、重开数据库。预期：仅同工具且新 manifest 仍声明的旧选择被继承；首次安装默认值不变；更新与授权合并原子完成，无跨工具授权或复活已移除权限。
 - GitHub 验证入口：已有 `:core-data:testDebugUnitTest --tests io.toolbox.core.data.CatalogAndStorageRepositoryTest` 与 `:tool-package:testDebugUnitTest --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest`；既有编译门禁补入 `:core-data:compileDebugAndroidTestKotlin`，只编译真实 Room 测试源码，不启动模拟器。Room 测试运行仍需 Android 环境，编译通过不能记成测试执行通过。
 - 本地实际结果：安全不变量扫描、开发帮助的 7 章/28 主题/27 代码块与模拟桥检查、门禁脚本语法和差异空白检查均通过。因用户要求不本机编译，没有执行本机 Gradle/Kotlin 或 Android 测试；Kotlin LSP daemon 不可达，未安装或重启开发服务绕过限制。
@@ -387,7 +444,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 | 测试 | 理由 | 方法 | 预期与实际边界 |
 |---|---|---|---|
 | `HostNavigationTest` 的详情操作 | 删除确认曾注册在 Miuix Scaffold 之外而不可见；重复的“工具操作”弹层已按用户确认移除。 | 生产详情页确认无右上角重复入口，点击删除并取消，再次点击删除并确认。 | 唯一入口显示实际确认弹层，取消保留工具，确认才删除。源码由 GitHub 编译，交互由用户真机验证，不启动模拟器。 |
-| `RuntimeLiveNotificationRendererTest` | 已有实时内容的白字配置没有覆盖恢复占位。 | 在无 Focus 与 Focus V3 已支持但报告权限未允许两种状态下构建准备、恢复、单/多会话通知，Parcel 往返检查普通文本，以及实际 `miui.focus.param` 内两组全部明暗文字字段；同时检查未启用 colorized。 | 全状态均携带白色配置，仍保留 Android promoted ongoing 资格。只证明生产通知数据与编译，不将其视为小米 SystemUI 颜色验证。 |
+| `RuntimeLiveNotificationRendererTest` | 系统更新后通知可自行适配前景色，生产路径不能残留旧的强制白字。 | 在无 Focus 与 Focus V3 已支持但报告权限未允许两种状态下构建准备、恢复、单/多会话通知，Parcel 往返检查普通文本没有固定颜色 span，并检查实际 `miui.focus.param` 未写固定白色字段；同时检查未启用 colorized。 | 全状态文字颜色均交给 SystemUI，仍保留 Android promoted ongoing 资格。只证明生产通知数据与编译，不将其视为小米 SystemUI 颜色验证。 |
 | `RuntimeNetworkGatewayTest` | 文本被错误扣除 Base64 膨胀预算，且配额、连接错误被伪装为网络阻止。 | 通过宿主实际使用的 gateway 和生产 proxy 注入 800000/1500000 字节 JSON、超限响应、未声明域名、连接及正文读取阶段的 IO/超时异常。 | 预算内 JSON 完整返回；超限为 `QUOTA_EXCEEDED`，只有地址策略拒绝为 `NETWORK_BLOCKED`，连接/超时分别返回 `NETWORK_UNAVAILABLE`/`NETWORK_TIMEOUT`；错误不含底层敏感细节。GitHub 运行 JVM 测试。 |
 | `examples/github-actions-watcher/app.test.js` | 原生错误不能再次被网页包装为普通断网。 | 启动生产 app.js，点击已注册的仓库读取回调，参数化注入配额、超时、连接、域名及权限错误。 | 请求使用 4 MiB 响应预算，五类原生错误完整到达提示，结束加载并可重试；测试使用模拟桥，不代表 Android 宿主执行。 |
 | 守望 1.0.2 生产导入与包验证 | 扩大的消息上限必须能通过真正的安装器，不能只让 ZIP 校验通过。 | GitHub 运行 18 项 Node 测试、两次打包和完整性校验，production `ToolPackageManager` 按宿主 0.3.5 导入实际产物。 | 版本为 1.0.2 (3)、最低宿主 0.3.5、网络 4 MiB、消息 8 MiB，安装器返回 `Installed(io.toolbox.githubactionswatcher, 3, false)` 且无残留。 |
@@ -421,12 +478,13 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 - 用户本轮要求不提交 GitHub、不编译：没有运行 Gradle、APK 打包、模拟器或真机。新增 JVM/Compose 测试尚未执行，开发帮助截图基线尚未重新生成；现有截图不能作为本次改造的验证结果。
 - Kotlin LSP 状态检查返回 daemon unreachable；未安装、重启或借用 Android 编译代替静态检查，Kotlin 编译结果保持未验证。
 
-## 实时通知白字修正（2026-09-03，未提交/未编译）
+## 实时通知白字修正（2026-09-03，历史记录，0.4.0 已撤销）
 
 - 根据用户的深色实时通知截图，修正恢复占位使用未着色文本、Focus 浅色主题字段使用黑色的两条生产路径；准备、恢复、正常实时内容、多会话摘要及操作文字统一携带白色。普通非实时通知不变。
 - `RuntimeNotificationRegressionTest` 改为检查 Focus 全部明暗文字字段均为白色；新增 `RuntimeLiveNotificationRendererTest` 在真实 Android Notification/Parcel 层覆盖四种状态，验证文字 span 不丢失。两项测试本轮均未编译、未执行，不能记为通过。
 - 本地安全不变量扫描及 `git diff --check` 通过；检查旧调色函数已无引用。LSP daemon 仍不可达，不将源码检查替代 Kotlin 编译结果。
 - 遵守本轮交付边界：没有提交/推送 GitHub、触发 Actions、编译或操作手机。尚未验证 SystemUI 最终呈现；后续在浅色、深色主题下分别检查恢复通知与实时更新，确认白字及打开/停止操作正常。
+- 0.4.0 按系统更新后的实际行为撤销上述固定白色策略：生产通知不再添加颜色 span，也不再填写 Focus 明暗文字色，当前规则以本文件顶部 0.4.0 登记为准。
 
 ## 0.3.4 候选版收尾
 
@@ -570,7 +628,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 | `StaticSvgPolicyTest` | SVG 图标不得引入页面执行、外部资源或递归图形引用。 | 生产静态 SVG 校验器，覆盖形状/文字/本地渐变，以及脚本、实体、外链、use 循环、图片、样式导入、超深和超量元素。 | 静态内容通过，危险或复杂输入在绘制前拒绝；不增加网络或 WebView 通道。纳入最小 JVM 门禁。 | 测试源码已添加；未执行。 |
 | `ToolIconLoadingTest` | 真正的 Android 解码、并发缓存和版本失效不能用图片文件名断言替代。 | 系统 PNG 解码、AndroidSVG、白色透明标记，fake catalog 接真实包文件；并发读取同版本、换版本、失效和删除，检查读取不在主线程。 | 256px 等比、无染色、白标可读；同源请求共用缓存，不返回旧版本或已删工具图片。 | Android 测试源码已添加；未运行设备或模拟器。 |
 | `LiveNotificationCoordinatorTest` 图标补入 | 异步图片抵达不能重发其他卡或唤回已停止的会话。 | 生产通知控制器与可控 sink，补入一张卡，再停止该会话、清空服务并重放迟到补图。 | 只刷新所属仍发布的会话；不切换承载、不串内容、不复活已停止卡。 | 用例已扩展；未执行 JVM 测试。 |
-| `RuntimeLiveNotificationRendererTest` | 标准通知与 HyperOS 必须真正携带所属工具图片，不能仅更换标题。 | 红/蓝位图分别进入生产渲染器与 Notification Parcel，检查 largeIcon 像素、独立图片键及补图序号，保留白字、动作身份和原生增强资格断言。 | 卡片图片独立，HyperOS 引用同图；缺图仍可发通知，原有增强与操作保持。 | Android 测试已扩展；未执行；超级岛显示数量/布局仍需真机。 |
+| `RuntimeLiveNotificationRendererTest` | 标准通知与 HyperOS 必须真正携带所属工具图片，不能仅更换标题。 | 红/蓝位图分别进入生产渲染器与 Notification Parcel，检查 largeIcon 像素、独立图片键及补图序号，并保留系统管理文字色、动作身份和原生增强资格断言。 | 卡片图片独立，HyperOS 引用同图；缺图仍可发通知，原有增强与操作保持。 | Android 测试已扩展；未执行；超级岛显示数量/布局仍需真机。 |
 | `HostNavigationTest`、`DestructiveButtonTest` | 删除/停止需要真实按钮，同时不能因移除重复入口破坏管理或删除确认。 | 保留安装→权限→运行→后台→详情删除的生产旅程；分别用浅/深主题及 2× 字体验证有底色按钮的点击、至少 48dp、禁用行为。 | 无重复弹层；取消不删除、确认才删除；按钮可见可点、不误停其他工具。 | 测试源码已更新/新增；未执行原生交互。 |
 | 静态检查 | 接图和改控件不能改变 API 或宿主安全边界。 | 安全扫描、帮助文档与嵌入源码一致性、模拟桥示例、API 哈希核对、门禁脚本语法和 diff 检查。 | 不改变公开合同、网络、权限、数据库、四个内置包或签名配置。 | 安全扫描、帮助检查（7 章/28 主题/27 代码块）及模拟桥、shell 语法、diff 检查通过；协议哈希核对记录见本轮回执。 |
 

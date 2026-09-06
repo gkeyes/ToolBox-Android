@@ -48,6 +48,8 @@ import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.component.rememberToolBoxGlassState
+import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.runtime.RuntimeSessionManager
@@ -184,6 +186,7 @@ internal fun BackgroundSafeguardsContent(
     onOpenHyperOsAutoStart: () -> Unit,
     onOpenHyperOsBatteryPolicy: () -> Unit,
 ) {
+    val glassState = rememberToolBoxGlassState()
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -191,10 +194,11 @@ internal fun BackgroundSafeguardsContent(
                 title = "后台保障",
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
+                glassState = glassState,
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().toolBoxBackdropSource(glassState)) {
             LazyColumn(
                 modifier = Modifier
                     .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)

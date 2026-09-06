@@ -2,14 +2,13 @@ package io.toolbox.host.runtime
 
 import com.xzakota.hyper.notification.focus.model.BaseInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class RuntimeNotificationRegressionTest {
     @Test
-    fun focusTextIsWhiteInBothThemeVariantsOfTheDarkLiveSurface() {
+    fun focusTextColorsRemainUnderSystemUiControl() {
         val info = BaseInfo()
-
-        applyWhiteFocusTextColors(info)
 
         listOf(
             info.colorTitle, info.colorTitleDark,
@@ -17,7 +16,7 @@ class RuntimeNotificationRegressionTest {
             info.colorSubTitle, info.colorSubTitleDark,
             info.colorExtraTitle, info.colorExtraTitleDark,
             info.colorSubContent, info.colorSubContentDark,
-        ).forEach { color -> assertEquals("#FFFFFF", color) }
+        ).forEach { color -> assertNotEquals("#FFFFFF", color?.uppercase()) }
     }
 
     @Test

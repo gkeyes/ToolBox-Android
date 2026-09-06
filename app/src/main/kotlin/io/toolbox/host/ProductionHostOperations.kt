@@ -32,6 +32,7 @@ import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
 import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailure
 import io.toolbox.tool.packagekit.lifecycle.PackageRecoveryResult
 import io.toolbox.tool.packagekit.lifecycle.PackageUninstallResult
+import io.toolbox.tool.packagekit.lifecycle.PackageVersionConfirmationKind
 import io.toolbox.tool.packagekit.lifecycle.ToolPackageManager
 import io.toolbox.tool.packagekit.lifecycle.ToolPackageManagers
 import io.toolbox.tool.packagekit.lifecycle.ToolStateCleanup
@@ -109,22 +110,50 @@ internal class ProductionHostPackageOperations(
         }
     }
 
-    override suspend fun importPackage(input: PackageInput): HostImportResult = when (
-        val result = packages.importAndInstall(input, cleanup)
-    ) {
+    override suspend fun importPackage(input: PackageInput): HostImportResult =
+        packages.importAndInstall(input, cleanup).toHostImportResult()
+
+    override suspend fun confirmImport(confirmationId: String): HostImportResult =
+        packages.confirmInstall(confirmationId, cleanup).toHostImportResult()
+
+    override suspend fun cancelImport(confirmationId: String): HostImportCancellationResult =
+        packages.cancelInstall(confirmationId)?.let { failure ->
+            HostImportCancellationResult.Failed(
+                code = failure.code.name,
+                message = importFailureMessage(failure),
+            )
+        } ?: HostImportCancellationResult.Cancelled
+
+    private suspend fun PackageInstallResult.toHostImportResult(): HostImportResult = when (this) {
         is PackageInstallResult.Installed -> {
-            val name = repositories.catalog.observeTool(result.toolId).first()?.metadata?.name ?: "工具"
-            HostImportResult.Installed(result.toolId, name)
+            val name = repositories.catalog.observeTool(toolId).first()?.metadata?.name ?: "工具"
+            HostImportResult.Installed(toolId, name)
         }
 
+        is PackageInstallResult.ConfirmationRequired -> HostImportResult.ConfirmationRequired(
+            HostImportConfirmation(
+                id = confirmation.id,
+                toolId = confirmation.toolId,
+                toolName = confirmation.toolName,
+                installedVersionName = confirmation.installedVersionName,
+                installedVersionCode = confirmation.installedVersionCode,
+                incomingVersionName = confirmation.incomingVersionName,
+                incomingVersionCode = confirmation.incomingVersionCode,
+                kind = when (confirmation.kind) {
+                    PackageVersionConfirmationKind.SAME_VERSION -> HostImportConfirmationKind.SAME_VERSION
+                    PackageVersionConfirmationKind.DOWNGRADE -> HostImportConfirmationKind.DOWNGRADE
+                },
+            ),
+        )
+
         is PackageInstallResult.Rejected -> HostImportResult.Failed(
-            code = result.rejection.code.name,
-            message = importFailureMessage(result.rejection),
+            code = rejection.code.name,
+            message = importFailureMessage(rejection),
         )
 
         is PackageInstallResult.Failed -> HostImportResult.Failed(
-            code = result.failure.code.name,
-            message = importFailureMessage(result.failure),
+            code = failure.code.name,
+            message = importFailureMessage(failure),
         )
     }
 
@@ -144,15 +173,22 @@ internal class ProductionHostPackageOperations(
         for (asset in BUNDLED_EXAMPLES) {
             when (val result = packages.importAndInstall(AssetPackageInput(application, asset), cleanup)) {
                 is PackageInstallResult.Installed -> available += 1
-                is PackageInstallResult.Failed -> {
-                    if (result.failure.code.name == "VERSION_NOT_NEWER") {
+                is PackageInstallResult.ConfirmationRequired -> {
+                    val failure = packages.cancelInstall(result.confirmation.id)
+                    if (failure == null) {
                         available += 1
                     } else {
                         return HostExampleInstallResult.Failed(
-                            code = result.failure.code.name,
+                            code = failure.code.name,
                             message = "范例安装未完成，请重试。",
                         )
                     }
+                }
+                is PackageInstallResult.Failed -> {
+                    return HostExampleInstallResult.Failed(
+                        code = result.failure.code.name,
+                        message = "范例安装未完成，请重试。",
+                    )
                 }
                 is PackageInstallResult.Rejected -> return HostExampleInstallResult.Failed(
                     code = result.rejection.code.name,
@@ -183,7 +219,7 @@ internal class ProductionHostPackageOperations(
     }
 
     private fun importFailureMessage(failure: PackageOperationFailure): String = when (failure.code.name) {
-        "VERSION_NOT_NEWER" -> "此工具已安装相同或更高版本。"
+        "CONFIRMATION_EXPIRED" -> "安装确认已失效，请重新选择工具包。"
         "UNSUPPORTED_HOST_VERSION" -> "此工具需要更高版本的 ToolBox。"
         "BUSY" -> "正在处理另一个工具包，请稍后重试。"
         else -> "安装未完成，请重试。"

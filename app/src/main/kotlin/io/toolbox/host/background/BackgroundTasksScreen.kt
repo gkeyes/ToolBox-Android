@@ -36,6 +36,7 @@ import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
+import io.toolbox.host.ui.mergePadding
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -107,14 +108,17 @@ internal fun BackgroundTasksContent(
     onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
     onCancelTask: (BackgroundTask) -> Unit,
 ) {
-    DetailScreen(title = "后台任务", onBack = onBack) {
+    DetailScreen(title = "后台任务", onBack = onBack) { chromePadding ->
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
                 .fillMaxSize()
                 .align(Alignment.TopCenter),
-            contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.two),
+            contentPadding = mergePadding(
+                chromePadding,
+                PaddingValues(ToolBoxThemeTokens.spacing.two),
+            ),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             message?.let { text ->

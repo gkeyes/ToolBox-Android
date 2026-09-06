@@ -1,7 +1,18 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,20 +20,30 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -30,12 +51,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardColors
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
@@ -122,6 +147,7 @@ fun ToolBoxTopBar(
     navigationIcon: ToolBoxIconKey? = null,
     navigationContentDescription: String = "返回",
     onNavigationClick: (() -> Unit)? = null,
+    glassState: ToolBoxGlassState? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val navigationSlot: @Composable () -> Unit = {
@@ -133,10 +159,44 @@ fun ToolBoxTopBar(
             )
         }
     }
+    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+    val barModifier = when {
+        isGlass && glassState != null -> modifier.toolBoxTopGlassEffect(glassState)
+        isGlass -> modifier.toolBoxSolidGlass(RectangleShape)
+        else -> modifier
+    }
+    if (isGlass) {
+        Row(
+            modifier = barModifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .heightIn(min = ToolBoxThemeTokens.sizes.compactChrome)
+                .padding(horizontal = ToolBoxThemeTokens.spacing.one),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            navigationSlot()
+            Column(Modifier.weight(1f)) {
+                ToolBoxText(
+                    text = title,
+                    style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary),
+                )
+                if (subtitle.isNotBlank()) {
+                    ToolBoxText(
+                        text = subtitle,
+                        style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                            color = ToolBoxThemeTokens.colors.textSecondary,
+                        ),
+                    )
+                }
+            }
+            actions()
+        }
+        return
+    }
     SmallTopAppBar(
         title = title,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
-        color = ToolBoxThemeTokens.colors.background,
+        modifier = barModifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        color = if (isGlass) Color.Transparent else ToolBoxThemeTokens.colors.background,
         titleColor = ToolBoxThemeTokens.colors.textPrimary,
         subtitle = subtitle,
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
@@ -152,14 +212,58 @@ fun ToolBoxLargeTopBar(
     modifier: Modifier = Modifier,
     subtitle: String = "",
     defaultWindowInsetsPadding: Boolean = true,
+    glassState: ToolBoxGlassState? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+    val barModifier = when {
+        isGlass && glassState != null -> modifier.toolBoxTopGlassEffect(glassState)
+        isGlass -> modifier.toolBoxSolidGlass(RectangleShape)
+        else -> modifier
+    }
+    if (isGlass) {
+        Row(
+            modifier = barModifier
+                .fillMaxWidth()
+                .then(
+                    if (defaultWindowInsetsPadding) Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                    else Modifier,
+                )
+                .heightIn(min = 76.dp)
+                .padding(
+                    start = ToolBoxThemeTokens.spacing.two,
+                    top = ToolBoxThemeTokens.spacing.one,
+                    end = ToolBoxThemeTokens.spacing.one,
+                    bottom = ToolBoxThemeTokens.spacing.one,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                ToolBoxText(
+                    text = title,
+                    style = ToolBoxThemeTokens.textStyles.screenTitle.copy(
+                        color = ToolBoxThemeTokens.colors.textPrimary,
+                    ),
+                )
+                if (subtitle.isNotBlank()) {
+                    ToolBoxText(
+                        text = subtitle,
+                        style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                            color = ToolBoxThemeTokens.colors.textSecondary,
+                        ),
+                    )
+                }
+            }
+            actions()
+        }
+        return
+    }
     TopAppBar(
         title = title,
         largeTitle = title,
         subtitle = subtitle,
-        modifier = modifier,
-        color = ToolBoxThemeTokens.colors.background,
+        modifier = barModifier,
+        color = if (isGlass) Color.Transparent else ToolBoxThemeTokens.colors.background,
         titleColor = ToolBoxThemeTokens.colors.textPrimary,
         largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
@@ -183,6 +287,7 @@ fun ToolBoxRuntimeTopBar(
         navigationIcon = navigationIcon,
         navigationContentDescription = navigationContentDescription,
         onNavigationClick = onNavigationClick,
+        glassState = null,
         actions = actions,
     )
 }
@@ -193,10 +298,29 @@ fun ToolBoxNavigationBar(
     selectedId: String,
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier = Modifier,
+    glassState: ToolBoxGlassState? = null,
 ) {
     val usesIconOnlyLayout = LocalDensity.current.fontScale >= 1.5f
+    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+    val navigationShape = RoundedCornerShape(ToolBoxThemeTokens.radii.full)
+    if (isGlass) {
+        LiquidGlassNavigationBar(
+            items = items,
+            selectedId = selectedId,
+            onItemSelected = onItemSelected,
+            modifier = modifier,
+            glassState = glassState,
+            navigationShape = navigationShape,
+        )
+        return
+    }
+    val navigationModifier = when {
+        glassState != null -> modifier
+            .toolBoxGlassEffect(glassState, navigationShape)
+        else -> modifier
+    }
     NavigationBar(
-        modifier = modifier,
+        modifier = navigationModifier,
         color = ToolBoxThemeTokens.colors.surface,
         showDivider = false,
         defaultWindowInsetsPadding = true,
@@ -216,6 +340,137 @@ fun ToolBoxNavigationBar(
                 modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
             )
         }
+    }
+}
+
+@Composable
+private fun LiquidGlassNavigationBar(
+    items: List<ToolBoxNavigationItem>,
+    selectedId: String,
+    onItemSelected: (ToolBoxNavigationItem) -> Unit,
+    modifier: Modifier,
+    glassState: ToolBoxGlassState?,
+    navigationShape: RoundedCornerShape,
+) {
+    if (items.isEmpty()) return
+    val surfaceModifier = modifier
+        .windowInsetsPadding(WindowInsets.navigationBars)
+        .padding(
+            horizontal = ToolBoxThemeTokens.spacing.oneHalf,
+            vertical = ToolBoxThemeTokens.spacing.one,
+        )
+        .let { base ->
+            if (glassState != null) {
+                base.toolBoxGlassEffect(glassState, navigationShape)
+            } else {
+                base.toolBoxSolidGlass(navigationShape)
+            }
+        }
+
+    BoxWithConstraints(
+        modifier = surfaceModifier
+            .fillMaxWidth()
+            .height(64.dp),
+    ) {
+        val itemWidth = maxWidth / items.size
+        val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+        val selectionOffset by animateDpAsState(
+            targetValue = itemWidth * selectedIndex,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "navigation selection lens",
+        )
+        val materials = ToolBoxThemeTokens.materials
+        val selectionShape = RoundedCornerShape(ToolBoxThemeTokens.radii.full)
+        if (materials.navigationLensEnabled) {
+            Box(
+                Modifier
+                    .offset(x = selectionOffset)
+                    .width(itemWidth)
+                    .fillMaxHeight()
+                    .padding(horizontal = 5.dp, vertical = 5.dp)
+                    .clip(selectionShape)
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                materials.navigationSelectionHighlight,
+                                materials.navigationSelectionTint,
+                                materials.navigationSelectionTint,
+                            ),
+                        ),
+                    )
+                    .border(0.75.dp, materials.navigationSelectionBorder, selectionShape),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEach { item ->
+                LiquidGlassNavigationItem(
+                    item = item,
+                    selected = item.id == selectedId,
+                    onClick = { onItemSelected(item) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.LiquidGlassNavigationItem(
+    item: ToolBoxNavigationItem,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressFeedbackEnabled = ToolBoxThemeTokens.materials.pressFeedbackEnabled
+    val contentScale by animateFloatAsState(
+        targetValue = if (pressed && pressFeedbackEnabled) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "navigation item press",
+    )
+    val color = if (selected) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.colors.textSecondary
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .selectable(
+                selected = selected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
+            .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
+            .semantics { contentDescription = item.label }
+            .graphicsLayer {
+                scaleX = contentScale
+                scaleY = contentScale
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ToolBoxIcon(
+            icon = item.icon,
+            contentDescription = null,
+            tint = color,
+        )
+        Spacer(Modifier.height(2.dp))
+        ToolBoxText(
+            text = item.label,
+            style = ToolBoxThemeTokens.textStyles.label.copy(
+                color = color,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            maxLines = 1,
+        )
     }
 }
 
@@ -260,6 +515,10 @@ fun ToolBoxCard(
         ),
         cornerRadius = ToolBoxThemeTokens.radii.card,
         insideMargin = contentPadding,
+        colors = CardColors(
+            color = ToolBoxThemeTokens.colors.surface,
+            contentColor = ToolBoxThemeTokens.colors.textPrimary,
+        ),
         onClick = onClick,
         onLongPress = onLongClick,
         content = content,
@@ -275,6 +534,10 @@ fun ToolBoxGroupedSurface(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = ToolBoxThemeTokens.radii.denseSurface,
         insideMargin = PaddingValues(0.dp),
+        colors = CardColors(
+            color = ToolBoxThemeTokens.colors.surface,
+            contentColor = ToolBoxThemeTokens.colors.textPrimary,
+        ),
         content = content,
     )
 }

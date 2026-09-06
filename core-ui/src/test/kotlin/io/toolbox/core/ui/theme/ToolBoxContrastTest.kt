@@ -33,4 +33,35 @@ class ToolBoxContrastTest {
         assertEquals(colors.textSecondary, readableForeground(colors.textSecondary, surfaces))
         assertEquals(Color.Black, readableForeground(Color.White, surfaces))
     }
+
+    @Test
+    fun liquidGlassKeepsNeutralSurfacesReadableAcrossRepresentativeSystemAccents() {
+        val accents = listOf(Color(0xFF0A84FF), Color(0xFF30B05A), Color(0xFFAF52DE))
+        for (dark in listOf(false, true)) for (accent in accents) {
+            val colors = liquidGlassColors(dark, accent, accentForeground = accent)
+            assertEquals(if (dark) Color.Black else Color(0xFFF2F2F7), colors.background)
+            for (surface in listOf(colors.background, colors.surface, colors.surfaceMuted)) {
+                assertTrue(contrastRatio(colors.textPrimary, surface) >= 4.5f)
+                assertTrue(contrastRatio(colors.textSecondary, surface) >= 4.5f)
+            }
+            assertTrue(contrastRatio(colors.primary, colors.onPrimary) >= 4.5f)
+        }
+    }
+
+    @Test
+    fun reduceTransparencyUsesTheSameOpaqueMaterialFallback() {
+        val colors = liquidGlassColors(false, Color(0xFF0A84FF), Color.White)
+        val glass = liquidGlassMaterials(colors, dark = false, enabled = true, reduceTransparency = false)
+        val solid = liquidGlassMaterials(colors, dark = false, enabled = true, reduceTransparency = true)
+        assertTrue(glass.realBlurEnabled)
+        assertTrue(!solid.realBlurEnabled)
+        assertTrue(glass.topEdgeFadeEnabled)
+        assertTrue(!solid.topEdgeFadeEnabled)
+        assertTrue(glass.navigationLensEnabled)
+        assertTrue(solid.navigationLensEnabled)
+        assertTrue(glass.pressFeedbackEnabled)
+        assertTrue(solid.pressFeedbackEnabled)
+        assertEquals(glass.glassFallback, solid.glassFallback)
+        assertEquals(1f, solid.glassFallback.alpha)
+    }
 }

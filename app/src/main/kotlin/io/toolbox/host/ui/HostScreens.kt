@@ -16,6 +16,12 @@ object HostTestTags {
     const val CatalogEmptyState = "catalog_empty_state"
     const val CatalogList = "catalog_list"
     const val ToolCardPrefix = "tool_card:"
+    const val SettingsAppearance = "settings_appearance"
+    const val AppearanceMiuix = "appearance_miuix"
+    const val AppearanceLiquidGlass = "appearance_liquid_glass"
+    const val AppearanceMode = "appearance_mode"
+    const val AppearanceSystemColor = "appearance_system_color"
+    const val AppearanceReduceTransparency = "appearance_reduce_transparency"
 }
 
 enum class MainDestination(val label: String) {

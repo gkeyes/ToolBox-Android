@@ -15,6 +15,7 @@ value class BundleLocator(val value: String) {
 
 enum class SecurityProfile { STRICT, COMPAT }
 enum class ThemeMode { SYSTEM, LIGHT, DARK, MONET_SYSTEM, MONET_LIGHT, MONET_DARK }
+enum class ThemeStyle { MIUIX, LIQUID_GLASS }
 enum class InstallTransactionState { PREPARING, COMMITTING, COMPLETED, FAILED }
 enum class TaskState { QUEUED, RUNNING, COMPLETED, CANCELLED }
 enum class RunOutcome { SUCCEEDED, FAILED, CANCELLED }
@@ -119,6 +120,8 @@ data class TaskRunResult(
 data class HostSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val backgroundEnabled: Boolean = true,
+    val themeStyle: ThemeStyle = ThemeStyle.LIQUID_GLASS,
+    val reduceTransparency: Boolean = false,
 )
 
 object CoreDataLimits {

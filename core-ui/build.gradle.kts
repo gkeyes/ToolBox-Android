@@ -35,6 +35,7 @@ dependencies {
     api(libs.androidx.compose.ui)
     api(libs.miuix.ui)
     api(libs.miuix.preference)
+    implementation(libs.haze)
 
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.miuix.icons)

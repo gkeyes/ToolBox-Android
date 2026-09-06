@@ -6,6 +6,8 @@ import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.CommittedInstall
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
+import io.toolbox.core.data.InstallTransaction
+import io.toolbox.core.data.InstallTransactionState
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.memory.InMemoryCoreData
@@ -19,10 +21,12 @@ import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.Signature
 import java.util.Base64
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -91,7 +95,7 @@ class DirectPackageLifecycleTest {
     }
 
     @Test
-    fun importUpdateVersionGateAndUninstallAreOneStepAndAtomic() = runBlocking {
+    fun upgradeAndConfirmedSameVersionOrDowngradeRemainAtomic() = runBlocking {
         val root = Files.createTempDirectory("tool-package-lifecycle")
         try {
             val repositories = InMemoryCoreData.create()
@@ -118,20 +122,20 @@ class DirectPackageLifecycleTest {
                     previousVersionCode: Int,
                     nextVersionCode: Int,
                 ) {
-                    assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
-                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/1")))
+                    assertEquals(previousVersionCode, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/$previousVersionCode")))
                     released += "update:$previousVersionCode:$nextVersionCode"
                 }
 
                 override suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) {
                     assertEquals(TOOL_ID, toolId)
-                    assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+                    assertEquals(nextVersionCode, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
                     replaced += previousVersionCode to nextVersionCode
                 }
 
                 override suspend fun beforeUninstall(toolId: String) {
-                    assertEquals(2, repositories.catalog.observeTool(toolId).first()?.currentVersion?.versionCode)
-                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/2")))
+                    assertEquals(1, repositories.catalog.observeTool(toolId).first()?.currentVersion?.versionCode)
+                    assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/1")))
                     released += "uninstall"
                 }
 
@@ -146,16 +150,45 @@ class DirectPackageLifecycleTest {
             assertEquals(ToolKvValue("draft", "1", 1), repositories.keyValues.observe(TOOL_ID, "draft").first())
             assertEquals(savedGrants, repositories.grants.observeGrants(TOOL_ID).first())
 
-            val duplicate = manager.importAndInstall(ByteInput("same.tbx", packageBytes(versionCode = 2)))
-            assertTrue(
-                duplicate is PackageInstallResult.Failed &&
-                    duplicate.failure.code == PackageOperationFailureCode.VERSION_NOT_NEWER,
-            )
+            val sameHtml = "<!doctype html><html><body>same-version replacement</body></html>".toByteArray()
+            val same = manager.importAndInstall(ByteInput("same.tbx", packageBytes(versionCode = 2, entryHtml = sameHtml)))
+            assertTrue(same is PackageInstallResult.ConfirmationRequired)
+            val sameConfirmation = (same as PackageInstallResult.ConfirmationRequired).confirmation
+            assertEquals(PackageVersionConfirmationKind.SAME_VERSION, sameConfirmation.kind)
+            assertEquals(2, sameConfirmation.installedVersionCode)
+            assertEquals(2, sameConfirmation.incomingVersionCode)
             assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
             assertEquals(savedGrants, repositories.grants.observeGrants(TOOL_ID).first())
+            assertNull(manager.cancelInstall(sameConfirmation.id))
+            assertEquals(listOf("update:1:2"), released)
+            assertNoTransientFiles(root)
+
+            val sameAgain = manager.importAndInstall(ByteInput("same-again.tbx", packageBytes(versionCode = 2, entryHtml = sameHtml)))
+                as PackageInstallResult.ConfirmationRequired
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 2, true),
+                manager.confirmInstall(sameAgain.confirmation.id, cleanup),
+            )
+            assertArrayEquals(sameHtml, Files.readAllBytes(root.resolve("miniapps/$TOOL_ID/versions/2/bundle/index.html")))
+            assertEquals(listOf("update:1:2", "update:2:2"), released)
+            assertEquals(listOf(1 to 2, 2 to 2), replaced)
+
+            val lower = manager.importAndInstall(ByteInput("v1-lower.tbx", packageBytes(versionCode = 1)))
+                as PackageInstallResult.ConfirmationRequired
+            assertEquals(PackageVersionConfirmationKind.DOWNGRADE, lower.confirmation.kind)
+            assertEquals(2, lower.confirmation.installedVersionCode)
+            assertEquals(1, lower.confirmation.incomingVersionCode)
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 1, true),
+                manager.confirmInstall(lower.confirmation.id, cleanup),
+            )
+            assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+            assertEquals(savedGrants, repositories.grants.observeGrants(TOOL_ID).first())
+            assertEquals(listOf("update:1:2", "update:2:2", "update:2:1"), released)
+            assertEquals(listOf(1 to 2, 2 to 2, 2 to 1), replaced)
 
             assertEquals(PackageUninstallResult.Uninstalled(TOOL_ID), manager.uninstall(TOOL_ID, cleanup))
-            assertEquals(listOf("update:1:2", "uninstall"), released)
+            assertEquals(listOf("update:1:2", "update:2:2", "update:2:1", "uninstall"), released)
             assertNull(repositories.catalog.observeTool(TOOL_ID).first())
             assertNull(repositories.keyValues.observe(TOOL_ID, "draft").first())
             assertEquals(emptyList<PermissionGrant>(), repositories.grants.observeGrants(TOOL_ID).first())
@@ -255,6 +288,117 @@ class DirectPackageLifecycleTest {
             assertEquals(ToolKvValue("draft", "1", 1), repositories.keyValues.observe(TOOL_ID, "draft").first())
             assertTrue(Files.isDirectory(root.resolve("miniapps/$TOOL_ID/versions/1")))
             assertFalse(Files.exists(root.resolve("miniapps/$TOOL_ID/versions/2")))
+            assertNoTransientFiles(root)
+            assertNoPendingCleanup(root)
+        } finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
+    fun failedSameVersionCommitRestoresThePreviouslyInstalledBundle() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-same-version-failure")
+        try {
+            val repositories = InMemoryCoreData.create()
+            val initialManager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+            )
+            val originalHtml = "<!doctype html><html><body>original</body></html>".toByteArray()
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 1, false),
+                initialManager.importAndInstall(ByteInput("original.tbx", packageBytes(versionCode = 1, entryHtml = originalHtml))),
+            )
+            val failingManager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = FailingCommitLifecycle(repositories.lifecycle),
+                transactions = repositories.installs,
+            )
+            val replacement = failingManager.importAndInstall(
+                ByteInput(
+                    "replacement.tbx",
+                    packageBytes(
+                        versionCode = 1,
+                        entryHtml = "<!doctype html><html><body>replacement</body></html>".toByteArray(),
+                    ),
+                ),
+            ) as PackageInstallResult.ConfirmationRequired
+
+            val result = failingManager.confirmInstall(replacement.confirmation.id)
+
+            assertTrue(
+                result is PackageInstallResult.Failed &&
+                    result.failure.code == PackageOperationFailureCode.DATA_FAILURE,
+            )
+            assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+            assertArrayEquals(
+                originalHtml,
+                Files.readAllBytes(root.resolve("miniapps/$TOOL_ID/versions/1/bundle/index.html")),
+            )
+            assertNoTransientFiles(root)
+            assertNoPendingCleanup(root)
+        } finally {
+            deleteTree(root)
+        }
+    }
+
+    @Test
+    fun interruptedSameVersionReplacementRestoresThePreviouslyInstalledBundle() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-same-version-interrupted")
+        try {
+            val repositories = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+            )
+            val originalHtml = "<!doctype html><html><body>original</body></html>".toByteArray()
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 1, false),
+                manager.importAndInstall(ByteInput("original.tbx", packageBytes(versionCode = 1, entryHtml = originalHtml))),
+            )
+
+            val transactionId = UUID.randomUUID().toString()
+            assertEquals(
+                DataResult.Success(Unit),
+                repositories.installs.begin(
+                    InstallTransaction(
+                        id = transactionId,
+                        toolId = TOOL_ID,
+                        versionCode = 1,
+                        state = InstallTransactionState.PREPARING,
+                        startedAt = 10,
+                        updatedAt = 10,
+                    ),
+                ),
+            )
+            val storage = LifecycleStorage(root)
+            storage.recordReplacementCleanup(transactionId, TOOL_ID, 1, 1)
+            val interruptedVersion = root.resolve("miniapps/$TOOL_ID/versions/1")
+            Files.createDirectories(interruptedVersion.resolve("bundle"))
+            Files.write(
+                interruptedVersion.resolve("bundle/index.html"),
+                "<!doctype html><html><body>interrupted</body></html>".toByteArray(),
+            )
+            Files.writeString(interruptedVersion.resolve(".install-owner"), transactionId)
+
+            val recoveringManager = ToolPackageManagers.create(
+                privateFilesDirectory = root.toFile(),
+                catalog = repositories.catalog,
+                lifecycle = repositories.lifecycle,
+                transactions = repositories.installs,
+            )
+            assertEquals(PackageRecoveryResult.Recovered, recoveringManager.recoverPendingMutations())
+            assertArrayEquals(
+                originalHtml,
+                Files.readAllBytes(root.resolve("miniapps/$TOOL_ID/versions/1/bundle/index.html")),
+            )
+            assertEquals(1, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+            assertTrue(repositories.installs.observeIncomplete().first().isEmpty())
             assertNoTransientFiles(root)
             assertNoPendingCleanup(root)
         } finally {
@@ -441,8 +585,10 @@ class DirectPackageLifecycleTest {
 
     private fun assertNoPendingCleanup(root: Path) {
         val replacement = root.resolve("miniapps/.lifecycle/replacement-cleanup")
+        val replacementBackups = root.resolve("miniapps/.lifecycle/replacement-backups")
         val uninstall = root.resolve("miniapps/.lifecycle/uninstall-cleanup")
         assertTrue(!Files.exists(replacement) || Files.list(replacement).use { it.findAny().isEmpty })
+        assertTrue(!Files.exists(replacementBackups) || Files.list(replacementBackups).use { it.findAny().isEmpty })
         assertTrue(!Files.exists(uninstall) || Files.list(uninstall).use { it.findAny().isEmpty })
     }
 

@@ -100,7 +100,7 @@ internal class RuntimeForegroundService : Service() {
                     (application as ToolBoxApplication).hostDependencies()
                 }
                 val sessions = dependencies.runtimeSessions
-                sessions.recover(if (intent?.action == ACTION_RESTORE_REBOOT) RESTORE_REBOOT else RESTORE_PROCESS)
+                sessions.recover(RESTORE_PROCESS)
                 if (intent?.action == ACTION_STOP_SESSION) {
                     val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
                     val toolId = intent.getStringExtra(EXTRA_TOOL_ID)
@@ -187,7 +187,6 @@ internal class RuntimeForegroundService : Service() {
 
     companion object {
         private const val ACTION_REFRESH = "io.toolbox.host.runtime.REFRESH"
-        private const val ACTION_RESTORE_REBOOT = "io.toolbox.host.runtime.RESTORE_REBOOT"
         private const val ACTION_STOP_SESSION = "io.toolbox.host.runtime.STOP_SESSION"
         private const val EXTRA_SESSION_ID = "sessionId"
         private const val EXTRA_TOOL_ID = "toolId"
@@ -196,7 +195,6 @@ internal class RuntimeForegroundService : Service() {
         private const val EXTRA_STARTED_AT = "startedAt"
         private const val TAG = "RuntimeNotifications"
         private const val RESTORE_PROCESS = "process"
-        private const val RESTORE_REBOOT = "reboot"
 
         fun ensureRunning(context: Context, snapshot: RuntimeForegroundNotificationSnapshot): Boolean {
             val first = snapshot.cards().firstOrNull()?.session ?: return false
@@ -211,12 +209,6 @@ internal class RuntimeForegroundService : Service() {
                 )
             }.isSuccess
         }
-
-        fun restoreAfterBoot(context: Context): Boolean = runCatching {
-            context.startForegroundService(
-                Intent(context, RuntimeForegroundService::class.java).setAction(ACTION_RESTORE_REBOOT),
-            )
-        }.isSuccess
 
         fun stop(context: Context) {
             runCatching { context.stopService(Intent(context, RuntimeForegroundService::class.java)) }

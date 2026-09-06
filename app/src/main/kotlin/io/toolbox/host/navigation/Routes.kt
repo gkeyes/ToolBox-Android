@@ -22,6 +22,9 @@ data class RuntimeRoute(val toolId: String) : ToolBoxRoute
 data object SettingsRoute : ToolBoxRoute
 
 @Serializable
+data object AppearanceRoute : ToolBoxRoute
+
+@Serializable
 data class BackgroundTasksRoute(val toolId: String) : ToolBoxRoute
 
 @Serializable

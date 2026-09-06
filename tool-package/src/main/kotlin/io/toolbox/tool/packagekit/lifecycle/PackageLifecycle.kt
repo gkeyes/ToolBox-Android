@@ -18,6 +18,13 @@ interface ToolPackageManager {
         cleanup: ToolStateCleanup = ToolStateCleanup.None,
     ): PackageInstallResult
 
+    suspend fun confirmInstall(
+        confirmationId: String,
+        cleanup: ToolStateCleanup = ToolStateCleanup.None,
+    ): PackageInstallResult
+
+    suspend fun cancelInstall(confirmationId: String): PackageOperationFailure?
+
     suspend fun uninstall(
         toolId: String,
         cleanup: ToolStateCleanup = ToolStateCleanup.None,
@@ -61,9 +68,23 @@ object ToolPackageManagers {
 
 sealed interface PackageInstallResult {
     data class Installed(val toolId: String, val versionCode: Int, val updated: Boolean) : PackageInstallResult
+    data class ConfirmationRequired(val confirmation: PackageVersionConfirmation) : PackageInstallResult
     data class Rejected(val rejection: PackageRejection) : PackageInstallResult
     data class Failed(val failure: PackageOperationFailure) : PackageInstallResult
 }
+
+data class PackageVersionConfirmation(
+    val id: String,
+    val toolId: String,
+    val toolName: String,
+    val installedVersionName: String,
+    val installedVersionCode: Int,
+    val incomingVersionName: String,
+    val incomingVersionCode: Int,
+    val kind: PackageVersionConfirmationKind,
+)
+
+enum class PackageVersionConfirmationKind { SAME_VERSION, DOWNGRADE }
 
 sealed interface PackageUninstallResult {
     data class Uninstalled(val toolId: String) : PackageUninstallResult
@@ -80,7 +101,7 @@ data class PackageOperationFailure(val code: PackageOperationFailureCode, val me
 
 enum class PackageOperationFailureCode {
     BUSY,
-    VERSION_NOT_NEWER,
+    CONFIRMATION_EXPIRED,
     UNSUPPORTED_REQUIRED_CAPABILITY,
     UNSUPPORTED_HOST_VERSION,
     DATA_FAILURE,
