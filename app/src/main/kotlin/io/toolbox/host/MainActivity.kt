@@ -17,8 +17,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
+import io.toolbox.core.data.ThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
+import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.importflow.ImportViewModel
@@ -84,8 +86,23 @@ class MainActivity : ComponentActivity() {
                     }
                     val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
                     val pendingShortcutIntent by shortcutIntent.collectAsStateWithLifecycle()
+                    if (!settingsState.loaded) {
+                        ToolBoxTheme(mode = ToolBoxThemeMode.System) {
+                            ApplySystemBarAppearance(ToolBoxThemeMode.System)
+                            HostBootstrapScreen(
+                                loading = true,
+                                message = "正在读取外观设置。",
+                                onRetry = dependenciesViewModel::retry,
+                            )
+                        }
+                        return@setContent
+                    }
                     val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
-                    ToolBoxTheme(mode = themeMode) {
+                    ToolBoxTheme(
+                        mode = themeMode,
+                        style = settingsState.settings.themeStyle.toToolBoxThemeStyle(),
+                        reduceTransparency = settingsState.settings.reduceTransparency,
+                    ) {
                         ApplySystemBarAppearance(themeMode)
                         CompositionLocalProvider(LocalToolIconLoader provides state.dependencies.toolIcons) {
                             ToolBoxNavigation(
@@ -167,4 +184,9 @@ private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
     ThemeMode.MONET_SYSTEM -> ToolBoxThemeMode.MonetSystem
     ThemeMode.MONET_LIGHT -> ToolBoxThemeMode.MonetLight
     ThemeMode.MONET_DARK -> ToolBoxThemeMode.MonetDark
+}
+
+private fun ThemeStyle.toToolBoxThemeStyle(): ToolBoxThemeStyle = when (this) {
+    ThemeStyle.MIUIX -> ToolBoxThemeStyle.Miuix
+    ThemeStyle.LIQUID_GLASS -> ToolBoxThemeStyle.LiquidGlass
 }

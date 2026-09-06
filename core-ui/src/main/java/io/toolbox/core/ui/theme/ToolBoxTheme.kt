@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +28,11 @@ enum class ToolBoxThemeMode {
     MonetSystem,
     MonetLight,
     MonetDark,
+}
+
+enum class ToolBoxThemeStyle {
+    Miuix,
+    LiquidGlass,
 }
 
 @Immutable
@@ -104,6 +110,16 @@ data class ToolBoxSizes(
     val detailContentMaxWidth: Dp = 720.dp,
 )
 
+@Immutable
+data class ToolBoxMaterialTokens(
+    val realBlurEnabled: Boolean,
+    val glassTint: Color,
+    val glassFallback: Color,
+    val glassBorder: Color,
+    val blurRadius: Dp,
+    val noiseFactor: Float,
+)
+
 internal val LightToolBoxColors = ToolBoxColorScheme(
     primary = Color(0xFF1264CC),
     onPrimary = Color.White,
@@ -155,12 +171,43 @@ private val DefaultTextStyles = ToolBoxTextStyles(
     label = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
 )
 
+private val LiquidGlassTextStyles = ToolBoxTextStyles(
+    screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
+    sectionTitle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+    body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp),
+    metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
+    label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+)
+
+private val MiuixRadii = ToolBoxRadii()
+private val LiquidGlassRadii = ToolBoxRadii(
+    control = 16.dp,
+    badge = 14.dp,
+    denseSurface = 20.dp,
+    card = 22.dp,
+)
+
 private val LocalToolBoxColors = staticCompositionLocalOf { LightToolBoxColors }
 private val LocalToolBoxTextStyles = staticCompositionLocalOf { DefaultTextStyles }
+private val LocalToolBoxThemeStyle = staticCompositionLocalOf { ToolBoxThemeStyle.Miuix }
+private val LocalToolBoxRadii = staticCompositionLocalOf { MiuixRadii }
+private val LocalToolBoxMaterials = staticCompositionLocalOf {
+    ToolBoxMaterialTokens(
+        realBlurEnabled = false,
+        glassTint = Color.White,
+        glassFallback = Color.White,
+        glassBorder = Color.Transparent,
+        blurRadius = 24.dp,
+        noiseFactor = 0f,
+    )
+}
 
 @Composable
 fun ToolBoxTheme(
     mode: ToolBoxThemeMode = ToolBoxThemeMode.Light,
+    style: ToolBoxThemeStyle = ToolBoxThemeStyle.Miuix,
+    reduceTransparency: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val usesDarkColors = when (mode) {
@@ -221,9 +268,72 @@ fun ToolBoxTheme(
         )
     }
 
-    MiuixTheme(controller = controller) {
+    val accentColors = controller.currentColors()
+    val renderedController = if (style == ToolBoxThemeStyle.LiquidGlass) {
+        val liquidLight = liquidGlassColors(
+            dark = false,
+            accent = accentColors.primary,
+            accentForeground = accentColors.onPrimary,
+        )
+        val liquidDark = liquidGlassColors(
+            dark = true,
+            accent = accentColors.primary,
+            accentForeground = accentColors.onPrimary,
+        )
+        remember(usesDarkColors, accentColors.primary, accentColors.onPrimary) {
+            ThemeController(
+                colorSchemeMode = if (usesDarkColors) ColorSchemeMode.Dark else ColorSchemeMode.Light,
+                lightColors = lightColorScheme(
+                    primary = liquidLight.primary,
+                    onPrimary = liquidLight.onPrimary,
+                    primaryContainer = liquidLight.softPrimary,
+                    onPrimaryContainer = liquidLight.primary,
+                    background = liquidLight.background,
+                    onBackground = liquidLight.textPrimary,
+                    surface = liquidLight.surface,
+                    onSurface = liquidLight.textPrimary,
+                    surfaceVariant = liquidLight.surfaceMuted,
+                    onSurfaceSecondary = liquidLight.textSecondary,
+                    onSurfaceVariantSummary = liquidLight.textSecondary,
+                    onSurfaceVariantActions = liquidLight.textSecondary,
+                    surfaceContainer = liquidLight.surface,
+                    surfaceContainerHigh = liquidLight.surfaceMuted,
+                    dividerLine = liquidLight.divider,
+                    errorContainer = liquidLight.softDanger,
+                    onErrorContainer = liquidLight.onSoftDanger,
+                    error = liquidLight.danger,
+                ),
+                darkColors = darkColorScheme(
+                    primary = liquidDark.primary,
+                    onPrimary = liquidDark.onPrimary,
+                    primaryContainer = liquidDark.softPrimary,
+                    onPrimaryContainer = liquidDark.primary,
+                    background = liquidDark.background,
+                    onBackground = liquidDark.textPrimary,
+                    surface = liquidDark.surface,
+                    onSurface = liquidDark.textPrimary,
+                    surfaceVariant = liquidDark.surfaceMuted,
+                    onSurfaceSecondary = liquidDark.textSecondary,
+                    onSurfaceVariantSummary = liquidDark.textSecondary,
+                    onSurfaceVariantActions = liquidDark.textSecondary,
+                    surfaceContainer = liquidDark.surface,
+                    onSurfaceContainer = liquidDark.textPrimary,
+                    surfaceContainerHigh = liquidDark.surfaceMuted,
+                    dividerLine = liquidDark.divider,
+                    errorContainer = liquidDark.softDanger,
+                    onErrorContainer = liquidDark.onSoftDanger,
+                    error = liquidDark.danger,
+                ),
+                keyColor = accentColors.primary,
+            )
+        }
+    } else {
+        controller
+    }
+
+    MiuixTheme(controller = renderedController) {
         val miuixColors = MiuixTheme.colorScheme
-        val colors = baseColors.copy(
+        val miuixSemanticColors = baseColors.copy(
             primary = miuixColors.primary,
             onPrimary = readableForeground(miuixColors.onPrimary, listOf(miuixColors.primary)),
             background = miuixColors.background,
@@ -241,9 +351,35 @@ fun ToolBoxTheme(
             softDanger = miuixColors.errorContainer,
             onSoftDanger = miuixColors.onErrorContainer,
         )
+        val colors = if (style == ToolBoxThemeStyle.LiquidGlass) {
+            liquidGlassColors(
+                dark = usesDarkColors,
+                accent = miuixSemanticColors.primary,
+                accentForeground = miuixSemanticColors.onPrimary,
+            )
+        } else {
+            miuixSemanticColors
+        }
+        val materials = liquidGlassMaterials(
+            colors = colors,
+            dark = usesDarkColors,
+            enabled = style == ToolBoxThemeStyle.LiquidGlass,
+            reduceTransparency = reduceTransparency,
+        )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,
-            LocalToolBoxTextStyles provides DefaultTextStyles,
+            LocalToolBoxTextStyles provides if (style == ToolBoxThemeStyle.LiquidGlass) {
+                LiquidGlassTextStyles
+            } else {
+                DefaultTextStyles
+            },
+            LocalToolBoxThemeStyle provides style,
+            LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.LiquidGlass) {
+                LiquidGlassRadii
+            } else {
+                MiuixRadii
+            },
+            LocalToolBoxMaterials provides materials,
             content = content,
         )
     }
@@ -265,8 +401,22 @@ internal fun readableForeground(preferred: Color, backgrounds: List<Color>): Col
 
 object ToolBoxThemeTokens {
     val spacing = ToolBoxSpacing()
-    val radii = ToolBoxRadii()
     val sizes = ToolBoxSizes()
+
+    val style: ToolBoxThemeStyle
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalToolBoxThemeStyle.current
+
+    val radii: ToolBoxRadii
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalToolBoxRadii.current
+
+    val materials: ToolBoxMaterialTokens
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalToolBoxMaterials.current
 
     val colors: ToolBoxColorScheme
         @Composable
@@ -278,6 +428,44 @@ object ToolBoxThemeTokens {
         @ReadOnlyComposable
         get() = LocalToolBoxTextStyles.current
 }
+
+internal fun liquidGlassColors(
+    dark: Boolean,
+    accent: Color,
+    accentForeground: Color,
+): ToolBoxColorScheme {
+    val base = if (dark) DarkToolBoxColors else LightToolBoxColors
+    val background = if (dark) Color.Black else Color(0xFFF2F2F7)
+    val surface = if (dark) Color(0xFF1C1C1E) else Color.White
+    val surfaceMuted = if (dark) Color(0xFF2C2C2E) else Color(0xFFE9E9EE)
+    val textPrimary = if (dark) Color(0xFFF5F5F7) else Color(0xFF1C1C1E)
+    val textSecondary = if (dark) Color(0xFFAEAEB2) else Color(0xFF5F5F64)
+    return base.copy(
+        primary = accent,
+        onPrimary = readableForeground(accentForeground, listOf(accent)),
+        background = background,
+        surface = surface,
+        surfaceMuted = surfaceMuted,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        divider = if (dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.12f),
+        softPrimary = accent.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(surface),
+    )
+}
+
+internal fun liquidGlassMaterials(
+    colors: ToolBoxColorScheme,
+    dark: Boolean,
+    enabled: Boolean,
+    reduceTransparency: Boolean,
+) = ToolBoxMaterialTokens(
+    realBlurEnabled = enabled && !reduceTransparency,
+    glassTint = colors.surface.copy(alpha = if (dark) 0.66f else 0.72f),
+    glassFallback = colors.surface,
+    glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
+    blurRadius = 24.dp,
+    noiseFactor = 0.035f,
+)
 
 private fun ToolBoxThemeMode.toMiuixMode(): ColorSchemeMode = when (this) {
     ToolBoxThemeMode.System -> ColorSchemeMode.System

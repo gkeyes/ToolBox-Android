@@ -105,6 +105,7 @@ fun ToolBoxIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    tint: Color = ToolBoxThemeTokens.colors.textSecondary,
 ) {
     IconButton(
         onClick = onClick,
@@ -116,7 +117,7 @@ fun ToolBoxIconButton(
             },
         enabled = enabled,
     ) {
-        ToolBoxIcon(icon = icon, contentDescription = null)
+        ToolBoxIcon(icon = icon, contentDescription = null, tint = tint)
     }
 }
 

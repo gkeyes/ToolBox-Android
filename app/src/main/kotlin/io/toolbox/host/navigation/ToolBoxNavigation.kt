@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -33,6 +34,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
+import io.toolbox.core.ui.component.ToolBoxGlassActivity
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostDependencies
 import io.toolbox.host.HostFeatureViewModelFactory
@@ -54,6 +56,7 @@ import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.ToolPermissionsScreen
 import io.toolbox.host.runtime.RuntimeViewModel
+import io.toolbox.host.settings.AppearanceScreen
 import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.MainDestination
@@ -65,6 +68,7 @@ import io.toolbox.host.ui.RuntimeShellScreen
 import io.toolbox.host.ui.ToolDetailScreen
 import io.toolbox.host.ui.ToolManagerScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
@@ -75,9 +79,11 @@ import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.nav.transition.navGraphicsTransition
 
+private const val PrimaryTabMotionDurationMillis = 160
+
 private val PrimaryTabMotion = NavMotion(
     programmatic = NavSettleSpec.Tween(
-        durationMillis = 160,
+        durationMillis = PrimaryTabMotionDurationMillis,
         easing = NavProgrammaticEasing,
     ),
 )
@@ -107,6 +113,8 @@ internal fun ToolBoxNavigation(
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
     val toolsListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    var primaryTransitioning by remember { mutableStateOf(false) }
+    var primaryTransitionGeneration by remember { mutableIntStateOf(0) }
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
         coroutineScope.launch {
@@ -129,7 +137,15 @@ internal fun ToolBoxNavigation(
             MainDestination.Tools -> ToolManagerRoute
             MainDestination.Settings -> SettingsRoute
         }
-        if (primaryBackStack.lastOrNull() != route) primaryBackStack.add(route)
+        if (primaryBackStack.lastOrNull() != route) {
+            primaryTransitioning = true
+            val generation = ++primaryTransitionGeneration
+            primaryBackStack.add(route)
+            coroutineScope.launch {
+                delay(PrimaryTabMotionDurationMillis.toLong())
+                if (generation == primaryTransitionGeneration) primaryTransitioning = false
+            }
+        }
     }
 
     fun goBackPrimary() {
@@ -145,6 +161,7 @@ internal fun ToolBoxNavigation(
     }
 
     val allSecondaryRoutes = secondaryBackStack.filterIsInstance<ToolBoxRoute>()
+    val currentPrimaryRoute = primaryBackStack.lastOrNull()
     val runtimeRoute = allSecondaryRoutes.lastOrNull() as? RuntimeRoute
     val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
     val runtimeTitle = runtimeRoute?.let { route ->
@@ -222,8 +239,11 @@ internal fun ToolBoxNavigation(
                     },
                 ),
         ) {
-            NavDisplay(
-                backStack = primaryBackStack,
+            ToolBoxGlassActivity(
+                active = retainedRoutes.isEmpty() && runtimeRoute == null && !primaryTransitioning,
+            ) {
+                NavDisplay(
+                    backStack = primaryBackStack,
                 modifier = Modifier
                     .fillMaxSize()
                     .then(
@@ -240,37 +260,57 @@ internal fun ToolBoxNavigation(
                     backdropColor = ToolBoxThemeTokens.colors.background,
                     blockInputDuringTransition = true,
                 ),
-            ) {
+                ) {
                 entry<ToolManagerRoute>(transition = PrimaryTabFadeTransition) {
-                    ToolManagerRouteContent(
-                        dependencies = dependencies,
-                        viewModelStoreOwner = viewModelStoreOwner,
-                        catalogViewModel = catalogViewModel,
-                        importViewModel = importViewModel,
-                        listState = toolsListState,
-                        // Freeze only while the settled runtime fully covers the base page.
-                        // Resume before the source's return animation, not after route removal.
-                        uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
-                        onDestination = ::navigateMain,
-                        onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
-                        onOpenDetails = { navigate(ToolDetailRoute(it)) },
-                    )
-                }
-                entry<SettingsRoute>(transition = PrimaryTabFadeTransition) {
-                    PrimaryScreen(
-                        selected = MainDestination.Settings,
-                        onDestination = ::navigateMain,
-                        title = "设置",
-                        onImport = null,
-                    ) { padding, _ ->
-                        SettingsScreen(
-                            viewModel = settingsViewModel,
-                            contentPadding = padding,
-                            onBackgroundSafeguards = { navigate(BackgroundSafeguardsRoute) },
-                            onToolPermissions = { navigate(ToolPermissionsRoute) },
-                            onDeveloperHelp = { navigate(DeveloperHelpRoute) },
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (currentPrimaryRoute == ToolManagerRoute) Modifier
+                                else Modifier.clearAndSetSemantics { },
+                            ),
+                    ) {
+                        ToolManagerRouteContent(
+                            dependencies = dependencies,
+                            viewModelStoreOwner = viewModelStoreOwner,
+                            catalogViewModel = catalogViewModel,
+                            importViewModel = importViewModel,
+                            listState = toolsListState,
+                            // Freeze only while the settled runtime fully covers the base page.
+                            // Resume before the source's return animation, not after route removal.
+                            uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
+                            onDestination = ::navigateMain,
+                            onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
+                            onOpenDetails = { navigate(ToolDetailRoute(it)) },
                         )
                     }
+                }
+                entry<SettingsRoute>(transition = PrimaryTabFadeTransition) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (currentPrimaryRoute == SettingsRoute) Modifier
+                                else Modifier.clearAndSetSemantics { },
+                            ),
+                    ) {
+                        PrimaryScreen(
+                            selected = MainDestination.Settings,
+                            onDestination = ::navigateMain,
+                            title = "设置",
+                            onImport = null,
+                        ) { padding, _ ->
+                            SettingsScreen(
+                                viewModel = settingsViewModel,
+                                contentPadding = padding,
+                                onAppearance = { navigate(AppearanceRoute) },
+                                onBackgroundSafeguards = { navigate(BackgroundSafeguardsRoute) },
+                                onToolPermissions = { navigate(ToolPermissionsRoute) },
+                                onDeveloperHelp = { navigate(DeveloperHelpRoute) },
+                            )
+                        }
+                    }
+                }
                 }
             }
 
@@ -311,7 +351,14 @@ internal fun ToolBoxNavigation(
                     onBack = leaveRuntime,
                     modifier = Modifier
                         .fillMaxSize()
-                        .zIndex(1f),
+                        .zIndex(1f)
+                        .then(
+                            if (entryCoverVisible || sourceAboveRuntime) {
+                                Modifier.clearAndSetSemantics { }
+                            } else {
+                                Modifier
+                            },
+                        ),
                 )
             }
         }
@@ -394,7 +441,9 @@ private fun RetainedSecondaryPage(
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         NavigationInputBlocker()
-        content(requestBack) { contentReady = true }
+        ToolBoxGlassActivity(active = isTop && !leaving && progress.value <= 0.001f) {
+            content(requestBack) { contentReady = true }
+        }
     }
 }
 
@@ -443,6 +492,12 @@ private fun SecondaryRouteContent(
             catalog = dependencies.repositories.catalog,
             onBack = onBack,
             onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
+            onReady = onReady,
+        )
+
+        AppearanceRoute -> AppearanceScreen(
+            viewModel = settingsViewModel,
+            onBack = onBack,
             onReady = onReady,
         )
 

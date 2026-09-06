@@ -26,6 +26,7 @@ import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.mergePadding
 import kotlinx.coroutines.flow.onEach
 
 @Composable
@@ -44,14 +45,17 @@ internal fun ToolPermissionsScreen(
         if (toolsLoaded) onReady()
     }
 
-    DetailScreen(title = "工具权限", onBack = onBack) {
+    DetailScreen(title = "工具权限", onBack = onBack) { chromePadding ->
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
                 .fillMaxSize()
                 .align(Alignment.TopCenter),
-            contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.two),
+            contentPadding = mergePadding(
+                chromePadding,
+                PaddingValues(ToolBoxThemeTokens.spacing.two),
+            ),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             if (tools.isEmpty()) {

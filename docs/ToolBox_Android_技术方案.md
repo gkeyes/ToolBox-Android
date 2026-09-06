@@ -20,9 +20,10 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.3.8 (12)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.4.0 (13)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
-  `DataMigration` 或 `fallbackToDestructiveMigration`。
+  Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
+  `DataMigration` 做一次性补齐，不接触 Room。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
 - 删除审计、发布者信任、安装审核会话、恢复审核和虚假设置的模型、repository、界面、
   文档与测试。
@@ -75,7 +76,7 @@ Room 只包含：`tools`、`tool_versions`、`permission_grants`、`tool_kv`、
 现有 KV 物理存储；会话只保存 sessionId、启动/提醒时间、恢复选项和独立通知编号，闹钟只保存 id 与调度时间，
 不保存轨迹、行情、行程、通知正文或其他业务 payload。
 
-DataStore 只包含 `theme` 和 `backgroundEnabled`。工具数量、KV 限额、速率、任务数量与
+DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTransparency`。工具数量、KV 限额、速率、任务数量与
 响应大小是代码中的内部常量，不伪装成用户设置。
 
 所有文件、解压、哈希、Room、DataStore 和网络工作在 IO dispatcher；Compose 只观察
@@ -312,11 +313,10 @@ Android 16+ 在系统允许时请求 promoted ongoing；每张卡不带 `GROUP_S
 `islandOrder=false`，普通刷新不强制重开或重排岛。`canShowFocus=false` 只作为返回状态，不阻止提交。增强接口的
 `REQUESTED` 仅表示数据已交给系统；协议不存在、权限不足或系统不展示时，普通持续通知仍然成立。
 
-实时活动的标题、主值、辅助信息、正文和操作文字继续请求白色；
-该配置同样覆盖每工具后台占位。原生通知通过文字颜色 span 显式指定，Focus V3
-的明暗两套文字字段均为 `#FFFFFF`，大岛文本不继承强调色。普通非实时通知仍遵循系统主题，
-本规则不修改权限、通知内容或 API 合同；实际颜色仍由 SystemUI 绘制。浅色系统主题下出现黑字
-是独立待验证问题，不能把本次多卡修复或白色字段测试当作该问题已解决。
+实时活动的标题、主值、辅助信息、正文和操作文字不写入固定前景色。原生通知不附加文字颜色
+span，Focus V3 也不覆盖明暗文字字段，由当前 Android/HyperOS SystemUI 根据通知表面自行选择。
+该规则同样覆盖每工具后台占位，不修改权限、通知内容或 API 合同；系统更新后的实际呈现仍需在
+浅色、深色与锁屏界面分别验收。
 
 ## 8. Miuix 页面与布局
 
@@ -387,7 +387,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.3.8 (12) 上传 `toolbox-v0.3.8-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.4.0 (13) 上传 `toolbox-v0.4.0-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

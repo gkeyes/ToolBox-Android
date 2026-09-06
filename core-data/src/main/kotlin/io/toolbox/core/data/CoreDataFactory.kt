@@ -43,8 +43,11 @@ object CoreDataFactory {
             )
         }
         val appContext = context.applicationContext
+        val settingsFile = appContext.preferencesDataStoreFile(settingsName)
+        val hasExistingHostData = settingsFile.exists() || appContext.getDatabasePath(databaseName).exists()
         val settings = ProcessLifetimeHostSettingsDataStores.get(
-            appContext.preferencesDataStoreFile(settingsName),
+            file = settingsFile,
+            defaultThemeStyle = if (hasExistingHostData) ThemeStyle.MIUIX else ThemeStyle.LIQUID_GLASS,
         )
         val database = Room.databaseBuilder(appContext, ToolBoxDatabase::class.java, databaseName).build()
         return CoreDataStores(

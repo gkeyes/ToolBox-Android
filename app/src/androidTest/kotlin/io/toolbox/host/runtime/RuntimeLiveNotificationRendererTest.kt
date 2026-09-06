@@ -29,7 +29,7 @@ import org.json.JSONObject
 @RunWith(AndroidJUnit4::class)
 class RuntimeLiveNotificationRendererTest {
     @Test
-    fun independentBackgroundAndLiveCardTextRetainsWhiteSpansAcrossNotificationParceling() {
+    fun independentBackgroundAndLiveCardTextKeepsSystemManagedColorsAcrossNotificationParceling() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val renderer = RuntimeLiveNotificationRenderer(context)
         val intent = PendingIntent.getActivity(
@@ -88,13 +88,13 @@ class RuntimeLiveNotificationRendererTest {
                         val largeIcon = requireNotNull(restored.getLargeIcon()).loadDrawable(context) as BitmapDrawable
                         assertEquals(toolColor, largeIcon.bitmap.getPixel(largeIcon.bitmap.width / 2, largeIcon.bitmap.height / 2))
                         listOf(Notification.EXTRA_TITLE, Notification.EXTRA_TEXT, Notification.EXTRA_BIG_TEXT)
-                            .forEach { key -> assertWhite(restored.extras.getCharSequence(key)) }
+                            .forEach { key -> assertNoForcedForeground(restored.extras.getCharSequence(key)) }
                         if (card.presentation != null) {
-                            assertWhite(restored.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+                            assertNoForcedForeground(restored.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
                         }
                         assertEquals(2, restored.actions.size)
                         assertEquals(listOf("打开", "停止当前"), restored.actions.map { it.title.toString() })
-                        restored.actions.forEach { action -> assertWhite(action.title) }
+                        restored.actions.forEach { action -> assertNoForcedForeground(action.title) }
                         assertFalse(restored.extras.getBoolean("android.colorized"))
                         assertNull(restored.group)
                         assertEquals(0, restored.flags and Notification.FLAG_GROUP_SUMMARY)
@@ -105,7 +105,7 @@ class RuntimeLiveNotificationRendererTest {
                         )
                         if (support.hyperOsSupported && card.presentation != null) {
                             val payload = JSONObject(checkNotNull(restored.extras.getString("miui.focus.param")))
-                            assertWhiteFocusPayload(payload)
+                            assertNoForcedFocusForeground(payload)
                             assertTrue(payload.toString().contains(card.notificationId.toString()))
                             assertTrue(payload.toString().contains("${card.session.toolId}:${card.session.sessionId}"))
                             assertTrue(payload.toString().contains("tool-icon-${card.session.sessionId}"))
@@ -151,35 +151,31 @@ class RuntimeLiveNotificationRendererTest {
         }
     }
 
-    private fun assertWhiteFocusPayload(payload: JSONObject) {
+    private fun assertNoForcedFocusForeground(payload: JSONObject) {
         val fields = setOf(
             "colorTitle", "colorTitleDark", "colorContent", "colorContentDark",
             "colorSubTitle", "colorSubTitleDark", "colorExtraTitle", "colorExtraTitleDark",
             "colorSubContent", "colorSubContentDark",
         )
-        var checked = 0
         fun visit(value: Any?) {
             when (value) {
                 is JSONObject -> value.keys().forEach { key ->
                     if (key in fields) {
-                        assertEquals("#FFFFFF", value.getString(key))
-                        checked += 1
+                        assertNotEquals("#FFFFFF", value.optString(key).uppercase())
                     } else visit(value.get(key))
                 }
                 is JSONArray -> (0 until value.length()).forEach { visit(value.get(it)) }
             }
         }
         visit(payload)
-        assertEquals("Both Focus text blocks must specify light and dark foregrounds", 20, checked)
     }
 
-    private fun assertWhite(text: CharSequence?) {
-        assertTrue("Notification text must retain its explicit white color", text is Spanned)
-        val styled = text as Spanned
-        val spans = styled.getSpans(0, styled.length, ForegroundColorSpan::class.java)
-        assertEquals(1, spans.size)
-        assertEquals(Color.WHITE, spans.single().foregroundColor)
-        assertEquals(0, styled.getSpanStart(spans.single()))
-        assertEquals(styled.length, styled.getSpanEnd(spans.single()))
+    private fun assertNoForcedForeground(text: CharSequence?) {
+        if (text is Spanned) {
+            assertTrue(
+                "Notification foreground must remain under SystemUI control",
+                text.getSpans(0, text.length, ForegroundColorSpan::class.java).isEmpty(),
+            )
+        }
     }
 }

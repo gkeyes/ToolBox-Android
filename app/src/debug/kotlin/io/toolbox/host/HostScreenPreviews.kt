@@ -159,7 +159,7 @@ fun SettingsPreview() {
             SettingsContent(
                 state = PreviewHostFixtures.settings,
                 contentPadding = contentPadding,
-                onThemeSelected = {},
+                onAppearance = {},
                 onBackgroundSafeguards = {},
                 onToolPermissions = {},
                 onDeveloperHelp = {},
@@ -226,7 +226,7 @@ fun MediumSettingsDarkPreview() {
             SettingsContent(
                 state = PreviewHostFixtures.settings,
                 contentPadding = contentPadding,
-                onThemeSelected = {},
+                onAppearance = {},
                 onBackgroundSafeguards = {},
                 onToolPermissions = {},
                 onDeveloperHelp = {},

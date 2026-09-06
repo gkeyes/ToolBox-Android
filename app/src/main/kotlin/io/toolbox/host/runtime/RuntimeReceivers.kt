@@ -75,8 +75,20 @@ internal class RuntimeRestoreReceiver : BroadcastReceiver() {
             }
             return
         }
-        val started = RuntimeForegroundService.restoreAfterBoot(context)
-        if (!started) showRestoreNotice(context)
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                runCatching {
+                    (context.applicationContext as ToolBoxApplication).hostDependencies()
+                        .runtimeSessions
+                        .recover("reboot")
+                }.onFailure {
+                    runCatching { showRestoreNotice(context) }
+                }
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 
     private fun showRestoreNotice(context: Context) {

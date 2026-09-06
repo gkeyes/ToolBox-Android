@@ -21,23 +21,34 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
+import io.toolbox.core.ui.component.ToolBoxGlassState
 import io.toolbox.core.ui.component.ToolBoxIcon
+import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxLargeTopBar
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.component.rememberToolBoxGlassState
+import io.toolbox.core.ui.component.toolBoxBackdropSource
+import io.toolbox.core.ui.component.toolBoxGlassEffect
+import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
@@ -49,6 +60,7 @@ internal fun PrimaryScreen(
     onImport: (() -> Unit)?,
     content: @Composable (PaddingValues, HostRouteLayout) -> Unit,
 ) {
+    val glassState = rememberToolBoxGlassState()
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -56,19 +68,27 @@ internal fun PrimaryScreen(
             .testTag(selected.screenTestTag),
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
+        val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
         if (layout.isCompact) {
             ToolBoxAppScaffold(
                 modifier = Modifier.fillMaxSize(),
-                topBar = { TopBar(title, subtitle, onImport) },
-                bottomBar = { DestinationBar(selected, onDestination, compact = true) },
+                topBar = { TopBar(title, subtitle, onImport, glassState = glassState) },
+                bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
             ) { scaffoldPadding ->
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .padding(scaffoldPadding)
+                        .toolBoxBackdropSource(glassState)
+                        .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
                         .consumeWindowInsets(scaffoldPadding),
                 ) {
-                    content(layout.contentPadding(), layout)
+                    content(
+                        mergePadding(
+                            if (isGlass) scaffoldPadding else PaddingValues(0.dp),
+                            layout.contentPadding(),
+                        ),
+                        layout,
+                    )
                 }
             }
         } else {
@@ -77,12 +97,19 @@ internal fun PrimaryScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing),
             ) {
-                DestinationBar(selected, onDestination, compact = false)
+                DestinationBar(selected, onDestination, compact = false, glassState = glassState)
                 Column(Modifier.weight(1f)) {
-                    TopBar(title, subtitle, onImport, defaultWindowInsetsPadding = false)
+                    TopBar(
+                        title,
+                        subtitle,
+                        onImport,
+                        defaultWindowInsetsPadding = false,
+                        glassState = glassState,
+                    )
                     Box(
                         Modifier
                             .weight(1f)
+                            .toolBoxBackdropSource(glassState)
                             .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
                             .align(Alignment.CenterHorizontally),
                     ) {
@@ -106,6 +133,7 @@ private fun DestinationBar(
     selected: MainDestination,
     onDestination: (MainDestination) -> Unit,
     compact: Boolean,
+    glassState: ToolBoxGlassState,
 ) {
     val modifier = if (compact) {
         Modifier
@@ -123,10 +151,19 @@ private fun DestinationBar(
             selectedId = selected.name,
             onItemSelected = { item -> onDestination(MainDestination.valueOf(item.id)) },
             modifier = modifier,
+            glassState = glassState,
         )
     } else {
+        val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
         Column(
-            modifier.background(ToolBoxThemeTokens.colors.surface),
+            modifier
+                .toolBoxGlassEffect(
+                    state = glassState,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                        if (isGlass) ToolBoxThemeTokens.radii.card else 0.dp,
+                    ),
+                )
+                .background(if (isGlass) androidx.compose.ui.graphics.Color.Transparent else ToolBoxThemeTokens.colors.surface),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.two),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -176,8 +213,10 @@ internal fun DetailScreen(
     modifier: Modifier = Modifier,
     subtitle: String = "",
     actions: @Composable RowScope.() -> Unit = {},
-    content: @Composable BoxScope.() -> Unit,
+    content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
+    val glassState = rememberToolBoxGlassState()
+    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     Box(
         modifier = modifier.fillMaxSize().background(ToolBoxThemeTokens.colors.background),
         contentAlignment = Alignment.TopCenter,
@@ -190,6 +229,7 @@ internal fun DetailScreen(
                     subtitle = subtitle,
                     navigationIcon = ToolBoxIconKey.Back,
                     onNavigationClick = onBack,
+                    glassState = glassState,
                     actions = actions,
                 )
             },
@@ -197,13 +237,25 @@ internal fun DetailScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(scaffoldPadding)
+                    .toolBoxBackdropSource(glassState)
+                    .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
                     .consumeWindowInsets(scaffoldPadding),
             ) {
-                content()
+                content(if (isGlass) scaffoldPadding else PaddingValues(0.dp))
             }
         }
     }
+}
+
+@Composable
+internal fun mergePadding(first: PaddingValues, second: PaddingValues): PaddingValues {
+    val layoutDirection = LocalLayoutDirection.current
+    return PaddingValues(
+        start = first.calculateStartPadding(layoutDirection) + second.calculateStartPadding(layoutDirection),
+        top = first.calculateTopPadding() + second.calculateTopPadding(),
+        end = first.calculateEndPadding(layoutDirection) + second.calculateEndPadding(layoutDirection),
+        bottom = first.calculateBottomPadding() + second.calculateBottomPadding(),
+    )
 }
 
 @Composable
@@ -212,21 +264,36 @@ private fun TopBar(
     subtitle: String,
     onImport: (() -> Unit)?,
     defaultWindowInsetsPadding: Boolean = true,
+    glassState: ToolBoxGlassState,
 ) {
     ToolBoxLargeTopBar(
         title = title,
         subtitle = subtitle,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
+        glassState = glassState,
         actions = {
             if (onImport != null) {
-                ToolBoxTextButton(
-                    label = "＋ 导入",
-                    onClick = onImport,
-                    modifier = Modifier
-                        .testTag(HostTestTags.ImportFab)
-                        .semantics { contentDescription = "导入 .tbx 工具包" },
-                    contentColor = ToolBoxThemeTokens.colors.primary,
-                )
+                if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
+                    ToolBoxIconButton(
+                        icon = ToolBoxIconKey.Add,
+                        contentDescription = "导入 .tbx 工具包",
+                        onClick = onImport,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(ToolBoxThemeTokens.colors.surface)
+                            .testTag(HostTestTags.ImportFab),
+                        tint = ToolBoxThemeTokens.colors.primary,
+                    )
+                } else {
+                    ToolBoxTextButton(
+                        label = "＋ 导入",
+                        onClick = onImport,
+                        modifier = Modifier
+                            .testTag(HostTestTags.ImportFab)
+                            .semantics { contentDescription = "导入 .tbx 工具包" },
+                        contentColor = ToolBoxThemeTokens.colors.primary,
+                    )
+                }
             }
         },
     )

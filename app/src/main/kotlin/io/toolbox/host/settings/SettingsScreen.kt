@@ -8,18 +8,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.toolbox.core.data.ThemeMode
-import io.toolbox.core.ui.component.ToolBoxChoiceSettingRow
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.ToolBoxSettingChoice
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.BuildConfig
 import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 
@@ -27,6 +26,7 @@ import io.toolbox.host.ui.SurfaceCard
 internal fun SettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
+    onAppearance: () -> Unit,
     onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
@@ -35,7 +35,7 @@ internal fun SettingsScreen(
     SettingsContent(
         state = state,
         contentPadding = contentPadding,
-        onThemeSelected = { viewModel.selectTheme(ThemeMode.valueOf(it)) },
+        onAppearance = onAppearance,
         onBackgroundSafeguards = onBackgroundSafeguards,
         onToolPermissions = onToolPermissions,
         onDeveloperHelp = onDeveloperHelp,
@@ -46,7 +46,7 @@ internal fun SettingsScreen(
 internal fun SettingsContent(
     state: SettingsUiState,
     contentPadding: PaddingValues,
-    onThemeSelected: (String) -> Unit,
+    onAppearance: () -> Unit,
     onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
@@ -63,13 +63,12 @@ internal fun SettingsContent(
         item("before-appearance") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("appearance") {
             ToolBoxGroupedSurface {
-                ToolBoxChoiceSettingRow(
-                    title = "主题",
-                    selectedValue = state.settings.theme.name,
-                    choices = ThemeMode.entries.map { ToolBoxSettingChoice(it.name, it.label) },
-                    onSelected = onThemeSelected,
-                    dialogSummary = "主题只影响 ToolBox 宿主界面，不改变工具内部页面。",
+                ToolBoxSettingRow(
+                    title = "外观",
+                    modifier = Modifier.testTag(HostTestTags.SettingsAppearance),
+                    summary = "${state.settings.themeStyle.label} · ${state.settings.theme.baseLabel}",
                     icon = ToolBoxIconKey.Palette,
+                    onClick = onAppearance,
                     enabled = state.loaded,
                 )
             }
@@ -116,3 +115,16 @@ internal fun SettingsContent(
         }
     }
 }
+
+private val io.toolbox.core.data.ThemeMode.baseLabel: String
+    get() = when (this) {
+        io.toolbox.core.data.ThemeMode.SYSTEM,
+        io.toolbox.core.data.ThemeMode.MONET_SYSTEM,
+        -> "跟随系统"
+        io.toolbox.core.data.ThemeMode.LIGHT,
+        io.toolbox.core.data.ThemeMode.MONET_LIGHT,
+        -> "浅色"
+        io.toolbox.core.data.ThemeMode.DARK,
+        io.toolbox.core.data.ThemeMode.MONET_DARK,
+        -> "深色"
+    }

@@ -114,7 +114,12 @@ class FreshPersistenceContractTest {
         var settings = DataStoreHostSettingsRepository(
             createHostSettingsDataStore(context.preferencesDataStoreFile(SETTINGS_NAME), scope),
         )
-        val desired = HostSettings(ThemeMode.DARK, backgroundEnabled = false)
+        val desired = HostSettings(
+            theme = ThemeMode.DARK,
+            backgroundEnabled = false,
+            themeStyle = ThemeStyle.MIUIX,
+            reduceTransparency = true,
+        )
         assertEquals(DataResult.Success(Unit), settings.update { desired })
         scope.coroutineContext[Job]!!.cancelAndJoin()
 
@@ -122,7 +127,10 @@ class FreshPersistenceContractTest {
         val store = createHostSettingsDataStore(context.preferencesDataStoreFile(SETTINGS_NAME), scope)
         settings = DataStoreHostSettingsRepository(store)
         assertEquals(desired, settings.settings.first())
-        assertEquals(setOf("theme", "background_enabled"), store.data.first().asMap().keys.map { it.name }.toSet())
+        assertEquals(
+            setOf("theme", "background_enabled", "theme_style", "reduce_transparency"),
+            store.data.first().asMap().keys.map { it.name }.toSet(),
+        )
         scope.coroutineContext[Job]!!.cancelAndJoin()
     }
 

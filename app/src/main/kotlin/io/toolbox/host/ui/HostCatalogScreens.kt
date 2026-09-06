@@ -188,18 +188,21 @@ internal fun ToolDetailScreen(
     DetailScreen(
         title = "工具详情",
         onBack = onBack,
-    ) {
+    ) { chromePadding ->
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
                 .fillMaxHeight()
                 .align(Alignment.TopCenter),
-            contentPadding = PaddingValues(
-                start = ToolBoxThemeTokens.spacing.two,
-                top = ToolBoxThemeTokens.spacing.oneHalf,
-                end = ToolBoxThemeTokens.spacing.two,
-                bottom = ToolBoxThemeTokens.spacing.twoHalf,
+            contentPadding = mergePadding(
+                chromePadding,
+                PaddingValues(
+                    start = ToolBoxThemeTokens.spacing.two,
+                    top = ToolBoxThemeTokens.spacing.oneHalf,
+                    end = ToolBoxThemeTokens.spacing.two,
+                    bottom = ToolBoxThemeTokens.spacing.twoHalf,
+                ),
             ),
         ) {
             if (tool == null) {

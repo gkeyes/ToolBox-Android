@@ -3,12 +3,14 @@ package io.toolbox.host.settings
 import androidx.compose.runtime.Immutable
 import io.toolbox.core.data.HostSettings
 import io.toolbox.core.data.ThemeMode
+import io.toolbox.core.data.ThemeStyle
 
 @Immutable
 internal data class SettingsUiState(
     val settings: HostSettings = HostSettings(),
     val loaded: Boolean = false,
     val error: String? = null,
+    val canRetry: Boolean = false,
 )
 
 internal val ThemeMode.label: String
@@ -19,4 +21,10 @@ internal val ThemeMode.label: String
         ThemeMode.MONET_SYSTEM -> "系统取色"
         ThemeMode.MONET_LIGHT -> "取色·明亮"
         ThemeMode.MONET_DARK -> "取色·深色"
+    }
+
+internal val ThemeStyle.label: String
+    get() = when (this) {
+        ThemeStyle.MIUIX -> "Miuix"
+        ThemeStyle.LIQUID_GLASS -> "Liquid Glass"
     }

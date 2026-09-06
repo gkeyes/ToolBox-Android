@@ -40,6 +40,7 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
+import io.toolbox.host.ui.mergePadding
 import io.toolbox.tool.api.ToolBoxApiV1
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +101,7 @@ internal fun DeveloperHelpPage(
         title = "开发帮助",
         onBack = onBack,
         modifier = Modifier.testTag(DeveloperHelpTestTags.Screen),
-    ) {
+    ) { chromePadding ->
         val pageModifier = Modifier
             .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
             .fillMaxSize()
@@ -110,13 +111,21 @@ internal fun DeveloperHelpPage(
                 document = loaded.document,
                 onInstallExamples = onInstallExamples,
                 modifier = pageModifier,
+                contentPadding = mergePadding(
+                    chromePadding,
+                    PaddingValues(ToolBoxThemeTokens.spacing.two),
+                ),
             )
             HelpLoadState.Loading -> AppText(
                 "正在读取离线手册…",
-                modifier = pageModifier.padding(ToolBoxThemeTokens.spacing.two),
+                modifier = pageModifier
+                    .padding(chromePadding)
+                    .padding(ToolBoxThemeTokens.spacing.two),
             )
             HelpLoadState.Failed -> Column(
-                modifier = pageModifier.padding(ToolBoxThemeTokens.spacing.two),
+                modifier = pageModifier
+                    .padding(chromePadding)
+                    .padding(ToolBoxThemeTokens.spacing.two),
                 verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
             ) {
                 AppText("离线手册暂时无法读取，请重试。持续失败时请更新或重新安装 ToolBox。")
@@ -132,6 +141,7 @@ internal fun DeveloperHelpContent(
     onInstallExamples: () -> Unit,
     modifier: Modifier = Modifier,
     onCopy: ((String) -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(ToolBoxThemeTokens.spacing.two),
 ) {
     val context = LocalContext.current
     var query by rememberSaveable { mutableStateOf("") }
@@ -163,7 +173,7 @@ internal fun DeveloperHelpContent(
     }
     LazyColumn(
         modifier = modifier.testTag(DeveloperHelpTestTags.List),
-        contentPadding = PaddingValues(ToolBoxThemeTokens.spacing.two),
+        contentPadding = contentPadding,
     ) {
         item("intro", contentType = "help-intro") {
             Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {

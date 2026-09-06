@@ -36,6 +36,8 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTopBar
+import io.toolbox.core.ui.component.rememberToolBoxGlassState
+import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
@@ -91,6 +93,7 @@ internal fun PermissionCenterContent(
     onSetEnabled: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
 ) {
+    val glassState = rememberToolBoxGlassState()
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
     var confirmSecureWipe by remember { mutableStateOf(false) }
     LaunchedEffect(state.loadState) {
@@ -120,10 +123,11 @@ internal fun PermissionCenterContent(
                 subtitle = state.toolName.takeUnless { it == "权限" }.orEmpty(),
                 navigationIcon = ToolBoxIconKey.Back,
                 onNavigationClick = onBack,
+                glassState = glassState,
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().toolBoxBackdropSource(glassState)) {
             LazyColumn(
                 modifier = Modifier
                     .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
