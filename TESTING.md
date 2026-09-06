@@ -50,6 +50,12 @@
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
 
+## 0.3.11 可配置网络超时上限（2026-09-06）
+
+- `ManifestValidatorTest.networkTimeoutAcceptsThe60MinuteCeilingAndRequiresACompatibleHost`：理由是 manifest 校验是工具实际可安装的第一层上限，不能只放宽网页或代理。方法是直接解析生产 manifest，接受 3600000，拒绝 3600001，并拒绝在 minHostVersion 低于 0.3.11 时声明超过 600000。预期：60 分钟声明保留原值，越界包或旧宿主不兼容的长等待包在安装前稳定拒绝。
+- `RuntimeRpcDispatcherTest.m2MethodsUseTypedNativeHandlersAndContractValues`、`ToolNetworkProxyTest.declaredHttpsPostAllowsCustomPortHeadersHttpErrorResponseAndMaximumTimeout` 和 `RuntimeNetworkGatewayTest.longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault`：理由是网页参数、原生代理和流式会话必须使用同一上限。方法是生产 dispatcher、proxy 和 gateway 分别传入 3600000，并验证 3600001 被拒绝、900000 的小工具声明仍截断 3600000 的请求、默认仍为 30000。预期：60 分钟仅是宿主上限；每个小工具按自身 manifest 与请求值独立收紧，连接建立仍为 10 秒。
+- 健康档案 Node 回归会同时验证普通 AI、MiniMax 实时流和真实页面识别路径均传入 900000；打包后的 manifest 必须为 version 1.0.10、versionCode 11、minHostVersion 0.3.11、network.timeoutMs 900000。
+
 ## 0.3.10 原生流式网络回归（2026-09-06）
 
 - CI 帮助回归修复：`DeveloperHelpDocumentTest.shippedManualParsesWithReachableChaptersAndCopyableSdk` 的旧预期仍为 28 主题，但流式帮助已增加至 29，导致 `073011c` 的 Android CI `34028563714` 在该断言失败；协议、安全及 Kotlin 编译实际均通过。保留精确数量检查并对齐 29，同时用生产解析器搜索新增主题，检查可复制示例完整保留 open/read/cancel 三个接口。预期：7 章、29 主题全部可达，新示例不被解析为普通段落或丢失清理调用；原层级、搜索、SDK 和损坏围栏断言不变。测试仍为原类内的 3 项，无新增重复测试；本地用同版 Kotlin 2.4.10 / JDK 21 / JUnit 4.13.2 直接运行生产解析器和原测试，完整 Gradle/Android 门禁仍由 GitHub 执行，不代替设备验收。

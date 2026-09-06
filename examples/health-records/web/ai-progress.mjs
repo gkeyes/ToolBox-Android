@@ -8,7 +8,7 @@ export function aiStreamConsent(api, config) {
 export function createAiProgress({ api, config, dialog, isCurrent, onCancel }) {
   const controller = new AbortController(), started = Date.now(), streaming = supportsAiStream(api, config);
   const status = h("p", { class: "small", role: "status" }, "准备请求");
-  const elapsed = h("p", { class: "small muted" }, "已耗时 0 秒 · 单次最多等待 5 分钟");
+  const elapsed = h("p", { class: "small muted" }, "已耗时 0 秒 · 单次最多等待 15 分钟");
   const thinking = h("div", { class: "ai-thinking pre-wrap", tabindex: "0", "aria-label": "AI 实时推理文字" }, streaming ? "等待服务返回推理文字…" : "当前服务或宿主不提供实时推理，仅显示处理阶段。");
   const clipped = h("p", { class: "small muted", hidden: true }, "推理较长，仅展示前 24000 字符；最终结果仍继续完整接收和校验。");
   const element = h("div", { class: "ai-progress" }, h("div", { class: "ai-progress-status" }, h("span", { class: "loading-indicator", "aria-hidden": "true" }), status), elapsed,
@@ -23,7 +23,7 @@ export function createAiProgress({ api, config, dialog, isCurrent, onCancel }) {
   window.addEventListener("pagehide", unload);
   const timer = setInterval(() => {
     cancelIfObsolete();
-    if (isCurrent()) elapsed.textContent = `已耗时 ${Math.floor((Date.now() - started) / 1000)} 秒 · 单次最多等待 5 分钟`;
+    if (isCurrent()) elapsed.textContent = `已耗时 ${Math.floor((Date.now() - started) / 1000)} 秒 · 单次最多等待 15 分钟`;
   }, 1000);
   return {
     element,

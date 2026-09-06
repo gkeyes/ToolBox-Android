@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.3.10 (14)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.3.11 (15)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   `DataMigration` 或 `fallbackToDestructiveMigration`。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
@@ -250,6 +250,10 @@ alarmId、triggerAt、scheduledAt；开机和精确闹钟授权变化后重新�
 `manifest.network.allowDomains` 的精确域名或子域通配声明。直接请求会把
 4xx/5xx 状态和受限响应正文返回页面，不把 HTTP 错误伪装成安全阻断。
 
+请求与 manifest 的 `timeoutMs` 都必须在 1000–3600000 毫秒内，最终时限取两者较小值；默认仍为
+30000 毫秒。60 分钟只是工具可声明的上限，不是默认等待时间；数值高于 600000 毫秒的工具须将
+`minHostVersion` 提高到 0.3.11。连接建立仍最多 10 秒，域名、重定向、地址和大小限制不因长等待放宽。
+
 代理仍禁用自动重定向、缓存、自动 retry、系统代理和宿主认证状态。Host、Connection、
 Content-Length、Transfer-Encoding、Upgrade 与 Proxy 系列协议 Header 由传输层控制；Authorization、
 Cookie、X-API-Key、Accept、Content-Type 等可由工具提供。每次 DNS 与每跳重定向都重新验证
@@ -362,7 +366,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试与截图验证 →
-release APK。0.3.10 (14) 上传 `toolbox-v0.3.10-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+release APK。0.3.11 (15) 上传 `toolbox-v0.3.11-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

@@ -65,7 +65,7 @@ export function makeAiRequest(settings, key, prompt, payload, image = null, stre
   }
   // Preserve integer literals across ToolBox's native JSON number conversion.
   request.body = JSON.stringify(request.body);
-  request.timeoutMs = 300000; request.maxResponseBytes = streaming && config.provider === "minimax" ? 4 * 1024 * 1024 : 512 * 1024;
+  request.timeoutMs = 900000; request.maxResponseBytes = streaming && config.provider === "minimax" ? 4 * 1024 * 1024 : 512 * 1024;
   if (byteSize(request) > 950 * 1024) throw new HealthError("待发送资料过大，请减少记录或缩小报告图片", "QUOTA_EXCEEDED");
   return request;
 }

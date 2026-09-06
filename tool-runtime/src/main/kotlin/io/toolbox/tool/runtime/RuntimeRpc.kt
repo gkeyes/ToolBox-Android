@@ -1301,7 +1301,7 @@ class RuntimeRpcDispatcher(
         const val MAX_NETWORK_RESPONSE_HEADERS = 64
         const val MAX_NETWORK_HEADER_VALUE_CHARS = 4_096
         const val MIN_NETWORK_TIMEOUT_MS = 1_000L
-        const val MAX_NETWORK_TIMEOUT_MS = 600_000L
+        const val MAX_NETWORK_TIMEOUT_MS = 3_600_000L
         const val MAX_NOTIFICATION_ID_CHARS = 64
         const val MAX_NOTIFICATION_TITLE_CHARS = 64
         const val MAX_NOTIFICATION_BODY_CHARS = 256

@@ -10,7 +10,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 
 ## 开发基线
 
-当前候选为 `0.3.10 (14)`，由 GitHub 使用同一签名密钥构建 release APK，可覆盖已交付的 debug
+当前候选为 `0.3.11 (15)`，由 GitHub 使用同一签名密钥构建 release APK，可覆盖已交付的 debug
 版本并保留工具、权限和设置，不需要卸载。
 本次不改变 Room `version = 1` 的表结构，不新增数据库迁移。
 
@@ -54,7 +54,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 用它覆盖 GitHub 同签名版本。不要用 debug 构建评价页面帧性能。
 
 GitHub Actions 在安全不变量、API 合同、静态编译、最小单元与现有截图门禁通过后上传
-`toolbox-v0.3.10-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
+`toolbox-v0.3.11-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
 版本、后台任务类名与内置资源；R8 映射独立归档以便排查崩溃，不放进安装包。
 系统权限、SAF、相机、通知、持续运行、后台位置、精确闹钟和 HyperOS 增强通知由用户在小米真机
 上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。

@@ -33,7 +33,7 @@ class ToolNetworkProxyTest {
     @Test
     fun effectiveRequestBudgetControlsReadWriteAndCallWithoutExtendingConnectWait() {
         val proxy = ToolNetworkProxy()
-        for (budget in listOf(1_000L, 30_000L, 300_000L)) {
+        for (budget in listOf(1_000L, 30_000L, 300_000L, 3_600_000L)) {
             val client = proxy.clientForRequest(budget)
             assertEquals(budget.toInt(), client.callTimeoutMillis)
             assertEquals(budget.toInt(), client.readTimeoutMillis)
@@ -105,7 +105,7 @@ class ToolNetworkProxyTest {
     }
 
     @Test
-    fun declaredHttpsPostAllowsCustomPortHeadersAndHttpErrorResponse() = runTest {
+    fun declaredHttpsPostAllowsCustomPortHeadersHttpErrorResponseAndMaximumTimeout() = runTest {
         var captured: Request? = null
         var capturedTimeout = 0L
         val transport = ToolNetworkTransport { request, timeout ->
@@ -125,7 +125,7 @@ class ToolNetworkProxyTest {
             body = "{\"symbol\":\"TEST\"}".toByteArray(),
             bodyIsJson = true,
             allowedHosts = setOf("api.example.com"),
-            timeoutMillis = 120_000,
+            timeoutMillis = 3_600_000,
             maxResponseBytes = 4 * 1024 * 1024,
         )
 
@@ -133,12 +133,21 @@ class ToolNetworkProxyTest {
         result as NetworkExecution.Success
         assertEquals(401, result.statusCode)
         assertEquals("{\"error\":\"expired\"}", result.body)
-        assertEquals(120_000L, capturedTimeout)
+        assertEquals(3_600_000L, capturedTimeout)
         val capturedRequest = checkNotNull(captured)
         assertEquals(8443, capturedRequest.url.port)
         assertEquals("Bearer test-token", capturedRequest.header("Authorization"))
         assertEquals("POST", capturedRequest.method)
         assertEquals("{\"symbol\":\"TEST\"}", capturedRequest.body?.let(::readBody))
+        assertEquals(
+            NetworkExecution.TerminalFailure("INVALID_TIMEOUT"),
+            proxy.request(
+                url = "https://api.example.com/v1/quote",
+                method = NetworkRequestMethod.GET,
+                allowedHosts = setOf("api.example.com"),
+                timeoutMillis = 3_600_001,
+            ),
+        )
     }
 
     @Test

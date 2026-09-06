@@ -193,6 +193,8 @@ class RuntimeNetworkGatewayTest {
     @Test
     fun longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault() = runTest {
         for ((declared, requested, expected) in listOf(
+            Triple(3_600_000, 3_600_000L, 3_600_000L),
+            Triple(900_000, 3_600_000L, 900_000L),
             Triple(300_000, 300_000L, 300_000L),
             Triple(90_000, 300_000L, 90_000L),
             Triple(300_000, 1_000L, 1_000L),
