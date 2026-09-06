@@ -329,7 +329,7 @@ timeoutMs 可为 1000–600000 毫秒，maxResponseBytes 可为 1024–67108864 
 
 ### 增量读取与取消
 
-ToolBox 0.3.10 起提供 network.openStream、network.readStream 和 network.cancelStream。它们沿用 network 权限、域名、HTTPS、DNS、重定向与 Header 检查，不开放网页直接 fetch。NetworkRequest 的字段不变；openStream 的第二参数可传入 { signal }，用于在等待响应头或正文时取消。依赖流式接口的工具应声明 minHostVersion 为 0.3.10 或更高。
+ToolBox 0.6.0 起提供 network.openStream、network.readStream 和 network.cancelStream。它们沿用 network 权限、域名、HTTPS、DNS、重定向与 Header 检查，不开放网页直接 fetch。NetworkRequest 的字段不变；openStream 的第二参数可传入 { signal }，用于在等待响应头或正文时取消。依赖流式接口的工具应声明 minHostVersion 为 0.6.0 或更高。
 
 openStream 在响应头到达时返回 { streamId, status, headers }，不会先读完整正文。每次顺序调用 readStream 返回 { data: Uint8Array, done, receivedBytes }；数据按需从连接增量读取，每块最多 16 KiB，并按当前消息上限自动缩小。receivedBytes 是累计正文原始字节数，累计上限取请求和 manifest 网络上限中的较小值；每个分段及响应头仍须通过完整编码后的消息预算。HTTP 4xx/5xx 仍返回真实状态。
 

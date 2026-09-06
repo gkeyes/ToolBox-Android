@@ -32,7 +32,7 @@ function errorText(error) {
   if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。单次请求最多等待 5 分钟；连接失败或服务主动断开可能提前结束，请检查网络后重试";
   if (code === "NETWORK_UNAVAILABLE") return "连接或读取响应失败，尚未得到完整结果。请检查网络、代理连接或服务可用性后重试";
   if (code === "INTERNAL_ERROR") return "ToolBox 宿主内部处理失败，请返回工具列表后重新打开，再尝试整理；原始记录未修改";
-  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.3.10 或更新版本中使用";
+  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.6.0 或更新版本中使用";
   return "操作未完成，请重试；原数据仍保留";
 }
 

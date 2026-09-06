@@ -9,7 +9,7 @@
   "entry": "index.html",
   "icon": "icon-v1.0.3.png",
   "apiVersion": "1.0",
-  "minHostVersion": "0.3.10",
+  "minHostVersion": "0.6.0",
   "categories": ["健康", "记录"],
   "permissions": [
     { "name": "storage", "reason": "在本机保存检验记录、档案和偏好", "required": true },

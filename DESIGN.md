@@ -1,6 +1,6 @@
 # ToolBox Android 设计规范
 
-> 版本：基于 0.5.0；Liquid Glass 第二稿摘要见 `design/liquid_glass_v2_reference.md`，下一阶段光学升级见 `design/liquid_glass_v3_upgrade_plan.md`。
+> 版本：基于 0.6.0；Liquid Glass 第二稿摘要见 `design/liquid_glass_v2_reference.md`，下一阶段光学升级见 `design/liquid_glass_v3_upgrade_plan.md`。
 > 按用户要求已撤销自动截图测试/基线门禁；仅保留 debug 的 IDE 手动预览，不再要求更新 golden。
 > 设计系统：Miuix `v0.9.4-rc01` + Haze `1.7.3` + ToolBox 适配层
 > 目标：紧凑、可用、内容优先；不以审核、安全状态或宿主装饰占据工具屏幕。

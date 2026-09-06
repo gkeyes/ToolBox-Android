@@ -4,6 +4,15 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 0.6.0 默认分支收敛（2026-09-06）
+
+- 默认分支统一包含 Liquid Glass、通知品牌图标、系统托管通知文字色、同/低版本安装确认、原生网络
+  流式读取及健康档案 1.0.9。宿主版本为 `0.6.0 (16)`；使用流式接口的小工具最低宿主同步为 0.6.0，
+  防止不含该接口的 0.5.0 被版本比较误判为兼容。
+- 合并后运行网络流 shim、健康档案完整 Node 套件、API 合同、安全不变量、宿主准入用例和优化构建。
+  预期：普通请求收到响应头后仍可取消；流式连接在取消、超时、撤权或会话关闭时释放；主题、安装、
+  通知与既有安全边界不回退。自动截图门禁保持移除，设备表现单独记录。
+
 ## 通知品牌图标与系统托管文字颜色（2026-09-06）
 
 - 实时、普通、恢复、闹钟及延时提醒统一使用透明单色通知小图标；实时通知有工具图时继续显示
@@ -393,7 +402,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
 | GitHub 构建守望 | `github-model.test.js`；`DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，且独立打包检查不能替代宿主真实导入链路，必须保护历史样本、仓库分支选择、只读 API、后台摘要和最终 `.tbx` 可安装性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、仓库分支候选与近期 run 回退、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查与两次可重复打包，校验入口前 4096 字节可由当前已安装宿主完整解码，再把实际产物交给 production `ToolPackageManager` 以宿主 0.3.4 完成一次原子导入。 | 默认分支、仓库分支和近期 run 分支按顺序去重后进入下拉候选；所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；生产安装器返回 `Installed(io.toolbox.githubactionswatcher, 2, false)` 且无临时残留；CI 回执明确 APK、真机和超级岛未执行。 |
-| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.5.0-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
+| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.6.0-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
 
 ## 执行原则
 
@@ -403,14 +412,14 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 - 失败测试不得通过删除断言、降低安全检查或改成静态 UI 来“修绿”；修复后重跑完整相关场景。
 - 每阶段报告必须逐项给出实际命令、理由、方法、预期、实际结果和证据路径；未运行即明确写未运行。
 
-## 0.3.10 原生流式网络回归（2026-09-06）
+## 0.6.0 原生流式网络回归（2026-09-06）
 
 - CI 帮助回归修复：`DeveloperHelpDocumentTest.shippedManualParsesWithReachableChaptersAndCopyableSdk` 的旧预期仍为 28 主题，但流式帮助已增加至 29，导致 `073011c` 的 Android CI `34028563714` 在该断言失败；协议、安全及 Kotlin 编译实际均通过。保留精确数量检查并对齐 29，同时用生产解析器搜索新增主题，检查可复制示例完整保留 open/read/cancel 三个接口。预期：7 章、29 主题全部可达，新示例不被解析为普通段落或丢失清理调用；原层级、搜索、SDK 和损坏围栏断言不变。测试仍为原类内的 3 项，无新增重复测试；本地用同版 Kotlin 2.4.10 / JDK 21 / JUnit 4.13.2 直接运行生产解析器和原测试，完整 Gradle/Android 门禁仍由 GitHub 执行，不代替设备验收。
 - `RuntimeNetworkGatewayTest` 新增 7 项：理由是流式接口必须真实增量读取，同时约束累计容量、会话归属、取消与截止时间。方法是生产 gateway/proxy 配合合成 ResponseBody、阻塞读取、迟到响应头、虚拟时钟和 260 次 EOF/取消循环。预期：不提前读完整正文，12 KiB 正文可分块通过 4 KiB 消息限制；累计超限返回明确错误；取消、到期和关闭释放连接；取消后迟到响应不交付，其他会话不受影响，反复结束不耗尽取消表。
 - `ToolNetworkProxyTest` 新增 1 项：理由是移除流编号不能替代取消底层连接。方法是将未执行的真实 OkHttp Call 在取消前后分别挂接到生产控制器。预期：两种顺序下 Call 均被取消，不发外网请求。
 - `RuntimeRpcDispatcherTest` 新增 4 项：理由是异步读取后仍须复验权限、完整编码预算、原参数规则及速率限制。方法是生产 dispatcher/policy 配合合成 handler，覆盖 4 KiB 桥、128 字符请求编号、过大响应头、重复 open 的 BUSY、1000/1001 次 read 和 120/121 次普通请求。预期：失效授权的数据不交付，外会话取消无效，分块不超预算，过大 open 被清理，BUSY 不取消原流；普通请求原限额保持。
 - `tool-runtime/src/test/js/network-stream.test.mjs` 新增 4 项：理由是需要验证网页真正使用的文档起始桥，而非另造一套模拟 API。方法是将生产 shim 原文放入 Node vm，分段回复桥消息，回放 AbortController、迟到响应、pagehide、预先取消和重叠 read 失败。预期：返回 Uint8Array；响应头等待可取消；迟到结果拒绝；预先取消不开流；BUSY 保留原流的取消监听。
-- 执行：上述 Kotlin 用例包含在已有宿主最小 JVM 类集合内；实际 shim 通过 `node --test tool-runtime/src/test/js/network-stream.test.mjs` 执行，已纳入 Android CI。另核验协议哈希、SDK/离线帮助同步与安全不变量。不将模拟桥/JVM 成功视为 Android 真机验收；本次分支推送只重跑轻量检查，不重新构建 APK。
+- 执行：上述 Kotlin 用例包含在已有宿主最小 JVM 类集合内；实际 shim 通过 `node --test tool-runtime/src/test/js/network-stream.test.mjs` 执行，已纳入 Android CI。另核验协议哈希、SDK/离线帮助同步与安全不变量，并在默认分支重新执行优化 APK 构建。不将模拟桥/JVM 成功视为 Android 真机验收。
 
 ## 0.3.8 同签名 release 与体积优化（2026-09-04）
 
