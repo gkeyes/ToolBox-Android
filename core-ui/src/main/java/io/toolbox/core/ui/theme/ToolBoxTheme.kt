@@ -113,9 +113,15 @@ data class ToolBoxSizes(
 @Immutable
 data class ToolBoxMaterialTokens(
     val realBlurEnabled: Boolean,
+    val topEdgeFadeEnabled: Boolean,
+    val navigationLensEnabled: Boolean,
+    val pressFeedbackEnabled: Boolean,
     val glassTint: Color,
     val glassFallback: Color,
     val glassBorder: Color,
+    val navigationSelectionTint: Color,
+    val navigationSelectionHighlight: Color,
+    val navigationSelectionBorder: Color,
     val blurRadius: Dp,
     val noiseFactor: Float,
 )
@@ -195,9 +201,15 @@ private val LocalToolBoxRadii = staticCompositionLocalOf { MiuixRadii }
 private val LocalToolBoxMaterials = staticCompositionLocalOf {
     ToolBoxMaterialTokens(
         realBlurEnabled = false,
+        topEdgeFadeEnabled = false,
+        navigationLensEnabled = false,
+        pressFeedbackEnabled = false,
         glassTint = Color.White,
         glassFallback = Color.White,
         glassBorder = Color.Transparent,
+        navigationSelectionTint = Color.Transparent,
+        navigationSelectionHighlight = Color.Transparent,
+        navigationSelectionBorder = Color.Transparent,
         blurRadius = 24.dp,
         noiseFactor = 0f,
     )
@@ -460,9 +472,15 @@ internal fun liquidGlassMaterials(
     reduceTransparency: Boolean,
 ) = ToolBoxMaterialTokens(
     realBlurEnabled = enabled && !reduceTransparency,
+    topEdgeFadeEnabled = enabled && !reduceTransparency,
+    navigationLensEnabled = enabled,
+    pressFeedbackEnabled = enabled,
     glassTint = colors.surface.copy(alpha = if (dark) 0.66f else 0.72f),
     glassFallback = colors.surface,
     glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
+    navigationSelectionTint = colors.primary.copy(alpha = if (dark) 0.20f else 0.11f),
+    navigationSelectionHighlight = Color.White.copy(alpha = if (dark) 0.16f else 0.74f),
+    navigationSelectionBorder = Color.White.copy(alpha = if (dark) 0.20f else 0.88f),
     blurRadius = 24.dp,
     noiseFactor = 0.035f,
 )

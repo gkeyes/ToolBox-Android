@@ -4,6 +4,20 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 0.5.0 Liquid Glass 光学升级（2026-09-06）
+
+- 工具与设置改为一个常驻一级外壳，Haze state、背景采集节点、顶栏和底栏在切页时保持身份；
+  页面只替换内容，继续保留搜索、工具列表滚动和 ViewModel 状态。
+- 顶栏增加只作用于实时玻璃的下缘渐隐；底栏增加滑动选中透镜和按压回弹。透镜不重复采样背景，
+  两个目的地继续各占一半宽度，命中区不随动画缩放。降低透明度时顶栏使用稳定实底。
+
+| 检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` | 一级导航由两个页面外壳改为一个常驻外壳，必须继续保护设置、外观、返回、工具生命周期和状态所有权。 | 运行 production 导航旅程，在工具与设置之间切换，再进入外观页并返回，继续安装、权限、运行和删除。 | 两个目的地与二级路由均可达；返回语义和完整工具流程不变。 |
+| `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 滑动透镜不能改变目的地的等分布局、64dp 内容高度或 48dp 命中区。 | 在 360dp、200% 字体下读取两个 production 底栏项边界与标签。 | 两项均可达，宽高至少 48dp，内容高度仍为 64dp；动画只改变视觉内容。 |
+| `ToolBoxContrastTest.reduceTransparencyUsesTheSameOpaqueMaterialFallback` 扩展 | 顶栏渐隐只应出现在实时玻璃，降低透明度不能留下透明下缘；选中提示仍需存在。 | 比较正常与降低透明度的 production 材质 token。 | 正常启用实时模糊和渐隐；降低透明度关闭两者并保留同色 opaque fallback、选中透镜和按压反馈。 |
+| `manual-liquid-glass-v3` | JVM/语义测试不能证明真实模糊连续性、渐隐边缘、滑动透镜或按压观感。 | 在 API 35 模拟器操作工具/设置连续切换、按住两个目的地、滚动内容、开关降低透明度，并检查浅深色；HyperOS 真机复查相同路径。 | 外壳不闪白/灰、不出现双标题；透镜在等宽区域之间移动且不推挤图标文字；顶栏边缘自然；实底模式稳定。模拟器结果不代替 OEM 性能数据。 |
+
 ## 0.4.1 一级页签切换闪烁修正（2026-09-06）
 
 - 工具与设置的稳定顶栏都为白色；原 160ms 整页透明度交叉淡入会在中间帧露出下层
@@ -370,7 +384,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 | 范例打包 | `scripts/package-examples.sh` 可重复性检查 | APK 必须内置四个可重复生成的 `.tbx`，其中通知实验室用于真机验证通知通道。 | 对同一工作树连续运行两次打包脚本并比较 SHA-256；检查 APK assets 中存在四个名称，不把 `.tbx` 复制进最终交付目录。 | 两次哈希一致，四个范例都在 APK assets；最终产物不出现独立 `.tbx`。 |
 | 行情哨兵摘要与打包 | `live-summary.test.js`；`examples/stock-monitor/package.sh` 可重复性检查 | 防止多股票实时通知只显示第一只或重复股票名，并确保独立 `.tbx` 可复验。 | Node 回归测试输入两只启用股票，检查标题数量、两只摘要及正文唯一性；随后 `node --check` 并连续打包两次比较 SHA-256，检查 manifest、integrity、ZIP 内容。 | 通知报告 2 只且每只只出现一次；两次包哈希一致；版本为 1.1.1 (3)、`minHostVersion=0.3.2`；ZIP 只含声明文件并使用 `notifications.live`。 |
 | GitHub 构建守望 | `github-model.test.js`；`DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`；`examples/github-actions-watcher/package.sh`；`GitHub Actions Watcher TBX` | 百分比是本工具估算而非 GitHub 原生字段，且独立打包检查不能替代宿主真实导入链路，必须保护历史样本、仓库分支选择、只读 API、后台摘要和最终 `.tbx` 可安装性。 | 固定 fixtures 覆盖仓库/Actions/workflow 链接、分页、仓库分支候选与近期 run 回退、workflow/分支过滤、1–10 次及淘汰最旧样本、缺失与矩阵 step、并行 job、单调 98% 上限、终态 100%、rerun 重置、多 run 优先级、错误/限流状态和通知摘要；执行 JS 语法检查与两次可重复打包，校验入口前 4096 字节可由当前已安装宿主完整解码，再把实际产物交给 production `ToolPackageManager` 以宿主 0.3.4 完成一次原子导入。 | 默认分支、仓库分支和近期 run 分支按顺序去重后进入下拉候选；所有模型边界稳定；只访问 `api.github.com` 的只读接口；活动构建通知内容不重复错位；两个包 SHA-256 一致；生产安装器返回 `Installed(io.toolbox.githubactionswatcher, 2, false)` 且无临时残留；CI 回执明确 APK、真机和超级岛未执行。 |
-| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.4.1-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
+| CI 交付 | `artifact-gate-receipt` | 防止未过门禁的、可调试的或签名变化的 APK 交付，也保护混淆后旧后台任务的类名和内置资源。 | Actions 按 verify → delivery 运行；Secrets 恢复固定 keystore 后构建 release，比较 APK 证书指纹；aapt 核对包名/版本且无 debuggable 标记，检查 R8 mapping 非空且持久化 Worker 类名不变；逐字节比较 APK 内四例和帮助，生成 `toolbox-v0.5.0-release.apk`、SHA256 与同提交回执。 | 任一保留门禁、签名、优化产物或资源检查失败时不交付；APK 可验证为非调试同签名产物，不另交付 `.tbx`；映射单独归档。回执明确设备、混淆后实际运行和超级岛未验证，不以 debug JVM/截图结果冒充 release 真机结果。 |
 
 ## 执行原则
 

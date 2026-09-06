@@ -1,6 +1,6 @@
 # ToolBox Android 设计规范
 
-> 版本：基于 0.4.1；Liquid Glass 第二稿摘要见 `design/liquid_glass_v2_reference.md`，下一阶段光学升级见 `design/liquid_glass_v3_upgrade_plan.md`。
+> 版本：基于 0.5.0；Liquid Glass 第二稿摘要见 `design/liquid_glass_v2_reference.md`，下一阶段光学升级见 `design/liquid_glass_v3_upgrade_plan.md`。
 > 按用户要求已撤销自动截图测试/基线门禁；仅保留 debug 的 IDE 手动预览，不再要求更新 golden。
 > 设计系统：Miuix `v0.9.4-rc01` + Haze `1.7.3` + ToolBox 适配层
 > 目标：紧凑、可用、内容优先；不以审核、安全状态或宿主装饰占据工具屏幕。
@@ -96,7 +96,9 @@ Monet 对主/危险按钮文字执行对比度检查，低于 4.5:1 时采用更
 | `glassTint` | `surface / 72%` | `surface / 66%` | 原生导航与局部悬浮操作 |
 
 Liquid Glass 一级标题为 34sp，正文 17sp，辅助文字 13sp；分组圆角 20dp、卡片 22dp、
-控件 16dp。Haze 模糊半径 24dp，只采集同一原生页面的内容层。一个页面共享一个采集状态；
+控件 16dp。Haze 模糊半径 24dp，只采集原生内容层。工具与设置共用一套常驻一级外壳和采集状态，
+切页只替换内容，不重新创建顶栏、底栏或背景源。顶栏材质在下缘渐隐；底栏选中项使用不嵌套模糊的
+高光透镜，在两个等宽区域之间移动，按压反馈只缩放内容而不改变命中区和布局。
 降低透明度、硬件加速不可用、页面被覆盖或转场未完成时停止采集并使用同色不透明材质。
 运行顶栏沿用同一几何和颜色，但只使用实色材质，不采集 WebView。
 
@@ -265,8 +267,9 @@ Developer Help 从 `sdk/help/manual.md` 离线读取同一份开发手册；仓�
 - 工具、设置、权限分组：Miuix surface/card + ToolBox `GroupedSurface`。
 - 权限与后台开关：Miuix preference switch + ToolBox `ToolBoxSwitchSettingRow`。
 - 菜单、删除确认、失败反馈：清晰 surface 上的 Miuix menu/dialog/snackbar，不使用内容玻璃。
-- 一级页面栈使用 `miuix-nav`；二级页面使用独立且类型一致的 `ToolBoxRoute` back stack，并由
-  ToolBox 常驻分层宿主渲染，不接入第二套 Navigation3，也不让库转场同时重组前后两张完整页面。
+- 一级工具/设置由一个常驻 `PrimaryScreen` 直接切换内容，并保留原主目的地返回语义；二级页面使用
+  独立且类型一致的 `ToolBoxRoute` back stack，并由 ToolBox 常驻分层宿主渲染，不接入第二套
+  Navigation3，也不让库转场同时重组前后两张完整页面。
 
 适配层负责版本差异、语义、inset 和组件默认值；业务页面不得直接依赖大量第三方 API。
 

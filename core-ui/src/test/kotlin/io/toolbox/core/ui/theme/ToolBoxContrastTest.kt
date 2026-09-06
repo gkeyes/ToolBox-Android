@@ -55,6 +55,12 @@ class ToolBoxContrastTest {
         val solid = liquidGlassMaterials(colors, dark = false, enabled = true, reduceTransparency = true)
         assertTrue(glass.realBlurEnabled)
         assertTrue(!solid.realBlurEnabled)
+        assertTrue(glass.topEdgeFadeEnabled)
+        assertTrue(!solid.topEdgeFadeEnabled)
+        assertTrue(glass.navigationLensEnabled)
+        assertTrue(solid.navigationLensEnabled)
+        assertTrue(glass.pressFeedbackEnabled)
+        assertTrue(solid.pressFeedbackEnabled)
         assertEquals(glass.glassFallback, solid.glassFallback)
         assertEquals(1f, solid.glassFallback.alpha)
     }

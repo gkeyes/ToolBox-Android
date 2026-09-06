@@ -9,9 +9,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -61,6 +65,8 @@ fun Modifier.toolBoxGlassEffect(
     state: ToolBoxGlassState,
     shape: Shape,
     blurAllowed: Boolean = true,
+    mask: Brush? = null,
+    borderWidth: Dp = 0.75.dp,
 ): Modifier {
     val style = ToolBoxThemeTokens.style
     val materials = ToolBoxThemeTokens.materials
@@ -78,8 +84,39 @@ fun Modifier.toolBoxGlassEffect(
     return clip(shape)
         .hazeEffect(state = state.hazeState, style = hazeStyle) {
             blurEnabled = materials.realBlurEnabled && glassActive && blurAllowed && hardwareAccelerated
+            this.mask = mask
         }
-        .border(0.75.dp, materials.glassBorder, shape)
+        .then(
+            if (borderWidth > 0.dp) {
+                Modifier.border(borderWidth, materials.glassBorder, shape)
+            } else {
+                Modifier
+            },
+        )
+}
+
+@Composable
+fun Modifier.toolBoxTopGlassEffect(state: ToolBoxGlassState): Modifier {
+    val materials = ToolBoxThemeTokens.materials
+    val canRenderLiveGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass &&
+        materials.realBlurEnabled &&
+        materials.topEdgeFadeEnabled &&
+        LocalToolBoxGlassActive.current &&
+        LocalView.current.isHardwareAccelerated
+    if (!canRenderLiveGlass) return toolBoxSolidGlass(RectangleShape)
+
+    return toolBoxGlassEffect(
+        state = state,
+        shape = RectangleShape,
+        mask = Brush.verticalGradient(
+            colorStops = arrayOf(
+                0f to Color.Black,
+                0.74f to Color.Black,
+                1f to Color.Transparent,
+            ),
+        ),
+        borderWidth = 0.dp,
+    )
 }
 
 @Composable

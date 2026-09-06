@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.4.1 (14)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.5.0 (15)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -391,7 +391,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.4.1 (14) 上传 `toolbox-v0.4.1-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.5.0 (15) 上传 `toolbox-v0.5.0-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

@@ -71,144 +71,177 @@ internal fun ToolManagerScreen(
     onCancelImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
 ) {
-    val confirmation = importState.confirmation
     PrimaryScreen(
         selected = MainDestination.Tools,
         onDestination = onDestination,
         title = "工具",
         onImport = onImport,
     ) { padding, layout ->
-        val recentLimit = if (layout.isCompact) COMPACT_RECENT_TOOL_COUNT else 3
-        val recentTools = state.recentTools.take(recentLimit)
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
+        ToolManagerContent(
+            state = state,
+            importState = importState,
+            listState = listState,
             contentPadding = padding,
-        ) {
-            item("search") {
-                ToolBoxSearchField(
-                    value = state.query,
-                    onValueChange = { onAction(CatalogAction.SetQuery(it)) },
-                    placeholder = "搜索工具",
+            layout = layout,
+            onAction = onAction,
+            onImport = onImport,
+            onInstallExamples = onInstallExamples,
+            onDismissImport = onDismissImport,
+            onOpenDetails = onOpenDetails,
+            onConfirmImport = onConfirmImport,
+            onCancelImport = onCancelImport,
+            runningTools = runningTools,
+        )
+    }
+}
+
+@Composable
+internal fun ToolManagerContent(
+    state: CatalogUiState,
+    importState: ImportUiState,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    layout: HostRouteLayout,
+    onAction: (CatalogAction) -> Unit,
+    onImport: () -> Unit,
+    onInstallExamples: () -> Unit,
+    onDismissImport: () -> Unit,
+    onOpenDetails: (String) -> Unit,
+    onConfirmImport: () -> Unit = {},
+    onCancelImport: () -> Unit = {},
+    runningTools: @Composable () -> Unit = {},
+) {
+    val confirmation = importState.confirmation
+    val recentLimit = if (layout.isCompact) COMPACT_RECENT_TOOL_COUNT else 3
+    val recentTools = state.recentTools.take(recentLimit)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+    ) {
+        item("search") {
+            ToolBoxSearchField(
+                value = state.query,
+                onValueChange = { onAction(CatalogAction.SetQuery(it)) },
+                placeholder = "搜索工具",
+            )
+        }
+        item("after-search") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+
+        if (importState.working || importState.message != null) {
+            item("import-feedback") {
+                FeedbackSurface(
+                    message = if (importState.working) "正在检查并安装工具…" else requireNotNull(importState.message),
+                    tone = when {
+                        importState.working -> FeedbackTone.Progress
+                        importState.succeeded -> FeedbackTone.Success
+                        else -> FeedbackTone.Error
+                    },
+                    dismissible = !importState.working,
+                    onDismiss = onDismissImport,
+                    modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
                 )
             }
-            item("after-search") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
-
-            if (importState.working || importState.message != null) {
-                item("import-feedback") {
-                    FeedbackSurface(
-                        message = if (importState.working) "正在检查并安装工具…" else requireNotNull(importState.message),
-                        tone = when {
-                            importState.working -> FeedbackTone.Progress
-                            importState.succeeded -> FeedbackTone.Success
-                            else -> FeedbackTone.Error
-                        },
-                        dismissible = !importState.working,
-                        onDismiss = onDismissImport,
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
-                    )
-                }
-            }
-            state.feedback?.let { feedback ->
-                item("catalog-feedback") {
-                    FeedbackSurface(
-                        message = feedback.message,
-                        tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
-                        dismissible = true,
-                        onDismiss = { onAction(CatalogAction.DismissFeedback) },
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
-                    )
-                }
-            }
-
-            item("running-tools", contentType = "running-tools") { runningTools() }
-
-            when {
-                !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }
-                state.tools.isEmpty() -> item("empty") { EmptyCatalogState(onImport, onInstallExamples) }
-                state.visibleTools.isEmpty() -> {
-                    item("installed-title") { SectionHeader("搜索结果 · 0") }
-                    item("no-match") { CatalogStatusState("没有匹配的工具") }
-                }
-                else -> {
-                    if (!state.isSearching && recentTools.isNotEmpty()) {
-                        item("recent-title") { SectionHeader("最近使用") }
-                        item("before-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-                        item("recent-tools", contentType = "recent-tools") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-                            ) {
-                                recentTools.forEach { tool ->
-                                    CatalogRecentCard(
-                                        tool = tool,
-                                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                                repeat(recentLimit - recentTools.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
-                        item("after-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-                    }
-                    item("installed-title") {
-                        SectionHeader(
-                            if (state.isSearching) "搜索结果 · ${state.visibleTools.size}"
-                            else "全部工具 · ${state.tools.size}",
-                        )
-                    }
-                    item("before-tools") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-                    itemsIndexed(
-                        items = state.visibleTools,
-                        key = { _, tool -> tool.toolId },
-                        contentType = { _, _ -> "tool" },
-                    ) { index, tool ->
-                        CatalogToolRow(
-                            tool = tool,
-                            isFirst = index == 0,
-                            isLast = index == state.visibleTools.lastIndex,
-                            onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                            onDetails = { onOpenDetails(tool.toolId) },
-                        )
-                    }
-                }
+        }
+        state.feedback?.let { feedback ->
+            item("catalog-feedback") {
+                FeedbackSurface(
+                    message = feedback.message,
+                    tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
+                    dismissible = true,
+                    onDismiss = { onAction(CatalogAction.DismissFeedback) },
+                    modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
+                )
             }
         }
 
-        OverlayDialog(
-            show = confirmation != null,
-            title = when (confirmation?.kind) {
-                HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
-                HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
-                null -> null
-            },
-            summary = confirmation?.let {
-                val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
-                val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
-                if (it.kind == HostImportConfirmationKind.SAME_VERSION) {
-                    "${it.toolName} 当前为 $installed，待安装为 $incoming，两者 versionCode 相同。继续会覆盖现有工具文件，并停止其运行和后台任务；普通存储与仍有效的权限选择会保留。"
-                } else {
-                    "${it.toolName} 当前为 $installed，待安装为 $incoming。较低版本可能无法读取新版数据；继续会停止其运行和后台任务，普通存储与仍有效的权限选择会保留。"
-                }
-            },
-            onDismissRequest = onCancelImport,
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-            ) {
-                ToolBoxTextButton(
-                    label = "取消",
-                    onClick = onCancelImport,
-                    modifier = Modifier.weight(1f),
-                    contentColor = ToolBoxThemeTokens.colors.textPrimary,
-                )
-                ToolBoxPrimaryButton(
-                    label = if (confirmation?.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
-                    onClick = onConfirmImport,
-                    modifier = Modifier.weight(1f),
-                )
+        item("running-tools", contentType = "running-tools") { runningTools() }
+
+        when {
+            !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }
+            state.tools.isEmpty() -> item("empty") { EmptyCatalogState(onImport, onInstallExamples) }
+            state.visibleTools.isEmpty() -> {
+                item("installed-title") { SectionHeader("搜索结果 · 0") }
+                item("no-match") { CatalogStatusState("没有匹配的工具") }
             }
+            else -> {
+                if (!state.isSearching && recentTools.isNotEmpty()) {
+                    item("recent-title") { SectionHeader("最近使用") }
+                    item("before-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                    item("recent-tools", contentType = "recent-tools") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+                        ) {
+                            recentTools.forEach { tool ->
+                                CatalogRecentCard(
+                                    tool = tool,
+                                    onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            repeat(recentLimit - recentTools.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                    item("after-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                }
+                item("installed-title") {
+                    SectionHeader(
+                        if (state.isSearching) "搜索结果 · ${state.visibleTools.size}"
+                        else "全部工具 · ${state.tools.size}",
+                    )
+                }
+                item("before-tools") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                itemsIndexed(
+                    items = state.visibleTools,
+                    key = { _, tool -> tool.toolId },
+                    contentType = { _, _ -> "tool" },
+                ) { index, tool ->
+                    CatalogToolRow(
+                        tool = tool,
+                        isFirst = index == 0,
+                        isLast = index == state.visibleTools.lastIndex,
+                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                        onDetails = { onOpenDetails(tool.toolId) },
+                    )
+                }
+            }
+        }
+    }
+
+    OverlayDialog(
+        show = confirmation != null,
+        title = when (confirmation?.kind) {
+            HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
+            HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
+            null -> null
+        },
+        summary = confirmation?.let {
+            val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
+            val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
+            if (it.kind == HostImportConfirmationKind.SAME_VERSION) {
+                "${it.toolName} 当前为 $installed，待安装为 $incoming，两者 versionCode 相同。继续会覆盖现有工具文件，并停止其运行和后台任务；普通存储与仍有效的权限选择会保留。"
+            } else {
+                "${it.toolName} 当前为 $installed，待安装为 $incoming。较低版本可能无法读取新版数据；继续会停止其运行和后台任务，普通存储与仍有效的权限选择会保留。"
+            }
+        },
+        onDismissRequest = onCancelImport,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+        ) {
+            ToolBoxTextButton(
+                label = "取消",
+                onClick = onCancelImport,
+                modifier = Modifier.weight(1f),
+                contentColor = ToolBoxThemeTokens.colors.textPrimary,
+            )
+            ToolBoxPrimaryButton(
+                label = if (confirmation?.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
+                onClick = onConfirmImport,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

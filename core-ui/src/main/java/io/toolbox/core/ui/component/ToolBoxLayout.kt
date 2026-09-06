@@ -1,9 +1,17 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,11 +21,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
@@ -27,8 +37,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -146,7 +161,7 @@ fun ToolBoxTopBar(
     }
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val barModifier = when {
-        glassState != null -> modifier.toolBoxGlassEffect(glassState, RectangleShape)
+        isGlass && glassState != null -> modifier.toolBoxTopGlassEffect(glassState)
         isGlass -> modifier.toolBoxSolidGlass(RectangleShape)
         else -> modifier
     }
@@ -202,7 +217,7 @@ fun ToolBoxLargeTopBar(
 ) {
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val barModifier = when {
-        glassState != null -> modifier.toolBoxGlassEffect(glassState, RectangleShape)
+        isGlass && glassState != null -> modifier.toolBoxTopGlassEffect(glassState)
         isGlass -> modifier.toolBoxSolidGlass(RectangleShape)
         else -> modifier
     }
@@ -337,6 +352,7 @@ private fun LiquidGlassNavigationBar(
     glassState: ToolBoxGlassState?,
     navigationShape: RoundedCornerShape,
 ) {
+    if (items.isEmpty()) return
     val surfaceModifier = modifier
         .windowInsetsPadding(WindowInsets.navigationBars)
         .padding(
@@ -351,49 +367,110 @@ private fun LiquidGlassNavigationBar(
             }
         }
 
-    Row(
+    BoxWithConstraints(
         modifier = surfaceModifier
             .fillMaxWidth()
             .height(64.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items.forEach { item ->
-            val isSelected = item.id == selectedId
-            val color = if (isSelected) {
-                ToolBoxThemeTokens.colors.textPrimary
-            } else {
-                ToolBoxThemeTokens.colors.textSecondary
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
+        val itemWidth = maxWidth / items.size
+        val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+        val selectionOffset by animateDpAsState(
+            targetValue = itemWidth * selectedIndex,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "navigation selection lens",
+        )
+        val materials = ToolBoxThemeTokens.materials
+        val selectionShape = RoundedCornerShape(ToolBoxThemeTokens.radii.full)
+        if (materials.navigationLensEnabled) {
+            Box(
+                Modifier
+                    .offset(x = selectionOffset)
+                    .width(itemWidth)
                     .fillMaxHeight()
-                    .selectable(
-                        selected = isSelected,
-                        role = Role.Tab,
-                        onClick = { onItemSelected(item) },
+                    .padding(horizontal = 5.dp, vertical = 5.dp)
+                    .clip(selectionShape)
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                materials.navigationSelectionHighlight,
+                                materials.navigationSelectionTint,
+                                materials.navigationSelectionTint,
+                            ),
+                        ),
                     )
-                    .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
-                    .semantics { contentDescription = item.label },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                ToolBoxIcon(
-                    icon = item.icon,
-                    contentDescription = null,
-                    tint = color,
-                )
-                Spacer(Modifier.height(2.dp))
-                ToolBoxText(
-                    text = item.label,
-                    style = ToolBoxThemeTokens.textStyles.label.copy(
-                        color = color,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    ),
-                    maxLines = 1,
+                    .border(0.75.dp, materials.navigationSelectionBorder, selectionShape),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEach { item ->
+                LiquidGlassNavigationItem(
+                    item = item,
+                    selected = item.id == selectedId,
+                    onClick = { onItemSelected(item) },
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.LiquidGlassNavigationItem(
+    item: ToolBoxNavigationItem,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressFeedbackEnabled = ToolBoxThemeTokens.materials.pressFeedbackEnabled
+    val contentScale by animateFloatAsState(
+        targetValue = if (pressed && pressFeedbackEnabled) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "navigation item press",
+    )
+    val color = if (selected) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.colors.textSecondary
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .selectable(
+                selected = selected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
+            .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
+            .semantics { contentDescription = item.label }
+            .graphicsLayer {
+                scaleX = contentScale
+                scaleY = contentScale
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ToolBoxIcon(
+            icon = item.icon,
+            contentDescription = null,
+            tint = color,
+        )
+        Spacer(Modifier.height(2.dp))
+        ToolBoxText(
+            text = item.label,
+            style = ToolBoxThemeTokens.textStyles.label.copy(
+                color = color,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            maxLines = 1,
+        )
     }
 }
 
