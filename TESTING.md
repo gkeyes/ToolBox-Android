@@ -55,6 +55,7 @@
 - `ManifestValidatorTest.networkTimeoutAcceptsThe60MinuteCeilingAndRequiresACompatibleHost`：理由是 manifest 校验是工具实际可安装的第一层上限，不能只放宽网页或代理。方法是直接解析生产 manifest，接受 3600000，拒绝 3600001，并拒绝在 minHostVersion 低于 0.3.11 时声明超过 600000。预期：60 分钟声明保留原值，越界包或旧宿主不兼容的长等待包在安装前稳定拒绝。
 - `RuntimeRpcDispatcherTest.m2MethodsUseTypedNativeHandlersAndContractValues`、`ToolNetworkProxyTest.declaredHttpsPostAllowsCustomPortHeadersHttpErrorResponseAndMaximumTimeout` 和 `RuntimeNetworkGatewayTest.longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault`：理由是网页参数、原生代理和流式会话必须使用同一上限。方法是生产 dispatcher、proxy 和 gateway 分别传入 3600000，并验证 3600001 被拒绝、900000 的小工具声明仍截断 3600000 的请求、默认仍为 30000。预期：60 分钟仅是宿主上限；每个小工具按自身 manifest 与请求值独立收紧，连接建立仍为 10 秒。
 - 健康档案 Node 回归会同时验证普通 AI、MiniMax 实时流和真实页面识别路径均传入 900000；打包后的 manifest 必须为 version 1.0.10、versionCode 11、minHostVersion 0.3.11、network.timeoutMs 900000。
+- 截图基准同步：GitHub Android CI `34044199346` 的 17 张渲染中，15 张与原基准逐像素一致；仅 `SettingsScreenshot_Settings` 和 `MediumSettingsDarkScreenshot_Medium settings dark` 失败。逐像素差异分别为 339 与 208 个像素，且边界框只覆盖页面底部版本文本；人工查看原图、实际图和差异图，确认仅 `0.3.10 → 0.3.11`。只采用该次 CI 的两张实际渲染更新对应 reference，生产页面、预览夹具、阈值和其余 15 张基准不变；随后重新运行完整门禁。
 
 ## 0.3.10 原生流式网络回归（2026-09-06）
 
