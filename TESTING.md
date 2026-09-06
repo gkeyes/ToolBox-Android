@@ -405,6 +405,7 @@ Android/Kotlin 构建、上述 JVM/仪器测试、合并 manifest、真实 trace
 
 ## 0.3.10 原生流式网络回归（2026-09-06）
 
+- CI 帮助回归修复：`DeveloperHelpDocumentTest.shippedManualParsesWithReachableChaptersAndCopyableSdk` 的旧预期仍为 28 主题，但流式帮助已增加至 29，导致 `073011c` 的 Android CI `34028563714` 在该断言失败；协议、安全及 Kotlin 编译实际均通过。保留精确数量检查并对齐 29，同时用生产解析器搜索新增主题，检查可复制示例完整保留 open/read/cancel 三个接口。预期：7 章、29 主题全部可达，新示例不被解析为普通段落或丢失清理调用；原层级、搜索、SDK 和损坏围栏断言不变。测试仍为原类内的 3 项，无新增重复测试；本地用同版 Kotlin 2.4.10 / JDK 21 / JUnit 4.13.2 直接运行生产解析器和原测试，完整 Gradle/Android 门禁仍由 GitHub 执行，不代替设备验收。
 - `RuntimeNetworkGatewayTest` 新增 7 项：理由是流式接口必须真实增量读取，同时约束累计容量、会话归属、取消与截止时间。方法是生产 gateway/proxy 配合合成 ResponseBody、阻塞读取、迟到响应头、虚拟时钟和 260 次 EOF/取消循环。预期：不提前读完整正文，12 KiB 正文可分块通过 4 KiB 消息限制；累计超限返回明确错误；取消、到期和关闭释放连接；取消后迟到响应不交付，其他会话不受影响，反复结束不耗尽取消表。
 - `ToolNetworkProxyTest` 新增 1 项：理由是移除流编号不能替代取消底层连接。方法是将未执行的真实 OkHttp Call 在取消前后分别挂接到生产控制器。预期：两种顺序下 Call 均被取消，不发外网请求。
 - `RuntimeRpcDispatcherTest` 新增 4 项：理由是异步读取后仍须复验权限、完整编码预算、原参数规则及速率限制。方法是生产 dispatcher/policy 配合合成 handler，覆盖 4 KiB 桥、128 字符请求编号、过大响应头、重复 open 的 BUSY、1000/1001 次 read 和 120/121 次普通请求。预期：失效授权的数据不交付，外会话取消无效，分块不超预算，过大 open 被清理，BUSY 不取消原流；普通请求原限额保持。
