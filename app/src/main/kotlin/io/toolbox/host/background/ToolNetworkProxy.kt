@@ -328,10 +328,10 @@ class ToolNetworkProxy private constructor(
     }
 
     private companion object {
-        const val USER_AGENT = "ToolBox/0.6.0 (Android)"
+        const val USER_AGENT = "ToolBox/0.6.1 (Android)"
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
-        const val MAX_TIMEOUT_MILLIS = 600_000L
+        const val MAX_TIMEOUT_MILLIS = 3_600_000L
         const val DEFAULT_RESPONSE_BYTES = 4 * 1_024 * 1_024
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1_024 * 1_024
         const val DEFAULT_MAX_REDIRECTS = 5

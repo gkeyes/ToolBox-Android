@@ -193,6 +193,8 @@ class RuntimeNetworkGatewayTest {
     @Test
     fun longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault() = runTest {
         for ((declared, requested, expected) in listOf(
+            Triple(3_600_000, 3_600_000L, 3_600_000L),
+            Triple(900_000, 3_600_000L, 900_000L),
             Triple(300_000, 300_000L, 300_000L),
             Triple(90_000, 300_000L, 90_000L),
             Triple(300_000, 1_000L, 1_000L),
@@ -207,8 +209,17 @@ class RuntimeNetworkGatewayTest {
                 policy = InstalledManifestNetwork(setOf("api.github.com"), false, 4_096, declared),
                 bridgePayloadBytes = 4_096,
             )
-            assertEquals(200, gateway.request(request(4_096).copy(timeoutMillis = requested)).status)
-            assertEquals(expected, actualTimeout)
+            try {
+                val options = request(4_096).copy(timeoutMillis = requested)
+                assertEquals(200, gateway.request(options).status)
+                assertEquals(expected, actualTimeout)
+                actualTimeout = 0L
+                assertEquals(200, gateway.openStream(streamId(1), options).status)
+                assertEquals(expected, actualTimeout)
+                gateway.cancelStream(streamId(1))
+            } finally {
+                gateway.close()
+            }
         }
     }
 

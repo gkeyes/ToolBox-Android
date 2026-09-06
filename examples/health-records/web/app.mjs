@@ -29,10 +29,10 @@ function errorText(error) {
   if (code === "QUOTA_EXCEEDED") return "超出 ToolBox 存储或传输限额，请减少文件大小或导出部分年份";
   if (["CANCELLED", "SESSION_ENDED"].includes(code)) return "操作已取消";
   if (code === "NETWORK_BLOCKED") return "网络被宿主安全策略阻止，请确认网络权限；仅支持所选 Gemini 或 MiniMax 的官方域名";
-  if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。单次请求最多等待 5 分钟；连接失败或服务主动断开可能提前结束，请检查网络后重试";
+  if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。单次请求最多等待 15 分钟；连接失败或服务主动断开可能提前结束，请检查网络后重试";
   if (code === "NETWORK_UNAVAILABLE") return "连接或读取响应失败，尚未得到完整结果。请检查网络、代理连接或服务可用性后重试";
   if (code === "INTERNAL_ERROR") return "ToolBox 宿主内部处理失败，请返回工具列表后重新打开，再尝试整理；原始记录未修改";
-  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.6.0 或更新版本中使用";
+  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.6.1 或更新版本中使用";
   return "操作未完成，请重试；原数据仍保留";
 }
 
@@ -298,7 +298,7 @@ function minePage() {
       settingsRow("记录天数", "按年查看每月记录天数，同一天不重复计数", "calendar", () => navigate("calendar"))),
     sectionHeading("辅助整理"), h("div", { class: "surface" }, settingsRow("AI 资料助手", "识别、摘要、追溯；每次发送前由你确认", "spark", () => navigate("ai")), settingsRow("AI 设置", "MiniMax / Gemini；密钥单独安全保存", "settings", () => navigate("ai-settings"))),
     sectionHeading("外观"), themes,
-    h("p", { class: "privacy-note" }, "健康档案 1.0.9 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
+    h("p", { class: "privacy-note" }, "健康档案 1.0.10 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
     button("清空健康记录", () => ask("清空所有健康记录？", "将清空检验记录、个人档案、摘要和指标库。AI 密钥与外观设置保留。此操作不可撤销，请先备份。", "确认清空", async () => { await persist((draft) => ({ ...emptyArchive(), settings: draft.settings })); render(); toast("健康记录已清空，已有导出备份不受影响"); }, true), "button danger full"));
 }
 
@@ -485,7 +485,7 @@ function prepareAi(mode) {
   const payload = historyState ? historyState.plan.batches : aiPayload(snapshot, mode);
   const confirm = button("同意发送并整理", () => { dialog.close(); runAi(mode, snapshot, revision, payload, historyState); }, "button primary full");
   showDialog(`确认发送到 ${config.label}`, [h("p", { class: "notice warning" }, `将发送至 ${config.label}（${config.host}）：${definition.scope}。模型：${config.model}。可能产生 API 费用或消耗套餐额度。${aiStreamConsent(api, config)}`),
-    historyState && h("p", { class: "notice" }, `全部 ${historyState.plan.records} 份报告、${historyState.plan.items} 条结果将分 ${payload.length} 组依次发送，共 ${payload.length} 次 AI 调用，每次最多等待 5 分钟，总耗时可能更长。个人档案仅随首组发送。程序合成各组回复，不额外调用 AI；失败后可选择仅重试未完成组。不会截断历史或修改原记录。`),
+    historyState && h("p", { class: "notice" }, `全部 ${historyState.plan.records} 份报告、${historyState.plan.items} 条结果将分 ${payload.length} 组依次发送，共 ${payload.length} 次 AI 调用，每次最多等待 15 分钟，总耗时可能更长。个人档案仅随首组发送。程序合成各组回复，不额外调用 AI；失败后可选择仅重试未完成组。不会截断历史或修改原记录。`),
     h("details", {}, h("summary", {}, "查看本次发送的数据"), h("pre", {}, JSON.stringify(payload, null, 2))), h("p", { class: "small muted" }, "仅此次同意，不会在后台持续同步。发送后关闭页面不能撤回已发送的资料。"), confirm]);
 }
 

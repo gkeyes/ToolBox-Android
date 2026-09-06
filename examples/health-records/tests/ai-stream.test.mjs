@@ -33,7 +33,7 @@ test("MiniMax streams incremental UTF-8 reasoning separately and enables thinkin
     const body = JSON.parse(api.calls[0].request.body);
     assert.equal(body.stream, true); assert.deepEqual(body.thinking, { type: "adaptive" }); assert.equal(body.reasoning_split, true);
     assert.equal(body.max_completion_tokens, 131072);
-    assert.equal(api.calls[0].request.timeoutMs, 300000);
+    assert.equal(api.calls[0].request.timeoutMs, 900000);
     assert.equal(api.calls[0].request.maxResponseBytes, 4 * 1024 * 1024);
     assert.equal(reasoning.at(-1).text, "同一段");
     assert.equal(JSON.stringify(output).includes("同一段"), false);

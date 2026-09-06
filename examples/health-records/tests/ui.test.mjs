@@ -237,7 +237,7 @@ for (const rememberChoice of [false, true]) test(`OCR name review supports resto
   globalThis.createImageBitmap = async () => ({ width: 1, height: 1, close() {} });
   const screen = await openApp(fixture, { files: syntheticFiles(), network: { request: async (options) => {
     calls++; const body = JSON.parse(options.body); assert.equal(body.model, "MiniMax-M3"); assert.ok(options.url.startsWith("https://api.minimax.cn/"));
-    assert.equal(options.timeoutMs, 300000);
+    assert.equal(options.timeoutMs, 900000);
     return body.messages[1].content.some((part) => part.type === "image_url") ? ocrResponse(recognizedUnit) : matchedResponse(body);
   } } });
   await button(screen.main, "识别报告").fire("click");

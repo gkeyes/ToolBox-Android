@@ -41,7 +41,7 @@ test("MiniMax requests use the documented endpoint, separate key, bounded image 
   assert.equal(body.response_format, undefined);
   assert.equal(body.messages[0].role, "system");
   assert.deepEqual(body.messages[1].content[1], { type: "image_url", image_url: { url: "data:image/jpeg;base64,aGVsbG8=", detail: "high" } });
-  assert.equal(request.timeoutMs, 300000); assert.equal(request.maxResponseBytes, 512 * 1024);
+  assert.equal(request.timeoutMs, 900000); assert.equal(request.maxResponseBytes, 512 * 1024);
   const draft = ai.validateOcr(output);
   assert.equal(draft.missingDate, true);
   assert.deepEqual(draft.record.items, ocr.items);

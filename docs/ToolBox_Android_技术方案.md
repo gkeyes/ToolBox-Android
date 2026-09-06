@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.6.0 (16)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.6.1 (17)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -273,6 +273,10 @@ alarmId、triggerAt、scheduledAt；开机和精确闹钟授权变化后重新�
 字节请求体、合法 HTTPS 端口、重定向、超时和响应上限。普通 `network` grant 还必须服从
 `manifest.network.allowDomains` 的精确域名或子域通配声明。直接请求会把
 4xx/5xx 状态和受限响应正文返回页面，不把 HTTP 错误伪装成安全阻断。
+单次调用总时限、读取与写入等待取请求值和 manifest 声明中的较小值；请求未填仍为 30000 毫秒。
+0.6.1 将两层可配置上限统一为 3600000 毫秒（60 分钟），声明超过 600000 毫秒的工具必须要求
+最低宿主 0.6.1，避免被不支持长等待的 0.6.0 接受。普通请求和流式请求使用相同规则，连接建立
+仍最多 10 秒；服务主动失败、取消或关闭会话会提前结束。
 
 代理仍禁用自动重定向、缓存、自动 retry、系统代理和宿主认证状态。Host、Connection、
 Content-Length、Transfer-Encoding、Upgrade 与 Proxy 系列协议 Header 由传输层控制；Authorization、
@@ -391,7 +395,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.0 (16) 上传 `toolbox-v0.6.0-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.6.1 (17) 上传 `toolbox-v0.6.1-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不改变数据库或权限能力集合。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

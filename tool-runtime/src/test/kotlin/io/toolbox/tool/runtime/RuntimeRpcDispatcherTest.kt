@@ -279,7 +279,7 @@ class RuntimeRpcDispatcherTest {
                         "body" to RpcValue.ObjectValue(
                             mapOf("symbol" to RpcValue.StringValue("TEST")),
                         ),
-                        "timeoutMs" to RpcValue.Number(120_000.0),
+                        "timeoutMs" to RpcValue.Number(3_600_000.0),
                         "maxResponseBytes" to RpcValue.Number(1_048_576.0),
                     ),
                 ),
@@ -292,7 +292,7 @@ class RuntimeRpcDispatcherTest {
         assertEquals("Bearer test-token", recorder.networkRequest?.headers?.get("Authorization"))
         assertEquals("{\"symbol\":\"TEST\"}", recorder.networkRequest?.body?.toString(Charsets.UTF_8))
         assertEquals(true, recorder.networkRequest?.bodyIsJson)
-        assertEquals(120_000L, recorder.networkRequest?.timeoutMillis)
+        assertEquals(3_600_000L, recorder.networkRequest?.timeoutMillis)
         assertEquals(1_048_576, recorder.networkRequest?.maxResponseBytes)
         assertEquals(201.0, ((network.result as RpcValue.ObjectValue).value.getValue("status") as RpcValue.Number).value, 0.0)
 
@@ -308,6 +308,23 @@ class RuntimeRpcDispatcherTest {
                             "headers" to RpcValue.ObjectValue(
                                 mapOf("Host" to RpcValue.StringValue("other.example.invalid")),
                             ),
+                        ),
+                    ),
+                ),
+                inbound,
+            ),
+        )
+        assertEquals(null, recorder.networkRequest)
+
+        assertFailure(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            dispatcher.dispatch(
+                request(
+                    method = "network.request",
+                    params = RpcValue.ObjectValue(
+                        mapOf(
+                            "url" to RpcValue.StringValue("https://api.example.invalid/value"),
+                            "timeoutMs" to RpcValue.Number(3_600_001.0),
                         ),
                     ),
                 ),

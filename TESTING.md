@@ -4,6 +4,29 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 0.6.1 网络超时分支合并（2026-09-07）
+
+- 从 `codex/api-stream-support` 合入尚未进入默认分支的可配置超时扩展，保留默认分支已有的
+  普通请求正文取消、Liquid Glass、通知品牌、同/低版本确认与移除截图门禁的决定。
+- 宿主统一为 `0.6.1 (17)`。网络上限为 3600000 毫秒（60 分钟），默认仍为 30000 毫秒，
+  连接建立仍最多 10 秒；每个工具取请求与 manifest 声明中的较小值。健康档案更新为
+  `1.0.10 (11)`，请求及 manifest 为 900000 毫秒，最低宿主为 0.6.1。
+- `ManifestValidatorTest.networkTimeoutAcceptsThe60MinuteCeilingAndRequiresACompatibleHost`：理由是
+  新上限必须在实际安装入口生效，并拒绝过低的兼容声明。方法是生产解析器接受 3600000、
+  拒绝 3600001；对 0.3.10、0.3.11、0.5.0、0.6.0，接受原 600000 上限而拒绝 600001。
+  并传入超出整数范围的版本号，要求返回 manifest 格式错误。预期：长等待只由支持它的宿主承接，
+  错误版本不被误报为临时 IO 失败。修正原分支漏登记执行类的问题，加入 `run-host-gate.sh`。
+- 扩展既有 `RuntimeNetworkGatewayTest.longWaitUsesTheSmallerRequestAndManifestBudgetAndKeepsTheDefault`：
+  以生产普通请求及流式 open 各回放 60 分钟、manifest 截断、短请求和默认值矩阵，检查实际传输
+  收到的预算，并关闭流和 gateway。预期：两种路径均使用相同的较小预算，无连接残留。
+- `ToolNetworkProxyTest.declaredHttpsPostAllowsCustomPortHeadersHttpErrorResponseAndMaximumTimeout`
+  与 `RuntimeRpcDispatcherTest.m2MethodsUseTypedNativeHandlersAndContractValues`：通过真实 client
+  配置、生产代理及 dispatcher 检查 3600000 接受、3600001 拒绝、连接建立仍为 10000。
+  保留 HTTP 错误响应、Header、取消与既有安全断言。
+- 健康档案完整 Node 回归覆盖普通 AI、流式 AI 及页面 OCR 的 900000 参数；生产桥、离线帮助、
+  SDK、通用打包器和安全静态检查在本地执行，Kotlin、准入 JVM 及优化 APK 由 GitHub 执行。
+  设备交互仍由用户验收，本次不操作设备；自动检查不代表真机或 AI 内容准确性验证。
+
 ## 0.6.0 默认分支收敛（2026-09-06）
 
 - 默认分支统一包含 Liquid Glass、通知品牌图标、系统托管通知文字色、同/低版本安装确认、原生网络

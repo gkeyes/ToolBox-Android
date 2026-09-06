@@ -38,7 +38,7 @@ internal object ManifestValidator {
             "compat" -> SecurityProfile.COMPAT
             else -> throw JsonFormatException("securityProfile must be strict or compat")
         }
-        val network = root["network"]?.let(::parseNetwork)
+        val network = root["network"]?.let { parseNetwork(it, minHostVersion) }
         if (permissions.any { it.name == "network" } && network == null) {
             throw JsonFormatException("network permission requires network.allowDomains")
         }
@@ -92,7 +92,7 @@ internal object ManifestValidator {
         }
     }
 
-    private fun parseNetwork(value: JsonValue): ManifestNetwork {
+    private fun parseNetwork(value: JsonValue, minHostVersion: String): ManifestNetwork {
         val network = value.asObject("network")
         network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs"))
         val domains = network.required("allowDomains").asArray("network.allowDomains").mapIndexed { index, item ->
@@ -105,15 +105,19 @@ internal object ManifestValidator {
         if (domains.isEmpty() || domains.size > 32 || domains.toSet().size != domains.size) {
             throw JsonFormatException("network.allowDomains must contain 1..32 unique domains")
         }
+        val timeoutMs = network["timeoutMs"]?.let {
+            requireIntValue(it, "network.timeoutMs", 1000, 3_600_000)
+        } ?: 30_000
+        if (timeoutMs > 600_000 && !versionAtLeast(minHostVersion, 0, 6, 1)) {
+            throw JsonFormatException("network.timeoutMs above 600000 requires minHostVersion 0.6.1")
+        }
         return ManifestNetwork(
             allowDomains = domains,
             allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: true,
             maxResponseBytes = network["maxResponseBytes"]?.let {
                 requireIntValue(it, "network.maxResponseBytes", 1024, 67_108_864)
             } ?: 4_194_304,
-            timeoutMs = network["timeoutMs"]?.let {
-                requireIntValue(it, "network.timeoutMs", 1000, 600_000)
-            } ?: 30_000,
+            timeoutMs = timeoutMs,
         )
     }
 
@@ -211,7 +215,9 @@ internal object ManifestValidator {
     }
 
     private fun versionAtLeast(value: String, major: Int, minor: Int, patch: Int): Boolean {
-        val numeric = value.substringBefore('-').substringBefore('+').split('.').map(String::toInt)
+        val numeric = value.substringBefore('-').substringBefore('+').split('.').map {
+            it.toIntOrNull() ?: throw JsonFormatException("minHostVersion contains an out-of-range number")
+        }
         return numeric.zip(listOf(major, minor, patch)).firstOrNull { (left, right) -> left != right }
             ?.let { (left, right) -> left > right }
             ?: true
