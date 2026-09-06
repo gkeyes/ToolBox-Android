@@ -15,8 +15,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal class CatalogViewModel(
     private val catalog: CatalogRepository,
@@ -27,8 +30,18 @@ internal class CatalogViewModel(
     private val mutableState = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
 
+    private val queuedRuntimeLaunches = mutableSetOf<String>()
+    private val recordOpenedMutex = Mutex()
     private val mutableNavigation = Channel<CatalogNavigationIntent>(Channel.BUFFERED)
-    val navigation = mutableNavigation.receiveAsFlow()
+    val navigation = mutableNavigation.receiveAsFlow().filter { intent ->
+        when (intent) {
+            is CatalogNavigationIntent.RequestRuntimeLaunch -> {
+                queuedRuntimeLaunches.remove(intent.toolId)
+                // A delayed collector must not navigate to a tool already removed from the catalog.
+                state.value.tools.any { it.toolId == intent.toolId }
+            }
+        }
+    }
     private var pendingRuntimeLaunchToolId: String? = null
 
     init {
@@ -77,15 +90,38 @@ internal class CatalogViewModel(
     }
 
     private fun openInstalled(toolId: String) {
+        // Coalesce taps until navigation consumes the request, not until statistics finish.
+        if (!queuedRuntimeLaunches.add(toolId)) return
+        val requestedAt = now()
         viewModelScope.launch {
-            val result = HostTrace.bestEffortAsyncSection("tool.recordOpened") {
-                organization.recordOpened(toolId, now())
-            }
-            when (result) {
-                is DataResult.Success -> mutableNavigation.send(CatalogNavigationIntent.RequestRuntimeLaunch(toolId))
-                is DataResult.Failure -> showFailure("OPEN_FAILED", "工具暂时无法打开。")
+            mutableNavigation.send(CatalogNavigationIntent.RequestRuntimeLaunch(toolId))
+            // lastOpenedAt means an accepted open request, not successful WebView readiness.
+            // Runtime preparation still performs the authoritative installation/security checks.
+            try {
+                val result = HostTrace.bestEffortAsyncSection("tool.recordOpened") {
+                    // A slower earlier write must not overwrite a later request's timestamp.
+                    recordOpenedMutex.withLock { organization.recordOpened(toolId, requestedAt) }
+                }
+                when (result) {
+                    is DataResult.Success -> update { current ->
+                        if ((current.feedback as? CatalogFeedback.Failure)?.code == "RECENT_UPDATE_FAILED") {
+                            current.copy(feedback = null)
+                        } else {
+                            current
+                        }
+                    }
+                    is DataResult.Failure -> showRecentUpdateFailure()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                showRecentUpdateFailure()
             }
         }
+    }
+
+    private fun showRecentUpdateFailure() {
+        showFailure("RECENT_UPDATE_FAILED", "最近使用记录未保存，可稍后重新打开工具重试。")
     }
 
     private fun requestUninstall(toolId: String) {

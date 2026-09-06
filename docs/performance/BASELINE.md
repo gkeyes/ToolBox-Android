@@ -41,10 +41,13 @@ validation, production UI, dependencies and security boundaries were retained.
   reference images. The separate catalog UI sample was not visually approved;
   later removal of screenshot tests is a user-requested policy change, not visual approval.
 
-A for subsequent optimization comparisons must be the **P1 instrumented candidate
-before performance/UI changes**, B the individual optimization. Rebuild both
-with the same candidate profileable overlay, trace labels, R8 and compilation
-mode; the uninstrumented P0 release cannot satisfy the new trace-coverage checks.
+Keep the **P1 instrumented candidate before performance/UI changes** as the initial
+end-to-end baseline. For attribution of an individual optimization, compare its
+accepted parent with that change only, keeping the UI identical. For the later
+F1 change, A is `0224623089c06c70c2fc97066050ecae3fa11f60`, not the earlier
+pre-redesign APK. Rebuild A/B with the same candidate profileable overlay, trace
+labels, R8 and compilation mode; the uninstrumented P0 release cannot satisfy
+the new trace-coverage checks. None of these new comparisons has been measured.
 Record exact A/B SHAs and APK hashes; retain the P0 identity above for provenance.
 
 ## Environment and safety
@@ -152,7 +155,7 @@ does not move IO/WebView work, alter caches, navigation or background semantics.
 |---|---|
 | `coreData.create` | Existing bootstrap dependency acquisition; may include cached acquisition, not all startup work or TTFD |
 | `host.catalog.publish` | Catalog mapping/publication, not proof the screen is drawn/interactive |
-| `tool.recordOpened` | Awaited recent-open persistence; success/error branch remains unchanged |
+| `tool.recordOpened` | Recent-open persistence; after F1 it runs after queuing navigation and includes statistics serialization wait. Not click-to-shell or a readiness metric; completion never triggers another navigation |
 | `icon.catalog.lookup/recheck` | Initial catalog lookup and post-decode version recheck, including suspension |
 | `icon.cache.hit/miss/evict` | Count markers, not user-action durations; only actual LRU eviction counts as evict |
 | `icon.decode` | Read/decode inside the granted decode slot; not queue/lock wait |
@@ -211,17 +214,25 @@ are NOT_MEASURED, not zero. Record sample count and quantile method for every P9
 
 | Item | Current source evidence | Next measurement / possible change / risk |
 |---|---|---|
-| F1 | `catalog/CatalogViewModel.kt:openInstalled` still awaits recordOpened before navigation | C span vs tap/shell; if material, decouple statistics only; preserve launch validation, duplicate-open and failure semantics |
+| F1 | Later user-authorized continuation queues navigation before cancellable, serialized statistics; queued same-tool requests coalesce and known-deleted tools are filtered at consumption | Deterministic JVM regression is being added; C tap/shell/readiness and actual runtime regression still required. No measured latency improvement; runtime qualification is unchanged |
 | F2 | `icons/ToolIconLoader.kt:load` queries before cache.get; 4MiB/256px, two decode slots | B lookup/hit/evict/decode plus allocations; use full immutable version key only with safe invalidation; no blind capacity increase |
 | F5 | `navigation/ToolBoxNavigation.kt` enables runtime after entry animation; `runtime/RuntimeSessionManager.kt:ensureRuntime` then prepares | C shell/prepare/create gaps; evaluate safe IO overlap, not off-main WebView or another pool; cancellation/update/permit risks |
 | F4 | Permission VM uses passed Activity store; retained route composition survives hiding | D/F offscreen collectors, object counts and updates; route ownership only for UI, never suspend authoritative grants/background sessions |
 
 F1/F2 first, F5 next and F4 lifecycle review are a **source-led investigation
 order**, not timing evidence. Raw trace ranges, measured cost and attribution are
-NOT_MEASURED for all four. No performance implementation or UI redesign is
-included in P1. If device access remains blocked, a later low-risk sample could
-remove the always-visible saved hint and redundant subtitles, with unchanged
-behavior and real before/after screenshots; that UI work has not started.
+NOT_MEASURED for all four. P1 itself included no performance implementation or UI
+redesign. Subsequently, catalog/detail clarity landed in `e981b6f`; screenshot
+tests were explicitly retired in `0224623`, which passed default-branch CI
+[33984763500](https://github.com/gkeyes/ToolBox-Android/actions/runs/33984763500).
+The user then requested continued plan execution without waiting for device tests.
+The F1 continuation changes only statistics/navigation ordering, defines
+lastOpenedAt as an accepted request timestamp, serializes writes to avoid stale
+completion order, and reports statistics failure separately. JVM deferred-write,
+duplicate, cancellation and deletion fixtures are behavioral evidence only, not
+performance data. Safe prepare/animation overlap, version-key icon fast paths,
+route collector scoping and the remaining settings/startup work are not implemented
+by that F1 change. Do not infer visual approval or device readiness from CI.
 
 ## Results / remaining gates
 
