@@ -1,4 +1,4 @@
-import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, renameMetric, metricKey, assertNoNewDuplicateMetrics, byteSize, MAX_ARCHIVE_BYTES } from "./model.mjs";
+import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize, MAX_ARCHIVE_BYTES } from "./model.mjs";
 import { createStore } from "./store.mjs";
 import { h, icon, button, iconButton, field, sectionHeading, emptyState } from "./dom.mjs";
 import { createChoice } from "./choice.mjs";
@@ -6,15 +6,17 @@ import { trendChart, monthlyChart } from "./charts.mjs";
 import { createRecordEditor, createBatchEditor } from "./editor.mjs";
 import { runFileWorker, openFile, saveFile, reportImage } from "./io.mjs";
 import { backupName } from "./backup.mjs";
-import { AI_MODES, AI_PROVIDERS, MINIMAX_MODELS, getAiConfig, aiPayload, requestAi, validateAiReport, validateSuggestions, validateOcr, OCR_PROMPT } from "./ai.mjs";
-import { buildNameCatalog, alignRecordNames, MAX_NAME_BATCHES } from "./names.mjs";
+import { AI_MODES, AI_PROVIDERS, MINIMAX_MODELS, getAiConfig, aiPayload, requestAi, validateAiReport, reviewSuggestions, validateOcr, OCR_PROMPT } from "./ai.mjs";
+import { aiStreamConsent, createAiProgress } from "./ai-progress.mjs";
+import { buildHistoryPlan, createHistoryRun, runHistory } from "./history.mjs";
+import { buildNameCatalog, alignRecordNames, applyNameSuggestions, assertNameSuggestionGraph, MAX_NAME_BATCHES } from "./names.mjs";
 
 const main = document.getElementById("main"), nav = document.getElementById("navigation"), dialog = document.getElementById("dialog");
 const api = window.ToolBox;
 let store, archive = emptyArchive(), index = buildIndex([]), page = "overview", lastTab = "overview", detailId = null;
 let filter = "all", query = "", recordLimit = 24, selectedMetric = null, metricQuery = "", trendLimit = 30;
 let trendReturn = { page: "overview", lastTab: "overview", detailId: null };
-let editor = null, toastTimer = null, aiBusy = false, operationBusy = false, viewGeneration = 0;
+let editor = null, toastTimer = null, aiBusy = false, operationBusy = false, viewGeneration = 0, dialogControls = null;
 const scrollPositions = new Map();
 const tabLabels = { overview: "概览", records: "记录", trends: "趋势", mine: "我的" };
 
@@ -30,7 +32,7 @@ function errorText(error) {
   if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。单次请求最多等待 5 分钟；连接失败或服务主动断开可能提前结束，请检查网络后重试";
   if (code === "NETWORK_UNAVAILABLE") return "连接或读取响应失败，尚未得到完整结果。请检查网络、代理连接或服务可用性后重试";
   if (code === "INTERNAL_ERROR") return "ToolBox 宿主内部处理失败，请返回工具列表后重新打开，再尝试整理；原始记录未修改";
-  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在 ToolBox 0.3.7 或更新版本中使用";
+  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.3.10 或更新版本中使用";
   return "操作未完成，请重试；原数据仍保留";
 }
 
@@ -42,26 +44,31 @@ function toast(message) {
 
 function showDialog(title, content) {
   if (dialog.open) dialog.close();
-  dialog.replaceChildren(h("div", { class: "dialog-head" }, h("h2", { id: "dialog-title" }, title), iconButton("关闭弹窗", "close", () => dialog.close())), h("div", { class: "dialog-body" }, content));
+  dialogControls = h("fieldset", { class: "editor-controls" }, h("div", { class: "dialog-head" }, h("h2", { id: "dialog-title" }, title), iconButton("关闭弹窗", "close", () => dialog.close())), h("div", { class: "dialog-body" }, content));
+  dialog.replaceChildren(dialogControls);
   dialog.showModal();
+  return dialogControls;
 }
+
+dialog.addEventListener("cancel", (event) => { if (dialogControls?.disabled) event.preventDefault(); });
 
 function ask(title, description, confirmLabel, action, dangerous = false) {
   const error = h("p", { class: "form-error", role: "alert", hidden: true });
   const confirm = button(confirmLabel, async () => {
-    confirm.disabled = true;
-    try { await action(); if (dialog.open) dialog.close(); } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { confirm.disabled = false; }
+    if (controls.disabled) return;
+    controls.disabled = true;
+    try { await action(); if (dialog.open && dialog.contains(controls)) dialog.close(); } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { controls.disabled = false; }
   }, dangerous ? "button danger" : "button primary");
-  showDialog(title, [h("p", { class: "small pre-wrap" }, description), error, h("div", { class: "actions" }, button("取消", () => dialog.close()), confirm)]);
+  const controls = showDialog(title, [h("p", { class: "small pre-wrap" }, description), error, h("div", { class: "actions" }, button("取消", () => dialog.close()), confirm)]);
 }
 
 function setTheme(theme) {
   if (theme === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
 }
 
-async function persist(mutator) {
+async function persist(mutator, expectedRevision) {
   try {
-    archive = await store.update(mutator); index = buildIndex(archive.records); setTheme(archive.settings.theme);
+    archive = await store.update(mutator, { expectedRevision }); index = buildIndex(archive.records); setTheme(archive.settings.theme);
   } catch (e) { throw new HealthError(errorText(e), e.code || "SAVE_FAILED"); }
 }
 
@@ -193,8 +200,12 @@ function openEditor(record = null, notice = "", nameReview = null) {
     cancel: (dirty) => { if (dirty) ask("放弃未保存的修改？", "当前输入尚未保存，原记录不会改变。", "放弃修改", () => { editor = null; navigate(returnPage); }, true); else navigate(returnPage); },
     history: openHistoryPicker,
     save: async (next, aliases) => {
-      if (store.revision !== openedRevision) throw new HealthError("档案已被其他操作更新，请返回后重新打开这份记录再编辑");
-      await persist((draft) => { const position = draft.records.findIndex((r) => r.id === next.id); if (position >= 0) draft.records[position] = next; else draft.records.push(next); Object.assign(draft.aliasMap, aliases); });
+      await persist((draft) => {
+        const rules = Object.entries(aliases).map(([key, target]) => ({ key, target }));
+        if (rules.length) draft.aliasMap = assertNameSuggestionGraph(draft, rules);
+        const position = draft.records.findIndex((r) => r.id === next.id);
+        if (position >= 0) draft.records[position] = next; else draft.records.push(next);
+      }, openedRevision);
       editor = null; detailId = next.id; navigate("detail"); toast("记录已保存到本机");
     },
   });
@@ -222,7 +233,6 @@ function openBatch(metric, returnPage = "trends") {
     backLabel: returnPage === "detail" ? "返回记录" : "返回趋势",
     cancel: (dirty) => { if (dirty) ask("放弃未保存的修改？", "原记录不会改变。", "放弃修改", () => { editor = null; navigate(returnPage); }, true); else navigate(returnPage); },
     save: async (changes) => {
-      if (revision !== store.revision) throw new HealthError("记录已变化，请重新打开后编辑");
       await persist((draft) => {
         for (const change of changes) {
           const record = draft.records.find((r) => r.id === change.recordId);
@@ -232,7 +242,7 @@ function openBatch(metric, returnPage = "trends") {
         for (const recordId of new Set(changes.map((c) => c.recordId))) {
           assertNoNewDuplicateMetrics(archive.records.find((r) => r.id === recordId), draft.records.find((r) => r.id === recordId));
         }
-      });
+      }, revision);
       editor = null; navigate(returnPage); toast("修改已保存");
     },
   });
@@ -288,19 +298,28 @@ function minePage() {
       settingsRow("记录天数", "按年查看每月记录天数，同一天不重复计数", "calendar", () => navigate("calendar"))),
     sectionHeading("辅助整理"), h("div", { class: "surface" }, settingsRow("AI 资料助手", "识别、摘要、追溯；每次发送前由你确认", "spark", () => navigate("ai")), settingsRow("AI 设置", "MiniMax / Gemini；密钥单独安全保存", "settings", () => navigate("ai-settings"))),
     sectionHeading("外观"), themes,
-    h("p", { class: "privacy-note" }, "健康档案 1.0.7 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
+    h("p", { class: "privacy-note" }, "健康档案 1.0.9 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
     button("清空健康记录", () => ask("清空所有健康记录？", "将清空检验记录、个人档案、摘要和指标库。AI 密钥与外观设置保留。此操作不可撤销，请先备份。", "确认清空", async () => { await persist((draft) => ({ ...emptyArchive(), settings: draft.settings })); render(); toast("健康记录已清空，已有导出备份不受影响"); }, true), "button danger full"));
 }
 
 function profilePage() {
-  const controls = {};
+  const controls = {}, revision = store.revision;
   const gender = createChoice("性别", ["", "男", "女", "其他 / 不填写"].map((value) => ({ value, label: value || "不填写" })), { value: archive.profile.gender }); controls.gender = gender;
   const input = (key, placeholder, max) => (controls[key] = h("input", { class: "input", type: "number", min: "0", max, step: key === "age" ? "1" : "0.1", value: archive.profile[key], placeholder }));
   const history = h("textarea", { class: "textarea", rows: 5, maxlength: 10000, value: archive.profile.history, placeholder: "可填写既往病史、过敏史等。未使用 AI 时不会发送。" }); controls.history = history;
   const error = h("p", { class: "form-error", role: "alert", hidden: true });
   const submit = h("button", { class: "button primary full", type: "submit" }, "保存档案");
-  const form = h("form", { class: "record-layout stack" }, header("个人健康档案", "可选填写，仅保存你希望记录的信息", () => go("mine")), h("div", { class: "form-grid" }, gender.element, field("年龄（岁）", input("age", "可不填", "130")), field("身高（cm）", input("height", "可不填", "300")), field("体重（kg）", input("weight", "可不填", "600"))), field("既往病史与备注", history), error, submit);
-  form.addEventListener("submit", async (event) => { event.preventDefault(); submit.disabled = true; try { const profile = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value])); await persist((draft) => { draft.profile = profile; }); navigate("mine"); toast("档案已保存"); } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { submit.disabled = false; } });
+  const fields = h("fieldset", { class: "editor-controls record-layout stack" }, header("个人健康档案", "可选填写，仅保存你希望记录的信息", () => go("mine")), h("div", { class: "form-grid" }, gender.element, field("年龄（岁）", input("age", "可不填", "130")), field("身高（cm）", input("height", "可不填", "300")), field("体重（kg）", input("weight", "可不填", "600"))), field("既往病史与备注", history), error, submit);
+  const form = h("form", {}, fields);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault(); if (fields.disabled) return;
+    fields.disabled = true; error.hidden = true;
+    try {
+      const profile = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value]));
+      await persist((draft) => { draft.profile = profile; }, revision);
+      if (main.contains(form)) { navigate("mine"); toast("档案已保存"); }
+    } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { fields.disabled = false; }
+  });
   return form;
 }
 
@@ -321,7 +340,7 @@ async function startImport() {
     if (!file) return;
     toast("正在本机解析备份…");
     const incoming = await runFileWorker("read", { name: file.name, bytes: file.bytes.buffer });
-    const revision = store.revision;
+    const revision = store.revision, generation = viewGeneration;
     let preview;
     const includeProfile = h("input", { type: "checkbox", checked: !Object.values(archive.profile).some(Boolean) });
     const currentIds = new Set(archive.records.map((r) => r.id));
@@ -337,19 +356,18 @@ async function startImport() {
       } catch (e) { preview = null; summary.textContent = "当前导入方式无法合并。若这是修订备份，可勾选下方修订选项重新预览。"; error.textContent = errorText(e); error.hidden = false; confirm.disabled = true; }
     }
     const confirm = button("确认导入", async () => {
-      if (!preview || confirm.disabled) return;
+      if (!preview || confirm.disabled || controls.disabled) return;
       const selected = preview;
       const profile = includeProfile.checked, revise = updateMatching.checked;
-      confirm.disabled = true;
-      includeProfile.disabled = true; updateMatching.disabled = true;
+      controls.disabled = true;
       try {
-        if (revision !== store.revision) throw new HealthError("当前记录已改变，请重新选择备份");
-        await persist((draft) => mergeArchive(draft, incoming, profile, newId, revise).archive);
-        dialog.close(); navigate("records"); toast(`新增 ${selected.added} 份，修订 ${selected.updated} 份，跳过 ${selected.duplicates} 份重复记录`);
-      } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { confirm.disabled = !preview; includeProfile.disabled = false; updateMatching.disabled = false; }
+        await persist((draft) => mergeArchive(draft, incoming, profile, newId, revise).archive, revision);
+        if (dialog.open && dialog.contains(controls) && viewGeneration === generation) { dialog.close(); navigate("records"); }
+        toast(`新增 ${selected.added} 份，修订 ${selected.updated} 份，跳过 ${selected.duplicates} 份重复记录`);
+      } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { controls.disabled = false; confirm.disabled = !preview; }
     }, "button primary");
     updateMatching.addEventListener("change", refreshPreview); includeProfile.addEventListener("change", refreshPreview); refreshPreview();
-    showDialog("确认导入备份", [h("h3", {}, file.name), summary,
+    const controls = showDialog("确认导入备份", [h("h3", {}, file.name), summary,
       hasMatchingIds && h("label", { class: "checkbox-field" }, updateMatching, h("span", {}, "使用备份修订相同 ID 的记录，并替换指标库与别名规则（会覆盖对应内容，请先备份）")),
       h("label", { class: "checkbox-field" }, includeProfile, h("span", {}, "同时导入个人档案（勾选将替换本机性别、年龄、身高、体重和病史）")),
       h("p", { class: "small muted" }, "旧文件中的 API 密钥不会导入。备份仅在本机解析，不会上传。"), error,
@@ -362,25 +380,28 @@ function exportDialog() {
   const select = createChoice("记录范围", [{ value: "all", label: "全部年份" }, ...years.map((year) => ({ value: year, label: `${year} 年` }))], { ariaLabel: "导出年份" });
   const status = h("p", { class: "small muted", role: "status" });
   const prepared = h("div", { class: "stack" });
+  select.element.addEventListener("change", () => { prepared.replaceChildren(); status.textContent = "范围已更改，请重新生成备份。"; });
   const makeButton = (format, label) => button(label, async () => {
-    if (operationBusy) return; operationBusy = true; status.textContent = "正在本机生成备份…"; prepared.replaceChildren();
+    if (operationBusy || controls.disabled) return;
+    operationBusy = true; controls.disabled = true; select.close(); status.textContent = "正在本机生成备份…"; prepared.replaceChildren();
     try {
-      const snapshot = normalizeArchive(archive);
-      if (select.value !== "all") snapshot.records = snapshot.records.filter((r) => r.date.startsWith(select.value));
+      const year = select.value, snapshot = normalizeArchive(archive);
+      if (year !== "all") snapshot.records = snapshot.records.filter((r) => r.date.startsWith(year));
       const data = await runFileWorker(format, { archive: snapshot });
-      const name = backupName(format).replace(`.${format}`, select.value === "all" ? `.${format}` : `_${select.value}.${format}`);
+      const name = backupName(format).replace(`.${format}`, year === "all" ? `.${format}` : `_${year}.${format}`);
       const mime = format === "json" ? "application/json" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      status.textContent = "备份已生成，不含 API 密钥。点击下方按钮选择保存位置。";
+      status.textContent = `备份已生成（${year === "all" ? "全部年份" : `${year} 年`}），不含 API 密钥。点击下方按钮选择保存位置。`;
       const save = button("选择位置并保存", async () => {
-        save.disabled = true;
-        try { const token = await saveFile(api, name, mime, data); if (token) { dialog.close(); toast("备份已保存，请妥善保管其中的健康资料"); } else status.textContent = "已取消选择；备份未保存，可以重新选择位置。"; }
+        if (controls.disabled) return;
+        controls.disabled = true;
+        try { const token = await saveFile(api, name, mime, data); if (token) { if (dialog.contains(controls)) dialog.close(); toast("备份已保存，请妥善保管其中的健康资料"); } else status.textContent = "已取消选择；备份未保存，可以重新选择位置。"; }
         catch (e) { status.textContent = errorText(e); }
-        finally { save.disabled = false; }
+        finally { controls.disabled = false; }
       }, "button primary full", "download");
       prepared.append(save);
-    } catch (e) { status.textContent = errorText(e); } finally { operationBusy = false; }
+    } catch (e) { status.textContent = errorText(e); } finally { operationBusy = false; controls.disabled = false; }
   });
-  showDialog("导出健康备份", [h("p", { class: "small muted" }, "备份含检验记录与个人档案，请存放到可信位置。JSON 适合完整恢复，Excel 便于查看。"), select.element, h("div", { class: "actions" }, makeButton("json", "生成 JSON"), makeButton("xlsx", "生成 Excel")), status, prepared]);
+  const controls = showDialog("导出健康备份", [h("p", { class: "small muted" }, "备份含检验记录与个人档案，请存放到可信位置。JSON 适合完整恢复，Excel 便于查看。"), select.element, h("div", { class: "actions" }, makeButton("json", "生成 JSON"), makeButton("xlsx", "生成 Excel")), status, prepared]);
 }
 
 function aiSettingsPage() {
@@ -457,75 +478,95 @@ function prepareAi(mode) {
   if (!archive.records.length) { toast("请先添加或导入检验记录"); return; }
   let config;
   try { config = getAiConfig(archive.settings); } catch (e) { navigate("ai-settings"); toast(errorText(e)); return; }
-  const snapshot = normalizeArchive(archive), revision = store.revision, payload = aiPayload(snapshot, mode), definition = AI_MODES[mode];
-  const confirm = button("同意发送并整理", () => { dialog.close(); runAi(mode, snapshot, revision, payload); }, "button primary full");
-  showDialog(`确认发送到 ${config.label}`, [h("p", { class: "notice warning" }, `将发送至 ${config.label}（${config.host}）：${definition.scope}。模型：${config.model}。可能产生 API 费用或消耗套餐额度。`),
+  const snapshot = normalizeArchive(archive), revision = store.revision, definition = AI_MODES[mode];
+  let historyState;
+  try { if (mode === "trace") historyState = createHistoryRun(buildHistoryPlan(snapshot)); }
+  catch (e) { toast(errorText(e)); return; }
+  const payload = historyState ? historyState.plan.batches : aiPayload(snapshot, mode);
+  const confirm = button("同意发送并整理", () => { dialog.close(); runAi(mode, snapshot, revision, payload, historyState); }, "button primary full");
+  showDialog(`确认发送到 ${config.label}`, [h("p", { class: "notice warning" }, `将发送至 ${config.label}（${config.host}）：${definition.scope}。模型：${config.model}。可能产生 API 费用或消耗套餐额度。${aiStreamConsent(api, config)}`),
+    historyState && h("p", { class: "notice" }, `全部 ${historyState.plan.records} 份报告、${historyState.plan.items} 条结果将分 ${payload.length} 组依次发送，共 ${payload.length} 次 AI 调用，每次最多等待 5 分钟，总耗时可能更长。个人档案仅随首组发送。程序合成各组回复，不额外调用 AI；失败后可选择仅重试未完成组。不会截断历史或修改原记录。`),
     h("details", {}, h("summary", {}, "查看本次发送的数据"), h("pre", {}, JSON.stringify(payload, null, 2))), h("p", { class: "small muted" }, "仅此次同意，不会在后台持续同步。发送后关闭页面不能撤回已发送的资料。"), confirm]);
 }
 
-async function runAi(mode, snapshot, revision, payload) {
+async function runAi(mode, snapshot, revision, payload, historyState = null) {
   aiBusy = true;
   const config = getAiConfig(snapshot.settings), started = Date.now();
   let stage = "准备请求";
-  const progressText = h("p", {}, `正在准备 ${config.label} 请求，原始记录不会自动改写。`);
-  const progress = h("div", { class: "loading-screen" }, h("span", { class: "loading-indicator" }), progressText);
-  const isCurrent = () => dialog.open && dialog.contains(progress);
-  showDialog("正在整理资料", [progress]);
+  const generation = viewGeneration;
+  const isCurrent = () => viewGeneration === generation && dialog.open && dialog.contains(progress.element);
+  const progress = createAiProgress({ api, config, dialog, isCurrent, onCancel: () => dialog.close() });
+  showDialog("正在整理资料", [progress.element]);
   try {
-    const output = await requestAi(api, snapshot.settings, AI_MODES[mode].prompt, payload, null, (next) => {
+    const onStage = (next) => {
       stage = next;
-      if (isCurrent()) progressText.textContent = `${config.label} · ${stage}。单次最多等待 5 分钟。关闭弹窗后不再接收本次结果，原始记录不会自动改写。`;
-    });
+      progress.stage(stage);
+    };
+    const output = historyState
+      ? await runHistory(api, snapshot.settings, historyState, onStage, { ...progress.options, isCurrent })
+      : await requestAi(api, snapshot.settings, AI_MODES[mode].prompt, payload, null, onStage, { ...progress.options, mode });
     if (!isCurrent()) return;
+    progress.dispose();
     stage = "校验整理结果";
     if (mode === "summary" || mode === "trace") {
       const report = validateAiReport(output);
       const save = button("保存此摘要", async () => {
-        save.disabled = true;
+        if (controls.disabled) return;
+        controls.disabled = true;
         try {
-          if (revision !== store.revision) throw new HealthError("档案在分析期间已变化，请重新整理后保存");
-          await persist((draft) => { draft.healthSummary = { text: report.summary + "\n\n" + report.sections.map((s) => `${s.title}\n${s.text}`).join("\n\n"), time: new Date().toLocaleString("zh-CN") }; }); dialog.close(); if (!editor) navigate("ai"); toast("摘要已保存，检验记录未改动");
-        } catch (e) { toast(errorText(e)); } finally { save.disabled = false; }
+          await persist((draft) => { draft.healthSummary = { text: report.summary + "\n\n" + report.sections.map((s) => `${s.title}\n${s.text}`).join("\n\n"), time: new Date().toLocaleString("zh-CN") }; }, revision);
+          if (dialog.open && dialog.contains(controls)) { dialog.close(); if (!editor) navigate("ai"); }
+          toast("摘要已保存，检验记录未改动");
+        } catch (e) { toast(errorText(e)); } finally { controls.disabled = false; }
       }, "button primary full");
-      showDialog(AI_MODES[mode].title, [h("p", { class: "notice warning" }, "AI 生成，仅供资料整理，请对照原报告核实。"), h("article", { class: "report-text" }, h("p", {}, report.summary), report.sections.map((s) => h("section", {}, h("h3", {}, s.title), h("p", {}, s.text)))), save]);
-    } else showSuggestions(validateSuggestions(output, snapshot, mode), mode, revision);
+      const controls = showDialog(AI_MODES[mode].title, [h("p", { class: "notice warning" }, "AI 生成，仅供资料整理，请对照原报告核实。"), h("article", { class: "report-text" }, h("p", {}, report.summary), report.sections.map((s) => h("section", {}, h("h3", {}, s.title), h("p", {}, s.text)))), save]);
+    } else showSuggestions(reviewSuggestions(output, snapshot, mode), mode, revision);
   } catch (e) {
     if (isCurrent()) {
+      progress.dispose();
       const publicCodes = ["UNSUPPORTED", "INVALID_REQUEST", "INVALID_SESSION", "WRONG_ORIGIN", "NOT_MAIN_FRAME", "NOT_DECLARED", "PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED", "USER_GESTURE_REQUIRED", "BUSY", "RATE_LIMITED", "QUOTA_EXCEEDED", "CANCELLED", "SESSION_ENDED", "NOT_FOUND", "DUPLICATE_TASK", "NETWORK_BLOCKED", "NETWORK_UNAVAILABLE", "NETWORK_TIMEOUT", "INTERNAL_ERROR"];
       const code = e instanceof HealthError ? e.code : publicCodes.includes(e?.code) ? e.code : "UNEXPECTED_ERROR";
+      const remaining = historyState?.reports.filter(report => !report).length;
       showDialog("未能完成整理", [h("p", { class: "notice warning" }, errorText(e)),
         h("p", { class: "small pre-wrap" }, `${AI_MODES[mode].title} · ${config.label} / ${config.model}\n阶段：${stage} · 已耗时 ${((Date.now() - started) / 1000).toFixed(1)} 秒\n错误码：${code}`),
-        h("p", { class: "small muted" }, "这次操作失败，不等于“没有修改建议”。原始记录未修改；可把上方阶段和错误码用于排查，不需要发送密钥或病史。")]);
+        h("p", { class: "small muted" }, "这次操作失败，不等于“没有修改建议”。原始记录未修改；可把上方阶段和错误码用于排查，不需要发送密钥或病史。"),
+        historyState && h("p", { class: "notice" }, `已临时保留 ${historyState.reports.length - remaining}/${historyState.reports.length} 组完整回复，尚未保存到档案。重试仅发送未完成的 ${remaining} 组，可能再产生 ${remaining} 次调用费用。关闭本次结果后这些临时回复不再保留。`),
+        remaining > 0 && button(`同意重试未完成的 ${remaining} 组`, () => {
+          if (aiBusy) return;
+          if (store.revision !== revision) { toast("档案已变化，请重新选择历史整理并确认发送范围"); return; }
+          dialog.close(); runAi(mode, snapshot, revision, payload, historyState);
+        }, "button primary full")]);
     }
   }
-  finally { aiBusy = false; }
+  finally { progress.dispose(); aiBusy = false; }
 }
 
-function showSuggestions(suggestions, mode, revision) {
+function showSuggestions({ suggestions, rejected, received }, mode, revision) {
   const selected = new Map(), error = h("p", { class: "form-error", role: "alert", hidden: true });
   const rows = suggestions.map((suggestion, i) => {
     const checked = h("input", { type: "checkbox", onChange: (e) => selected.set(i, e.target.checked) });
     const title = mode === "cleanup" ? `${suggestion.source} → ${suggestion.target}` : `${suggestion.date}：${TYPES[suggestion.oldType]} → ${TYPES[suggestion.type]}`;
-    return h("div", { class: "suggestion-row" }, h("label", { class: "checkbox-field" }, checked, h("strong", {}, title)), h("p", {}, suggestion.reason), mode === "cleanup" && h("p", {}, `${suggestion.specimen} · ${suggestion.unit || "无单位"}`));
+    return h("div", { class: "suggestion-row" }, h("label", { class: "checkbox-field" }, checked, h("strong", {}, title)), h("p", {}, suggestion.reason), suggestion.notice && h("p", { class: "notice warning" }, suggestion.notice), mode === "cleanup" ? h("p", {}, `${suggestion.specimen} · ${suggestion.unit || "无单位"}`) : h("p", { class: "small muted" }, `AI 引用的原始项目：${suggestion.evidenceNames.join("、")}（内容是否支持分类，请你核对）`));
   });
   const apply = button("应用已勾选的建议", async () => {
-    apply.disabled = true; error.hidden = true;
+    if (controls.disabled) return;
+    controls.disabled = true; error.hidden = true;
     try {
-      if (revision !== store.revision) throw new HealthError("记录已变化，请重新生成建议");
       const accepted = suggestions.filter((_, i) => selected.get(i));
       if (!accepted.length) throw new HealthError("请先逐条核对并勾选需要应用的建议");
       await persist((draft) => {
-        for (const suggestion of accepted) {
-          if (mode === "cleanup") renameMetric(draft, suggestion.key, suggestion.target);
-          else draft.records.find((r) => r.id === suggestion.recordId).type = suggestion.type;
-        }
-      });
-      dialog.close(); if (!editor) navigate("ai"); toast(`已应用 ${accepted.length} 条建议`);
-    } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { apply.disabled = false; }
+        if (mode === "cleanup") applyNameSuggestions(draft, accepted);
+        else for (const suggestion of accepted) draft.records.find((r) => r.id === suggestion.recordId).type = suggestion.type;
+      }, revision);
+      if (dialog.open && dialog.contains(controls)) { dialog.close(); if (!editor) navigate("ai"); }
+      toast(`已应用 ${accepted.length} 条建议`);
+    } catch (e) { error.textContent = errorText(e); error.hidden = false; } finally { controls.disabled = false; }
   }, "button primary full");
-  showDialog(rows.length ? "核对整理建议" : "整理完成，暂无修改建议", [
-    h("p", { class: rows.length ? "notice warning" : "notice" }, rows.length ? "请先备份再修改。AI 建议默认不勾选，只有你选择的项目会改动。数值不会被重算。" : "已收到 AI 的有效回复，返回 0 条可应用的修改建议；这不是请求失败。"),
-    rows.length ? rows : h("p", { class: "small muted" }, mode === "cleanup" ? "本次只检查同标本下的确定同义名称，单位仅作辅助，仍排除不同方法或数量/比例冲突。没有建议不代表全部数据或医学结论正确。" : "本次只检查能确定的检验类型修正，不跨血样、尿样推断。没有建议不代表全部数据或医学结论正确。"), error, rows.length > 0 && apply]);
+  const controls = showDialog(rows.length ? "核对整理建议" : rejected.length ? "整理结果需要核对" : "整理完成，暂无修改建议", [
+    rejected.length > 0 && h("p", { class: "notice warning" }, `收到 ${received} 条建议：${suggestions.length} 条可核对并选择，${rejected.length} 条因格式、记录对应或写入冲突不能直接应用。所有建议均可查看，程序不判断医学内容对错。`),
+    h("p", { class: rows.length || rejected.length ? "notice warning" : "notice" }, rows.length ? "请先备份再修改。AI 建议默认不勾选，只有你选择的项目会改动。数值不会被重算。" : rejected.length ? "服务已返回建议，但均未通过校验，不能应用；原始记录未修改。" : "已收到 AI 的有效回复，返回 0 条可应用的修改建议；这不是请求失败。"),
+    rows.length ? rows : h("p", { class: "small muted" }, rejected.length ? "请查看 AI 原建议及无法直接应用的原因，再手工核对；原始记录未修改。" : "AI 本次没有提出修改建议，不代表数据或医学结论一定正确；血样、尿样仍按你的要求分开。"),
+    rejected.length > 0 && h("details", {}, h("summary", {}, `查看 ${rejected.length} 条无法应用的 AI 原建议及原因`), rejected.map(entry => h("div", { class: "suggestion-row" }, h("strong", {}, `${entry.index}. ${entry.label}`), h("p", {}, entry.reason), h("pre", {}, JSON.stringify(entry.proposal, null, 2))))), error, rows.length > 0 && apply]);
 }
 
 async function chooseOcr() {
@@ -542,33 +583,36 @@ async function chooseOcr() {
     const preview = h("img", { src: `data:${image.mimeType};base64,${image.data}`, alt: "实际发送的报告图片", class: "report-image-preview" });
     const imageInfo = h("p", { class: "notice", role: "status" }, `原图 ${(image.originalBytes / 1024 / 1024).toFixed(2)} MiB → 实际发送 ${Math.ceil(image.outputBytes / 1024)} KiB · ${image.width} × ${image.height} 像素。${image.compressed ? "已在本机压缩为 JPEG，原文件未改动。请检查下方文字是否清晰。" : "保留原图编码和清晰度，原文件未改动。"}`);
     const status = h("p", { class: "notice", role: "status", hidden: true });
+    const progressSlot = h("div");
     const isCurrent = () => viewGeneration === generation && dialog.open && dialog.contains(confirm);
     const confirm = button("同意发送这张图片", async () => {
       if (aiBusy) return; aiBusy = true; confirm.disabled = true;
-      status.textContent = "正在识别图片，单次最多等待 5 分钟，尚未保存记录…"; status.hidden = false; status.scrollIntoView({ block: "nearest" });
+      status.hidden = true;
+      const progress = createAiProgress({ api, config, dialog, isCurrent, onCancel: () => dialog.close() });
+      progressSlot.replaceChildren(progress.element); progressSlot.scrollIntoView({ block: "nearest" });
       try {
-        const output = await requestAi(api, settings, OCR_PROMPT, {}, image);
+        const output = await requestAi(api, settings, OCR_PROMPT, {}, image, progress.stage, { ...progress.options, mode: "ocr" });
         if (!isCurrent()) return;
         const result = validateOcr(output);
         const notice = `AI 识别结果尚未保存，请逐项核对名称、数值、单位和参考范围。${result.missingDate ? "未识别日期，暂填今天，请按报告修正。" : ""}`;
         let aligned;
         try {
-          aligned = await alignRecordNames(result.record, catalog, { isCurrent, request: (prompt, payload) => requestAi(api, settings, prompt, payload), onProgress: (index, total) => {
-            status.textContent = `图片已识别，正在对齐本地名称（${index}/${total}）… 单次最多等待 5 分钟，尚未保存记录。`; status.scrollIntoView({ block: "nearest" });
+          aligned = await alignRecordNames(result.record, catalog, { isCurrent, request: (prompt, payload) => requestAi(api, settings, prompt, payload, null, next => progress.stage(`正在对齐本地名称 · ${next}`), { ...progress.options, mode: "names" }), onProgress: (index, total) => {
+            progress.stage(`图片已识别，正在对齐本地名称（${index}/${total}），尚未保存记录`);
           } });
         } catch {
-          if (isCurrent()) { dialog.close(); openEditor(result.record, `${notice}名称匹配未完成，已保留识别草稿。`); }
+          if (isCurrent()) { progress.dispose(); dialog.close(); openEditor(result.record, `${notice}名称匹配未完成，已保留识别草稿。`); }
           return;
         }
         if (!aligned || !isCurrent()) return;
-        const { aiRequests, localMatches, aiMatches, unresolved } = aligned.stats;
-        const matching = ` 本地匹配 ${localMatches} 项；AI 名称匹配尝试 ${aiRequests} 次，对齐 ${aiMatches} 项。`;
-        dialog.close(); openEditor(aligned.record, `${notice}${matching}${unresolved ? ` ${unresolved} 项名称未自动对齐，原因见各指标下方。` : " 名称已与本地目录核对，仍请检查识别结果。"}`, aligned);
-      } catch (e) { if (isCurrent()) { status.textContent = errorText(e); status.scrollIntoView({ block: "nearest" }); } } finally { aiBusy = false; confirm.disabled = false; }
+        const { aiRequests, localMatches, aiMatches, unresolved, rejectedMatches = 0 } = aligned.stats;
+        const matching = ` 本地匹配 ${localMatches} 项；AI 名称匹配尝试 ${aiRequests} 次，对齐 ${aiMatches} 项。${rejectedMatches ? ` ${rejectedMatches} 条不合规匹配已拦截，其他有效匹配已保留。` : ""}`;
+        progress.dispose(); dialog.close(); openEditor(aligned.record, `${notice}${matching}${unresolved ? ` ${unresolved} 项名称未自动对齐，原因见各指标下方。` : " 名称已与本地目录核对，仍请检查识别结果。"}`, aligned);
+      } catch (e) { if (isCurrent()) { status.textContent = errorText(e); status.hidden = false; status.scrollIntoView({ block: "nearest" }); } } finally { progress.dispose(); progressSlot.replaceChildren(); aiBusy = false; confirm.disabled = false; }
     }, "button primary full");
     showDialog("确认发送报告图片", [h("p", { class: "notice warning pre-wrap" }, `将把下方完整图片及其附带信息发送到 ${config.label}（${config.host}）。模型：${config.model}。图片可能包含姓名等敏感信息，建议先遮挡无关个人信息、移除照片的位置等附带信息。${catalog.candidates.length ? `识别后自动对齐本地名称：先使用已确认的对应，其余仅发送识别名称、标本、单位及同组候选目录，不再次发图，不发送历史结果、参考范围、日期或病史。名称匹配最多额外调用 ${MAX_NAME_BATCHES} 次，可能产生额外 API 费用或消耗套餐额度。` : "当前没有本地标准目录，本次仅识别图片，可能产生 API 费用或消耗套餐额度。"}`),
-      catalog.candidates.length > 0 && h("details", {}, h("summary", {}, `查看本地标准目录（${catalog.candidates.length} 项）`), h("p", { class: "small muted" }, "只发送同标本且方法、数量性质兼容的候选。单位缺失或不同不会直接排除同义名称；未注明标本的指标库条目仅供手工选择。"), h("pre", {}, catalog.candidates.map((entry) => `${entry.name} · ${entry.specimen || "标本未标注"} · ${entry.unit || "单位未注明"}`).join("\n"))),
-      imageInfo, preview, h("p", { class: "small muted" }, "关闭弹窗后不再填入本次结果；尚未发出的匹配请求也会停止，但无法撤回已经发送的资料。"), confirm, status]);
+      catalog.candidates.length > 0 && h("details", {}, h("summary", {}, `查看本地标准目录（${catalog.candidates.length} 项）`), h("p", { class: "small muted" }, "发送同标本的完整候选目录。单位差异不直接排除候选；方法与数量/比例差异只作核对提示，由 AI 建议、你确认。未注明标本的指标库条目仅供手工选择。"), h("pre", {}, catalog.candidates.map((entry) => `${entry.name} · ${entry.specimen || "标本未标注"} · ${entry.unit || "单位未注明"}`).join("\n"))),
+      imageInfo, preview, h("p", { class: "small muted" }, `${aiStreamConsent(api, config)}关闭弹窗后不再填入本次结果；尚未发出的匹配请求也会停止，但无法撤回已经发送的资料。`), confirm, progressSlot, status]);
   } catch (e) { toast(errorText(e)); } finally { operationBusy = false; }
 }
 

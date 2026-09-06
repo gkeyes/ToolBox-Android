@@ -42,8 +42,9 @@ export function createStore(storage, makeId = () => crypto.randomUUID()) {
     return copy(state);
   }
 
-  async function commit(mutator) {
+  async function commit(mutator, expectedRevision) {
     if (!state) throw new HealthError("记录尚未读取完成，请稍后重试", "NOT_READY");
+    if (expectedRevision !== undefined && expectedRevision !== revision) throw new HealthError("档案已被其他操作更新，本次未保存。请保留当前输入，重新打开后核对再保存", "STALE_EDIT");
     const draft = copy(state);
     const replacement = await mutator(draft);
     const next = normalizeArchive(replacement || draft, makeId);
@@ -78,8 +79,8 @@ export function createStore(storage, makeId = () => crypto.randomUUID()) {
     load,
     get value() { if (!state) throw new HealthError("档案尚未加载"); return copy(state); },
     get revision() { return revision; },
-    update(mutator) {
-      const pending = tail.then(() => commit(mutator));
+    update(mutator, { expectedRevision } = {}) {
+      const pending = tail.then(() => commit(mutator, expectedRevision));
       tail = pending.catch(() => {});
       return pending;
     },
