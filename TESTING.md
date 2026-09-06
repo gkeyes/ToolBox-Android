@@ -4,6 +4,23 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 开发计划续行 P-C：运行页完全覆盖时暂停底页 UI 订阅
+
+- 只暂停工具首页的 catalog/import/running UI StateFlow 收集，不暂停其 VM、数据仓库、导航事件、
+  运行会话或后台任务。底页保持组合/测量，原列表位置、页面状态与业务任务不销毁。
+- 仅在 runtime 已呈现且 entry cover 隐藏、source 尚未开始返回时冻结；入场/返回展示前恢复订阅。
+  以 source/可见性作为局部 key，重新显示即用 StateFlow 当前值初始化，而不是等下一次变化或回放历史事件。
+- 卸载/停止确认是窗口级弹层：确认存在时对应 UI 保持订阅，让工具/会话消失仍能及时关闭确认。
+  此例外不会触发停止操作，也不改变确认目标的 VM 校验。
+- 本地 diff 与安全不变量脚本通过；只做源码检查，不是 Android 编译或设备回归。
+- 不把这个切片称为完整 F4：权限页 Activity-store VM、其他保留二级页收集、Activity 重建/权限回调
+  与授权写入生命周期仍未改。图标 F2 也未冒进：现有调用方只有 versionCode，完整版本与失效时序需另行设计。
+
+| 扩展既有检查 | 理由 | 方法 | 预期/状态 |
+|---|---|---|---|
+| `CatalogRunningToolsTest.coveredUiFreezesWithoutStoppingItsProducerAndKeepsConfirmationsLive` | 遮挡不能停止真正的后台会话或漏掉确认失效；重新显示不能留在旧会话列表。 | 生产 RunningToolsViewModel + CatalogRunningTools，控制可见性和会话 StateFlow；遮挡时改变会话，检查 UI 冻结但 VM 已更新、上游订阅仍存在且无 stop 回调；重新显示检查最新会话；有停止确认时遮挡再移除会话。 | 非确认 UI 冻结，返回呈现当前值；确认随会话消失而关闭，不调用 stop；仪器执行 NOT_RUN。这里的会话源是 fixture，不证明真实服务生命周期、动画或帧率。 |
+| 原 host gate / optimized_compile / delivery | 新的 Compose 状态收集边界需经真实类型/源集编译与既有回归。 | 沿用原 GitHub 门禁，保留原运行/权限/导航测试，不恢复截图。 | 待本提交 CI；设备、动画/性能和跨重建行为未测，不标 PASS。 |
+
 ## 开发计划续行 P-D：启动主题与系统栏（F6 小步修改）
 
 - Loading/Error 使用宿主现有 System 主题，不再硬编码浅色；不提前同步读 DataStore。

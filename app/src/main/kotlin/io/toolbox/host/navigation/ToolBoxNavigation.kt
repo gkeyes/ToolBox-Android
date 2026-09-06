@@ -57,6 +57,7 @@ import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.CatalogRunningTools
+import io.toolbox.host.ui.collectAsStateWhileVisible
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellPreviewContent
 import io.toolbox.host.ui.RuntimeShellScreen
@@ -246,6 +247,9 @@ internal fun ToolBoxNavigation(
                         catalogViewModel = catalogViewModel,
                         importViewModel = importViewModel,
                         listState = toolsListState,
+                        // Freeze only while the settled runtime fully covers the base page.
+                        // Resume before the source's return animation, not after route removal.
+                        uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
                         onDestination = ::navigateMain,
                         onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
                         onOpenDetails = { navigate(ToolDetailRoute(it)) },
@@ -467,6 +471,7 @@ private fun ToolManagerRouteContent(
     catalogViewModel: CatalogViewModel,
     importViewModel: ImportViewModel,
     listState: androidx.compose.foundation.lazy.LazyListState,
+    uiVisible: Boolean,
     onDestination: (MainDestination) -> Unit,
     onImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
@@ -475,8 +480,12 @@ private fun ToolManagerRouteContent(
         ViewModelProvider(viewModelStoreOwner, HostFeatureViewModelFactory(dependencies))
             .get("host.running-tools", RunningToolsViewModel::class.java)
     }
-    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
-    val importState by importViewModel.state.collectAsStateWithLifecycle()
+    // A modal can outlive its base surface (for example, an external shortcut).
+    // Keep its invalidation live rather than freezing a destructive confirmation.
+    val catalogState by catalogViewModel.state.collectAsStateWhileVisible(
+        uiVisible || catalogViewModel.state.value.uninstallConfirmation != null,
+    )
+    val importState by importViewModel.state.collectAsStateWhileVisible(uiVisible)
     ToolManagerScreen(
         state = catalogState,
         importState = importState,
@@ -491,6 +500,7 @@ private fun ToolManagerRouteContent(
             CatalogRunningTools(
                 viewModel = runningToolsViewModel,
                 tools = catalogState.tools,
+                uiVisible = uiVisible,
                 onOpen = { catalogViewModel.dispatch(CatalogAction.RequestRuntimeLaunch(it)) },
             )
         },

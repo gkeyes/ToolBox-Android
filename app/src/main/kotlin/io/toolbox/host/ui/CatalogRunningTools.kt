@@ -21,7 +21,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -40,8 +39,12 @@ internal fun CatalogRunningTools(
     viewModel: RunningToolsViewModel,
     tools: List<CatalogTool>,
     onOpen: (String) -> Unit,
+    uiVisible: Boolean = true,
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    // Never freeze a window-level stop confirmation while its session can disappear.
+    val state by viewModel.state.collectAsStateWhileVisible(
+        uiVisible || viewModel.state.value.confirmation != null,
+    )
     CatalogRunningToolsContent(
         state = state,
         tools = tools,

@@ -3,6 +3,7 @@ package io.toolbox.host
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -38,6 +39,7 @@ class CatalogRunningToolsTest {
     private val first = session("watcher", "GitHub 构建守望", 1)
     private val second = session("lab", "通知实验室", 2)
     private val source = MutableStateFlow<List<RuntimeBackgroundSessionUi>>(emptyList())
+    private val uiVisible = mutableStateOf(true)
     private val stopped = mutableListOf<String>()
     private val opened = mutableListOf<String>()
     private lateinit var viewModel: RunningToolsViewModel
@@ -82,6 +84,35 @@ class CatalogRunningToolsTest {
     }
 
     @Test
+    fun coveredUiFreezesWithoutStoppingItsProducerAndKeepsConfirmationsLive() {
+        source.value = listOf(first)
+        showHome()
+        composeRule.onNodeWithTag("catalog-running-${first.sessionId}").assertIsDisplayed()
+        composeRule.runOnIdle { uiVisible.value = false }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { source.value = listOf(second) }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertEquals(listOf(second), viewModel.state.value.sessions)
+            assertEquals(1, source.subscriptionCount.value)
+            assertTrue(stopped.isEmpty())
+        }
+        composeRule.onNodeWithTag("catalog-running-${first.sessionId}").assertIsDisplayed()
+        composeRule.onNodeWithTag("catalog-running-${second.sessionId}").assertDoesNotExist()
+
+        composeRule.runOnIdle { uiVisible.value = true }
+        composeRule.onNodeWithTag("catalog-running-${first.sessionId}").assertDoesNotExist()
+        composeRule.onNodeWithTag("catalog-running-${second.sessionId}").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("停止${second.toolName}后台运行").performClick()
+        composeRule.onNodeWithText("停止后台运行？").assertIsDisplayed()
+        composeRule.runOnIdle { uiVisible.value = false }
+        composeRule.onNodeWithText("停止后台运行？").assertIsDisplayed()
+        composeRule.runOnIdle { source.value = emptyList() }
+        composeRule.onNodeWithText("停止后台运行？").assertDoesNotExist()
+        composeRule.runOnIdle { assertTrue(stopped.isEmpty()) }
+    }
+
+    @Test
     fun runningControlsRemainSeparateTouchTargetsAtDoubleFontScale() {
         source.value = listOf(first, second)
         showHome(fontScale = 2f)
@@ -122,7 +153,9 @@ class CatalogRunningToolsTest {
                         onInstallExamples = {},
                         onDismissImport = {},
                         onOpenDetails = {},
-                        runningTools = { CatalogRunningTools(viewModel, tools, onOpen = { opened += it }) },
+                        runningTools = {
+                            CatalogRunningTools(viewModel, tools, onOpen = { opened += it }, uiVisible = uiVisible.value)
+                        },
                     )
                 }
             }

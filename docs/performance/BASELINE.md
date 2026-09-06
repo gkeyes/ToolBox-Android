@@ -217,7 +217,7 @@ are NOT_MEASURED, not zero. Record sample count and quantile method for every P9
 | F1 | Later user-authorized continuation queues navigation before cancellable, serialized statistics; queued same-tool requests coalesce and known-deleted tools are filtered at consumption | Deterministic JVM regression is being added; C tap/shell/readiness and actual runtime regression still required. No measured latency improvement; runtime qualification is unchanged |
 | F2 | `icons/ToolIconLoader.kt:load` queries before cache.get; 4MiB/256px, two decode slots | B lookup/hit/evict/decode plus allocations; use full immutable version key only with safe invalidation; no blind capacity increase |
 | F5 | `navigation/ToolBoxNavigation.kt` enables runtime after entry animation; `runtime/RuntimeSessionManager.kt:ensureRuntime` then prepares | C shell/prepare/create gaps; evaluate safe IO overlap, not off-main WebView or another pool; cancellation/update/permit risks |
-| F4 | Permission VM uses passed Activity store; retained route composition survives hiding | D/F offscreen collectors, object counts and updates; route ownership only for UI, never suspend authoritative grants/background sessions |
+| F4 | Permission VM still uses passed Activity store; retained route composition survives hiding. A later slice pauses only home catalog/import/running UI subscriptions under a fully presented runtime, except open destructive confirmations | D/F collector/object/return-frame evidence remains unmeasured. Source stays live and resume initializes current StateFlow value before the source return animation; no grant/runtime/job lifetime changes |
 
 F1/F2 first, F5 next and F4 lifecycle review are a **source-led investigation
 order**, not timing evidence. Raw trace ranges, measured cost and attribution are
@@ -249,6 +249,18 @@ preceding settings fix `7773220` passed CI
 [34008474117](https://github.com/gkeyes/ToolBox-Android/actions/runs/34008474117);
 that result does not certify this later startup change. Do not infer visual
 approval or device readiness from CI.
+
+The later P-C covered-home slice uses local source/visibility keys, preserving the
+retained composition and list state while detaching only selected UI collectors.
+It resumes during entry/return, not just after the runtime route has been removed.
+Window-level uninstall/stop confirmations keep live invalidation. A production
+running-group/VM fixture regression checks frozen UI versus still-live producer,
+latest-value return, and disappearance of a confirmed session without calling stop;
+instrumentation execution is NOT_RUN. It does not scope permission VMs, stop their
+manifest/grant observers, or alter background sessions and security mutations.
+The icon fast path is still pending: current UI projection exposes versionCode,
+not the full ToolVersion identity, and post-mutation invalidation cannot simply be
+replaced by trusting a stale caller snapshot. No cache size/decode changes made.
 
 ## Results / remaining gates
 
