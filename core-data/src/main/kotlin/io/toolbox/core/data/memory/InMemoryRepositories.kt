@@ -273,8 +273,7 @@ private class InMemoryToolKvRepository(private val state: InMemoryCoreState) : T
         key: String,
         valueJson: String,
         updatedAt: Long,
-        quotaBytes: Long,
-    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt, quotaBytes)
+    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt)
 
     override suspend fun keys(toolId: String): List<String> = state.mutex.withLock {
         state.keyValues.value.keys.filter { it.first == toolId }.map { it.second }.sorted()
@@ -285,24 +284,12 @@ private class InMemoryToolKvRepository(private val state: InMemoryCoreState) : T
         removeKeys: Set<String>,
         values: Map<String, String>,
         updatedAt: Long,
-        quotaBytes: Long,
     ): DataResult<Unit> = state.mutex.withLock {
         if (removeKeys.any(String::isBlank) || values.keys.any(String::isBlank)) {
             return@withLock DataResult.Failure.InvalidInput("key")
         }
-        if (quotaBytes !in 1..CoreDataLimits.MAX_TOOL_KV_BYTES) {
-            return@withLock DataResult.Failure.InvalidInput("quotaBytes")
-        }
         if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
-        val affectedKeys = removeKeys + values.keys
         val rows = values.map { (key, value) -> (toolId to key) to ToolKvValue(key, value, updatedAt) }.toMap()
-        val retainedBytes = state.keyValues.value.entries.sumOf { (key, value) ->
-            if (key.first == toolId && key.second !in affectedKeys) value.bytes.toLong() else 0L
-        }
-        val attempted = retainedBytes + rows.values.sumOf { it.bytes.toLong() }
-        if (values.isNotEmpty() && attempted > quotaBytes) {
-            return@withLock DataResult.Failure.QuotaExceeded(quotaBytes, attempted)
-        }
         state.keyValues.value = (state.keyValues.value - removeKeys.map { toolId to it }.toSet()) + rows
         DataResult.Success(Unit)
     }

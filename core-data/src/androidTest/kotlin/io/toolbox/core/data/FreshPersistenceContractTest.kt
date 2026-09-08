@@ -239,7 +239,7 @@ class FreshPersistenceContractTest {
     }
 
     @Test
-    fun declaredStorageQuotaAndAtomicReplacementSurviveReopen() = runTest {
+    fun largeStorageAndAtomicReplacementSurviveFailureAndReopen() = runTest {
         var database = openDatabase()
         try {
             assertEquals(
@@ -250,36 +250,39 @@ class FreshPersistenceContractTest {
             )
             assertEquals(DataResult.Success(CommitInstallOutcome.Committed), RoomCatalogLifecycleRepository(database).commitInstall(attempt()))
             var storage = RoomToolKvRepository(database)
-            val quota = 3L * 1024 * 1024
             val chunk = "x".repeat(768 * 1024)
-            for (key in listOf("standard.one", "standard.two", "secure.document", "host.session")) {
-                assertEquals(DataResult.Success(Unit), storage.put(TOOL_ID, key, chunk, 2, quota))
+            val keys = (1..26).map { "standard.$it" } + listOf("secure.document", "host.session")
+            for (key in keys) {
+                assertEquals(DataResult.Success(Unit), storage.put(TOOL_ID, key, chunk, 2))
             }
-            assertEquals(quota, storage.bytesUsed(TOOL_ID))
-            assertEquals(DataResult.Failure.QuotaExceeded(quota, quota + 3), storage.put(TOOL_ID, "overflow", "中", 3, quota))
-            assertEquals(
-                DataResult.Failure.QuotaExceeded(quota, quota + 1),
-                storage.replace(TOOL_ID, setOf("standard.one"), mapOf("replacement" to chunk + "x"), 3, quota),
+            val totalBytes = 21L * 1024 * 1024
+            assertEquals(totalBytes, storage.bytesUsed(TOOL_ID))
+            assertEquals(DataResult.Success(Unit), storage.put(TOOL_ID, "extra", "中", 3))
+            database.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER reject_test_row BEFORE INSERT ON tool_kv WHEN NEW.`key` = 'reject' BEGIN SELECT RAISE(ABORT, 'injected'); END",
             )
-            assertEquals(chunk, storage.observe(TOOL_ID, "standard.one").first()!!.valueJson)
+            assertEquals(
+                DataResult.Failure.StorageFailure("putToolKv"),
+                storage.replace(TOOL_ID, setOf("standard.1"), linkedMapOf("partial" to chunk, "reject" to "x"), 4),
+            )
+            assertEquals(chunk, storage.observe(TOOL_ID, "standard.1").first()!!.valueJson)
+            assertEquals((keys + "extra").sorted(), storage.keys(TOOL_ID))
+            assertEquals(totalBytes + 3, storage.bytesUsed(TOOL_ID))
+            database.openHelper.writableDatabase.execSQL("DROP TRIGGER reject_test_row")
             assertEquals(
                 DataResult.Success(Unit),
-                storage.replace(TOOL_ID, setOf("standard.one", "standard.two"), mapOf("replacement" to chunk, "standard.two" to chunk), 4, quota),
+                storage.replace(TOOL_ID, setOf("standard.1", "standard.2"), mapOf("replacement" to chunk + "more", "standard.2" to chunk), 5),
             )
             database.close()
             database = openDatabase()
             storage = RoomToolKvRepository(database)
-            assertEquals(listOf("host.session", "replacement", "secure.document", "standard.two"), storage.keys(TOOL_ID))
-            assertEquals(quota, storage.bytesUsed(TOOL_ID))
-            assertEquals(chunk, storage.observe(TOOL_ID, "replacement").first()!!.valueJson)
-            assertEquals(
-                DataResult.Failure.QuotaExceeded(CoreDataLimits.TOOL_KV_BYTES, quota + 1),
-                storage.put(TOOL_ID, "default-quota", "x", 5),
-            )
-            assertEquals(
-                DataResult.Failure.InvalidInput("quotaBytes"),
-                storage.put(TOOL_ID, "invalid-quota", "x", 5, CoreDataLimits.MAX_TOOL_KV_BYTES + 1),
-            )
+            assertEquals((keys.filter { it != "standard.1" } + listOf("replacement", "extra")).sorted(), storage.keys(TOOL_ID))
+            assertEquals(totalBytes + 7, storage.bytesUsed(TOOL_ID))
+            for (key in keys.filter { it != "standard.1" }) {
+                assertEquals(chunk, storage.observe(TOOL_ID, key).first()!!.valueJson)
+            }
+            assertEquals(chunk + "more", storage.observe(TOOL_ID, "replacement").first()!!.valueJson)
+            assertEquals("中", storage.observe(TOOL_ID, "extra").first()!!.valueJson)
         } finally {
             database.close()
         }

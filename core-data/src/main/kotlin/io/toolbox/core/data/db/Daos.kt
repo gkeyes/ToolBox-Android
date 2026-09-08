@@ -96,9 +96,6 @@ internal interface ToolKvDao {
     @Query("SELECT `key` FROM tool_kv WHERE toolId = :toolId ORDER BY `key`")
     suspend fun keys(toolId: String): List<String>
 
-    @Query("SELECT bytes FROM tool_kv WHERE toolId = :toolId AND `key` = :key")
-    suspend fun bytesForKey(toolId: String, key: String): Int?
-
     @Query("SELECT COALESCE(SUM(bytes), 0) FROM tool_kv WHERE toolId = :toolId")
     suspend fun bytesUsed(toolId: String): Long
 

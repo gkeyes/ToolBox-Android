@@ -38,13 +38,13 @@ class RuntimeStandardStorageInstrumentedTest {
             assertTrue(stores.repositories.lifecycle.commitInstall(attempt) is DataResult.Success)
             val legacy = "{\"previous\":\"${"x".repeat(600_000)}\"}"
             assertEquals(DataResult.Success(Unit), stores.repositories.keyValues.put(TOOL_ID, ToolStorageNamespace.Standard.documentKey, legacy, 1))
-            val storage = StandardToolKvStorageHandler(TOOL_ID, stores.repositories.keyValues, QUOTA, { 1 })
+            val storage = StandardToolKvStorageHandler(TOOL_ID, stores.repositories.keyValues, { 1 })
             val article = RpcValue.StringValue("正文😀\\\"\n".repeat(300_000))
             storage.set("full-article", article)
             assertNull(stores.repositories.keyValues.observe(TOOL_ID, ToolStorageNamespace.Standard.documentKey).first())
             stores.close()
             stores = CoreDataFactory.create(context, "$name.db", name)
-            val reopened = StandardToolKvStorageHandler(TOOL_ID, stores.repositories.keyValues, QUOTA, { 2 })
+            val reopened = StandardToolKvStorageHandler(TOOL_ID, stores.repositories.keyValues, { 2 })
             assertEquals(article, reopened.get("full-article"))
             assertEquals(RpcValue.StringValue("x".repeat(600_000)), reopened.get("previous"))
             assertEquals(setOf("previous", "full-article"), reopened.keys().toSet())
@@ -65,6 +65,5 @@ class RuntimeStandardStorageInstrumentedTest {
 
     private companion object {
         const val TOOL_ID = "io.toolbox.storage.instrumented"
-        const val QUOTA = 32L * 1024 * 1024
     }
 }

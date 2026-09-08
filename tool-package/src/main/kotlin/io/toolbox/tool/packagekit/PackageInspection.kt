@@ -96,7 +96,7 @@ data class ManifestUi(
 )
 enum class ManifestOrientation { UNSPECIFIED, PORTRAIT, LANDSCAPE }
 enum class ManifestStatusBarStyle { AUTO, LIGHT, DARK }
-data class ManifestLimits(val storageBytes: Int, val maxBridgePayloadBytes: Int)
+data class ManifestLimits(val maxBridgePayloadBytes: Int)
 
 data class PackageRejection(val code: PackageRejectionCode, val detail: String)
 

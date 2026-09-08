@@ -113,7 +113,7 @@ internal class HostRuntimeBridgeProvider(
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
-            handlers = createM1Handlers(runtime.toolId, runtime.installedManifest.storageBytes.toLong()),
+            handlers = createM1Handlers(runtime.toolId),
             m2Handlers = m2Handlers,
             m3Handlers = m3Handlers,
             hostVersion = hostVersion,
@@ -122,12 +122,11 @@ internal class HostRuntimeBridgeProvider(
         )
     }
 
-    private fun createM1Handlers(toolId: String, storageQuotaBytes: Long): RuntimeM1Handlers = RuntimeM1Handlers(
+    private fun createM1Handlers(toolId: String): RuntimeM1Handlers = RuntimeM1Handlers(
         toast = AndroidToastHandler(applicationContext),
         storage = StandardToolKvStorageHandler(
             toolId = toolId,
             repository = keyValues,
-            quotaBytes = storageQuotaBytes,
             nowMillis = nowMillis,
         ),
         secureStorage = AndroidKeyStoreCipher.isAvailable().takeIf { it }?.let {
@@ -135,7 +134,6 @@ internal class HostRuntimeBridgeProvider(
                 toolId = toolId,
                 repository = keyValues,
                 namespace = ToolStorageNamespace.Secure,
-                quotaBytes = storageQuotaBytes,
                 nowMillis = nowMillis,
                 cipher = AndroidKeyStoreCipher(toolId),
                 canAccess = { grantState.isGranted(toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
@@ -269,7 +267,6 @@ internal enum class ToolStorageNamespace(val documentKey: String) {
 internal class StandardToolKvStorageHandler(
     private val toolId: String,
     private val repository: ToolKvRepository,
-    private val quotaBytes: Long,
     private val nowMillis: () -> Long,
     private val canAccess: suspend () -> Boolean = { true },
 ) : RuntimeStorageHandler {
@@ -281,14 +278,14 @@ internal class StandardToolKvStorageHandler(
     override suspend fun set(key: String, value: RpcValue) = withAccess {
         val physicalKey = physicalKey(key)
         if (!migrateLegacyDocument(key, value)) {
-            checkResult(repository.replace(toolId, existingRows(physicalKey), encodeRows(physicalKey, value), nowMillis(), quotaBytes))
+            checkResult(repository.replace(toolId, existingRows(physicalKey), encodeRows(physicalKey, value), nowMillis()))
         }
     }
 
     override suspend fun remove(key: String) = withAccess {
         val physicalKey = physicalKey(key)
         if (!migrateLegacyDocument(key, null)) {
-            checkResult(repository.replace(toolId, existingRows(physicalKey), emptyMap(), nowMillis(), quotaBytes))
+            checkResult(repository.replace(toolId, existingRows(physicalKey), emptyMap(), nowMillis()))
         }
     }
 
@@ -302,7 +299,7 @@ internal class StandardToolKvStorageHandler(
         val rows = repository.keys(toolId).filterTo(linkedSetOf()) {
             it.startsWith(ROW_PREFIX) || it == ToolStorageNamespace.Standard.documentKey
         }
-        checkResult(repository.replace(toolId, rows, emptyMap(), nowMillis(), quotaBytes))
+        checkResult(repository.replace(toolId, rows, emptyMap(), nowMillis()))
     }
 
     private suspend fun <T> withAccess(action: suspend () -> T): T = withContext(Dispatchers.IO) {
@@ -321,9 +318,9 @@ internal class StandardToolKvStorageHandler(
         if (value == null) document.remove(changedKey) else document[changedKey] = value
         val rows = linkedMapOf<String, String>()
         for ((key, child) in document) rows.putAll(encodeRows(physicalKey(key), child))
-        // Include the requested mutation so shrinking/removing a full legacy document needs no extra quota.
-        // The old document remains intact if the transaction fails, including quota failures.
-        checkResult(repository.replace(toolId, setOf(ToolStorageNamespace.Standard.documentKey), rows, nowMillis(), quotaBytes))
+        // Apply the requested mutation in the migration transaction.
+        // The old document remains intact if any part of the replacement fails.
+        checkResult(repository.replace(toolId, setOf(ToolStorageNamespace.Standard.documentKey), rows, nowMillis()))
         return true
     }
 
@@ -358,7 +355,7 @@ internal class StandardToolKvStorageHandler(
 
     private fun chunkCount(record: Map<String, RpcValue>): Int {
         val count = (record["chunks"] as? RpcValue.Number)?.value ?: unreadable()
-        if (record.keys != setOf("chunks") || count < 1 || count > MAX_CHUNKS || count != count.toInt().toDouble()) unreadable()
+        if (record.keys != setOf("chunks") || count < 1 || count > Int.MAX_VALUE || !count.isFinite() || count != count.toInt().toDouble()) unreadable()
         return count.toInt()
     }
 
@@ -369,12 +366,11 @@ internal class StandardToolKvStorageHandler(
         var offset = 0
         var index = 0
         while (offset < encoded.length) {
-            var end = minOf(offset + CHUNK_CHARS, encoded.length)
+            var end = offset + minOf(CHUNK_CHARS, encoded.length - offset)
             if (end < encoded.length && encoded[end - 1].isHighSurrogate() && encoded[end].isLowSurrogate()) end--
             rows["$key.${index++}"] = RuntimeValueJson.encode(RpcValue.StringValue(encoded.substring(offset, end)))
             offset = end
         }
-        if (index > MAX_CHUNKS) throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Stored value exceeds the tool storage quota")
         rows[key] = RuntimeValueJson.encodeObject(mapOf("chunks" to RpcValue.Number(index.toDouble())))
         return rows
     }
@@ -397,9 +393,8 @@ internal class StandardToolKvStorageHandler(
     private fun checkResult(result: DataResult<Unit>) {
         when (result) {
             is DataResult.Success -> Unit
-            is DataResult.Failure.QuotaExceeded -> throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Tool storage quota exceeded")
             is DataResult.Failure.NotFound -> throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Tool was removed")
-            is DataResult.Failure -> throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Tool storage is unavailable")
+            is DataResult.Failure -> throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "无法写入工具数据，请检查手机剩余空间后重试")
         }
     }
 
@@ -409,7 +404,6 @@ internal class StandardToolKvStorageHandler(
         const val ROW_PREFIX = "toolbox.runtime.v2.standard.key."
         // Even worst-case JSON escaping stays below a 2 MiB Android CursorWindow.
         const val CHUNK_CHARS = 128 * 1024
-        const val MAX_CHUNKS = 512 * 1024 * 1024 / CHUNK_CHARS
     }
 }
 
@@ -417,7 +411,6 @@ private class JsonToolKvStorageHandler(
     private val toolId: String,
     private val repository: ToolKvRepository,
     private val namespace: ToolStorageNamespace,
-    private val quotaBytes: Long,
     private val nowMillis: () -> Long,
     private val cipher: AndroidKeyStoreCipher? = null,
     private val canAccess: suspend () -> Boolean = { true },
@@ -469,13 +462,8 @@ private class JsonToolKvStorageHandler(
     }
 
     private suspend fun write(key: String, valueJson: String) {
-        when (val result = repository.put(toolId, key, valueJson, nowMillis(), quotaBytes)) {
+        when (val result = repository.put(toolId, key, valueJson, nowMillis())) {
             is DataResult.Success -> Unit
-            is DataResult.Failure.QuotaExceeded -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                "Tool storage quota exceeded",
-            )
-
             is DataResult.Failure.NotFound -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.NOT_FOUND,
                 "Tool was removed",
@@ -483,7 +471,7 @@ private class JsonToolKvStorageHandler(
 
             is DataResult.Failure -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.INTERNAL_ERROR,
-                "Tool storage is unavailable",
+                "无法写入工具数据，请检查手机剩余空间后重试",
             )
         }
     }
@@ -496,7 +484,7 @@ private class JsonToolKvStorageHandler(
 
             is DataResult.Failure -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.INTERNAL_ERROR,
-                "Tool storage is unavailable",
+                "无法写入工具数据，请检查手机剩余空间后重试",
             )
         }
     }

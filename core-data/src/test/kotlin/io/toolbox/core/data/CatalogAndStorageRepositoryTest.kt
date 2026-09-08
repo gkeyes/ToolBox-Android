@@ -197,61 +197,35 @@ class CatalogAndStorageRepositoryTest {
     }
 
     @Test
-    fun declaredQuotaAboveDefaultCountsAllNamespacesAndReplacements() = runTest {
+    fun storageBeyondFormerDefaultAndDeclaredLimitsRemainsComplete() = runTest {
         val repositories = InMemoryCoreData.create()
-        val install = attempt("tx-quota", 1)
+        val install = attempt("tx-storage", 1)
         assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(install)))
         assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(install))
-        val quota = 3L * 1024 * 1024
         val chunk = "x".repeat(768 * 1024)
-        for (key in listOf("standard.one", "standard.two", "secure.document", "host.session")) {
-            assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, key, chunk, 2, quota))
+        val keys = (1..26).map { "standard.$it" } + listOf("secure.document", "host.session")
+        for (key in keys) {
+            assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, key, chunk, 2))
         }
-        assertEquals(quota, repositories.keyValues.bytesUsed(TOOL_ID))
-        assertEquals(
-            DataResult.Failure.QuotaExceeded(quota, quota + 3),
-            repositories.keyValues.put(TOOL_ID, "standard.overflow", "中", 3, quota),
-        )
-        assertNull(repositories.keyValues.observe(TOOL_ID, "standard.overflow").first())
-        assertEquals(
-            DataResult.Success(Unit),
-            repositories.keyValues.put(TOOL_ID, "standard.one", chunk, 4, quota),
-        )
-        assertEquals(quota, repositories.keyValues.bytesUsed(TOOL_ID))
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.remove(TOOL_ID, "standard.one"))
-        assertEquals(
-            DataResult.Success(Unit),
-            repositories.keyValues.put(TOOL_ID, "standard.overflow", "中", 5, quota),
-        )
-        assertEquals(quota - chunk.length + 3, repositories.keyValues.bytesUsed(TOOL_ID))
+        // 21 MiB exceeds both the old 2 MiB default and Nextflux's old 20 MiB declaration.
+        val totalBytes = 21L * 1024 * 1024
+        assertEquals(totalBytes, repositories.keyValues.bytesUsed(TOOL_ID))
+        assertEquals(keys.sorted(), repositories.keyValues.keys(TOOL_ID))
+        for (key in keys) {
+            assertEquals(chunk, repositories.keyValues.observe(TOOL_ID, key).first()!!.valueJson)
+        }
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "standard.extra", "中", 3))
+        assertEquals(totalBytes + 3, repositories.keyValues.bytesUsed(TOOL_ID))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "standard.1", chunk + "more", 4))
+        assertEquals(totalBytes + 7, repositories.keyValues.bytesUsed(TOOL_ID))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.remove(TOOL_ID, "standard.1"))
+        assertEquals(totalBytes - chunk.length + 3, repositories.keyValues.bytesUsed(TOOL_ID))
     }
 
     @Test
-    fun defaultAndDeclaredQuotaRejectOverflowAndInvalidLimits() = runTest {
+    fun atomicReplacementAndDeletionStayScopedAndPreserveStateOnInvalidInput() = runTest {
         val repositories = InMemoryCoreData.create()
-        val install = attempt("tx-quota", 1)
-        assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(install)))
-        assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(install))
-        assertEquals(
-            DataResult.Failure.QuotaExceeded(CoreDataLimits.TOOL_KV_BYTES, CoreDataLimits.TOOL_KV_BYTES + 1),
-            repositories.keyValues.put(TOOL_ID, "large", "x".repeat(CoreDataLimits.TOOL_KV_BYTES.toInt() + 1), 2),
-        )
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "small", "中", 2, 3))
-        assertEquals(DataResult.Failure.QuotaExceeded(2, 3), repositories.keyValues.put(TOOL_ID, "small", "中", 3, 2))
-        for (quota in listOf(-1L, 0L, CoreDataLimits.MAX_TOOL_KV_BYTES + 1, Long.MAX_VALUE)) {
-            assertEquals(
-                DataResult.Failure.InvalidInput("quotaBytes"),
-                repositories.keyValues.put(TOOL_ID, "small", "changed", 4, quota),
-            )
-        }
-        assertEquals("中", repositories.keyValues.observe(TOOL_ID, "small").first()!!.valueJson)
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "small", "max", 5, CoreDataLimits.MAX_TOOL_KV_BYTES))
-    }
-
-    @Test
-    fun atomicReplacementCountsFinalRowsAndPreservesStateOnFailure() = runTest {
-        val repositories = InMemoryCoreData.create()
-        val first = attempt("tx-quota", 1)
+        val first = attempt("tx-storage", 1)
         val otherId = "io.toolbox.other"
         val other = attempt("tx-other", 1).let {
             it.copy(
@@ -264,34 +238,30 @@ class CatalogAndStorageRepositoryTest {
             assertEquals(DataResult.Success(Unit), repositories.installs.begin(transaction(install)))
             assertEquals(DataResult.Success(CommitInstallOutcome.Committed), repositories.lifecycle.commitInstall(install))
         }
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "legacy", "12345678", 2, 10))
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "secure", "90", 2, 10))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "legacy", "12345678", 2))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.put(TOOL_ID, "secure", "90", 2))
         assertEquals(DataResult.Success(Unit), repositories.keyValues.put(otherId, "legacy", "other", 2))
         assertEquals(
-            DataResult.Failure.QuotaExceeded(10, 11),
-            repositories.keyValues.replace(TOOL_ID, setOf("legacy"), mapOf("one" to "12345", "two" to "6789"), 3, 10),
+            DataResult.Failure.InvalidInput("key"),
+            repositories.keyValues.replace(TOOL_ID, setOf("legacy"), mapOf("one" to "12345", "" to "6789"), 3),
         )
         assertEquals(listOf("legacy", "secure"), repositories.keyValues.keys(TOOL_ID))
         assertEquals("12345678", repositories.keyValues.observe(TOOL_ID, "legacy").first()!!.valueJson)
         assertEquals(
             DataResult.Success(Unit),
-            repositories.keyValues.replace(TOOL_ID, setOf("legacy", "secure"), mapOf("one" to "1234", "secure" to "567890"), 4, 10),
+            repositories.keyValues.replace(TOOL_ID, setOf("legacy", "secure"), mapOf("one" to "12345", "secure" to "567890"), 4),
         )
         assertEquals(listOf("one", "secure"), repositories.keyValues.keys(TOOL_ID))
-        assertEquals(10L, repositories.keyValues.bytesUsed(TOOL_ID))
+        assertEquals(11L, repositories.keyValues.bytesUsed(TOOL_ID))
         assertEquals("567890", repositories.keyValues.observe(TOOL_ID, "secure").first()!!.valueJson)
-        assertEquals("other", repositories.keyValues.observe(otherId, "legacy").first()!!.valueJson)
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.replace(TOOL_ID, setOf("one"), emptyMap(), 5, 2))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.replace(TOOL_ID, setOf("one"), emptyMap(), 5))
         assertEquals(listOf("secure"), repositories.keyValues.keys(TOOL_ID))
         assertEquals(6L, repositories.keyValues.bytesUsed(TOOL_ID))
-        assertEquals(
-            DataResult.Failure.QuotaExceeded(2, 3),
-            repositories.keyValues.replace(TOOL_ID, emptySet(), mapOf("secure" to "123"), 6, 2),
-        )
-        assertEquals("567890", repositories.keyValues.observe(TOOL_ID, "secure").first()!!.valueJson)
-        assertEquals(DataResult.Success(Unit), repositories.keyValues.replace(TOOL_ID, setOf("secure"), emptyMap(), 7, 2))
+        assertEquals(DataResult.Success(Unit), repositories.keyValues.replace(TOOL_ID, setOf("secure"), emptyMap(), 6))
         assertEquals(emptyList<String>(), repositories.keyValues.keys(TOOL_ID))
         assertEquals(0L, repositories.keyValues.bytesUsed(TOOL_ID))
+        assertEquals(listOf("legacy"), repositories.keyValues.keys(otherId))
+        assertEquals("other", repositories.keyValues.observe(otherId, "legacy").first()!!.valueJson)
     }
 
     private fun attempt(

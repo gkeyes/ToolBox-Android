@@ -56,21 +56,21 @@ class ManifestValidatorTest {
     }
 
     @Test
-    fun installedStorageBudgetIsPreservedAndLargeBudgetsRequireCompatibleHost() {
-        fun source(bytes: Long, host: String = "0.6.5") = manifest(30_000, host)
+    fun legacyStorageDeclarationsRemainCompatibleWithoutSettingACapacityLimit() {
+        fun source(value: String) = manifest(30_000, "0.6.4")
             .toString(Charsets.UTF_8)
-            .replace("\"securityProfile\"", "\"limits\":{\"storageBytes\":$bytes},\"securityProfile\"")
+            .replace("\"securityProfile\"", "\"limits\":{\"storageBytes\":$value},\"securityProfile\"")
             .toByteArray()
-        val verified = InstalledManifestVerifier.verify(
-            source(536_870_912), "io.toolbox.timeoutfixture", 1, io.toolbox.core.data.SecurityProfile.STRICT,
-        ) as InstalledManifestVerification.Verified
-        assertEquals(536_870_912, verified.manifest.storageBytes)
-        assertEquals(52_428_800, ManifestValidator.parse(source(52_428_800, "0.6.4"), PackageLimits()).limits.storageBytes)
-        assertThrows(JsonFormatException::class.java) {
-            ManifestValidator.parse(source(536_870_913), PackageLimits())
+        for (value in listOf("0", "2097152", "536870912", "1099511627776")) {
+            val verified = InstalledManifestVerifier.verify(
+                source(value), "io.toolbox.timeoutfixture", 1, io.toolbox.core.data.SecurityProfile.STRICT,
+            ) as InstalledManifestVerification.Verified
+            assertEquals(262_144, verified.manifest.maxBridgePayloadBytes)
         }
-        assertThrows(JsonFormatException::class.java) {
-            ManifestValidator.parse(source(52_428_801, "0.6.4"), PackageLimits())
+        for (value in listOf("-1", "0.5", "true", "null", "\"unlimited\"")) {
+            assertThrows(JsonFormatException::class.java) {
+                ManifestValidator.parse(source(value), PackageLimits())
+            }
         }
     }
 

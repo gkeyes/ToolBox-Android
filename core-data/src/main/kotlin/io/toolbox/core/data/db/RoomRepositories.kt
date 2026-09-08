@@ -238,8 +238,7 @@ internal class RoomToolKvRepository(
         key: String,
         valueJson: String,
         updatedAt: Long,
-        quotaBytes: Long,
-    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt, quotaBytes)
+    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt)
 
     override suspend fun keys(toolId: String): List<String> = database.keyValues().keys(toolId)
 
@@ -248,13 +247,9 @@ internal class RoomToolKvRepository(
         removeKeys: Set<String>,
         values: Map<String, String>,
         updatedAt: Long,
-        quotaBytes: Long,
     ): DataResult<Unit> {
         if (removeKeys.any(String::isBlank) || values.keys.any(String::isBlank)) {
             return DataResult.Failure.InvalidInput("key")
-        }
-        if (quotaBytes !in 1..CoreDataLimits.MAX_TOOL_KV_BYTES) {
-            return DataResult.Failure.InvalidInput("quotaBytes")
         }
         return try {
             val rows = values.map { (key, value) ->
@@ -262,13 +257,6 @@ internal class RoomToolKvRepository(
             }
             database.withTransaction {
                 if (database.tools().get(toolId) == null) return@withTransaction DataResult.Failure.NotFound("tool")
-                val affectedKeys = removeKeys + values.keys
-                var replacedBytes = 0L
-                for (key in affectedKeys) replacedBytes += database.keyValues().bytesForKey(toolId, key) ?: 0
-                val attempted = database.keyValues().bytesUsed(toolId) - replacedBytes + rows.sumOf { it.bytes.toLong() }
-                if (values.isNotEmpty() && attempted > quotaBytes) {
-                    return@withTransaction DataResult.Failure.QuotaExceeded(quotaBytes, attempted)
-                }
                 for (key in removeKeys) database.keyValues().delete(toolId, key)
                 for (row in rows) database.keyValues().put(row)
                 DataResult.Success(Unit)

@@ -47,12 +47,8 @@ internal object ManifestValidator {
             showHostToolbar = true,
         )
         val manifestLimits = root["limits"]?.let(::parseLimits) ?: ManifestLimits(
-            storageBytes = 2_097_152,
             maxBridgePayloadBytes = 262_144,
         )
-        if (manifestLimits.storageBytes > 52_428_800 && !versionAtLeast(minHostVersion, 0, 6, 5)) {
-            throw JsonFormatException("Storage budgets above 50 MiB require minHostVersion 0.6.5")
-        }
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -165,10 +161,16 @@ internal object ManifestValidator {
     private fun parseLimits(value: JsonValue): ManifestLimits {
         val limits = value.asObject("limits")
         limits.requireOnly("limits", setOf("storageBytes", "maxBridgePayloadBytes"))
+        // Legacy manifests may still declare a storage budget. Validate its JSON
+        // shape for compatibility, but it no longer limits persisted tool data.
+        limits["storageBytes"]?.let {
+            val number = (it as? JsonValue.NumberValue)?.value
+                ?: throw JsonFormatException("limits.storageBytes must be an integer")
+            if (number.signum() < 0 || number.stripTrailingZeros().scale() > 0) {
+                throw JsonFormatException("limits.storageBytes must be a non-negative integer")
+            }
+        }
         return ManifestLimits(
-            storageBytes = limits["storageBytes"]?.let {
-                requireIntValue(it, "limits.storageBytes", 65_536, 536_870_912)
-            } ?: 2_097_152,
             maxBridgePayloadBytes = limits["maxBridgePayloadBytes"]?.let {
                 requireIntValue(it, "limits.maxBridgePayloadBytes", 4096, 8_388_608)
             } ?: 262_144,

@@ -272,7 +272,7 @@ console.log(ready.apiVersion, digest.hex, device.screenClass);
 
 storage.get(key) 返回保存的 JSON 值，键不存在时返回 null。set(key, value) 保存 JSON 值；remove(key) 删除单项；keys() 列出键；clear() 清空当前工具的普通存储。key 最多 128 个字符，不能用它存储函数、DOM 对象或未序列化的二进制数据。
 
-存储总量由 manifest.limits.storageBytes 声明，默认 2 MiB。ToolBox 0.6.5 起按声明执行配额，最高 512 MiB；声明超过 50 MiB 时，minHostVersion 必须至少为 0.6.5。普通存储按键保存，大值由宿主分片；单次调用仍受桥消息配额约束。超额写入返回 QUOTA_EXCEEDED 并保留旧值，不会自动淘汰数据。总量包括普通、安全存储及该工具的后台调度数据。
+ToolBox 0.6.5 起不设每工具持久存储总容量配额，可保存量由设备剩余空间决定。旧 manifest.limits.storageBytes 字段仍兼容接受，但不再用于限制容量，新工具可以省略。普通存储按键保存，大值由宿主分片；单次调用仍受桥消息大小约束。写入失败保留旧值，不会自动淘汰数据。
 
 storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
 
@@ -949,7 +949,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 - NETWORK_BLOCKED：检查 manifest 域名、HTTPS、端口、重定向目标和地址类型。
 - NETWORK_UNAVAILABLE、NETWORK_TIMEOUT：连接、读取失败或请求超时，检查网络并退避重试；与权限或域名阻止不同。
 - RATE_LIMITED：降低调用频率并等待，不要即时无限重试。
-- QUOTA_EXCEEDED：缩小消息、文件或响应，分页处理，并检查普通存储配额。
+- QUOTA_EXCEEDED：单次消息、文件或响应超限，使用分片或分页传输。ToolBox 0.6.5 起不对持久存储总容量设配额。
 - BUSY：当前系统交互或操作尚未完成，等结束后再试。
 - DUPLICATE_TASK：后台任务 key 已存在，复用已有任务或选择新的业务标识。
 - CANCELLED：用户或系统取消了操作，页面应回到可继续操作的状态。
@@ -1278,7 +1278,7 @@ export interface ToolBoxApi {
   crypto: {
     sha256(value: string | Uint8Array): Promise<Sha256Result>;
   };
-  /** Total persisted storage uses manifest.limits.storageBytes. Values above 50 MiB require minHostVersion >= 0.6.5; maximum 512 MiB. Writes fail atomically on quota exhaustion. */
+  /** Since host 0.6.5, persisted storage has no per-tool capacity quota; available device space applies. Legacy limits.storageBytes is ignored. Writes remain atomic. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
     set(key: string, value: JsonValue): Promise<void>;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { CACHE_PREFIX, createArticleCache, jsonBytes } from "../src/toolbox/cache.js";
 
-function fakeStorage({ quotaBytes = 512 * 1024 * 1024 } = {}) {
+function fakeStorage() {
   const data = new Map();
   const secure = new Map();
   let fail = () => false;
@@ -17,7 +17,6 @@ function fakeStorage({ quotaBytes = 512 * 1024 * 1024 } = {}) {
       assert.ok(jsonBytes({ key, value }) < 8 * 1024 * 1024, "storage RPC fits the declared bridge payload");
       const itemBytes = jsonBytes(value);
       const size = used - (sizes.get(key) || 0) + itemBytes;
-      if (size > quotaBytes) throw Object.assign(new Error("storage quota exceeded"), { code: "QUOTA_EXCEEDED" });
       peak = Math.max(peak, size);
       used = size;
       sizes.set(key, itemBytes);
@@ -89,7 +88,6 @@ test("all 18518 articles exceeding 6 MiB survive compression, update and reopen 
   const reopened = await createArticleCache(store.api).read();
   assert.deepEqual(reopened.articles, expected);
   assert.equal(reopened.meta.lastSyncTime, "2026-09-09T00:00:00.000Z");
-  assert.ok(store.peak() < 512 * 1024 * 1024);
 });
 
 test("less-compressible archive survives two generations exceeding the old 50 MiB quota", async () => {
@@ -109,7 +107,6 @@ test("less-compressible archive survives two generations exceeding the old 50 Mi
   assert.ok(keys.every((key) => store.data.get(key).length <= 1024 * 1024));
   await cache.transact(["articles"], (s) => { s.articles[0].status = "read"; });
   assert.ok(store.peak() > 50 * 1024 * 1024);
-  assert.ok(store.peak() < 512 * 1024 * 1024);
   const restored = await createArticleCache(store.api).read();
   assert.equal(restored.articles.length, articles.length);
   for (const [index, article] of restored.articles.entries()) {
@@ -216,9 +213,19 @@ test("legacy v1 remains readable, resets checkpoint, and migrates only after a s
   assert.deepEqual(migrated.feeds, [{ id: 1 }]);
 });
 
-test("native quota rejection is actionable and never evicts committed rows or advances their checkpoint", async () => {
-  const store = fakeStorage({ quotaBytes: 4096 });
-  const cache = createArticleCache(store.api);
+test("host disk write failure preserves committed rows and their checkpoint", async () => {
+  const store = fakeStorage();
+  const diskError = Object.assign(new Error("simulated host disk write failure"), { code: "INTERNAL_ERROR" });
+  const api = {
+    ...store.api,
+    async set(key, value) {
+      // Fail after the replacement article shard has reached storage, before
+      // the new checkpoint can be written or the manifest can switch snapshots.
+      if (key === `${CACHE_PREFIX}meta.2.0`) throw diskError;
+      return store.api.set(key, value);
+    },
+  };
+  const cache = createArticleCache(api);
   await cache.transact(["articles", "meta"], (s) => {
     s.articles = [{ id: 1, content: "saved" }];
     s.meta.lastSyncTime = "2026-09-08T00:00:00.000Z";
@@ -227,7 +234,8 @@ test("native quota rejection is actionable and never evicts committed rows or ad
   await assert.rejects(cache.transact(["articles", "meta"], (s) => {
     s.articles.push({ id: 2, content: randomBytes(10000).toString("base64") });
     s.meta.lastSyncTime = "2026-09-09T00:00:00.000Z";
-  }), (error) => error.code === "QUOTA_EXCEEDED" && /原有文章和同步进度已保留/.test(error.message));
+  }), (error) => error === diskError);
+  assert.equal(store.data.has(`${CACHE_PREFIX}articles.2.0`), true);
   assert.deepEqual(await cache.read(), before);
   assert.deepEqual(await createArticleCache(store.api).read(), before);
 });

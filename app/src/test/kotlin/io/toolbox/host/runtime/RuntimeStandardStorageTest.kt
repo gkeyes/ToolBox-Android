@@ -72,19 +72,36 @@ class RuntimeStandardStorageTest {
     }
 
     @Test
-    fun quotaFailurePreservesOldChunksAndFailedMigrationPreservesLegacy() = runBlocking {
-        val repository = installedData().keyValues
-        val storage = handler(repository, 400_000)
+    fun writeFailurePreservesOldChunksAndFailedMigrationPreservesLegacy() = runBlocking {
+        val backing = installedData().keyValues
+        var failWrites = false
+        val repository = object : ToolKvRepository by backing {
+            override suspend fun replace(
+                toolId: String,
+                removeKeys: Set<String>,
+                values: Map<String, String>,
+                updatedAt: Long,
+            ): DataResult<Unit> = if (failWrites) {
+                DataResult.Failure.StorageFailure("injected")
+            } else {
+                backing.replace(toolId, removeKeys, values, updatedAt)
+            }
+        }
+        val storage = handler(repository)
         val old = RpcValue.StringValue("a".repeat(250_000))
         storage.set("key", old)
-        expectFailure(RuntimeRpcErrorCode.QUOTA_EXCEEDED) { storage.set("key", RpcValue.StringValue("b".repeat(500_000))) }
+        failWrites = true
+        expectFailure(RuntimeRpcErrorCode.INTERNAL_ERROR) { storage.set("key", RpcValue.StringValue("b".repeat(500_000))) }
         assertEquals(old, storage.get("key"))
+        failWrites = false
         storage.clear()
         val legacy = "{\"keep\":\"${"c".repeat(350_000)}\"}"
         repository.put(TOOL_ID, LEGACY, legacy, 1)
-        expectFailure(RuntimeRpcErrorCode.QUOTA_EXCEEDED) { storage.set("added", RpcValue.StringValue("d".repeat(100_000))) }
+        failWrites = true
+        expectFailure(RuntimeRpcErrorCode.INTERNAL_ERROR) { storage.set("added", RpcValue.StringValue("d".repeat(100_000))) }
         assertEquals(legacy, repository.observe(TOOL_ID, LEGACY).first()!!.valueJson)
         assertEquals(listOf(LEGACY), repository.keys(TOOL_ID))
+        failWrites = false
         storage.remove("keep")
         assertEquals(emptyList<String>(), storage.keys())
     }
@@ -94,7 +111,7 @@ class RuntimeStandardStorageTest {
         val repository = installedData().keyValues
         repository.put(TOOL_ID, LEGACY, "{\"old\":1}", 1)
         repository.put(TOOL_ID, SECURE, "ciphertext", 1)
-        val denied = StandardToolKvStorageHandler(TOOL_ID, repository, QUOTA, { 1 }, { false })
+        val denied = StandardToolKvStorageHandler(TOOL_ID, repository, { 1 }, { false })
         expectFailure(RuntimeRpcErrorCode.PERMISSION_DENIED) { denied.get("old") }
         expectFailure(RuntimeRpcErrorCode.PERMISSION_DENIED) { denied.set("new", RpcValue.Null) }
         expectFailure(RuntimeRpcErrorCode.PERMISSION_DENIED) { denied.clear() }
@@ -116,8 +133,8 @@ class RuntimeStandardStorageTest {
         assertTrue(data.lifecycle.commitInstall(attempt) is DataResult.Success)
     }
 
-    private fun handler(repository: ToolKvRepository, quota: Long = QUOTA) =
-        StandardToolKvStorageHandler(TOOL_ID, repository, quota, { 1 })
+    private fun handler(repository: ToolKvRepository) =
+        StandardToolKvStorageHandler(TOOL_ID, repository, { 1 })
 
     private suspend fun expectFailure(code: RuntimeRpcErrorCode, action: suspend () -> Unit) {
         try {
@@ -130,7 +147,6 @@ class RuntimeStandardStorageTest {
 
     private companion object {
         const val TOOL_ID = "io.toolbox.storage.test"
-        const val QUOTA = 32L * 1024 * 1024
         val LEGACY = ToolStorageNamespace.Standard.documentKey
         val SECURE = ToolStorageNamespace.Secure.documentKey
     }

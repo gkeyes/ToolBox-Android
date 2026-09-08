@@ -195,7 +195,7 @@ export function createArticleCache(storage) {
         await call("set", MANIFEST_KEY, nextManifest);
       } catch (cause) {
         if (cause?.code === "QUOTA_EXCEEDED") {
-          const error = new Error("ToolBox 存储空间不足，本次同步未保存；原有文章和同步进度已保留。请释放存储空间后重试。", { cause });
+          const error = new Error("ToolBox 未能保存本次缓存；原有文章和同步进度已保留，请稍后重试。", { cause });
           error.code = cause.code;
           throw error;
         }
