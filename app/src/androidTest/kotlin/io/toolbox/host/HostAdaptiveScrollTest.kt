@@ -299,7 +299,6 @@ class HostAdaptiveScrollTest {
         val style = mutableStateOf(ToolBoxThemeStyle.LiquidGlass)
         val reduceTransparency = mutableStateOf(false)
         var created = 0
-        var backClicks = 0
         var contentClicks = 0
         var glassAlpha = 0f
         var firstView: View? = null
@@ -315,7 +314,7 @@ class HostAdaptiveScrollTest {
                         )
                         .testTag("RuntimeSafeArea"),
                 ) {
-                    ToolBoxRuntimeScaffold(Modifier.fillMaxSize(), onBack = { backClicks += 1 }) {
+                    ToolBoxRuntimeScaffold(Modifier.fillMaxSize()) {
                         AndroidView(
                             factory = { context ->
                                 View(context).also {
@@ -347,17 +346,12 @@ class HostAdaptiveScrollTest {
             val safeBounds = composeRule.onNodeWithTag("RuntimeSafeArea").fetchSemanticsNode().boundsInRoot
             val contentBounds = composeRule.onNodeWithTag("RuntimeContent").fetchSemanticsNode().boundsInRoot
             assertEquals(safeBounds, contentBounds)
-            composeRule.onNodeWithContentDescription("返回")
-                .assertIsDisplayed()
-                .assertWidthIsAtLeast(48.dp)
-                .assertHeightIsAtLeast(48.dp)
-                .performTouchInput { click() }
-            // The rest of the top row belongs to the embedded Android View, not an overlay toolbar.
+            composeRule.onNodeWithContentDescription("返回").assertDoesNotExist()
+            // The top-left corner belongs to the embedded Android View.
             composeRule.onNodeWithTag("RuntimeContent").performTouchInput {
-                click(Offset(width - 12f, 12f))
+                click(Offset(12f, 12f))
             }
             composeRule.runOnIdle {
-                assertEquals(index + 1, backClicks)
                 assertEquals(index + 1, contentClicks)
                 assertEquals(1, created)
                 assertSame(firstView, currentView)

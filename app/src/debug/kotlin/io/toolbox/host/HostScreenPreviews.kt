@@ -279,7 +279,7 @@ private fun DeveloperHelpPreview() {
 @Composable
 fun RuntimeShellPreview() {
     ToolBoxTheme {
-        RuntimeShellPreviewContent(onBack = {})
+        RuntimeShellPreviewContent()
     }
 }
 
@@ -287,7 +287,7 @@ fun RuntimeShellPreview() {
 @Composable
 fun RuntimeShellDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
-        RuntimeShellPreviewContent(onBack = {})
+        RuntimeShellPreviewContent()
     }
 }
 

@@ -331,9 +331,7 @@ internal fun ToolBoxNavigation(
                         translationX = trailingDirection * entryProgress.value * size.width
                     },
             ) {
-                RuntimeShellPreviewContent(
-                    onBack = leaveRuntime,
-                )
+                RuntimeShellPreviewContent()
             }
         }
 

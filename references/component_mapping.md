@@ -36,7 +36,7 @@ implementation("dev.chrisbanes.haze:haze:1.7.3")
 | 设置 | `ArrowPreference`、`RadioButtonPreference`、`OverlayDialog` | `SettingsContent`、`AppearanceContent`、`ToolBoxChoiceSettingRow` | 外观独立页即时选择风格、明暗、系统取色与降低透明度；保存失败保留原外观并可重试；关于版本来自 BuildConfig。 |
 | 后台保障 | preference switch、grouped rows | `BackgroundSafeguardsScreen` | 总开关、持续会话停止按钮和真实系统设置入口。 |
 | Developer Help | top bar、search、grouped list、text button | `DeveloperHelpScreen`、`ToolBoxDisclosureRow` | 同一份离线 Markdown；章节/主题折叠、搜索、代码复制与四个范例入口。 |
-| 运行容器 | `Box`、`IconButton` | `ToolBoxRuntimeScaffold`、`MiniAppWebView` | 内容填满系统安全区域；左上角叠放 48dp 半透明玻璃返回按钮，边距 8dp；无标题/刷新/底栏/安全条，不采集 WebView，降低透明度时使用实底。 |
+| 运行容器 | `Box` | `ToolBoxRuntimeScaffold`、`MiniAppWebView` | 内容填满系统安全区域；无宿主悬浮按钮、标题、刷新、底栏或安全条；使用系统返回手势或按键退出。 |
 
 ## 3. ToolBox 适配层
 
@@ -63,7 +63,7 @@ core-ui/
   不把容器乘以字体缩放。
 - 一级 Tab 直接切换内容，不对整页做 alpha、位移或缩放；选中反馈留在底栏项内。二级页面转场与返回
   只使用 `miuix-nav`。系统关闭动画时停用装饰性动效。
-- 运行页无 `MainDestinationBar`、固定权限栏、整行工具栏或技术状态条；仅左上角悬浮返回按钮。
+- 运行页无 `MainDestinationBar`、固定权限栏、整行工具栏或技术状态条；不叠放宿主返回按钮。
 - 工具与设置共用常驻一级 Haze state 和同一个稳定采集节点；二级原生页面各自持有一个 state。
   被覆盖、转场、降低透明度或无硬件加速时不注册采集源，使用相同 `glassFallback` 实色。
   运行页永不注册 WebView 采集源。底栏选中透镜只绘制语义色与高光，不叠加第二次背景模糊。

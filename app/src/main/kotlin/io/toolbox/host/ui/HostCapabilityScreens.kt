@@ -48,7 +48,6 @@ internal fun RuntimeShellScreen(
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background)
             .testTag(HostTestTags.RuntimeShell),
-        onBack = onBack,
     ) {
         Box(
             modifier = Modifier
@@ -84,14 +83,11 @@ internal fun RuntimeShellScreen(
 }
 
 @Composable
-internal fun RuntimeShellPreviewContent(
-    onBack: () -> Unit,
-) {
+internal fun RuntimeShellPreviewContent() {
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background),
-        onBack = onBack,
     ) {
         RuntimeCenteredState("正在打开工具", "正在准备页面。")
     }

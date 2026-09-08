@@ -43,7 +43,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -112,10 +111,8 @@ fun ToolBoxAppScaffold(
 @Composable
 fun ToolBoxRuntimeScaffold(
     modifier: Modifier = Modifier,
-    onBack: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val materials = ToolBoxThemeTokens.materials
     Box(
         modifier = modifier
             .background(ToolBoxThemeTokens.colors.background)
@@ -124,29 +121,8 @@ fun ToolBoxRuntimeScaffold(
                     .union(WindowInsets.navigationBars)
                     .union(WindowInsets.displayCutout),
             ),
-    ) {
-        content()
-        // Draw above the content without reserving a toolbar row or sampling the WebView.
-        ToolBoxIconButton(
-            icon = ToolBoxIconKey.Back,
-            contentDescription = "返回",
-            onClick = onBack,
-            tint = ToolBoxThemeTokens.colors.textPrimary,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(ToolBoxThemeTokens.spacing.one)
-                .shadow(4.dp, CircleShape)
-                .clip(CircleShape)
-                .background(materials.glassTint)
-                .border(
-                    1.dp,
-                    Brush.verticalGradient(
-                        listOf(materials.glassBorder, materials.glassBorder.copy(alpha = 0.12f)),
-                    ),
-                    CircleShape,
-                ),
-        )
-    }
+        content = content,
+    )
 }
 
 @Composable
