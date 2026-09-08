@@ -126,6 +126,7 @@ data class HostSettings(
 
 object CoreDataLimits {
     const val TOOL_KV_BYTES = 2L * 1024L * 1024L
+    const val MAX_TOOL_KV_BYTES = 512L * 1024L * 1024L
     const val MAX_TRANSACTION_ID_LENGTH = 128
     const val MAX_CATEGORY_ID_LENGTH = 128
     const val MAX_TASK_ID_LENGTH = 128

@@ -189,7 +189,7 @@ capability descriptor、JS shim method table、`sdk/toolbox-api.d.ts` 和 manife
 | `ready` | 无 | 返回 host/API/tool generation，不泄露设备标识。 |
 | `ui.toast` | 无 | 文本长度限制，Toast 不代表业务完成。 |
 | `crypto.sha256` | 无 | 对上限内 UTF-8/字节求摘要。 |
-| `storage.*` | `storage` | key 长度、JSON 值与每工具 quota 限制。 |
+| `storage.*` | `storage` | key 长度、JSON 值与 manifest.limits.storageBytes 总配额限制；默认 2 MiB，0.6.5 起支持最高 512 MiB，超过 50 MiB 要求 minHostVersion 至少 0.6.5。普通值按键分片保存，旧文档首次修改时原子迁移；超额失败保留旧数据。 |
 | `storage.secure.*` | `storage.secure` | 每工具/版本 Keystore 隔离；关闭/更新/卸载销毁。 |
 | `device.basic` | `device.basic` | 仅 API level、locale、timezone、screen class。 |
 | `haptics.perform` | `haptics` | 枚举效果并限流，需要近期真实触摸。 |

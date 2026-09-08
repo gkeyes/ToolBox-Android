@@ -55,6 +55,25 @@ class ManifestValidatorTest {
         assertTrue(ManifestValidator.parse(emptyDomains.toByteArray(), PackageLimits()).network!!.allowDomains.isEmpty())
     }
 
+    @Test
+    fun installedStorageBudgetIsPreservedAndLargeBudgetsRequireCompatibleHost() {
+        fun source(bytes: Long, host: String = "0.6.5") = manifest(30_000, host)
+            .toString(Charsets.UTF_8)
+            .replace("\"securityProfile\"", "\"limits\":{\"storageBytes\":$bytes},\"securityProfile\"")
+            .toByteArray()
+        val verified = InstalledManifestVerifier.verify(
+            source(536_870_912), "io.toolbox.timeoutfixture", 1, io.toolbox.core.data.SecurityProfile.STRICT,
+        ) as InstalledManifestVerification.Verified
+        assertEquals(536_870_912, verified.manifest.storageBytes)
+        assertEquals(52_428_800, ManifestValidator.parse(source(52_428_800, "0.6.4"), PackageLimits()).limits.storageBytes)
+        assertThrows(JsonFormatException::class.java) {
+            ManifestValidator.parse(source(536_870_913), PackageLimits())
+        }
+        assertThrows(JsonFormatException::class.java) {
+            ManifestValidator.parse(source(52_428_801, "0.6.4"), PackageLimits())
+        }
+    }
+
     private fun parse(timeoutMs: Int, minHostVersion: String = "0.6.1") = ManifestValidator.parse(
         manifest(timeoutMs, minHostVersion), PackageLimits(),
     )

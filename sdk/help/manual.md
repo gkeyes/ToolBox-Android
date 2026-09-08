@@ -272,6 +272,8 @@ console.log(ready.apiVersion, digest.hex, device.screenClass);
 
 storage.get(key) 返回保存的 JSON 值，键不存在时返回 null。set(key, value) 保存 JSON 值；remove(key) 删除单项；keys() 列出键；clear() 清空当前工具的普通存储。key 最多 128 个字符，不能用它存储函数、DOM 对象或未序列化的二进制数据。
 
+存储总量由 manifest.limits.storageBytes 声明，默认 2 MiB。ToolBox 0.6.5 起按声明执行配额，最高 512 MiB；声明超过 50 MiB 时，minHostVersion 必须至少为 0.6.5。普通存储按键保存，大值由宿主分片；单次调用仍受桥消息配额约束。超额写入返回 QUOTA_EXCEEDED 并保留旧值，不会自动淘汰数据。总量包括普通、安全存储及该工具的后台调度数据。
+
 storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
 
 普通存储在工具更新后保留；安全存储在关闭其授权、工具更新或删除时会清理，更新后需要重新输入 Token。临时文件令牌和 sessionId 不能作为可跨版本复用的数据保存。
@@ -1276,6 +1278,7 @@ export interface ToolBoxApi {
   crypto: {
     sha256(value: string | Uint8Array): Promise<Sha256Result>;
   };
+  /** Total persisted storage uses manifest.limits.storageBytes. Values above 50 MiB require minHostVersion >= 0.6.5; maximum 512 MiB. Writes fail atomically on quota exhaustion. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
     set(key: string, value: JsonValue): Promise<void>;

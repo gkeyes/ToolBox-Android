@@ -30,7 +30,24 @@ interface PermissionGrantRepository {
 
 interface ToolKvRepository {
     fun observe(toolId: String, key: String): Flow<ToolKvValue?>
-    suspend fun put(toolId: String, key: String, valueJson: String, updatedAt: Long): DataResult<Unit>
+    /** Native callers supply the current validated manifest limit; all tool rows share this quota. */
+    suspend fun put(
+        toolId: String,
+        key: String,
+        valueJson: String,
+        updatedAt: Long,
+        quotaBytes: Long = CoreDataLimits.TOOL_KV_BYTES,
+    ): DataResult<Unit>
+    /** Lists keys without loading their values. */
+    suspend fun keys(toolId: String): List<String>
+    /** Atomically removes and replaces rows, enforcing quota on the final complete tool storage. */
+    suspend fun replace(
+        toolId: String,
+        removeKeys: Set<String>,
+        values: Map<String, String>,
+        updatedAt: Long,
+        quotaBytes: Long = CoreDataLimits.TOOL_KV_BYTES,
+    ): DataResult<Unit>
     suspend fun remove(toolId: String, key: String): DataResult<Unit>
     suspend fun bytesUsed(toolId: String): Long
 }

@@ -4,7 +4,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar.jsx";
 import { filter } from "@/stores/articlesStore.js";
 import { feeds, categories } from "@/stores/feedsStore.js";
 import MarkAllReadButton from "./MarkAllReadButton";
-import { isSyncing } from "@/stores/syncStore.js";
+import { isSyncing, syncProgress, error } from "@/stores/syncStore.js";
 import { useTranslation } from "react-i18next";
 import {
   totalStarredCount,
@@ -20,6 +20,8 @@ export default function ArticleListHeader() {
   const $feeds = useStore(feeds);
   const $categories = useStore(categories);
   const $isSyncing = useStore(isSyncing);
+  const $syncProgress = useStore(syncProgress);
+  const $syncError = useStore(error);
   const $totalStarredCount = useStore(totalStarredCount);
   const $totalUnreadCount = useStore(totalUnreadCount);
   const $getCategoryCount = useStore(getCategoryCount);
@@ -84,8 +86,8 @@ export default function ArticleListHeader() {
           <SidebarTrigger />
           <div className="grid flex-1 text-left text-sm leading-tight">
             <span className="truncate font-semibold">{getTitleText()}</span>
-            <span className="truncate text-xs text-muted opacity-60">
-              {$isSyncing ? t("common.syncing") : getFilteredCount()}
+            <span role="status" className="line-clamp-2 text-xs text-muted opacity-60">
+              {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || getFilteredCount()}
             </span>
           </div>
           <div className="ml-auto flex gap-1">

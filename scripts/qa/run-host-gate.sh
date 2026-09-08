@@ -136,6 +136,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.runtime.RuntimeNotificationRegressionTest' \
     --tests 'io.toolbox.host.runtime.RuntimeReminderPolicyTest' \
     --tests 'io.toolbox.host.runtime.RuntimeSecureStorageTest' \
+    --tests 'io.toolbox.host.runtime.RuntimeStandardStorageTest' \
     --tests 'io.toolbox.host.runtime.UserNetworkDomainsTest' \
     --tests 'io.toolbox.core.data.BackgroundTaskRepositoryTest' \
     --tests 'io.toolbox.core.data.CatalogAndStorageRepositoryTest' \

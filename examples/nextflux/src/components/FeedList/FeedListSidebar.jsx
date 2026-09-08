@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useStore } from "@nanostores/react";
 import { loadFeeds } from "@/stores/feedsStore.js";
-import { isSyncing, lastSync } from "@/stores/syncStore.js";
+import { isSyncing, lastSync, syncProgress, error } from "@/stores/syncStore.js";
 import {
   Sidebar,
   SidebarContent,
@@ -31,6 +31,8 @@ const FeedListSidebar = () => {
   const { t } = useTranslation();
   const $lastSync = useStore(lastSync);
   const $isSyncing = useStore(isSyncing);
+  const $syncProgress = useStore(syncProgress);
+  const $syncError = useStore(error);
   const { showHiddenFeeds, floatingSidebar } = useStore(settingsState);
   const { setOpenMobile } = useSidebar();
   const { articleId } = useParams();
@@ -70,8 +72,8 @@ const FeedListSidebar = () => {
               <img src={logo} alt="logo" className="size-8" />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">Nextflux</span>
-                <span className="truncate text-xs text-muted opacity-60">
-                  {$isSyncing ? t("common.syncing") : formatLastSync($lastSync)}
+                <span role="status" className="line-clamp-2 text-xs text-muted opacity-60">
+                  {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || formatLastSync($lastSync)}
                 </span>
               </div>
               <SyncButton />

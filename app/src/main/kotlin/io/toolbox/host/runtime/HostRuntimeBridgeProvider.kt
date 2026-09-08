@@ -59,7 +59,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
@@ -114,7 +113,7 @@ internal class HostRuntimeBridgeProvider(
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
-            handlers = createM1Handlers(runtime.toolId),
+            handlers = createM1Handlers(runtime.toolId, runtime.installedManifest.storageBytes.toLong()),
             m2Handlers = m2Handlers,
             m3Handlers = m3Handlers,
             hostVersion = hostVersion,
@@ -123,12 +122,12 @@ internal class HostRuntimeBridgeProvider(
         )
     }
 
-    private fun createM1Handlers(toolId: String): RuntimeM1Handlers = RuntimeM1Handlers(
+    private fun createM1Handlers(toolId: String, storageQuotaBytes: Long): RuntimeM1Handlers = RuntimeM1Handlers(
         toast = AndroidToastHandler(applicationContext),
-        storage = JsonToolKvStorageHandler(
+        storage = StandardToolKvStorageHandler(
             toolId = toolId,
             repository = keyValues,
-            namespace = ToolStorageNamespace.Standard,
+            quotaBytes = storageQuotaBytes,
             nowMillis = nowMillis,
         ),
         secureStorage = AndroidKeyStoreCipher.isAvailable().takeIf { it }?.let {
@@ -136,6 +135,7 @@ internal class HostRuntimeBridgeProvider(
                 toolId = toolId,
                 repository = keyValues,
                 namespace = ToolStorageNamespace.Secure,
+                quotaBytes = storageQuotaBytes,
                 nowMillis = nowMillis,
                 cipher = AndroidKeyStoreCipher(toolId),
                 canAccess = { grantState.isGranted(toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
@@ -265,10 +265,159 @@ internal enum class ToolStorageNamespace(val documentKey: String) {
     Secure("toolbox.runtime.v1.secure.values"),
 }
 
+/** Ordinary values use bounded rows; secure values keep their encrypted document. */
+internal class StandardToolKvStorageHandler(
+    private val toolId: String,
+    private val repository: ToolKvRepository,
+    private val quotaBytes: Long,
+    private val nowMillis: () -> Long,
+    private val canAccess: suspend () -> Boolean = { true },
+) : RuntimeStorageHandler {
+    override suspend fun get(key: String): RpcValue? = withAccess {
+        val physicalKey = physicalKey(key)
+        readValue(physicalKey) ?: loadLegacyDocument()?.get(key)
+    }
+
+    override suspend fun set(key: String, value: RpcValue) = withAccess {
+        val physicalKey = physicalKey(key)
+        if (!migrateLegacyDocument(key, value)) {
+            checkResult(repository.replace(toolId, existingRows(physicalKey), encodeRows(physicalKey, value), nowMillis(), quotaBytes))
+        }
+    }
+
+    override suspend fun remove(key: String) = withAccess {
+        val physicalKey = physicalKey(key)
+        if (!migrateLegacyDocument(key, null)) {
+            checkResult(repository.replace(toolId, existingRows(physicalKey), emptyMap(), nowMillis(), quotaBytes))
+        }
+    }
+
+    override suspend fun keys(): List<String> = withAccess {
+        val rows = repository.keys(toolId).filter { it.startsWith(ROW_PREFIX) && '.' !in it.removePrefix(ROW_PREFIX) }
+            .map { decodeKey(it.removePrefix(ROW_PREFIX)) }
+        (rows + loadLegacyDocument().orEmpty().keys).distinct()
+    }
+
+    override suspend fun clear() = withAccess {
+        val rows = repository.keys(toolId).filterTo(linkedSetOf()) {
+            it.startsWith(ROW_PREFIX) || it == ToolStorageNamespace.Standard.documentKey
+        }
+        checkResult(repository.replace(toolId, rows, emptyMap(), nowMillis(), quotaBytes))
+    }
+
+    private suspend fun <T> withAccess(action: suspend () -> T): T = withContext(Dispatchers.IO) {
+        withRuntimeStorageAccess(toolId, ToolStorageNamespace.Standard, canAccess, action)
+    }
+
+    private suspend fun loadLegacyDocument(): Map<String, RpcValue>? {
+        val encoded = repository.observe(toolId, ToolStorageNamespace.Standard.documentKey).first()?.valueJson ?: return null
+        val document = RuntimeValueJson.decodeObject(encoded) ?: unreadable()
+        for (key in document.keys) physicalKey(key)
+        return document
+    }
+
+    private suspend fun migrateLegacyDocument(changedKey: String, value: RpcValue?): Boolean {
+        val document = loadLegacyDocument()?.toMutableMap() ?: return false
+        if (value == null) document.remove(changedKey) else document[changedKey] = value
+        val rows = linkedMapOf<String, String>()
+        for ((key, child) in document) rows.putAll(encodeRows(physicalKey(key), child))
+        // Include the requested mutation so shrinking/removing a full legacy document needs no extra quota.
+        // The old document remains intact if the transaction fails, including quota failures.
+        checkResult(repository.replace(toolId, setOf(ToolStorageNamespace.Standard.documentKey), rows, nowMillis(), quotaBytes))
+        return true
+    }
+
+    private suspend fun readRecord(key: String): Map<String, RpcValue>? {
+        val encoded = repository.observe(toolId, key).first()?.valueJson ?: return null
+        return RuntimeValueJson.decodeObject(encoded) ?: unreadable()
+    }
+
+    private suspend fun readValue(key: String): RpcValue? {
+        val record = readRecord(key) ?: return null
+        if (record.keys == setOf("value")) return record.getValue("value")
+        val count = chunkCount(record)
+        val encoded = buildString {
+            repeat(count) { index ->
+                val chunk = repository.observe(toolId, "$key.$index").first()?.valueJson ?: unreadable()
+                val text = (RuntimeValueJson.decode(chunk) as? RpcValue.StringValue)?.value ?: unreadable()
+                if (text.length > CHUNK_CHARS) unreadable()
+                append(text)
+            }
+        }
+        return RuntimeValueJson.decode(encoded) ?: unreadable()
+    }
+
+    private suspend fun existingRows(key: String): Set<String> {
+        val record = readRecord(key) ?: return emptySet()
+        if (record.keys == setOf("value")) return setOf(key)
+        return buildSet {
+            add(key)
+            repeat(chunkCount(record)) { add("$key.$it") }
+        }
+    }
+
+    private fun chunkCount(record: Map<String, RpcValue>): Int {
+        val count = (record["chunks"] as? RpcValue.Number)?.value ?: unreadable()
+        if (record.keys != setOf("chunks") || count < 1 || count > MAX_CHUNKS || count != count.toInt().toDouble()) unreadable()
+        return count.toInt()
+    }
+
+    private fun encodeRows(key: String, value: RpcValue): Map<String, String> {
+        val encoded = RuntimeValueJson.encode(value)
+        if (encoded.length <= CHUNK_CHARS) return mapOf(key to RuntimeValueJson.encodeObject(mapOf("value" to value)))
+        val rows = linkedMapOf<String, String>()
+        var offset = 0
+        var index = 0
+        while (offset < encoded.length) {
+            var end = minOf(offset + CHUNK_CHARS, encoded.length)
+            if (end < encoded.length && encoded[end - 1].isHighSurrogate() && encoded[end].isLowSurrogate()) end--
+            rows["$key.${index++}"] = RuntimeValueJson.encode(RpcValue.StringValue(encoded.substring(offset, end)))
+            offset = end
+        }
+        if (index > MAX_CHUNKS) throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Stored value exceeds the tool storage quota")
+        rows[key] = RuntimeValueJson.encodeObject(mapOf("chunks" to RpcValue.Number(index.toDouble())))
+        return rows
+    }
+
+    private fun physicalKey(key: String): String {
+        if (key.isBlank() || key.length > 128 || key.any(Char::isISOControl)) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid storage key")
+        }
+        // UTF-16 code units preserve every accepted JS key, including lone surrogates.
+        return ROW_PREFIX + key.map { it.code.toString(16).padStart(4, '0') }.joinToString("")
+    }
+
+    private fun decodeKey(encoded: String): String {
+        if (encoded.isEmpty() || encoded.length % 4 != 0 || encoded.length > 512) unreadable()
+        val key = encoded.chunked(4).map { (it.toIntOrNull(16) ?: unreadable()).toChar() }.joinToString("")
+        if (physicalKey(key) != ROW_PREFIX + encoded) unreadable()
+        return key
+    }
+
+    private fun checkResult(result: DataResult<Unit>) {
+        when (result) {
+            is DataResult.Success -> Unit
+            is DataResult.Failure.QuotaExceeded -> throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Tool storage quota exceeded")
+            is DataResult.Failure.NotFound -> throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Tool was removed")
+            is DataResult.Failure -> throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Tool storage is unavailable")
+        }
+    }
+
+    private fun unreadable(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values cannot be read")
+
+    private companion object {
+        const val ROW_PREFIX = "toolbox.runtime.v2.standard.key."
+        // Even worst-case JSON escaping stays below a 2 MiB Android CursorWindow.
+        const val CHUNK_CHARS = 128 * 1024
+        const val MAX_CHUNKS = 512 * 1024 * 1024 / CHUNK_CHARS
+    }
+}
+
 private class JsonToolKvStorageHandler(
     private val toolId: String,
     private val repository: ToolKvRepository,
     private val namespace: ToolStorageNamespace,
+    private val quotaBytes: Long,
     private val nowMillis: () -> Long,
     private val cipher: AndroidKeyStoreCipher? = null,
     private val canAccess: suspend () -> Boolean = { true },
@@ -320,7 +469,7 @@ private class JsonToolKvStorageHandler(
     }
 
     private suspend fun write(key: String, valueJson: String) {
-        when (val result = repository.put(toolId, key, valueJson, nowMillis())) {
+        when (val result = repository.put(toolId, key, valueJson, nowMillis(), quotaBytes)) {
             is DataResult.Success -> Unit
             is DataResult.Failure.QuotaExceeded -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.QUOTA_EXCEEDED,
@@ -466,33 +615,33 @@ private object RuntimeValueJson {
     fun encode(value: RpcValue): String = toJson(value).toString()
 
     fun decode(encoded: String): RpcValue? = runCatching {
-        fromJson(JSONTokener(encoded).nextValue())
+        fromJson(kotlinx.serialization.json.Json.parseToJsonElement(encoded))
     }.getOrNull()
 
-    fun encodeObject(values: Map<String, RpcValue>): String = toJson(RpcValue.ObjectValue(values)).toString()
+    fun encodeObject(values: Map<String, RpcValue>): String = encode(RpcValue.ObjectValue(values))
 
     fun decodeObject(encoded: String): Map<String, RpcValue>? =
         (decode(encoded) as? RpcValue.ObjectValue)?.value
 
-    private fun toJson(value: RpcValue): Any = when (value) {
-        RpcValue.Null -> JSONObject.NULL
-        is RpcValue.Bool -> value.value
-        is RpcValue.Number -> value.value.also { require(it.isFinite()) }
-        is RpcValue.StringValue -> value.value
-        is RpcValue.ArrayValue -> JSONArray().also { output -> value.value.forEach { output.put(toJson(it)) } }
-        is RpcValue.ObjectValue -> JSONObject().also { output ->
-            value.value.forEach { (key, child) -> output.put(key, toJson(child)) }
-        }
+    private fun toJson(value: RpcValue): kotlinx.serialization.json.JsonElement = when (value) {
+        RpcValue.Null -> kotlinx.serialization.json.JsonNull
+        is RpcValue.Bool -> kotlinx.serialization.json.JsonPrimitive(value.value)
+        is RpcValue.Number -> kotlinx.serialization.json.JsonPrimitive(value.value.also { require(it.isFinite()) })
+        is RpcValue.StringValue -> kotlinx.serialization.json.JsonPrimitive(value.value)
+        is RpcValue.ArrayValue -> kotlinx.serialization.json.JsonArray(value.value.map(::toJson))
+        is RpcValue.ObjectValue -> kotlinx.serialization.json.JsonObject(value.value.mapValues { toJson(it.value) })
     }
 
-    private fun fromJson(value: Any?): RpcValue = when (value) {
-        null, JSONObject.NULL -> RpcValue.Null
-        is Boolean -> RpcValue.Bool(value)
-        is Number -> RpcValue.Number(value.toDouble().also { require(it.isFinite()) })
-        is String -> RpcValue.StringValue(value)
-        is JSONArray -> RpcValue.ArrayValue((0 until value.length()).map { fromJson(value.get(it)) })
-        is JSONObject -> RpcValue.ObjectValue(value.keys().asSequence().associateWith { fromJson(value.get(it)) })
-        else -> throw IllegalArgumentException("json")
+    private fun fromJson(value: kotlinx.serialization.json.JsonElement): RpcValue = when (value) {
+        kotlinx.serialization.json.JsonNull -> RpcValue.Null
+        is kotlinx.serialization.json.JsonObject -> RpcValue.ObjectValue(value.mapValues { fromJson(it.value) })
+        is kotlinx.serialization.json.JsonArray -> RpcValue.ArrayValue(value.map(::fromJson))
+        is kotlinx.serialization.json.JsonPrimitive -> when {
+            value.isString -> RpcValue.StringValue(value.content)
+            value.content == "true" -> RpcValue.Bool(true)
+            value.content == "false" -> RpcValue.Bool(false)
+            else -> RpcValue.Number(value.content.toDouble().also { require(it.isFinite()) })
+        }
     }
 }
 

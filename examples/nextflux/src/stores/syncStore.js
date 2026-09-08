@@ -5,17 +5,18 @@ import {
   getCachedArticles, getLastSyncTime, commitSyncSnapshot, addCategory,
   updateCategory, deleteFeedWithArticles, getFeedIcon, setFeedIcon,
 } from "../db/storage.js";
-import { boundArticles } from "../toolbox/cache.js";
 import { settingsState } from "./settingsStore.js";
 import { authState } from "./authStore.js";
 
 export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
+export const syncProgress = atom("");
 export const lastSync = atom(null);
 export const error = atom(null);
 let syncInterval = null;
 let accountEpoch = 0;
 let accountQueue = Promise.resolve();
+let iconQueue = Promise.resolve();
 let currentSync = null;
 
 function cancellation() {
@@ -43,7 +44,7 @@ export function runAccountOperation(task, { requireOnline = true } = {}) {
 export function cancelAccountOperations() {
   accountEpoch += 1;
   stopAutoSync();
-  return accountQueue;
+  return Promise.allSettled([accountQueue, iconQueue]);
 }
 
 export function createCachedCategory(title) {
@@ -88,22 +89,32 @@ export function removeCachedFeed(feedId) {
 }
 
 export function loadAccountFeedIcon(feedId) {
-  return runAccountOperation(async (check) => {
-    let icon = await getFeedIcon(feedId);
-    check(false);
-    if ((!icon || Date.now() - Date.parse(icon.updated_at) > 7 * 86400000) &&
-        isOnline.get() && navigator.onLine !== false) {
-      check(true);
-      const fetched = await minifluxAPI.getIconByFeedId(feedId);
+  const epoch = accountEpoch;
+  // Only an active icon joins the account queue. Optional queued icons yield
+  // to a refresh, while logout still drains and invalidates all of them.
+  const operation = iconQueue.then(async () => {
+    if (epoch !== accountEpoch) throw cancellation();
+    if (currentSync) await currentSync.catch(() => {});
+    if (epoch !== accountEpoch) throw cancellation();
+    return runAccountOperation(async (check) => {
+      let icon = await getFeedIcon(feedId);
       check(false);
-      if (fetched) {
-        await setFeedIcon({ feedId, mime_type: fetched.mime_type, data: fetched.data });
+      if ((!icon || Date.now() - Date.parse(icon.updated_at) > 7 * 86400000) &&
+          isOnline.get() && navigator.onLine !== false) {
+        check(true);
+        const fetched = await minifluxAPI.getIconByFeedId(feedId);
         check(false);
-        icon = fetched;
+        if (fetched) {
+          await setFeedIcon({ feedId, mime_type: fetched.mime_type, data: fetched.data });
+          check(false);
+          icon = fetched;
+        }
       }
-    }
-    return icon;
-  }, { requireOnline: false });
+      return icon;
+    }, { requireOnline: false });
+  });
+  iconQueue = operation.catch(() => {});
+  return operation;
 }
 
 if (typeof window !== "undefined") {
@@ -129,16 +140,26 @@ async function joinSyncRequests(tasks, check) {
   return results.map((result) => result.value);
 }
 
-async function collectSnapshot(check) {
+async function collectSnapshot(accountCheck) {
+  let requestFailure;
+  const check = () => {
+    accountCheck();
+    if (requestFailure) throw requestFailure;
+  };
+  const join = (tasks) => joinSyncRequests(tasks.map((task) => task.catch((failure) => {
+    requestFailure ||= failure;
+    throw failure;
+  })), check);
   // Start time (not completion time) leaves concurrent server changes eligible
   // for the next incremental sync, with the existing 24-hour overlap as well.
   const syncedAt = new Date();
-  let articles = await getCachedArticles();
+  syncProgress.set("正在读取订阅和文章…");
+  const previous = getLastSyncTime();
+  const cached = previous ? await getCachedArticles() : [];
   check();
-  let evicted = false;
+  const articleMap = new Map(cached.map((article) => [article.id, article]));
   const entryChanges = new Map();
   const addEntries = (entries) => {
-    const map = new Map(articles.map((article) => [article.id, article]));
     for (const entry of entries) {
       // Parallel endpoints can overlap. Keep the fresher server record even
       // when its response arrives first; retain deletion timestamps as well.
@@ -148,23 +169,18 @@ async function collectSnapshot(check) {
         if (previousChange !== undefined && changedAt <= previousChange) continue;
         entryChanges.set(entry.id, changedAt);
       }
-      if (entry.status === "removed") map.delete(entry.id);
-      else map.set(entry.id, mapEntryToArticle(entry));
+      if (entry.status === "removed") articleMap.delete(entry.id);
+      else articleMap.set(entry.id, mapEntryToArticle(entry));
     }
-    const result = boundArticles([...map.values()]);
-    articles = result.articles;
-    evicted ||= result.evicted > 0;
   };
-  const previous = getLastSyncTime();
   // Metadata and the two independent article streams use at most four requests
   // at once. Each stream retains sequential, adaptive, bounded pagination.
   const collectArticles = async () => {
     if (!previous) {
-      articles = [];
       const unread = async () => {
         let offset = 0;
         let total = Infinity;
-        let pageSize = 200;
+        let pageSize = 1000;
         while (offset < total) {
           check();
           const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
@@ -176,28 +192,29 @@ async function collectSnapshot(check) {
           if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
           addEntries(page.entries);
           offset += page.entries.length;
+          syncProgress.set(`正在同步文章 · ${offset} / ${total}`);
           // Remember quota/server reductions for the rest of this sync.
           if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
         }
       };
-      const [, starred] = await joinSyncRequests([
+      const [, starred] = await join([
         unread(), minifluxAPI.getAllStarredEntries(check),
-      ], check);
+      ]);
       addEntries(starred);
     } else {
       const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
-      const [changed, created] = await joinSyncRequests([
+      const [changed, created] = await join([
         minifluxAPI.getChangedEntries(since, check), minifluxAPI.getNewEntries(since, check),
-      ], check);
+      ]);
       // Merge by server change time; older servers without it retain the
       // previous deterministic changed-then-created fallback.
       addEntries(changed);
       addEntries(created);
     }
   };
-  const [serverFeeds, serverCategories] = await joinSyncRequests([
+  const [serverFeeds, serverCategories] = await join([
     minifluxAPI.getFeeds(), minifluxAPI.getCategories(), collectArticles(),
-  ], check);
+  ]);
   return {
     feeds: serverFeeds.map((feed) => ({
       id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,
@@ -207,21 +224,22 @@ async function collectSnapshot(check) {
       blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
     })),
     categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
-    articles, syncedAt, evicted,
+    articles: [...articleMap.values()], syncedAt,
   };
 }
 
 export function sync() {
   if (currentSync) return currentSync;
   isSyncing.set(true);
+  syncProgress.set("正在准备同步…");
   error.set(null);
   const operation = runAccountOperation(async (check) => {
     const snapshot = await collectSnapshot(check);
     check();
+    syncProgress.set("正在保存完整阅读数据…");
     await commitSyncSnapshot(snapshot);
     check(false);
     lastSync.set(snapshot.syncedAt);
-    if (snapshot.evicted) globalThis.dispatchEvent?.(new CustomEvent("nextflux:cache-evicted"));
   });
   currentSync = operation.catch((failure) => {
     if (failure.code !== "ACCOUNT_CHANGED") {
@@ -232,6 +250,7 @@ export function sync() {
   }).finally(() => {
     currentSync = null;
     isSyncing.set(false);
+    syncProgress.set("");
   });
   return currentSync;
 }

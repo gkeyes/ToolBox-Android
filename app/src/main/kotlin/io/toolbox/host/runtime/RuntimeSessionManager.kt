@@ -932,6 +932,7 @@ internal class RuntimeSessionManager(
     }
 
     private suspend fun persistSessions(toolId: String) {
+        val prepared = hosts[toolId]?.runtime
         val snapshot = sessionsByTool[toolId].orEmpty().values.toList()
         withContext(Dispatchers.IO) {
             val result = if (snapshot.isEmpty()) {
@@ -942,6 +943,7 @@ internal class RuntimeSessionManager(
                     RUNTIME_SESSIONS_KEY,
                     JSONArray().also { array -> snapshot.forEach { array.put(it.toJson()) } }.toString(),
                     nowMillis(),
+                    quotaBytes = storageQuotaBytes(toolId, prepared),
                 )
             }
             requirePersistence(result, allowMissingTool = snapshot.isEmpty())
@@ -949,6 +951,7 @@ internal class RuntimeSessionManager(
     }
 
     private suspend fun persistAlarms(toolId: String) {
+        val prepared = hosts[toolId]?.runtime
         val snapshot = alarmsByTool[toolId].orEmpty().values.toList()
         withContext(Dispatchers.IO) {
             val result = if (snapshot.isEmpty()) {
@@ -959,9 +962,24 @@ internal class RuntimeSessionManager(
                     RUNTIME_ALARMS_KEY,
                     JSONArray().also { array -> snapshot.forEach { array.put(it.toJson()) } }.toString(),
                     nowMillis(),
+                    quotaBytes = storageQuotaBytes(toolId, prepared),
                 )
             }
             requirePersistence(result, allowMissingTool = snapshot.isEmpty())
+        }
+    }
+
+    private suspend fun storageQuotaBytes(toolId: String, prepared: PreparedToolRuntime?): Long {
+        val installed = repositories.catalog.observeTool(toolId).first()
+            ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "工具已不存在")
+        if (prepared != null && prepared.versionCode == installed.currentVersion.versionCode) {
+            return prepared.installedManifest.storageBytes.toLong()
+        }
+        return when (val result = preparer.prepare(toolId, installed)) {
+            is RuntimePreparationResult.Prepared -> result.runtime.installedManifest.storageBytes.toLong()
+            is RuntimePreparationResult.Failed -> throw RuntimeHandlerException(
+                RuntimeRpcErrorCode.INTERNAL_ERROR, "无法读取工具的存储限额，请重新导入工具",
+            )
         }
     }
 

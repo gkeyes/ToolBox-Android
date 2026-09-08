@@ -75,7 +75,7 @@ export const getFeeds = async () => {
 export const getFeedEntries = async (feedId, params = {}) => {
   try {
     const response = await apiClient.get("/v1/feeds/" + feedId + "/entries", {
-      params: { direction: "desc", ...params, limit: Math.max(1, Math.min(Number(params.limit) || 50, 50)) },
+      params: { direction: "desc", limit: 50, ...params },
     });
     return response.data.entries;
   } catch (error) {
@@ -117,20 +117,39 @@ export const updateEntryStarred = async (entry) => {
 
 // Fewer round trips for ordinary articles; large bodies still shrink the page
 // against ToolBox's existing response limit without advancing the offset.
-const SYNC_PAGE_SIZE = 200;
+// Keep the upstream synchronization batch size. The adaptive fallback below
+// only handles a single response exceeding ToolBox's transport budget.
+const SYNC_PAGE_SIZE = 1000;
+async function waitForNetworkWindow(check) {
+  // ToolBox's rolling request window is 60 seconds. Check cancellation while
+  // yielding so logout does not have to wait for this entire backoff.
+  const until = Date.now() + 60000;
+  while (Date.now() < until) {
+    check();
+    await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
+  }
+  check();
+}
 async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = () => {}) {
   let pageSize = requestedSize;
+  let retriedRateLimit = false;
   while (true) {
     check();
     try {
       const { data } = await apiClient.get(endpoint, {
-        params: { ...filters, order: "id", direction: "asc", offset, limit: pageSize },
+        params: { ...filters, offset, limit: pageSize },
+        toolboxMaxResponseBytes: 4 * 1024 * 1024,
       });
       check();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
       return { data, pageSize };
     } catch (error) {
       check();
+      if (error.code === "RATE_LIMITED" && !retriedRateLimit) {
+        retriedRateLimit = true;
+        await waitForNetworkWindow(check);
+        continue;
+      }
       if (error.code !== "QUOTA_EXCEEDED" || pageSize <= 1) throw error;
       pageSize = Math.max(1, Math.floor(pageSize / 2));
     }
@@ -140,7 +159,7 @@ async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = 
 // Stable ID order avoids the publication-time reordering of the visual list.
 export async function getEntriesInBatches(endpoint, params = {}, check = () => {}) {
   const initialOffset = params.offset || 0;
-  const filters = { ...params };
+  const filters = { order: "id", direction: "asc", ...params };
   delete filters.limit;
   delete filters.offset;
   const entries = [];
@@ -318,7 +337,7 @@ export const importOPML = async (file) => {
 
 // 分页获取未读文章
 export const getUnreadEntriesByPage = async (offset = 0, limit = SYNC_PAGE_SIZE, check) => {
-  const { data } = await fetchEntryPage("/v1/entries", { status: "unread" }, offset,
+  const { data } = await fetchEntryPage("/v1/entries", { status: "unread", direction: "desc" }, offset,
     Math.max(1, Math.min(Number(limit) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)), check);
   return data;
 };

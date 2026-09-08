@@ -303,3 +303,66 @@ test("overlapping article streams keep newer states and never resurrect a newer 
   assert.equal((await db.getArticleById(3)).status, "read");
   assert.equal((await db.getArticleById(3)).starred, 1);
 });
+
+
+test("first sync retains all 18,518 articles beyond the former 6 MiB cap and exposes progress", async () => {
+  await reset();
+  const total = 18518;
+  const pageSizes = [];
+  const statuses = [];
+  const unlisten = sync.syncProgress.listen((value) => statuses.push(value));
+  fakeApi.getUnreadEntriesByPage = async (offset, size) => {
+    pageSizes.push(size);
+    return { total, entries: Array.from({ length: Math.min(size, total - offset) }, (_, index) => ({
+      ...entry(offset + index + 1), published_at: "2026-09-09T00:00:00Z", content: "完整正文📰".repeat(50),
+    })) };
+  };
+  await sync.sync();
+  unlisten();
+  assert.equal(pageSizes.length, 19);
+  assert.ok(pageSizes.every((size) => size === 1000));
+  assert.equal(await db.getArticlesCount([1]), total);
+  assert.equal((await db.getArticleById(1)).content, "完整正文📰".repeat(50));
+  assert.equal((await db.getArticleById(total)).content, "完整正文📰".repeat(50));
+  assert.ok(statuses.includes("正在同步文章 · 18518 / 18518"));
+  assert.equal(sync.syncProgress.get(), "");
+  assert.equal(sync.isSyncing.get(), false);
+  assert.ok(db.getLastSyncTime());
+});
+
+test("queued feed icons yield to sync and remain invalidated by logout", async () => {
+  await reset();
+  const gate = deferred();
+  const order = [];
+  fakeApi.getIconByFeedId = async (id) => {
+    order.push(`icon-${id}`);
+    if (id === 1) await gate.promise;
+    return null;
+  };
+  const icons = [1, 2, 3].map((id) => sync.loadAccountFeedIcon(id));
+  await tick();
+  fakeApi.getUnreadEntriesByPage = async () => {
+    order.push("sync");
+    return { total: 1, entries: [entry(1)] };
+  };
+  const refresh = sync.sync();
+  gate.resolve();
+  await refresh;
+  await Promise.all(icons);
+  assert.deepEqual(order, ["icon-1", "sync", "icon-2", "icon-3"]);
+
+  const pendingIcon = deferred();
+  let count = 0;
+  fakeApi.getIconByFeedId = async () => { count += 1; return pendingIcon.promise; };
+  const first = sync.loadAccountFeedIcon(4);
+  const second = sync.loadAccountFeedIcon(5);
+  const firstFailure = assert.rejects(first, /登录状态已改变/);
+  const secondFailure = assert.rejects(second, /登录状态已改变/);
+  await tick();
+  const loggingOut = auth.logout();
+  await tick();
+  pendingIcon.resolve({ mime_type: "image/png", data: "fixture" });
+  await Promise.all([firstFailure, secondFailure, loggingOut]);
+  assert.equal(count, 1, "queued icon never dispatches after logout");
+  assert.equal(await db.getFeedIcon(4), undefined);
+});

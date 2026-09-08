@@ -4,9 +4,7 @@ let cache;
 function getCache() {
   if (!cache) {
     if (!globalThis.ToolBox?.storage) throw new Error("请在 ToolBox 中打开 NextFlux。");
-    cache = createArticleCache(globalThis.ToolBox.storage, () => {
-      globalThis.dispatchEvent?.(new CustomEvent("nextflux:cache-evicted"));
-    });
+    cache = createArticleCache(globalThis.ToolBox.storage);
   }
   return cache;
 }

@@ -110,61 +110,65 @@ test("login rejects alternate origin and fails closed when secure persistence fa
 test("synchronization paginates bounded requests and returns the complete entry set", async () => {
   const { getEntriesInBatches } = await import("../src/api/miniflux.js");
   const offsets = [];
-  host(async ({ url }) => {
+  host(async ({ url, maxResponseBytes }) => {
+    assert.equal(maxResponseBytes, 4 * 1024 * 1024);
     const params = new URL(url).searchParams;
     const offset = Number(params.get("offset"));
     const limit = Number(params.get("limit"));
     offsets.push(offset);
-    assert.equal(limit, 200);
+    assert.equal(limit, 1000);
     assert.equal(params.get("order"), "id");
     assert.equal(params.get("direction"), "asc");
-    const entries = Array.from({ length: Math.min(limit, 1000 - offset) }, (_, i) => ({ id: offset + i + 1 }));
-    return { status: 200, headers: {}, body: JSON.stringify({ total: 1000, entries }), bodyEncoding: "text" };
+    const entries = Array.from({ length: Math.min(limit, 18518 - offset) }, (_, i) => ({ id: offset + i + 1 }));
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 18518, entries }), bodyEncoding: "text" };
   });
   const entries = await getEntriesInBatches("/v1/entries", { starred: true });
-  assert.equal(entries.length, 1000);
-  assert.deepEqual(offsets, [0, 200, 400, 600, 800], "1,000 ordinary articles use 5 round trips instead of 20");
+  assert.equal(entries.length, 18518);
+  assert.deepEqual(offsets, Array.from({ length: 19 }, (_, page) => page * 1000), "all 18,518 articles use the upstream 1,000-entry pages");
+  assert.equal(entries.at(-1).id, 18518);
 });
 
 test("oversized article batches retry at a smaller page size without skipping entries", async () => {
   const { getEntriesInBatches } = await import("../src/api/miniflux.js");
   const sizes = [];
-  host(async ({ url }) => {
+  host(async ({ url, maxResponseBytes }) => {
+    assert.equal(maxResponseBytes, 4 * 1024 * 1024);
     const params = new URL(url).searchParams;
     const offset = Number(params.get("offset"));
     const limit = Number(params.get("limit"));
     sizes.push(limit);
-    if (limit > 25) throw { code: "QUOTA_EXCEEDED" };
-    const entries = Array.from({ length: Math.min(limit, 30 - offset) }, (_, i) => ({ id: offset + i + 1 }));
-    return { status: 200, headers: {}, body: JSON.stringify({ total: 30, entries }), bodyEncoding: "text" };
+    if (limit > 250) throw { code: "QUOTA_EXCEEDED" };
+    const entries = Array.from({ length: Math.min(limit, 630 - offset) }, (_, i) => ({ id: offset + i + 1 }));
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 630, entries }), bodyEncoding: "text" };
   });
   const entries = await getEntriesInBatches("/v1/entries");
-  assert.deepEqual(sizes, [200, 100, 50, 25, 25]);
-  assert.equal(entries.length, 30);
-  assert.equal(entries.at(-1).id, 30);
+  assert.deepEqual(sizes, [1000, 500, 250, 250, 250]);
+  assert.equal(entries.length, 630);
+  assert.equal(entries.at(-1).id, 630);
 });
 
 
-test("initial unread sync shrinks oversized pages and keeps stable ID order", async () => {
+test("initial unread sync keeps upstream ordering and only shrinks transport-overflow pages", async () => {
   const { getUnreadEntriesByPage } = await import("../src/api/miniflux.js");
   const requests = [];
-  host(async ({ url }) => {
+  host(async ({ url, maxResponseBytes }) => {
+    assert.equal(maxResponseBytes, 4 * 1024 * 1024);
     const params = new URL(url).searchParams;
     const offset = Number(params.get("offset"));
     const limit = Number(params.get("limit"));
     requests.push([offset, limit]);
-    assert.equal(params.get("order"), "id");
-    assert.equal(params.get("direction"), "asc");
+    assert.equal(params.has("order"), false);
+    assert.equal(params.get("direction"), "desc");
     assert.equal(params.get("status"), "unread");
-    if (limit > 50) throw { code: "QUOTA_EXCEEDED" };
-    return { status: 200, headers: {}, body: JSON.stringify({ total: 350,
+    if (limit > 250) throw { code: "QUOTA_EXCEEDED" };
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 1350,
       entries: Array.from({ length: limit }, (_, i) => ({ id: offset + i + 1 })),
     }), bodyEncoding: "text" };
   });
   const page = await getUnreadEntriesByPage(200);
-  assert.deepEqual(requests, [[200, 200], [200, 100], [200, 50]]);
+  assert.deepEqual(requests, [[200, 1000], [200, 500], [200, 250]]);
   assert.equal(page.entries[0].id, 201);
-  assert.equal(page.entries.at(-1).id, 250);
+  assert.equal(page.entries.at(-1).id, 450);
 });
 
 test("pagination stops after account cancellation and rejects incomplete results", async () => {
@@ -182,4 +186,38 @@ test("pagination stops after account cancellation and rejects incomplete results
   assert.equal(calls, 1);
   host(async () => ({ status: 200, headers: {}, body: '{"total":400,"entries":[]}', bodyEncoding: "text" }));
   await assert.rejects(getEntriesInBatches("/v1/entries"), /不完整/);
+});
+
+
+test("ToolBox rate limiting waits once without dropping or restarting a page", async (t) => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const offsets = [];
+  host(async ({ url }) => {
+    offsets.push(Number(new URL(url).searchParams.get("offset")));
+    if (offsets.length === 1) throw { code: "RATE_LIMITED" };
+    return { status: 200, headers: {}, body: '{"total":1,"entries":[{"id":1}]}', bodyEncoding: "text" };
+  });
+  const result = getEntriesInBatches("/v1/entries");
+  await new Promise(setImmediate);
+  assert.equal(offsets.length, 1);
+  for (let second = 0; second < 60; second += 1) {
+    t.mock.timers.tick(1000);
+    await new Promise(setImmediate);
+  }
+  assert.deepEqual(await result, [{ id: 1 }]);
+  assert.deepEqual(offsets, [0, 0]);
+
+  let cancelled = false;
+  let requests = 0;
+  host(async () => { requests += 1; throw { code: "RATE_LIMITED" }; });
+  const running = getEntriesInBatches("/v1/entries", {}, () => {
+    if (cancelled) throw new Error("account cancelled");
+  });
+  const failure = assert.rejects(running, /account cancelled/);
+  await new Promise(setImmediate);
+  cancelled = true;
+  t.mock.timers.tick(1000);
+  await failure;
+  assert.equal(requests, 1, "logout cancels backoff before another network request");
 });

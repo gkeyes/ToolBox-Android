@@ -74,5 +74,4 @@ export function installLinkHandling() {
     showLinkActions(target.href);
   }, true);
   window.addEventListener("nextflux:storage-error", () => toast.error("保存失败，请检查存储权限或可用空间。"));
-  window.addEventListener("nextflux:cache-evicted", () => toast.info("本地缓存已满，已保留较新的文章。服务器中的文章不受影响。"));
 }

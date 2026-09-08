@@ -95,6 +95,7 @@ export async function toolboxAxiosAdapter(config) {
     body: config.data,
     signal: config.signal,
     timeoutMs: config.timeout || 60000,
+    maxResponseBytes: config.toolboxMaxResponseBytes,
   });
   const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
   if (!validateStatus(response.status)) throw httpError(response.status);

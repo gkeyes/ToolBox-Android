@@ -233,21 +233,44 @@ internal class RoomToolKvRepository(
     override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =
         database.keyValues().observe(toolId, key).map { it?.toDomain() }
 
-    override suspend fun put(toolId: String, key: String, valueJson: String, updatedAt: Long): DataResult<Unit> {
-        if (key.isBlank()) return DataResult.Failure.InvalidInput("key")
+    override suspend fun put(
+        toolId: String,
+        key: String,
+        valueJson: String,
+        updatedAt: Long,
+        quotaBytes: Long,
+    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt, quotaBytes)
+
+    override suspend fun keys(toolId: String): List<String> = database.keyValues().keys(toolId)
+
+    override suspend fun replace(
+        toolId: String,
+        removeKeys: Set<String>,
+        values: Map<String, String>,
+        updatedAt: Long,
+        quotaBytes: Long,
+    ): DataResult<Unit> {
+        if (removeKeys.any(String::isBlank) || values.keys.any(String::isBlank)) {
+            return DataResult.Failure.InvalidInput("key")
+        }
+        if (quotaBytes !in 1..CoreDataLimits.MAX_TOOL_KV_BYTES) {
+            return DataResult.Failure.InvalidInput("quotaBytes")
+        }
         return try {
+            val rows = values.map { (key, value) ->
+                ToolKvEntity(toolId, key, value, updatedAt, value.toByteArray(StandardCharsets.UTF_8).size)
+            }
             database.withTransaction {
                 if (database.tools().get(toolId) == null) return@withTransaction DataResult.Failure.NotFound("tool")
-                val current = database.keyValues().get(toolId, key)
-                val bytes = valueJson.toByteArray(StandardCharsets.UTF_8).size
-                val attempted = database.keyValues().bytesUsed(toolId) - (current?.bytes ?: 0) + bytes
-                if (attempted > CoreDataLimits.TOOL_KV_BYTES) {
-                    return@withTransaction DataResult.Failure.QuotaExceeded(
-                        CoreDataLimits.TOOL_KV_BYTES,
-                        attempted,
-                    )
+                val affectedKeys = removeKeys + values.keys
+                var replacedBytes = 0L
+                for (key in affectedKeys) replacedBytes += database.keyValues().bytesForKey(toolId, key) ?: 0
+                val attempted = database.keyValues().bytesUsed(toolId) - replacedBytes + rows.sumOf { it.bytes.toLong() }
+                if (values.isNotEmpty() && attempted > quotaBytes) {
+                    return@withTransaction DataResult.Failure.QuotaExceeded(quotaBytes, attempted)
                 }
-                database.keyValues().put(ToolKvEntity(toolId, key, valueJson, updatedAt, bytes))
+                for (key in removeKeys) database.keyValues().delete(toolId, key)
+                for (row in rows) database.keyValues().put(row)
                 DataResult.Success(Unit)
             }
         } catch (cancelled: CancellationException) {

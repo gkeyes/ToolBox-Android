@@ -268,20 +268,44 @@ private class InMemoryToolKvRepository(private val state: InMemoryCoreState) : T
     override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =
         state.keyValues.map { it[toolId to key] }
 
-    override suspend fun put(toolId: String, key: String, valueJson: String, updatedAt: Long): DataResult<Unit> =
-        state.mutex.withLock {
-            if (key.isBlank()) return@withLock DataResult.Failure.InvalidInput("key")
-            if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
-            val mapKey = toolId to key
-            val bytes = valueJson.toByteArray(StandardCharsets.UTF_8).size
-            val attempted = state.keyValues.value.filterKeys { it.first == toolId }.values
-                .sumOf { it.bytes.toLong() } - (state.keyValues.value[mapKey]?.bytes ?: 0) + bytes
-            if (attempted > CoreDataLimits.TOOL_KV_BYTES) {
-                return@withLock DataResult.Failure.QuotaExceeded(CoreDataLimits.TOOL_KV_BYTES, attempted)
-            }
-            state.keyValues.value = state.keyValues.value + (mapKey to ToolKvValue(key, valueJson, updatedAt))
-            DataResult.Success(Unit)
+    override suspend fun put(
+        toolId: String,
+        key: String,
+        valueJson: String,
+        updatedAt: Long,
+        quotaBytes: Long,
+    ): DataResult<Unit> = replace(toolId, emptySet(), mapOf(key to valueJson), updatedAt, quotaBytes)
+
+    override suspend fun keys(toolId: String): List<String> = state.mutex.withLock {
+        state.keyValues.value.keys.filter { it.first == toolId }.map { it.second }.sorted()
+    }
+
+    override suspend fun replace(
+        toolId: String,
+        removeKeys: Set<String>,
+        values: Map<String, String>,
+        updatedAt: Long,
+        quotaBytes: Long,
+    ): DataResult<Unit> = state.mutex.withLock {
+        if (removeKeys.any(String::isBlank) || values.keys.any(String::isBlank)) {
+            return@withLock DataResult.Failure.InvalidInput("key")
         }
+        if (quotaBytes !in 1..CoreDataLimits.MAX_TOOL_KV_BYTES) {
+            return@withLock DataResult.Failure.InvalidInput("quotaBytes")
+        }
+        if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
+        val affectedKeys = removeKeys + values.keys
+        val rows = values.map { (key, value) -> (toolId to key) to ToolKvValue(key, value, updatedAt) }.toMap()
+        val retainedBytes = state.keyValues.value.entries.sumOf { (key, value) ->
+            if (key.first == toolId && key.second !in affectedKeys) value.bytes.toLong() else 0L
+        }
+        val attempted = retainedBytes + rows.values.sumOf { it.bytes.toLong() }
+        if (values.isNotEmpty() && attempted > quotaBytes) {
+            return@withLock DataResult.Failure.QuotaExceeded(quotaBytes, attempted)
+        }
+        state.keyValues.value = (state.keyValues.value - removeKeys.map { toolId to it }.toSet()) + rows
+        DataResult.Success(Unit)
+    }
 
     override suspend fun remove(toolId: String, key: String): DataResult<Unit> = state.mutex.withLock {
         if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")

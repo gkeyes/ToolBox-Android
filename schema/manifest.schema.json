@@ -230,7 +230,8 @@
         "storageBytes": {
           "type": "integer",
           "minimum": 65536,
-          "maximum": 52428800,
+          "maximum": 536870912,
+          "description": "Per-tool persisted storage budget. Values above 50 MiB require minHostVersion 0.6.5 or newer.",
           "default": 2097152
         },
         "maxBridgePayloadBytes": {

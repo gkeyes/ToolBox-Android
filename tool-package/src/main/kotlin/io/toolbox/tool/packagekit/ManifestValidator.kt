@@ -50,6 +50,9 @@ internal object ManifestValidator {
             storageBytes = 2_097_152,
             maxBridgePayloadBytes = 262_144,
         )
+        if (manifestLimits.storageBytes > 52_428_800 && !versionAtLeast(minHostVersion, 0, 6, 5)) {
+            throw JsonFormatException("Storage budgets above 50 MiB require minHostVersion 0.6.5")
+        }
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -164,7 +167,7 @@ internal object ManifestValidator {
         limits.requireOnly("limits", setOf("storageBytes", "maxBridgePayloadBytes"))
         return ManifestLimits(
             storageBytes = limits["storageBytes"]?.let {
-                requireIntValue(it, "limits.storageBytes", 65_536, 52_428_800)
+                requireIntValue(it, "limits.storageBytes", 65_536, 536_870_912)
             } ?: 2_097_152,
             maxBridgePayloadBytes = limits["maxBridgePayloadBytes"]?.let {
                 requireIntValue(it, "limits.maxBridgePayloadBytes", 4096, 8_388_608)

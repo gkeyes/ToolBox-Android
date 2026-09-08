@@ -238,6 +238,53 @@ class FreshPersistenceContractTest {
         }
     }
 
+    @Test
+    fun declaredStorageQuotaAndAtomicReplacementSurviveReopen() = runTest {
+        var database = openDatabase()
+        try {
+            assertEquals(
+                DataResult.Success(Unit),
+                RoomInstallTransactionRepository(database).begin(
+                    InstallTransaction("tx", TOOL_ID, 1, InstallTransactionState.PREPARING, 1, 1),
+                ),
+            )
+            assertEquals(DataResult.Success(CommitInstallOutcome.Committed), RoomCatalogLifecycleRepository(database).commitInstall(attempt()))
+            var storage = RoomToolKvRepository(database)
+            val quota = 3L * 1024 * 1024
+            val chunk = "x".repeat(768 * 1024)
+            for (key in listOf("standard.one", "standard.two", "secure.document", "host.session")) {
+                assertEquals(DataResult.Success(Unit), storage.put(TOOL_ID, key, chunk, 2, quota))
+            }
+            assertEquals(quota, storage.bytesUsed(TOOL_ID))
+            assertEquals(DataResult.Failure.QuotaExceeded(quota, quota + 3), storage.put(TOOL_ID, "overflow", "中", 3, quota))
+            assertEquals(
+                DataResult.Failure.QuotaExceeded(quota, quota + 1),
+                storage.replace(TOOL_ID, setOf("standard.one"), mapOf("replacement" to chunk + "x"), 3, quota),
+            )
+            assertEquals(chunk, storage.observe(TOOL_ID, "standard.one").first()!!.valueJson)
+            assertEquals(
+                DataResult.Success(Unit),
+                storage.replace(TOOL_ID, setOf("standard.one", "standard.two"), mapOf("replacement" to chunk, "standard.two" to chunk), 4, quota),
+            )
+            database.close()
+            database = openDatabase()
+            storage = RoomToolKvRepository(database)
+            assertEquals(listOf("host.session", "replacement", "secure.document", "standard.two"), storage.keys(TOOL_ID))
+            assertEquals(quota, storage.bytesUsed(TOOL_ID))
+            assertEquals(chunk, storage.observe(TOOL_ID, "replacement").first()!!.valueJson)
+            assertEquals(
+                DataResult.Failure.QuotaExceeded(CoreDataLimits.TOOL_KV_BYTES, quota + 1),
+                storage.put(TOOL_ID, "default-quota", "x", 5),
+            )
+            assertEquals(
+                DataResult.Failure.InvalidInput("quotaBytes"),
+                storage.put(TOOL_ID, "invalid-quota", "x", 5, CoreDataLimits.MAX_TOOL_KV_BYTES + 1),
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     private fun openDatabase() = Room.databaseBuilder(context, ToolBoxDatabase::class.java, DATABASE_NAME).build()
 
     private fun attempt() = CatalogInstallAttempt(

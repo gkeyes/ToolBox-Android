@@ -300,6 +300,7 @@ export interface ToolBoxApi {
   crypto: {
     sha256(value: string | Uint8Array): Promise<Sha256Result>;
   };
+  /** Total persisted storage uses manifest.limits.storageBytes. Values above 50 MiB require minHostVersion >= 0.6.5; maximum 512 MiB. Writes fail atomically on quota exhaustion. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
     set(key: string, value: JsonValue): Promise<void>;
