@@ -26,7 +26,6 @@ PRODUCT.md
 README.md
 DESIGN.md
 CODEX_REFACTOR_PLAN.md
-TESTING.md
 ```
 
 其中：

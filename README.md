@@ -36,8 +36,8 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 
 ## 本地运行
 
-需要 JDK 21 与 Android SDK 37。按当前阶段只运行最小相关验证；完整命令与每项测试的理由、
-方法、预期结果见 [`TESTING.md`](TESTING.md)。典型本地构建为：
+需要 JDK 21 与 Android SDK 37。按当前阶段只运行最小相关验证；宿主 CI 检查入口为
+`scripts/qa/run-host-gate.sh`。典型本地构建为：
 
 ```bash
 ./gradlew --no-daemon verifySecurityInvariants assembleDebug testDebugUnitTest

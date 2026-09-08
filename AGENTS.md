@@ -7,11 +7,9 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 ## Read first
 
 1. `docs/ToolBox_Android_技术方案.md`
-2. `design/host_ui_light.png`
-3. `schema/manifest.schema.json`
-4. `sdk/toolbox-api.d.ts`
-5. `references/component_mapping.md`
-6. `TESTING.md`
+2. `schema/manifest.schema.json`
+3. `sdk/toolbox-api.d.ts`
+4. `references/component_mapping.md`
 
 ## Non-negotiable security invariants
 
@@ -53,5 +51,5 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 - No main-thread file, zip, hash, database or network work.
 - Errors are typed and user-visible messages are actionable.
 - Security-sensitive branch has a test.
-- Every retained or new automated test is admitted in `TESTING.md` with its reason, method and expected result; prefer the smallest non-duplicated test at the lowest faithful layer.
+- Prefer the smallest non-duplicated test at the lowest faithful layer.
 - Documentation and TypeScript API declaration stay in sync.

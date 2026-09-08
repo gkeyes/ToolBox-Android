@@ -6,12 +6,10 @@ on:
     paths-ignore:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   pull_request:
     paths-ignore:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +21,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build and smallest admitted unit suite
+    name: Build and verify runtime behavior
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -70,7 +68,7 @@ jobs:
           node --test examples/health-records/tests/*.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
 
-      - name: Verify protocol, security, compile and admitted unit suite
+      - name: Verify protocol, security, compilation and runtime behavior
         env:
           TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.0.tbx
           TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "1"
@@ -80,27 +78,12 @@ jobs:
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
-      - name: Validate the redesigned host preview matrix
-        run: ./gradlew --no-daemon :app:validateDebugScreenshotTest
-
       - name: Upload verified NextFlux package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: nextflux-v1.0.0-${{ github.sha }}
           path: build/nextflux/nextflux-v1.0.0.tbx
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload rendered host previews
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: host-previews-${{ github.run_id }}
-          path: |
-            app/src/screenshotTestDebug/reference
-            app/build/reports/screenshotTest
-            app/build/outputs/screenshotTest-results
-          if-no-files-found: warn
           retention-days: 14
 
       - name: Upload host gate evidence
@@ -312,7 +295,7 @@ jobs:
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
             printf 'DEVELOPER_HELP_CHECK=PASS\n'
             printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
-            printf 'HOST_SCREENSHOT_VALIDATION=PASS\n'
+            printf 'HOST_SCREENSHOT_VALIDATION=NOT_RUN_USER_REQUEST\n'
             printf 'NETWORK_GATEWAY_REGRESSION=PASS\n'
             printf 'PERMISSION_MANIFEST_REGRESSION=PASS\n'
             printf 'PERMISSION_UPDATE_RETENTION_JVM=PASS\n'
