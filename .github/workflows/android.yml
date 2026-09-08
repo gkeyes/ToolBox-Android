@@ -71,8 +71,8 @@ jobs:
 
       - name: Verify protocol, security, compilation and runtime behavior
         env:
-          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.1.tbx
-          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "2"
+          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.2.tbx
+          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "3"
           TOOLBOX_PACKAGE_EXPECTED_ID: io.toolbox.nextflux
           TOOLBOX_PACKAGE_HOST_VERSION: "0.6.4"
         run: >-
@@ -82,8 +82,8 @@ jobs:
       - name: Upload verified NextFlux package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: nextflux-v1.0.1-${{ github.sha }}
-          path: build/nextflux/nextflux-v1.0.1.tbx
+          name: nextflux-v1.0.2-${{ github.sha }}
+          path: build/nextflux/nextflux-v1.0.2.tbx
           if-no-files-found: error
           retention-days: 14
 

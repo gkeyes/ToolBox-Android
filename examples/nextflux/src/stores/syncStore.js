@@ -119,20 +119,35 @@ const mapEntryToArticle = (entry) => ({
   enclosures: entry.enclosures || [],
 });
 
+// Drain sibling requests on failure before releasing the account operation
+// queue, so logout or a following mutation never races an unfinished sync.
+async function joinSyncRequests(tasks, check) {
+  const results = await Promise.allSettled(tasks);
+  check();
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure) throw failure.reason;
+  return results.map((result) => result.value);
+}
+
 async function collectSnapshot(check) {
   // Start time (not completion time) leaves concurrent server changes eligible
   // for the next incremental sync, with the existing 24-hour overlap as well.
   const syncedAt = new Date();
-  const [serverFeeds, serverCategories] = await Promise.all([
-    minifluxAPI.getFeeds(), minifluxAPI.getCategories(),
-  ]);
-  check();
   let articles = await getCachedArticles();
   check();
   let evicted = false;
+  const entryChanges = new Map();
   const addEntries = (entries) => {
     const map = new Map(articles.map((article) => [article.id, article]));
     for (const entry of entries) {
+      // Parallel endpoints can overlap. Keep the fresher server record even
+      // when its response arrives first; retain deletion timestamps as well.
+      const changedAt = Date.parse(entry.changed_at);
+      const previousChange = entryChanges.get(entry.id);
+      if (Number.isFinite(changedAt)) {
+        if (previousChange !== undefined && changedAt <= previousChange) continue;
+        entryChanges.set(entry.id, changedAt);
+      }
       if (entry.status === "removed") map.delete(entry.id);
       else map.set(entry.id, mapEntryToArticle(entry));
     }
@@ -141,33 +156,48 @@ async function collectSnapshot(check) {
     evicted ||= result.evicted > 0;
   };
   const previous = getLastSyncTime();
-  if (!previous) {
-    articles = [];
-    let offset = 0;
-    let total = Infinity;
-    while (offset < total) {
-      const page = await minifluxAPI.getUnreadEntriesByPage(offset, 50);
-      check();
-      if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
-        throw new Error("同步返回的文章列表无效，请重试。");
-      }
-      total = page.total;
-      if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
-      addEntries(page.entries);
-      offset += page.entries.length;
+  // Metadata and the two independent article streams use at most four requests
+  // at once. Each stream retains sequential, adaptive, bounded pagination.
+  const collectArticles = async () => {
+    if (!previous) {
+      articles = [];
+      const unread = async () => {
+        let offset = 0;
+        let total = Infinity;
+        let pageSize = 200;
+        while (offset < total) {
+          check();
+          const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
+          check();
+          if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
+            throw new Error("同步返回的文章列表无效，请重试。");
+          }
+          total = page.total;
+          if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
+          addEntries(page.entries);
+          offset += page.entries.length;
+          // Remember quota/server reductions for the rest of this sync.
+          if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
+        }
+      };
+      const [, starred] = await joinSyncRequests([
+        unread(), minifluxAPI.getAllStarredEntries(check),
+      ], check);
+      addEntries(starred);
+    } else {
+      const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
+      const [changed, created] = await joinSyncRequests([
+        minifluxAPI.getChangedEntries(since, check), minifluxAPI.getNewEntries(since, check),
+      ], check);
+      // Merge by server change time; older servers without it retain the
+      // previous deterministic changed-then-created fallback.
+      addEntries(changed);
+      addEntries(created);
     }
-    const starred = await minifluxAPI.getAllStarredEntries();
-    check();
-    addEntries(starred);
-  } else {
-    const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
-    const changed = await minifluxAPI.getChangedEntries(since);
-    check();
-    addEntries(changed);
-    const created = await minifluxAPI.getNewEntries(since);
-    check();
-    addEntries(created);
-  }
+  };
+  const [serverFeeds, serverCategories] = await joinSyncRequests([
+    minifluxAPI.getFeeds(), minifluxAPI.getCategories(), collectArticles(),
+  ], check);
   return {
     feeds: serverFeeds.map((feed) => ({
       id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,

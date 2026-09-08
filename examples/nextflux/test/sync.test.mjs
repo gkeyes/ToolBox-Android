@@ -230,3 +230,76 @@ test("offline icons use cache and unsubscribe commits feed, articles, and icon a
   assert.equal(await db.getArticlesCount([1]), 0);
   assert.equal(await db.getFeedIcon(1), undefined);
 });
+
+
+test("sync overlaps independent requests and drains failed work before releasing the account queue", async () => {
+  await reset();
+  const started = [];
+  const gates = [deferred(), deferred(), deferred(), deferred()];
+  fakeApi.getFeeds = () => { started.push("feeds"); return gates[0].promise; };
+  fakeApi.getCategories = () => { started.push("categories"); return gates[1].promise; };
+  fakeApi.getUnreadEntriesByPage = () => { started.push("unread"); return gates[2].promise; };
+  fakeApi.getAllStarredEntries = () => { started.push("starred"); return gates[3].promise; };
+  const initial = sync.sync();
+  await tick();
+  assert.deepEqual(new Set(started), new Set(["feeds", "categories", "unread", "starred"]),
+    "all four requests start without waiting for an earlier response");
+  assert.equal(db.getLastSyncTime(), null);
+  gates[3].resolve([entry(2, "read")]);
+  gates[2].resolve({ total: 1, entries: [entry(1)] });
+  gates[1].resolve([{ id: 10, title: "Category" }]);
+  gates[0].resolve([{ id: 1, title: "Source", category: { id: 10 } }]);
+  await initial;
+  assert.equal(await db.getArticlesCount([1]), 2);
+  const checkpoint = db.getLastSyncTime().toISOString();
+  const changedGate = deferred();
+  const newGate = deferred();
+  const incrementalStarted = [];
+  fakeApi.getChangedEntries = () => { incrementalStarted.push("changed"); return changedGate.promise; };
+  fakeApi.getNewEntries = () => { incrementalStarted.push("new"); return newGate.promise; };
+  const incremental = sync.sync();
+  const failure = assert.rejects(incremental, /page failed/);
+  let nextOperationStarted = false;
+  const queued = sync.runAccountOperation(() => { nextOperationStarted = true; });
+  await tick();
+  assert.deepEqual(incrementalStarted, ["changed", "new"]);
+  newGate.reject(new Error("page failed"));
+  await tick();
+  assert.equal(nextOperationStarted, false, "the sibling request still owns the account operation");
+  changedGate.resolve([entry(3)]);
+  await failure;
+  await queued;
+  assert.equal(nextOperationStarted, true);
+  assert.equal(db.getLastSyncTime().toISOString(), checkpoint);
+  assert.equal(await db.getArticleById(3), null);
+});
+
+
+test("overlapping article streams keep newer states and never resurrect a newer removal", async () => {
+  await reset();
+  await sync.sync();
+  const old = "2026-09-09T01:00:00Z";
+  const recent = "2026-09-09T01:01:00Z";
+  const changedGate = deferred();
+  const newGate = deferred();
+  fakeApi.getChangedEntries = () => changedGate.promise;
+  fakeApi.getNewEntries = () => newGate.promise;
+  const running = sync.sync();
+  await tick();
+  newGate.resolve([
+    { ...entry(1), changed_at: old },
+    { ...entry(2), changed_at: old },
+    { ...entry(3, "read"), starred: true, changed_at: recent },
+  ]);
+  changedGate.resolve([
+    { ...entry(1, "read"), starred: true, changed_at: recent },
+    { ...entry(2, "removed"), changed_at: recent },
+    { ...entry(3), changed_at: old },
+  ]);
+  await running;
+  assert.equal((await db.getArticleById(1)).status, "read");
+  assert.equal((await db.getArticleById(1)).starred, 1);
+  assert.equal(await db.getArticleById(2), null);
+  assert.equal((await db.getArticleById(3)).status, "read");
+  assert.equal((await db.getArticleById(3)).starred, 1);
+});

@@ -115,9 +115,30 @@ export const updateEntryStarred = async (entry) => {
   }
 };
 
-// Responses are bounded even during a first/full synchronization. Stable ID order
-// avoids the moving publication-time ordering used by the visual article list.
-export async function getEntriesInBatches(endpoint, params = {}) {
+// Fewer round trips for ordinary articles; large bodies still shrink the page
+// against ToolBox's existing response limit without advancing the offset.
+const SYNC_PAGE_SIZE = 200;
+async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = () => {}) {
+  let pageSize = requestedSize;
+  while (true) {
+    check();
+    try {
+      const { data } = await apiClient.get(endpoint, {
+        params: { ...filters, order: "id", direction: "asc", offset, limit: pageSize },
+      });
+      check();
+      if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
+      return { data, pageSize };
+    } catch (error) {
+      check();
+      if (error.code !== "QUOTA_EXCEEDED" || pageSize <= 1) throw error;
+      pageSize = Math.max(1, Math.floor(pageSize / 2));
+    }
+  }
+}
+
+// Stable ID order avoids the publication-time reordering of the visual list.
+export async function getEntriesInBatches(endpoint, params = {}, check = () => {}) {
   const initialOffset = params.offset || 0;
   const filters = { ...params };
   delete filters.limit;
@@ -125,42 +146,33 @@ export async function getEntriesInBatches(endpoint, params = {}) {
   const entries = [];
   const seen = new Set();
   let offset = initialOffset;
-  let pageSize = 50;
+  let pageSize = SYNC_PAGE_SIZE;
   for (let page = 0; page < 10000; page += 1) {
-    let data;
-    try {
-      ({ data } = await apiClient.get(endpoint, {
-        params: { ...filters, order: "id", direction: "asc", offset, limit: pageSize },
-      }));
-    } catch (error) {
-      if (error.code === "QUOTA_EXCEEDED" && pageSize > 1) {
-        pageSize = Math.max(1, Math.floor(pageSize / 2));
-        continue;
-      }
-      throw error;
+    const result = await fetchEntryPage(endpoint, filters, offset, pageSize, check);
+    pageSize = result.pageSize;
+    const { entries: batch, total } = result.data;
+    if (!batch.length && Number.isFinite(total) && offset < total) {
+      throw new Error("同步结果不完整，请重试。");
     }
-    const batch = data.entries;
-    if (!Array.isArray(batch)) throw new Error("服务器返回的文章列表无效。");
-    if (batch.length === 0) return entries;
     for (const entry of batch) {
       if (!seen.has(entry.id)) { seen.add(entry.id); entries.push(entry); }
     }
     offset += batch.length;
-    if (batch.length < pageSize || (Number.isFinite(data.total) && offset >= data.total)) return entries;
+    if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return entries;
   }
   throw new Error("文章数量超出单次同步范围，请减少服务器中的历史文章后重试。");
 }
 
 // 获取变更文章
-export const getChangedEntries = async (lastSyncTime) => {
+export const getChangedEntries = async (lastSyncTime, check) => {
   const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { changed_after: timestamp });
+  return getEntriesInBatches("/v1/entries", { changed_after: timestamp }, check);
 };
 
 // 获取新文章
-export const getNewEntries = async (lastSyncTime) => {
+export const getNewEntries = async (lastSyncTime, check) => {
   const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { after: timestamp });
+  return getEntriesInBatches("/v1/entries", { after: timestamp }, check);
 };
 
 // 标记全部已读
@@ -187,10 +199,10 @@ export const markAllAsRead = async (type, id = null) => {
 };
 
 // Unread starred entries are included in unread sync; retrieve read bookmarks here.
-export const getAllStarredEntries = () => getEntriesInBatches("/v1/entries", {
+export const getAllStarredEntries = (check) => getEntriesInBatches("/v1/entries", {
   starred: true,
   status: "read",
-});
+}, check);
 
 // 获取文章原始内容
 export const fetchEntryContent = async (entryId) => {
@@ -305,21 +317,10 @@ export const importOPML = async (file) => {
 };
 
 // 分页获取未读文章
-export const getUnreadEntriesByPage = async (offset = 0, limit = 100) => {
-  try {
-    const response = await apiClient.get("/v1/entries", {
-      params: {
-        status: "unread",
-        direction: "desc",
-        offset,
-        limit: Math.max(1, Math.min(Number(limit) || 50, 50)),
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.error("获取未读文章失败:", error);
-    throw error;
-  }
+export const getUnreadEntriesByPage = async (offset = 0, limit = SYNC_PAGE_SIZE, check) => {
+  const { data } = await fetchEntryPage("/v1/entries", { status: "unread" }, offset,
+    Math.max(1, Math.min(Number(limit) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)), check);
+  return data;
 };
 
 // 刷新订阅源

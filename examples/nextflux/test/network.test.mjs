@@ -115,15 +115,15 @@ test("synchronization paginates bounded requests and returns the complete entry 
     const offset = Number(params.get("offset"));
     const limit = Number(params.get("limit"));
     offsets.push(offset);
-    assert.equal(limit, 50);
+    assert.equal(limit, 200);
     assert.equal(params.get("order"), "id");
     assert.equal(params.get("direction"), "asc");
-    const entries = Array.from({ length: Math.min(limit, 120 - offset) }, (_, i) => ({ id: offset + i + 1 }));
-    return { status: 200, headers: {}, body: JSON.stringify({ total: 120, entries }), bodyEncoding: "text" };
+    const entries = Array.from({ length: Math.min(limit, 1000 - offset) }, (_, i) => ({ id: offset + i + 1 }));
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 1000, entries }), bodyEncoding: "text" };
   });
   const entries = await getEntriesInBatches("/v1/entries", { starred: true });
-  assert.equal(entries.length, 120);
-  assert.deepEqual(offsets, [0, 50, 100]);
+  assert.equal(entries.length, 1000);
+  assert.deepEqual(offsets, [0, 200, 400, 600, 800], "1,000 ordinary articles use 5 round trips instead of 20");
 });
 
 test("oversized article batches retry at a smaller page size without skipping entries", async () => {
@@ -139,7 +139,47 @@ test("oversized article batches retry at a smaller page size without skipping en
     return { status: 200, headers: {}, body: JSON.stringify({ total: 30, entries }), bodyEncoding: "text" };
   });
   const entries = await getEntriesInBatches("/v1/entries");
-  assert.deepEqual(sizes, [50, 25, 25]);
+  assert.deepEqual(sizes, [200, 100, 50, 25, 25]);
   assert.equal(entries.length, 30);
   assert.equal(entries.at(-1).id, 30);
+});
+
+
+test("initial unread sync shrinks oversized pages and keeps stable ID order", async () => {
+  const { getUnreadEntriesByPage } = await import("../src/api/miniflux.js");
+  const requests = [];
+  host(async ({ url }) => {
+    const params = new URL(url).searchParams;
+    const offset = Number(params.get("offset"));
+    const limit = Number(params.get("limit"));
+    requests.push([offset, limit]);
+    assert.equal(params.get("order"), "id");
+    assert.equal(params.get("direction"), "asc");
+    assert.equal(params.get("status"), "unread");
+    if (limit > 50) throw { code: "QUOTA_EXCEEDED" };
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 350,
+      entries: Array.from({ length: limit }, (_, i) => ({ id: offset + i + 1 })),
+    }), bodyEncoding: "text" };
+  });
+  const page = await getUnreadEntriesByPage(200);
+  assert.deepEqual(requests, [[200, 200], [200, 100], [200, 50]]);
+  assert.equal(page.entries[0].id, 201);
+  assert.equal(page.entries.at(-1).id, 250);
+});
+
+test("pagination stops after account cancellation and rejects incomplete results", async () => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  let calls = 0;
+  host(async () => {
+    calls += 1;
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 400,
+      entries: Array.from({ length: 200 }, (_, i) => ({ id: i + 1 })),
+    }), bodyEncoding: "text" };
+  });
+  await assert.rejects(getEntriesInBatches("/v1/entries", {}, () => {
+    if (calls) throw new Error("account cancelled");
+  }), /account cancelled/);
+  assert.equal(calls, 1);
+  host(async () => ({ status: 200, headers: {}, body: '{"total":400,"entries":[]}', bodyEncoding: "text" }));
+  await assert.rejects(getEntriesInBatches("/v1/entries"), /不完整/);
 });
