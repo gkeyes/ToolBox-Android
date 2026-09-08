@@ -274,7 +274,7 @@ storage.get(key) 返回保存的 JSON 值，键不存在时返回 null。set(key
 
 ToolBox 0.6.5 起不设每工具持久存储总容量配额，可保存量由设备剩余空间决定。旧 manifest.limits.storageBytes 字段仍兼容接受，但不再用于限制容量，新工具可以省略。普通存储按键保存，大值由宿主分片；单次调用仍受桥消息大小约束。写入失败保留旧值，不会自动淘汰数据。
 
-storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
+storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。0.6.5 起大密文也分片保存，更新与清理保持原子性。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
 
 普通存储在工具更新后保留；安全存储在关闭其授权、工具更新或删除时会清理，更新后需要重新输入 Token。临时文件令牌和 sessionId 不能作为可跨版本复用的数据保存。
 

@@ -190,7 +190,7 @@ capability descriptor、JS shim method table、`sdk/toolbox-api.d.ts` 和 manife
 | `ui.toast` | 无 | 文本长度限制，Toast 不代表业务完成。 |
 | `crypto.sha256` | 无 | 对上限内 UTF-8/字节求摘要。 |
 | `storage.*` | `storage` | key 长度与 JSON 值校验。0.6.5 起不设每工具持久存储总容量配额，旧 storageBytes 字段仅兼容接受；可保存量由设备剩余空间决定。普通值按键分片保存，旧文档首次修改时原子迁移；写入失败保留旧数据。 |
-| `storage.secure.*` | `storage.secure` | 每工具/版本 Keystore 隔离；关闭/更新/卸载销毁。 |
+| `storage.secure.*` | `storage.secure` | 每工具/版本 Keystore 隔离；大密文分片保存，替换与清理为原子操作；关闭/更新/卸载销毁。 |
 | `device.basic` | `device.basic` | 仅 API level、locale、timezone、screen class。 |
 | `haptics.perform` | `haptics` | 枚举效果并限流，需要近期真实触摸。 |
 | `clipboard.writeText` | `clipboard.write` | UTF-8 上限，需要近期真实触摸。 |

@@ -130,12 +130,10 @@ internal class HostRuntimeBridgeProvider(
             nowMillis = nowMillis,
         ),
         secureStorage = AndroidKeyStoreCipher.isAvailable().takeIf { it }?.let {
-            JsonToolKvStorageHandler(
+            createRuntimeSecureStorageHandler(
                 toolId = toolId,
                 repository = keyValues,
-                namespace = ToolStorageNamespace.Secure,
                 nowMillis = nowMillis,
-                cipher = AndroidKeyStoreCipher(toolId),
                 canAccess = { grantState.isGranted(toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
             )
         },
@@ -166,7 +164,7 @@ internal suspend fun clearRuntimeSecureStorage(
 ): Boolean = withContext(Dispatchers.IO) {
     ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Secure).withLock {
         try {
-            when (repository.remove(toolId, ToolStorageNamespace.Secure.documentKey)) {
+            when (RuntimeSecureEnvelopeStorage(toolId, repository).clear()) {
                 is DataResult.Success,
                 is DataResult.Failure.NotFound,
                 -> Unit
@@ -407,14 +405,88 @@ internal class StandardToolKvStorageHandler(
     }
 }
 
+internal fun createRuntimeSecureStorageHandler(
+    toolId: String,
+    repository: ToolKvRepository,
+    nowMillis: () -> Long,
+    canAccess: suspend () -> Boolean,
+): RuntimeStorageHandler = JsonToolKvStorageHandler(
+    toolId, repository, ToolStorageNamespace.Secure, nowMillis, AndroidKeyStoreCipher(toolId), canAccess,
+)
+
+/** Stores only the encrypted envelope. Callers hold the secure namespace lock. */
+internal class RuntimeSecureEnvelopeStorage(
+    private val toolId: String,
+    private val repository: ToolKvRepository,
+) {
+    suspend fun read(): String? {
+        val encoded = repository.observe(toolId, ROOT_KEY).first()?.valueJson ?: return null
+        val header = RuntimeValueJson.decodeObject(encoded) ?: unreadable()
+        // Existing AES-GCM envelopes stay readable until the next successful write.
+        if (header.keys == setOf("v", "iv", "ciphertext")) return encoded
+        if (header.keys != setOf("format", "v", "chunks", "length") ||
+            header["format"] != RpcValue.StringValue(FORMAT) || header["v"] != RpcValue.Number(1.0)) unreadable()
+        val length = positiveInt(header["length"])
+        val count = positiveInt(header["chunks"])
+        if (count != (length - 1) / CHUNK_CHARS + 1) unreadable()
+        return buildString {
+            repeat(count) { index ->
+                val chunk = repository.observe(toolId, "$CHUNK_PREFIX$index").first()?.valueJson ?: unreadable()
+                val expected = if (index == count - 1) length - index * CHUNK_CHARS else CHUNK_CHARS
+                if (chunk.length != expected) unreadable()
+                append(chunk)
+            }
+        }
+    }
+
+    suspend fun write(encryptedEnvelope: String, updatedAt: Long): DataResult<Unit> {
+        require(encryptedEnvelope.isNotEmpty())
+        val chunks = encryptedEnvelope.chunked(CHUNK_CHARS)
+        val rows = linkedMapOf(
+            ROOT_KEY to RuntimeValueJson.encodeObject(mapOf(
+                "format" to RpcValue.StringValue(FORMAT),
+                "v" to RpcValue.Number(1.0),
+                "chunks" to RpcValue.Number(chunks.size.toDouble()),
+                "length" to RpcValue.Number(encryptedEnvelope.length.toDouble()),
+            )),
+        )
+        chunks.forEachIndexed { index, chunk -> rows["$CHUNK_PREFIX$index"] = chunk }
+        return repository.replace(toolId, physicalRows(), rows, updatedAt)
+    }
+
+    suspend fun clear(): DataResult<Unit> = repository.replace(toolId, physicalRows(), emptyMap(), 0)
+
+    private suspend fun physicalRows(): Set<String> = repository.keys(toolId).filterTo(linkedSetOf(ROOT_KEY)) {
+        it.startsWith(CHUNK_PREFIX)
+    }
+
+    private fun positiveInt(value: RpcValue?): Int {
+        val number = (value as? RpcValue.Number)?.value ?: unreadable()
+        if (!number.isFinite() || number < 1 || number > Int.MAX_VALUE || number != number.toInt().toDouble()) unreadable()
+        return number.toInt()
+    }
+
+    private fun unreadable(): Nothing = throw RuntimeHandlerException(
+        RuntimeRpcErrorCode.INTERNAL_ERROR, "Secure storage data cannot be read",
+    )
+
+    private companion object {
+        val ROOT_KEY = ToolStorageNamespace.Secure.documentKey
+        val CHUNK_PREFIX = "$ROOT_KEY.chunk."
+        const val FORMAT = "toolbox.secure.chunks"
+        const val CHUNK_CHARS = 128 * 1024
+    }
+}
+
 private class JsonToolKvStorageHandler(
     private val toolId: String,
     private val repository: ToolKvRepository,
     private val namespace: ToolStorageNamespace,
     private val nowMillis: () -> Long,
-    private val cipher: AndroidKeyStoreCipher? = null,
+    private val cipher: AndroidKeyStoreCipher,
     private val canAccess: suspend () -> Boolean = { true },
 ) : RuntimeStorageHandler {
+    private val encryptedStorage = RuntimeSecureEnvelopeStorage(toolId, repository)
     override suspend fun get(key: String): RpcValue? = withAccess {
         validateLogicalKey(key)
         loadDocument()[key]
@@ -436,15 +508,16 @@ private class JsonToolKvStorageHandler(
     override suspend fun keys(): List<String> = withAccess { loadDocument().keys.toList() }
 
     override suspend fun clear() = withAccess {
-        deletePhysical(namespace.documentKey)
+        checkWriteResult(encryptedStorage.clear())
     }
 
-    private suspend fun <T> withAccess(action: suspend () -> T): T =
+    private suspend fun <T> withAccess(action: suspend () -> T): T = withContext(Dispatchers.IO) {
         withRuntimeStorageAccess(toolId, namespace, canAccess, action)
+    }
 
     private suspend fun loadDocument(): LinkedHashMap<String, RpcValue> {
-        val encoded = repository.observe(toolId, namespace.documentKey).first()?.valueJson ?: return linkedMapOf()
-        val json = cipher?.decrypt(encoded) ?: encoded
+        val encoded = encryptedStorage.read() ?: return linkedMapOf()
+        val json = cipher.decrypt(encoded)
         val document = RuntimeValueJson.decodeObject(json)
             ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values cannot be read")
         if (document.keys.any { !isValidLogicalKey(it) }) {
@@ -458,29 +531,16 @@ private class JsonToolKvStorageHandler(
             throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Storage index is invalid")
         }
         val json = RuntimeValueJson.encodeObject(document)
-        write(namespace.documentKey, cipher?.encrypt(json) ?: json)
+        checkWriteResult(encryptedStorage.write(cipher.encrypt(json), nowMillis()))
     }
 
-    private suspend fun write(key: String, valueJson: String) {
-        when (val result = repository.put(toolId, key, valueJson, nowMillis())) {
+    private fun checkWriteResult(result: DataResult<Unit>) {
+        when (result) {
             is DataResult.Success -> Unit
             is DataResult.Failure.NotFound -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.NOT_FOUND,
                 "Tool was removed",
             )
-
-            is DataResult.Failure -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.INTERNAL_ERROR,
-                "无法写入工具数据，请检查手机剩余空间后重试",
-            )
-        }
-    }
-
-    private suspend fun deletePhysical(key: String) {
-        when (val result = repository.remove(toolId, key)) {
-            is DataResult.Success,
-            is DataResult.Failure.NotFound,
-            -> Unit
 
             is DataResult.Failure -> throw RuntimeHandlerException(
                 RuntimeRpcErrorCode.INTERNAL_ERROR,
