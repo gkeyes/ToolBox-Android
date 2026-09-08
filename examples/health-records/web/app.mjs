@@ -298,7 +298,7 @@ function minePage() {
       settingsRow("记录天数", "按年查看每月记录天数，同一天不重复计数", "calendar", () => navigate("calendar"))),
     sectionHeading("辅助整理"), h("div", { class: "surface" }, settingsRow("AI 资料助手", "识别、摘要、追溯；每次发送前由你确认", "spark", () => navigate("ai")), settingsRow("AI 设置", "MiniMax / Gemini；密钥单独安全保存", "settings", () => navigate("ai-settings"))),
     sectionHeading("外观"), themes,
-    h("p", { class: "privacy-note" }, "健康档案 1.0.10 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
+    h("p", { class: "privacy-note" }, "健康档案 1.0.11 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
     button("清空健康记录", () => ask("清空所有健康记录？", "将清空检验记录、个人档案、摘要和指标库。AI 密钥与外观设置保留。此操作不可撤销，请先备份。", "确认清空", async () => { await persist((draft) => ({ ...emptyArchive(), settings: draft.settings })); render(); toast("健康记录已清空，已有导出备份不受影响"); }, true), "button danger full"));
 }
 

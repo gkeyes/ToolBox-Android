@@ -44,6 +44,9 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
 交付，不加入 APK assets；宿主候选仅交付 APK、SHA256 清单和同提交测试回执，不重新发布独立小工具。
 
+全部 10 个小工具的版本、源码及可导入包见 [小工具目录](examples/README.md)。安装包统一收录在
+`examples/packages/`，包括 NextFlux、健康档案、GitHub 构建守望、2048 和稳力。
+
 ## 本地运行
 
 需要 JDK 21 与 Android SDK 37。按当前阶段只运行最小相关验证；宿主 CI 检查入口为

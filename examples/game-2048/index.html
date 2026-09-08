@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#101619" />
+  <title>2048</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="game-shell" aria-labelledby="game-title">
+    <header class="game-header">
+      <div class="title-group">
+        <p class="eyebrow">合数 · 离线益智</p>
+        <h1 id="game-title">2048</h1>
+      </div>
+      <div class="score-group" aria-label="分数">
+        <div class="score-block">
+          <span>得分</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="score-block score-block-best">
+          <span>最高</span>
+          <strong id="best-score">0</strong>
+        </div>
+      </div>
+    </header>
+
+    <div class="game-actions" aria-label="游戏操作">
+      <button id="new-game" class="button button-primary" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        新游戏
+      </button>
+      <button id="undo" class="button button-secondary" type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6" />
+        </svg>
+        撤销一步
+      </button>
+    </div>
+
+    <section class="board-wrap" aria-labelledby="board-heading">
+      <h2 id="board-heading" class="sr-only">2048 棋盘</h2>
+      <div
+        id="board"
+        class="board"
+        role="grid"
+        aria-rowcount="4"
+        aria-colcount="4"
+        aria-describedby="game-instructions"
+        tabindex="0"
+      >
+        <div id="board-grid" class="board-grid"></div>
+        <div id="result-overlay" class="result-overlay" hidden>
+          <div class="result-copy">
+            <p id="result-kicker" class="result-kicker"></p>
+            <h2 id="result-title"></h2>
+            <p id="result-message"></p>
+          </div>
+          <div class="result-actions">
+            <button id="result-secondary" class="button button-secondary" type="button"></button>
+            <button id="result-primary" class="button button-primary" type="button"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="game-status" aria-label="游戏状态">
+      <div>
+        <p id="move-status" class="move-status" aria-live="polite">正在准备棋盘…</p>
+        <p id="game-instructions" class="instructions">在棋盘上滑动，或使用方向键 / WASD。相同数字相遇时会合并。</p>
+      </div>
+      <div class="session-meta" aria-label="本局信息">
+        <span><strong id="move-count">0</strong> 步</span>
+        <span class="meta-separator" aria-hidden="true"></span>
+        <span id="save-state">当前会话</span>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="new-game-dialog" class="confirm-dialog" aria-labelledby="new-dialog-title">
+    <form method="dialog">
+      <div class="dialog-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </div>
+      <h2 id="new-dialog-title">开始新游戏？</h2>
+      <p>当前棋局会被替换，最高分会继续保留。</p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" value="cancel">继续当前棋局</button>
+        <button id="confirm-new-game" class="button button-primary" value="confirm">开始新游戏</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="game.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="稳力">
+  <defs>
+    <linearGradient id="ring" x1="96" y1="80" x2="410" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8df2ce"/>
+      <stop offset="1" stop-color="#4aa9f5"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="256" y1="120" x2="256" y2="392" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1d4f50"/>
+      <stop offset="1" stop-color="#132b38"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="126" fill="#111820"/>
+  <circle cx="256" cy="256" r="162" fill="url(#glow)" opacity=".54"/>
+  <circle cx="256" cy="256" r="146" fill="none" stroke="#243c48" stroke-width="25"/>
+  <circle cx="256" cy="256" r="146" fill="none" stroke="url(#ring)" stroke-width="25" stroke-linecap="round" stroke-dasharray="680 238" transform="rotate(-84 256 256)"/>
+  <path d="M151 278c34 0 41-43 105-43s71 43 105 43" fill="none" stroke="#d3fff0" stroke-width="20" stroke-linecap="round"/>
+  <path d="M179 321c23 0 29-24 77-24s54 24 77 24" fill="none" stroke="#7dddc6" stroke-width="16" stroke-linecap="round" opacity=".94"/>
+  <circle cx="256" cy="176" r="11" fill="#f5fff9"/>
+</svg>

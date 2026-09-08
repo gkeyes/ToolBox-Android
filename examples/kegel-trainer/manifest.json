@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.kegeltrainer",
+  "name": "稳力",
+  "shortName": "稳力",
+  "description": "离线男性盆底训练：节奏倒计时、提示音、语音和震动反馈。",
+  "version": "1.0.2",
+  "versionCode": 3,
+  "entry": "index.html",
+  "icon": "icon.png",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.6.4",
+  "categories": [
+    "健康",
+    "训练"
+  ],
+  "permissions": [],
+  "securityProfile": "strict",
+  "ui": {
+    "orientation": "unspecified",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  }
+}
