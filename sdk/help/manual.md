@@ -321,6 +321,11 @@ document.getElementById("copy").addEventListener("click", async () => {
 
 network.request 接受 url、method、headers、body、timeoutMs、maxResponseBytes。method 默认为 GET，另支持 POST、PUT、PATCH、DELETE、HEAD；GET/HEAD 不带请求体。
 
+ToolBox 0.3.12 起，小工具可在 manifest.network 中显式声明 allowUserDomains: true（minHostVersion 至少为 0.3.12），允许用户为该工具添加额外的精确 HTTPS 域名。未声明时仍只允许 allowDomains，不受此功能影响。网页在真实点击处理器中调用 ToolBox.network.authorizeDomain("api.example.com")，宿主显示工具名和完整域名，用户允许后返回 true，取消返回 false。此接口只能在当前工具前台、近期真实触摸、network 授权有效时调用；不得把定时器或程序构造的事件当成用户确认。ToolBox.network.listDomains() 返回当前工具和版本已授权的额外域名，可用于后台请求前的检查。
+
+用户可在工具权限页面撤销额外域名；撤销会终止该工具的活动网络流。关闭 network 权限、更新或卸载工具会清除额外域名授权，需要再次确认。每工具最多 32 个额外域名，只接受完整域名，不接受协议、路径、端口、IP 或通配符。域名授权涵盖该域名的合法 HTTPS 端口，不放开网页直接网络，也不绕过逐跳重定向、DNS 私网/保留地址、权限及响应大小检查。API Key 必须在确认域名之后才发送，并使用 storage.secure 保存。
+
+
 ToolBox 0.3.7 起，单次 HTTP 调用的总时限、读取等待与写入等待均采用请求 timeoutMs 和 manifest timeoutMs 中的较小值；请求未填时仍为 30000 毫秒。0.3.11 将可声明上限提高到 3600000（60 分钟）；超过 600000 毫秒的长响应工具必须将 manifest 的 minHostVersion 提高到至少 0.3.11。连接建立仍以 10 秒为上限，也受较短的调用总时限约束。服务器主动报错或网络断开不会继续等待满声明时限。域名、重定向、地址与大小检查不变。
 
 timeoutMs 可为 1000–3600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB；读取上限取请求值、manifest 网络上限与消息上限的最小值，不预先按 Base64 比例缩小文本响应。消息默认 256 KiB，ToolBox 0.3.5 起可通过 limits.maxBridgePayloadBytes 声明 4096–8388608 字节（最高 8 MiB）；使用超过 1 MiB 的消息上限时，minHostVersion 请至少填写 0.3.5。宿主在返回前检查实际 JSON 编码后的总大小，JSON 转义或 Base64 膨胀也占消息空间；超出时返回 QUOTA_EXCEEDED。
@@ -960,7 +965,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44";
+export type ToolBoxContractSha256 = "aac8b4c47d30a81a8cf5e6d1aba5f24ceff02ff5679a45c45bf9f8473988e57a";
 
 export type ToolBoxCapability =
   | "storage"
@@ -997,6 +1002,8 @@ export type ToolBoxMethodName =
   | "device.getBasicInfo"
   | "haptics.perform"
   | "clipboard.writeText"
+  | "network.authorizeDomain"
+  | "network.listDomains"
   | "network.request"
   | "network.openStream"
   | "network.readStream"
@@ -1283,6 +1290,10 @@ export interface ToolBoxApi {
     readText(): Promise<string>;
   };
   network: {
+    /** Requires manifest.network.allowUserDomains, an enabled network grant, a recent real touch, and foreground native confirmation. Accepts an exact hostname without scheme, path, port, wildcard, or IP literal. Returns false when declined. */
+    authorizeDomain(domain: string): Promise<boolean>;
+    /** Lists user-authorized additional domains for this tool generation (static manifest domains are excluded). */
+    listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
     readStream(streamId: string): Promise<NetworkStreamChunk>;

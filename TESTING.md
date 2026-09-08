@@ -345,3 +345,23 @@
 - 理由：用户已确认删除/停止使用有底色的 Miuix 按钮，并移除详情页重复的更多菜单，旧截图仍保留透明文字按钮及菜单入口。基线需要反映已批准的真实界面，不能关闭截图校验或放宽阈值。
 - 方法与实际结果：下载同一提交的 GitHub 原生渲染，验证全部 17 张 PNG 签名、尺寸和透明通道，逐张查看，并完成组件/操作绑定及视觉/CJK 两项独立只读复核。三个差异比例分别为详情 4.92%、后台任务 9.19%、后台保障 4.59%，差异只落在预期按钮底色/文字及被移除的菜单区域；没有新增文字裁切、重叠或布局位移。两项复核均通过，仅用这三张 CI 原图替换相应基线，不重写其余图片或截图测试。
 - 预期与边界：基线提交必须重新通过全部 17 项截图校验，才进入 APK 交付。此次静态审图不代表真机点击、TalkBack、动画、系统通知或超级岛验证；本机未编译，也未启动模拟器。最终编译、签名与交付结果以该次 Actions 和产物内 `BUILD_AND_TEST_RECEIPT.txt` 为准。
+
+
+## NextFlux 小工具与自定义 HTTPS 域名（2026-09-08）
+
+| 测试 | 理由 | 方法 | 预期结果 |
+|---|---|---|---|
+| `examples/nextflux/test/network.test.mjs` | 防止登录凭据越域、响应错误泄密或大批同步超限。 | Node 执行生产适配器、真实 Axios 分页，模拟 ToolBox 传输与安全存储。 | 仅固定 Miniflux 源收到凭据；登录凭据不进入普通存储；错误脱敏；分页及超限缩批正确。 |
+| `examples/nextflux/test/ai-network.test.mjs` | AI Key 不得在域名确认前发送，流式响应应可取消并正确解码。 | 模拟域名同意/拒绝/过期/撤销，跨字节 UTF-8、SSE 分行、终止及失败；执行生产 AI 传输。 | 新域名先获原生同意；静默摘要不弹授权；拒绝不发请求；撤销阻断；取消关闭流；截断响应明确失败。 |
+| `examples/nextflux/test/storage.test.mjs`、`test/sync.test.mjs` | 无状态 WebView、缓存配额、失败恢复、账号退出和服务器状态不能互相污染。 | 生产 KV 分片/查询/事务，经存储故障和延迟服务器响应回放同步、文章操作、分类及图标跨退出竞态。 | 不依赖 localStorage/IndexedDB；AI Key 仅安全存储；缓存有上限；同步失败不推进检查点；退出后不重新写回；服务器拒绝不显示本地成功。 |
+| `examples/nextflux/test/media.test.mjs` | 正文、图片和附件是外部输入，不能引入远程执行或绕过网络。 | URL/属性矩阵、原生代理、引用计数/队列/大小上限、失败重试及旧引用释放、代码高亮转义。 | 仅允许签名代理及安全本地资源；不附账号头；释放 Blob；失败可重试且不误删新资源；超限拒绝；代码文本不执行。 |
+| `examples/nextflux/test/fonts.test.mjs` | 在线字体不得直接联网、无限加载或泄漏文章内容。 | URL/CSS/Unicode 边界及原生请求/失败状态；本地选择字符子集。 | 限定字体来源，无凭据和文章 text 参数，按需加载且有失败反馈。 |
+| `python3 examples/nextflux/package.py --check` | 生产包必须满足宿主清单与 ZIP 限额，并能校验全部资源。 | 临时打包生产构建，检查清单、版本、许可锁文件摘要、文件数、大小、压缩比、CRC 和逐文件 SHA-256。 | 所有限额及摘要一致；检查模式不写交付包，正常打包拒绝覆盖已有产物。 |
+| `DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle`（NextFlux CI） | Python 校验不能替代实际宿主导入逻辑。 | CI 生产构建后，将包路径、预期 ID、版本号和宿主 0.3.12 传入现有导入测试；未设置新增参数时保留 Watcher 原有默认值。 | 真实导入器接纳 NextFlux 包，ID/版本一致，无暂存文件和待清理状态；本地不编译，结果以 CI 为准。 |
+| `ManifestValidatorTest.userDomainsRequireExplicitDeclarationAndCompatibleHostAndSurviveInstalledVerification` | 新域名能力必须显式声明且不能被旧宿主误接纳。 | 生产包/已安装 manifest 校验器读取省略、false、true、无效类型及不同最低版本。 | 默认关闭，true 要求 0.3.12，安装前后声明一致。 |
+| `RuntimeRpcDispatcherTest.userDomainAuthorizationRequiresDeclarationGrantRealGestureAndForegroundBeforeNativeExecution`、`userDomainAuthorizationRechecksForegroundAfterPolicyAdmission` | 网页不能以后台、伪手势或过期上下文触发原生域名同意。 | 生产 dispatcher 组合声明、权限、真实触摸及前台变化。 | 不满足任一条件不执行授权 handler；入场后再次复核前台。 |
+| `UserNetworkDomainsTest` | 额外域名必须归属工具/版本，原生同意前不可持久化。 | 生产 store/handler 检查精确域名规范化、隔离、拒绝、延迟同意期间版本/权限/前台/会话/撤销变化。 | IP/通配符/非法主机拒绝，过期同意不落盘，其他工具不能使用授权。 |
+| `RuntimeNetworkGatewayTest.userDomainsApplyToRequestAndStreamAndRevocationCancelsActiveStream`、`legacyManifestsCannotUseUserDomainProvider` | 普通请求与流必须使用同一域名边界，撤销要生效。 | 生产 gateway 接可控传输和动态域名来源，授权后请求/开流、撤销，另测旧 manifest。 | 仅显式启用的包合并用户域名；撤销取消活动流；旧包不读取动态来源。 |
+| `PermissionCenterViewModelTest.domainListRevokesAndNetworkOffDisablesGrantBeforeDomainCleanup` | 权限页撤销要真正更新宿主状态，并避免关闭网络的并发确认竞态。 | 生产 ViewModel 观察额外域名、撤销域名、关闭网络，检查授权与清理顺序。 | 列表随持久状态更新，network 先关闭，再清理动态授权。 |
+
+浏览器验证使用生产构建、匹配宿主 CSP 的资源响应和独立模拟桥，覆盖无浏览器存储的登录、同步、阅读、正文清洗、AI 设置/流式摘要、字体及后台入口。模拟账号/AI 数据只用于本地验证，不打入 `.tbx`，不代表真实账号、真实 AI 或 Android 系统界面验证。实际测试结果在交付说明中列出。

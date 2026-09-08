@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.nextflux",
+  "name": "NextFlux",
+  "shortName": "NextFlux",
+  "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要及后台同步。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "web-app-manifest-512x512.png",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.3.12",
+  "categories": ["阅读", "效率"],
+  "permissions": [
+    {"name": "storage", "reason": "保存阅读缓存、订阅和界面设置。", "required": true},
+    {"name": "storage.secure", "reason": "安全保存 Miniflux 登录凭据及 AI API 密钥。", "required": true},
+    {"name": "network", "reason": "同步 Miniflux、请求 AI 摘要并通过受控代理获取媒体及字体。", "required": true},
+    {"name": "clipboard.write", "reason": "复制文章链接和文字。", "required": false},
+    {"name": "share", "reason": "通过 Android 分享面板分享文章链接。", "required": false},
+    {"name": "files.open", "reason": "选择并导入 OPML 订阅文件。", "required": false},
+    {"name": "background.runtime", "reason": "用户开启后，在离开阅读页面时继续定时同步。", "required": false}
+  ],
+  "network": {
+    "allowDomains": [
+      "miniflux.xiaochen.win",
+      "api.openai.com",
+      "fonts.googleapis.com",
+      "fonts.gstatic.com",
+      "cdn.jsdelivr.net",
+      "itunes.apple.com"
+    ],
+    "allowUserDomains": true,
+    "allowRedirects": false,
+    "timeoutMs": 60000,
+    "maxResponseBytes": 4194304
+  },
+  "securityProfile": "strict",
+  "ui": {
+    "orientation": "unspecified",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  },
+  "limits": {
+    "storageBytes": 20971520,
+    "maxBridgePayloadBytes": 8388608
+  }
+}

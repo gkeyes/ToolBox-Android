@@ -94,7 +94,7 @@ internal object ManifestValidator {
 
     private fun parseNetwork(value: JsonValue, minHostVersion: String): ManifestNetwork {
         val network = value.asObject("network")
-        network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs"))
+        network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs", "allowUserDomains"))
         val domains = network.required("allowDomains").asArray("network.allowDomains").mapIndexed { index, item ->
             val domain = item.asString("network.allowDomains[$index]")
             if (domain.length !in 1..253 || !domainPattern.matches(domain)) {
@@ -111,6 +111,10 @@ internal object ManifestValidator {
         if (timeoutMs > 600_000 && !versionAtLeast(minHostVersion, 0, 3, 11)) {
             throw JsonFormatException("network.timeoutMs above 600000 requires minHostVersion 0.3.11")
         }
+        val allowUserDomains = network["allowUserDomains"]?.asBoolean("network.allowUserDomains") ?: false
+        if (allowUserDomains && !versionAtLeast(minHostVersion, 0, 3, 12)) {
+            throw JsonFormatException("network.allowUserDomains requires minHostVersion 0.3.12")
+        }
         return ManifestNetwork(
             allowDomains = domains,
             allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: true,
@@ -118,6 +122,7 @@ internal object ManifestValidator {
                 requireIntValue(it, "network.maxResponseBytes", 1024, 67_108_864)
             } ?: 4_194_304,
             timeoutMs = timeoutMs,
+            allowUserDomains = allowUserDomains,
         )
     }
 

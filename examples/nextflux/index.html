@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"/>
+    <link href="favicon-96x96.png" rel="icon" sizes="96x96" type="image/png"/>
+    <link href="favicon.svg" rel="icon" type="image/svg+xml"/>
+    <link href="favicon.ico" rel="shortcut icon"/>
+    <link href="apple-touch-icon.png" rel="apple-touch-icon" sizes="180x180"/>
+    <meta content="Nextflux" name="apple-mobile-web-app-title"/>
+    <meta content="no-referrer" name="referrer"/>
+    <meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"/>
+    <meta content="yes" name="apple-mobile-web-app-capable"/>
+    <meta content="yes" name="mobile-web-app-capable"/>
+    <meta content="yes" name="apple-touch-fullscreen"/>
+    <meta content="width=device-width,initial-scale=1,viewport-fit=cover"
+          name="viewport"/>
+    <meta content="#f4f4f5" media="(prefers-color-scheme: light)" name="theme-color"/>
+    <meta content="#27272a" media="(prefers-color-scheme: dark)" name="theme-color"/>
+    <meta content="#FFFFFF" media="(prefers-color-scheme: light)" name="background-color"/>
+    <meta content="#000000" media="(prefers-color-scheme: dark)" name="background-color"/>
+    <meta content="A Simple but Powerful RSS Reader for Miniflux" name="description"/>
+    <!-- Fonts are loaded on demand via fontLoader.js -->
+    <title>Nextflux</title>
+</head>
+<body class="bg-background">
+  <div id="splash-screen" class="fixed z-50 inset-0 flex items-center justify-center bg-overlay [&.fade-out]:opacity-0 transition-opacity duration-400">
+    <div class="flex flex-col items-center gap-4">
+      <div class="splash-logo animate-in fade-in zoom-in duration-400">
+        <div class="loading-spinner w-6 h-6 border-3 border-accent border-t-default rounded-full animate-spin"></div>
+      </div>
+    </div>
+  </div>
+  <div id="root"></div>
+  <script src="/src/main.jsx" type="module"></script>
+</body>
+</html>

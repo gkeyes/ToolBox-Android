@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
+import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostPermissionSideEffects
@@ -39,6 +40,7 @@ internal data class PermissionCenterUiState(
     val loadState: PermissionLoadState = PermissionLoadState.Loading,
     val message: String? = null,
     val showSystemSettings: Boolean = false,
+    val userNetworkDomains: List<String> = emptyList(),
 ) {
     val loaded: Boolean get() = loadState != PermissionLoadState.Loading
 }
@@ -51,7 +53,9 @@ internal class PermissionCenterViewModel(
     private val grants: PermissionGrantRepository,
     private val sideEffects: HostPermissionSideEffects,
     private val now: () -> Long = System::currentTimeMillis,
+    private val domainStore: UserNetworkDomainStore? = null,
 ) : ViewModel() {
+    private var manifestVersionCode: Int? = null
     private val mutableState = MutableStateFlow(PermissionCenterUiState())
     val state: StateFlow<PermissionCenterUiState> = mutableState.asStateFlow()
     private val mutableRequests = MutableSharedFlow<SystemPermissionRequest>(extraBufferCapacity = 1)
@@ -70,6 +74,12 @@ internal class PermissionCenterViewModel(
                         loadState = PermissionLoadState.Failed(result.code, result.message),
                     )
                     return@launch
+                }
+            }
+            manifestVersionCode = manifest.versionCode
+            if (manifest.allowUserNetworkDomains) launch {
+                domainStore?.observe(toolId, manifest.versionCode)?.collect { domains ->
+                    mutableState.value = mutableState.value.copy(userNetworkDomains = domains)
                 }
             }
             grants.observeGrants(toolId).collect { stored ->
@@ -110,6 +120,20 @@ internal class PermissionCenterViewModel(
         }
     }
 
+    fun revokeNetworkDomain(domain: String) {
+        val versionCode = manifestVersionCode ?: return
+        if (domain !in state.value.userNetworkDomains) return
+        viewModelScope.launch {
+            try {
+                domainStore?.revoke(toolId, versionCode, domain)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableState.value = mutableState.value.copy(message = "域名授权未撤销，请重试。")
+            }
+        }
+    }
+
     fun dismissMessage() {
         mutableState.value = mutableState.value.copy(message = null, showSystemSettings = false)
     }
@@ -117,9 +141,9 @@ internal class PermissionCenterViewModel(
     private fun save(capability: String, enabled: Boolean) {
         viewModelScope.launch {
             try {
-                if (!enabled) sideEffects.onCapabilityDisabled(toolId, capability)
+                if (!enabled && capability != "network") sideEffects.onCapabilityDisabled(toolId, capability)
                 when (grants.put(PermissionGrant(toolId, capability, enabled, now()))) {
-                    is DataResult.Success -> Unit
+                    is DataResult.Success -> if (!enabled && capability == "network") sideEffects.onCapabilityDisabled(toolId, capability)
                     is DataResult.Failure -> mutableState.value = mutableState.value.copy(message = "权限未保存，请重试。")
                 }
             } catch (cancelled: CancellationException) {

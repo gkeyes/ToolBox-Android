@@ -48,6 +48,21 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
+      - name: Set up Node 22 for NextFlux
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+
+      - name: Test and package NextFlux
+        working-directory: examples/nextflux
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+          python3 package.py
+
       - name: Verify offline developer help and generic packager
         run: |
           node scripts/check-developer-help.mjs
@@ -56,12 +71,25 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
 
       - name: Verify protocol, security, compile and admitted unit suite
+        env:
+          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.0.tbx
+          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "1"
+          TOOLBOX_PACKAGE_EXPECTED_ID: io.toolbox.nextflux
+          TOOLBOX_PACKAGE_HOST_VERSION: "0.3.12"
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
       - name: Validate the redesigned host preview matrix
         run: ./gradlew --no-daemon :app:validateDebugScreenshotTest
+
+      - name: Upload verified NextFlux package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-v1.0.0-${{ github.sha }}
+          path: build/nextflux/nextflux-v1.0.0.tbx
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload rendered host previews
         if: ${{ always() }}
@@ -86,7 +114,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package optimized v0.3.11 release delivery
+    name: Package optimized v0.3.12 release delivery
     needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
@@ -151,7 +179,7 @@ jobs:
           mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/release/mapping.txt"
           badging_path="$RUNNER_TEMP/toolbox-release-badging.txt"
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$badging_path"
-          grep -F "package: name='io.toolbox.host' versionCode='15' versionName='0.3.11'" "$badging_path"
+          grep -F "package: name='io.toolbox.host' versionCode='16' versionName='0.3.12'" "$badging_path"
           if grep -q '^application-debuggable' "$badging_path"; then
             printf 'Release APK must not be debuggable.\n' >&2
             exit 1
@@ -266,13 +294,13 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/release/app-release.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.3.11-release.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.3.12-release.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.3.11\n'
-            printf 'VERSION_CODE=15\n'
+            printf 'VERSION_NAME=0.3.12\n'
+            printf 'VERSION_CODE=16\n'
             printf 'BUILD_TYPE=release\n'
             printf 'APK_DEBUGGABLE=false\n'
             printf 'R8_MINIFICATION=PASS\n'
@@ -302,22 +330,22 @@ jobs:
             printf 'APK_SOURCE=app/build/outputs/apk/release/app-release.apk\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
             printf 'EMBEDDED_EXAMPLE_BYTES=PASS\n'
-            printf 'DELIVERY_FILES=toolbox-v0.3.11-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.3.12-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.3.11-release.apk \
+              toolbox-v0.3.12-release.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.3.11 release delivery
+      - name: Upload verified v0.3.12 release delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.3.11-release-${{ github.sha }}
+          name: toolbox-v0.3.12-release-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.3.11-release.apk
+            build/ci-delivery/toolbox-v0.3.12-release.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

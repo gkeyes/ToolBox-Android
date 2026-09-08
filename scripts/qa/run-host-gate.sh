@@ -131,9 +131,11 @@ run_gate admitted-unit \
     --tests 'io.toolbox.host.runtime.LiveNotificationCoordinatorTest' \
     --tests 'io.toolbox.host.runtime.RuntimeNotificationRegressionTest' \
     --tests 'io.toolbox.host.runtime.RuntimeReminderPolicyTest' \
+    --tests 'io.toolbox.host.runtime.UserNetworkDomainsTest' \
     --tests 'io.toolbox.core.data.BackgroundTaskRepositoryTest' \
     --tests 'io.toolbox.core.data.CatalogAndStorageRepositoryTest' \
     --tests 'io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest' \
+    --tests 'io.toolbox.tool.packagekit.ManifestValidatorTest' \
     --tests 'io.toolbox.tool.runtime.RuntimeRpcDispatcherTest' || overall_exit=1
 
 printf '%s\n' \

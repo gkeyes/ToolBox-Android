@@ -271,6 +271,43 @@ class RuntimeNetworkGatewayTest {
         }
     }
 
+    @Test
+    fun userDomainsApplyToRequestAndStreamAndRevocationCancelsActiveStream() = runTest {
+        var domains = setOf("api.github.com")
+        var connections = 0
+        val gateway = RuntimeNetworkGateway(
+            ToolNetworkProxy(ToolNetworkTransport { request, _ -> connections++; response(request, "data: hi\n\n".toResponseBody()) }),
+            InstalledManifestNetwork(setOf("example.com"), false, 4_096, 30_000, allowUserDomains = true),
+            4_096, additionalAllowedHosts = { domains }, toolId = "gateway-dynamic-test",
+        )
+        try {
+            assertEquals(200, gateway.request(request(4_096)).status)
+            val stream = gateway.openStream(streamId(77), request(4_096))
+            assertEquals(200, stream.status)
+            domains = emptySet()
+            io.toolbox.host.runtime.NetworkDomainInvalidation.cancel("gateway-dynamic-test")
+            assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { gateway.readStream(stream.streamId, 256) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.request(request(4_096)) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.openStream(streamId(78), request(4_096)) }.errorCode)
+            assertEquals(2, connections)
+        } finally { gateway.close() }
+    }
+
+    @Test
+    fun legacyManifestsCannotUseUserDomainProvider() = runTest {
+        var consulted = false
+        val gateway = RuntimeNetworkGateway(
+            ToolNetworkProxy(ToolNetworkTransport { request, _ -> response(request, "ok".toResponseBody()) }),
+            InstalledManifestNetwork(setOf("example.com"), false, 4_096, 30_000), 4_096,
+            additionalAllowedHosts = { consulted = true; setOf("api.github.com") },
+        )
+        try {
+            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.request(request(4_096)) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.openStream(streamId(79), request(4_096)) }.errorCode)
+            assertFalse(consulted)
+        } finally { gateway.close() }
+    }
+
     private fun gateway(limit: Int, transport: ToolNetworkTransport) = RuntimeNetworkGateway(
         proxy = ToolNetworkProxy(transport),
         policy = InstalledManifestNetwork(setOf("api.github.com"), false, limit, 30_000),

@@ -43,6 +43,8 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,9 +104,17 @@ internal fun locationResult(value: android.location.Location?): Result<android.l
     value?.let(Result.Companion::success)
         ?: Result.failure(RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Location is unavailable"))
 
+internal data class NetworkDomainConfirmation(
+    val toolName: String,
+    val domain: String,
+    val answer: CompletableDeferred<Boolean>,
+)
+
 internal class ForegroundCapabilityBroker private constructor(
     private val activity: ComponentActivity,
 ) {
+    private val mutableDomainConfirmation = MutableStateFlow<NetworkDomainConfirmation?>(null)
+    val domainConfirmation = mutableDomainConfirmation.asStateFlow()
     private val active = AtomicBoolean(true)
     private val pickerMutex = Mutex()
     private var openResult: CompletableDeferred<Uri?>? = null
@@ -142,6 +152,8 @@ internal class ForegroundCapabilityBroker private constructor(
 
     fun close() {
         if (!active.compareAndSet(true, false)) return
+        mutableDomainConfirmation.value?.answer?.complete(false)
+        mutableDomainConfirmation.value = null
         val failure = RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "The host activity closed")
         openResult?.completeExceptionally(failure)
         saveResult?.completeExceptionally(failure)
@@ -160,6 +172,28 @@ internal class ForegroundCapabilityBroker private constructor(
             filesToDelete.forEach(File::delete)
         }
     }
+
+    private fun domainPromptAvailable(toolId: String): Boolean =
+        toolId in foregroundTools && active.get() && !activity.isFinishing && !activity.isDestroyed &&
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+
+    fun answerNetworkDomain(request: NetworkDomainConfirmation, allowed: Boolean) {
+        if (mutableDomainConfirmation.value === request) request.answer.complete(allowed)
+    }
+
+    private suspend fun confirmNetworkDomain(toolId: String, toolName: String, domain: String): Boolean =
+        withContext(Dispatchers.Main.immediate) {
+            ensureActive()
+            if (!domainPromptAvailable(toolId)) throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "请打开工具后授权域名。")
+            if (mutableDomainConfirmation.value != null) throw RuntimeHandlerException(RuntimeRpcErrorCode.BUSY, "请先完成当前域名授权。")
+            val request = NetworkDomainConfirmation(toolName, domain, CompletableDeferred())
+            mutableDomainConfirmation.value = request
+            try {
+                request.answer.await() && domainPromptAvailable(toolId)
+            } finally {
+                if (mutableDomainConfirmation.value === request) mutableDomainConfirmation.value = null
+            }
+        }
 
     private suspend fun readClipboardAfterConfirmation(): String = withContext(Dispatchers.Main.immediate) {
         ensureActive()
@@ -474,6 +508,7 @@ internal class ForegroundCapabilityBroker private constructor(
         const val EXTRA_SHORTCUT_TOKEN = "io.toolbox.host.extra.SHORTCUT_TOKEN"
         private const val SHORTCUT_PREFERENCES = "toolbox_shortcut_routes"
         private const val MAX_SHORTCUT_LABEL_CHARS = 40
+        private val foregroundTools = ConcurrentHashMap.newKeySet<String>()
         private val companionLock = Any()
         private var activeBroker = WeakReference<ForegroundCapabilityBroker>(null)
         private val random = SecureRandom()
@@ -485,6 +520,19 @@ internal class ForegroundCapabilityBroker private constructor(
 
         fun activeHandlers(toolId: String, toolName: String): RuntimeM3Handlers = synchronized(companionLock) {
             activeBroker.get()?.handlers(toolId, toolName) ?: RuntimeM3Handlers()
+        }
+
+        fun setToolForeground(toolId: String, visible: Boolean) {
+            if (visible) foregroundTools.add(toolId) else foregroundTools.remove(toolId)
+        }
+
+        fun networkDomainPrompt(toolId: String): Pair<() -> Boolean, suspend (String, String) -> Boolean> = synchronized(companionLock) {
+            val broker = activeBroker.get()
+            val available: () -> Boolean = { broker?.domainPromptAvailable(toolId) == true }
+            val confirm: suspend (String, String) -> Boolean = { name, domain ->
+                broker?.confirmNetworkDomain(toolId, name, domain) ?: false
+            }
+            available to confirm
         }
 
         fun resolveShortcutToolId(context: Context, intent: Intent?): String? {

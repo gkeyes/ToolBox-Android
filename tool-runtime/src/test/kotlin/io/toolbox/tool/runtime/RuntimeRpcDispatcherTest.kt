@@ -15,6 +15,86 @@ import org.junit.Test
 
 class RuntimeRpcDispatcherTest {
     @Test
+    fun userDomainAuthorizationRequiresDeclarationGrantRealGestureAndForegroundBeforeNativeExecution() = runTest {
+        var foreground = true
+        var authorized = 0
+        var listed = 0
+        var accepted = true
+        val handler = object : RuntimeNetworkDomainHandler {
+            override fun isForegroundAvailable() = foreground
+            override suspend fun authorizeDomain(domain: String): Boolean {
+                assertEquals("api.example.com", domain)
+                authorized += 1
+                return accepted
+            }
+            override suspend fun listDomains(): List<String> {
+                listed += 1
+                return listOf("api.example.com")
+            }
+        }
+        val policy = MutablePolicy()
+        val declaredIdentity = identity.copy(declaredCapabilities = setOf("network"), allowUserNetworkDomains = true)
+        fun dispatcher(session: RuntimeSessionIdentity = declaredIdentity) = RuntimeRpcDispatcher(
+            session, policy, RuntimeM1Handlers(), m3Handlers = RuntimeM3Handlers(networkDomains = handler),
+        )
+        val rpc = request(method = "network.authorizeDomain", params = RpcValue.ObjectValue(mapOf("domain" to RpcValue.StringValue("api.example.com"))))
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, 1)
+        for (method in listOf("network.authorizeDomain", "network.listDomains")) {
+            assertFailure(RuntimeRpcErrorCode.NOT_DECLARED, dispatcher(declaredIdentity.copy(allowUserNetworkDomains = false)).dispatch(rpc.copy(method = method), inbound))
+        }
+        assertFailure(RuntimeRpcErrorCode.NOT_DECLARED, dispatcher(declaredIdentity.copy(declaredCapabilities = emptySet())).dispatch(rpc, inbound))
+        assertFailure(RuntimeRpcErrorCode.WRONG_ORIGIN, dispatcher().dispatch(rpc, inbound.copy(sourceOrigin = "https://foreign.invalid")))
+        assertFailure(RuntimeRpcErrorCode.NOT_MAIN_FRAME, dispatcher().dispatch(rpc, inbound.copy(isMainFrame = false)))
+        assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher().dispatch(rpc.copy(nonce = "wrong"), inbound))
+        policy.granted = false
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher().dispatch(rpc, inbound))
+        policy.granted = true
+        for (age in listOf(null, -1L, 5_001L)) {
+            assertFailure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, dispatcher().dispatch(rpc, inbound.copy(recentTouchAgeMillis = age)))
+        }
+        foreground = false
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher().dispatch(rpc, inbound))
+        assertEquals(0, authorized)
+        foreground = true
+        assertFailure(RuntimeRpcErrorCode.INVALID_REQUEST, dispatcher().dispatch(rpc.copy(params = RpcValue.ObjectValue(emptyMap())), inbound))
+        assertEquals(0, authorized)
+        assertEquals(RpcValue.Bool(true), (dispatcher().dispatch(rpc, inbound) as RuntimeRpcResponse.Success).result)
+        accepted = false
+        assertEquals(RpcValue.Bool(false), (dispatcher().dispatch(rpc, inbound) as RuntimeRpcResponse.Success).result)
+        assertEquals(2, authorized)
+        foreground = false
+        val list = dispatcher().dispatch(request(method = "network.listDomains", params = RpcValue.ObjectValue(emptyMap())), inbound.copy(recentTouchAgeMillis = null))
+        assertEquals(RpcValue.ArrayValue(listOf(RpcValue.StringValue("api.example.com"))), (list as RuntimeRpcResponse.Success).result)
+        assertEquals(1, listed)
+    }
+
+    @Test
+    fun userDomainAuthorizationRechecksForegroundAfterPolicyAdmission() = runTest {
+        var foreground = true
+        var authorized = false
+        val handler = object : RuntimeNetworkDomainHandler {
+            override fun isForegroundAvailable() = foreground
+            override suspend fun authorizeDomain(domain: String): Boolean { authorized = true; return true }
+            override suspend fun listDomains() = emptyList<String>()
+        }
+        val policy = object : RuntimeAuthorizationPolicy by MutablePolicy() {
+            override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int): RuntimePolicyDecision {
+                foreground = false
+                return RuntimePolicyDecision.Allowed
+            }
+        }
+        val dispatcher = RuntimeRpcDispatcher(
+            identity.copy(declaredCapabilities = setOf("network"), allowUserNetworkDomains = true), policy, RuntimeM1Handlers(),
+            m3Handlers = RuntimeM3Handlers(networkDomains = handler),
+        )
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher.dispatch(
+            request(method = "network.authorizeDomain", params = RpcValue.ObjectValue(mapOf("domain" to RpcValue.StringValue("api.example.com")))),
+            RuntimeInboundContext(identity.exactOrigin, true, 1),
+        ))
+        assertEquals(false, authorized)
+    }
+
+    @Test
     fun streamReadsHaveABoundedIncrementalRateWithoutRaisingOtherMethodLimits() = runTest {
         var clock = 0L
         val policy = DefaultRuntimeAuthorizationPolicy(

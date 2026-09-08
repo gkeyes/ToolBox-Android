@@ -16,7 +16,10 @@ import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.host.BuildConfig
+import io.toolbox.host.HostInstalledManifestReader
+import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostRuntimeM2HandlerFactory
+import io.toolbox.tool.runtime.RuntimeSessionCleanupHandler
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxApiV1
 import io.toolbox.tool.api.ToolBoxCapabilityId
@@ -72,6 +75,8 @@ internal class HostRuntimeBridgeProvider(
     private val grantState = RepositoryRuntimeGrantStateSource(repositories.catalog, repositories.grants)
     private val systemPermissions = AndroidRuntimeSystemPermissionChecker(applicationContext)
     private val keyValues = repositories.keyValues
+    private val networkGrants = repositories.grants
+    private val installedManifests = HostInstalledManifestReader(applicationContext.filesDir, repositories.catalog)
 
     override fun create(runtime: PreparedToolRuntime): RuntimeBridgeConfiguration {
         val continuity = continuityHandlerFactory(runtime)
@@ -79,10 +84,31 @@ internal class HostRuntimeBridgeProvider(
             continuousBackground = continuity.background,
             alarms = continuity.alarms,
         )
-        val m3Handlers = ForegroundCapabilityBroker.activeHandlers(
+        val foregroundHandlers = ForegroundCapabilityBroker.activeHandlers(
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
-        ).copy(locationWatch = continuity.locationWatch)
+        )
+        val prompt = ForegroundCapabilityBroker.networkDomainPrompt(runtime.toolId)
+        val networkDomains = HostNetworkDomainHandler(
+            runtime.toolId, runtime.installedManifest.name, runtime.versionCode,
+            UserNetworkDomainStore(keyValues), prompt.first, prompt.second,
+        ) {
+            val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
+            val grant = networkGrants.observeGrants(runtime.toolId).first().firstOrNull { it.capability == "network" }
+            if (current?.versionCode != runtime.versionCode || !current.allowUserNetworkDomains ||
+                current.permissions.none { it.capability == "network" } || grant?.granted != true) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本、网络声明或权限已变更。")
+            }
+            grant.updatedAt
+        }
+        val m3Handlers = foregroundHandlers.copy(
+            locationWatch = continuity.locationWatch,
+            networkDomains = networkDomains,
+            sessionCleanup = RuntimeSessionCleanupHandler {
+                networkDomains.close()
+                foregroundHandlers.sessionCleanup?.close()
+            },
+        )
         val authorization = DefaultRuntimeAuthorizationPolicy(
             state = grantState,
             systemPermissions = systemPermissions,

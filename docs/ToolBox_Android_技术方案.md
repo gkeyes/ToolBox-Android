@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.3.11 (15)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.3.12 (16)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   `DataMigration` 或 `fallbackToDestructiveMigration`。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
@@ -264,6 +264,8 @@ IP 字面量、IPv4-mapped 私网 IPv6 和 NAT64 私网映射均阻断。读取�
 完整消息。响应或消息过大返回 `QUOTA_EXCEEDED`，连接/读取失败与超时分别返回
 `NETWORK_UNAVAILABLE`、`NETWORK_TIMEOUT`；只有地址或重定向策略拒绝才返回 `NETWORK_BLOCKED`。
 
+0.3.12 新增用户授权的额外 HTTPS 域名：manifest.network.allowUserDomains 默认 false；显式启用时要求 minHostVersion 至少 0.3.12。network.authorizeDomain(domain) 需要当前工具前台、近期真实触摸及 network grant，经宿主 Miuix 确认后才写入宿主专用 KV；network.listDomains 返回该工具当前版本的授权集合。网页不能读写宿主域名记录。请求与流式请求的有效域名为静态 allowDomains 与已确认域名的并集，私网/IP/重定向校验继续执行。每工具最多 32 个精确额外域名；撤销会取消活动流，关闭网络、更新、卸载清理授权；确认返回后再次核对版本、声明、权限、前台和会话有效性，过期确认不落盘。既有小工具未声明时保持原行为。
+
 ### 7.4 旧后台任务兼容
 
 WorkManager `background.enqueue/schedulePeriodic/list/getResult/cancel` 冻结为 0.2 legacy API。
@@ -366,7 +368,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的顺序固定为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试与截图验证 →
-release APK。0.3.11 (15) 上传 `toolbox-v0.3.11-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+release APK。0.3.12 (16) 上传 `toolbox-v0.3.12-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不修改版本、数据库或能力。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

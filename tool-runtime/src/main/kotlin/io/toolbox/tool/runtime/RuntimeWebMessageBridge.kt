@@ -372,7 +372,7 @@ class RuntimeBridgeSession internal constructor(
                   writeText: text => call('clipboard.writeText', { text }),
                   readText: () => call('clipboard.readText')
                 },
-                network: { request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
+                network: { authorizeDomain: domain => call('network.authorizeDomain', { domain }), listDomains: () => call('network.listDomains'), request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
                 notifications: {
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
                   update: (id, title, body) => call('notifications.update', { id, title, body }),
@@ -593,6 +593,7 @@ internal fun createRuntimeBridgeSession(
         nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(nonceBytes),
         exactOrigin = runtime.origin,
         declaredCapabilities = runtime.declaredCapabilities,
+        allowUserNetworkDomains = runtime.installedManifest.network?.allowUserDomains == true,
     )
     return RuntimeBridgeSession(
         identity = identity,

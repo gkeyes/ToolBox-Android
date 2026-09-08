@@ -330,6 +330,7 @@ internal class PermissionCenterViewModelFactory(
             packages = dependencies.packageOperations,
             grants = dependencies.repositories.grants,
             sideEffects = dependencies.permissionSideEffects,
+            domainStore = io.toolbox.host.runtime.UserNetworkDomainStore(dependencies.repositories.keyValues),
         ) as T
     }
 }

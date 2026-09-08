@@ -1,5 +1,6 @@
 package io.toolbox.host.background
 
+import io.toolbox.host.runtime.NetworkDomainInvalidation
 import io.toolbox.tool.packagekit.InstalledManifestNetwork
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding
@@ -18,8 +19,15 @@ internal class RuntimeNetworkGateway(
     private val proxy: ToolNetworkProxy,
     private val policy: InstalledManifestNetwork?,
     private val bridgePayloadBytes: Int,
+    private val additionalAllowedHosts: suspend () -> Set<String> = { emptySet() },
+    private val toolId: String? = null,
 ) : RuntimeNetworkHandler {
     private val streams = RuntimeNetworkStreams()
+    init { toolId?.let { NetworkDomainInvalidation.register(it, this, streams::clear) } }
+
+    private suspend fun allowedHosts(declared: InstalledManifestNetwork): Set<String> =
+        if (declared.allowUserDomains) declared.allowDomains + additionalAllowedHosts() else declared.allowDomains
+
 
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
         val declared = policy ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "工具未声明网络域名。")
@@ -27,9 +35,10 @@ internal class RuntimeNetworkGateway(
         val timeout = minOf(request.timeoutMillis ?: 30_000L, declared.timeoutMs.toLong())
         val control = streams.reserve(streamId, timeout)
         try {
+            val allowedHosts = allowedHosts(declared)
             val stream = proxy.openStream(
                 ToolNetworkRequest(request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
-                    request.body, request.bodyIsJson, declared.allowDomains, declared.allowRedirects,
+                    request.body, request.bodyIsJson, allowedHosts, declared.allowRedirects,
                     timeout, limit),
                 control,
             )
@@ -64,7 +73,10 @@ internal class RuntimeNetworkGateway(
 
     override fun cancelStreams() = streams.clear()
 
-    override fun close() = streams.close()
+    override fun close() {
+        toolId?.let { NetworkDomainInvalidation.unregister(it, this) }
+        streams.close()
+    }
 
     override suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse {
         val declared = policy ?: throw RuntimeHandlerException(
@@ -82,7 +94,7 @@ internal class RuntimeNetworkGateway(
             headers = request.headers,
             body = request.body,
             bodyIsJson = request.bodyIsJson,
-            allowedHosts = declared.allowDomains,
+            allowedHosts = allowedHosts(declared),
             allowRedirects = declared.allowRedirects,
             timeoutMillis = minOf(request.timeoutMillis ?: 30_000L, declared.timeoutMs.toLong()),
             maxResponseBytes = responseLimit,
@@ -120,7 +132,7 @@ internal class RuntimeNetworkGateway(
                 else -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.NETWORK_BLOCKED,
                     when (result.errorCode) {
-                        "NETWORK_HOST_NOT_ALLOWED" -> "目标域名未在工具的 network.allowDomains 中声明。"
+                        "NETWORK_HOST_NOT_ALLOWED" -> "目标域名未在工具的 network.allowDomains 中声明，也未获得用户授权。"
                         "NETWORK_ADDRESS_BLOCKED" -> "目标解析到本机、私网或保留地址。"
                         "HTTPS_REQUIRED" -> "仅支持 HTTPS 网络请求。"
                         "REDIRECTS_DISABLED" -> "服务器要求重定向，但工具未允许重定向。"
