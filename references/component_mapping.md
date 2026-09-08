@@ -38,6 +38,8 @@ implementation("dev.chrisbanes.haze:haze:1.7.3")
 | Developer Help | top bar、search、grouped list、text button | `DeveloperHelpScreen`、`ToolBoxDisclosureRow` | 同一份离线 Markdown；章节/主题折叠、搜索、代码复制与四个范例入口。 |
 | 运行容器 | `Box` | `ToolBoxRuntimeScaffold`、`MiniAppWebView` | 内容填满系统安全区域；无宿主悬浮按钮、标题、刷新、底栏或安全条；使用系统返回手势或按键退出。 |
 
+小工具内部返回遵循 [技术方案中的页面返回设计规范](../docs/ToolBox_Android_技术方案.md#小工具页面返回设计规范)：内容区域右滑返回上一级，首页不退出；系统边缘返回退出小工具。已有横向交互优先，并保留可点击的无障碍返回入口。App 内 Developer Help 的“页面设计与返回手势”提供同一要求。
+
 ## 3. ToolBox 适配层
 
 ```text

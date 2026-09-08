@@ -13,7 +13,7 @@ class DeveloperHelpDocumentTest {
         val document = parseHelpDocument(source)
         assertEquals(source, document.source)
         assertEquals(7, document.chapters.size)
-        assertEquals(29, document.chapters.sumOf { it.articles.size })
+        assertEquals(30, document.chapters.sumOf { it.articles.size })
         assertTrue(document.chapters.all { it.summary.isNotBlank() })
         assertTrue(document.search("background.setTimer").isNotEmpty())
         assertTrue(document.search("manifest 图标").flatMap { it.articles }.any {
