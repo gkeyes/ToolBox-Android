@@ -155,7 +155,7 @@ class BackgroundTaskCoordinator(
         }
         when (request) {
             is BackgroundTaskRequest.HttpGet -> if (
-                !policy.networkDeclared || !policy.networkGranted || policy.allowedNetworkHosts.isEmpty()
+                !policy.canUseNetwork
             ) {
                 return@withLock EnqueueResult.Rejected("NETWORK_NOT_ALLOWED")
             }

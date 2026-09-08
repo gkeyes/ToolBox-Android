@@ -214,7 +214,7 @@ class CatalogViewModelTest {
     }
 
     @Test
-    fun catalogPresentationSortsRecentToolsAndCapsTheMediumLayoutAtThree() = runTest(mainDispatcher) {
+    fun catalogPresentationKeepsOpenedToolsSortedForTheAdaptiveRecentRow() = runTest(mainDispatcher) {
         val catalog = FakeCatalogRepository()
         val viewModel = CatalogViewModel(
             catalog = catalog,
@@ -233,12 +233,10 @@ class CatalogViewModelTest {
         )
         advanceUntilIdle()
 
-        assertEquals(MAX_RECENT_TOOL_COUNT, viewModel.state.value.recentTools.size)
         assertEquals(
-            listOf("io.toolbox.two", "io.toolbox.four", "io.toolbox.three"),
+            listOf("io.toolbox.two", "io.toolbox.four", "io.toolbox.three", "io.toolbox.one"),
             viewModel.state.value.recentTools.map(CatalogTool::toolId),
         )
-        assertEquals(2, COMPACT_RECENT_TOOL_COUNT)
     }
 
     @Test

@@ -1,6 +1,6 @@
 # ToolBox 小工具开发手册
 
-从网页文件到可导入的小工具。章节默认折叠，点击展开；可以搜索接口、复制代码或复制整份手册交给开发助手。适用于 ToolBox 0.6.3，API 1.0。
+从网页文件到可导入的小工具。章节默认折叠，点击展开；可以搜索接口、复制代码或复制整份手册交给开发助手。适用于 ToolBox 0.6.4，API 1.0。
 
 ## 快速开始
 
@@ -17,13 +17,15 @@
 
 ### 页面设计与返回手势
 
+ToolBox 的“最近使用”采用纯图标行，显示数量随可用宽度自动适配，超出部分可横向滑动。请提供清晰可辨的 manifest.icon；工具名称仍用于无障碍朗读。
+
 页面内部右滑返回上一级是小工具的统一设计规范。手势从内容区域开始，向右横向滑动时执行与页面内“返回”按钮相同的动作，例如文章详情返回文章列表、设置子页返回设置首页。已有弹窗或抽屉时先关闭最上层，再返回页面；已在工具首页且没有可关闭层时保持当前页面，不退出工具。
 
-从屏幕边缘向内滑动属于 Android 系统返回，用于退出当前小工具、回到 ToolBox；左边缘向右滑与系统支持的右边缘向左滑保持一致。小工具不得拦截或占用系统边缘返回区域，宿主不叠放悬浮返回按钮。
+从屏幕边缘向内滑动属于 Android 系统返回，用于退出当前小工具、回到 ToolBox；左边缘向右滑与系统支持的右边缘向左滑保持一致。小工具不得拦截或占用系统边缘返回区域，ToolBox不叠放悬浮返回按钮。
 
-内部右滑由小工具根据自身路由和界面状态实现，宿主不统一拦截内容触摸。只识别方向明确的横向右滑，短距离拖动、纵向滚动及取消的手势不触发返回；轮播图、横向列表、滑块、画布、文本选择等已有交互区域优先保留原操作。返回后应保留上一页的滚动位置和已有输入状态。
+内部右滑由小工具根据自身路由和界面状态实现，ToolBox不统一拦截内容触摸。只识别方向明确的横向右滑，短距离拖动、纵向滚动及取消的手势不触发返回；轮播图、横向列表、滑块、画布、文本选择等已有交互区域优先保留原操作。返回后应保留上一页的滚动位置和已有输入状态。
 
-手势不能成为唯一入口：有上一级的页面须保留可点击、带清晰无障碍名称的返回按钮，供 TalkBack、键盘及不使用手势的用户操作。此处规定设计行为，不表示宿主已为任意网页自动提供内部返回，也不新增 ToolBox JS 返回接口。
+手势不能成为唯一入口：有上一级的页面须保留可点击、带清晰无障碍名称的返回按钮，供 TalkBack、键盘及不使用手势的用户操作。此处规定设计行为，不表示ToolBox已为任意网页自动提供内部返回，也不新增 ToolBox JS 返回接口。
 
 ### 完整最小工程
 
@@ -194,23 +196,23 @@ python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 - name：显示名称，最多 40 个字符。
 - version：形如 1.0.0 的版本号；versionCode：大于 0 的整数，更新时递增。
 - entry：包内相对 HTML 路径，例如 index.html；不能使用绝对路径或上级目录。
-- apiVersion：固定为 1.0；minHostVersion：要求的最低宿主版本。
+- apiVersion：固定为 1.0；minHostVersion：要求的最低ToolBox版本。
 - permissions：由 name 和 reason 组成的数组，不需要能力时可以为空。
 - securityProfile：新工具使用 strict，把脚本写在独立 .js 文件中。
 
 可选字段：icon、shortName、description、categories、network、ui、limits。字段格式以 schema/manifest.schema.json 为准；不要加入自行发明的顶级字段。
 
-0.3 持续后台、后台位置和闹钟能力要求 minHostVersion 至少 0.3.0；实时通知至少 0.3.1。建议新工具从当前修复基线 0.3.2 起步。仅写高版本号不会自动获得能力，宿主仍会实际检查版本和权限。
+0.3 持续后台、后台位置和闹钟能力要求 minHostVersion 至少 0.3.0；实时通知至少 0.3.1。建议新工具从当前修复基线 0.3.2 起步。仅写高版本号不会自动获得能力，ToolBox仍会实际检查版本和权限。
 
 ### 同一图标用于列表、通知和超级岛
 
 把图标文件放进 `.tbx`，在 manifest 的可选 `icon` 字段填写包内相对路径，例如 `"icon": "assets/icon.png"`。它和其他资源一起进入完整性清单；不需要额外权限，也不需要在通知 API 中重复传图片。
 
-宿主读取当前已安装版本的这张图，供工具列表、最近使用、首页正在运行、详情、普通通知大图标、实时通知和 HyperOS 超级岛使用。小工具内部网页仍需自己引用相同资源。ToolBox 桌面图标与 Android 通知来源的小图标仍代表宿主，不冒充独立安装的 App；通知的具体摆放由系统模板决定。
+ToolBox读取当前已安装版本的这张图，供工具列表、最近使用、首页正在运行、详情、普通通知大图标、实时通知和 HyperOS 超级岛使用。小工具内部网页仍需自己引用相同资源。ToolBox 桌面图标与 Android 通知来源的小图标仍代表ToolBox，不冒充独立安装的 App；通知的具体摆放由系统模板决定。
 
-推荐正方形 256–512px PNG，也支持 JPEG、WebP 和静态 SVG。宿主等比缩放到 256px 的透明画布，不给彩色图标套主题色；纯白透明标记会获得统一深色底板，保证浅深背景均可辨认。SVG 支持路径、形状、文字和本地渐变，不执行脚本、不读取外链、实体、嵌入图片、use、滤镜或遮罩；复杂效果请预先导出 PNG。
+推荐正方形 256–512px PNG，也支持 JPEG、WebP 和静态 SVG。ToolBox等比缩放到 256px 的透明画布，不给彩色图标套主题色；纯白透明标记会获得统一深色底板，保证浅深背景均可辨认。SVG 支持路径、形状、文字和本地渐变，不执行脚本、不读取外链、实体、嵌入图片、use、滤镜或遮罩；复杂效果请预先导出 PNG。
 
-图标解码是宿主缩略图任务：位图源文件最多 4MiB、6400 万源像素，SVG 最多 256KiB、2048 个元素和 32 层嵌套。这些限制只影响图标缩略图，不限制网页计算或其他资源。缺失、不支持或损坏时使用默认图标，工具和通知仍正常工作。文件读取、校验、解码不在界面线程；缓存按已安装版本区分，更新和删除后清理旧图。
+图标解码是ToolBox缩略图任务：位图源文件最多 4MiB、6400 万源像素，SVG 最多 256KiB、2048 个元素和 32 层嵌套。这些限制只影响图标缩略图，不限制网页计算或其他资源。缺失、不支持或损坏时使用默认图标，工具和通知仍正常工作。文件读取、校验、解码不在界面线程；缓存按已安装版本区分，更新和删除后清理旧图。
 
 ### 能力清单与默认授权
 
@@ -244,7 +246,7 @@ ToolBox 自动在顶层网页注入 window.ToolBox，不需要下载或手动引
 
 先等待 ToolBox.ready() 再进行原生调用。剪贴板、触觉、文件、相机、分享和快捷方式等交互，要在按钮的真实点击回调中及时发起；不要先等待长网络请求再尝试使用该手势。不能用 JS 自报 userGesture:true 代替触摸。
 
-strict 模式使用本地外链脚本和样式，不要写内联 script、onclick 字符串、eval、new Function、远程脚本或 CDN 依赖。构建工具产出的资源要一起打包。网络数据用 ToolBox.network.request；不要依赖页面 fetch、WebSocket、iframe 或远程子资源绕过宿主网络权限。
+strict 模式使用本地外链脚本和样式，不要写内联 script、onclick 字符串、eval、new Function、远程脚本或 CDN 依赖。构建工具产出的资源要一起打包。网络数据用 ToolBox.network.request；不要依赖页面 fetch、WebSocket、iframe 或远程子资源绕过ToolBox网络权限。
 
 图标、字体和图片应引用包内相对路径；不要使用电脑绝对路径。普通网页的文件选择器和摄像头直通不属于本接口，请使用 files.open 和 camera.capture。
 
@@ -270,7 +272,7 @@ console.log(ready.apiVersion, digest.hex, device.screenClass);
 
 storage.get(key) 返回保存的 JSON 值，键不存在时返回 null。set(key, value) 保存 JSON 值；remove(key) 删除单项；keys() 列出键；clear() 清空当前工具的普通存储。key 最多 128 个字符，不能用它存储函数、DOM 对象或未序列化的二进制数据。
 
-storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或宿主凭据管理接口。
+storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
 
 普通存储在工具更新后保留；安全存储在关闭其授权、工具更新或删除时会清理，更新后需要重新输入 Token。临时文件令牌和 sessionId 不能作为可跨版本复用的数据保存。
 
@@ -287,7 +289,7 @@ await ToolBox.storage.secure.remove("api-token");
 
 ### 剪贴板与触觉
 
-clipboard.writeText(text) 需要 clipboard.write；clipboard.readText() 需要 clipboard.read，会触发宿主确认。haptics.perform(effect) 需要 haptics，只接受 click、confirm、reject。
+clipboard.writeText(text) 需要 clipboard.write；clipboard.readText() 需要 clipboard.read，会触发ToolBox确认。haptics.perform(effect) 需要 haptics，只接受 click、confirm、reject。
 
 复制与触觉默认开启仍以 manifest 已声明为前提。不要把下面按钮回调替换为页面加载时自动执行。读取剪贴板内容不要写入日志。
 
@@ -307,11 +309,11 @@ document.getElementById("copy").addEventListener("click", async () => {
 
 ## 网络请求
 
-允许声明域名的公网 HTTPS。页面自己解析返回内容并处理 HTTP 状态。
+开启小工具的网络权限后，通过 ToolBox 访问 HTTPS 服务。页面自己解析返回内容并处理 HTTP 状态。
 
 ### 网络声明与参数
 
-声明 network 时必须提供 network.allowDomains。允许精确域名或 *.example.com 形式的子域通配；通配项不代表根域名。重定向目的地也必须满足域名声明、HTTPS 和地址检查。
+ToolBox 0.6.4 起，在 permissions 中声明 network，并由用户开启网络权限即可联网。network 配置可省略，或仅设置超时和响应上限；不需要域名白名单或额外域名授权。需要这一行为的工具请将 minHostVersion 设为 0.6.4。
 
 下面是添加到 manifest 的相关字段，不是完整 manifest：
 
@@ -321,8 +323,6 @@ document.getElementById("copy").addEventListener("click", async () => {
     { "name": "network", "reason": "读取仓库公开状态" }
   ],
   "network": {
-    "allowDomains": ["api.github.com"],
-    "allowRedirects": true,
     "timeoutMs": 30000,
     "maxResponseBytes": 65536
   }
@@ -331,14 +331,13 @@ document.getElementById("copy").addEventListener("click", async () => {
 
 network.request 接受 url、method、headers、body、timeoutMs、maxResponseBytes。method 默认为 GET，另支持 POST、PUT、PATCH、DELETE、HEAD；GET/HEAD 不带请求体。
 
-ToolBox 0.6.3 起，小工具可在 manifest.network 中显式声明 allowUserDomains: true（minHostVersion 至少为 0.6.3），允许用户为该工具添加额外的精确 HTTPS 域名。未声明时仍只允许 allowDomains，不受此功能影响。网页在真实点击处理器中调用 ToolBox.network.authorizeDomain("api.example.com")，宿主显示工具名和完整域名，用户允许后返回 true，取消返回 false。此接口只能在当前工具前台、近期真实触摸、network 授权有效时调用；不得把定时器或程序构造的事件当成用户确认。ToolBox.network.listDomains() 返回当前工具和版本已授权的额外域名，可用于后台请求前的检查。
+ToolBox 不再因 DNS 返回 Fake-IP、内网或保留地址而阻止 HTTPS 连接，也支持 HTTPS IP 地址和重定向。TLS 证书仍须有效；跨来源跳转不会携带调用方的凭据。API Key 保存在 storage.secure 中。关闭网络权限会禁止新的请求并取消活动流。
 
-用户可在工具权限页面撤销额外域名；撤销会终止该工具的活动网络流。关闭 network 权限、更新或卸载工具会清除额外域名授权，需要再次确认。每工具最多 32 个额外域名，只接受完整域名，不接受协议、路径、端口、IP 或通配符。域名授权涵盖该域名的合法 HTTPS 端口，不放开网页直接网络，也不绕过逐跳重定向、DNS 私网/保留地址、权限及响应大小检查。API Key 必须在确认域名之后才发送，并使用 storage.secure 保存。
+旧字段 allowDomains、allowUserDomains、allowRedirects 仅为读取旧包而保留，不再限制连接。旧 network.authorizeDomain/listDomains 方法只作兼容，新工具直接调用 request/openStream，无需先授权域名。
 
+ToolBox 0.3.7 起，单次 HTTP 调用的总时限、读取等待与写入等待均采用请求 timeoutMs 和 manifest timeoutMs 中的较小值；请求未填时仍为 30000 毫秒。连接建立仍以 10 秒为上限，也受较短的调用总时限约束。需要等待 AI 等长响应时，同时声明并传入例如 300000（5 分钟），minHostVersion 至少填写 0.3.7；服务器主动报错或网络断开不会继续等待满 5 分钟。0.6.1 起允许最长 3600000 毫秒（60 分钟）；声明超过 600000 毫秒时 minHostVersion 必须至少为 0.6.1。每个小工具仍由请求和 manifest 中较短的值独立限制。超时和响应大小限制继续生效。
 
-ToolBox 0.3.7 起，单次 HTTP 调用的总时限、读取等待与写入等待均采用请求 timeoutMs 和 manifest timeoutMs 中的较小值；请求未填时仍为 30000 毫秒。连接建立仍以 10 秒为上限，也受较短的调用总时限约束。需要等待 AI 等长响应时，同时声明并传入例如 300000（5 分钟），minHostVersion 至少填写 0.3.7；服务器主动报错或网络断开不会继续等待满 5 分钟。0.6.1 起允许最长 3600000 毫秒（60 分钟）；声明超过 600000 毫秒时 minHostVersion 必须至少为 0.6.1。每个小工具仍由请求和 manifest 中较短的值独立限制。域名、重定向、地址与大小检查不变。
-
-timeoutMs 可为 1000–3600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB；读取上限取请求值、manifest 网络上限与消息上限的最小值，不预先按 Base64 比例缩小文本响应。消息默认 256 KiB，ToolBox 0.3.5 起可通过 limits.maxBridgePayloadBytes 声明 4096–8388608 字节（最高 8 MiB）；使用超过 1 MiB 的消息上限时，minHostVersion 请至少填写 0.3.5。宿主在返回前检查实际 JSON 编码后的总大小，JSON 转义或 Base64 膨胀也占消息空间；超出时返回 QUOTA_EXCEEDED。
+timeoutMs 可为 1000–3600000 毫秒，maxResponseBytes 可为 1024–67108864 字节。manifest 网络默认超时 30000 毫秒、响应上限 4 MiB；读取上限取请求值、manifest 网络上限与消息上限的最小值，不预先按 Base64 比例缩小文本响应。消息默认 256 KiB，ToolBox 0.3.5 起可通过 limits.maxBridgePayloadBytes 声明 4096–8388608 字节（最高 8 MiB）；使用超过 1 MiB 的消息上限时，minHostVersion 请至少填写 0.3.5。ToolBox在返回前检查实际 JSON 编码后的总大小，JSON 转义或 Base64 膨胀也占消息空间；超出时返回 QUOTA_EXCEEDED。
 
 不要把可配置的网络上限理解为可以一次把 64 MiB 数据塞回网页。大数据应由服务端分页，或分段请求并逐段处理。
 
@@ -350,7 +349,7 @@ openStream 在响应头到达时返回 { streamId, status, headers }，不会先
 
 同一会话最多同时打开两个流；同一流的 readStream 不可重叠调用，否则返回 BUSY。readStream 有单独的每分钟 1000 次上限，openStream、cancelStream 及其他接口仍使用原速率上限；页面宜合并小块更新，不要高频空读。总时限从打开开始覆盖响应头、重定向和后续读取，超过时限会释放流，不会因持续收到小块数据而无限延长。EOF、取消、读取失败、撤权和会话结束都会释放连接；取消可中断正在等待的读取。未知或已结束 ID 的读取返回 NOT_FOUND，cancelStream 对已结束 ID 是幂等的；流标识只能用于创建它的会话。
 
-文本编码可能在任意字节处分段，应保留同一个 TextDecoder 并使用 stream 选项。宿主不解析 SSE 或替工具记录响应内容；下面例子只展示增量文本解码，SSE 的事件边界和 JSON 内容仍由工具处理。
+文本编码可能在任意字节处分段，应保留同一个 TextDecoder 并使用 stream 选项。ToolBox不解析 SSE 或替工具记录响应内容；下面例子只展示增量文本解码，SSE 的事件边界和 JSON 内容仍由工具处理。
 
 ```js
 const controller = new AbortController();
@@ -374,7 +373,7 @@ try {
 }
 ```
 
-取消按钮或工具内路由关闭时调用 controller.abort()；不要只隐藏等待弹窗。宿主页面关闭也会清理对应连接，但工具自己的弹窗关闭不等于宿主会话结束。
+取消按钮或工具内路由关闭时调用 controller.abort()；不要只隐藏等待弹窗。ToolBox页面关闭也会清理对应连接，但工具自己的弹窗关闭不等于ToolBox会话结束。
 
 ### GET、JSON POST 与返回值
 
@@ -413,7 +412,7 @@ const response = await ToolBox.network.request({
 
 ### Header、二进制与错误处理
 
-Authorization、Cookie、X-API-Key、Accept、Content-Type 等普通 Header 可由页面传入；不会复用宿主其他页面的登录状态。Host、Content-Length、Connection、Transfer-Encoding、Upgrade、TE、Trailer 和 Proxy 系列协议 Header 由传输层控制，不能自行设置。
+Authorization、Cookie、X-API-Key、Accept、Content-Type 等普通 Header 可由页面传入；不会复用ToolBox其他页面的登录状态。Host、Content-Length、Connection、Transfer-Encoding、Upgrade、TE、Trailer 和 Proxy 系列协议 Header 由传输层控制，不能自行设置。
 
 body 可以是字符串、JSON 值或 Uint8Array；字节请求仍受消息预算和请求体上限约束。Base64 响应解码示例：
 
@@ -423,7 +422,7 @@ const bytes = Uint8Array.from(atob(response.body), char => char.charCodeAt(0));
 
 只在 bodyEncoding === "base64" 时使用上述解码。不要记录 Header、Token、请求正文或响应正文来排查网络问题；记录错误码、HTTP 状态和操作步骤即可。
 
-NETWORK_BLOCKED：检查错误提示中的域名声明、HTTPS、重定向目标及地址类型。私网、回环、保留地址和 IP 字面量被阻止。NETWORK_UNAVAILABLE：连接或读取响应失败；NETWORK_TIMEOUT：请求超时。这两类失败可以退避重试，不表示被安全策略阻止。HTTP 401/403：检查服务端 Token 与授权；HTTP 429：遵循服务端限额和重试时间。QUOTA_EXCEEDED：响应或编码后的消息过大，按提示提高对应 manifest 上限或分页读取，不要无限重试相同的超大请求。
+NETWORK_BLOCKED：检查 HTTPS 地址及重定向是否有效。NETWORK_UNAVAILABLE：连接或读取响应失败；NETWORK_TIMEOUT：请求超时。这两类失败可以退避重试，不表示被安全策略阻止。HTTP 401/403：检查服务端 Token 与授权；HTTP 429：遵循服务端限额和重试时间。QUOTA_EXCEEDED：响应或编码后的消息过大，按提示提高对应 manifest 上限或分页读取，不要无限重试相同的超大请求。
 
 ## 后台与通知
 
@@ -435,7 +434,7 @@ background.start(options?) 返回 { sessionId, startedAt, restoreAfterProcessDea
 
 background.status(sessionId) 返回会话或 null；listSessions() 列出当前工具的持续会话；stop(sessionId) 停止。这里不是旧任务列表 background.list()。
 
-background.setTimer(key, intervalMs) 创建或更新同名计时器；key 最多 128 个字符，intervalMs 是大于 0 的安全整数毫秒。cancelTimer(key) 取消，不存在时会返回 NOT_FOUND。宿主没有把这个间隔当作严格实时调度保证。
+background.setTimer(key, intervalMs) 创建或更新同名计时器；key 最多 128 个字符，intervalMs 是大于 0 的安全整数毫秒。cancelTimer(key) 取消，不存在时会返回 NOT_FOUND。ToolBox没有把这个间隔当作严格实时调度保证。
 
 通过 background.onTimer(listener) 接收 { key, firedAt }；通过 background.onRestore(listener) 接收 { reason, restoredAt }。二者返回取消订阅函数。先注册监听再完成 ready，避免依赖有限的早到事件缓冲。不要使用 window.addEventListener("background.timer") 代替这些公开监听接口。
 
@@ -460,7 +459,7 @@ ToolBox 0.3.6 起，不同工具的持续会话分别显示独立通知卡，独
 - accentColor：只接受 #RRGGBB。
 - tone：neutral、positive、negative 或 warning。
 
-通知文字不允许控制字符；需要多项信息时用可读分隔符连接，不要塞入换行。长度按字符串长度计算，emoji 可能占两个单位。字段更新会由宿主在 500ms 窗口内合并，网页无需自行提高刷新频率。
+通知文字不允许控制字符；需要多项信息时用可读分隔符连接，不要塞入换行。长度按字符串长度计算，emoji 可能占两个单位。字段更新会由ToolBox在 500ms 窗口内合并，网页无需自行提高刷新频率。
 
 ```js
 const session = await ToolBox.background.start();
@@ -613,7 +612,7 @@ REQUESTED 只说明数据已提交，不能证明系统真的显示了超级岛�
 
 notifications.post(id, title, body) 发布普通通知；update(id, title, body) 更新同一工具内同一 id；cancel(id) 删除。id 最多 64 个字符，使用简短稳定标识，不要每次刷新都生成新 id。title 最多 64、body 最多 256 个字符，两者都不能为空。
 
-普通通知不要求创建持续会话；在后台主动发送仍需要有效的持续环境或受支持的后台执行场景。点击通知由宿主打开所属工具，工具不传入任意 Android Intent。
+普通通知不要求创建持续会话；在后台主动发送仍需要有效的持续环境或受支持的后台执行场景。点击通知由ToolBox打开所属工具，工具不传入任意 Android Intent。
 
 ```js
 await ToolBox.notifications.post("result", "任务完成", "共处理 12 条数据");
@@ -706,7 +705,7 @@ location.getCurrent(accuracy?, timeoutMs?) 返回 { latitude, longitude, accurac
 
 location.watch(options?) 返回 watchId。options 支持 accuracy、intervalMs、minDistanceMeters、allowBackground；更新由 location.onChanged(listener) 接收，其事件在位置字段外包含 watchId。clearWatch(watchId) 停止监听；onChanged 返回的函数只取消 JS 订阅，不等于停止原生监听。
 
-允许后台定位需要 location、location.background、background.runtime 及相应 Android 权限/前台服务条件。宿主只透传位置，不保存轨迹或计算路线；业务记录由页面自己决定。
+允许后台定位需要 location、location.background、background.runtime 及相应 Android 权限/前台服务条件。ToolBox只透传位置，不保存轨迹或计算路线；业务记录由页面自己决定。
 
 ```js
 const fix = await ToolBox.location.getCurrent("coarse", 10000);
@@ -730,15 +729,15 @@ async function stopWatching() {
 }
 ```
 
-5000 毫秒是此例选择的间隔，不是宿主规定的产品范围；实际更新时机由系统位置服务决定。一次性 getCurrent 只用于前台。
+5000 毫秒是此例选择的间隔，不是ToolBox规定的产品范围；实际更新时机由系统位置服务决定。一次性 getCurrent 只用于前台。
 
 ### 精确闹钟
 
 alarms.schedule({ id, triggerAt }) 返回 { id, triggerAt, scheduledAt }；triggerAt 为将来的 Unix 毫秒。list() 返回登记列表，cancel(id) 取消。需要 alarms 授权和系统精确闹钟权限。
 
-运行环境存在时，alarms.onAlarm(listener) 接收 { id, triggerAt, scheduledAt, firedAt }；没有运行环境时宿主发送普通通知，点击后打开对应工具。监听返回取消订阅函数。
+运行环境存在时，alarms.onAlarm(listener) 接收 { id, triggerAt, scheduledAt, firedAt }；没有运行环境时ToolBox发送普通通知，点击后打开对应工具。监听返回取消订阅函数。
 
-宿主仅持久化调度标识与时间，不接受任意业务 payload。业务含义可由页面以 id 为键保存到 storage。不要把收到普通通知当成网页已在后台执行了业务代码。
+ToolBox仅持久化调度标识与时间，不接受任意业务 payload。业务含义可由页面以 id 为键保存到 storage。不要把收到普通通知当成网页已在后台执行了业务代码。
 
 ```js
 const unsubscribe = ToolBox.alarms.onAlarm(event => {
@@ -781,7 +780,7 @@ self.onmessage = ({ data }) => {
 
 ## 打包与排错
 
-打包器、完整接口与导入规则可以直接复制；不用阅读宿主实现才能继续。
+打包器、完整接口与导入规则可以直接复制；不用阅读ToolBox实现才能继续。
 
 ### 通用打包器
 
@@ -789,7 +788,7 @@ self.onmessage = ({ data }) => {
 
 这是源码目录的打包器，不是前端编译器：React/Vue 等项目先生成静态产物，再打包产物目录。不要把 node_modules、APK、其他压缩包或构建缓存塞进 .tbx。
 
-只打包未签名包；旧 integrity.json 和 signature.json 不会原样保留。未签名工具可以正常导入。打包器仅做基础结构检查，最终以宿主导入检查为准，不能把“打包成功”当作全部权限或功能已经验证。
+只打包未签名包；旧 integrity.json 和 signature.json 不会原样保留。未签名工具可以正常导入。打包器仅做基础结构检查，最终以ToolBox导入检查为准，不能把“打包成功”当作全部权限或功能已经验证。
 
 没有仓库时，可把下列完整代码保存为 package-tool.py，然后执行 python3 package-tool.py ./my-tool ./my-tool.tbx。
 
@@ -931,13 +930,13 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 
 上面只展示格式，文字占位不是有效摘要；实际文件清单由打包器生成。存在完整性清单时必须与包内容一致。没有签名不需要额外审核或申请发行资格。
 
-更新同一工具：保持 id 不变，通常同时提高 version 和 versionCode，再重新导入。更高 versionCode 直接安装；相同或更低 versionCode 在完整包检查通过后显示当前与待安装版本，只有用户确认才覆盖或降级。版本确认不绕过签名、完整性、最低宿主版本或能力检查。替换会停止旧运行环境、任务和通知；普通 KV 和新 manifest 仍声明能力的原有开启/关闭状态保留，不需要每次重新开权限。新增能力默认关闭，移除的能力清理；以后重新加入也需要手动开启。失败或取消不改变原有工具和权限，Android 系统权限仍需满足。安全存储和临时令牌仍按现有策略清理，授权开关保留不代表 Token 内容保留。删除会同时清理代码、数据、授权、任务和通知。
+更新同一工具：保持 id 不变，通常同时提高 version 和 versionCode，再重新导入。更高 versionCode 直接安装；相同或更低 versionCode 在完整包检查通过后显示当前与待安装版本，只有用户确认才覆盖或降级。版本确认不绕过签名、完整性、最低ToolBox版本或能力检查。替换会停止旧运行环境、任务和通知；普通 KV 和新 manifest 仍声明能力的原有开启/关闭状态保留，不需要每次重新开权限。新增能力默认关闭，移除的能力清理；以后重新加入也需要手动开启。失败或取消不改变原有工具和权限，Android 系统权限仍需满足。安全存储和临时令牌仍按现有策略清理，授权开关保留不代表 Token 内容保留。删除会同时清理代码、数据、授权、任务和通知。
 
 ### 错误码与定位顺序
 
 先区分“导入失败”和“接口调用失败”。导入失败时检查 ZIP 根目录、manifest、入口、版本和完整性；接口失败时优先查看 error.code，不要只显示“出错了”。
 
-- UNSUPPORTED：当前宿主或系统不支持方法，检查 hostVersion 与公开接口。
+- UNSUPPORTED：当前ToolBox或系统不支持方法，检查 hostVersion 与公开接口。
 - INVALID_REQUEST：参数名称、类型、长度或数值范围不正确；不要添加未公开参数。
 - NOT_DECLARED：manifest.permissions 缺少对应能力，补声明后提高版本并重新打包。
 - PERMISSION_DENIED：到该工具权限页打开开关；不能仅在 Android 设置中授权。
@@ -953,9 +952,9 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 - DUPLICATE_TASK：后台任务 key 已存在，复用已有任务或选择新的业务标识。
 - CANCELLED：用户或系统取消了操作，页面应回到可继续操作的状态。
 - NOT_FOUND：键以外的任务、会话资源或文件令牌不存在；文件令牌只能读取一次。
-- INTERNAL_ERROR：保留错误码、操作路径、宿主/工具版本，再提供截图反馈；不要附带 Token 或私人文件内容。
+- INTERNAL_ERROR：保留错误码、操作路径、ToolBox/工具版本，再提供截图反馈；不要附带 Token 或私人文件内容。
 
-空白页还要检查 index.html 的 charset/viewport、相对资源路径、外链脚本及 CSP 限制。普通浏览器能显示页面，不代表宿主已授予网络、文件或后台权限。
+空白页还要检查 index.html 的 charset/viewport、相对资源路径、外链脚本及 CSP 限制。普通浏览器能显示页面，不代表ToolBox已授予网络、文件或后台权限。
 
 ### 四个内置范例怎么参考
 
@@ -975,7 +974,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "aac8b4c47d30a81a8cf5e6d1aba5f24ceff02ff5679a45c45bf9f8473988e57a";
+export type ToolBoxContractSha256 = "52897e7e73aae041ec272d8d63576f24e9626f55b34c0c1f7b38b7c2f8acecf8";
 
 export type ToolBoxCapability =
   | "storage"
@@ -1300,9 +1299,9 @@ export interface ToolBoxApi {
     readText(): Promise<string>;
   };
   network: {
-    /** Requires manifest.network.allowUserDomains, an enabled network grant, a recent real touch, and foreground native confirmation. Accepts an exact hostname without scheme, path, port, wildcard, or IP literal. Returns false when declined. */
+    /** @deprecated Compatibility check: returns true when the network capability is declared and granted. No domain prompt or destination allowlist is used. */
     authorizeDomain(domain: string): Promise<boolean>;
-    /** Lists user-authorized additional domains for this tool generation (static manifest domains are excluded). */
+    /** @deprecated Returns an empty list. Network access is controlled by the network permission, not a domain list. */
     listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;

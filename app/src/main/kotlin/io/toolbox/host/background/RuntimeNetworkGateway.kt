@@ -19,26 +19,21 @@ internal class RuntimeNetworkGateway(
     private val proxy: ToolNetworkProxy,
     private val policy: InstalledManifestNetwork?,
     private val bridgePayloadBytes: Int,
-    private val additionalAllowedHosts: suspend () -> Set<String> = { emptySet() },
+    private val validateNetworkAccess: suspend () -> Unit = {},
     private val toolId: String? = null,
 ) : RuntimeNetworkHandler {
     private val streams = RuntimeNetworkStreams()
     init { toolId?.let { NetworkDomainInvalidation.register(it, this, streams::clear) } }
 
-    private suspend fun allowedHosts(declared: InstalledManifestNetwork): Set<String> =
-        if (declared.allowUserDomains) declared.allowDomains + additionalAllowedHosts() else declared.allowDomains
-
-
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
-        val declared = policy ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "工具未声明网络域名。")
-        val limit = minOf(request.maxResponseBytes ?: 4 * 1024 * 1024, declared.maxResponseBytes)
-        val timeout = minOf(request.timeoutMillis ?: 30_000L, declared.timeoutMs.toLong())
+        val limit = minOf(request.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES, policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES)
+        val timeout = minOf(request.timeoutMillis ?: DEFAULT_TIMEOUT_MILLIS, policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS)
         val control = streams.reserve(streamId, timeout)
         try {
-            val allowedHosts = allowedHosts(declared)
+            validateNetworkAccess()
             val stream = proxy.openStream(
                 ToolNetworkRequest(request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
-                    request.body, request.bodyIsJson, allowedHosts, declared.allowRedirects,
+                    request.body, request.bodyIsJson, emptySet(), true,
                     timeout, limit),
                 control,
             )
@@ -58,6 +53,7 @@ internal class RuntimeNetworkGateway(
     }
 
     override suspend fun readStream(streamId: String, maxChunkBytes: Int): RuntimeNetworkStreamChunk = withContext(Dispatchers.IO) {
+        validateNetworkAccess()
         val stream = streams.get(streamId)
         try {
             val chunk = stream.read(maxChunkBytes)
@@ -79,13 +75,10 @@ internal class RuntimeNetworkGateway(
     }
 
     override suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse {
-        val declared = policy ?: throw RuntimeHandlerException(
-            RuntimeRpcErrorCode.NETWORK_BLOCKED,
-            "工具未声明网络域名。",
-        )
+        validateNetworkAccess()
         val responseLimit = minOf(
-            request.maxResponseBytes ?: 4 * 1_024 * 1_024,
-            declared.maxResponseBytes,
+            request.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
+            policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
             bridgePayloadBytes,
         )
         return when (val result = proxy.request(
@@ -94,9 +87,7 @@ internal class RuntimeNetworkGateway(
             headers = request.headers,
             body = request.body,
             bodyIsJson = request.bodyIsJson,
-            allowedHosts = allowedHosts(declared),
-            allowRedirects = declared.allowRedirects,
-            timeoutMillis = minOf(request.timeoutMillis ?: 30_000L, declared.timeoutMs.toLong()),
+            timeoutMillis = minOf(request.timeoutMillis ?: DEFAULT_TIMEOUT_MILLIS, policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS),
             maxResponseBytes = responseLimit,
         )) {
             is NetworkExecution.Success -> RuntimeNetworkResponse(
@@ -132,15 +123,17 @@ internal class RuntimeNetworkGateway(
                 else -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.NETWORK_BLOCKED,
                     when (result.errorCode) {
-                        "NETWORK_HOST_NOT_ALLOWED" -> "目标域名未在工具的 network.allowDomains 中声明，也未获得用户授权。"
-                        "NETWORK_ADDRESS_BLOCKED" -> "目标解析到本机、私网或保留地址。"
                         "HTTPS_REQUIRED" -> "仅支持 HTTPS 网络请求。"
-                        "REDIRECTS_DISABLED" -> "服务器要求重定向，但工具未允许重定向。"
                         else -> "网络地址或重定向未通过检查（${result.errorCode}）。"
                     },
                 )
             }
         }
+    }
+
+    private companion object {
+        const val DEFAULT_RESPONSE_BYTES = 4 * 1_024 * 1_024
+        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
     }
 }
 
@@ -151,5 +144,5 @@ private fun ToolNetworkFailure.toRuntimeStreamFailure(): RuntimeHandlerException
     "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络流读取超时，请重试。")
     "NETWORK_IO" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络流连接或读取失败，请重试。")
     "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "网络流请求参数无效。")
-    else -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "网络流地址或重定向未通过 HTTPS、域名或公网地址检查。")
+    else -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "网络流地址或重定向无效；请检查 HTTPS 地址与服务器配置。")
 }

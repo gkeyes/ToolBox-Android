@@ -53,7 +53,6 @@ internal fun CatalogUiState.withCatalogTools(values: List<CatalogTool>): Catalog
             .asSequence()
             .filter { it.lastOpenedAt != null }
             .sortedByDescending { it.lastOpenedAt }
-            .take(MAX_RECENT_TOOL_COUNT)
             .toList(),
         uninstallConfirmation = uninstallConfirmation?.takeIf { confirmation ->
             values.any { it.toolId == confirmation.toolId }
@@ -68,9 +67,6 @@ internal fun CatalogUiState.withCatalogQuery(value: String): CatalogUiState {
         visibleTools = tools.filteredBy(normalized),
     )
 }
-
-internal const val COMPACT_RECENT_TOOL_COUNT = 2
-internal const val MAX_RECENT_TOOL_COUNT = 3
 
 private fun List<CatalogTool>.filteredBy(query: String): List<CatalogTool> {
     val value = query.trim()

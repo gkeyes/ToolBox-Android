@@ -500,7 +500,6 @@ private fun ToolManagerRouteContent(
         importState = importState,
         listState = listState,
         contentPadding = contentPadding,
-        layout = layout,
         onAction = catalogViewModel::dispatch,
         onImport = onImport,
         onInstallExamples = importViewModel::installBundledExamples,

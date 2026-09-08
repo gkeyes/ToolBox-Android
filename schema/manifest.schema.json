@@ -143,15 +143,15 @@
       }
     },
     "network": {
+      "description": "Optional request budgets. Network access requires the network capability grant.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "allowDomains"
-      ],
       "properties": {
         "allowDomains": {
+          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
+          "deprecated": true,
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "maxItems": 32,
           "uniqueItems": true,
           "items": {
@@ -164,9 +164,12 @@
         "allowUserDomains": {
           "type": "boolean",
           "default": false,
-          "description": "Allow user-confirmed additional exact HTTPS domains; requires minHostVersion 0.6.3 or newer."
+          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
+          "deprecated": true
         },
         "allowRedirects": {
+          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
+          "deprecated": true,
           "type": "boolean",
           "default": true
         },
@@ -252,31 +255,5 @@
       "maxLength": 180,
       "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+$"
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "permissions": {
-            "contains": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "const": "network"
-                }
-              },
-              "required": [
-                "name"
-              ]
-            }
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "network"
-        ]
-      }
-    }
-  ]
+  }
 }

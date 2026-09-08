@@ -6,7 +6,6 @@ import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostPermissionSideEffects
-import io.toolbox.host.runtime.UserNetworkDomainStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -33,29 +32,6 @@ internal class PermissionMutationRunner(
 
     fun submit(toolId: String, capability: String, enabled: Boolean, expectedVersion: Int): Deferred<PermissionMutationResult> =
         enqueue(toolId) { apply(toolId, capability, enabled, expectedVersion) }
-
-    fun revokeNetworkDomain(
-        toolId: String,
-        domain: String,
-        expectedVersion: Int,
-        store: UserNetworkDomainStore,
-    ): Deferred<PermissionMutationResult> = enqueue(toolId) {
-        try {
-            val current = (packages.installedManifest(toolId) as? HostInstalledManifestResult.Found)?.manifest
-            if (current?.versionCode != expectedVersion || !current.allowUserNetworkDomains ||
-                current.permissions.none { it.capability == "network" }
-            ) {
-                PermissionMutationResult.Outdated
-            } else {
-                store.revoke(toolId, expectedVersion, domain)
-                PermissionMutationResult.Saved
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            PermissionMutationResult.CleanupFailed
-        }
-    }
 
     private fun enqueue(toolId: String, action: suspend () -> PermissionMutationResult): Deferred<PermissionMutationResult> =
         synchronized(pending) {

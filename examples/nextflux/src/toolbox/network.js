@@ -25,7 +25,7 @@ function transportError(code) {
   const messages = {
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
     NOT_DECLARED: "此版本未声明所需的网络权限。",
-    NETWORK_BLOCKED: "服务器连接被安全策略阻止，请检查 HTTPS 地址及重定向。",
+    NETWORK_BLOCKED: "服务器连接失败，请检查 HTTPS 地址。",
     NETWORK_TIMEOUT: "服务器响应超时，请稍后重试。",
     NETWORK_UNAVAILABLE: "无法连接服务器，请检查网络后重试。",
     QUOTA_EXCEEDED: "响应内容过大，请减少同步数量后重试。",

@@ -13,7 +13,9 @@ internal data class ToolNetworkRequest(
     val headers: Map<String, String>,
     val body: ByteArray?,
     val bodyIsJson: Boolean,
+    /** Legacy options retained for source compatibility; destinations are permission-controlled. */
     val allowedHosts: Set<String>,
+    /** Ignored: HTTPS redirects are followed within the host redirect limit. */
     val allowRedirects: Boolean,
     val timeoutMillis: Long,
     val maxResponseBytes: Int,

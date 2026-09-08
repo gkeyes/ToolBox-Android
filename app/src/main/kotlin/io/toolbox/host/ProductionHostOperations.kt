@@ -305,13 +305,12 @@ internal class ProductionHostBackgroundOperations(
     override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
         network = RuntimeNetworkGateway(
             network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes,
-            additionalAllowedHosts = {
+            validateNetworkAccess = {
                 val current = networkCatalog.observeTool(runtime.toolId).first()
                 val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
                 if (current?.currentVersion?.versionCode != runtime.versionCode || !granted) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本或网络权限已变更。")
                 }
-                domainStore.list(runtime.toolId, runtime.versionCode).toSet()
             },
             toolId = runtime.toolId,
         ),

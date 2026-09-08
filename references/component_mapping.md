@@ -27,6 +27,7 @@ implementation("dev.chrisbanes.haze:haze:1.7.3")
 | 顶栏 | `TopAppBar`、`SmallTopAppBar`、Haze | `ToolBoxLargeTopBar`、`ToolBoxTopBar` | Liquid Glass 一级 34sp；普通页 48–56dp 内容区；大字体自然增高。 |
 | 工具列表 | surface/card、menu、search | `GroupedSurface`、`ToolRow`、`ToolSearchField` | 48dp 搜索、72–80dp 起且大字自然增长、stable key；主区域打开，独立 48dp“管理”文字按钮进入详情。 |
 | 首页正在运行 | `Card`、`Button`、`OverlayDialog` | `ToolBoxGroupedSurface`、`ToolBoxRunningStatusButton`、`CatalogRunningTools` | 最近使用上方；每会话独立行，名称打开、状态按钮确认停止，零会话隐藏。 |
+| 最近使用 | 自适应图标行 | `CatalogRecentTools` | 仅显示工具图标，点击直接打开；按可用宽度与最小点击区域自动计算可见数量，不固定为两个或四个。超出部分横向滚动，工具名称仅用于无障碍描述。 |
 | 导入反馈 | progress、snackbar、dialog | `ImportFeedback` | 选择 → 内部检查 → 成功/失败；同版本或降级只在检查通过后显示版本确认，没有审核卡/风险徽标。 |
 | 工具详情 | grouped surface、button、dialog | `ToolDetailSection`、`ToolBoxDestructiveButton` | 身份块保留名称/图标/打开，信息区单独显示版本/大小；权限、后台任务、删除各一处入口，删除仍需确认。 |
 | 工具身份图 | Compose `Image`、Android `Bitmap` | `CatalogToolGlyph`、`ToolIconLoader` | 从当前版本 `manifest.icon` 异步加载；列表/详情/运行区、通知内容图及超级岛同源，来源小图标仍是宿主。 |

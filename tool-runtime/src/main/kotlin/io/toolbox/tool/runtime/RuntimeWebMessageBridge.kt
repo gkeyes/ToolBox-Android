@@ -628,7 +628,6 @@ internal fun createRuntimeBridgeSession(
         nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(nonceBytes),
         exactOrigin = runtime.origin,
         declaredCapabilities = runtime.declaredCapabilities,
-        allowUserNetworkDomains = runtime.installedManifest.network?.allowUserDomains == true,
     )
     return RuntimeBridgeSession(
         identity = identity,

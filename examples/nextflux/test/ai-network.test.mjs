@@ -1,17 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assertAiUrl, streamChatCompletion, testAiConnection } from "../src/toolbox/ai-network.js";
-import { AI_ALLOWED_ORIGINS } from "../src/toolbox/config.js";
 
-const baseUrl = `${AI_ALLOWED_ORIGINS[0]}/v1`;
+const baseUrl = "https://api.openai.com/v1";
 const options = { baseUrl, apiKey: "test-only-secret", body: { model: "test-model", messages: [{ role: "user", content: "fixture" }] } };
 const encode = (text) => new TextEncoder().encode(text);
 function host(network) { globalThis.window = { ToolBox: { network } }; }
 
-test("AI endpoint validation rejects userinfo, IPs, query strings and non-HTTPS before disclosing key", async () => {
+test("AI endpoint validation rejects userinfo, query strings and non-HTTPS before disclosing key", async () => {
   let calls = 0;
   host({ openStream: async () => { calls += 1; }, request: async () => { calls += 1; } });
-  for (const url of ["http://api.openai.com/v1", "https://secret@api.openai.com/v1", "https://127.0.0.1/v1", "https://[::1]/v1", "https://0x7f000001/v1", "https://api.openai.com/v1?key=secret", "https://api.openai.com/v1#secret"]) {
+  for (const url of ["http://api.openai.com/v1", "https://secret@api.openai.com/v1", "https://api.openai.com/v1?key=secret", "https://api.openai.com/v1#secret"]) {
     await assert.rejects(streamChatCompletion({ ...options, baseUrl: url, onDelta: () => {} }));
   }
   assert.equal(calls, 0);
@@ -96,51 +95,41 @@ test("finish_reason completes compatible streams without a DONE sentinel", async
 });
 
 
-test("custom endpoint approval completes before a key-bearing test request", async () => {
-  const calls = [];
-  const custom = "https://custom.provider.test/api/v1";
-  host({
-    authorizeDomain: async (domain) => { calls.push(["approve", domain]); return true; },
-    request: async (data) => { calls.push(["request", data]); return { status: 200 }; },
-  });
-  await testAiConnection({ baseUrl: custom, apiKey: "test-only-secret", model: "custom-model" });
-  assert.deepEqual(calls[0], ["approve", "custom.provider.test"]);
-  assert.equal(calls[1][1].url, `${custom}/chat/completions`);
-  assert.equal(calls[1][1].headers.Authorization, "Bearer test-only-secret");
-});
-
-test("denied or unsupported custom authorization sends no credentials or requests", async () => {
-  for (const authorizeDomain of [undefined, async () => false, async () => { throw { code: "USER_GESTURE_REQUIRED", message: "secret-native-error" }; }]) {
-    let requests = 0;
-    host({ authorizeDomain, request: async () => { requests += 1; } });
-    await assert.rejects(testAiConnection({ baseUrl: "https://custom.provider.test/v1", apiKey: "test-only-secret", model: "test" }), (error) => {
-      assert.doesNotMatch(error.message, /secret-native-error|test-only-secret/);
-      return true;
-    });
-    assert.equal(requests, 0);
+test("custom HTTPS domains and IP endpoints use network permission without domain approval", async () => {
+  for (const custom of ["https://custom.provider.test/api/v1", "https://127.0.0.1/v1", "https://[::1]/v1", "https://192.168.1.2:8443/v1"]) {
+    let sent;
+    host({ request: async (data) => { sent = data; return { status: 200 }; } });
+    await testAiConnection({ baseUrl: custom, apiKey: "test-only-secret", model: "custom-model" });
+    assert.equal(sent.url, `${custom}/chat/completions`);
+    assert.equal(sent.headers.Authorization, "Bearer test-only-secret");
   }
 });
 
-test("streaming uses a current custom grant silently and preserves the selected exact origin", async () => {
+test("custom endpoint streaming needs no legacy domain approval API", async () => {
   let sent;
-  let approvals = 0;
   host({
-    listDomains: async () => ["custom.provider.test"],
-    authorizeDomain: async () => { approvals += 1; return true; },
     openStream: async (data) => { sent = data; return { streamId: "s1", status: 200 }; },
     readStream: async () => ({ data: encode("data: [DONE]\n\n"), done: true }),
     cancelStream: async () => {},
   });
   await streamChatCompletion({ ...options, baseUrl: "https://custom.provider.test/path/v1", onDelta: () => {} });
   assert.equal(sent.url, "https://custom.provider.test/path/v1/chat/completions");
-  assert.equal(approvals, 0);
 });
 
-test("revoked, unavailable and hostname-mismatched grants prevent stream credential disclosure", async () => {
-  for (const listDomains of [undefined, async () => [], async () => ["custom.provider.test.evil.test"]]) {
-    let calls = 0;
-    host({ listDomains, openStream: async () => { calls += 1; } });
-    await assert.rejects(streamChatCompletion({ ...options, baseUrl: "https://custom.provider.test/v1", onDelta: () => {} }));
-    assert.equal(calls, 0);
+test("disabled network permission remains actionable without exposing native error details", async () => {
+  host({
+    request: async () => { throw { code: "PERMISSION_DENIED", message: "secret-native-error" }; },
+    openStream: async () => { throw { code: "PERMISSION_DENIED", message: "secret-native-error" }; },
+  });
+  for (const operation of [
+    () => testAiConnection({ baseUrl, apiKey: "test-only-secret", model: "test" }),
+    () => streamChatCompletion({ ...options, onDelta: () => {} }),
+  ]) {
+    await assert.rejects(operation(), (error) => {
+      assert.equal(error.code, "PERMISSION_DENIED");
+      assert.match(error.message, /开启网络访问/);
+      assert.doesNotMatch(error.message, /secret-native-error|test-only-secret/);
+      return true;
+    });
   }
 });

@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "aac8b4c47d30a81a8cf5e6d1aba5f24ceff02ff5679a45c45bf9f8473988e57a";
+export type ToolBoxContractSha256 = "52897e7e73aae041ec272d8d63576f24e9626f55b34c0c1f7b38b7c2f8acecf8";
 
 export type ToolBoxCapability =
   | "storage"
@@ -323,9 +323,9 @@ export interface ToolBoxApi {
     readText(): Promise<string>;
   };
   network: {
-    /** Requires manifest.network.allowUserDomains, an enabled network grant, a recent real touch, and foreground native confirmation. Accepts an exact hostname without scheme, path, port, wildcard, or IP literal. Returns false when declined. */
+    /** @deprecated Compatibility check: returns true when the network capability is declared and granted. No domain prompt or destination allowlist is used. */
     authorizeDomain(domain: string): Promise<boolean>;
-    /** Lists user-authorized additional domains for this tool generation (static manifest domains are excluded). */
+    /** @deprecated Returns an empty list. Network access is controlled by the network permission, not a domain list. */
     listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;

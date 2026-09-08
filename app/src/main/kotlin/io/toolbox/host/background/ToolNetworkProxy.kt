@@ -3,11 +3,6 @@ package io.toolbox.host.background
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.net.IDN
-import java.net.Inet4Address
-import java.net.Inet6Address
-import java.net.InetAddress
-import java.net.UnknownHostException
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.Locale
@@ -59,7 +54,7 @@ class ToolNetworkProxy private constructor(
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(false)
-            .dns(ValidatingDns(dns))
+            .dns(dns)
             .build()
     }
 
@@ -69,9 +64,10 @@ class ToolNetworkProxy private constructor(
         .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .build()
 
+    /** Legacy destination options are ignored; the caller enforces the network capability grant. */
     suspend fun httpGet(
         url: String,
-        allowedHosts: Set<String>,
+        allowedHosts: Set<String> = emptySet(),
         allowRedirects: Boolean = false,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         maxResponseBytes: Int = MAX_RESULT_BYTES,
@@ -85,13 +81,15 @@ class ToolNetworkProxy private constructor(
         acceptHttpErrors = false,
     )
 
+    /** HTTPS and resource limits apply; legacy allowlist and redirect switches are ignored. */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun request(
         url: String,
         method: NetworkRequestMethod,
         headers: Map<String, String> = emptyMap(),
         body: ByteArray? = null,
         bodyIsJson: Boolean = false,
-        allowedHosts: Set<String>,
+        allowedHosts: Set<String> = emptySet(),
         allowRedirects: Boolean = true,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
@@ -103,10 +101,6 @@ class ToolNetworkProxy private constructor(
         if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
             return NetworkExecution.TerminalFailure("INVALID_RESPONSE_LIMIT")
         }
-        if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) {
-            return NetworkExecution.TerminalFailure("NETWORK_HOST_NOT_ALLOWED")
-        }
-        val normalizedAllowlist = allowedHosts.mapTo(linkedSetOf()) { requireNotNull(normalizeHost(it)) }
         val requestClient = if (transport == null) {
             clientForRequest(timeoutMillis)
         } else {
@@ -119,7 +113,7 @@ class ToolNetworkProxy private constructor(
         var includeCallerHeaders = true
         var redirects = 0
         while (true) {
-            val validation = NetworkPolicy.validateEndpoint(current, normalizedAllowlist)
+            val validation = NetworkPolicy.validateEndpoint(current)
             if (validation != null) return NetworkExecution.TerminalFailure(validation)
             val response = try {
                 val request = Request.Builder()
@@ -164,16 +158,11 @@ class ToolNetworkProxy private constructor(
                 } else {
                     requireNotNull(requestClient).newCall(request).awaitResponse(maxResponseBytes, acceptHttpErrors)
                 }
-            } catch (_: BlockedAddressException) {
-                return NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
             } catch (error: IOException) {
                 return error.toNetworkFailure()
             }
             response.let {
                 if (it.code in REDIRECT_CODES) {
-                    NetworkPolicy.redirectError(allowRedirects)?.let {
-                        return NetworkExecution.TerminalFailure(it)
-                    }
                     if (redirects >= maxRedirects) return NetworkExecution.TerminalFailure("TOO_MANY_REDIRECTS")
                     val location = it.location
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
@@ -221,8 +210,8 @@ class ToolNetworkProxy private constructor(
             headers,
             body,
             bodyIsJson,
-            allowedHosts,
-            allowRedirects,
+            _, // Legacy allowlist is no longer an authorization boundary.
+            _, // HTTPS redirects are always followed within the redirect limit.
             timeoutMillis,
             maxResponseBytes,
             acceptHttpErrors,
@@ -233,10 +222,6 @@ class ToolNetworkProxy private constructor(
         if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
             throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
         }
-        if (allowedHosts.isEmpty() || allowedHosts.any { normalizeHost(it) == null }) {
-            throw ToolNetworkFailure("NETWORK_HOST_NOT_ALLOWED")
-        }
-        val normalizedAllowlist = allowedHosts.mapTo(linkedSetOf()) { requireNotNull(normalizeHost(it)) }
         val requestClient = if (transport == null) clientForRequest(timeoutMillis) else null
         var current = url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
         var currentMethod = method
@@ -245,7 +230,7 @@ class ToolNetworkProxy private constructor(
         var redirects = 0
         while (true) {
             control.requireActive()
-            NetworkPolicy.validateEndpoint(current, normalizedAllowlist)?.let { throw ToolNetworkFailure(it) }
+            NetworkPolicy.validateEndpoint(current)?.let { throw ToolNetworkFailure(it) }
             val response = try {
                 val request = Request.Builder()
                     .url(current)
@@ -281,8 +266,6 @@ class ToolNetworkProxy private constructor(
                     .build()
                 transport?.execute(request, timeoutMillis)
                     ?: requireNotNull(requestClient).newCall(request).also(control::attach).await()
-            } catch (_: BlockedAddressException) {
-                throw ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
             } catch (error: IOException) {
                 control.requireActive()
                 throw error.toStreamFailure()
@@ -290,7 +273,6 @@ class ToolNetworkProxy private constructor(
             control.attach(response)
             if (response.code in REDIRECT_CODES) {
                 response.use {
-                    NetworkPolicy.redirectError(allowRedirects)?.let { code -> throw ToolNetworkFailure(code) }
                     if (redirects >= maxRedirects) throw ToolNetworkFailure("TOO_MANY_REDIRECTS")
                     val location = it.header("Location") ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location) ?: throw ToolNetworkFailure("INVALID_REDIRECT")
@@ -317,18 +299,8 @@ class ToolNetworkProxy private constructor(
         }
     }
 
-    private class ValidatingDns(private val delegate: Dns) : Dns {
-        override fun lookup(hostname: String): List<InetAddress> {
-            val addresses = delegate.lookup(hostname)
-            if (addresses.isEmpty() || addresses.any(AddressPolicy::isForbidden)) {
-                throw BlockedAddressException()
-            }
-            return addresses
-        }
-    }
-
     private companion object {
-        const val USER_AGENT = "ToolBox/0.6.2 (Android)"
+        const val USER_AGENT = "ToolBox/0.6.4 (Android)"
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val MIN_TIMEOUT_MILLIS = 1_000L
         const val MAX_TIMEOUT_MILLIS = 3_600_000L
@@ -364,18 +336,11 @@ private fun sameOrigin(first: HttpUrl, second: HttpUrl): Boolean =
     first.scheme == second.scheme && first.host == second.host && first.port == second.port
 
 internal object NetworkPolicy {
-    fun validateEndpoint(url: HttpUrl, allowedHosts: Set<String>): String? {
+    fun validateEndpoint(url: HttpUrl): String? {
         if (!url.isHttps) return "HTTPS_REQUIRED"
         if (url.username.isNotEmpty() || url.password.isNotEmpty()) return "URL_CREDENTIALS_FORBIDDEN"
-        val host = normalizeHost(url.host) ?: return "INVALID_HOST"
-        if (isIpLiteralHost(host)) return "IP_LITERAL_FORBIDDEN"
-        if (allowedHosts.none { allowed -> hostMatches(host, allowed) }) {
-            return "NETWORK_HOST_NOT_ALLOWED"
-        }
         return null
     }
-
-    fun redirectError(allowRedirects: Boolean): String? = if (allowRedirects) null else "REDIRECTS_DISABLED"
 }
 
 sealed interface NetworkExecution {
@@ -392,132 +357,16 @@ sealed interface NetworkExecution {
     data class TerminalFailure(val errorCode: String) : NetworkExecution
 }
 
-internal object AddressPolicy {
-    fun isForbidden(address: InetAddress): Boolean {
-        if (
-            address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
-            address.isSiteLocalAddress || address.isMulticastAddress
-        ) return true
-        val bytes = address.address
-        return when (address) {
-            is Inet4Address -> isForbiddenIpv4(bytes)
-            is Inet6Address -> isForbiddenIpv6(bytes)
-            else -> true
-        }
-    }
-
-    private fun isForbiddenIpv4(bytes: ByteArray, offset: Int = 0): Boolean {
-        val first = bytes[offset].unsigned()
-        val second = bytes[offset + 1].unsigned()
-        val third = bytes[offset + 2].unsigned()
-        return first == 0 || first == 10 || first == 127 || first >= 224 ||
-            (first == 100 && second in 64..127) ||
-            (first == 169 && second == 254) ||
-            (first == 172 && second in 16..31) ||
-            (first == 192 && second == 0) ||
-            (first == 192 && second == 31 && third == 196) ||
-            (first == 192 && second == 52 && third == 193) ||
-            (first == 192 && second == 88 && third == 99) ||
-            (first == 192 && second == 168) ||
-            (first == 192 && second == 175 && third == 48) ||
-            (first == 198 && second in 18..19) ||
-            (first == 198 && second == 51 && third == 100) ||
-            (first == 203 && second == 0 && third == 113)
-    }
-
-    private fun isForbiddenIpv6(bytes: ByteArray): Boolean {
-        if (isIpv4Mapped(bytes)) return isForbiddenIpv4(bytes, 12)
-        if (isIpv4Compatible(bytes)) return true
-        if (isWellKnownNat64(bytes)) return isForbiddenIpv4(bytes, 12)
-        return isUniqueLocal(bytes) ||
-            isLocalUseNat64(bytes) ||
-            isDiscardOnly(bytes) ||
-            isDocumentation(bytes) ||
-            isBenchmarking(bytes) ||
-            isTeredo(bytes) ||
-            is6to4(bytes) ||
-            isOrchid(bytes)
-    }
-
-    private fun isIpv4Mapped(bytes: ByteArray): Boolean =
-        bytes.take(10).all { it.unsigned() == 0 } && bytes[10].unsigned() == 0xff && bytes[11].unsigned() == 0xff
-
-    private fun isIpv4Compatible(bytes: ByteArray): Boolean =
-        bytes.take(12).all { it.unsigned() == 0 }
-
-    private fun isWellKnownNat64(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x00 && bytes[1].unsigned() == 0x64 &&
-            bytes[2].unsigned() == 0xff && bytes[3].unsigned() == 0x9b &&
-            bytes[4].unsigned() == 0 && bytes[5].unsigned() == 0 &&
-            bytes[6].unsigned() == 0 && bytes[7].unsigned() == 0 &&
-            bytes[8].unsigned() == 0 && bytes[9].unsigned() == 0 &&
-            bytes[10].unsigned() == 0 && bytes[11].unsigned() == 0
-
-    private fun isUniqueLocal(bytes: ByteArray): Boolean = (bytes[0].unsigned() and 0xfe) == 0xfc
-
-    private fun isLocalUseNat64(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x00 && bytes[1].unsigned() == 0x64 &&
-            bytes[2].unsigned() == 0xff && bytes[3].unsigned() == 0x9b &&
-            bytes[4].unsigned() == 0 && bytes[5].unsigned() == 1
-
-    private fun isDiscardOnly(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x01 && bytes.drop(1).take(7).all { it.unsigned() == 0 }
-
-    private fun isDocumentation(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x20 && bytes[1].unsigned() == 0x01 &&
-            bytes[2].unsigned() == 0x0d && bytes[3].unsigned() == 0xb8
-
-    private fun isBenchmarking(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x20 && bytes[1].unsigned() == 0x01 &&
-            bytes[2].unsigned() == 0x00 && bytes[3].unsigned() == 0x02
-
-    private fun isTeredo(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x20 && bytes[1].unsigned() == 0x01 &&
-            bytes[2].unsigned() == 0x00 && bytes[3].unsigned() == 0x00
-
-    private fun is6to4(bytes: ByteArray): Boolean = bytes[0].unsigned() == 0x20 && bytes[1].unsigned() == 0x02
-
-    private fun isOrchid(bytes: ByteArray): Boolean =
-        bytes[0].unsigned() == 0x20 && bytes[1].unsigned() == 0x01 &&
-            bytes[2].unsigned() in 0x10..0x2f
-}
-
-private class BlockedAddressException : UnknownHostException("Blocked network destination")
-
-private fun Throwable.hasBlockedAddressCause(): Boolean =
-    generateSequence(this) { it.cause }.any { it is BlockedAddressException }
-
 private fun IOException.toNetworkFailure(): NetworkExecution = when {
-    hasBlockedAddressCause() -> NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED")
     this is InterruptedIOException -> NetworkExecution.RetryableFailure("NETWORK_TIMEOUT")
     else -> NetworkExecution.RetryableFailure("NETWORK_IO")
 }
 
 internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
     this is ToolNetworkFailure -> this
-    hasBlockedAddressCause() -> ToolNetworkFailure("NETWORK_ADDRESS_BLOCKED")
     this is InterruptedIOException -> ToolNetworkFailure("NETWORK_TIMEOUT", retryable = true)
     else -> ToolNetworkFailure("NETWORK_IO", retryable = true)
 }
-
-internal fun normalizeHost(value: String): String? = runCatching {
-    val wildcard = value.startsWith("*.")
-    val source = if (wildcard) value.substring(2) else value
-    val normalized = IDN.toASCII(source.trim().trimEnd('.'), IDN.USE_STD3_ASCII_RULES)
-        .lowercase(Locale.ROOT)
-    require(normalized.isNotBlank())
-    if (wildcard) "*.$normalized" else normalized
-}.getOrNull()
-
-internal fun hostMatches(host: String, allowed: String): Boolean =
-    if (allowed.startsWith("*.")) {
-        host.endsWith(".${allowed.substring(2)}") && host != allowed.substring(2)
-    } else {
-        host == allowed
-    }
-
-private fun isIpLiteralHost(host: String): Boolean =
-    host.contains(':') || IPV4_LITERAL.matches(host)
 
 internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
     .asSequence()
@@ -525,10 +374,6 @@ internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
     .mapNotNull { name -> headers[name]?.takeIf { it.length <= 4_096 }?.let { name to it } }
     .take(64)
     .toMap(linkedMapOf())
-
-private fun Byte.unsigned(): Int = toInt() and 0xff
-
-private val IPV4_LITERAL = Regex("^\\d{1,3}(?:\\.\\d{1,3}){3}$")
 
 private fun ResponseBody.readBounded(maxBytes: Int): ByteArray? {
     byteStream().use { input ->
@@ -566,7 +411,7 @@ private fun Response.readResponse(maxBytes: Int, acceptHttpErrors: Boolean): Buf
         contentType = header("Content-Type")?.substringBefore(';'),
         isText = isText,
         headers = exposedHeaders(),
-        // Redirect/error bodies are not consumed; the next endpoint still gets full validation.
+        // Redirect/error bodies are not consumed; the next endpoint must still use HTTPS.
         body = if (code in setOf(301, 302, 303, 307, 308) || (!acceptHttpErrors && code !in 200..299)) {
             ByteArray(0)
         } else {

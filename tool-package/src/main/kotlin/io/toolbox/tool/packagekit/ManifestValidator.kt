@@ -39,9 +39,6 @@ internal object ManifestValidator {
             else -> throw JsonFormatException("securityProfile must be strict or compat")
         }
         val network = root["network"]?.let { parseNetwork(it, minHostVersion) }
-        if (permissions.any { it.name == "network" } && network == null) {
-            throw JsonFormatException("network permission requires network.allowDomains")
-        }
         val categories = root["categories"]?.let(::parseCategories).orEmpty()
         val ui = root["ui"]?.let(::parseUi) ?: ManifestUi(
             orientation = null,
@@ -95,15 +92,15 @@ internal object ManifestValidator {
     private fun parseNetwork(value: JsonValue, minHostVersion: String): ManifestNetwork {
         val network = value.asObject("network")
         network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs", "allowUserDomains"))
-        val domains = network.required("allowDomains").asArray("network.allowDomains").mapIndexed { index, item ->
+        val domains = network["allowDomains"]?.asArray("network.allowDomains")?.mapIndexed { index, item ->
             val domain = item.asString("network.allowDomains[$index]")
             if (domain.length !in 1..253 || !domainPattern.matches(domain)) {
                 throw JsonFormatException("Invalid network domain: $domain")
             }
             domain
-        }
-        if (domains.isEmpty() || domains.size > 32 || domains.toSet().size != domains.size) {
-            throw JsonFormatException("network.allowDomains must contain 1..32 unique domains")
+        }.orEmpty()
+        if (domains.size > 32 || domains.toSet().size != domains.size) {
+            throw JsonFormatException("network.allowDomains must contain at most 32 unique domains")
         }
         val timeoutMs = network["timeoutMs"]?.let {
             requireIntValue(it, "network.timeoutMs", 1000, 3_600_000)
@@ -112,9 +109,6 @@ internal object ManifestValidator {
             throw JsonFormatException("network.timeoutMs above 600000 requires minHostVersion 0.6.1")
         }
         val allowUserDomains = network["allowUserDomains"]?.asBoolean("network.allowUserDomains") ?: false
-        if (allowUserDomains && !versionAtLeast(minHostVersion, 0, 6, 3)) {
-            throw JsonFormatException("network.allowUserDomains requires minHostVersion 0.6.3")
-        }
         return ManifestNetwork(
             allowDomains = domains,
             allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: true,

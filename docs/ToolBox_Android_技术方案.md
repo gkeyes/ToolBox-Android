@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.6.3 (19)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.6.4 (20)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -48,9 +48,9 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
    真实手势、速率和配额。
 4. 关闭 WebView file/content access、universal file URL access、mixed content、popup 与任意
    外部导航；不开放 WebView file chooser、媒体权限或自动跳转。
-5. 工具网络默认关闭；授权后由原生 HTTPS 代理访问 manifest 精确声明的公网 HTTPS 域名及
-   合法端口。每跳重定向、DNS 解析地址和私网/回环/保留地址仍必须复验，
-   且代理不使用宿主 cookie、缓存或认证状态。
+5. 工具网络默认关闭；开启该工具的 network 权限后，由 ToolBox 原生 HTTPS 代理联网。
+   不再限制目的域名、IP 字面量和 DNS 解析地址范围，也不要求额外域名确认。
+   保留 TLS 证书校验、跨来源重定向清除凭据；代理不使用 ToolBox cookie、缓存或认证状态。
 6. 安装是事务性、可补偿的；拒绝 Zip Slip、Zip Bomb、路径碰撞、符号链接、嵌套压缩包、
    原生或动态代码负载。
 7. 无效签名必须阻止安装；未签名工具可正常安装，但不会获得默认关闭的外部能力。
@@ -154,7 +154,7 @@ Miuix `ToolBoxSwitchSettingRow`，整行与开关都可操作。只在 handler �
 更新同一工具不重置已有选择：读取提交时的当前 grant，只保留新 manifest 仍声明的能力，
 包括用户已关闭的能力；新增或移除后重新加入的能力一律关闭，不套用首次安装的默认开启值。
 合并与版本切换共用一个事务，失败回滚不改变授权；重复提交不会覆盖之后的用户选择。
-这只保留工具级开关，不绕过 Android 系统权限、声明、域名白名单或运行时校验；也不恢复旧版已清除的授权记录。
+这只保留工具级开关，不绕过 Android 系统权限、声明或运行时校验；也不恢复旧版已清除的授权记录。
 
 关闭 grant 立即停止新调用；关闭 `storage.secure` 同时销毁该工具 generation 的 key/数据；
 关闭后台总开关会取消旧任务并停止所有持续环境、计时器、后台位置监听和对应通知；关闭
@@ -222,6 +222,9 @@ RPC 在解析/创建协程前限制每会话 32 个、全局 128 个排队/在�
 仍必须保留 CSP、安全响应头、危险 scheme 和导航
 阻断、renderer-gone 恢复、文件/content/mixed-content/popup 禁用等边界。
 
+ToolBox 首页“最近使用”只显示图标，按可用宽度和至少 48 dp 点击区域自动计算可见数量，
+超出部分横向滚动；工具名称保留用于无障碍朗读，不在图标旁显示。
+
 #### 小工具页面返回设计规范
 
 页面内部右滑返回上一级是小工具的统一设计规范。手势从内容区域开始，向右横向滑动时执行与页面内“返回”按钮相同的动作，例如文章详情返回文章列表、设置子页返回设置首页。已有弹窗或抽屉时先关闭最上层，再返回页面；已在工具首页且没有可关闭层时保持当前页面，不退出工具。
@@ -279,11 +282,11 @@ bridge、timer、位置监听和通知，再删除旧 bundle。没有持续会�
 `alarm` 事件；不存在时显示不含业务内容的普通通知，点击重新打开对应工具。登记数据只有
 alarmId、triggerAt、scheduledAt；开机和精确闹钟授权变化后重新调度。
 
-### 7.3 通用公网 HTTPS 代理
+### 7.3 由网络权限控制的 HTTPS 代理
 
 `network.request` 支持 GET、POST、PUT、PATCH、DELETE、HEAD，自定义普通 Header、文本/JSON/
-字节请求体、合法 HTTPS 端口、重定向、超时和响应上限。普通 `network` grant 还必须服从
-`manifest.network.allowDomains` 的精确域名或子域通配声明。直接请求会把
+字节请求体、合法 HTTPS 端口、重定向、超时和响应上限。ToolBox 0.6.4 起只需声明并开启
+`network` 权限，不限制目的域名或 DNS/IP 地址范围。直接请求会把
 4xx/5xx 状态和受限响应正文返回页面，不把 HTTP 错误伪装成安全阻断。
 单次调用总时限、读取与写入等待取请求值和 manifest 声明中的较小值；请求未填仍为 30000 毫秒。
 0.6.1 将两层可配置上限统一为 3600000 毫秒（60 分钟），声明超过 600000 毫秒的工具必须要求
@@ -292,15 +295,19 @@ alarmId、triggerAt、scheduledAt；开机和精确闹钟授权变化后重新�
 
 代理仍禁用自动重定向、缓存、自动 retry、系统代理和宿主认证状态。Host、Connection、
 Content-Length、Transfer-Encoding、Upgrade 与 Proxy 系列协议 Header 由传输层控制；Authorization、
-Cookie、X-API-Key、Accept、Content-Type 等可由工具提供。每次 DNS 与每跳重定向都重新验证
-HTTPS、manifest allowlist 和解析地址；loopback、link-local、private、CGNAT、multicast、保留地址、
-IP 字面量、IPv4-mapped 私网 IPv6 和 NAT64 私网映射均阻断。读取响应的有效上限是请求值、manifest
+Cookie、X-API-Key、Accept、Content-Type 等可由工具提供。HTTPS 重定向由 ToolBox 逐跳处理，
+跨来源跳转清除调用方 Header；不执行域名白名单或 DNS/IP 范围拦截，支持 Fake-IP 和内网 HTTPS 地址。
+读取响应的有效上限是请求值、manifest
 网络值、WebMessage 上限和宿主防 OOM 上限的最小值，不为文本预扣 Base64 膨胀空间。
 0.3.5 允许 manifest 将消息上限从默认 256 KiB 提高到最多 8 MiB；返回前仍检查实际编码后的
 完整消息。响应或消息过大返回 `QUOTA_EXCEEDED`，连接/读取失败与超时分别返回
 `NETWORK_UNAVAILABLE`、`NETWORK_TIMEOUT`；只有地址或重定向策略拒绝才返回 `NETWORK_BLOCKED`。
 
-0.6.3 新增用户授权的额外 HTTPS 域名：manifest.network.allowUserDomains 默认 false；显式启用时要求 minHostVersion 至少 0.6.3。network.authorizeDomain(domain) 需要当前工具前台、近期真实触摸及 network grant，经宿主 Miuix 确认后才写入宿主专用 KV；network.listDomains 返回该工具当前版本的授权集合。网页不能读写宿主域名记录。请求与流式请求的有效域名为静态 allowDomains 与已确认域名的并集，私网/IP/重定向校验继续执行。每工具最多 32 个精确额外域名；撤销会取消活动流，关闭网络、更新、卸载清理授权；确认返回后再次核对版本、声明、权限、前台和会话有效性，过期确认不落盘。既有小工具未声明时保持原行为。
+0.6.4 统一采用每工具网络权限，关闭后请求及活动流不可继续联网。network 配置可省略，缺省使用
+30000 毫秒超时和 4 MiB 响应上限。旧 allowDomains、allowUserDomains、allowRedirects 字段仅保留
+解析兼容，不再决定访问目标或是否跟随 HTTPS 跳转。旧 network.authorizeDomain/listDomains 接口
+仅兼容旧调用，不弹确认或保存域名授权；新工具直接调用 network.request/openStream。
+此调整不开放 WebView 直接联网，也不取消 origin、frame、nonce、版本、能力声明和授权检查。
 
 ### 7.4 旧后台任务兼容
 
@@ -402,13 +409,13 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 | 新鲜数据基线 | 防止无用兼容代码残留。 | 创建/重开 production Room/DataStore，写工具、grant、KV、任务、结果并检查 schema/keys。 | 真实状态持久化；没有 audit/publisher/旧设置/迁移。 |
 | 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入四个有效例子、损坏包与现有恶意 ZIP 矩阵，再从详情删除按钮确认删除。 | 有效包可打开；无效零残留；删除完整清理。 |
 | 权限与 RPC | 防止开关和功能脱节。 | 逐 capability 调 production dispatcher，并关闭每一个授权层。 | 开启有真实结果；任一层缺失稳定拒绝。 |
-| 后台与代理 | 防止持续环境丢失、旧 API 冲突或 SSRF。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；无 SSRF、孤儿资源或协议回退。 |
+| 后台与代理 | 防止持续环境丢失、旧 API 冲突或撤权后联网。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；撤权终止联网，无孤儿资源或协议回退。 |
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
 
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 检查通过后直接构建一次签名 release APK，不另行构建重复的 candidate APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.3 (19) 上传 `toolbox-v0.6.3-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.6.4 (20) 上传 `toolbox-v0.6.4-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不改变数据库或权限能力集合。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

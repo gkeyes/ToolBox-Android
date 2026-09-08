@@ -129,10 +129,6 @@ def read_manifest():
     manifest = json.loads((HERE / "manifest.json").read_text())
     schema = json.loads((ROOT / "schema/manifest.schema.json").read_text())
     schema_check(manifest, schema, schema)
-    if manifest["network"].get("allowUserDomains"):
-        host = tuple(int(part) for part in manifest["minHostVersion"].split("-", 1)[0].split("."))
-        if host < (0, 6, 3):
-            raise ValueError("User-confirmed domains require ToolBox 0.6.3 or newer")
     package = json.loads((HERE / "package.json").read_text())
     lock = json.loads((HERE / "package-lock.json").read_text())
     if package["version"] != manifest["version"] or lock["version"] != manifest["version"]:

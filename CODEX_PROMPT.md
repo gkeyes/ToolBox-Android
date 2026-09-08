@@ -43,7 +43,7 @@ ToolBox 是 Android 13+ 的轻量本地 HTML/CSS/JavaScript 小工具宿主。�
 `AGENTS.md` 的所有安全不变量原样适用，尤其是：禁止 `addJavascriptInterface`、`file://`
 和 localhost；唯一 exact HTTPS origin；`addWebMessageListener` 的 origin/frame/nonce/
 manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文件/内容访问、混合
-内容、任意导航和弹窗；网络只经原生 HTTPS 代理并执行重定向、DNS/IP 私网 SSRF 检查；
+内容、任意导航和弹窗；网络只经 ToolBox 原生 HTTPS 代理，由每工具 network 权限统一控制，不限制域名和 DNS/IP 范围；
 安装事务化并抵御 Zip Slip、Zip Bomb、路径碰撞、链接、嵌套压缩包和动态代码。
 
 不要申请 `MANAGE_EXTERNAL_STORAGE`、`QUERY_ALL_PACKAGES`、无障碍、短信、联系人或 root
@@ -64,7 +64,7 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 4. **0.2 后台、网络和通知**：保留 WorkManager 任务 API、任务持久化、取消、版本/卸载
    清理和后台总开关，三个现有范例保持原样。
 5. **0.3 通用运行宿主**：先建立 host → web 事件通道，再实现持续运行环境、恢复、计时器、
-   位置 watch、精确闹钟、通用公网 HTTPS 请求以及普通通知上的 HyperOS 增强适配。
+   位置 watch、精确闹钟、通用 HTTPS 请求以及普通通知上的 HyperOS 增强适配。
 6. **0.3.2 实时展示修复**：`notifications.live` 绑定当前后台 session，普通持续通知为可靠基础，
    Android 实时更新与 HyperOS Focus V3 为尽力增强；不加入 Root、Shizuku 或白名单绕过。
 7. **交付门**：协议一致性、安全静态检查、Kotlin 编译和最小单元测试通过后由 GitHub
@@ -86,9 +86,9 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
   `background.restore`，连续运行每 12 小时提醒一次。
 - `location.watch` 只透传 Android 位置，不保存轨迹；后台监听还需要 `location.background`
   和 `background.runtime`。`alarms` 只保存 id 与调度时间，不保存业务 payload。
-- `network.request` 允许访问 manifest 精确声明的公网 HTTPS 域名及合法 HTTPS 端口，支持常用
-  方法、Header、文本/JSON/二进制请求体、超时和响应上限；私网、回环、保留地址、
-  IP 字面量、危险协议 Header 与未复验重定向仍被阻止。
+- `network.request` 在 network 权限开启后允许访问 HTTPS 地址及合法端口，支持常用
+  方法、Header、文本/JSON/二进制请求体、超时和响应上限；不再拦截域名、IP 字面量或 DNS 地址范围。
+  保留 TLS、跨来源重定向清除凭据、关闭权限取消活动流；旧 allowDomains/allowUserDomains/allowRedirects 仅作解析兼容。
 - `notifications.live.start/update/end` 只接受当前工具 `background.start` 返回的 sessionId；每个
   会话一个实时状态、一张独立编号的通知卡，只刷新自身变化，不合并为跨工具摘要。一个前台服务
   稳定承载其中一张工具卡，停止承载会话时移交给剩余会话；不增加宿主提示卡。打开与停止动作
@@ -110,7 +110,7 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 ## 验证与汇报
 
 不保留删除功能的字符串测试，也不为同一边界叠加重复测试。至少覆盖：全新数据基线、有效/
-损坏包导入与删除、权限/RPC 一致性、后台与 SSRF、Miuix 真机组合流程。
+损坏包导入与删除、权限/RPC 一致性、后台与网络权限、Miuix 真机组合流程。
 
 每阶段汇报：改动文件、运行方式、每项测试的理由/方法/预期/实际结果、证据路径和剩余风险。
 0.3 继续采用开发期干净安装基线，Room schema 没有变化并保持 v1；不新增迁移或兼容代码。

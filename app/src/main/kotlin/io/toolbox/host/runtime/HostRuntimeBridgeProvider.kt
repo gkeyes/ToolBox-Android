@@ -89,14 +89,10 @@ internal class HostRuntimeBridgeProvider(
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
         )
-        val prompt = ForegroundCapabilityBroker.networkDomainPrompt(runtime.toolId)
-        val networkDomains = HostNetworkDomainHandler(
-            runtime.toolId, runtime.installedManifest.name, runtime.versionCode,
-            UserNetworkDomainStore(keyValues), prompt.first, prompt.second,
-        ) {
+        val networkDomains = HostNetworkDomainHandler {
             val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
             val grant = networkGrants.observeGrants(runtime.toolId).first().firstOrNull { it.capability == "network" }
-            if (current?.versionCode != runtime.versionCode || !current.allowUserNetworkDomains ||
+            if (current?.versionCode != runtime.versionCode ||
                 current.permissions.none { it.capability == "network" } || grant?.granted != true) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本、网络声明或权限已变更。")
             }

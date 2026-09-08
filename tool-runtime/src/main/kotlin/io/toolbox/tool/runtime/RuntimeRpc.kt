@@ -29,7 +29,6 @@ data class RuntimeSessionIdentity(
     val nonce: String,
     val exactOrigin: String,
     val declaredCapabilities: Set<String>,
-    val allowUserNetworkDomains: Boolean = false,
 )
 
 data class RuntimeInboundContext(
@@ -371,7 +370,6 @@ interface RuntimeLocationWatchHandler {
 }
 
 interface RuntimeNetworkDomainHandler {
-    fun isForegroundAvailable(): Boolean
     suspend fun authorizeDomain(domain: String): Boolean
     suspend fun listDomains(): List<String>
 }
@@ -469,19 +467,6 @@ class RuntimeRpcDispatcher(
                 return failure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "A recent real touch is required")
             }
         }
-        if (method.name == "network.authorizeDomain" || method.name == "network.listDomains") {
-            if (!identity.allowUserNetworkDomains) {
-                return failure(RuntimeRpcErrorCode.NOT_DECLARED, "User-authorized network domains are not declared by this tool")
-            }
-            if (method.name == "network.authorizeDomain") {
-                if (inbound.recentTouchAgeMillis == null || inbound.recentTouchAgeMillis !in 0..recentGestureWindowMillis) {
-                    return failure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "A recent real touch is required")
-                }
-                if (m3Handlers.networkDomains?.isForegroundAvailable() != true) {
-                    return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Open this tool before authorizing a network domain")
-                }
-            }
-        }
         when (val decision = authorization.admit(identity, method, request.encodedBytes)) {
             RuntimePolicyDecision.Allowed -> Unit
             is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message)
@@ -573,9 +558,6 @@ class RuntimeRpcDispatcher(
         "network.authorizeDomain" -> {
             params.requireOnly("domain")
             val handler = requireHandler(m3Handlers.networkDomains)
-            if (!handler.isForegroundAvailable()) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Open this tool before authorizing a network domain")
-            }
             RpcValue.Bool(handler.authorizeDomain(params.requiredString("domain", 253)))
         }
         "network.listDomains" -> {

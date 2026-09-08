@@ -145,9 +145,6 @@ class ToolBoxBackgroundWorker(
         return when (task.operation) {
             BackgroundOperation.HTTP_GET -> {
                 val url = spec.url ?: return TaskExecution.TerminalFailure("INVALID_TASK_SPEC")
-                if (spec.allowRedirects && !policy.allowNetworkRedirects) {
-                    return TaskExecution.TerminalFailure("REDIRECTS_DISABLED")
-                }
                 when (
                     val network = dependencies.networkProxy.httpGet(
                         url = url,
@@ -255,7 +252,7 @@ class ToolBoxBackgroundWorker(
         toolId == task.toolId && versionCode == task.versionCode && canRunBackground
 
     private fun BackgroundExecutionPolicy.permits(operation: BackgroundOperation): Boolean = when (operation) {
-        BackgroundOperation.HTTP_GET -> networkDeclared && networkGranted && allowedNetworkHosts.isNotEmpty()
+        BackgroundOperation.HTTP_GET -> canUseNetwork
         BackgroundOperation.NOTIFY -> notificationsDeclared && notificationsGranted && notificationSystemPermissionGranted
     }
 

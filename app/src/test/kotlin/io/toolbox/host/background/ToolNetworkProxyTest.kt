@@ -111,44 +111,57 @@ class ToolNetworkProxyTest {
     }
 
     @Test
-    fun privateDnsAddressIsRejectedBeforeConnection() = runTest {
-        val proxy = ToolNetworkProxy(
-            dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) },
-        )
-
-        assertEquals(
-            NetworkExecution.TerminalFailure("NETWORK_ADDRESS_BLOCKED"),
-            proxy.httpGet(
-                url = "https://api.example.com/path",
-                allowedHosts = setOf("api.example.com"),
-            ),
-        )
+    fun systemDnsResultsIncludingPrivateAndFakeIpAddressesReachTheTransportUnfiltered() {
+        val addresses = listOf("127.0.0.1", "192.168.1.1", "198.18.7.58", "::1", "fc00::1")
+            .map(InetAddress::getByName)
+        val proxy = ToolNetworkProxy(dns = Dns { addresses })
+        assertEquals(addresses, proxy.clientForRequest(1_000).dns.lookup("miniflux.example.com"))
     }
 
     @Test
-    fun redirectSecondHopIsRevalidatedBeforeTransport() = runTest {
-        val requests = mutableListOf<String>()
-        val transport = ToolNetworkTransport { request, _ ->
-            requests += request.url.toString()
-            response(
-                request = request,
-                code = 302,
-                message = "Found",
-                body = "",
-                location = "https://evil.example.com/final",
-            )
-        }
-        val proxy = ToolNetworkProxy(transport, Dns.SYSTEM, 5)
-
-        assertEquals(
-            NetworkExecution.TerminalFailure("NETWORK_HOST_NOT_ALLOWED"),
-            proxy.httpGet(
-                url = "https://api.example.com/start",
-                allowedHosts = setOf("api.example.com"),
-                allowRedirects = true,
-            ),
+    fun redirectsIgnoreLegacyAllowlistAndSwitchButStripCrossOriginCredentials() = runTest {
+        val requests = mutableListOf<Request>()
+        val proxy = ToolNetworkProxy(ToolNetworkTransport { request, _ ->
+            requests += request
+            if (requests.size == 1) {
+                response(request, 302, "Found", "", location = "https://other.example.com/final")
+            } else {
+                response(request, 200, "OK", "connected")
+            }
+        })
+        val result = proxy.request(
+            url = "https://api.example.com/start",
+            method = NetworkRequestMethod.GET,
+            headers = mapOf("Authorization" to "Bearer test-token", "Cookie" to "session=test", "X-API-Key" to "test-key"),
+            allowedHosts = emptySet(),
+            allowRedirects = false,
         )
-        assertEquals(listOf("https://api.example.com/start"), requests)
+        assertTrue(result is NetworkExecution.Success)
+        assertEquals("https://other.example.com/final", (result as NetworkExecution.Success).finalUrl)
+        assertEquals(2, requests.size)
+        assertEquals("Bearer test-token", requests.first().header("Authorization"))
+        for (header in listOf("Authorization", "Cookie", "X-API-Key")) {
+            org.junit.Assert.assertNull(requests.last().header(header))
+        }
+    }
+
+    @Test
+    fun redirectsStillRejectHttpDowngradesAndBoundLoops() = runTest {
+        for ((destination, expected, expectedRequests) in listOf(
+            Triple("http://api.example.com/final", "HTTPS_REQUIRED", 1),
+            Triple("https://api.example.com/loop", "TOO_MANY_REDIRECTS", 6),
+        )) {
+            var requests = 0
+            val proxy = ToolNetworkProxy(ToolNetworkTransport { request, _ ->
+                requests += 1
+                response(request, 302, "Found", "", location = destination)
+            })
+            assertEquals(
+                NetworkExecution.TerminalFailure(expected),
+                proxy.httpGet("https://api.example.com/start"),
+            )
+            assertEquals(expectedRequests, requests)
+        }
     }
 
     @Test

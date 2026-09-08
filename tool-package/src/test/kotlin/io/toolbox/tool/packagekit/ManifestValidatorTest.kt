@@ -28,7 +28,7 @@ class ManifestValidatorTest {
     }
 
     @Test
-    fun userDomainsRequireExplicitDeclarationAndCompatibleHostAndSurviveInstalledVerification() {
+    fun legacyDomainFieldsRemainReadableWithoutAnExtraHostGate() {
         assertEquals(false, parse(30_000).network?.allowUserDomains)
         val source = manifest(30_000, "0.6.3", ",\"allowUserDomains\":true")
         assertEquals(true, ManifestValidator.parse(source, PackageLimits()).network?.allowUserDomains)
@@ -37,14 +37,22 @@ class ManifestValidatorTest {
         ) as InstalledManifestVerification.Verified
         assertEquals(true, installed.manifest.network?.allowUserDomains)
         for (version in listOf("0.3.12", "0.6.1", "0.6.2")) {
-            val failure = assertThrows(JsonFormatException::class.java) {
-                ManifestValidator.parse(manifest(30_000, version, ",\"allowUserDomains\":true"), PackageLimits())
-            }
-            assertTrue(failure.message.orEmpty().contains("minHostVersion 0.6.3"))
+            assertEquals(true, ManifestValidator.parse(manifest(30_000, version, ",\"allowUserDomains\":true"), PackageLimits()).network?.allowUserDomains)
         }
         assertThrows(JsonFormatException::class.java) {
             ManifestValidator.parse(manifest(30_000, "0.6.3", ",\"allowUserDomains\":\"true\""), PackageLimits())
         }
+    }
+
+    @Test
+    fun networkPermissionDoesNotRequireDestinationListsOrNetworkOptions() {
+        val source = manifest(30_000, "0.6.4").toString(Charsets.UTF_8)
+        val withoutOptions = source.replace("\"network\":{\"allowDomains\":[\"api.example.com\"],\"timeoutMs\":30000},", "")
+        assertEquals(null, ManifestValidator.parse(withoutOptions.toByteArray(), PackageLimits()).network)
+        val withoutDomains = source.replace("\"allowDomains\":[\"api.example.com\"],", "")
+        assertTrue(ManifestValidator.parse(withoutDomains.toByteArray(), PackageLimits()).network!!.allowDomains.isEmpty())
+        val emptyDomains = source.replace("[\"api.example.com\"]", "[]")
+        assertTrue(ManifestValidator.parse(emptyDomains.toByteArray(), PackageLimits()).network!!.allowDomains.isEmpty())
     }
 
     private fun parse(timeoutMs: Int, minHostVersion: String = "0.6.1") = ManifestValidator.parse(

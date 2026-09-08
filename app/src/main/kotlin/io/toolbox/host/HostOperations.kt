@@ -20,7 +20,6 @@ internal data class HostInstalledManifest(
     val versionCode: Int,
     val versionName: String,
     val permissions: List<HostManifestPermission>,
-    val allowUserNetworkDomains: Boolean = false,
 )
 
 internal sealed interface HostInstalledManifestResult {

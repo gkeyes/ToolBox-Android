@@ -8,7 +8,7 @@ export default function About() {
   return (
     <div className="flex flex-col gap-4">
       <NotFancyLogo since={2025} />
-      <p className="text-center text-sm text-muted">ToolBox 适配版 1.0.0 · miniflux.xiaochen.win</p>
+      <p className="text-center text-sm text-muted">ToolBox 适配版 1.0.1 · miniflux.xiaochen.win</p>
 
       {/* Made with love section */}
       <div className="text-center text-muted px-3">

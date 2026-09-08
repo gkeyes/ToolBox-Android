@@ -11,6 +11,21 @@ import org.junit.Test
 
 class BackgroundTaskPolicyTest {
     @Test
+    fun networkExecutionUsesDeclarationAndGrantWithoutDomainOrRedirectApproval() {
+        val policy = BackgroundExecutionPolicy(
+            toolId = "io.toolbox.task", versionCode = 1,
+            backgroundEnabled = true, backgroundDeclared = true, backgroundGranted = true,
+            networkDeclared = true, networkGranted = true,
+            notificationsDeclared = false, notificationsGranted = false, notificationSystemPermissionGranted = false,
+            allowedNetworkHosts = emptySet(), allowNetworkRedirects = false,
+            networkTimeoutMillis = 30_000, maxNetworkResponseBytes = 4_194_304,
+        )
+        assertTrue(policy.canUseNetwork)
+        assertFalse(policy.copy(networkDeclared = false).canUseNetwork)
+        assertFalse(policy.copy(networkGranted = false).canUseNetwork)
+    }
+
+    @Test
     fun retryBudgetAndPeriodicCompletionUseTheDeclaredSchedule() {
         assertTrue(BackgroundRetryPolicy.shouldRetry(1))
         assertTrue(BackgroundRetryPolicy.shouldRetry(2))

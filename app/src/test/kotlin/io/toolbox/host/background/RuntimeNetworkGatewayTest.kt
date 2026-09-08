@@ -179,7 +179,7 @@ class RuntimeNetworkGatewayTest {
             response(request, "unauthorized".toResponseBody()).newBuilder().code(401).header("Set-Cookie", "private").build()
         })
         try {
-            for ((index, url) in listOf("http://api.github.com/", "https://127.0.0.1/", "https://unknown.example.com/").withIndex()) {
+            for ((index, url) in listOf("http://api.github.com/", "https://user:pass@api.github.com/").withIndex()) {
                 assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED,
                     failure { gateway.openStream(streamId(index), request(4_096).copy(url = url)) }.errorCode)
             }
@@ -240,7 +240,7 @@ class RuntimeNetworkGatewayTest {
     }
 
     @Test
-    fun responseQuotaAndBlockedDestinationHaveDifferentErrors() = runTest {
+    fun responseQuotaAndInvalidHttpsEndpointHaveDifferentErrors() = runTest {
         var connections = 0
         val gateway = gateway(4_096, ToolNetworkTransport { request, _ ->
             connections += 1
@@ -251,10 +251,10 @@ class RuntimeNetworkGatewayTest {
         assertTrue(quota.message.contains("4096"))
 
         val blocked = failure {
-            gateway.request(request(4_096).copy(url = "https://undeclared.example.com/"))
+            gateway.request(request(4_096).copy(url = "http://api.github.com/"))
         }
         assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, blocked.errorCode)
-        assertTrue(blocked.message.contains("allowDomains"))
+        assertTrue(blocked.message.contains("HTTPS"))
         assertEquals(1, connections)
     }
 
@@ -281,40 +281,95 @@ class RuntimeNetworkGatewayTest {
     }
 
     @Test
-    fun userDomainsApplyToRequestAndStreamAndRevocationCancelsActiveStream() = runTest {
-        var domains = setOf("api.github.com")
+    fun networkPermissionRevocationStopsRequestsAndActiveStreams() = runTest {
+        var granted = true
         var connections = 0
         val gateway = RuntimeNetworkGateway(
             ToolNetworkProxy(ToolNetworkTransport { request, _ -> connections++; response(request, "data: hi\n\n".toResponseBody()) }),
-            InstalledManifestNetwork(setOf("example.com"), false, 4_096, 30_000, allowUserDomains = true),
-            4_096, additionalAllowedHosts = { domains }, toolId = "gateway-dynamic-test",
+            null, 4_096,
+            validateNetworkAccess = {
+                if (!granted) throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "网络权限已关闭。")
+            },
+            toolId = "gateway-permission-test",
         )
         try {
             assertEquals(200, gateway.request(request(4_096)).status)
             val stream = gateway.openStream(streamId(77), request(4_096))
             assertEquals(200, stream.status)
-            domains = emptySet()
-            io.toolbox.host.runtime.NetworkDomainInvalidation.cancel("gateway-dynamic-test")
+            granted = false
+            io.toolbox.host.runtime.NetworkDomainInvalidation.cancel("gateway-permission-test")
+            assertEquals(RuntimeRpcErrorCode.PERMISSION_DENIED, failure { gateway.readStream(stream.streamId, 256) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.PERMISSION_DENIED, failure { gateway.request(request(4_096)) }.errorCode)
+            assertEquals(RuntimeRpcErrorCode.PERMISSION_DENIED, failure { gateway.openStream(streamId(78), request(4_096)) }.errorCode)
+            granted = true
             assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { gateway.readStream(stream.streamId, 256) }.errorCode)
-            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.request(request(4_096)) }.errorCode)
-            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.openStream(streamId(78), request(4_096)) }.errorCode)
             assertEquals(2, connections)
         } finally { gateway.close() }
     }
 
     @Test
-    fun legacyManifestsCannotUseUserDomainProvider() = runTest {
-        var consulted = false
-        val gateway = RuntimeNetworkGateway(
-            ToolNetworkProxy(ToolNetworkTransport { request, _ -> response(request, "ok".toResponseBody()) }),
-            InstalledManifestNetwork(setOf("example.com"), false, 4_096, 30_000), 4_096,
-            additionalAllowedHosts = { consulted = true; setOf("api.github.com") },
-        )
+    fun requestsAndStreamsAllowUnlistedAndIpHostsWithOrWithoutLegacyPolicy() = runTest {
+        for (policy in listOf(null, InstalledManifestNetwork(setOf("example.com"), false, 4_096, 30_000))) {
+            var connections = 0
+            val gateway = RuntimeNetworkGateway(
+                ToolNetworkProxy(ToolNetworkTransport { request, timeout ->
+                    connections += 1
+                    assertEquals(30_000L, timeout)
+                    response(request, "ok".toResponseBody())
+                }),
+                policy, 4_096,
+            )
+            try {
+                for ((index, url) in listOf(
+                    "https://unknown.example.com/", "https://127.0.0.1/", "https://198.18.7.58/", "https://192.168.1.1/", "https://[::1]/",
+                ).withIndex()) {
+                    val options = request(4_096).copy(url = url)
+                    assertEquals(200, gateway.request(options).status)
+                    val opened = gateway.openStream(streamId(index), options)
+                    assertEquals(200, opened.status)
+                    gateway.cancelStream(opened.streamId)
+                }
+                assertEquals(10, connections)
+            } finally { gateway.close() }
+        }
+    }
+
+    @Test
+    fun streamsFollowHttpsRedirectsWithoutDomainApprovalAndKeepCredentialBoundary() = runTest {
+        val requests = mutableListOf<Request>()
+        val gateway = gateway(4_096, ToolNetworkTransport { request, _ ->
+            requests += request
+            response(request, "ok".toResponseBody()).newBuilder().apply {
+                if (requests.size == 1) code(307).header("Location", "https://other.example.com/stream")
+            }.build()
+        })
         try {
-            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.request(request(4_096)) }.errorCode)
-            assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.openStream(streamId(79), request(4_096)) }.errorCode)
-            assertFalse(consulted)
+            val opened = gateway.openStream(streamId(1), request(4_096).copy(headers = mapOf("Authorization" to "Bearer test-token")))
+            assertEquals(200, opened.status)
+            assertEquals("https://other.example.com/stream", opened.headers["x-toolbox-final-url"])
+            assertEquals("Bearer test-token", requests.first().header("Authorization"))
+            org.junit.Assert.assertNull(requests.last().header("Authorization"))
+            assertEquals(2, requests.size)
         } finally { gateway.close() }
+    }
+
+    @Test
+    fun streamingRedirectsStillRejectHttpDowngradesAndBoundLoops() = runTest {
+        for ((destination, expectedRequests) in listOf(
+            "http://api.github.com/final" to 1,
+            "https://api.github.com/loop" to 6,
+        )) {
+            var connections = 0
+            val gateway = gateway(4_096, ToolNetworkTransport { request, _ ->
+                connections += 1
+                response(request, "".toResponseBody()).newBuilder().code(302).header("Location", destination).build()
+            })
+            try {
+                assertEquals(RuntimeRpcErrorCode.NETWORK_BLOCKED, failure { gateway.openStream(streamId(1), request(4_096)) }.errorCode)
+                assertEquals(expectedRequests, connections)
+                assertEquals(RuntimeRpcErrorCode.NOT_FOUND, failure { gateway.readStream(streamId(1), 256) }.errorCode)
+            } finally { gateway.close() }
+        }
     }
 
     private fun gateway(limit: Int, transport: ToolNetworkTransport) = RuntimeNetworkGateway(

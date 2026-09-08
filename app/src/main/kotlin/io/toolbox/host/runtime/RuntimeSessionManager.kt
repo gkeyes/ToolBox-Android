@@ -149,7 +149,6 @@ internal class RuntimeSessionManager(
         stateByTool.getOrPut(toolId) { MutableStateFlow(RuntimeUiState.Loading) }.asStateFlow()
 
     fun openForeground(toolId: String) {
-        ForegroundCapabilityBroker.setToolForeground(toolId, true)
         scope.launch {
             HostTrace.bestEffortAsyncSection("runtime.attach") {
                 visibleTools += toolId
@@ -175,7 +174,6 @@ internal class RuntimeSessionManager(
     }
 
     fun detachForeground(toolId: String) {
-        ForegroundCapabilityBroker.setToolForeground(toolId, false)
         scope.launch {
             if (!visibleTools.remove(toolId)) return@launch
             HostTrace.bestEffortSection("runtime.detach") { }
@@ -262,7 +260,6 @@ internal class RuntimeSessionManager(
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
         stopTool(toolId)
         visibleTools -= toolId
-        ForegroundCapabilityBroker.setToolForeground(toolId, false)
         destroyHost(toolId)
         stateFlow(toolId).value = RuntimeUiState.Loading
     }

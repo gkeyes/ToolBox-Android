@@ -18,7 +18,7 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 - Use a unique exact HTTPS origin for every tool through `WebViewAssetLoader`.
 - Use `WebViewCompat.addWebMessageListener`; validate exact `sourceOrigin`, `isMainFrame`, session nonce, manifest declaration, ToolBox grant, Android permission, user gesture, rate limit and quota.
 - Disable file/content access, universal file URL access, mixed content, popup windows and arbitrary navigation.
-- Remote networking is off by default. All network access goes through a native HTTPS proxy with manifest domain allowlists, redirect revalidation and SSRF/private-address blocking.
+- Remote networking is off by default and controlled by each tool's network capability grant. ToolBox uses its native HTTPS proxy without destination allowlists, additional domain consent, or DNS/IP range blocking. Preserve TLS validation, cross-origin redirect credential stripping, cancellation and resource limits.
 - Do not request `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`, accessibility, SMS, contacts or root privileges.
 - Installation is transactional and rollback-safe. Reject Zip Slip, zip bombs, path collisions, symlinks, nested archives and native/dynamic-code payloads.
 - Invalid signatures are blocking. Unsigned tools use strict policy and cannot silently persist high-risk grants.
@@ -43,7 +43,7 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 3. Implement AssetLoader, unique origin/profile, CSP and hardened navigation.
 4. Implement the RPC bridge and the `ready/ui/crypto/storage/device/haptics/clipboard.write` vertical slice.
 5. Add delegated background work, network, notifications and the remaining app-like capabilities, plus Developer Help and three functional examples.
-6. Add integrity/signature validation, uninstall cleanup, SSRF and hardening tests. Do not add audit-log, publisher-trust, migration or compatibility features.
+6. Add integrity/signature validation, uninstall cleanup, network permission and hardening tests. Do not add audit-log, publisher-trust, migration or compatibility features.
 
 ## Test policy
 

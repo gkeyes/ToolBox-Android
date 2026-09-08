@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
-import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.tool.runtime.RuntimePreparationCode
@@ -43,7 +42,6 @@ internal data class PermissionCenterUiState(
     val loadState: PermissionLoadState = PermissionLoadState.Loading,
     val message: String? = null,
     val showSystemSettings: Boolean = false,
-    val userNetworkDomains: List<String> = emptyList(),
 ) {
     val loaded: Boolean get() = loadState != PermissionLoadState.Loading
 }
@@ -61,7 +59,6 @@ internal class PermissionCenterViewModel(
     private val catalog: CatalogRepository,
     private val grants: PermissionGrantRepository,
     private val mutations: PermissionMutationRunner,
-    private val domainStore: UserNetworkDomainStore? = null,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(PermissionCenterUiState())
     val state: StateFlow<PermissionCenterUiState> = mutableState.asStateFlow()
@@ -98,11 +95,6 @@ internal class PermissionCenterViewModel(
         }
         manifestVersion = manifest.versionCode
         coroutineScope {
-            if (manifest.allowUserNetworkDomains) launch {
-                domainStore?.observe(toolId, manifest.versionCode)?.collect { domains ->
-                    mutableState.value = mutableState.value.copy(userNetworkDomains = domains)
-                }
-            }
             grants.observeGrants(toolId).collect { stored ->
                 val values = stored.associateBy(PermissionGrant::capability)
                 mutableState.value = mutableState.value.copy(
@@ -158,24 +150,6 @@ internal class PermissionCenterViewModel(
             mutableState.value = mutableState.value.copy(
                 message = "系统权限未授予，工具权限保持关闭。",
                 showSystemSettings = true,
-            )
-        }
-    }
-
-    fun revokeNetworkDomain(domain: String) {
-        if (cleared || domain !in state.value.userNetworkDomains) return
-        val expectedVersion = manifestVersion ?: return
-        val store = domainStore ?: return
-        val result = mutations.revokeNetworkDomain(toolId, domain, expectedVersion, store)
-        viewModelScope.launch {
-            val outcome = result.await()
-            if (manifestVersion != expectedVersion) return@launch
-            mutableState.value = mutableState.value.copy(
-                message = when (outcome) {
-                    PermissionMutationResult.Saved -> null
-                    PermissionMutationResult.Outdated -> "工具已更新，请在最新权限列表中重试。"
-                    else -> "域名授权未撤销，请重试。"
-                },
             )
         }
     }

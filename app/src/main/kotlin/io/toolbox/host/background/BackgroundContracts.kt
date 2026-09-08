@@ -67,6 +67,9 @@ data class BackgroundExecutionPolicy(
 ) {
     val canRunBackground: Boolean
         get() = backgroundEnabled && backgroundDeclared && backgroundGranted
+
+    val canUseNetwork: Boolean
+        get() = networkDeclared && networkGranted
 }
 
 fun interface BackgroundAuthorization {

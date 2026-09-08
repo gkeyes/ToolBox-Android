@@ -264,11 +264,11 @@ class PermissionCenterViewModelTest {
     }
 
     @Test
-    fun domainListRevokesAndNetworkOffDisablesGrantBeforeDomainCleanup() = runTest(mainDispatcher) {
+    fun networkOffDisablesGrantBeforeLegacyStateCleanupAndCancelsActiveStreams() = runTest(mainDispatcher) {
         val repositories = InMemoryCoreData.create()
         installFixture(temporaryFolder.newFolder(), repositories)
         val store = UserNetworkDomainStore(repositories.keyValues)
-        store.authorize(TOOL_ID, 1, "api.example.com", store.epoch(TOOL_ID)) {}
+        repositories.keyValues.put(TOOL_ID, "toolbox.host.v1.network.domains", "[1,\"api.example.com\"]", 1L)
         val grants = FakePermissionGrantRepository(PermissionGrant(TOOL_ID, "network", true, 100L))
         var cleanups = 0
         val viewModel = permissionViewModel(
@@ -276,7 +276,7 @@ class PermissionCenterViewModelTest {
             packages = object : HostPackageOperations by FakeHostPackageOperations {
                 override suspend fun installedManifest(toolId: String) = HostInstalledManifestResult.Found(
                     HostInstalledManifest(TOOL_ID, "工具示例", 1, "1.0.0",
-                        listOf(HostManifestPermission("network", "连接服务器", false)), allowUserNetworkDomains = true),
+                        listOf(HostManifestPermission("network", "连接服务器", false))),
                 )
             },
             catalog = repositories.catalog,
@@ -289,19 +289,17 @@ class PermissionCenterViewModelTest {
                     store.clear(toolId)
                 }
             },
-            domainStore = store,
         )
         advanceUntilIdle()
-        assertEquals(listOf("api.example.com"), viewModel.state.value.userNetworkDomains)
-        viewModel.revokeNetworkDomain("api.example.com")
-        advanceUntilIdle()
-        assertTrue(viewModel.state.value.userNetworkDomains.isEmpty())
-        store.authorize(TOOL_ID, 1, "api.example.com", store.epoch(TOOL_ID)) {}
-        advanceUntilIdle()
+        var cancellations = 0
+        val listener = Any()
+        io.toolbox.host.runtime.NetworkDomainInvalidation.register(TOOL_ID, listener) { cancellations++ }
         viewModel.setEnabled("network", false)
         advanceUntilIdle()
         assertEquals(1, cleanups)
-        assertTrue(viewModel.state.value.userNetworkDomains.isEmpty())
+        assertEquals(1, cancellations)
+        assertNull(repositories.keyValues.observe(TOOL_ID, "toolbox.host.v1.network.domains").first())
+        io.toolbox.host.runtime.NetworkDomainInvalidation.unregister(TOOL_ID, listener)
         assertFalse(viewModel.state.value.items.single().enabled)
     }
 
@@ -434,11 +432,10 @@ class PermissionCenterViewModelTest {
         grants: PermissionGrantRepository,
         sideEffects: HostPermissionSideEffects = RecordingPermissionSideEffects(),
         now: () -> Long = System::currentTimeMillis,
-        domainStore: UserNetworkDomainStore? = null,
         mutations: PermissionMutationRunner = PermissionMutationRunner(
             packages, grants, sideEffects, CoroutineScope(SupervisorJob() + mainDispatcher), now,
         ),
-    ) = PermissionCenterViewModel(toolId, packages, catalog, grants, mutations, domainStore)
+    ) = PermissionCenterViewModel(toolId, packages, catalog, grants, mutations)
 
     private fun storeFor(viewModel: PermissionCenterViewModel): ViewModelStore {
         val owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
