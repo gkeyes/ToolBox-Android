@@ -35,6 +35,8 @@
     {"name":"device.getBasicInfo","phase":"M1","capability":"device.basic","request":"void","result":"BasicDeviceInfo"},
     {"name":"haptics.perform","phase":"M1","capability":"haptics","request":"HapticsRequest","result":"void"},
     {"name":"clipboard.writeText","phase":"M1","capability":"clipboard.write","request":"ClipboardWriteRequest","result":"void"},
+    {"name":"network.authorizeDomain","phase":"M3","capability":"network","request":"NetworkDomainRequest","result":"boolean"},
+    {"name":"network.listDomains","phase":"M3","capability":"network","request":"void","result":"string[]"},
     {"name":"network.request","phase":"M2","capability":"network","request":"NetworkRequest","result":"NetworkResponse"},
     {"name":"network.openStream","phase":"M2","capability":"network","request":"NetworkStreamOpenRequest","result":"NetworkStreamResponse"},
     {"name":"network.readStream","phase":"M2","capability":"network","request":"NetworkStreamIdRequest","result":"NetworkStreamChunk"},

@@ -2,14 +2,12 @@ name: GitHub Actions Watcher TBX
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: ["codex/refactor-lightweight-v2"]
     paths:
       - "examples/github-actions-watcher/**"
-      - ".github/workflows/github-actions-watcher.yml"
   pull_request:
     paths:
       - "examples/github-actions-watcher/**"
-      - ".github/workflows/github-actions-watcher.yml"
   workflow_dispatch:
 
 permissions:

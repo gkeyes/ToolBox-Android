@@ -25,6 +25,7 @@ import io.toolbox.host.background.RuntimeNetworkGateway
 import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
+import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageRejection
@@ -205,6 +206,7 @@ internal class ProductionHostPackageOperations(
         if (removeShortcut) ForegroundCapabilityBroker.clearToolShortcut(application, toolId)
         when (
             runtimeDataCleaner.clearThenRun(toolId) {
+                UserNetworkDomainStore(repositories.keyValues).clear(toolId)
                 check(clearRuntimeSecureStorage(toolId, repositories.keyValues))
             }
         ) {
@@ -251,6 +253,9 @@ internal class ProductionHostBackgroundOperations(
     HostRuntimeM2HandlerFactory {
     private val applicationContext = context.applicationContext
     private val network = ToolNetworkProxy()
+    private val domainStore = UserNetworkDomainStore(repositories.keyValues)
+    private val networkCatalog = repositories.catalog
+    private val networkGrants = repositories.grants
     private val notifications = AndroidNotificationGateway(applicationContext)
     private val coordinator = BackgroundTaskCoordinator(
         workManager = WorkManager.getInstance(applicationContext),
@@ -290,6 +295,7 @@ internal class ProductionHostBackgroundOperations(
         if (capability == "storage.secure") {
             check(clearRuntimeSecureStorage(toolId, repositories.keyValues)) { "Secure storage cleanup failed" }
         }
+        if (capability == "network") domainStore.clear(toolId)
         delegate.onCapabilityDisabled(toolId, capability)
         runtimeSessions?.onCapabilityDisabled(toolId, capability)
     }
@@ -297,7 +303,18 @@ internal class ProductionHostBackgroundOperations(
     override suspend fun reconcile() = coordinator.reconcile()
 
     override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
-        network = RuntimeNetworkGateway(network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes),
+        network = RuntimeNetworkGateway(
+            network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes,
+            additionalAllowedHosts = {
+                val current = networkCatalog.observeTool(runtime.toolId).first()
+                val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
+                if (current?.currentVersion?.versionCode != runtime.versionCode || !granted) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本或网络权限已变更。")
+                }
+                domainStore.list(runtime.toolId, runtime.versionCode).toSet()
+            },
+            toolId = runtime.toolId,
+        ),
         notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) {
                 when (val result = notifications.post(runtime.toolId, notificationId, title, body)) {

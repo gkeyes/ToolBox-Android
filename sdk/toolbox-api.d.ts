@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44";
+export type ToolBoxContractSha256 = "aac8b4c47d30a81a8cf5e6d1aba5f24ceff02ff5679a45c45bf9f8473988e57a";
 
 export type ToolBoxCapability =
   | "storage"
@@ -35,6 +35,8 @@ export type ToolBoxMethodName =
   | "device.getBasicInfo"
   | "haptics.perform"
   | "clipboard.writeText"
+  | "network.authorizeDomain"
+  | "network.listDomains"
   | "network.request"
   | "network.openStream"
   | "network.readStream"
@@ -321,6 +323,10 @@ export interface ToolBoxApi {
     readText(): Promise<string>;
   };
   network: {
+    /** Requires manifest.network.allowUserDomains, an enabled network grant, a recent real touch, and foreground native confirmation. Accepts an exact hostname without scheme, path, port, wildcard, or IP literal. Returns false when declined. */
+    authorizeDomain(domain: string): Promise<boolean>;
+    /** Lists user-authorized additional domains for this tool generation (static manifest domains are excluded). */
+    listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
     readStream(streamId: string): Promise<NetworkStreamChunk>;

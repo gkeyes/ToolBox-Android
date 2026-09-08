@@ -1,0 +1,145 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { SERVER_URL, assertServerUrl, request, responseText, basicAuth, toolboxAxiosAdapter } from "../src/toolbox/network.js";
+
+function host(handler) { globalThis.window = { ToolBox: { network: { request: handler } } }; }
+
+test("exact server origin rejects alternate hosts, ports and embedded credentials", () => {
+  assert.equal(assertServerUrl("/v1/me").href, `${SERVER_URL}/v1/me`);
+  for (const url of ["https://miniflux.xiaochen.win.evil.test/v1/me", "http://miniflux.xiaochen.win/v1/me", "https://miniflux.xiaochen.win:8443/v1/me", "https://secret@miniflux.xiaochen.win/v1/me", "//evil.test/v1/me", "https://127.0.0.1/v1/me"]) {
+    assert.throws(() => assertServerUrl(url));
+  }
+});
+
+test("forbidden origins never dispatch the native request, even with auth headers", async () => {
+  let calls = 0;
+  host(async () => { calls += 1; });
+  await assert.rejects(request("https://evil.test/v1/me", { headers: { Authorization: "secret" } }));
+  assert.equal(calls, 0);
+});
+
+test("missing bridge fails closed without a browser fetch fallback", async () => {
+  globalThis.window = {};
+  await assert.rejects(request("/v1/me"), /ToolBox/);
+});
+
+test("adapter forwards methods, credentials, encoded params, JSON and status", async () => {
+  let sent;
+  host(async (payload) => { sent = payload; return { status: 201, headers: { "content-type": "application/json" }, body: '{"id":1}', bodyEncoding: "text" }; });
+  const result = await toolboxAxiosAdapter({ url: "/v1/feeds", method: "post", params: { title: "甲 & 乙", ignored: undefined }, headers: { "X-Auth-Token": "test-token", "Content-Type": "application/json" }, data: '{"title":"feed"}' });
+  assert.equal(new URL(sent.url).searchParams.get("title"), "甲 & 乙");
+  assert.equal(new URL(sent.url).searchParams.has("ignored"), false);
+  assert.equal(sent.method, "POST");
+  assert.equal(sent.headers["X-Auth-Token"], "test-token");
+  assert.equal(sent.body, '{"title":"feed"}');
+  assert.equal(result.status, 201);
+  assert.equal(result.data, '{"id":1}');
+  assert.equal(sent.maxResponseBytes, 2 * 1024 * 1024);
+});
+
+test("HTTP errors expose status but never response content or request credentials", async () => {
+  host(async () => ({ status: 401, body: "sensitive-response", headers: {}, bodyEncoding: "text" }));
+  await assert.rejects(toolboxAxiosAdapter({ url: "/v1/me", headers: { "X-Auth-Token": "sensitive-token" } }), (error) => {
+    assert.equal(error.response.status, 401);
+    assert.equal(error.config, undefined);
+    assert.doesNotMatch(JSON.stringify(error), /sensitive/);
+    return true;
+  });
+});
+
+test("native errors retain known codes and discard potentially sensitive messages", async () => {
+  host(async () => { throw { code: "QUOTA_EXCEEDED", message: "secret body" }; });
+  await assert.rejects(request("/v1/entries"), (error) => {
+    assert.equal(error.code, "QUOTA_EXCEEDED");
+    assert.doesNotMatch(error.message, /secret/);
+    return true;
+  });
+});
+
+test("base64 responses and Basic credentials preserve Unicode UTF-8", () => {
+  const value = "中文 / café";
+  const base64 = Buffer.from(value).toString("base64");
+  assert.equal(responseText({ bodyEncoding: "base64", body: base64 }), value);
+  assert.equal(basicAuth("用户", "密码"), `Basic ${Buffer.from("用户:密码").toString("base64")}`);
+});
+
+test("cancelled requests are not dispatched", async () => {
+  let calls = 0;
+  host(async () => { calls += 1; });
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(request("/v1/me", { signal: controller.signal }), { code: "CANCELLED" });
+  assert.equal(calls, 0);
+});
+
+
+test("login persists credentials only through secure storage and restores them before UI", async () => {
+  const { login, restoreAuth, authState } = await import("../src/stores/authStore.js");
+  let saved;
+  host(async () => ({ status: 200, headers: {}, body: '{"id":7,"username":"reader"}', bodyEncoding: "text" }));
+  window.ToolBox.storage = { secure: {
+    set: async (key, value) => { saved = { key, value }; },
+    get: async () => saved?.value || null,
+  } };
+  await login(SERVER_URL, "", "", "test-only-token");
+  assert.equal(saved.key, "nextflux.auth");
+  assert.equal(saved.value.token, "test-only-token");
+  assert.equal(saved.value.password, "");
+  authState.set({});
+  await restoreAuth();
+  assert.equal(authState.get().userId, 7);
+  assert.equal(authState.get().token, "test-only-token");
+  saved = null;
+  await restoreAuth();
+  assert.equal(authState.get().token, "");
+  assert.equal(authState.get().userId, "");
+});
+
+test("login rejects alternate origin and fails closed when secure persistence fails", async () => {
+  const { login, authState } = await import("../src/stores/authStore.js");
+  let calls = 0;
+  host(async () => { calls += 1; return { status: 200, headers: {}, body: '{"id":7,"username":"reader"}', bodyEncoding: "text" }; });
+  window.ToolBox.storage = { secure: { set: async () => { throw new Error("secret-native-error"); } } };
+  await assert.rejects(login("https://evil.test", "", "", "secret"));
+  assert.equal(calls, 0);
+  await assert.rejects(login(SERVER_URL, "", "", "secret"), /安全存储/);
+  assert.equal(authState.get().userId, "");
+});
+
+
+test("synchronization paginates bounded requests and returns the complete entry set", async () => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  const offsets = [];
+  host(async ({ url }) => {
+    const params = new URL(url).searchParams;
+    const offset = Number(params.get("offset"));
+    const limit = Number(params.get("limit"));
+    offsets.push(offset);
+    assert.equal(limit, 50);
+    assert.equal(params.get("order"), "id");
+    assert.equal(params.get("direction"), "asc");
+    const entries = Array.from({ length: Math.min(limit, 120 - offset) }, (_, i) => ({ id: offset + i + 1 }));
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 120, entries }), bodyEncoding: "text" };
+  });
+  const entries = await getEntriesInBatches("/v1/entries", { starred: true });
+  assert.equal(entries.length, 120);
+  assert.deepEqual(offsets, [0, 50, 100]);
+});
+
+test("oversized article batches retry at a smaller page size without skipping entries", async () => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  const sizes = [];
+  host(async ({ url }) => {
+    const params = new URL(url).searchParams;
+    const offset = Number(params.get("offset"));
+    const limit = Number(params.get("limit"));
+    sizes.push(limit);
+    if (limit > 25) throw { code: "QUOTA_EXCEEDED" };
+    const entries = Array.from({ length: Math.min(limit, 30 - offset) }, (_, i) => ({ id: offset + i + 1 }));
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 30, entries }), bodyEncoding: "text" };
+  });
+  const entries = await getEntriesInBatches("/v1/entries");
+  assert.deepEqual(sizes, [50, 25, 25]);
+  assert.equal(entries.length, 30);
+  assert.equal(entries.at(-1).id, 30);
+});

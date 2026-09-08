@@ -29,6 +29,7 @@ data class RuntimeSessionIdentity(
     val nonce: String,
     val exactOrigin: String,
     val declaredCapabilities: Set<String>,
+    val allowUserNetworkDomains: Boolean = false,
 )
 
 data class RuntimeInboundContext(
@@ -369,6 +370,12 @@ interface RuntimeLocationWatchHandler {
     suspend fun clearWatch(watchId: String): Boolean
 }
 
+interface RuntimeNetworkDomainHandler {
+    fun isForegroundAvailable(): Boolean
+    suspend fun authorizeDomain(domain: String): Boolean
+    suspend fun listDomains(): List<String>
+}
+
 data class RuntimeM3Handlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
@@ -378,6 +385,7 @@ data class RuntimeM3Handlers(
     val location: RuntimeLocationHandler? = null,
     val locationWatch: RuntimeLocationWatchHandler? = null,
     val sessionCleanup: RuntimeSessionCleanupHandler? = null,
+    val networkDomains: RuntimeNetworkDomainHandler? = null,
 )
 
 class RuntimeRpcDispatcher(
@@ -459,6 +467,19 @@ class RuntimeRpcDispatcher(
                 (inbound.recentTouchAgeMillis == null || inbound.recentTouchAgeMillis !in 0..recentGestureWindowMillis)
             ) {
                 return failure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "A recent real touch is required")
+            }
+        }
+        if (method.name == "network.authorizeDomain" || method.name == "network.listDomains") {
+            if (!identity.allowUserNetworkDomains) {
+                return failure(RuntimeRpcErrorCode.NOT_DECLARED, "User-authorized network domains are not declared by this tool")
+            }
+            if (method.name == "network.authorizeDomain") {
+                if (inbound.recentTouchAgeMillis == null || inbound.recentTouchAgeMillis !in 0..recentGestureWindowMillis) {
+                    return failure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "A recent real touch is required")
+                }
+                if (m3Handlers.networkDomains?.isForegroundAvailable() != true) {
+                    return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Open this tool before authorizing a network domain")
+                }
             }
         }
         when (val decision = authorization.admit(identity, method, request.encodedBytes)) {
@@ -548,6 +569,18 @@ class RuntimeRpcDispatcher(
         "clipboard.writeText" -> {
             requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", MAX_CLIPBOARD_CHARS))
             RpcValue.Null
+        }
+        "network.authorizeDomain" -> {
+            params.requireOnly("domain")
+            val handler = requireHandler(m3Handlers.networkDomains)
+            if (!handler.isForegroundAvailable()) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Open this tool before authorizing a network domain")
+            }
+            RpcValue.Bool(handler.authorizeDomain(params.requiredString("domain", 253)))
+        }
+        "network.listDomains" -> {
+            params.requireOnly()
+            RpcValue.ArrayValue(requireHandler(m3Handlers.networkDomains).listDomains().map(RpcValue::StringValue))
         }
         "network.request" -> requireHandler(m2Handlers.network)
             .request(params.toNetworkRequest())

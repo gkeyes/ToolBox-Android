@@ -86,6 +86,7 @@ data class ManifestNetwork(
     val allowRedirects: Boolean,
     val maxResponseBytes: Int,
     val timeoutMs: Int,
+    val allowUserDomains: Boolean = false,
 )
 data class ManifestUi(
     val orientation: ManifestOrientation?,

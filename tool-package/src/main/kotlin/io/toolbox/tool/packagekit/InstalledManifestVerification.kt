@@ -27,6 +27,7 @@ data class InstalledManifestNetwork(
     val allowRedirects: Boolean,
     val maxResponseBytes: Int,
     val timeoutMs: Int,
+    val allowUserDomains: Boolean = false,
 )
 
 sealed interface InstalledManifestVerification {
@@ -82,6 +83,7 @@ object InstalledManifestVerifier {
                         allowRedirects = network.allowRedirects,
                         maxResponseBytes = network.maxResponseBytes,
                         timeoutMs = network.timeoutMs,
+                        allowUserDomains = network.allowUserDomains,
                     )
                 },
                 maxBridgePayloadBytes = parsed.limits.maxBridgePayloadBytes,

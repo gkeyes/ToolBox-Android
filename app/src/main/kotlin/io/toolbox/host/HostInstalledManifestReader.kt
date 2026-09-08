@@ -26,6 +26,7 @@ internal class HostInstalledManifestReader(
                         toolName = manifest.name,
                         versionCode = manifest.versionCode,
                         versionName = tool.currentVersion.version,
+                        allowUserNetworkDomains = manifest.network?.allowUserDomains == true,
                         permissions = manifest.permissionDeclarations.map {
                             HostManifestPermission(it.name, it.reason, it.required)
                         },

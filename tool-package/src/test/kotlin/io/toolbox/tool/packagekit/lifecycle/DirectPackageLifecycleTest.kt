@@ -70,6 +70,8 @@ class DirectPackageLifecycleTest {
         val expectedVersionCode = requireNotNull(System.getenv("TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE")) {
             "TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE is required for the standalone package gate."
         }.toInt()
+        val expectedToolId = System.getenv("TOOLBOX_PACKAGE_EXPECTED_ID") ?: "io.toolbox.githubactionswatcher"
+        val expectedHostVersion = System.getenv("TOOLBOX_PACKAGE_HOST_VERSION") ?: "0.3.5"
         val root = Files.createTempDirectory("tool-package-standalone")
         try {
             val repositories = InMemoryCoreData.create()
@@ -78,13 +80,13 @@ class DirectPackageLifecycleTest {
                 catalog = repositories.catalog,
                 lifecycle = repositories.lifecycle,
                 transactions = repositories.installs,
-                hostVersion = "0.3.5",
+                hostVersion = expectedHostVersion,
             )
 
             val result = manager.importAndInstall(FileInput(packagePath))
 
             assertEquals(
-                PackageInstallResult.Installed("io.toolbox.githubactionswatcher", expectedVersionCode, false),
+                PackageInstallResult.Installed(expectedToolId, expectedVersionCode, false),
                 result,
             )
             assertNoTransientFiles(root)

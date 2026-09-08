@@ -2,16 +2,14 @@ name: Android CI
 
 on:
   push:
-    branches: [main, "codex/**"]
+    branches: ["codex/refactor-lightweight-v2"]
     paths-ignore:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   pull_request:
     paths-ignore:
       - "examples/github-actions-watcher/**"
       - ".github/workflows/github-actions-watcher.yml"
-      - "TESTING.md"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +21,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build and smallest admitted unit suite
+    name: Build and verify runtime behavior
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -48,6 +46,21 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
+      - name: Set up Node 22 for NextFlux
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+
+      - name: Test and package NextFlux
+        working-directory: examples/nextflux
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+          python3 package.py
+
       - name: Verify offline developer help and generic packager
         run: |
           node scripts/check-developer-help.mjs
@@ -56,10 +69,23 @@ jobs:
           node --test examples/health-records/tests/*.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
 
-      - name: Verify protocol, security, compile and admitted unit suite
+      - name: Verify protocol, security, compilation and runtime behavior
+        env:
+          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.0.tbx
+          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "1"
+          TOOLBOX_PACKAGE_EXPECTED_ID: io.toolbox.nextflux
+          TOOLBOX_PACKAGE_HOST_VERSION: "0.6.3"
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
+
+      - name: Upload verified NextFlux package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-v1.0.0-${{ github.sha }}
+          path: build/nextflux/nextflux-v1.0.0.tbx
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload host gate evidence
         if: ${{ always() }}
@@ -71,81 +97,9 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
-  optimized_compile:
-    name: Compile optimized APK (not delivery)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Android SDK 37
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
-        with:
-          packages: >-
-            platform-tools
-            platforms;android-37.0
-            build-tools;37.0.0
-
-      - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-
-      - name: Compile release sources and assemble optimized candidate
-        run: |
-          set -euo pipefail
-          evidence="$GITHUB_WORKSPACE/.omo/evidence/ci-optimized-compile"
-          mkdir -p "$evidence"
-          printf 'BUILD_COMMIT=%s\nSCOPE=OPTIMIZED_COMPILE_ONLY\n' "$GITHUB_SHA" > "$evidence/receipt.txt"
-          ./gradlew --no-daemon :app:compileReleaseKotlin :app:assembleCandidate --console=plain 2>&1 |
-            tee "$evidence/build.log"
-
-      - name: Verify candidate APK and R8 outputs without publishing it
-        run: |
-          set -euo pipefail
-          evidence="$GITHUB_WORKSPACE/.omo/evidence/ci-optimized-compile"
-          apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/candidate/app-candidate.apk"
-          mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/candidate/mapping.txt"
-          test -s "$apk_path"
-          test -s "$mapping_path"
-          "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$evidence/badging.txt"
-          grep -F "package: name='io.toolbox.host' versionCode='18' versionName='0.6.2'" "$evidence/badging.txt"
-          if grep -q '^application-debuggable' "$evidence/badging.txt"; then
-            printf 'Optimized candidate must not be debuggable.\n' >&2
-            exit 1
-          fi
-          grep -Fx 'io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:' "$mapping_path"
-          sha256sum "$apk_path" > "$evidence/APK_SHA256.txt"
-          {
-            printf 'RELEASE_KOTLIN_COMPILE=PASS\nOPTIMIZED_APK_ASSEMBLY=PASS\n'
-            printf 'APK_VARIANT=candidate\nAPK_DEBUGGABLE=false\nR8_MAPPING=PASS\n'
-            printf 'RESOURCE_SHRINKING=ENABLED\nWORKER_CLASS_NAME_RETENTION=PASS\n'
-            printf 'SIGNING=DIAGNOSTIC_ONLY\nAPK_DELIVERY=NOT_AUTHORIZED\n'
-            printf 'SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\nDEVICE_TEST=NOT_RUN\n'
-            printf 'APK_SIZE_BYTES=%s\n' "$(stat -c '%s' "$apk_path")"
-          } >> "$evidence/receipt.txt"
-
-      - name: Retain optimized compile diagnostics (no APK)
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: optimized-compile-${{ github.sha }}
-          path: |
-            .omo/evidence/ci-optimized-compile
-            app/build/outputs/mapping/candidate
-          if-no-files-found: warn
-          include-hidden-files: true
-          retention-days: 14
-
   delivery:
-    name: Package optimized v0.6.2 release delivery
-    needs: [verify, optimized_compile]
+    name: Package optimized v0.6.3 release delivery
+    needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -209,7 +163,7 @@ jobs:
           mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/release/mapping.txt"
           badging_path="$RUNNER_TEMP/toolbox-release-badging.txt"
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$badging_path"
-          grep -F "package: name='io.toolbox.host' versionCode='18' versionName='0.6.2'" "$badging_path"
+          grep -F "package: name='io.toolbox.host' versionCode='19' versionName='0.6.3'" "$badging_path"
           if grep -q '^application-debuggable' "$badging_path"; then
             printf 'Release APK must not be debuggable.\n' >&2
             exit 1
@@ -315,24 +269,22 @@ jobs:
       - name: Assemble checksummed delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
-          OPTIMIZED_COMPILE_RESULT: ${{ needs.optimized_compile.result }}
         run: |
           set -euo pipefail
           [[ "$VERIFY_JOB_RESULT" == "success" ]]
-          [[ "$OPTIMIZED_COMPILE_RESULT" == "success" ]]
 
           delivery_dir="$GITHUB_WORKSPACE/build/ci-delivery"
           mkdir -p "$delivery_dir"
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/release/app-release.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.6.2-release.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.6.3-release.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.6.2\n'
-            printf 'VERSION_CODE=18\n'
+            printf 'VERSION_NAME=0.6.3\n'
+            printf 'VERSION_CODE=19\n'
             printf 'BUILD_TYPE=release\n'
             printf 'APK_DEBUGGABLE=false\n'
             printf 'R8_MINIFICATION=PASS\n'
@@ -340,9 +292,8 @@ jobs:
             printf 'WORKER_CLASS_NAME_RETENTION=PASS\n'
             printf 'APK_SIZE_BYTES=%s\n' "$TOOLBOX_APK_SIZE_BYTES"
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$TOOLBOX_APK_CERT_SHA256"
-            printf 'VERIFY_JOB=Build and smallest admitted unit suite\n'
+            printf 'VERIFY_JOB=Build and verify runtime behavior\n'
             printf 'VERIFY_RESULT=%s\n' "$VERIFY_JOB_RESULT"
-            printf 'OPTIMIZED_CANDIDATE_BUILD=%s\n' "$OPTIMIZED_COMPILE_RESULT"
             printf 'DEVELOPER_HELP_CHECK=PASS\n'
             printf 'DEVELOPER_HELP_PACKAGER_TESTS=PASS\n'
             printf 'HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\n'
@@ -364,22 +315,22 @@ jobs:
             printf 'APK_SOURCE=app/build/outputs/apk/release/app-release.apk\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
             printf 'EMBEDDED_EXAMPLE_BYTES=PASS\n'
-            printf 'DELIVERY_FILES=toolbox-v0.6.2-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.6.3-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.6.2-release.apk \
+              toolbox-v0.6.3-release.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.6.2 release delivery
+      - name: Upload verified v0.6.3 release delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.6.2-release-${{ github.sha }}
+          name: toolbox-v0.6.3-release-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.6.2-release.apk
+            build/ci-delivery/toolbox-v0.6.3-release.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

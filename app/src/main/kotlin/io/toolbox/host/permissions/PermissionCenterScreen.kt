@@ -76,6 +76,7 @@ internal fun PermissionCenterScreen(
         state = state,
         onBack = onBack,
         onSetEnabled = viewModel::setEnabled,
+        onRevokeNetworkDomain = viewModel::revokeNetworkDomain,
         onOpenSystemSettings = {
             context.startActivity(
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(
@@ -92,6 +93,7 @@ internal fun PermissionCenterContent(
     onBack: () -> Unit,
     onSetEnabled: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
+    onRevokeNetworkDomain: (String) -> Unit = {},
 ) {
     val glassState = rememberToolBoxGlassState()
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
@@ -159,6 +161,24 @@ internal fun PermissionCenterContent(
                         }
                     }
                     item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+                }
+                if (state.userNetworkDomains.isNotEmpty()) {
+                    item("custom-network-title") { SectionHeader("已授权的自定义域名") }
+                    item("custom-network-domains") {
+                        ToolBoxGroupedSurface {
+                            state.userNetworkDomains.forEachIndexed { index, domain ->
+                                ToolBoxSwitchSettingRow(
+                                    title = domain,
+                                    summary = "HTTPS · 关闭即可撤销授权",
+                                    checked = true,
+                                    onCheckedChange = { enabled -> if (!enabled) onRevokeNetworkDomain(domain) },
+                                    icon = ToolBoxIconKey.Globe,
+                                )
+                                if (index != state.userNetworkDomains.lastIndex) ToolBoxGroupDivider()
+                            }
+                        }
+                    }
+                    item("after-custom-network") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
                 }
                 when (val loadState = state.loadState) {
                     PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限") }

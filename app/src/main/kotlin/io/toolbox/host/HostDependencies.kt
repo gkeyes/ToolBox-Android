@@ -336,6 +336,7 @@ internal class PermissionCenterViewModelFactory(
             catalog = dependencies.repositories.catalog,
             grants = dependencies.repositories.grants,
             mutations = dependencies.permissionMutations,
+            domainStore = io.toolbox.host.runtime.UserNetworkDomainStore(dependencies.repositories.keyValues),
         ) as T
     }
 }

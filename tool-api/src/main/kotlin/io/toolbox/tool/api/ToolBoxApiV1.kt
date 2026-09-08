@@ -47,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "afd3afdaa186ab62bf6b7e3bb10c263220bf43aa15f529f2a9a19d54309ccb44"
+    const val CANONICAL_SHA256: String = "aac8b4c47d30a81a8cf5e6d1aba5f24ceff02ff5679a45c45bf9f8473988e57a"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -85,6 +85,8 @@ object ToolBoxApiV1 {
         MethodDescriptor("device.getBasicInfo", ContractPhase.M1, ToolBoxCapabilityId.DEVICE_BASIC, "void", "BasicDeviceInfo"),
         MethodDescriptor("haptics.perform", ContractPhase.M1, ToolBoxCapabilityId.HAPTICS, "HapticsRequest", "void"),
         MethodDescriptor("clipboard.writeText", ContractPhase.M1, ToolBoxCapabilityId.CLIPBOARD_WRITE, "ClipboardWriteRequest", "void"),
+        MethodDescriptor("network.authorizeDomain", ContractPhase.M3, ToolBoxCapabilityId.NETWORK, "NetworkDomainRequest", "boolean"),
+        MethodDescriptor("network.listDomains", ContractPhase.M3, ToolBoxCapabilityId.NETWORK, "void", "string[]"),
         MethodDescriptor("network.request", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkRequest", "NetworkResponse"),
         MethodDescriptor("network.openStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamOpenRequest", "NetworkStreamResponse"),
         MethodDescriptor("network.readStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamIdRequest", "NetworkStreamChunk"),

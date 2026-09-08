@@ -161,6 +161,11 @@
             "pattern": "^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
           }
         },
+        "allowUserDomains": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow user-confirmed additional exact HTTPS domains; requires minHostVersion 0.6.3 or newer."
+        },
         "allowRedirects": {
           "type": "boolean",
           "default": true

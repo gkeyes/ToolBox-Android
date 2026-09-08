@@ -26,6 +26,7 @@ import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.navigation.ToolBoxNavigation
 import io.toolbox.host.settings.SettingsViewModel
+import io.toolbox.host.runtime.NetworkDomainConfirmationDialog
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.ui.HostBootstrapScreen
 import io.toolbox.host.ui.LocalToolIconLoader
@@ -114,6 +115,7 @@ class MainActivity : ComponentActivity() {
                                 contentResolver = contentResolver,
                             )
                         }
+                        foregroundCapabilityBroker?.let { NetworkDomainConfirmationDialog(it) }
                         LaunchedEffect(pendingShortcutIntent) {
                             val launchIntent = pendingShortcutIntent ?: return@LaunchedEffect
                             val requestedToolId = launchIntent.takeIf { it.action == ACTION_OPEN_TOOL }

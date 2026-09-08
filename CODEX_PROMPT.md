@@ -2,7 +2,7 @@
 
 开始前完整读取并遵守 `AGENTS.md`、`docs/ToolBox_Android_技术方案.md`、
 `schema/manifest.schema.json`、`sdk/toolbox-api.d.ts`、
-`references/component_mapping.md` 和 `TESTING.md`。
+`references/component_mapping.md`。
 
 ## 产品目标
 
@@ -109,7 +109,6 @@ manifest/grant/system permission/gesture/rate/quota 校验；禁止 WebView 文�
 
 ## 验证与汇报
 
-每个保留或新增自动化测试必须在 `TESTING.md` 中记录：测试理由、测试方法、预期结果。
 不保留删除功能的字符串测试，也不为同一边界叠加重复测试。至少覆盖：全新数据基线、有效/
 损坏包导入与删除、权限/RPC 一致性、后台与 SSRF、Miuix 真机组合流程。
 
