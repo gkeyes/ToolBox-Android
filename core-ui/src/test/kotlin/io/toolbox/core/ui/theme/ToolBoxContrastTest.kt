@@ -63,5 +63,7 @@ class ToolBoxContrastTest {
         assertTrue(solid.pressFeedbackEnabled)
         assertEquals(glass.glassFallback, solid.glassFallback)
         assertEquals(1f, solid.glassFallback.alpha)
+        assertTrue(glass.glassTint.alpha < 1f)
+        assertEquals(solid.glassFallback, solid.glassTint)
     }
 }

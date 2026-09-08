@@ -475,7 +475,7 @@ internal fun liquidGlassMaterials(
     topEdgeFadeEnabled = enabled && !reduceTransparency,
     navigationLensEnabled = enabled,
     pressFeedbackEnabled = enabled,
-    glassTint = colors.surface.copy(alpha = if (dark) 0.66f else 0.72f),
+    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.72f),
     glassFallback = colors.surface,
     glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
     navigationSelectionTint = colors.primary.copy(alpha = if (dark) 0.20f else 0.11f),

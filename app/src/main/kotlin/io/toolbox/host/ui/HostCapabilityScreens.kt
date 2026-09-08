@@ -23,11 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.toolbox.core.ui.component.ToolBoxIconButton
-import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
-import io.toolbox.core.ui.component.ToolBoxRuntimeTopBar
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
@@ -39,7 +36,6 @@ internal fun RuntimeShellScreen(
     onPresentationReady: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val ready = state as? RuntimeUiState.Ready
 
     LaunchedEffect(state) {
         if (state is RuntimeUiState.Error) onPresentationReady()
@@ -52,26 +48,11 @@ internal fun RuntimeShellScreen(
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background)
             .testTag(HostTestTags.RuntimeShell),
-        topBar = {
-            ToolBoxRuntimeTopBar(
-                title = ready?.runtime?.toolName ?: "工具",
-                navigationIcon = ToolBoxIconKey.Back,
-                navigationContentDescription = "返回",
-                onNavigationClick = onBack,
-                actions = {
-                    ToolBoxIconButton(
-                        icon = ToolBoxIconKey.Refresh,
-                        contentDescription = "重新加载工具",
-                        onClick = viewModel::reload,
-                    )
-                },
-            )
-        },
-    ) { contentPadding ->
+        onBack = onBack,
+    ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
+                .fillMaxSize(),
         ) {
             when (val current = state) {
                 RuntimeUiState.Loading -> RuntimeCenteredState("正在打开工具", "正在准备页面。")
@@ -105,26 +86,14 @@ internal fun RuntimeShellScreen(
 @Composable
 internal fun RuntimeShellPreviewContent(
     onBack: () -> Unit,
-    title: String = "工具",
 ) {
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background),
-        topBar = {
-            ToolBoxRuntimeTopBar(
-                title = title,
-                navigationIcon = ToolBoxIconKey.Back,
-                onNavigationClick = onBack,
-                actions = {
-                    ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新加载工具", onClick = {})
-                },
-            )
-        },
-    ) { contentPadding ->
-        Box(Modifier.fillMaxSize().padding(contentPadding)) {
-            RuntimeCenteredState("正在打开工具", "正在准备页面。")
-        }
+        onBack = onBack,
+    ) {
+        RuntimeCenteredState("正在打开工具", "正在准备页面。")
     }
 }
 

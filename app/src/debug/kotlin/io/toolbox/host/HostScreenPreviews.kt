@@ -287,7 +287,7 @@ fun RuntimeShellPreview() {
 @Composable
 fun RuntimeShellDarkPreview() {
     ToolBoxTheme(mode = ToolBoxThemeMode.Dark) {
-        RuntimeShellPreviewContent(title = "通知实验室", onBack = {})
+        RuntimeShellPreviewContent(onBack = {})
     }
 }
 

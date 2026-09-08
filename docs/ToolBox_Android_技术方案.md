@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.6.1 (17)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.6.2 (18)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -216,8 +216,10 @@ RPC 在解析/创建协程前限制每会话 32 个、全局 128 个排队/在�
 满载返回 `BUSY`，不排入另一条等待队列；回复送达主线程后才归还准入名额。协程执行前取消同样
 释放预算。JS shim 的 pending 表也限制为 32，并在序列化或发送失败时删除对应请求。
 
-运行容器不使用宿主底栏：顶部约 48dp，只放返回、标题、刷新/更多；其余区域由 WebView
-占满，不显示 origin/API/安全技术副标题。仍必须保留 CSP、安全响应头、危险 scheme 和导航
+运行容器不使用宿主顶栏或底栏：WebView 填满系统状态栏、导航栏和挖孔之外的安全区域，
+左上角仅叠放 48dp 半透明玻璃返回按钮，边距 8dp，不占整行高度。原生底色、高光和阴影不采集
+WebView；降低透明度时使用实底。进入过渡壳共用此布局，不显示标题、刷新/更多或 origin/API/安全技术副标题。
+仍必须保留 CSP、安全响应头、危险 scheme 和导航
 阻断、renderer-gone 恢复、文件/content/mixed-content/popup 禁用等边界。
 
 ### 6.3 M3 App 式 API
@@ -395,7 +397,7 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 它与并行的 optimized_compile 均成功后才构建 release APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.1 (17) 上传 `toolbox-v0.6.1-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.6.2 (18) 上传 `toolbox-v0.6.2-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不改变数据库或权限能力集合。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug

@@ -131,9 +131,6 @@ internal fun ToolBoxNavigation(
     val currentPrimaryRoute = primaryBackStack.lastOrNull()
     val runtimeRoute = allSecondaryRoutes.lastOrNull() as? RuntimeRoute
     val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
-    val runtimeTitle = runtimeRoute?.let { route ->
-        catalogViewModel.state.value.tools.firstOrNull { it.toolId == route.toolId }?.name
-    } ?: "工具"
     val entryProgress = remember(runtimeRoute) { Animatable(if (runtimeRoute == null) 0f else 1f) }
     val sourceReturnProgress = remember(runtimeRoute) { Animatable(0f) }
     var runtimeLayerEnabled by remember(runtimeRoute) { mutableStateOf(false) }
@@ -335,7 +332,6 @@ internal fun ToolBoxNavigation(
                     },
             ) {
                 RuntimeShellPreviewContent(
-                    title = runtimeTitle,
                     onBack = leaveRuntime,
                 )
             }

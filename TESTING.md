@@ -4,6 +4,19 @@
 本文件登记三项内容：**测试理由、测试方法、预期结果**。实现尚未到达某阶段时，不创建占位
 测试；功能删除后，同步删除其测试与本文件条目。
 
+## 0.6.2 运行页悬浮返回（2026-09-08）
+
+- 宿主更新为 `0.6.2 (18)`，同步网络 User-Agent、CI APK 身份、交付文件名与当前版本文档。
+  网络长超时的最低宿主仍为 0.6.1；不改变小程序包、API 或数据库。
+- 正常运行页与进入过渡壳共用 `ToolBoxRuntimeScaffold`，移除标题/刷新栏；48dp 返回按钮
+  叠放于安全区域左上角，边距 8dp，保留无障碍标签与系统返回，不为按钮预留整行。
+  半透明底色、高光和阴影不采集 WebView；降低透明度时为实底。
+- 扩展下文已准入的 `HostAdaptiveScrollTest.themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity`
+  与 `ToolBoxContrastTest.reduceTransparencyUsesTheSameOpaqueMaterialFallback`，覆盖内容边界、
+  两处触摸各自的回调、48dp 命中目标、换肤后的 Android View 身份和透明度回退。
+- 本地执行差异与安全静态检查；Android 编译、主题单元与原有门禁由 GitHub 执行。
+  仪器用例只编译、不启动模拟器，设备/玻璃视觉与键盘交互仍由用户验收；示意预览不是原生截图。
+
 ## 0.6.1 网络超时分支合并（2026-09-07）
 
 - 从 `codex/api-stream-support` 合入尚未进入默认分支的可配置超时扩展，保留默认分支已有的
@@ -56,7 +69,7 @@
 |---|---|---|---|
 | `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` | 一级导航由两个页面外壳改为一个常驻外壳，必须继续保护设置、外观、返回、工具生命周期和状态所有权。 | 运行 production 导航旅程，在工具与设置之间切换，再进入外观页并返回，继续安装、权限、运行和删除。 | 两个目的地与二级路由均可达；返回语义和完整工具流程不变。 |
 | `HostAdaptiveScrollTest.freshInstallRemainsReachableAtTwoHundredPercentFontScale` | 滑动透镜不能改变目的地的等分布局、64dp 内容高度或 48dp 命中区。 | 在 360dp、200% 字体下读取两个 production 底栏项边界与标签。 | 两项均可达，宽高至少 48dp，内容高度仍为 64dp；动画只改变视觉内容。 |
-| `ToolBoxContrastTest.reduceTransparencyUsesTheSameOpaqueMaterialFallback` 扩展 | 顶栏渐隐只应出现在实时玻璃，降低透明度不能留下透明下缘；选中提示仍需存在。 | 比较正常与降低透明度的 production 材质 token。 | 正常启用实时模糊和渐隐；降低透明度关闭两者并保留同色 opaque fallback、选中透镜和按压反馈。 |
+| `ToolBoxContrastTest.reduceTransparencyUsesTheSameOpaqueMaterialFallback` 扩展 | 顶栏渐隐只应出现在实时玻璃，降低透明度不能留下透明下缘或透明返回按钮底色；选中提示仍需存在。 | 比较正常与降低透明度的 production 材质 token，断言普通 `glassTint` 半透明，降低透明度后等于 opaque fallback。 | 正常启用实时模糊和渐隐；降低透明度关闭两者，底色不透明，并保留同色 opaque fallback、选中透镜和按压反馈。 |
 | `manual-liquid-glass-v3` | JVM/语义测试不能证明真实模糊连续性、渐隐边缘、滑动透镜或按压观感。 | 在 API 35 模拟器操作工具/设置连续切换、按住两个目的地、滚动内容、开关降低透明度，并检查浅深色；HyperOS 真机复查相同路径。 | 外壳不闪白/灰、不出现双标题；透镜在等宽区域之间移动且不推挤图标文字；顶栏边缘自然；实底模式稳定。模拟器结果不代替 OEM 性能数据。 |
 
 ## 0.4.1 一级页签切换闪烁修正（2026-09-06）
@@ -104,7 +117,7 @@
 | `SettingsViewModelTest` | 连续快速选择和保存失败是异步边界，不能让较早写入反盖最后选择，也不能先改根主题再报失败。 | 可控 repository 记录写入顺序并注入一次失败，连续提交风格/明暗/取色/降低透明度，再执行生产重试入口。 | 写入按选择顺序串行且最终值为最后一次选择；无关设置保持；失败时有效主题不变并显示可重试错误，重试成功后才生效。 |
 | `ToolBoxContrastTest` 扩展 | 玻璃只取系统强调色，浅深模式的中性正文底板、边框和实色回退仍需可读。 | 对多组代表性系统强调色生成 Liquid Glass 浅深配色，检查正文/辅助文字与各清晰底板的对比度，并比较正常与降低透明度的 opaque fallback。 | 小字达到既有 4.5:1 下限；强调色不污染内容底板；降低透明度使用同色不透明材质。 |
 | `HostAdaptiveScrollTest.appearanceChoicesRemainInteractiveAtTwoHundredPercentFontScale` | 外观预览、模式、系统取色、降低透明度与错误重试在 2 倍字体下仍须可达，条件项不能泄漏到 Miuix。 | 360dp、200% 字体运行 production `AppearanceContent`，滚动并操作每个入口，记录回调；切到 Miuix 后查询条件项。 | 所有命中区域至少 48dp、可滚动点击且只触发对应回调；Miuix 下不显示降低透明度；错误可重试。 |
-| `HostAdaptiveScrollTest.themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity` | 根主题重组不能重新创建承载运行内容的 Android View，否则 WebView 输入、页面与会话状态会丢失。 | 在 production `ToolBoxTheme` 内创建一个真实 `AndroidView`，Liquid Glass → Miuix → Liquid Glass 连续切换，记录 factory 次数与 View 对象身份。 | factory 只执行一次，两次换肤后的对象与首次对象相同；该测试保护 Compose 身份边界，不替代真实 WebView 会话操作。 |
+| `HostAdaptiveScrollTest.themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity` | 悬浮返回布局不能挤占整行内容、阻断按钮外触摸，换肤不能重新创建承载运行内容的 Android View。 | 在 production `ToolBoxTheme` / `ToolBoxRuntimeScaffold` 内创建真实 `AndroidView`，Liquid Glass → Miuix → Liquid Glass（降低透明度）切换；比较内容与已消费系统 inset 的安全区域边界，触摸返回与同一顶行右侧内容，记录 factory 次数、对象身份和材质透明度。 | 内容边界等于安全区域，返回目标至少 48dp，两处触摸只触发各自回调；factory 仅一次且对象不变；降低透明度后底色不透明。该测试不替代真实 WebView、键盘、TalkBack 或玻璃视觉验收。 |
 | `HostNavigationTest.bundledExampleCanBeManagedFromInstallThroughDelete` 扩展 | 即时换肤不能丢失当前外观路由或破坏后续导入、权限、运行和删除流程。 | 新安装进入外观页，断言 Liquid Glass；连续选择 Miuix 再选 Liquid Glass并等待最终状态，保持在原路由后继续完整内置工具生命周期。 | 最后选择生效且页面身份保留；导航栈、权限持久化、运行壳及删除全流程继续可用；测试不把语义状态冒充 WebView 对象或真机动画测量。 |
 
 | 手动检查 | 理由 | 方法 | 预期 |

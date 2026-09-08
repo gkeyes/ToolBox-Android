@@ -8,9 +8,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -34,6 +42,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.data.ThemeStyle
+import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
@@ -288,39 +297,72 @@ class HostAdaptiveScrollTest {
     @Test
     fun themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity() {
         val style = mutableStateOf(ToolBoxThemeStyle.LiquidGlass)
+        val reduceTransparency = mutableStateOf(false)
         var created = 0
+        var backClicks = 0
+        var contentClicks = 0
+        var glassAlpha = 0f
         var firstView: View? = null
         var currentView: View? = null
         composeRule.activity.setContent {
-            ToolBoxTheme(style = style.value) {
-                AndroidView(
-                    factory = { context ->
-                        View(context).also {
-                            created += 1
-                            firstView = it
-                            currentView = it
-                        }
-                    },
-                    update = { currentView = it },
-                    modifier = Modifier.fillMaxSize(),
-                )
+            ToolBoxTheme(style = style.value, reduceTransparency = reduceTransparency.value) {
+                glassAlpha = ToolBoxThemeTokens.materials.glassTint.alpha
+                Box(
+                    Modifier.fillMaxSize()
+                        .windowInsetsPadding(
+                            WindowInsets.statusBars.union(WindowInsets.navigationBars)
+                                .union(WindowInsets.displayCutout),
+                        )
+                        .testTag("RuntimeSafeArea"),
+                ) {
+                    ToolBoxRuntimeScaffold(Modifier.fillMaxSize(), onBack = { backClicks += 1 }) {
+                        AndroidView(
+                            factory = { context ->
+                                View(context).also {
+                                    created += 1
+                                    firstView = it
+                                    currentView = it
+                                    it.setOnClickListener { contentClicks += 1 }
+                                }
+                            },
+                            update = { currentView = it },
+                            modifier = Modifier.fillMaxSize().testTag("RuntimeContent"),
+                        )
+                    }
+                }
             }
         }
 
-        composeRule.runOnIdle {
-            assertEquals(1, created)
-            style.value = ToolBoxThemeStyle.Miuix
-        }
-        composeRule.waitForIdle()
-        composeRule.runOnIdle {
-            assertEquals(1, created)
-            assertSame(firstView, currentView)
-            style.value = ToolBoxThemeStyle.LiquidGlass
-        }
-        composeRule.waitForIdle()
-        composeRule.runOnIdle {
-            assertEquals(1, created)
-            assertSame(firstView, currentView)
+        val states = listOf(
+            ToolBoxThemeStyle.LiquidGlass to false,
+            ToolBoxThemeStyle.Miuix to false,
+            ToolBoxThemeStyle.LiquidGlass to true,
+        )
+        states.forEachIndexed { index, (themeStyle, reduced) ->
+            composeRule.runOnIdle {
+                style.value = themeStyle
+                reduceTransparency.value = reduced
+            }
+            composeRule.waitForIdle()
+            val safeBounds = composeRule.onNodeWithTag("RuntimeSafeArea").fetchSemanticsNode().boundsInRoot
+            val contentBounds = composeRule.onNodeWithTag("RuntimeContent").fetchSemanticsNode().boundsInRoot
+            assertEquals(safeBounds, contentBounds)
+            composeRule.onNodeWithContentDescription("返回")
+                .assertIsDisplayed()
+                .assertWidthIsAtLeast(48.dp)
+                .assertHeightIsAtLeast(48.dp)
+                .performTouchInput { click() }
+            // The rest of the top row belongs to the embedded Android View, not an overlay toolbar.
+            composeRule.onNodeWithTag("RuntimeContent").performTouchInput {
+                click(Offset(width - 12f, 12f))
+            }
+            composeRule.runOnIdle {
+                assertEquals(index + 1, backClicks)
+                assertEquals(index + 1, contentClicks)
+                assertEquals(1, created)
+                assertSame(firstView, currentView)
+                if (reduced) assertEquals(1f, glassAlpha, 0f) else assertTrue(glassAlpha < 1f)
+            }
         }
     }
 

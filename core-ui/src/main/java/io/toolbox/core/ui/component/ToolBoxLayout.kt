@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -42,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -110,16 +112,41 @@ fun ToolBoxAppScaffold(
 @Composable
 fun ToolBoxRuntimeScaffold(
     modifier: Modifier = Modifier,
-    topBar: (@Composable () -> Unit)? = null,
-    content: @Composable (PaddingValues) -> Unit,
+    onBack: () -> Unit,
+    content: @Composable BoxScope.() -> Unit,
 ) {
-    ToolBoxAppScaffold(
-        modifier = modifier,
-        topBar = topBar,
-        bottomBar = null,
-        floatingActionButton = null,
-        content = content,
-    )
+    val materials = ToolBoxThemeTokens.materials
+    Box(
+        modifier = modifier
+            .background(ToolBoxThemeTokens.colors.background)
+            .windowInsetsPadding(
+                WindowInsets.statusBars
+                    .union(WindowInsets.navigationBars)
+                    .union(WindowInsets.displayCutout),
+            ),
+    ) {
+        content()
+        // Draw above the content without reserving a toolbar row or sampling the WebView.
+        ToolBoxIconButton(
+            icon = ToolBoxIconKey.Back,
+            contentDescription = "返回",
+            onClick = onBack,
+            tint = ToolBoxThemeTokens.colors.textPrimary,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(ToolBoxThemeTokens.spacing.one)
+                .shadow(4.dp, CircleShape)
+                .clip(CircleShape)
+                .background(materials.glassTint)
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(materials.glassBorder, materials.glassBorder.copy(alpha = 0.12f)),
+                    ),
+                    CircleShape,
+                ),
+        )
+    }
 }
 
 @Composable
@@ -269,26 +296,6 @@ fun ToolBoxLargeTopBar(
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
         actions = actions,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
-    )
-}
-
-@Composable
-fun ToolBoxRuntimeTopBar(
-    title: String,
-    modifier: Modifier = Modifier,
-    navigationIcon: ToolBoxIconKey? = null,
-    navigationContentDescription: String = "返回",
-    onNavigationClick: (() -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
-) {
-    ToolBoxTopBar(
-        title = title,
-        modifier = modifier,
-        navigationIcon = navigationIcon,
-        navigationContentDescription = navigationContentDescription,
-        onNavigationClick = onNavigationClick,
-        glassState = null,
-        actions = actions,
     )
 }
 
