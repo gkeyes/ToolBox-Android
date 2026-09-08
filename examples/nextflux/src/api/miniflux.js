@@ -166,20 +166,23 @@ export async function getEntriesInBatches(endpoint, params = {}, check = () => {
   const seen = new Set();
   let offset = initialOffset;
   let pageSize = SYNC_PAGE_SIZE;
-  for (let page = 0; page < 10000; page += 1) {
+  while (true) {
     const result = await fetchEntryPage(endpoint, filters, offset, pageSize, check);
     pageSize = result.pageSize;
     const { entries: batch, total } = result.data;
     if (!batch.length && Number.isFinite(total) && offset < total) {
       throw new Error("同步结果不完整，请重试。");
     }
+    const previousCount = entries.length;
     for (const entry of batch) {
       if (!seen.has(entry.id)) { seen.add(entry.id); entries.push(entry); }
+    }
+    if (batch.length && entries.length === previousCount) {
+      throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
     }
     offset += batch.length;
     if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return entries;
   }
-  throw new Error("文章数量超出单次同步范围，请减少服务器中的历史文章后重试。");
 }
 
 // 获取变更文章

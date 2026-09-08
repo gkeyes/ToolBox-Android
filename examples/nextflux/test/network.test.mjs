@@ -221,3 +221,15 @@ test("ToolBox rate limiting waits once without dropping or restarting a page", a
   await failure;
   assert.equal(requests, 1, "logout cancels backoff before another network request");
 });
+
+
+test("repeated server pages fail without imposing a page-count limit", async () => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  let requests = 0;
+  host(async () => {
+    requests += 1;
+    return { status: 200, headers: {}, body: '{"total":3,"entries":[{"id":1}]}', bodyEncoding: "text" };
+  });
+  await assert.rejects(getEntriesInBatches("/v1/entries"), /重复返回同一页/);
+  assert.equal(requests, 2);
+});
