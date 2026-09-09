@@ -33,8 +33,8 @@ export default function CustomAlertDialog({
       >
         <AlertDialog.Container>
           <AlertDialog.Dialog className="sm:max-w-[400px] p-0">
-            <AlertDialog.CloseTrigger />
-            <AlertDialog.Header className="px-4 pt-4">
+            <AlertDialog.CloseTrigger className="nextflux-close-button" />
+            <AlertDialog.Header className="nextflux-close-header px-4 pt-4">
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Heading>{title}</AlertDialog.Heading>
             </AlertDialog.Header>

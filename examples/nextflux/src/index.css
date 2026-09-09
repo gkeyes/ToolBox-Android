@@ -269,6 +269,52 @@
   min-height: 48px; padding: 8px 16px; border-radius: 12px; background: #8882; cursor: pointer;
 }
 .toolbox-start-error { margin-top: 15vh; }
+
+/* Size controls by their component role, never by their accessible name. */
+.nextflux-toolbar-button,
+.nextflux-close-button {
+  box-sizing: border-box;
+  inline-size: 48px;
+  min-inline-size: 48px;
+  max-inline-size: 48px;
+  block-size: 48px;
+  min-block-size: 48px;
+  max-block-size: 48px;
+  flex: 0 0 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.nextflux-close-button { border-radius: 50%; }
+.nextflux-toolbar-button > svg,
+.nextflux-toolbar-button > [data-slot="spinner"],
+.nextflux-close-button > svg {
+  display: block;
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+  margin: 0;
+}
+.nextflux-toolbar-button > [data-slot="spinner"] > svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+}
+/* Reserve the absolute close trigger's space, including when titles wrap. */
+.nextflux-close-header {
+  min-block-size: calc(48px + 1rem);
+  padding-inline-end: calc(48px + 1.5rem);
+}
+.nextflux-close-header > :is(h2, h3, [role="heading"]) {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.nextflux-summary-title {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 640px) {
-  button[aria-label], .profile-button button { min-height: 44px; }
+  .nextflux-compact-touch-target, .profile-button button { min-height: 44px; }
 }

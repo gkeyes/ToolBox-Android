@@ -106,6 +106,7 @@ export default function LoginPage() {
                                     />
                                     <InputGroup.Suffix>
                                         <button
+                                            className="nextflux-compact-touch-target"
                                             type="button"
                                             onClick={() => setIsVisible(!isVisible)}
                                             aria-label="Toggle password visibility"

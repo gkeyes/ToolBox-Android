@@ -158,20 +158,22 @@ export default function ActionButtons() {
           : "bg-background/70 md:bg-overlay/70",
       )}
     >
-      <div className="flex items-center">
+      <div className="flex flex-wrap items-start gap-1">
         <Tooltip
           content={t("common.close")}
           classNames={{ content: "shadow-custom!" }}
         >
-          <CloseButton onPress={handleClose} className="mx-2" />
+          <CloseButton onPress={handleClose} className="nextflux-close-button" aria-label={t("common.close")} />
           <Tooltip.Content showArrow>
             <Tooltip.Arrow />
             {t("common.close")}
           </Tooltip.Content>
         </Tooltip>
-        <div className="gap-1 hidden md:flex">
+        <div className="hidden shrink-0 items-center gap-1 md:flex">
           <Tooltip delay={0}>
             <Button
+              className="nextflux-toolbar-button"
+              aria-label={t("common.previous")}
               onPress={handlePrevious}
               isDisabled={currentIndex <= 0}
               isIconOnly
@@ -187,6 +189,8 @@ export default function ActionButtons() {
           </Tooltip>
           <Tooltip delay={0}>
             <Button
+              className="nextflux-toolbar-button"
+              aria-label={t("common.next")}
               onPress={handleNext}
               isDisabled={currentIndex >= $articles.length - 1}
               isIconOnly
@@ -201,9 +205,11 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
         </div>
-        <div className="flex gap-1 ml-auto">
+        <div className="ml-auto flex min-w-[48px] flex-1 flex-wrap items-center justify-end gap-1">
           <Tooltip delay={0}>
             <Button
+              className="nextflux-toolbar-button"
+              aria-label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
               onPress={() => handleMarkStatus($activeArticle)}
               variant="ghost"
               isIconOnly
@@ -224,6 +230,8 @@ export default function ActionButtons() {
           </Tooltip>
           <Tooltip delay={0}>
             <Button
+              className="nextflux-toolbar-button"
+              aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
               ref={buttonRef}
               variant="ghost"
               isIconOnly
@@ -247,6 +255,8 @@ export default function ActionButtons() {
           {$hasIntegrations && (
             <Tooltip delay={0}>
               <Button
+                className="nextflux-toolbar-button"
+                aria-label={t("articleView.saveToThirdParty")}
                 variant="ghost"
                 isIconOnly
                 size="sm"
@@ -268,6 +278,7 @@ export default function ActionButtons() {
           {aiApiKey && (
             <Tooltip delay={0}>
               <Button
+                className="nextflux-toolbar-button"
                 onPress={handleAISummarize}
                 variant="ghost"
                 isIconOnly
@@ -290,6 +301,8 @@ export default function ActionButtons() {
           )}
           <Tooltip delay={0}>
             <Button
+              className="nextflux-toolbar-button"
+              aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
               onPress={() => handleToggleContent($activeArticle)}
               variant="ghost"
               isIconOnly
@@ -317,7 +330,7 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
           <Tooltip delay={0}>
-            <Button variant="ghost" isIconOnly size="sm" onPress={handleShare}>
+            <Button className="nextflux-toolbar-button" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
               <Share className="size-4 text-muted" />
             </Button>
             <Tooltip.Content showArrow>

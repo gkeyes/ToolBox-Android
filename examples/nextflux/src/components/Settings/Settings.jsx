@@ -110,7 +110,7 @@ function ContentArea({ activeTab, showTitle = false }) {
   return (
     <div className="flex flex-col h-full bg-overlay md:shadow-custom md:rounded-2xl">
       {showTitle && (
-        <div className="px-4 pt-4 pb-2">
+        <div className="nextflux-close-header px-4 pt-4 pb-2">
           <h3 className="text-base font-medium">
             {t(currentMenuItem?.translationKey || "")}
           </h3>
@@ -154,8 +154,8 @@ function MobileSettings() {
         <Drawer.Content>
           <Drawer.Dialog className="h-[85vh] p-0">
             <Drawer.Handle className="p-1" />
-            <Drawer.CloseTrigger />
-            <Drawer.Header className="px-4 py-1 flex flex-row items-center gap-2">
+            <Drawer.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
+            <Drawer.Header className="nextflux-close-header px-4 py-1 flex flex-row items-center gap-2">
               {activeTab !== null && (
                 <Button
                   isIconOnly
@@ -216,7 +216,7 @@ function DesktopSettings() {
       >
         <Modal.Container>
           <Modal.Dialog className="w-[700px] max-w-[90vw] h-[600px] max-h-[85vh] p-0 overflow-hidden relative bg-background/90 backdrop-blur-sm border shadow-2xl">
-            <Modal.CloseTrigger />
+            <Modal.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
             <div className="flex h-full">
               {/* 左侧导航栏 */}
               <div className="flex flex-col w-52">

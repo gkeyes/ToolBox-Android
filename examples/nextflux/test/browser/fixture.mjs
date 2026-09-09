@@ -11,13 +11,14 @@ export async function installFixture(page, options = {}) {
     blocked.push(url);
     return route.abort("blockedbyclient");
   });
-  await page.addInitScript(({ reduceMotion = true, markAsReadOnScroll = false } = {}) => {
+  await page.addInitScript(({ reduceMotion = true, markAsReadOnScroll = false, aiEnabled = false, hasIntegrations = false } = {}) => {
     const server = "https://miniflux.xiaochen.win";
+    const aiServer = "https://fixture-ai.example";
     const clone = (value) => structuredClone(value);
     const state = {
       workerUrls: [], calls: [], results: [], held: [], holds: [],
       storageCalls: [], network: [], unexpectedNetwork: [], revoked: [],
-      sanitizations: {}, createdBlobs: [],
+      sanitizations: {}, createdBlobs: [], streams: [], heldNetwork: [],
     };
     window.__nextfluxTest = state;
     const canvas = document.createElement("canvas");
@@ -69,12 +70,14 @@ export async function installFixture(page, options = {}) {
         syncInterval: "0", showUnreadByDefault: true, reduceMotion,
         markAsReadOnScroll, cardImageSize: "none", showFavicon: false,
         fontFamily: "system-ui", textPreviewLines: 2,
+        ...(aiEnabled ? { aiBaseUrl: `${aiServer}/v1`, aiModel: "fixture-model", aiPrompt: "Summarize this synthetic test article." } : {}),
       }),
     });
     secure.set("nextflux.auth", {
       serverUrl: server, userId: 1, username: "fixture-user",
       authType: "token", token: "fixture-token-not-a-real-credential",
     });
+    if (aiEnabled) secure.set("nextflux.ai-key.v1", "fixture-ai-key-not-a-real-credential");
     state.storageRoot = () => clone(memory.get("nextflux.cache.v3.root") ?? null);
     const storage = {
       async get(key) { state.storageCalls.push({ method: "get", keys: [key] }); return clone(memory.get(key) ?? null); },
@@ -101,6 +104,24 @@ export async function installFixture(page, options = {}) {
       },
     };
     const response = (value, status = 200) => ({ status, bodyEncoding: "text", headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
+    // Pause native responses, never React state, so pending buttons are reached
+    // through the same event handlers and async operations used in production.
+    const networkHolds = [];
+    state.holdNetworkNext = (path) => networkHolds.push(path);
+    state.releaseNetwork = () => state.heldNetwork.splice(0).forEach((entry) => entry.resolve());
+    const streams = new Map();
+    const enqueueStream = (text, done = false) => {
+      const stream = [...streams.values()].find((item) => !item.cancelled);
+      if (!stream) throw new Error("Fixture: no open AI stream");
+      const chunk = { data: new TextEncoder().encode(text), done };
+      if (stream.waiter) {
+        const resolve = stream.waiter;
+        stream.waiter = null;
+        resolve(chunk);
+      } else stream.queue.push(chunk);
+    };
+    state.emitAIChunk = (content) => enqueueStream(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+    state.finishAIStream = () => enqueueStream("data: [DONE]\n\n", true);
     window.ToolBox = {
       async ready() { return { hostVersion: "0.6.6", apiVersion: "1.0" }; },
       storage,
@@ -109,10 +130,18 @@ export async function installFixture(page, options = {}) {
           const url = new URL(payload.url);
           const record = { path: url.pathname, method: payload.method || "GET" };
           state.network.push(record);
-          if (url.origin !== server) throw { code: "NETWORK_BLOCKED" };
+          if (url.origin !== server) {
+            state.unexpectedNetwork.push(record);
+            throw { code: "NETWORK_BLOCKED" };
+          }
+          const holdIndex = networkHolds.indexOf(url.pathname);
+          if (holdIndex >= 0) {
+            networkHolds.splice(holdIndex, 1);
+            await new Promise((resolve) => state.heldNetwork.push({ path: url.pathname, resolve }));
+          }
           if (url.pathname.startsWith("/proxy/fixture/")) return { status: 200, headers: { "content-type": "image/png" }, bodyEncoding: "base64", body: png };
           if (url.pathname === "/v1/me") return response({ id: 1, username: "fixture-user" });
-          if (url.pathname === "/v1/integrations/status") return response({ has_integrations: false });
+          if (url.pathname === "/v1/integrations/status") return response({ has_integrations: hasIntegrations });
           if (/^\/v1\/feeds\/\d+\/icon$/.test(url.pathname)) return response({ id: 1, mime_type: "image/png", data: `image/png;base64,${png}` });
           if (url.pathname === "/v1/entries" && record.method === "PUT") {
             const change = typeof payload.body === "string" ? JSON.parse(payload.body) : payload.body;
@@ -129,8 +158,40 @@ export async function installFixture(page, options = {}) {
           }
           const original = /^\/v1\/entries\/(\d+)\/fetch-content$/.exec(url.pathname);
           if (original) return response({ content: body(Number(original[1]), true) });
+          if (hasIntegrations && /^\/v1\/entries\/\d+\/save$/.test(url.pathname) && record.method === "POST") return response(null, 204);
           state.unexpectedNetwork.push(record);
           throw { code: "NETWORK_UNAVAILABLE" };
+        },
+        async openStream(payload) {
+          const url = new URL(payload.url);
+          const record = { method: "openStream", path: url.pathname, origin: url.origin, requestMethod: payload.method };
+          if (!aiEnabled || url.origin !== aiServer || url.pathname !== "/v1/chat/completions" || payload.method !== "POST") {
+            state.unexpectedNetwork.push(record);
+            throw { code: "NETWORK_BLOCKED" };
+          }
+          const body = JSON.parse(payload.body);
+          if (!body.stream || body.model !== "fixture-model") throw new Error("Fixture: expected production streaming request");
+          const streamId = `fixture-stream-${streams.size + 1}`;
+          streams.set(streamId, { queue: [], waiter: null, cancelled: false });
+          state.streams.push({ ...record, streamId });
+          return { streamId, status: 200, headers: { "content-type": "text/event-stream" } };
+        },
+        async readStream(streamId) {
+          const stream = streams.get(streamId);
+          if (!stream || stream.cancelled) throw { code: "CANCELLED" };
+          state.streams.push({ method: "readStream", streamId });
+          if (stream.queue.length) return stream.queue.shift();
+          if (stream.waiter) throw new Error("Fixture: overlapping native stream reads");
+          return new Promise((resolve) => { stream.waiter = resolve; });
+        },
+        async cancelStream(streamId) {
+          const stream = streams.get(streamId);
+          state.streams.push({ method: "cancelStream", streamId });
+          if (!stream) return;
+          stream.cancelled = true;
+          stream.waiter?.({ data: new Uint8Array(), done: true });
+          stream.waiter = null;
+          stream.queue = [];
         },
       },
       ui: { async toast() {} },

@@ -17,6 +17,7 @@ const SyncButton = () => {
 
   return (
     <Button
+      className="nextflux-compact-touch-target"
       aria-label="立即同步"
       onPress={handleForceSync}
       isDisabled={$isSyncing || !$isOnline}

@@ -53,7 +53,7 @@ export default function CodeBlock({ code, language = "text" }) {
   return (
     <div className={cn("code-block relative group", forceDarkCodeTheme ? `${darkTheme} force-dark-code-theme` : "", showLineNumbers ? "line-numbers" : "")}>
       {language !== "text" && <span className="text-xs absolute left-3 top-2 text-muted">{language}</span>}
-      <Button className="absolute right-2 top-2" size="sm" isDisabled={isCopied} variant="ghost" isIconOnly aria-label={t("common.copy")} onPress={handleCopy}>
+      <Button className="nextflux-compact-touch-target absolute right-2 top-2" size="sm" isDisabled={isCopied} variant="ghost" isIconOnly aria-label={t("common.copy")} onPress={handleCopy}>
         {isCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
       </Button>
       {highlight?.code === code && highlight?.language === language ? <div className="pt-10" dangerouslySetInnerHTML={{ __html: highlight.html }} /> : <pre className="overflow-x-auto pt-12"><code>{code}</code></pre>}

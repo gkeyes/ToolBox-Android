@@ -64,17 +64,18 @@ export default function AISummary({ articleId }) {
       theme={$currentThemeMode}
     >
       <div className="ai-summary p-4 bg-background rounded-2xl">
-        <div className="flex gap-2 h-10">
-          <div className="flex items-center gap-1 h-auto">
+        <div className="flex min-h-[48px] items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1">
             <Sparkles className="size-4 text-accent shrink-0" />
-            <span className="text-sm font-medium text-accent">
+            <span className="nextflux-summary-title text-sm font-medium text-accent">
               {t("articleView.aiSummary")}
             </span>
           </div>
           {!isTyping && (
             <CloseButton
               onPress={() => clearSummary(articleId)}
-              className="ml-auto"
+              className="nextflux-close-button ml-auto"
+              aria-label={`${t("common.close")} ${t("articleView.aiSummary")}`}
             />
           )}
         </div>
