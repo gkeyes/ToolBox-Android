@@ -1,44 +1,19 @@
 package io.toolbox.host.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
-import io.toolbox.core.data.ThemeStyle
-import io.toolbox.core.ui.component.ToolBoxCard
-import io.toolbox.core.ui.component.ToolBoxChoiceSettingRow
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
-import io.toolbox.core.ui.component.ToolBoxSettingChoice
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -62,7 +37,6 @@ internal fun AppearanceScreen(
     DetailScreen(title = "外观", onBack = onBack) { chromePadding ->
         AppearanceContent(
             state = state,
-            onThemeStyleSelected = viewModel::selectThemeStyle,
             onThemeModeSelected = viewModel::selectTheme,
             onReduceTransparencyChanged = viewModel::setReduceTransparency,
             onRetry = viewModel::retryAppearanceUpdate,
@@ -80,7 +54,6 @@ internal fun AppearanceScreen(
 @Composable
 internal fun AppearanceContent(
     state: SettingsUiState,
-    onThemeStyleSelected: (ThemeStyle) -> Unit,
     onThemeModeSelected: (ThemeMode) -> Unit,
     onReduceTransparencyChanged: (Boolean) -> Unit,
     onRetry: () -> Unit,
@@ -106,26 +79,15 @@ internal fun AppearanceContent(
             item("error-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
 
-        item("style-title") { SectionHeader("界面风格") }
+        item("style-title") { SectionHeader("当前样式") }
         item("style-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-        item("style-previews") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-            ) {
-                ThemeStylePreview(
-                    style = ThemeStyle.MIUIX,
-                    selected = settings.themeStyle == ThemeStyle.MIUIX,
-                    enabled = state.loaded,
-                    onClick = { onThemeStyleSelected(ThemeStyle.MIUIX) },
-                    modifier = Modifier.weight(1f),
-                )
-                ThemeStylePreview(
-                    style = ThemeStyle.LIQUID_GLASS,
-                    selected = settings.themeStyle == ThemeStyle.LIQUID_GLASS,
-                    enabled = state.loaded,
-                    onClick = { onThemeStyleSelected(ThemeStyle.LIQUID_GLASS) },
-                    modifier = Modifier.weight(1f),
+        item("current-style") {
+            ToolBoxGroupedSurface {
+                io.toolbox.core.ui.component.ToolBoxValueRow(
+                    title = "Liquid Glass",
+                    summary = "OpenDesign · 层次、光线与轻盈的内容卡片",
+                    value = "已启用",
+                    modifier = Modifier.testTag(HostTestTags.AppearanceLiquidGlass),
                 )
             }
         }
@@ -135,22 +97,15 @@ internal fun AppearanceContent(
         item("color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("color-settings") {
             ToolBoxGroupedSurface {
-                ToolBoxChoiceSettingRow(
-                    title = "明暗模式",
-                    modifier = Modifier.testTag(HostTestTags.AppearanceMode),
-                    selectedValue = settings.theme.baseMode.name,
-                    choices = listOf(
-                        ToolBoxSettingChoice(ThemeMode.SYSTEM.name, "跟随系统"),
-                        ToolBoxSettingChoice(ThemeMode.LIGHT.name, "浅色"),
-                        ToolBoxSettingChoice(ThemeMode.DARK.name, "深色"),
-                    ),
-                    onSelected = { selected ->
-                        onThemeModeSelected(
-                            ThemeMode.valueOf(selected).withSystemColor(settings.theme.usesSystemColor),
-                        )
-                    },
-                    enabled = state.loaded,
-                )
+                listOf(ThemeMode.SYSTEM to "跟随系统", ThemeMode.LIGHT to "浅色", ThemeMode.DARK to "深色").forEachIndexed { index, (mode, label) ->
+                    io.toolbox.core.ui.component.ToolBoxRadioSettingRow(
+                        title = label, selected = settings.theme.baseMode == mode,
+                        onClick = { onThemeModeSelected(mode.withSystemColor(settings.theme.usesSystemColor)) },
+                        enabled = state.loaded,
+                        modifier = if (index == 0) Modifier.testTag(HostTestTags.AppearanceMode) else Modifier,
+                    )
+                    if (index < 2) ToolBoxGroupDivider()
+                }
                 ToolBoxGroupDivider()
                 ToolBoxSwitchSettingRow(
                     title = "系统取色",
@@ -165,7 +120,7 @@ internal fun AppearanceContent(
             }
         }
 
-        if (settings.themeStyle == ThemeStyle.LIQUID_GLASS) {
+        run {
             item("material-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
             item("material-title") { SectionHeader("玻璃材质") }
             item("material-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
@@ -191,92 +146,6 @@ internal fun AppearanceContent(
                 color = ToolBoxThemeTokens.colors.textSecondary,
             )
         }
-    }
-}
-
-@Composable
-private fun ThemeStylePreview(
-    style: ThemeStyle,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = ToolBoxThemeTokens.colors
-    val radius = if (style == ThemeStyle.LIQUID_GLASS) 22.dp else 14.dp
-    val selectionColor = if (selected) colors.primary else colors.divider
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        ToolBoxCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = selected,
-                    enabled = enabled,
-                    role = Role.RadioButton,
-                    onClick = onClick,
-                )
-                .testTag(
-                    if (style == ThemeStyle.MIUIX) HostTestTags.AppearanceMiuix
-                    else HostTestTags.AppearanceLiquidGlass,
-                )
-                .border(if (selected) 2.dp else 1.dp, selectionColor, RoundedCornerShape(radius))
-                .semantics { this.selected = selected },
-            contentPadding = PaddingValues(8.dp),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(132.dp)
-                    .clip(RoundedCornerShape(radius - 4.dp))
-                    .background(if (style == ThemeStyle.LIQUID_GLASS) colors.background else colors.surfaceMuted),
-            ) {
-                Column(Modifier.fillMaxSize().padding(10.dp)) {
-                    Box(
-                        Modifier
-                            .width(if (style == ThemeStyle.LIQUID_GLASS) 64.dp else 52.dp)
-                            .height(if (style == ThemeStyle.LIQUID_GLASS) 10.dp else 8.dp)
-                            .clip(CircleShape)
-                            .background(colors.textPrimary.copy(alpha = 0.78f)),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    repeat(3) { index ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(22.dp)
-                                .clip(RoundedCornerShape(if (style == ThemeStyle.LIQUID_GLASS) 8.dp else 5.dp))
-                                .background(colors.surface.copy(alpha = if (style == ThemeStyle.LIQUID_GLASS) 0.88f else 1f))
-                                .padding(horizontal = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(Modifier.size(6.dp).clip(CircleShape).background(if (index == 0) colors.primary else colors.divider))
-                            Spacer(Modifier.width(5.dp))
-                            Box(Modifier.weight(1f).height(3.dp).clip(CircleShape).background(colors.textSecondary.copy(alpha = 0.45f)))
-                        }
-                        Spacer(Modifier.height(4.dp))
-                    }
-                }
-                if (style == ThemeStyle.LIQUID_GLASS) {
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(8.dp)
-                            .fillMaxWidth()
-                            .height(20.dp)
-                            .clip(CircleShape)
-                            .background(colors.surface.copy(alpha = 0.72f))
-                            .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        AppText(
-            style.label,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata,
-            color = if (selected) colors.primary else colors.textSecondary,
-            weight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        )
     }
 }
 

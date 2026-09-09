@@ -166,11 +166,11 @@ private fun RunningToolRow(
                 size = ToolBoxThemeTokens.sizes.compactToolGlyph,
             )
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-            AppText(
-                text = session.toolName,
-                modifier = Modifier.weight(1f),
-                textStyle = ToolBoxThemeTokens.textStyles.body,
-            )
+            Column(Modifier.weight(1f)) {
+                AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
+                AppText(text = if (stopping) "正在停止后台会话" else "● 运行中",
+                    color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+            }
         }
         ToolBoxRunningStatusButton(
             stopping = stopping,

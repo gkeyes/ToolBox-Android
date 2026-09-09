@@ -3,7 +3,6 @@ package io.toolbox.core.ui.component
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Check
@@ -24,7 +23,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.TouchApp
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
@@ -108,11 +106,11 @@ fun ToolBoxIconButton(
 }
 
 internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
-    ToolBoxIconKey.Tools -> Icons.Outlined.Apps
-    ToolBoxIconKey.Settings -> Icons.Outlined.Settings
+    ToolBoxIconKey.Tools -> OpenDesignIcons.Tools
+    ToolBoxIconKey.Settings -> OpenDesignIcons.Settings
     ToolBoxIconKey.Add -> Icons.Outlined.Add
     ToolBoxIconKey.Search -> Icons.Outlined.Search
-    ToolBoxIconKey.Back -> Icons.AutoMirrored.Outlined.ArrowBack
+    ToolBoxIconKey.Back -> OpenDesignIcons.Back
     ToolBoxIconKey.ChevronRight -> Icons.AutoMirrored.Outlined.KeyboardArrowRight
     ToolBoxIconKey.Shield -> Icons.Outlined.Shield
     ToolBoxIconKey.Refresh -> Icons.Outlined.Refresh

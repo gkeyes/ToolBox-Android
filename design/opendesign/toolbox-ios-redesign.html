@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ToolBox · iOS 风格界面重设计</title>
+  <style>
+    :root {
+      --bg: oklch(96.257% 0.00665 286.27);
+      --surface: oklch(100% 0 89.88);
+      --fg: oklch(22.728% 0.00382 286.09);
+      --muted: oklch(48.721% 0.0079 286.10);
+      --border: oklch(93.546% 0.0067 286.27);
+      --accent: oklch(51.961% 0.17756 257.61);
+      --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+      --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+      --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --fs-h1: clamp(42px, 5.7vw, 72px);
+      --fs-h2: clamp(30px, 3.6vw, 46px);
+      --fs-h3: 20px;
+      --fs-lead: 18px;
+      --fs-body: 16px;
+      --fs-meta: 13px;
+      --gap-xs: 8px;
+      --gap-sm: 12px;
+      --gap-md: 20px;
+      --gap-lg: 32px;
+      --gap-xl: 56px;
+      --gap-2xl: 96px;
+      --container: 1120px;
+      --gutter: 32px;
+      --radius: 14px;
+      --radius-lg: 22px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: var(--fs-body); line-height: 1.55; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    p { text-wrap: pretty; }
+    h1, h2, h3 { text-wrap: balance; }
+    .container { max-width: var(--container); margin-inline: auto; padding-inline: var(--gutter); }
+    .section { padding-block: clamp(52px, 8vw, var(--gap-2xl)); }
+    .section + .section { border-top: 1px solid var(--border); }
+    .stack { display: flex; flex-direction: column; }
+    .row { display: flex; align-items: center; gap: var(--gap-md); }
+    .row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-md); }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap-lg); }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap-lg); }
+    .h1, h1 { font-family: var(--font-display); font-size: var(--fs-h1); font-weight: 720; line-height: 1.03; letter-spacing: -0.045em; margin: 0; }
+    .h2, h2 { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 720; line-height: 1.08; letter-spacing: -0.035em; margin: 0; }
+    .h3, h3 { font-size: var(--fs-h3); font-weight: 680; line-height: 1.3; letter-spacing: -0.02em; margin: 0; }
+    .lead { color: var(--muted); font-size: var(--fs-lead); line-height: 1.55; max-width: 52ch; margin: 0; }
+    .eyebrow, .meta { font-family: var(--font-mono); font-size: var(--fs-meta); }
+    .eyebrow { color: var(--accent); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 var(--gap-md); }
+    .meta { color: var(--muted); }
+    .topnav { position: sticky; top: 0; z-index: 10; background: color-mix(in oklch, var(--bg) 78%, transparent); backdrop-filter: blur(18px) saturate(1.2); border-bottom: 1px solid color-mix(in oklch, var(--border) 75%, transparent); }
+    .topnav-inner { min-height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 730; letter-spacing: -.03em; }
+    .logo-mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--surface); background: var(--fg); font-size: 13px; font-weight: 800; }
+    .topnav nav { display: flex; gap: 24px; }
+    .topnav nav a { color: var(--muted); font-size: 14px; transition: color .15s ease; }
+    .topnav nav a:hover { color: var(--fg); }
+    .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 17px; border: 1px solid transparent; border-radius: 14px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+    .btn:active { transform: scale(.98); }
+    .btn-primary { color: var(--surface); background: var(--accent); border-color: var(--accent); box-shadow: 0 5px 14px color-mix(in oklch, var(--accent) 22%, transparent); }
+    .btn-primary:hover { background: color-mix(in oklch, var(--accent) 88%, black); }
+    .btn-secondary { color: var(--fg); background: color-mix(in oklch, var(--surface) 78%, transparent); border-color: var(--border); }
+    .btn-secondary:hover { background: var(--surface); border-color: color-mix(in oklch, var(--fg) 25%, var(--border)); }
+    .btn-ghost { min-height: 40px; color: var(--accent); background: transparent; border-color: transparent; padding-inline: 8px; }
+    .btn-ghost:hover { background: var(--accent-soft); }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid color-mix(in oklch, var(--accent) 30%, transparent); outline-offset: 3px; }
+    .hero { padding-block: clamp(64px, 9vw, 112px); }
+    .hero-split { display: grid; grid-template-columns: minmax(0, .96fr) minmax(390px, .9fr); align-items: center; gap: clamp(48px, 8vw, 96px); }
+    .hero .lead { margin-top: var(--gap-md); }
+    .hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .micro-note { margin: 15px 0 0; color: var(--muted); font-size: 13px; }
+    .card-flat { padding: 0; background: transparent; border: 0; }
+    .feature-mark { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 17px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: var(--accent); }
+    .feature-mark svg { width: 21px; height: 21px; }
+    .feature p { color: var(--muted); margin: 8px 0 0; font-size: 15px; }
+    .pagefoot { padding-block: 34px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+    .pagefoot .row-between { flex-wrap: wrap; }
+
+    .phone-stage { display: grid; place-items: center; min-height: 760px; position: relative; }
+    .phone-stage::before { content: ''; position: absolute; width: 82%; aspect-ratio: 1; border-radius: 50%; background: color-mix(in oklch, var(--fg) 5%, transparent); filter: blur(22px); }
+    .phone { width: min(100%, 390px); height: 844px; position: relative; z-index: 1; padding: 10px; border-radius: 49px; background: oklch(18% .01 286); box-shadow: 0 30px 70px color-mix(in oklch, var(--fg) 24%, transparent), inset 0 0 0 1px color-mix(in oklch, var(--surface) 25%, transparent); }
+    .phone-screen { height: 100%; overflow: hidden; isolation: isolate; position: relative; border-radius: 39px; background: radial-gradient(130px 220px at 100% 8%, color-mix(in oklch, var(--accent) 16%, transparent), transparent 72%), radial-gradient(180px 250px at -10% 88%, color-mix(in oklch, var(--fg) 8%, transparent), transparent 72%), var(--bg); }
+    .phone-screen::after { content: ''; position: absolute; z-index: 3; right: 0; bottom: 0; left: 0; height: 126px; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklch, var(--surface) 72%, transparent) 66%, color-mix(in oklch, var(--surface) 90%, transparent)); }
+    .ambient-orb { display: none; }
+    .dynamic-island { position: absolute; z-index: 3; top: 9px; left: 50%; width: 118px; height: 28px; transform: translateX(-50%); background: oklch(8% .003 286); border-radius: 999px; }
+    .statusbar { height: 58px; display: flex; justify-content: space-between; align-items: center; padding: 12px 25px 0; font-size: 12px; font-weight: 700; }
+    .screen-content { height: calc(100% - 58px); position: relative; z-index: 1; overflow: auto; padding: 0 16px 146px; scrollbar-width: none; }
+    .screen-content::-webkit-scrollbar { display: none; }
+    .screen-title-row { display: flex; align-items: center; justify-content: space-between; margin: 8px 1px 18px; }
+    .screen-title { font-size: 34px; line-height: 1.05; letter-spacing: -.05em; font-weight: 760; margin: 0; }
+    .circle-button { display: grid; place-items: center; width: 44px; height: 44px; color: var(--accent); background: color-mix(in oklch, var(--surface) 48%, transparent); backdrop-filter: blur(18px) saturate(1.4); border: 1px solid color-mix(in oklch, var(--surface) 88%, transparent); border-radius: 50%; box-shadow: 0 6px 16px color-mix(in oklch, var(--fg) 10%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 92%, transparent); transition: transform .15s ease, background .15s ease; }
+    .circle-button:hover { background: color-mix(in oklch, var(--surface) 66%, transparent); transform: scale(1.04); }
+    .circle-button svg { width: 21px; height: 21px; }
+    .search { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 13px; margin-bottom: 19px; background: color-mix(in oklch, var(--surface) 44%, transparent); backdrop-filter: blur(16px) saturate(1.3); border: 1px solid color-mix(in oklch, var(--surface) 78%, transparent); border-radius: 17px; box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface) 76%, transparent); color: var(--muted); }
+    .search:focus-within { background: color-mix(in oklch, var(--surface) 62%, transparent); border-color: var(--accent); }
+    .search svg { width: 18px; height: 18px; flex: none; }
+    .search input { width: 100%; border: 0; outline: 0; color: var(--fg); background: transparent; font-size: 16px; }
+    .search input::placeholder { color: var(--muted); }
+    .section-label { display: flex; align-items: baseline; justify-content: space-between; margin: 20px 4px 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+    .section-label strong { color: var(--muted); font-weight: 600; }
+    .group { overflow: hidden; isolation: isolate; position: relative; background: color-mix(in oklch, var(--surface) 54%, transparent); border: 1px solid color-mix(in oklch, var(--surface) 88%, transparent); border-radius: 20px; box-shadow: 0 12px 28px color-mix(in oklch, var(--fg) 7%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 100%, transparent), inset 0 -1px 0 color-mix(in oklch, var(--fg) 5%, transparent); backdrop-filter: blur(24px) saturate(1.3) brightness(1.05); }
+    .tool-row { width: 100%; min-height: 76px; display: grid; grid-template-columns: 46px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; background: color-mix(in oklch, var(--surface) 52%, transparent); border: 1px solid color-mix(in oklch, var(--surface) 90%, transparent); border-radius: 20px; box-shadow: 0 9px 20px color-mix(in oklch, var(--fg) 8%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 96%, transparent); backdrop-filter: blur(22px) saturate(1.28); color: var(--fg); text-align: left; transition: transform .16s ease, background .16s ease, box-shadow .16s ease; }
+    .tool-row + .tool-row { margin-top: 8px; }
+    .tool-row:hover { background: color-mix(in oklch, var(--surface) 68%, transparent); box-shadow: 0 13px 24px color-mix(in oklch, var(--fg) 11%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 100%, transparent); transform: translateY(-1px); }
+    .tool-main { min-width: 0; }
+    .tool-main b { display: block; overflow: hidden; font-size: 16px; line-height: 1.25; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-main span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; color: var(--surface); font-size: 14px; font-weight: 750; letter-spacing: -.04em; }
+    .tool-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.75; }
+    .tool-icon.calc, .tool-icon.note, .tool-icon.task, .tool-icon.lab { color: var(--surface); background: color-mix(in oklch, var(--fg) 72%, var(--accent)); box-shadow: inset 0 1px 0 color-mix(in oklch, var(--surface) 28%, transparent), 0 5px 10px color-mix(in oklch, var(--fg) 16%, transparent); }
+    .manage { min-width: 48px; min-height: 48px; padding: 0; color: var(--accent); background: transparent; border: 0; font-weight: 650; }
+    .manage:hover { text-decoration: underline; text-underline-offset: 3px; }
+    #tool-list { display: flex; flex-direction: column; overflow: visible; margin-bottom: 24px; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; }
+    #tool-list::before, #tool-list::after { display: none; }
+    .running-row { display: flex; align-items: center; gap: 11px; padding: 10px 12px; }
+    .running-copy { min-width: 0; flex: 1; }
+    .running-copy b { display: block; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .running-copy span { color: var(--muted); font-size: 12px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 5px; color: color-mix(in oklch, var(--accent) 58%, oklch(48% .14 150)); font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .status-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .stop { min-width: 48px; min-height: 40px; color: color-mix(in oklch, var(--fg) 60%, oklch(49% .17 25)); background: color-mix(in oklch, oklch(60% .16 25) 10%, transparent); border: 0; border-radius: 12px; font-size: 13px; font-weight: 650; }
+    .stop:hover { background: color-mix(in oklch, oklch(60% .16 25) 18%, transparent); }
+    .recents { display: flex; gap: 12px; overflow: auto; padding: 1px 1px 2px; scrollbar-width: none; }
+    .recent { width: 58px; min-width: 58px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; color: var(--fg); background: transparent; border: 0; font-size: 11px; }
+    .recent span:last-child { width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    .recent .tool-icon { width: 48px; height: 48px; border-radius: 16px; }
+    .bottom-nav { position: absolute; z-index: 4; right: 12px; bottom: 11px; left: 12px; isolation: isolate; height: 70px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 6px; background: color-mix(in oklch, var(--surface) 48%, transparent); backdrop-filter: blur(32px) saturate(1.58) brightness(1.1); border: 1px solid color-mix(in oklch, var(--surface) 98%, transparent); border-radius: 25px; box-shadow: 0 18px 36px color-mix(in oklch, var(--fg) 18%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 100%, transparent), inset 0 -1px 0 color-mix(in oklch, var(--fg) 7%, transparent); }
+    .bottom-nav::before { content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: 23px; background: color-mix(in oklch, var(--surface) 20%, transparent); pointer-events: none; }
+    .tab { min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: transparent; border: 0; border-radius: 19px; font-size: 13px; font-weight: 650; transition: color .16s ease, background .16s ease, transform .16s ease; }
+    .tab svg { width: 18px; height: 18px; }
+    .tab[aria-selected='true'] { color: var(--fg); background: color-mix(in oklch, var(--surface) 72%, transparent); box-shadow: 0 3px 11px color-mix(in oklch, var(--fg) 9%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 90%, transparent); }
+    .tab:active { transform: scale(.97); }
+    .screen-panel[hidden] { display: none; }
+    .settings-card { margin-top: 8px; }
+    .settings-row { width: 100%; min-height: 68px; display: flex; align-items: center; gap: 12px; padding: 10px 13px; color: var(--fg); background: transparent; border: 0; text-align: left; }
+    .settings-row + .settings-row { border-top: 1px solid color-mix(in oklch, var(--border) 78%, transparent); }
+    button.settings-row:hover { background: color-mix(in oklch, var(--surface) 30%, transparent); }
+    .setting-glyph { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); }
+    .setting-glyph svg { width: 18px; height: 18px; }
+    .setting-copy { min-width: 0; flex: 1; }
+    .setting-copy b { display: block; font-size: 15px; letter-spacing: -.015em; }
+    .setting-copy span { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
+    .setting-value { color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .secondary-panel { padding-bottom: 8px; }
+    .secondary-header { position: sticky; z-index: 2; top: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; min-height: 52px; margin: 0 -2px 10px; background: color-mix(in oklch, var(--bg) 58%, transparent); backdrop-filter: blur(24px) saturate(1.25); }
+    .secondary-back { display: grid; place-items: center; width: 44px; height: 44px; color: var(--accent); background: color-mix(in oklch, var(--surface) 48%, transparent); border: 1px solid color-mix(in oklch, var(--surface) 88%, transparent); border-radius: 50%; box-shadow: 0 6px 16px color-mix(in oklch, var(--fg) 9%, transparent), inset 0 1px 0 color-mix(in oklch, var(--surface) 94%, transparent); }
+    .secondary-back:hover { background: color-mix(in oklch, var(--surface) 70%, transparent); transform: scale(1.04); }
+    .secondary-back svg { width: 20px; height: 20px; }
+    .secondary-title { overflow: hidden; padding: 0 8px; color: var(--fg); font-size: 18px; font-weight: 720; letter-spacing: -.025em; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    .secondary-intro { margin: 4px 4px 16px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .secondary-row { width: 100%; min-height: 62px; display: flex; align-items: center; gap: 11px; padding: 9px 13px; color: var(--fg); background: transparent; border: 0; text-align: left; }
+    .secondary-row + .secondary-row { border-top: 1px solid color-mix(in oklch, var(--border) 78%, transparent); }
+    button.secondary-row:hover { background: color-mix(in oklch, var(--surface) 30%, transparent); }
+    .secondary-row-copy { min-width: 0; flex: 1; }
+    .secondary-row-copy b { display: block; font-size: 15px; letter-spacing: -.015em; }
+    .secondary-row-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+    .secondary-choice { width: 100%; min-height: 54px; display: flex; align-items: center; gap: 11px; padding: 10px 13px; color: var(--fg); background: transparent; border: 0; text-align: left; }
+    .secondary-choice + .secondary-choice { border-top: 1px solid color-mix(in oklch, var(--border) 78%, transparent); }
+    .secondary-choice[aria-checked='true'] { background: color-mix(in oklch, var(--accent) 11%, transparent); }
+    .secondary-choice:hover { background: color-mix(in oklch, var(--surface) 30%, transparent); }
+    .choice-indicator { display: grid; place-items: center; width: 20px; height: 20px; flex: none; border: 1.5px solid var(--border); border-radius: 50%; }
+    .secondary-choice[aria-checked='true'] .choice-indicator { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 5px var(--surface); }
+    .secondary-meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .secondary-chevron { width: 18px; height: 18px; flex: none; color: var(--meta); }
+    .secondary-note { margin: 10px 4px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .secondary-columns { display: grid; gap: 14px; }
+    .import-picker { width: 100%; min-height: 128px; display: grid; justify-items: start; gap: 10px; padding: 18px; color: var(--fg); background: color-mix(in oklch, var(--surface) 34%, transparent); border: 1px dashed color-mix(in oklch, var(--border) 92%, transparent); border-radius: 20px; text-align: left; }
+    .import-picker:hover { background: color-mix(in oklch, var(--surface) 58%, transparent); border-color: var(--accent); }
+    .import-picker svg { width: 24px; height: 24px; color: var(--accent); }
+    .import-picker b { font-size: 16px; letter-spacing: -.02em; }
+    .import-picker span { color: var(--muted); font-size: 13px; }
+    .import-result { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; align-items: start; padding: 14px; border-radius: 18px; background: color-mix(in oklch, var(--success) 10%, var(--surface)); border: 1px solid color-mix(in oklch, var(--success) 30%, var(--border)); }
+    .import-result[hidden] { display: none; }
+    .import-result.is-failure { background: color-mix(in oklch, var(--danger) 9%, var(--surface)); border-color: color-mix(in oklch, var(--danger) 28%, var(--border)); }
+    .import-result-icon { display: grid; place-items: center; width: 38px; height: 38px; color: var(--success); background: color-mix(in oklch, var(--success) 14%, transparent); border-radius: 50%; }
+    .import-result.is-failure .import-result-icon { color: var(--danger); background: color-mix(in oklch, var(--danger) 13%, transparent); }
+    .import-result-icon svg { width: 20px; height: 20px; }
+    .import-result-copy { min-width: 0; }
+    .import-result-copy b { display: block; font-size: 15px; letter-spacing: -.015em; }
+    .import-result-copy p { margin: 3px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .result-link { min-height: 36px; padding: 0; color: var(--accent); background: transparent; border: 0; font-size: 13px; font-weight: 650; }
+    .result-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .phone-screen.reduce-transparency .secondary-header, .phone-screen.reduce-transparency .secondary-back { background: var(--surface); backdrop-filter: none; }
+    .phone-screen.reduce-transparency .group, .phone-screen.reduce-transparency .search, .phone-screen.reduce-transparency .circle-button, .phone-screen.reduce-transparency .bottom-nav { background: var(--surface); backdrop-filter: none; }
+    .switch { position: relative; width: 49px; height: 31px; flex: none; border: 0; border-radius: 999px; background: color-mix(in oklch, var(--muted) 32%, transparent); transition: background .15s ease; }
+    .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 25px; height: 25px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px color-mix(in oklch, var(--fg) 22%, transparent); transition: transform .15s ease; }
+    .switch[aria-checked='true'] { background: var(--accent); }
+    .switch[aria-checked='true']::after { transform: translateX(18px); }
+    .tool-danger { background: color-mix(in oklch, var(--danger) 7%, var(--surface)); border-color: color-mix(in oklch, var(--danger) 28%, var(--border)); }
+    .tool-danger .secondary-row-copy b { color: var(--danger); }
+    #tool-detail-panel .secondary-header { position: relative; margin: 0 -2px 8px; background: transparent; backdrop-filter: none; }
+    #tool-detail-panel .secondary-header .secondary-title { font-size: 20px; font-weight: 720; }
+    .vision-detail { max-width: 52ch; }
+    .principle-list { overflow: hidden; border-top: 1px solid var(--fg); }
+    .principle { display: grid; grid-template-columns: 66px 1fr; gap: 18px; padding: 22px 0; border-bottom: 1px solid var(--border); }
+    .principle span { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+    .principle p { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+    @media (max-width: 920px) { .hero-split, .grid-2, .grid-3 { grid-template-columns: 1fr; } .hero-split { gap: 44px; } .phone-stage { min-height: auto; } .topnav nav { display: none; } }
+    @media (max-width: 500px) { :root { --gutter: 20px; } .phone { width: min(100%, 390px); height: min(844px, calc(100vh - 54px)); } .section { padding-block: 56px; } .hero { padding-top: 48px; } }
+    @media (min-width: 2000px) and (max-height: 1300px) {
+      .hero-split { grid-template-columns: minmax(420px, .7fr) minmax(760px, 1.3fr); gap: clamp(56px, 7vw, 116px); }
+      .phone-stage { min-height: 504px; }
+      .phone { width: min(100%, 980px); height: 452px; padding: 8px; border-radius: 35px; }
+      .phone-screen { border-radius: 27px; }
+      .dynamic-island { display: none; }
+      .statusbar { height: 30px; padding: 6px 20px 0; }
+      .screen-content { height: calc(100% - 30px); padding: 0 18px 82px; }
+      .screen-title-row { margin: 6px 1px 10px; }
+      .screen-title { font-size: 28px; }
+      .circle-button { width: 40px; height: 40px; }
+      .search { height: 42px; margin-bottom: 9px; }
+      .section-label { margin-top: 11px; margin-bottom: 6px; }
+      .running-row { min-height: 58px; padding: 8px 10px; }
+      .recent .tool-icon { width: 40px; height: 40px; border-radius: 13px; }
+      .tool-row { min-height: 60px; padding: 8px 10px; }
+      .tool-row + .tool-row { margin-top: 6px; }
+      .tool-icon { width: 38px; height: 38px; border-radius: 12px; }
+      .tool-icon svg { width: 18px; height: 18px; }
+      .bottom-nav { right: 18px; bottom: 9px; left: 18px; height: 58px; border-radius: 21px; }
+      .bottom-nav::before { border-radius: 19px; }
+      .tab { min-height: 44px; border-radius: 15px; }
+      #tools-panel:not([hidden]) { display: grid; grid-template-columns: minmax(250px, .72fr) minmax(360px, 1.28fr); grid-template-rows: auto auto 1fr; column-gap: 18px; align-items: start; }
+      #tools-panel .screen-title-row { grid-column: 1 / -1; }
+      #tools-panel .search { grid-column: 1; grid-row: 2; }
+      #tools-panel #running-section { grid-column: 1; grid-row: 3; }
+      #tools-panel #recent-section { grid-column: 1; grid-row: 4; }
+      #tools-panel [data-od-id='all-tools-label'] { grid-column: 2; grid-row: 2; margin-top: 0; align-self: end; }
+      #tools-panel #tool-list { grid-column: 2; grid-row: 3 / span 2; margin: 0; }
+      #settings-panel:not([hidden]) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 14px; align-content: start; }
+      #settings-panel .screen-title-row { grid-column: 1 / -1; }
+      #settings-panel > .section-label { grid-row: 2; margin-top: 4px; }
+      #settings-panel > .settings-card { grid-row: 3; margin-top: 6px; }
+      #settings-panel .settings-row { min-height: 58px; padding: 8px 10px; }
+      #settings-panel .setting-glyph { width: 31px; height: 31px; border-radius: 10px; }
+      #settings-panel .setting-copy b { font-size: 14px; }
+      #settings-panel .setting-copy span { font-size: 11px; }
+      #secondary-panel:not([hidden]), #import-panel:not([hidden]), #tool-detail-panel:not([hidden]) { display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); column-gap: 18px; align-content: start; }
+      #secondary-panel .secondary-header, #import-panel .secondary-header, #tool-detail-panel .secondary-header { grid-column: 1 / -1; margin-bottom: 4px; }
+      #secondary-panel .secondary-intro, #import-panel .secondary-intro, #tool-detail-panel .secondary-intro { grid-column: 1; margin-top: 8px; }
+      #secondary-panel .secondary-columns, #import-panel .secondary-columns, #tool-detail-panel .secondary-columns { grid-column: 2; grid-row: 2 / span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); align-self: start; }
+      #secondary-panel .secondary-columns > .secondary-note { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topnav" data-od-id="topnav">
+    <div class="container topnav-inner">
+      <a class="logo" href="#content" data-od-id="brand-link"><span class="logo-mark">T</span>ToolBox</a>
+      <nav aria-label="页面导航" data-od-id="page-nav"><a href="#prototype">原型</a><a href="#principles">设计原则</a></nav>
+      <a class="btn btn-secondary" href="#prototype" data-od-id="view-prototype-cta">查看原型</a>
+    </div>
+  </header>
+  <main id="content">
+    <section class="section hero" data-od-id="hero">
+      <div class="container hero-split">
+        <div>
+          <p class="eyebrow" data-od-id="hero-eyebrow">ToolBox · Liquid Glass</p>
+          <h1 data-od-id="hero-heading">把工具管理变得像系统本身一样自然。</h1>
+          <p class="lead" data-od-id="hero-description">面向 Android 13+ 的 .tbx 小工具宿主，保留导入、打开、授权、后台与删除这条真实路径；以 iOS 式分组、材质与反馈重建日常使用体验。</p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="#prototype" data-od-id="hero-primary-cta">浏览交互原型</a>
+            <a class="btn btn-ghost" href="#principles" data-od-id="hero-secondary-cta">查看设计取舍</a>
+          </div>
+          <p class="micro-note">概念稿基于仓库现有 Liquid Glass 规范与四个内置范例。</p>
+        </div>
+        <div class="phone-stage" id="prototype" data-od-id="toolbox-app-prototype">
+          <div class="phone" aria-label="ToolBox 工具页交互原型">
+            <div class="phone-screen">
+              <div class="dynamic-island" aria-hidden="true"></div>
+              <span class="ambient-orb ambient-orb-a" aria-hidden="true"></span>
+              <span class="ambient-orb ambient-orb-b" aria-hidden="true"></span>
+              <div class="statusbar" aria-hidden="true"><span>9:41</span><span>▮▮▮ ◔</span></div>
+              <div class="screen-content">
+                <section class="screen-panel" id="tools-panel" data-od-id="tools-screen">
+                  <div class="screen-title-row"><h2 class="screen-title" data-od-id="tools-title">工具</h2><button class="circle-button" id="import-button" type="button" aria-label="导入 .tbx" data-od-id="import-tool-control"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button></div>
+                  <label class="search" data-od-id="tool-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input id="tool-search-input" type="search" placeholder="搜索工具" autocomplete="off" /></label>
+                  <div id="running-section" data-od-id="running-tools-section"><div class="section-label"><strong>正在运行</strong><span>1 个</span></div><div class="group"><div class="running-row"><span class="tool-icon task" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 17 10 12l3 3 6-7"/><path d="M15 8h4v4"/></svg></span><div class="running-copy"><b>后台任务演示</b><span>下一次运行由工具安排</span></div><span class="status-pill">运行中</span><button class="stop" id="stop-button" type="button" data-od-id="stop-background-task">停止</button></div></div></div>
+                  <div id="recent-section" data-od-id="recent-tools-section"><div class="section-label"><strong>最近使用</strong></div><div class="recents"><button class="recent" type="button" aria-label="打开仓位计算器" data-od-id="recent-calculator"><span class="tool-icon calc"><svg viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8 7.5h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/></svg></span><span>仓位</span></button><button class="recent" type="button" aria-label="打开快速笔记" data-od-id="recent-notes"><span class="tool-icon note"><svg viewBox="0 0 24 24"><path d="M6 4h9l3 3v13H6z"/><path d="M9 12h6M9 16h4M15 4v4h4"/></svg></span><span>笔记</span></button><button class="recent" type="button" aria-label="打开通知实验室" data-od-id="recent-lab"><span class="tool-icon lab"><svg viewBox="0 0 24 24"><path d="M6 17h12l-1.5-2.5V10a4.5 4.5 0 1 0-9 0v4.5z"/><path d="M10 20h4"/></svg></span><span>通知</span></button><button class="recent" type="button" aria-label="打开后台任务演示" data-od-id="recent-tasks"><span class="tool-icon task"><svg viewBox="0 0 24 24"><path d="M5 17 10 12l3 3 6-7"/><path d="M15 8h4v4"/></svg></span><span>任务</span></button></div></div>
+                  <div class="section-label" data-od-id="all-tools-label"><strong>全部工具</strong><span id="tool-count">4</span></div>
+                  <div class="group" id="tool-list" data-od-id="installed-tools-list">
+                    <div class="tool-row" data-name="仓位计算器 calculator"><span class="tool-icon calc"><svg viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8 7.5h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/></svg></span><span class="tool-main"><b>仓位计算器</b><span>计算 · 本地运行</span></span><button class="manage" type="button" aria-label="管理仓位计算器" data-tool="仓位计算器" data-od-id="manage-calculator">管理</button></div>
+                    <div class="tool-row" data-name="快速笔记 note"><span class="tool-icon note"><svg viewBox="0 0 24 24"><path d="M6 4h9l3 3v13H6z"/><path d="M9 12h6M9 16h4M15 4v4h4"/></svg></span><span class="tool-main"><b>快速笔记</b><span>记录 · 本地存储</span></span><button class="manage" type="button" aria-label="管理快速笔记" data-tool="快速笔记" data-od-id="manage-notes">管理</button></div>
+                    <div class="tool-row" data-name="后台任务演示 task"><span class="tool-icon task"><svg viewBox="0 0 24 24"><path d="M5 17 10 12l3 3 6-7"/><path d="M15 8h4v4"/></svg></span><span class="tool-main"><b>后台任务演示</b><span>后台 · 通知</span></span><button class="manage" type="button" aria-label="管理后台任务演示" data-tool="后台任务演示" data-od-id="manage-tasks">管理</button></div>
+                    <div class="tool-row" data-name="通知实验室 notification lab"><span class="tool-icon lab"><svg viewBox="0 0 24 24"><path d="M6 17h12l-1.5-2.5V10a4.5 4.5 0 1 0-9 0v4.5z"/><path d="M10 20h4"/></svg></span><span class="tool-main"><b>通知实验室</b><span>测试 · 系统通知</span></span><button class="manage" type="button" aria-label="管理通知实验室" data-tool="通知实验室" data-od-id="manage-lab">管理</button></div>
+                  </div>
+                </section>
+                <section class="screen-panel" id="settings-panel" data-od-id="settings-screen" hidden>
+                  <div class="screen-title-row"><h2 class="screen-title" data-od-id="settings-title">设置</h2></div>
+                  <div class="section-label"><strong>外观</strong></div>
+                  <div class="group settings-card"><button class="settings-row" id="appearance-row" type="button" data-od-id="appearance-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></span><span class="setting-copy"><b>界面样式</b><span>组件比例与玻璃材质</span></span><span class="setting-value">Liquid Glass ›</span></button><button class="settings-row" id="theme-row" type="button" data-od-id="theme-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9c0-5-4-9-9-9Z"/></svg></span><span class="setting-copy"><b>外观模式</b><span>明暗与系统取色</span></span><span class="setting-value">跟随系统 ›</span></button><div class="settings-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 0 16 0A8 8 0 0 1 4 12Z"/></svg></span><span class="setting-copy"><b>降低透明度</b><span>用实色替代玻璃折射</span></span><button class="switch" id="reduce-transparency-switch" type="button" role="switch" aria-checked="false" aria-label="降低透明度" data-od-id="reduce-transparency-switch"></button></div></div>
+                  <div class="section-label"><strong>运行与权限</strong></div>
+                  <div class="group settings-card"><div class="settings-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V7a5 5 0 0 1 10 0v2"/><rect x="5" y="9" width="14" height="11" rx="2"/></svg></span><span class="setting-copy"><b>后台保障</b><span>允许已启动的任务持续运行</span></span><button class="switch" id="background-switch" type="button" role="switch" aria-checked="true" aria-label="后台保障" data-od-id="background-switch"></button></div><button class="settings-row" id="permissions-row" type="button" data-od-id="permissions-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v5c0 4.4 3 7.8 7 10 4-2.2 7-5.6 7-10V6l-7-3Z"/></svg></span><span class="setting-copy"><b>工具权限</b><span>按安装工具管理已声明能力</span></span><span class="setting-value">›</span></button></div>
+                  <div class="section-label"><strong>支持</strong></div>
+                  <div class="group settings-card"><button class="settings-row" id="developer-help-row" type="button" data-od-id="developer-help-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19v17.5a2.5 2.5 0 0 0-2.5-2.5H5Z"/><path d="M5 4.5V20h11.5"/></svg></span><span class="setting-copy"><b>Developer Help</b><span>离线手册与四个范例</span></span><span class="setting-value">›</span></button><button class="settings-row" id="about-row" type="button" data-od-id="about-row"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg></span><span class="setting-copy"><b>关于 ToolBox</b><span>应用信息与开源许可</span></span><span class="setting-value">›</span></button></div>
+                </section>
+                <section class="screen-panel secondary-panel" id="secondary-panel" data-od-id="secondary-menu" hidden>
+                  <div class="secondary-header" data-od-id="secondary-header"><button class="secondary-back" id="secondary-back" type="button" aria-label="返回设置" data-od-id="secondary-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 5-7 7 7 7"/></svg></button><span class="secondary-title" id="secondary-title" data-od-id="secondary-title">设置</span><span aria-hidden="true"></span></div>
+                  <p class="secondary-intro" id="secondary-intro" data-od-id="secondary-intro"></p>
+                  <div class="secondary-columns" id="secondary-content" data-od-id="secondary-content"></div>
+                </section>
+                <section class="screen-panel secondary-panel" id="import-panel" data-od-id="import-screen" hidden>
+                  <div class="secondary-header" data-od-id="import-header"><button class="secondary-back" id="import-back" type="button" aria-label="返回工具" data-od-id="import-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 5-7 7 7 7"/></svg></button><span class="secondary-title" data-od-id="import-title">导入小工具</span><span aria-hidden="true"></span></div>
+                  <p class="secondary-intro" data-od-id="import-intro">选择一个 .tbx 包。校验结果在当前页面显示，不以弹窗打断导入流程。</p>
+                  <div class="secondary-columns" data-od-id="import-content"><div><div class="section-label"><strong>选择文件</strong></div><button class="import-picker" id="import-file-trigger" type="button" data-od-id="import-file-trigger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11M7.5 8.5 12 4l4.5 4.5"/><path d="M5 15.5v3A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-3"/></svg><b>选择 .tbx 文件</b><span>文件将由 ToolBox 在导入前完成结构与完整性检查</span></button><input id="import-file-input" type="file" accept=".tbx" hidden /></div><div><div class="section-label"><strong>导入结果</strong></div><div class="import-result" id="import-result" hidden data-od-id="import-result"><span class="import-result-icon" id="import-result-icon" aria-hidden="true"></span><div class="import-result-copy"><b id="import-result-title"></b><p id="import-result-description"></p><button class="result-link" id="import-result-action" type="button" data-od-id="import-result-action"></button></div></div></div></div>
+                </section>
+                <section class="screen-panel secondary-panel" id="tool-detail-panel" data-od-id="tool-detail-screen" hidden>
+                  <div class="secondary-header" data-od-id="tool-detail-header"><button class="secondary-back" id="tool-detail-back" type="button" aria-label="返回工具" data-od-id="tool-detail-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 5-7 7 7 7"/></svg></button><span class="secondary-title" id="tool-detail-title" data-od-id="tool-detail-title">工具详情</span><span aria-hidden="true"></span></div>
+                  <p class="secondary-intro" data-od-id="tool-detail-intro">管理工具已声明的能力、后台任务与本地信息。</p>
+                  <div class="secondary-columns" data-od-id="tool-detail-content"><div><div class="section-label"><strong>使用</strong></div><div class="group"><button class="secondary-row" type="button" data-od-id="tool-detail-open"><span class="secondary-row-copy"><b>打开工具</b><span>在运行容器中继续使用</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div><div class="section-label"><strong>权限与后台</strong></div><div class="group" id="tool-permission-list" data-od-id="tool-permission-list"></div></div><div><div class="section-label"><strong>管理</strong></div><div class="group tool-danger"><button class="secondary-row" type="button" data-od-id="tool-detail-remove"><span class="secondary-row-copy"><b>移除工具</b><span>删除操作应在此独立区域内完成</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div></div>
+                </section>
+              </div>
+              <nav class="bottom-nav" aria-label="主导航" data-od-id="bottom-navigation"><button class="tab" id="tools-tab" type="button" role="tab" aria-selected="true" aria-controls="tools-panel" data-od-id="tools-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 9h8M8 13h5"/></svg>工具</button><button class="tab" id="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settings-panel" data-od-id="settings-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.34 2.34-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.02 1.55v.1h-3.3v-.1A1.7 1.7 0 0 0 10.18 18.9a1.7 1.7 0 0 0-1.88.34l-.06.06-2.34-2.34.06-.06A1.7 1.7 0 0 0 6.3 15a1.7 1.7 0 0 0-1.55-1.02h-.1v-3.3h.1A1.7 1.7 0 0 0 6.3 9.66a1.7 1.7 0 0 0-.34-1.88L5.9 7.72 8.24 5.4l.06.06a1.7 1.7 0 0 0 1.88.34 1.7 1.7 0 0 0 1.02-1.55v-.1h3.3v.1a1.7 1.7 0 0 0 1.02 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.34 2.34-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.55 1.02h.1v3.3h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>设置</button></nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section" data-od-id="features">
+      <div class="container stack" style="gap: 48px;">
+        <div style="max-width: 37ch;"><p class="eyebrow" data-od-id="features-eyebrow">重新梳理的体验</p><h2 data-od-id="features-heading">不为“安全感”制造噪音。</h2></div>
+        <div class="grid-3">
+          <article class="feature card-flat" data-od-id="feature-import"><div class="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></div><h3>导入只做一次</h3><p>入口固定在工具页右上角。选择 .tbx 后在后台检查，成功回到列表，失败直接说清可执行的原因。</p></article>
+          <article class="feature card-flat" data-od-id="feature-management"><div class="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 9V7a5 5 0 0 1 10 0v2"/><rect x="5" y="9" width="14" height="11" rx="2"/></svg></div><h3>授权留在工具详情</h3><p>权限、后台任务与删除都属于某一个工具；首页保持为打开和查找工具的轻量目录。</p></article>
+          <article class="feature card-flat" data-od-id="feature-runtime"><div class="feature-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h10M4 17h16"/></svg></div><h3>运行时只让内容说话</h3><p>进入工具后，HTML 内容占满安全区域；不再叠加宿主工具栏、悬浮返回键或技术状态条。</p></article>
+        </div>
+      </div>
+    </section>
+    <section class="section" id="principles" data-od-id="principles">
+      <div class="container grid-2">
+        <div class="vision-detail"><p class="eyebrow" data-od-id="principles-eyebrow">视觉原则</p><h2 data-od-id="principles-heading">像 iOS，不是像一张 iOS 截图。</h2><p class="lead" style="margin-top: 18px;">借用系统级信息组织、材质与触感，而不复制 Apple 的产品界面。ToolBox 保留 Android 的真实能力边界，并用自己的蓝色建立主操作。</p></div>
+        <div class="principle-list" data-od-id="principles-list">
+          <article class="principle" data-od-id="principle-one"><span>01</span><div><h3>大标题，短路径</h3><p>一级目的地仅为「工具」与「设置」，顶部只服务当前页的一个关键操作。</p></div></article>
+          <article class="principle" data-od-id="principle-two"><span>02</span><div><h3>玻璃只出现一次</h3><p>底部导航使用局部玻璃；内容分组坚持清晰白底，避免整页透明造成阅读疲劳。</p></div></article>
+          <article class="principle" data-od-id="principle-three"><span>03</span><div><h3>动作有边界</h3><p>运行状态、权限开关与危险操作都连接到真实功能，不增加审核、评分或无意义的状态装饰。</p></div></article>
+        </div>
+      </div>
+    </section>
+    <section class="section" data-od-id="cta-strip" style="text-align: center;">
+      <div class="container" style="max-width: 620px;"><h2 data-od-id="cta-heading">让用户先看到自己的工具。</h2><p class="lead" style="margin: 16px auto 30px;">下一步可把这个方向拆成工具列表、工具详情、权限页与运行容器的 Android Compose 实现规范。</p><a class="btn btn-primary" href="#prototype" data-od-id="cta-button">回到交互原型</a></div>
+    </section>
+  </main>
+  <footer class="pagefoot" data-od-id="footer"><div class="container row-between"><span>ToolBox · iOS 风格重设计概念稿</span><span class="meta">基于当前 Liquid Glass 规范</span></div></footer>
+  <script>
+    const toolsTab = document.getElementById('tools-tab');
+    const settingsTab = document.getElementById('settings-tab');
+    const toolsPanel = document.getElementById('tools-panel');
+    const settingsPanel = document.getElementById('settings-panel');
+    const secondaryPanel = document.getElementById('secondary-panel');
+    const secondaryTitle = document.getElementById('secondary-title');
+    const secondaryIntro = document.getElementById('secondary-intro');
+    const secondaryContent = document.getElementById('secondary-content');
+    const secondaryBack = document.getElementById('secondary-back');
+    const importPanel = document.getElementById('import-panel');
+    const importBack = document.getElementById('import-back');
+    const importFileTrigger = document.getElementById('import-file-trigger');
+    const importFileInput = document.getElementById('import-file-input');
+    const importResult = document.getElementById('import-result');
+    const importResultIcon = document.getElementById('import-result-icon');
+    const importResultTitle = document.getElementById('import-result-title');
+    const importResultDescription = document.getElementById('import-result-description');
+    const importResultAction = document.getElementById('import-result-action');
+    const toolDetailPanel = document.getElementById('tool-detail-panel');
+    const toolDetailBack = document.getElementById('tool-detail-back');
+    const toolDetailTitle = document.getElementById('tool-detail-title');
+    const toolPermissionList = document.getElementById('tool-permission-list');
+    const searchInput = document.getElementById('tool-search-input');
+    const toolRows = [...document.querySelectorAll('.tool-row')];
+    const toolCount = document.getElementById('tool-count');
+    const runningSection = document.getElementById('running-section');
+    const recentSection = document.getElementById('recent-section');
+    let selectedTheme = 'system';
+    let activeSecondaryKey = null;
+    let secondaryParentKey = null;
+    const toolPermissions = {
+      '仓位计算器': [{ key: 'local-storage', label: '本地存储', description: '保存本机计算记录', enabled: true }],
+      '快速笔记': [{ key: 'local-storage', label: '本地存储', description: '保存本机笔记内容', enabled: true }],
+      '后台任务演示': [{ key: 'background-tasks', label: '后台任务', description: '允许已启动的任务持续运行', enabled: true }, { key: 'notifications', label: '通知', description: '在任务状态变化时发送提醒', enabled: true }],
+      '通知实验室': [{ key: 'notifications', label: '通知', description: '发送与测试系统通知', enabled: true }]
+    };
+    function showPanel(panel) {
+      const isTools = panel === 'tools';
+      const isSettings = panel === 'settings';
+      const isImport = panel === 'import';
+      const isToolDetail = panel === 'tool-detail';
+      toolsPanel.hidden = !isTools;
+      settingsPanel.hidden = !isSettings;
+      secondaryPanel.hidden = panel !== 'secondary';
+      importPanel.hidden = !isImport;
+      toolDetailPanel.hidden = !isToolDetail;
+      toolsTab.setAttribute('aria-selected', String(isTools || isImport || isToolDetail));
+      settingsTab.setAttribute('aria-selected', String(isSettings || panel === 'secondary'));
+    }
+    function showImportResult(state, fileName) {
+      const isSuccess = state === 'success';
+      importResult.classList.toggle('is-failure', !isSuccess);
+      importResultIcon.innerHTML = isSuccess
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 4.2 4L19 6.8"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 16h.01"/></svg>';
+      importResultTitle.textContent = isSuccess ? '已添加到工具库' : '无法导入此文件';
+      importResultDescription.textContent = isSuccess
+        ? `${fileName} 已通过此原型的导入流程，可回到工具列表继续使用。`
+        : `${fileName} 不是可识别的 .tbx 文件。请选择正确的小工具包后重试。`;
+      importResultAction.textContent = isSuccess ? '查看工具' : '重新选择文件';
+      importResultAction.dataset.importResult = isSuccess ? 'tools' : 'retry';
+      importResult.hidden = false;
+    }
+    function themeLabel() {
+      return { system: '跟随系统', light: '浅色', dark: '深色' }[selectedTheme];
+    }
+    function setReduceTransparency(enabled) {
+      const control = document.getElementById('reduce-transparency-switch');
+      control.setAttribute('aria-checked', String(enabled));
+      document.querySelector('.phone-screen').classList.toggle('reduce-transparency', enabled);
+      const secondaryControl = secondaryContent.querySelector('[data-secondary-switch="reduce"]');
+      if (secondaryControl) secondaryControl.setAttribute('aria-checked', String(enabled));
+    }
+    function openSecondary(key) {
+      activeSecondaryKey = key;
+      secondaryParentKey = null;
+      const reduceTransparency = document.getElementById('reduce-transparency-switch').getAttribute('aria-checked') === 'true';
+      const secondaryViews = {
+        appearance: {
+          title: '界面样式',
+          intro: '以清晰的内容层、局部折射与稳定的触控尺寸组织界面；玻璃只用于需要浮起的系统容器。',
+          content: `<div><div class="section-label"><strong>当前样式</strong></div><div class="group"><div class="secondary-row" data-od-id="liquid-glass-style"><span class="setting-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg></span><span class="secondary-row-copy"><b>Liquid Glass</b><span>局部折射、边缘高光与分层阴影</span></span><span class="secondary-meta">已启用</span></div></div></div><div><div class="section-label"><strong>材质偏好</strong></div><div class="group"><div class="secondary-row"><span class="secondary-row-copy"><b>降低透明度</b><span>以实色保留信息层级与可读性</span></span><button class="switch" type="button" role="switch" aria-checked="${reduceTransparency}" aria-label="降低透明度" data-secondary-switch="reduce" data-od-id="secondary-reduce-transparency"></button></div><button class="secondary-row" type="button" data-secondary-action="glass-detail" data-od-id="glass-layer-detail"><span class="secondary-row-copy"><b>玻璃层级说明</b><span>导航、浮层与列表各自使用不同深度</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div>`
+        },
+        theme: {
+          title: '外观模式',
+          intro: '外观优先跟随系统；取色与透明度在不干扰工具内容的前提下进行调整。',
+          content: `<div><div class="section-label"><strong>显示模式</strong></div><div class="group" role="radiogroup" aria-label="显示模式"><button class="secondary-choice" type="button" role="radio" aria-checked="${selectedTheme === 'system'}" data-theme-choice="system" data-od-id="theme-system"><span class="choice-indicator"></span><span class="secondary-row-copy"><b>跟随系统</b><span>自动使用设备当前外观</span></span></button><button class="secondary-choice" type="button" role="radio" aria-checked="${selectedTheme === 'light'}" data-theme-choice="light" data-od-id="theme-light"><span class="choice-indicator"></span><span class="secondary-row-copy"><b>浅色</b><span>清晰的浅色内容层</span></span></button><button class="secondary-choice" type="button" role="radio" aria-checked="${selectedTheme === 'dark'}" data-theme-choice="dark" data-od-id="theme-dark"><span class="choice-indicator"></span><span class="secondary-row-copy"><b>深色</b><span>降低暗环境下的视觉亮度</span></span></button></div></div><div><div class="section-label"><strong>颜色</strong></div><div class="group"><div class="secondary-row"><span class="secondary-row-copy"><b>系统取色</b><span>仅应用于可识别的操作与选择状态</span></span><button class="switch" type="button" role="switch" aria-checked="true" aria-label="系统取色" data-od-id="system-color-switch"></button></div></div><p class="secondary-note">蓝色始终用于主操作和焦点，不以大面积装饰色替代内容层级。</p></div>`
+        },
+        permissions: {
+          title: '工具权限',
+          intro: '只显示工具已声明且宿主实际支持的能力；权限归属于工具，不在首页制造额外状态。',
+          content: `<div><div class="section-label"><strong>已安装工具</strong></div><div class="group"><button class="secondary-row" type="button" data-secondary-action="permission-detail" data-od-id="permission-calculator"><span class="secondary-row-copy"><b>仓位计算器</b><span>本地存储</span></span><span class="secondary-meta">已配置</span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button><button class="secondary-row" type="button" data-secondary-action="permission-detail" data-od-id="permission-notes"><span class="secondary-row-copy"><b>快速笔记</b><span>本地存储</span></span><span class="secondary-meta">已配置</span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button><button class="secondary-row" type="button" data-secondary-action="permission-detail" data-od-id="permission-tasks"><span class="secondary-row-copy"><b>后台任务演示</b><span>后台任务、通知</span></span><span class="secondary-meta">已配置</span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button><button class="secondary-row" type="button" data-secondary-action="permission-detail" data-od-id="permission-lab"><span class="secondary-row-copy"><b>通知实验室</b><span>系统通知</span></span><span class="secondary-meta">已配置</span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div><p class="secondary-note">进入任一工具可分别查看和调整它声明的能力。</p>`
+        },
+        help: {
+          title: 'Developer Help',
+          intro: '离线手册围绕 .tbx 的实际开发、能力声明和运行时边界组织。',
+          content: `<div><div class="section-label"><strong>开始开发</strong></div><div class="group"><button class="secondary-row" type="button" data-secondary-action="help-detail" data-od-id="help-quick-start"><span class="secondary-row-copy"><b>快速开始</b><span>创建、导入与打开第一个工具</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button><button class="secondary-row" type="button" data-secondary-action="help-detail" data-od-id="help-capabilities"><span class="secondary-row-copy"><b>能力与权限</b><span>只声明工具真正需要的能力</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div><div><div class="section-label"><strong>运行时</strong></div><div class="group"><button class="secondary-row" type="button" data-secondary-action="help-detail" data-od-id="help-background"><span class="secondary-row-copy"><b>后台与通知</b><span>任务生命周期与通知触发</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button><button class="secondary-row" type="button" data-secondary-action="help-detail" data-od-id="help-examples"><span class="secondary-row-copy"><b>范例工具</b><span>查看四个内置范例的用途</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div>`
+        },
+        about: {
+          title: '关于 ToolBox',
+          intro: '面向 Android 13+ 的 .tbx 小工具宿主，保持宿主能力透明、工具边界明确。',
+          content: `<div><div class="section-label"><strong>应用</strong></div><div class="group"><div class="secondary-row" data-od-id="about-product"><span class="secondary-row-copy"><b>ToolBox</b><span>.tbx 小工具宿主</span></span></div><button class="secondary-row" type="button" data-secondary-action="about-detail" data-od-id="about-repository"><span class="secondary-row-copy"><b>项目仓库</b><span>github.com/gkeyes/ToolBox-Android</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div><div><div class="section-label"><strong>说明</strong></div><div class="group"><button class="secondary-row" type="button" data-secondary-action="about-detail" data-od-id="about-license"><span class="secondary-row-copy"><b>开源许可与声明</b><span>查看项目附带的许可文本与第三方说明</span></span><svg class="secondary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg></button></div></div>`
+        }
+      };
+      const view = secondaryViews[key];
+      secondaryTitle.textContent = view.title;
+      secondaryIntro.textContent = view.intro;
+      secondaryContent.innerHTML = view.content;
+      showPanel('secondary');
+      secondaryBack.focus();
+    }
+    function openSecondaryDetail(title, intro, content) {
+      secondaryParentKey = activeSecondaryKey;
+      secondaryTitle.textContent = title;
+      secondaryIntro.textContent = intro;
+      secondaryContent.innerHTML = content;
+      showPanel('secondary');
+      secondaryBack.focus();
+    }
+    function renderToolPermissions(name) {
+      toolPermissionList.innerHTML = toolPermissions[name].map((permission) => `<div class="secondary-row" data-od-id="tool-permission-${permission.key}"><span class="secondary-row-copy"><b>${permission.label}</b><span>${permission.description}</span></span><button class="switch" type="button" role="switch" aria-checked="${permission.enabled}" aria-label="${permission.label}" data-permission-tool="${name}" data-permission-key="${permission.key}" data-od-id="permission-toggle-${permission.key}"></button></div>`).join('');
+    }
+    function openToolDetail(name) {
+      toolDetailTitle.textContent = name;
+      renderToolPermissions(name);
+      showPanel('tool-detail');
+      toolDetailBack.focus();
+    }
+    toolsTab.addEventListener('click', () => showPanel('tools'));
+    settingsTab.addEventListener('click', () => showPanel('settings'));
+    importBack.addEventListener('click', () => showPanel('tools'));
+    importFileTrigger.addEventListener('click', () => importFileInput.click());
+    importFileInput.addEventListener('change', () => {
+      const file = importFileInput.files[0];
+      if (!file) return;
+      showImportResult(file.name.toLowerCase().endsWith('.tbx') ? 'success' : 'failure', file.name);
+    });
+    importResultAction.addEventListener('click', () => {
+      if (importResultAction.dataset.importResult === 'tools') showPanel('tools');
+      else importFileInput.click();
+    });
+    toolDetailBack.addEventListener('click', () => showPanel('tools'));
+    toolPermissionList.addEventListener('click', (event) => {
+      const control = event.target.closest('[data-permission-key]');
+      if (!control) return;
+      const permission = toolPermissions[control.dataset.permissionTool].find((item) => item.key === control.dataset.permissionKey);
+      permission.enabled = !permission.enabled;
+      control.setAttribute('aria-checked', String(permission.enabled));
+    });
+    secondaryBack.addEventListener('click', () => {
+      if (secondaryParentKey) {
+        const parentKey = secondaryParentKey;
+        secondaryParentKey = null;
+        openSecondary(parentKey);
+        return;
+      }
+      showPanel('settings');
+    });
+    document.getElementById('import-button').addEventListener('click', () => {
+      importResult.hidden = true;
+      importFileInput.value = '';
+      showPanel('import');
+      importFileTrigger.focus();
+    });
+    document.querySelectorAll('.manage').forEach((button) => button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openToolDetail(button.dataset.tool);
+    }));
+    document.getElementById('stop-button').addEventListener('click', (event) => {
+      const button = event.currentTarget;
+      button.textContent = '已停止';
+      button.disabled = true;
+      runningSection.hidden = true;
+    });
+    document.querySelectorAll('.switch').forEach((control) => control.addEventListener('click', (event) => {
+      const value = event.currentTarget.getAttribute('aria-checked') === 'true';
+      event.currentTarget.setAttribute('aria-checked', String(!value));
+      if (event.currentTarget.id === 'reduce-transparency-switch') {
+        document.querySelector('.phone-screen').classList.toggle('reduce-transparency', !value);
+      }
+    }));
+    document.getElementById('appearance-row').addEventListener('click', () => openSecondary('appearance'));
+    document.getElementById('theme-row').addEventListener('click', () => openSecondary('theme'));
+    document.getElementById('permissions-row').addEventListener('click', () => openSecondary('permissions'));
+    document.getElementById('developer-help-row').addEventListener('click', () => openSecondary('help'));
+    document.getElementById('about-row').addEventListener('click', () => openSecondary('about'));
+    secondaryContent.addEventListener('click', (event) => {
+      const themeChoice = event.target.closest('[data-theme-choice]');
+      if (themeChoice) {
+        selectedTheme = themeChoice.dataset.themeChoice;
+        document.querySelector('#theme-row .setting-value').textContent = `${themeLabel()} ›`;
+        openSecondary('theme');
+        return;
+      }
+      const reduceControl = event.target.closest('[data-secondary-switch="reduce"]');
+      if (reduceControl) {
+        setReduceTransparency(reduceControl.getAttribute('aria-checked') !== 'true');
+        return;
+      }
+      const action = event.target.closest('[data-secondary-action]');
+      if (!action) return;
+      if (action.dataset.secondaryAction === 'glass-detail') {
+        openSecondaryDetail('玻璃层级', '玻璃不是背景特效，而是用于区分导航、内容分组与临时浮层的结构材料。', `<div><div class="section-label"><strong>层级</strong></div><div class="group"><div class="secondary-row" data-od-id="glass-navigation-layer"><span class="secondary-row-copy"><b>导航</b><span>最高层级，承载全局目的地切换</span></span></div><div class="secondary-row" data-od-id="glass-content-layer"><span class="secondary-row-copy"><b>内容分组</b><span>中间层级，保持列表阅读稳定</span></span></div><div class="secondary-row" data-od-id="glass-surface-layer"><span class="secondary-row-copy"><b>页面底色</b><span>最低层级，只提供轻微的环境深度</span></span></div></div></div>`);
+        return;
+      }
+      if (action.dataset.secondaryAction === 'permission-detail') {
+        const toolName = action.querySelector('b').textContent;
+        const permissionByTool = {
+          '仓位计算器': '本地存储',
+          '快速笔记': '本地存储',
+          '后台任务演示': '后台任务、通知',
+          '通知实验室': '系统通知'
+        };
+        openSecondaryDetail(`${toolName} 权限`, '权限清单只包含此工具已经声明并由宿主支持的能力。', `<div><div class="section-label"><strong>已声明能力</strong></div><div class="group"><div class="secondary-row" data-od-id="tool-permission-detail"><span class="secondary-row-copy"><b>${permissionByTool[toolName]}</b><span>已配置</span></span><span class="secondary-meta">允许</span></div></div><p class="secondary-note">关闭能力后，相关功能会在该工具内明确提示不可用原因。</p></div>`);
+        return;
+      }
+      if (action.dataset.secondaryAction === 'help-detail') {
+        const chapterTitle = action.querySelector('b').textContent;
+        openSecondaryDetail(chapterTitle, '离线文档直接在当前页面层级中打开，不额外增加确认步骤。', `<div><div class="section-label"><strong>Developer Help</strong></div><div class="group"><div class="secondary-row" data-od-id="help-chapter-content"><span class="secondary-row-copy"><b>${chapterTitle}</b><span>开发说明与当前主题相关的使用边界</span></span></div></div><p class="secondary-note">这里保留给对应章节的正文内容与示例链接。</p></div>`);
+        return;
+      }
+      if (action.dataset.secondaryAction === 'about-detail') {
+        const detailTitle = action.querySelector('b').textContent;
+        openSecondaryDetail(detailTitle, '项目资料直接在当前导航栈中呈现，不使用打断式弹窗。', `<div><div class="section-label"><strong>ToolBox</strong></div><div class="group"><div class="secondary-row" data-od-id="about-detail-content"><span class="secondary-row-copy"><b>${detailTitle}</b><span>以项目随附的原始信息为准</span></span></div></div></div>`);
+      }
+    });
+    searchInput.addEventListener('input', (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      let visible = 0;
+      toolRows.forEach((row) => {
+        const match = row.dataset.name.includes(query);
+        row.hidden = !match;
+        if (match) visible += 1;
+      });
+      toolCount.textContent = visible;
+      recentSection.hidden = Boolean(query);
+      document.querySelector('[data-od-id="all-tools-label"] strong').textContent = query ? '搜索结果' : '全部工具';
+    });
+  </script>
+</body>
+</html>

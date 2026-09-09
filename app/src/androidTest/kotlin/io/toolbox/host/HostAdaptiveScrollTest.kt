@@ -27,7 +27,6 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
-import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -208,13 +207,13 @@ class HostAdaptiveScrollTest {
             composeRule.runOnIdle { settings.value = settings.value.copy(error = error) }
             composeRule.onNodeWithText(error).performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithTag(HostTestTags.SettingsAppearance).performScrollTo().assertHasClickAction()
-            listOf("后台保障", "工具权限", "开发帮助").forEach { label ->
+            listOf("后台运行设置", "工具权限", "Developer Help").forEach { label ->
                 val target = composeRule.onNodeWithText(label).performScrollTo()
                 target.assertIsDisplayed().assertHasClickAction().assertHeightIsAtLeast(48.dp)
                 target.performTouchInput { click(center) }
             }
             composeRule.onNodeWithText("关于 ToolBox").performScrollTo().assertIsDisplayed()
-            composeRule.onNodeWithText("${BuildConfig.VERSION_NAME} · API 1.0").assertIsDisplayed()
+            composeRule.onNodeWithText("${BuildConfig.VERSION_NAME} · OpenDesign").assertIsDisplayed()
             composeRule.runOnIdle {
                 assertEquals(
                     List(index + 1) { listOf("appearance", "background", "permissions", "help") }.flatten(),
@@ -227,7 +226,6 @@ class HostAdaptiveScrollTest {
     @Test
     fun appearanceChoicesRemainInteractiveAtTwoHundredPercentFontScale() {
         val state = mutableStateOf(SettingsUiState(loaded = true))
-        val styles = mutableListOf<ThemeStyle>()
         val modes = mutableListOf<ThemeMode>()
         val transparency = mutableListOf<Boolean>()
         var retries = 0
@@ -239,7 +237,6 @@ class HostAdaptiveScrollTest {
                         DetailScreen(title = "外观", onBack = {}) { chromePadding ->
                             AppearanceContent(
                                 state = state.value,
-                                onThemeStyleSelected = { styles += it },
                                 onThemeModeSelected = { modes += it },
                                 onReduceTransparencyChanged = { transparency += it },
                                 onRetry = { retries += 1 },
@@ -257,20 +254,10 @@ class HostAdaptiveScrollTest {
             }
         }
 
-        composeRule.onNodeWithTag(HostTestTags.AppearanceMiuix)
-            .performScrollTo()
-            .assertIsDisplayed()
-            .assertHasClickAction()
-            .performClick()
-        composeRule.runOnIdle { assertEquals(listOf(ThemeStyle.MIUIX), styles) }
+        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsDisplayed()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceMiuix).assertDoesNotExist()
 
-        composeRule.onNodeWithTag(HostTestTags.AppearanceMode)
-            .performScrollTo()
-            .assertHasClickAction()
-            .performSemanticsAction(SemanticsActions.OnClick)
-        val darkChoice = composeRule.onNodeWithText("深色")
-        composeRule.waitUntil(5_000) { darkChoice.isDisplayed() }
-        darkChoice.performClick()
+        composeRule.onNodeWithText("深色").performScrollTo().performClick()
         composeRule.onNodeWithTag(HostTestTags.AppearanceSystemColor)
             .performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick)
@@ -296,7 +283,7 @@ class HostAdaptiveScrollTest {
 
     @Test
     fun themeSwitchKeepsEmbeddedRuntimeSurfaceIdentity() {
-        val style = mutableStateOf(ToolBoxThemeStyle.LiquidGlass)
+        val mode = mutableStateOf(ToolBoxThemeMode.Light)
         val reduceTransparency = mutableStateOf(false)
         var created = 0
         var contentClicks = 0
@@ -304,7 +291,7 @@ class HostAdaptiveScrollTest {
         var firstView: View? = null
         var currentView: View? = null
         composeRule.activity.setContent {
-            ToolBoxTheme(style = style.value, reduceTransparency = reduceTransparency.value) {
+            ToolBoxTheme(mode = mode.value, reduceTransparency = reduceTransparency.value) {
                 glassAlpha = ToolBoxThemeTokens.materials.glassTint.alpha
                 Box(
                     Modifier.fillMaxSize()
@@ -333,13 +320,13 @@ class HostAdaptiveScrollTest {
         }
 
         val states = listOf(
-            ToolBoxThemeStyle.LiquidGlass to false,
-            ToolBoxThemeStyle.Miuix to false,
-            ToolBoxThemeStyle.LiquidGlass to true,
+            ToolBoxThemeMode.Light to false,
+            ToolBoxThemeMode.Dark to false,
+            ToolBoxThemeMode.Dark to true,
         )
-        states.forEachIndexed { index, (themeStyle, reduced) ->
+        states.forEachIndexed { index, (themeMode, reduced) ->
             composeRule.runOnIdle {
-                style.value = themeStyle
+                mode.value = themeMode
                 reduceTransparency.value = reduced
             }
             composeRule.waitForIdle()

@@ -55,6 +55,8 @@ import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.ToolPermissionsScreen
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.AppearanceScreen
+import io.toolbox.host.importflow.ImportScreen
+import io.toolbox.host.settings.AboutScreen
 import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.MainDestination
@@ -232,7 +234,7 @@ internal fun ToolBoxNavigation(
                         onDestination = ::navigateMain,
                         title = if (selectedDestination == MainDestination.Tools) "工具" else "设置",
                         onImport = if (selectedDestination == MainDestination.Tools) {
-                            { picker.launch(ToolBoxOpenDocument.mimeTypes()) }
+                            { navigate(ImportRoute) }
                         } else {
                             null
                         },
@@ -243,13 +245,14 @@ internal fun ToolBoxNavigation(
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
                                 importViewModel = importViewModel,
+                                importPageVisible = allSecondaryRoutes.contains(ImportRoute),
                                 listState = toolsListState,
                                 contentPadding = padding,
                                 layout = layout,
                                 // Freeze only while the settled runtime fully covers the base page.
                                 // Resume before the source's return animation, not after route removal.
                                 uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
-                                onImport = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
+                                onImport = { navigate(ImportRoute) },
                                 onOpenDetails = { navigate(ToolDetailRoute(it)) },
                             )
 
@@ -260,6 +263,7 @@ internal fun ToolBoxNavigation(
                                 onBackgroundSafeguards = { navigate(BackgroundSafeguardsRoute) },
                                 onToolPermissions = { navigate(ToolPermissionsRoute) },
                                 onDeveloperHelp = { navigate(DeveloperHelpRoute) },
+                                onAbout = { navigate(AboutRoute) },
                             )
 
                             else -> error("Route is not a primary destination: $currentPrimaryRoute")
@@ -290,6 +294,7 @@ internal fun ToolBoxNavigation(
                             onBack = requestBack,
                             onReady = signalReady,
                             onNavigate = ::navigate,
+                            onPickPackage = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
                         )
                     }
                 }
@@ -409,8 +414,12 @@ private fun SecondaryRouteContent(
     onBack: () -> Unit,
     onReady: () -> Unit,
     onNavigate: (ToolBoxRoute) -> Unit,
+    onPickPackage: () -> Unit,
 ) {
     when (route) {
+        ImportRoute -> ImportScreen(importViewModel, onPickPackage, onBack, onReady)
+        AboutRoute -> AboutScreen(onBack, onReady)
+
         is ToolDetailRoute -> ToolDetailRouteContent(
             toolId = route.toolId,
             catalogViewModel = catalogViewModel,
@@ -474,6 +483,7 @@ private fun SecondaryRouteContent(
 
 @Composable
 private fun ToolManagerRouteContent(
+    importPageVisible: Boolean = false,
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
     catalogViewModel: CatalogViewModel,
@@ -497,7 +507,7 @@ private fun ToolManagerRouteContent(
     val importState by importViewModel.state.collectAsStateWhileVisible(uiVisible)
     ToolManagerContent(
         state = catalogState,
-        importState = importState,
+        importState = if (importPageVisible) importState.copy(confirmation = null) else importState,
         listState = listState,
         contentPadding = contentPadding,
         onAction = catalogViewModel::dispatch,
