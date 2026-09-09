@@ -171,7 +171,7 @@ async function createSession(browser, variant) {
   await quietCache(page);
   await page.evaluate(() => window.__nextfluxPerf.observeFixture());
   const verify = () => verifyBoundary(page, observations, outsideRequests, consoleErrors);
-  return { context, page, verify };
+  return { context, page, verify, errors: { pageErrors: observations.pageErrors, blocked: observations.blocked, outsideRequests, consoleErrors } };
 }
 
 async function assertContent(page, article) {
@@ -230,6 +230,8 @@ async function readPass(page, article, cacheState) {
       bodyCompletePaintProxyMs: perf.reading.bodyCompleteAt - perf.reading.start.at,
     };
   });
+  report.activeSample.phases = { reading };
+  await persist();
   await expect(page.locator(".article-title")).toHaveText(`Article ${article.id}`);
   await assertContent(page, article);
   await quietCache(page);
@@ -244,6 +246,8 @@ async function readPass(page, article, cacheState) {
   }
   assert.ok(positions[2].scrollTop > 0, "The complete article must support real reader scrolling");
   const scroll = await page.evaluate((start) => window.__nextfluxPerf.finish(start), scrollStart);
+  report.activeSample.phases.scroll = { ...scroll, positions };
+  await persist();
   await assertContent(page, article);
   await quietCache(page);
   await expect(page.locator('.action-buttons button[aria-label="Unread"]')).toBeVisible();
@@ -333,6 +337,7 @@ try {
           if (scenario) {
             for (const cacheState of ["cold", "warm"]) {
               report.activeSample.cacheState = cacheState;
+              report.activeSample.phases = {};
               const sample = await readPass(session.page, scenario, cacheState);
               sample.boundary = await session.verify();
               report.samples.push({ variant, repetition, order, ...sample });
@@ -350,18 +355,38 @@ try {
         } catch (error) {
           // Text-only failure diagnostics stay small and contain no article body,
           // credentials, screenshots or traces; the dataset is wholly synthetic.
-          report.failureContext = await session.page.evaluate(() => ({
-            route: location.hash,
-            paragraphCount: document.querySelectorAll(".article-content p").length,
-            codeBlockCount: document.querySelectorAll(".article-content .code-block pre:not([hidden]) code").length,
-            readingStarted: Boolean(window.__nextfluxPerf.reading?.start),
-            firstReadableAt: window.__nextfluxPerf.reading?.firstReadableAt,
-            bodyCompleteAt: window.__nextfluxPerf.reading?.bodyCompleteAt,
-            actionStarted: Boolean(window.__nextfluxPerf.action),
-            recentCacheCalls: window.__nextfluxTest.calls.slice(-8),
-            recentCacheResults: window.__nextfluxTest.results.slice(-8),
-            unexpectedNetwork: window.__nextfluxTest.unexpectedNetwork,
-          })).catch((diagnosticError) => ({ unavailable: diagnosticError.message }));
+          report.failureContext = await session.page.evaluate(() => {
+            const visible = (element) => {
+              const bounds = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return bounds.width > 0 && bounds.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+            };
+            const toolbars = [...document.querySelectorAll(".action-buttons")];
+            const root = window.__nextfluxTest.storageRoot();
+            return {
+              route: location.hash, language: navigator.language,
+              paragraphCount: document.querySelectorAll(".article-content p").length,
+              codeBlockCount: document.querySelectorAll(".article-content .code-block pre:not([hidden]) code").length,
+              toolbarCount: toolbars.length,
+              visibleToolbarCount: toolbars.filter(visible).length,
+              toolbarButtons: toolbars.flatMap((toolbar) => [...toolbar.querySelectorAll("button")].map((button) => ({
+                ariaLabel: button.getAttribute("aria-label"), ariaLabelledBy: button.getAttribute("aria-labelledby"),
+                text: button.textContent.trim().slice(0, 100), visible: visible(button),
+                disabled: button.disabled, ariaDisabled: button.getAttribute("aria-disabled"),
+                svgClasses: [...button.querySelectorAll("svg")].map((svg) => svg.getAttribute("class")),
+              }))),
+              readingStarted: Boolean(window.__nextfluxPerf.reading?.start),
+              firstReadableAt: window.__nextfluxPerf.reading?.firstReadableAt,
+              bodyCompleteAt: window.__nextfluxPerf.reading?.bodyCompleteAt,
+              actionStarted: Boolean(window.__nextfluxPerf.action),
+              recentCacheCalls: window.__nextfluxTest.calls.slice(-8),
+              recentCacheResults: window.__nextfluxTest.results.slice(-8),
+              stateNetwork: window.__nextfluxTest.network.filter((entry) => entry.method === "PUT"),
+              storageRoot: root && { version: root.version, revision: root.revision, tableNames: Object.keys(root.tables || {}) },
+              unexpectedNetwork: window.__nextfluxTest.unexpectedNetwork,
+            };
+          }).catch((diagnosticError) => ({ unavailable: diagnosticError.message }));
+          report.failureContext.errors = session.errors;
           throw error;
         } finally { await session.context.close(); }
       }
