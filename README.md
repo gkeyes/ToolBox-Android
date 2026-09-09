@@ -1,4 +1,4 @@
-# ToolBox Android
+# ToolBox OpenDesign
 
 ToolBox 是 Android 13+ 的个人 `.tbx` 小工具宿主，导入包含 HTML/CSS/JavaScript 的 ZIP 包，
 在唯一 HTTPS origin 的硬化 WebView 中运行。核心流程是 **导入、使用、授权、后台任务、删除**。
@@ -7,10 +7,46 @@ ToolBox 是 Android 13+ 的个人 `.tbx` 小工具宿主，导入包含 HTML/CSS
 一次确认；失败或取消不留下待安装状态。工具默认空白安装，示例通过真实导入流程安装。
 所有按钮、权限和后台状态都对应实际功能，不增加审核、发布者信任或安全状态展示。
 
+## 本次界面升级
+
+基于 GitHub 默认分支 `codex/refactor-lightweight-v2` 的 `dc78a48baf03692d45c1877309c30412301f28ed`。
+独立工作目录 `ToolBox-OpenDesign` 保留上游历史；开发分支为原仓库的 `codex/opendesign-ui`，`upstream` 指向 `gkeyes/ToolBox-Android`。
+设计项目为 `04260a2f-f55c-40f3-ab23-0ab14063fa02`；原始文件及校验值存放于
+[design/opendesign](design/opendesign)。最新 HTML 为唯一视觉参考，真实业务继续使用 Android Compose。
+
+运行原型（Python 3，无 npm 依赖）：
+
+```sh
+python3 -m http.server 8772 --bind 127.0.0.1 --directory design/opendesign
+# 浏览器打开 http://127.0.0.1:8772/toolbox-ios-redesign.html
+```
+
+运行 Android 应用（JDK 21、Android SDK 37、已启动的 Android 13+ 设备/模拟器）：
+
+```sh
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
+adb shell am start -n io.toolbox.host/.MainActivity
+```
+
+针对本次改动的验证命令：
+
+```sh
+./gradlew :app:compileDebugAndroidTestKotlin :core-ui:testDebugUnitTest
+./gradlew :tool-api:verifyToolBoxApiContract
+bash scripts/verify-security-invariants.sh "$PWD"
+python3 scripts/verify-opendesign-source.py
+```
+
+Android CI 额外运行外观页 2 倍字体交互、后台任务单项停止与批量入口的行为测试；不包含自动截图测试。
+
+debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定签名时它采用本地 debug key，
+与 GitHub 已交付 APK 的签名不同；使用独立模拟器测试。本地构建不代表已发布或 GitHub CI 通过。
+
 ## 当前能力
 
-- 原生 Compose 宿主使用 Miuix / Liquid Glass 双主题；新安装默认 Liquid Glass，升级保留
-  用户外观设置。切换主题不重建导航或正在运行的 WebView。
+- 原生 Compose 宿主使用 OpenDesign Liquid Glass 唯一主题，保留明暗、系统取色和降低透明度；
+  颜色切换不重建导航或正在运行的 WebView。
 - 工具内容填满系统安全区域，系统返回退出工具；内部返回由小工具根据自身页面状态处理。
 - 每工具权限开关仍受 manifest、Android 系统权限、前台/手势、origin 与限额检查约束。
 - 普通存储按键保存，提供 `getMany` 和原子 `apply`，不设每工具持久存储总容量配额；安全值
@@ -19,7 +55,7 @@ ToolBox 是 Android 13+ 的个人 `.tbx` 小工具宿主，导入包含 HTML/CSS
   承载各会话的独立通知和停止入口。位置、闹钟、分享、浏览器打开、SAF、快捷方式和相机
   使用对应的原生能力；卸载清理工具数据、权限和后台资源。
 
-当前宿主为 **0.6.7 (23)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
+当前宿主为 **0.7.2 (26)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
 授权和设置；Room schema 保持 v1。功能边界与最低宿主要求以技术方案和 SDK 手册为准。
 
 ## 小工具与开发入口
@@ -66,7 +102,7 @@ GitHub 模拟器执行指定的存储事务与浏览器启动回归，NextFlux �
 |---|---|
 | [AGENTS.md](AGENTS.md) | 开发约定、不可放宽的安全边界和验证要求。 |
 | [技术方案](docs/ToolBox_Android_技术方案.md) | 产品范围、模块、包生命周期、权限、API、运行隔离和后台机制。 |
-| [设计规范](DESIGN.md) | 双主题、页面布局、组件映射、交互和可访问性。 |
+| [设计规范](DESIGN.md) | 唯一主题、页面布局、组件映射、交互和可访问性。 |
 | `app/` | 宿主页面、路由、系统结果和运行会话协调。 |
 | `core-ui/` / `core-data/` | 主题与组件；Room、DataStore、目录、授权和存储。 |
 | `tool-package/` / `tool-runtime/` / `tool-api/` | 包安装；硬化 WebView；协议、消息桥与原生能力。 |

@@ -4,7 +4,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
-import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -32,15 +31,12 @@ class HostNavigationTest {
         composeRule.onNodeWithTag(HostTestTags.BottomSettings).performClick()
         waitForVisibleTag(HostTestTags.SettingsAppearance)
         composeRule.onNodeWithTag(HostTestTags.SettingsAppearance).performClick()
-        waitForVisibleText("界面风格")
-        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsSelected()
-        composeRule.onNodeWithTag(HostTestTags.AppearanceMiuix).performClick()
-        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass)
-                .fetchSemanticsNode().config[SemanticsProperties.Selected]
-        }
-        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsSelected()
+        waitForVisibleText("当前样式")
+        composeRule.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertIsDisplayed()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceMiuix).assertDoesNotExist()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).performScrollTo().performClick()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).assertIsOn()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).performClick()
         composeRule.onNodeWithContentDescription("返回").performClick()
         composeRule.onNodeWithTag(HostTestTags.BottomTools).performClick()
         emptyState.assertIsDisplayed()
@@ -79,7 +75,7 @@ class HostNavigationTest {
         composeRule.waitUntil(timeoutMillis = 10_000) { runtimeShell.isDisplayed() }
         runtimeShell.assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("返回").performClick()
+        androidx.test.espresso.Espresso.pressBack()
         waitForVisibleText("后台任务")
         composeRule.onNodeWithText("后台任务").performClick()
         waitForVisibleText("没有后台任务")

@@ -15,6 +15,7 @@ import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxValueRow
+import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.BuildConfig
 import io.toolbox.host.ui.AppText
@@ -30,6 +31,7 @@ internal fun SettingsScreen(
     onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
+    onAbout: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsContent(
@@ -39,6 +41,8 @@ internal fun SettingsScreen(
         onBackgroundSafeguards = onBackgroundSafeguards,
         onToolPermissions = onToolPermissions,
         onDeveloperHelp = onDeveloperHelp,
+        onAbout = onAbout,
+        onBackgroundEnabledChange = viewModel::setBackgroundEnabled,
     )
 }
 
@@ -50,6 +54,8 @@ internal fun SettingsContent(
     onBackgroundSafeguards: () -> Unit,
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
+    onAbout: () -> Unit = {},
+    onBackgroundEnabledChange: (Boolean) -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -63,10 +69,12 @@ internal fun SettingsContent(
         item("before-appearance") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("appearance") {
             ToolBoxGroupedSurface {
+                ToolBoxValueRow("界面样式", "Liquid Glass", summary = "组件比例与玻璃材质", icon = ToolBoxIconKey.Palette)
+                ToolBoxGroupDivider()
                 ToolBoxSettingRow(
-                    title = "外观",
+                    title = "外观模式",
                     modifier = Modifier.testTag(HostTestTags.SettingsAppearance),
-                    summary = "${state.settings.themeStyle.label} · ${state.settings.theme.baseLabel}",
+                    summary = "Liquid Glass · ${state.settings.theme.baseLabel}",
                     icon = ToolBoxIconKey.Palette,
                     onClick = onAppearance,
                     enabled = state.loaded,
@@ -78,16 +86,18 @@ internal fun SettingsContent(
         item("before-operation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("operation") {
             ToolBoxGroupedSurface {
-                ToolBoxSettingRow(
-                    title = "后台保障",
-                    summary = if (state.settings.backgroundEnabled) "已开启" else "已关闭",
-                    icon = ToolBoxIconKey.Clock,
-                    onClick = onBackgroundSafeguards,
-                    enabled = state.loaded,
+                ToolBoxSwitchSettingRow(
+                    title = "后台保障", summary = "允许已启动的任务持续运行",
+                    checked = state.settings.backgroundEnabled, onCheckedChange = onBackgroundEnabledChange,
+                    icon = ToolBoxIconKey.Lock, enabled = state.loaded,
                 )
+                ToolBoxGroupDivider()
+                ToolBoxSettingRow("后台运行设置", summary = "通知、电池与系统权限", icon = ToolBoxIconKey.Clock,
+                    onClick = onBackgroundSafeguards, enabled = state.loaded)
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow(
                     title = "工具权限",
+                    summary = "按工具管理已声明的能力",
                     icon = ToolBoxIconKey.Shield,
                     onClick = onToolPermissions,
                     enabled = state.loaded,
@@ -100,16 +110,16 @@ internal fun SettingsContent(
         item("support") {
             ToolBoxGroupedSurface {
                 ToolBoxSettingRow(
-                    title = "开发帮助",
+                    title = "Developer Help",
+                    summary = "离线手册与四个范例",
                     icon = ToolBoxIconKey.Code,
                     onClick = onDeveloperHelp,
                     enabled = state.loaded,
                 )
                 ToolBoxGroupDivider()
-                ToolBoxValueRow(
-                    title = "关于 ToolBox",
-                    value = "${BuildConfig.VERSION_NAME} · API 1.0",
-                    icon = ToolBoxIconKey.Tools,
+                ToolBoxSettingRow(
+                    title = "关于 ToolBox", summary = "${BuildConfig.VERSION_NAME} · OpenDesign",
+                    icon = ToolBoxIconKey.Tools, onClick = onAbout,
                 )
             }
         }

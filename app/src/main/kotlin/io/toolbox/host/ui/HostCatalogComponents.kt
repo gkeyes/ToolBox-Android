@@ -88,11 +88,12 @@ internal fun SectionHeader(title: String, action: String = "") {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         AppText(
             title,
+            color = ToolBoxThemeTokens.colors.textSecondary,
             modifier = Modifier.weight(1f).semantics { heading() },
             textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
         )
         if (action.isNotEmpty()) {
-            AppText(action, color = ToolBoxThemeTokens.colors.primary, weight = FontWeight.SemiBold)
+            AppText(action, color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
         }
     }
 }

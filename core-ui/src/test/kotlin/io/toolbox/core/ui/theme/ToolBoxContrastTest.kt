@@ -49,6 +49,23 @@ class ToolBoxContrastTest {
     }
 
     @Test
+    fun navigationSelectionRemainsReadableWithoutDependingOnBlur() {
+        for (dark in listOf(false, true)) {
+            for (accent in listOf(Color(0xFF1264CC), Color(0xFF30B05A), Color(0xFFAF52DE))) {
+                val colors = liquidGlassColors(dark, accent, accent)
+                for (reduced in listOf(false, true)) {
+                    val material = liquidGlassMaterials(colors, dark, true, reduced)
+                    // An opaque selected lens stays distinct even over a white blur fallback.
+                    assertEquals(1f, material.navigationSelectionTint.alpha)
+                    assertTrue(contrastRatio(material.navigationSelectionTint, colors.surface) > 1.1f)
+                    val foreground = readableForeground(colors.primary, listOf(material.navigationSelectionTint, colors.surface))
+                    assertTrue(contrastRatio(foreground, material.navigationSelectionTint) >= 4.5f)
+                }
+            }
+        }
+    }
+
+    @Test
     fun reduceTransparencyUsesTheSameOpaqueMaterialFallback() {
         val colors = liquidGlassColors(false, Color(0xFF0A84FF), Color.White)
         val glass = liquidGlassMaterials(colors, dark = false, enabled = true, reduceTransparency = false)

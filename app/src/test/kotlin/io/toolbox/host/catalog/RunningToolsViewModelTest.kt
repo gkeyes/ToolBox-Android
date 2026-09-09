@@ -138,6 +138,50 @@ class RunningToolsViewModelTest {
         assertNull(viewModel.state.value.feedback)
     }
 
+    @Test
+    fun stopAllRequiresMoreThanTwoSessionsAndCancellationDoesNothing() = runTest(dispatcher) {
+        val source = MutableStateFlow(listOf(first, second))
+        val calls = mutableListOf<String>()
+        val viewModel = RunningToolsViewModel(source) { calls += it; true }
+        runCurrent()
+        viewModel.requestStopAll()
+        assertTrue(viewModel.state.value.batchConfirmation.isEmpty())
+        source.value += session("third", "io.toolbox.third", 3L)
+        runCurrent()
+        viewModel.requestStopAll()
+        assertEquals(3, viewModel.state.value.batchConfirmation.size)
+        viewModel.cancelStop()
+        viewModel.confirmStop()
+        advanceUntilIdle()
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun batchStopUsesConfirmedSnapshotAndContinuesAfterIndividualFailure() = runTest(dispatcher) {
+        val third = session("third", "io.toolbox.third", 3L)
+        val later = session("later", "io.toolbox.later", 4L)
+        val source = MutableStateFlow(listOf(first, second, third))
+        val calls = mutableListOf<String>()
+        val viewModel = RunningToolsViewModel(source) { id ->
+            calls += id
+            if (id == first.sessionId) error("private failure")
+            source.value = source.value.filterNot { it.sessionId == id }
+            true
+        }
+        runCurrent()
+        viewModel.requestStopAll()
+        source.value += later
+        runCurrent()
+        viewModel.confirmStop()
+        viewModel.confirmStop()
+        advanceUntilIdle()
+        assertEquals(listOf(first.sessionId, second.sessionId, third.sessionId), calls)
+        assertEquals(listOf(first, later), viewModel.state.value.sessions)
+        assertEquals("BACKGROUND_STOP_FAILED", viewModel.state.value.feedback?.code)
+        assertNull(viewModel.state.value.stoppingSessionId)
+        assertTrue(viewModel.state.value.batchConfirmation.isEmpty())
+    }
+
     private fun session(id: String, toolId: String, startedAt: Long) = RuntimeBackgroundSessionUi(
         sessionId = id,
         toolId = toolId,
