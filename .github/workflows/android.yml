@@ -85,7 +85,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Verify Room storage and Android browser Intent guards
+      - name: Verify storage, browser guards and affected UI interactions
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -94,7 +94,7 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest,io.toolbox.host.runtime.BrowserLauncherInstrumentedTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class='io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest,io.toolbox.host.runtime.BrowserLauncherInstrumentedTest,io.toolbox.host.HostAdaptiveScrollTest#appearanceChoicesRemainInteractiveAtTwoHundredPercentFontScale,io.toolbox.host.HostAdaptiveScrollTest#backgroundTasksUseSeparateStopTargetsAndShowBulkActionOnlyAboveTwo'
 
       - name: Retain storage transaction results
         if: ${{ always() }}

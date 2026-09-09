@@ -38,6 +38,8 @@ bash scripts/verify-security-invariants.sh "$PWD"
 python3 scripts/verify-opendesign-source.py
 ```
 
+Android CI 额外运行外观页 2 倍字体交互、后台任务单项停止与批量入口的行为测试；不包含自动截图测试。
+
 debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定签名时它采用本地 debug key，
 与 GitHub 已交付 APK 的签名不同；使用独立模拟器测试。本地构建不代表已发布或 GitHub CI 通过。
 
