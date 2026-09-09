@@ -93,3 +93,60 @@ test("invalid links and an older host do not navigate the WebView", async ({ pag
   await expect(dialog(page)).toContainText(originalUrl);
   await verifyBoundary(page, observations);
 });
+
+test("glass dialog dismisses without changing the reader and restores keyboard focus", async ({ page }) => {
+  const observations = await openArticle(page);
+  const trigger = page.locator(".article-title a");
+  for (const dismiss of ["cancel", "escape", "backdrop"]) {
+    await trigger.focus();
+    await trigger.press("Enter");
+    await expect(dialog(page).getByRole("button", { name: "浏览器打开", exact: true })).toBeFocused();
+    await dialog(page).getByRole("heading").click();
+    await expect(dialog(page)).toBeVisible();
+    if (dismiss === "cancel") await dialog(page).getByRole("button", { name: "取消", exact: true }).click();
+    if (dismiss === "escape") await page.keyboard.press("Escape");
+    if (dismiss === "backdrop") await page.touchscreen.tap(4, 4);
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page).toHaveURL(/\/article\/96/);
+  }
+  expect(await page.evaluate(() => window.__nextfluxTest.browserCalls)).toEqual([]);
+  await verifyBoundary(page, observations);
+});
+
+test("glass dialog fits narrow, large type and dark layouts with one primary action", async ({ page }) => {
+  const observations = await openArticle(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const [width, height, scale, dark] of [[390, 844, 1, false], [320, 720, 2, false], [844, 390, 1, true], [1280, 900, 1, true]]) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(({ scale, dark }) => {
+      document.documentElement.style.fontSize = `${16 * scale}px`;
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    }, { scale, dark });
+    const trigger = page.locator(".article-title a");
+    await trigger.click();
+    const layout = await dialog(page).evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const buttons = [...element.querySelectorAll("button")];
+      return {
+        left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+        scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+        animation: getComputedStyle(element).animationName,
+        buttons: buttons.map((button) => ({ height: button.getBoundingClientRect().height, background: getComputedStyle(button).backgroundColor })),
+      };
+    });
+    expect(layout.left).toBeGreaterThanOrEqual(15);
+    expect(layout.right).toBeLessThanOrEqual(width - 15);
+    expect(layout.top).toBeGreaterThanOrEqual(15);
+    expect(layout.bottom).toBeLessThanOrEqual(height - 15);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+    expect(layout.animation).toBe("none");
+    expect(layout.buttons.every((button) => button.height >= 48)).toBe(true);
+    expect(layout.buttons[0].background).not.toBe(layout.buttons[1].background);
+    expect(new Set(layout.buttons.slice(1).map((button) => button.background)).size).toBe(1);
+    await dialog(page).getByRole("button", { name: "取消", exact: true }).click();
+    await expect(dialog(page)).toHaveCount(0);
+  }
+  await verifyBoundary(page, observations);
+});

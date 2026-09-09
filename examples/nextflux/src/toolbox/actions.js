@@ -67,17 +67,21 @@ export function showLinkActions(value) {
     return;
   }
   document.querySelector("dialog.toolbox-link-dialog")?.remove();
+  const trigger = document.activeElement;
   const dialog = document.createElement("dialog");
   dialog.className = "toolbox-link-dialog";
   dialog.setAttribute("aria-label", "链接操作");
+  dialog.setAttribute("aria-describedby", "toolbox-link-explanation");
   const title = document.createElement("h2");
   title.textContent = "打开原文链接";
   const explanation = document.createElement("p");
-  explanation.textContent = "使用系统浏览器打开，也可以复制或分享链接。";
+  explanation.id = "toolbox-link-explanation";
+  explanation.textContent = "将由系统浏览器处理；你也可以先复制或分享链接。";
   const address = document.createElement("p");
   address.className = "toolbox-link-address";
   address.textContent = url.href;
   const footer = document.createElement("div");
+  footer.className = "toolbox-link-actions";
   let pending = false;
   for (const [label, action] of [
     ["浏览器打开", () => openInBrowser(url.href)],
@@ -88,6 +92,7 @@ export function showLinkActions(value) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
+    button.className = label === "浏览器打开" ? "toolbox-link-primary" : "toolbox-link-secondary";
     button.onclick = async () => {
       if (pending) return;
       pending = true;
@@ -105,9 +110,34 @@ export function showLinkActions(value) {
     footer.append(button);
   }
   dialog.append(title, explanation, address, footer);
-  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  // Only a gesture starting and ending on the backdrop dismisses the dialog.
+  // Dragging from the address or a button must not accidentally cancel it.
+  const outside = (event) => {
+    const bounds = dialog.getBoundingClientRect();
+    return event.clientX < bounds.left || event.clientX > bounds.right
+      || event.clientY < bounds.top || event.clientY > bounds.bottom;
+  };
+  let backdropPress = false;
+  dialog.addEventListener("pointerdown", (event) => {
+    backdropPress = event.target === dialog && outside(event);
+  });
+  dialog.addEventListener("pointercancel", () => { backdropPress = false; });
+  dialog.addEventListener("click", (event) => {
+    if (!pending && backdropPress && event.target === dialog && outside(event)) dialog.close();
+    backdropPress = false;
+  });
+  dialog.addEventListener("cancel", (event) => {
+    if (pending) event.preventDefault();
+  });
+  // Keep native dialog keyboard behavior, but don't also run reader shortcuts.
+  dialog.addEventListener("keydown", (event) => event.stopPropagation());
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    if (!document.querySelector("dialog[open]") && trigger?.isConnected) trigger.focus({ preventScroll: true });
+  }, { once: true });
   document.body.append(dialog);
   dialog.showModal();
+  footer.firstElementChild.focus({ preventScroll: true });
 }
 export function installLinkHandling() {
   document.addEventListener("click", event => {
