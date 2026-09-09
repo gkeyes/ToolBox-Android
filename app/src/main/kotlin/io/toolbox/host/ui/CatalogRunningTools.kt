@@ -42,9 +42,9 @@ internal fun CatalogRunningTools(
     uiVisible: Boolean = true,
 ) {
     // Never freeze a window-level stop confirmation while its session can disappear.
-    val state by viewModel.state.collectAsStateWhileVisible(
-        uiVisible || viewModel.state.value.confirmation != null,
-    )
+    val state by viewModel.state.collectAsStateWhileVisible(uiVisible) {
+        it.confirmation != null
+    }
     CatalogRunningToolsContent(
         state = state,
         tools = tools,
