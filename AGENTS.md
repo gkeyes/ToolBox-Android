@@ -9,7 +9,7 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 1. `docs/ToolBox_Android_技术方案.md`
 2. `schema/manifest.schema.json`
 3. `sdk/toolbox-api.d.ts`
-4. `references/component_mapping.md`
+4. `DESIGN.md`
 
 ## Non-negotiable security invariants
 

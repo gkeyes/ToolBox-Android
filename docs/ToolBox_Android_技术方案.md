@@ -1,8 +1,7 @@
 # ToolBox Android：功能优先技术方案
 
-> 版本：3.1-dev
 > 目标：Android 13+，优先 Xiaomi / HyperOS
-> 设计系统：Miuix `0.9.4-rc01`
+> 界面与组件统一见 [设计规范](../DESIGN.md)，依赖版本以 [Gradle 目录](../gradle/libs.versions.toml) 为准。
 
 ## 1. 产品合同
 
@@ -21,12 +20,11 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 ### 1.1 当前开发基线
 
 - 当前候选为 `0.6.7 (23)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
-- Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
-  Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
+- Room schema 继续为 `version = 1`，不写 Room `Migration`、`AutoMigration` 或
+  `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
 - 仅在既有持续会话 KV 描述符中保存独立通知编号；已安装版本缺少编号的会话在恢复时分配并保存。
-- 删除审计、发布者信任、安装审核会话、恢复审核和虚假设置的模型、repository、界面、
-  文档与测试。
+- 模型和界面只维护实际功能，不引入审计、发布者信任、安装审核或虚假设置。
 
 ### 1.2 不做的事情
 
@@ -72,7 +70,7 @@ Room 只包含：`tools`、`tool_versions`、`permission_grants`、`tool_kv`、
 `install_transactions`、`background_tasks`、`task_results`。安全存储的
 密钥材料留在 Android Keystore，不落为明文表。
 
-0.3 不改变 Room schema，继续为 v1。持续会话与闹钟仅保存宿主恢复所需的最小描述符，并复用
+持续会话与闹钟仅保存宿主恢复所需的最小描述符，并复用
 现有 KV 物理存储；会话只保存 sessionId、启动/提醒时间、恢复选项和独立通知编号，闹钟只保存 id 与调度时间，
 不保存轨迹、行情、行程、通知正文或其他业务 payload。
 
@@ -175,9 +173,16 @@ Android 授权请求绑定唯一请求号、版本和请求权限；页面只保
 
 ### 6.1 单一协议来源
 
-`tool-api` 内的机器可读 API v1 文件是唯一合同来源。Gradle 生成或严格比对 Kotlin
-capability descriptor、JS shim method table、`sdk/toolbox-api.d.ts` 和 manifest capability
-枚举；CI 必须在生成物漂移时失败。不得依靠示例或旧缺失 SDK hash 阻断实现。
+[API v1 JSON](../tool-api/src/main/resources/toolbox-api-v1.json) 是仓库维护的唯一合同来源。
+Gradle 生成或严格比对 Kotlin capability descriptor、JS shim method table、
+[TypeScript 声明](../sdk/toolbox-api.d.ts)、manifest capability 枚举和包检查器；CI 必须在漂移时失败。
+当前声明不宣称恢复了早期资料包中缺失的原始 SDK，历史交付 hash 不作为构建或发布条件。
+
+修改合同后，对 JSON 原始 UTF-8 字节计算 SHA-256，同步 `ToolBoxApiV1.CANONICAL_SHA256` 与
+`ToolBoxContractSha256`，再更新 [完整手册](../sdk/help/manual.md) 的内嵌声明；该 hash 是合同
+摘要，不是 TypeScript 文件摘要。`:tool-api:verifyToolBoxApiContract` 检查合同一致性，
+`scripts/check-developer-help.mjs` 检查手册内嵌源码与示例。能力只有具备实际 production handler
+后才可授予，示例、手册和运行时不能各自维护独立协议。
 
 每个 handler 在 dispatcher 中按顺序检查：支持情况 → 声明 → grant → 系统状态 → 手势/
 上下文 → 速率/配额 → handler。失败返回稳定结构化错误，不返回伪成功。
@@ -268,7 +273,51 @@ ToolBox 首页“最近使用”只显示图标，按可用宽度和至少 48 dp
 exact-origin 主 frame 的 bridge session。页面完成 `ToolBox.ready()` 后才冲刷 native 队列；若
 JS 监听器尚未注册，document-start shim 还会保留有限早到事件，避免恢复事件在首屏加载时丢失。
 
-## 7. 0.3 后台、网络和通知
+### 6.5 WebView 隔离与清理
+
+运行许可在创建 WebView 前预留 tool ID，并携带不可变隔离模式；注册、创建失败和页面释放时
+精确转移或关闭许可。模式记录、运行与卸载共用同工具生命周期租约，不允许清理与运行竞态。
+实现入口为 [RuntimeProfileManager](../tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeProfileManager.kt)
+和 [HardenedRuntimeWebView](../tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt)。
+
+| 模式 | 选择条件 | 浏览数据约束 |
+|---|---|---|
+| `DEDICATED_PROFILE` | provider 同时支持 `MULTI_PROFILE` 与 `DELETE_BROWSING_DATA`。 | 每工具独立 Profile，卸载必须证明整个 Profile 已删除或内容已清空；Cookie、ServiceWorker 和直接联网仍禁用。 |
+| `ORIGIN_ONLY_STATELESS` | 不满足专用模式，但具备完整无状态防护能力。 | 不调用 `setProfile`，关闭 DOM storage、database、Cookie，使用 `LOAD_NO_CACHE` 与本地响应 `no-store`；不向默认 Profile 写入工具浏览状态。 |
+
+无状态模式必须支持 `DOCUMENT_START_SCRIPT`。provider 支持 ServiceWorker basic usage 时，
+还必须支持请求拦截；缺少前置能力时在写入模式记录前拒绝许可，创建 WebView 时再核对实际能力。
+两种模式都阻断 ServiceWorker 请求；仅允许包内同源静态 Dedicated Worker，拒绝远程、blob 和
+data Worker。无状态文档开始脚本禁用 Cache API、IndexedDB、local/session storage、
+Storage/OPFS、Storage Buckets、WebSQL、legacy FileSystem 与 ServiceWorker API，锁定实例及
+原型 descriptor，全部完成后写入不可变 sentinel。页面完成时异步复核 sentinel，失败即停止加载，
+不能把脚本捕获异常当作成功。默认 Profile 中若有当前 exact origin 可见的 Cookie（包括父域），
+必须在 attach/load 前拒绝创建。所有模式继续遵守 origin、CSP、导航和消息桥不变量。
+
+首次运行前在私有目录原子写入并 fsync 模式记录，严格核对身份、文件名和内容；损坏或写入失败
+阻断运行。无状态转专用模式可改写记录；专用转无状态前仍须具备 `MULTI_PROFILE`，且证明旧
+Profile 未加载并已物理删除或不存在。旧 Profile 已加载、删除失败或无法确认时拒绝转换。
+
+专用 Profile 在进程内使用后，即使 WebView 已销毁也可能不能物理删除，因此采用两阶段清理：
+
+1. 活动 WebView 阻止取得清理租约并返回 `InUse`。取得租约后先尝试物理删除 Profile。
+2. 已加载 Profile 不能物理删除时，等待整个专用 Profile 的 `deleteBrowsingData` 真实完成回调。
+   超时或取消不能作为完成证据；清理失败则不进入包操作。
+3. 清理成功后原子写入并 fsync `CONTENT_CLEARED_PENDING_PROFILE_DELETE` 标记，再检查取消状态，
+   在同一租约内执行包生命周期动作。标记失败时包操作不执行。
+4. 冷恢复仅处理严格有效且 catalog 已无对应工具的标记/模式记录，不扫描猜测其他 Profile。
+   工具仍存在时保留标记，在新运行许可内、`setProfile` 前从 IO 线程消费。
+
+无状态模式只删除自身模式记录后进入包操作；包操作失败时，下次运行重新选择并记录安全模式。
+孤儿专用 Profile 的冷删除只要求 `MULTI_PROFILE`，必须证明未加载；provider 缺少该能力时
+保留证据并返回 `RecoveryDeferred`。没有标记和模式记录时不查询可选 WebKit 能力。
+不能全局清除默认 Profile，也不能忽略旧 Profile 或依赖 GC/延时推断清理成功。
+
+孤儿清理在 Compose 宿主首帧信号后执行，失败不替换已经发布的 Ready 界面；相关工具的运行
+和卸载仍依据保留记录拒绝不安全操作。启动维护时机不改变隔离模式，也不以减少启动耗时为由
+开放默认 Profile 持久存储。
+
+## 7. 后台、网络和通知
 
 ### 7.1 持续网页运行环境
 
@@ -385,7 +434,7 @@ span，Focus V3 也不覆盖明暗文字字段，由当前 Android/HyperOS Syste
 - 普通行 64–80dp、搜索框 48dp、最小触控目标 48dp。字体可换行/自然增高，禁止把顶栏、
   搜索框或底栏乘以 `fontScale`。
 - 每页状态栏、cutout、IME、导航/手势 inset 只能消费一次；IME 只由有输入焦点的内容区处理。
-- Tab 使用短淡入，详情进入/返回使用同一 Miuix easing。WebView 运行层不参与 Compose 页面
+- 一级 Tab 直接切换内容，详情进入/返回使用同一 Miuix easing。WebView 运行层不参与 Compose 页面
   变形：进入工具时先完成轻量原生页面壳转场，随后才创建 WebView，首帧完成后原地揭示；返回时
   由保留的原生源页面覆盖运行层后释放 WebView。系统关闭动画时禁用非必要动效。
 
@@ -411,8 +460,8 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 4. **通知实验室**：验证普通通知发布/更新/取消、会话绑定实时通知、后台计时原位更新、
    Android Live 状态与 HyperOS 超级岛状态；使用 `storage`、`notifications`、`background.runtime`。
 
-四个示例继续保留源码目录、manifest、integrity、可重复打包脚本和 APK 内置 `.tbx`，不把它们
-作为本轮独立交付物。行情哨兵要求至少 0.3.2 宿主，继续独立交付且不加入 APK assets。
+四个示例保留源码、manifest、integrity、打包脚本和 APK 内置 `.tbx`；其他小工具独立交付。
+当前版本、安装包与构建入口统一见 [小工具目录](../examples/README.md)。
 
 ## 10. 最小验证与交付
 
@@ -422,6 +471,8 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 |---|---|---|---|
 | 新鲜数据基线 | 防止无用兼容代码残留。 | 创建/重开 production Room/DataStore，写工具、grant、KV、任务、结果并检查 schema/keys。 | 真实状态持久化；没有 audit/publisher/旧设置/迁移。 |
 | 导入与卸载 | 保证核心“成功或失败”和真实删除。 | 导入四个有效例子、损坏包与现有恶意 ZIP 矩阵，再从详情删除按钮确认删除。 | 有效包可打开；无效零残留；删除完整清理。 |
+| 可选签名 | 防止精简安装流程时跳过内部校验。 | 覆盖无签名、有效 integrity/签名、篡改、错误 public key/key ID、原始 integrity 字节变化和无效签名。 | 有效包可安装；无效包失败且无文件、事务或目录记录残留。 |
+| Profile 与恢复 | 防止模式转换或卸载留下可复用浏览状态。 | 覆盖活动租约、清理回调/标记/取消、冷恢复、专用与无状态转换、缺失能力、Cookie 污染及 descriptor/sentinel 防护。 | 旧数据不可见；清理失败不调用包动作；维护只在宿主首帧后执行。 |
 | 权限与 RPC | 防止开关和功能脱节。 | 逐 capability 调 production dispatcher，并关闭每一个授权层。 | 开启有真实结果；任一层缺失稳定拒绝。 |
 | 后台与代理 | 防止持续环境丢失、旧 API 冲突或撤权后联网。 | fake clock 验证 12 小时提醒；dispatcher 同时验证 task list/session list；可注入传输/DNS 覆盖公网 POST、HTTP 状态、私网、重定向和旧任务重试。 | runtime 与旧 task 语义分离；事件/提醒可恢复；撤权终止联网，无孤儿资源或协议回退。 |
 | Miuix 真机旅程 | 验证卡顿、inset 和系统 UI。 | 小米机：干净安装、四个例子、权限、运行、复制、系统 surface、后台、删除，含大字体。 | 控件都有效；内容优先；无双 inset/明显卡顿。 |
@@ -429,8 +480,8 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 检查通过后直接构建一次签名 release APK，不另行构建重复的 candidate APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.7 (23) 上传 `toolbox-v0.6.7-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
-APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
+上传带当前版本的 release APK、`SHA256SUMS.txt` 和构建/测试回执；
+APK 内含四个范例，独立小工具通过各自 CI 交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不改变数据库结构；新增的 `browser` 能力仍按声明和默认关闭策略生效。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug
 后旧任务无法创建，不用整个模块的 keep 规则抵消优化。R8 映射随提交独立归档。

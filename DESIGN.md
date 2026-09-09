@@ -1,6 +1,6 @@
 # ToolBox Android 设计规范
 
-> Liquid Glass 设计参考见 `design/liquid_glass_v2_reference.md`；当前组件与运行容器规范以 `references/component_mapping.md`、`docs/ToolBox_Android_技术方案.md` 为准。
+> 本文件统一维护宿主设计与组件映射；架构和安全约束见 [技术方案](docs/ToolBox_Android_技术方案.md)。
 > 按用户要求已撤销自动截图测试/基线门禁；仅保留 debug 的 IDE 手动预览，不再要求更新 golden。
 > 设计系统：Miuix `v0.9.4-rc01` + Haze `1.7.3` + ToolBox 适配层
 > 目标：紧凑、可用、内容优先；不以审核、安全状态或宿主装饰占据工具屏幕。
@@ -233,8 +233,8 @@ HyperOS 岛图共享同一份异步解码结果；内置资源/分类图标仅�
 BuildConfig。后台总开关仍在后台保障内部页：关闭会取消所有工具后台任务及相应通知，重新打开
 不自动恢复旧任务；本轮不改变此行为。
 
-Developer Help 从 `sdk/help/manual.md` 离线读取同一份开发手册；仓库入口 `sdk/USAGE.md` 链接到
-它。采用“章节 → 主题 → 正文/代码”两级折叠，同级只展开一项，初始全部折叠。搜索跨标题、
+Developer Help 与仓库共用 [开发手册](sdk/help/manual.md)。采用“章节 → 主题 → 正文/代码”
+两级折叠，同级只展开一项，初始全部折叠。搜索跨标题、
 正文和代码匹配主题，不自动铺开长正文；清除搜索恢复目录。章节与主题整行可点，提供展开/折叠
 语义与至少 48dp 命中区。只组合当前展开内容，代码自然换行、可长按选择、逐块复制或复制整份
 手册；正文不使用全段高度动画。文件读取与解析离开主线程，单一 LazyColumn 使用稳定 key。
@@ -260,15 +260,26 @@ Developer Help 从 `sdk/help/manual.md` 离线读取同一份开发手册；仓�
 
 ## 6. 组件映射
 
-- 一级页面顶栏：ToolBox `ToolBoxLargeTopBar`；Miuix 使用 `TopAppBar`，Liquid Glass 使用 34sp
-  原生标题与 Haze 材质。二级页面走 `ToolBoxTopBar`，运行页使用只处理安全区域的 `ToolBoxRuntimeScaffold`。
-- 主导航：Miuix `NavigationBar` 由 ToolBox 包装；Liquid Glass 在同一组件出口增加悬浮胶囊几何和 Haze。
-- 工具、设置、权限分组：Miuix surface/card + ToolBox `GroupedSurface`。
-- 权限与后台开关：Miuix preference switch + ToolBox `ToolBoxSwitchSettingRow`。
-- 菜单、删除确认、失败反馈：清晰 surface 上的 Miuix menu/dialog/snackbar，不使用内容玻璃。
-- 一级工具/设置由一个常驻 `PrimaryScreen` 直接切换内容，并保留原主目的地返回语义；二级页面使用
-  独立且类型一致的 `ToolBoxRoute` back stack，并由 ToolBox 常驻分层宿主渲染，不接入第二套
-  Navigation3，也不让库转场同时重组前后两张完整页面。
+| 区域 | 当前组件 | 适配责任 |
+|---|---|---|
+| 双主题 | `ToolBoxTheme` | 统一风格、明暗、系统取色和材质 token。 |
+| 顶栏 | `ToolBoxLargeTopBar` / `ToolBoxTopBar` | Miuix 顶栏与 Liquid Glass 34sp 一级标题；inset 只消费一次。 |
+| 主导航 | `ToolBoxNavigationBar` | Miuix 底栏 / Liquid Glass 悬浮胶囊，共用目的地和点击语义。 |
+| 分组、身份图 | `ToolBoxGroupedSurface` / `CatalogToolGlyph` | 单一分组底板；异步显示当前安装版本的实际图标。 |
+| 工具首页 | `ToolManagerScreen` / `CatalogRunningTools` | 搜索、导入、正在运行、最近图标与已安装列表，全部基于真实状态。 |
+| 权限与外观 | `ToolBoxSwitchSettingRow` / `ToolBoxChoiceSettingRow` | 整行与控件可点，至少 48dp，保存失败可重试。 |
+| 删除、停止、取消 | `ToolBoxDestructiveButton` | 语义危险色、禁用反馈与独立确认。 |
+| Developer Help | `DeveloperHelpScreen` / `ToolBoxDisclosureRow` | 离线正文、分层折叠、搜索和代码复制。 |
+| 运行页 | `ToolBoxRuntimeScaffold` | 仅处理系统安全区域，内容由硬化 WebView 承载。 |
+
+主题入口位于 [ToolBoxTheme.kt](core-ui/src/main/java/io/toolbox/core/ui/theme/ToolBoxTheme.kt)，
+布局、玻璃、行与图标适配集中在 [component](core-ui/src/main/java/io/toolbox/core/ui/component)。
+HTML 小工具不使用这套宿主组件。HyperX 不是当前依赖，未来接入须固定源码版本。
+
+一级工具/设置共用常驻 `PrimaryScreen` 与 Haze state；二级页面使用 `ToolBoxRoute` 栈和各自的
+采集状态。转场、被覆盖、降低透明度或无硬件加速时停止采集；WebView 永不注册为玻璃背景源。
+菜单、确认和失败反馈使用清晰 surface 上的 Miuix menu/dialog/snackbar。导航不叠加第二套
+Navigation3 转场，也不让前后两张完整页面同时参与动画。
 
 适配层负责版本差异、语义、inset 和组件默认值；业务页面不得直接依赖大量第三方 API。
 

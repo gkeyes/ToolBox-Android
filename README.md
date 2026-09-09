@@ -1,101 +1,79 @@
 # ToolBox Android
 
-ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/CSS/JavaScript 的
-本地 ZIP 包，在唯一 HTTPS origin 的硬化 WebView 中运行，并按工具提供真实的权限开关和
-可独立于 Compose 页面生命周期的通用网页运行环境。
+ToolBox 是 Android 13+ 的个人 `.tbx` 小工具宿主，导入包含 HTML/CSS/JavaScript 的 ZIP 包，
+在唯一 HTTPS origin 的硬化 WebView 中运行。核心流程是 **导入、使用、授权、后台任务、删除**。
 
-当前重构的目标是让用户只经历：**导入、使用、授权、后台任务、删除**。选择 `.tbx` 后，宿主在
-后台完成结构、完整性和签名检查；首次安装和更高版本直接进入工具列表，同版本覆盖或降级只增加
-一次明确确认。失败或取消不留下待安装状态。不会出现审核会话、风险评分、签名/发布者标签、审计
-日志或恢复审核页面。
+包结构、完整性和签名在后台检查，用户只接收成功或可操作的失败结果。同版本覆盖和降级需要
+一次确认；失败或取消不留下待安装状态。工具默认空白安装，示例通过真实导入流程安装。
+所有按钮、权限和后台状态都对应实际功能，不增加审核、发布者信任或安全状态展示。
 
-## 开发基线
+## 当前能力
 
-当前候选为 `0.6.7 (23)`，由 GitHub 使用同一签名密钥构建 release APK，可覆盖已交付版本，
-并增加可即时切换的 Miuix / Liquid Glass 双主题。新安装默认 Liquid Glass 且跟随系统明暗；升级用户
-保留原 Miuix 外观与颜色选择。版本升级会保留工具、权限和设置，
-不需要卸载。
-0.6.0 同时加入可取消的原生网络增量读取接口；依赖该接口的小工具必须声明最低宿主为 0.6.0。
-0.6.1 将可配置网络超时上限扩展至 60 分钟；超过 10 分钟的声明要求最低宿主 0.6.1，默认仍为 30 秒。
-0.6.2 移除运行页标题和刷新栏，仅保留左上角半透明玻璃返回按钮；内容填满系统安全区域。
-0.6.3 移除运行页悬浮返回按钮，使用系统返回手势或按键退出工具；增加按工具授权的自定义 HTTPS 域名，
-并提供独立 NextFlux 阅读器，包含 OpenAI 兼容 AI 摘要。
-0.6.4 将联网控制统一为每工具的网络权限开关，移除域名二次授权和 DNS/IP 地址范围拦截，兼容代理 Fake-IP；最近使用改为纯图标行，可见数量随可用宽度自动适配。
-0.6.5 移除小工具持久存储总容量配额，由设备剩余空间决定可保存容量。普通数据按键分片保存，避免大缓存反复整体重写；旧 storageBytes 声明兼容接受但不再限制容量。NextFlux 1.0.3 恢复上游每页 1000 篇与完整同步范围，取消缓存淘汰。
-0.6.6 增加普通存储 `getMany` 与原子 `apply`，保留权限和工具隔离。配套 NextFlux 1.0.4 将正文与轻量列表数据分开，在同源 Worker 中处理缓存，修复分页等待、正文重复解析和图片离屏高度变化。
-0.6.7 增加按工具授权、用户点击后交给系统浏览器打开的 `browser.open`，方法限流错误可返回剩余等待时间。配套 NextFlux 1.0.5 增加浏览器打开入口，按可见正文加载字体和高亮代码，分批显示完整长文，并减少状态写入与同步期间的交互等待。
-本次不改变 Room `version = 1` 的表结构，不新增数据库迁移。
+- 原生 Compose 宿主使用 Miuix / Liquid Glass 双主题；新安装默认 Liquid Glass，升级保留
+  用户外观设置。切换主题不重建导航或正在运行的 WebView。
+- 工具内容填满系统安全区域，系统返回退出工具；内部返回由小工具根据自身页面状态处理。
+- 每工具权限开关仍受 manifest、Android 系统权限、前台/手势、origin 与限额检查约束。
+- 普通存储按键保存，提供 `getMany` 和原子 `apply`，不设每工具持久存储总容量配额；安全值
+  单独使用安全存储。网络通过按工具授权的原生 HTTPS 代理，支持可取消的流式读取。
+- 工具主动启动持续会话后才可脱离界面继续运行；应用级管理器持有 WebView，一个前台服务
+  承载各会话的独立通知和停止入口。位置、闹钟、分享、浏览器打开、SAF、快捷方式和相机
+  使用对应的原生能力；卸载清理工具数据、权限和后台资源。
 
-设置只保留外观、后台保障、工具权限和 Developer Help。外观页统一管理界面风格、明暗、系统取色与
-降低透明度；主题切换不重建 Activity、导航或正在运行的 WebView。工具详情提供打开、权限、后台任务和
-删除；权限是每工具的虚拟 grant，仍必须通过 manifest、宿主 Android 权限、用户手势、配额
-与 origin 校验才会生效。
+当前宿主为 **0.6.7 (23)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
+授权和设置；Room schema 保持 v1。功能边界与最低宿主要求以技术方案和 SDK 手册为准。
 
-## 功能切片
+## 小工具与开发入口
 
-1. **导入、目录和权限**：SAF 导入、内部包检查、原子安装/更新、真实删除、Miuix 权限开关。
-2. **安全运行时与基础 API**：exact HTTPS origin、CSP、消息桥、`ready`、toast、SHA-256、
-   storage、secure storage、device basic、haptics、clipboard write；包内同源 Web Worker 可承载
-   高负载前台计算，ServiceWorker 与远程 Worker 仍禁用。
-3. **持续运行环境**：应用级管理器拥有 WebView、permit、bridge、timer 和位置监听；运行页只
-   挂载显示层。工具主动 `background.start()` 后可在离开页面时继续工作，并在进程/重启恢复后
-   接收事件；一个 `specialUse` 前台服务承载，每个会话独立通知卡，分别更新、打开和停止。
-   隐藏遵循手机默认机制，超级岛实际展示和排序由系统决定。
-4. **ToolBox 通用能力**：由网络权限控制的 HTTPS 请求、会话绑定的实时通知与 HyperOS 增强、前后台位置
-   watch、精确闹钟，以及剪贴板、分享、浏览器打开、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
+仓位计算器、快速笔记、后台任务演示和通知实验室四个范例随 APK 提供；其他小工具独立打包。
+各工具版本、源码、安装包和 CI 下载入口统一见 [小工具目录](examples/README.md)。已交付包
+收录于 `examples/packages/`，重新打包不得覆盖原产物。
 
-仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
-交付，不加入 APK assets；本轮交付宿主 APK、配套 NextFlux TBX、SHA256 清单和同提交测试回执，其他独立小工具沿用原包。
+开发新工具从 [最小工程](sdk/templates/minimal) 开始，修改工具身份、版本与权限，再在仓库根目录执行：
 
-全部 10 个小工具的版本、源码及可导入包见 [小工具目录](examples/README.md)。安装包统一收录在
-`examples/packages/`，包括 NextFlux 历史包、健康档案、GitHub 构建守望、2048 和稳力；本轮 NextFlux 1.0.5 从目录中链接的 GitHub CI 下载。
-
-## 本地运行
-
-需要 JDK 21 与 Android SDK 37。按当前阶段只运行最小相关验证；宿主 CI 检查入口为
-`scripts/qa/run-host-gate.sh`。典型本地构建为：
-
-```bash
-./gradlew --no-daemon verifySecurityInvariants assembleDebug testDebugUnitTest
+```sh
+python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 ```
 
-需要真机测试时，可在 Android 13+ 设备上安装：
+通用打包器只需要 Python 3.9+ 和标准库，输出应位于源码目录外，已存在时拒绝覆盖。
+原生能力需在 ToolBox 中验证；普通浏览器没有 `window.ToolBox`。
 
-```bash
-./gradlew :app:installCandidate
-```
+- [完整开发手册](sdk/help/manual.md)：与 App 离线 Developer Help 共用，包含教程、返回手势、权限、API 和打包排错。
+- [TypeScript 接口](sdk/toolbox-api.d.ts) 与 [manifest schema](schema/manifest.schema.json)：参数、返回值、声明字段及约束。
+- [合同维护规则](docs/ToolBox_Android_技术方案.md#61-单一协议来源)：修改 API 后同步合同、实现、声明、schema 和手册。
 
-`release` 关闭调试，启用 R8 代码精简/优化与资源裁剪；未使用的代码和资源被移除，四个范例与
-离线帮助保留。`candidate` 使用相同优化；没有配置固定签名时会使用本机 debug key，因此不能
-用它覆盖 GitHub 同签名版本。不要用 debug 构建评价页面帧性能。
+## 宿主构建与验证
 
-GitHub Actions 在安全不变量、API 合同、静态编译、最小单元与优化构建通过后上传
-`toolbox-v0.6.7-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
-版本、后台任务类名与内置资源；R8 映射独立归档以便排查崩溃，不放进安装包。
-系统权限、SAF、相机、通知、持续运行、后台位置、精确闹钟和 HyperOS 增强通知由用户在小米真机
-上验证。GitHub 在模拟器执行指定的存储事务与浏览器启动回归，并在浏览器运行 NextFlux 合成数据交互测试。独立的 NextFlux performance comparison 工作流比较同一批样例的升级前后表现；这些结果不替代真机性能或真实服务验证。
+构建环境为 JDK 21、Android SDK 37，依赖固定在 [版本目录](gradle/libs.versions.toml)。
+构建和测试通过 GitHub Actions 执行：[Android CI](.github/workflows/android.yml) 验证宿主，
+[TBX CI](.github/workflows/tbx.yml) 构建独立小工具；宿主检查入口为
+[scripts/qa/run-host-gate.sh](scripts/qa/run-host-gate.sh)。
 
-按用户要求，自动截图测试及其插件、PNG 基线和 CI 门禁已删除，今后不运行该测试。
-`app/src/debug` 仅保留 Android Studio 手动 Compose 预览，不比较图片、不影响交付；
-回执明确记录 `HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`，不是视觉验收通过。
+宿主通过协议、安全、编译和相关行为检查后，构建固定签名的 release APK，并上传 APK、
+SHA256 清单和同提交回执。release 关闭调试，启用 R8 和资源裁剪；映射独立归档。
+本地 `candidate` 未配置固定签名时使用 debug key，不能覆盖已交付的 GitHub 同签名版本。
 
-## 工程结构
+GitHub 模拟器执行指定的存储事务与浏览器启动回归，NextFlux 浏览器测试使用合成数据。
+[NextFlux 性能比较](examples/nextflux/test/performance/README.md) 说明同配置前后对比方法；
+[宿主性能采集](docs/performance/BASELINE.md) 说明授权真机测量的输入与结果解释。
+这些证据不替代 Android 真机、真实服务或 HyperOS 展示验证。
 
-```text
-app/                              宿主 Compose 页面、路由、系统结果协调
-core-ui/                          ToolBox/Miuix 适配层与主题
-core-data/                        Room、DataStore、目录、grant、KV、任务与结果
-tool-package/                     `.tbx` 检查、签名/完整性、原子安装与卸载
-tool-runtime/                     exact-origin AssetLoader 与硬化 WebView
-tool-api/                         API v1 合同、bridge、handler 与后台协调
-docs/ToolBox_Android_技术方案.md   当前产品与安全架构基线
-examples/                         四个内置范例及独立工具的源码与打包脚本
-```
+自动截图测试、插件和 PNG 基线已退役。`app/src/debug` 仅保留 IDE 手动预览；回执记录
+`HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`，不是视觉验收通过。
 
-## 安全边界
+## 维护文档与源码
 
-安全不变量以 [`AGENTS.md`](AGENTS.md) 为准：不使用 `addJavascriptInterface`、`file://` 或
-localhost；不申请广泛存储、应用列表、无障碍、短信、联系人或 root 权限；所有 WebView 调用
-验证 origin/frame/nonce/声明/grant/系统权限/手势/限额；网络经 ToolBox 原生 HTTPS 代理，
-由每工具网络权限控制，不限制目的域名或解析地址，并支持 HTTPS 重定向。保留 TLS 证书校验、
-跨来源跳转清除凭据、超时、响应上限及撤权取消。
+| 入口 | 职责 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | 开发约定、不可放宽的安全边界和验证要求。 |
+| [技术方案](docs/ToolBox_Android_技术方案.md) | 产品范围、模块、包生命周期、权限、API、运行隔离和后台机制。 |
+| [设计规范](DESIGN.md) | 双主题、页面布局、组件映射、交互和可访问性。 |
+| `app/` | 宿主页面、路由、系统结果和运行会话协调。 |
+| `core-ui/` / `core-data/` | 主题与组件；Room、DataStore、目录、授权和存储。 |
+| `tool-package/` / `tool-runtime/` / `tool-api/` | 包安装；硬化 WebView；协议、消息桥与原生能力。 |
+
+依赖实际版本以 Gradle 目录和锁定信息为准，不在多份文档重复维护版本表。外部参考：
+[Miuix 源码](https://github.com/compose-miuix-ui/miuix)、[Miuix 文档](https://compose-miuix-ui.github.io/miuix/)、
+[WebKit 版本说明](https://developer.android.com/jetpack/androidx/releases/webkit)、
+[AssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)、
+[原生消息桥](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge)。
+第三方用途与授权信息见 [Third-party notices](THIRD_PARTY_NOTICES.md)，各独立小工具另保留自己的许可与上游来源。
