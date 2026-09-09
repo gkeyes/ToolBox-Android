@@ -34,6 +34,7 @@ import io.toolbox.tool.runtime.RuntimeM3Handlers
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.RuntimeSessionCleanupHandler
 import io.toolbox.tool.runtime.RuntimeShareTextHandler
+import io.toolbox.tool.runtime.RuntimeBrowserOpenHandler
 import io.toolbox.tool.runtime.RuntimeShortcutHandler
 import io.toolbox.tool.api.ToolBoxCapabilityId
 import java.io.File
@@ -486,11 +487,28 @@ internal class ForegroundCapabilityBroker private constructor(
 
         private val fileCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        fun activeHandlers(context: Context, toolId: String, toolName: String): RuntimeM3Handlers {
+        fun activeHandlers(
+            context: Context,
+            toolId: String,
+            toolName: String,
+            authorizeBrowserLaunch: suspend () -> Unit = {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Browser launch is not authorized")
+            },
+        ): RuntimeM3Handlers {
             val files = ToolFilesHandler(context.applicationContext)
             return RuntimeM3Handlers(
                 clipboardRead = RuntimeClipboardReadHandler { withForeground { it.readClipboardAfterConfirmation() } },
                 shareText = RuntimeShareTextHandler { text -> withForeground { it.shareText(text) } },
+                browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->
+                    withForeground { broker ->
+                        launchBrowserUrl(
+                            url = url,
+                            beforeLaunch = { authorizeBrowserLaunch(); beforeLaunch() },
+                            ensureForeground = broker::ensureActive,
+                            startActivity = broker.activity::startActivity,
+                        )
+                    }
+                },
                 files = files,
                 shortcuts = RuntimeShortcutHandler { name -> withForeground { it.pinShortcut(toolId, name ?: toolName) } },
                 camera = files,

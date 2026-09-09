@@ -88,14 +88,18 @@ export function logout() {
     clearMediaCache();
     const { cancelAccountOperations, lastSync } = await import("./syncStore.js");
     const draining = cancelAccountOperations();
-    const { stopContinuousSync } = await import("../toolbox/background.js");
+    const [{ clearArticleCache }, articles, feeds, { stopContinuousSync }] = await Promise.all([
+      import("../db/storage.js"), import("./articlesStore.js"), import("./feedsStore.js"), import("../toolbox/background.js"),
+    ]);
+    // clear() invalidates the Worker epoch immediately, then drains native
+    // writers before publishing its empty root. Starting it before awaiting the
+    // account queue also cancels storage admission waits owned by that queue.
+    const cleanup = Promise.allSettled([draining, clearArticleCache(), secureStorage().remove(AUTH_KEY)]);
     let backgroundFailure = null;
     try { await stopContinuousSync(); } catch (failure) { backgroundFailure = failure; }
-    await draining;
-    const [{ clearArticleCache }, articles, feeds] = await Promise.all([
-      import("../db/storage.js"), import("./articlesStore.js"), import("./feedsStore.js"),
-    ]);
-    await Promise.all([secureStorage().remove(AUTH_KEY), clearArticleCache()]);
+    const results = await cleanup;
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
     articles.resetArticleState();
     feeds.feeds.set([]);
     feeds.categories.set([]);

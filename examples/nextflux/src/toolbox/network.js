@@ -21,7 +21,7 @@ export function basicAuth(username, password) {
   return "Basic " + btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 }
 
-function transportError(code) {
+function transportError(code, retryAfterMs) {
   const messages = {
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
     NOT_DECLARED: "此版本未声明所需的网络权限。",
@@ -34,6 +34,9 @@ function transportError(code) {
   };
   const error = new Error(messages[code] || "网络请求失败，请稍后重试。");
   error.code = Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE";
+  if (error.code === "RATE_LIMITED" && Number.isInteger(retryAfterMs) && retryAfterMs >= 0) {
+    error.retryAfterMs = retryAfterMs;
+  }
   return error;
 }
 
@@ -55,7 +58,7 @@ export async function request(value, options = {}) {
     response = await network.request(payload);
   } catch (error) {
     // Never propagate native errors or Axios configs containing credentials/bodies.
-    throw transportError(error?.code);
+    throw transportError(error?.code, error?.retryAfterMs);
   }
   if (options.signal?.aborted) throw transportError("CANCELLED");
   return response;

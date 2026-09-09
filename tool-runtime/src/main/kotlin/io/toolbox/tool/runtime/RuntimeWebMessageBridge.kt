@@ -11,6 +11,7 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.security.SecureRandom
+import java.lang.ref.WeakReference
 import java.util.Base64
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -36,6 +37,9 @@ data class RuntimeBridgeConfiguration(
     val maxPayloadBytes: Int = DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
     val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    val browserLaunchGuard: () -> Unit = {
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
+    },
 ) {
     init {
         require(hostVersion.matches(Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")))
@@ -57,6 +61,9 @@ class RuntimeBridgeSession internal constructor(
     m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
     private val clockMillis: () -> Long = SystemClock::elapsedRealtime,
+    private val browserLaunchGuard: () -> Unit = {
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
+    },
 ) {
     private val active = AtomicBoolean(true)
     private val eventReady = AtomicBoolean(false)
@@ -65,6 +72,7 @@ class RuntimeBridgeSession internal constructor(
     private val eventProxy = AtomicReference<JavaScriptReplyProxy?>(null)
     private val pendingEvents = ArrayDeque<String>()
     private val jobs = RuntimeSessionJobs()
+    private var attachedView = WeakReference<WebView>(null)
     private val dispatcher = RuntimeRpcDispatcher(
         identity = identity,
         authorization = authorization,
@@ -72,6 +80,7 @@ class RuntimeBridgeSession internal constructor(
         m2Handlers = m2Handlers,
         m3Handlers = m3Handlers,
         maxResponseBytes = maxPayloadBytes,
+        browserLaunchGuard = ::requireBrowserForegroundSession,
     )
     private val sessionCleanup = m3Handlers.sessionCleanup
     private val network = m2Handlers.network
@@ -96,6 +105,23 @@ class RuntimeBridgeSession internal constructor(
             false
         }
         RuntimeBridgeLifecycle.register(webView, this)
+        attachedView = WeakReference(webView)
+    }
+
+    private fun requireBrowserForegroundSession() {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        val view = attachedView.get()
+        if (!active.get() || view == null || !RuntimeBridgeLifecycle.isCurrent(view, this)) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The browser request belongs to an ended tool session")
+        }
+        browserLaunchGuard()
+        if (!view.isAttachedToWindow || !view.isShown || !view.hasWindowFocus()) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before opening a browser")
+        }
+        val touchedAt = gestureAtMillis.get()
+        if (touchedAt == NO_GESTURE || clockMillis() - touchedAt !in 0..5_000L) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "Tap the link again to open the browser")
+        }
     }
 
     private fun accept(
@@ -165,6 +191,7 @@ class RuntimeBridgeSession internal constructor(
 
     internal fun close(webView: WebView) {
         if (!active.compareAndSet(true, false)) return
+        attachedView.clear()
         jobs.close()
         runCatching { network?.close() }
         runCatching { sessionCleanup?.close() }
@@ -443,6 +470,7 @@ class RuntimeBridgeSession internal constructor(
                   onTimer: listener => subscribe('background.timer', listener)
                 },
                 share: { text: text => call('share.text', { text }) },
+                browser: { open: url => call('browser.open', { url }).then(() => undefined) },
                 files: {
                   open: mimeTypes => call('files.open', mimeTypes === undefined ? {} : { mimeTypes }),
                   save: (suggestedName, mimeType, content) => call('files.save', { suggestedName, mimeType, content: bytes(content) }),
@@ -502,6 +530,8 @@ internal object RuntimeBridgeLifecycle {
         sessions.remove(webView)?.close(webView)
     }
 
+    fun isCurrent(webView: WebView, session: RuntimeBridgeSession): Boolean = sessions[webView] === session
+
     fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
         sessions[webView]?.emitEvent(webView, name, payload) == true
 }
@@ -537,9 +567,7 @@ internal object RuntimeRpcJson {
             .put("ok", false)
             .put(
                 "error",
-                JSONObject()
-                    .put("code", response.error.code.name)
-                    .put("message", response.error.message),
+                toJson(response.error.toRpcValue()),
             )
             .toString()
     }
@@ -645,5 +673,6 @@ internal fun createRuntimeBridgeSession(
         m2Handlers = configuration.m2Handlers,
         m3Handlers = configuration.m3Handlers,
         maxPayloadBytes = minOf(configuration.maxPayloadBytes, runtime.maxBridgePayloadBytes),
+        browserLaunchGuard = configuration.browserLaunchGuard,
     )
 }

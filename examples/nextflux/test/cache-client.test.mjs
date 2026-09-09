@@ -124,6 +124,53 @@ test("storage failures retain error code, message and cause through the worker r
   await rejected;
 });
 
+test("worker error round trips retain valid admission waits and discard invalid values", async (t) => {
+  const harness = workerHarness(t);
+  for (const [retryAfterMs, expected] of [
+    [0, 0], [1750, 1750], [undefined, undefined], [null, undefined],
+    [-1, undefined], [1.5, undefined], [Infinity, undefined], [NaN, undefined], ["1750", undefined],
+  ]) {
+    const nativeError = Object.assign(new Error("admission rejected"), {
+      code: "RATE_LIMITED", retryAfterMs,
+      cause: Object.assign(new Error("underlying admission rejected"), { code: "RATE_LIMITED", retryAfterMs }),
+    });
+    const { cache, worker } = harness.create({ getMany: async () => { throw nativeError; } });
+    const reading = cache.readMetadata(9);
+    const rejected = assert.rejects(reading, (error) => {
+      assert.equal(error.code, "RATE_LIMITED");
+      assert.equal(error.retryAfterMs, expected);
+      assert.equal(Object.hasOwn(error, "retryAfterMs"), expected !== undefined);
+      assert.ok(error.cause instanceof Error);
+      assert.equal(error.cause.retryAfterMs, expected);
+      assert.equal(Object.hasOwn(error.cause, "retryAfterMs"), expected !== undefined);
+      return true;
+    });
+    worker.receive({ type: "storage:request", id: "storage:rate", method: "getMany", args: [["article:9"]] });
+    const reply = await worker.waitForMessage((message) => message.type === "storage:result");
+    assert.equal(reply.ok, false);
+    assert.equal(reply.error.retryAfterMs, expected);
+    assert.equal(Object.hasOwn(reply.error, "retryAfterMs"), expected !== undefined);
+    assert.equal(reply.error.cause.retryAfterMs, expected);
+    // Exercise restoration against the original wire value too, rather than
+    // letting outbound filtering hide a missing inbound validation check.
+    worker.receive({ type: "cache:result", id: worker.request("readMetadata").id, ok: false,
+      error: { ...reply.error, retryAfterMs, cause: { ...reply.error.cause, retryAfterMs } },
+    });
+    await rejected;
+  }
+});
+
+test("prepareSyncCommit forwards its token and catalog and returns lightweight preparation state", async (t) => {
+  const { cache, worker } = workerHarness(t).create();
+  const token = "sync:prepared";
+  const catalog = { feeds: [{ id: 4, title: "Feed" }], categories: [{ id: 2, title: "Category" }] };
+  const preparation = cache.prepareSyncCommit(token, catalog);
+  const request = worker.request("prepareSyncCommit");
+  assert.deepEqual(request.args, [token, catalog]);
+  worker.reply(request, { token });
+  assert.deepEqual(await preparation, { token });
+});
+
 test("worker errors and undecodable messages reject every pending call without restarting", async (t) => {
   const harness = workerHarness(t);
   for (const [eventName, code] of [["error", "CACHE_WORKER_ERROR"], ["messageerror", "CACHE_WORKER_MESSAGE_ERROR"]]) {

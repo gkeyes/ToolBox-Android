@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createArticleRequestGate,
-  createArticleContentRenderer,
+  sameReadingSource,
   createArticleScrollReset,
   mergeArticleForReading,
   startArticleRead,
@@ -105,25 +105,12 @@ test("quick A to B navigation ignores a late A result and a cancelled read error
   assert.deepEqual(failures, []);
 });
 
-test("parsed article content is reused through list/status/settings updates, while source and URL changes reparse", () => {
-  let sanitizations = 0;
-  let parses = 0;
-  const render = createArticleContentRenderer(
-    (content, url) => { sanitizations += 1; return `${url}:${content}`; },
-    (sanitized) => { parses += 1; return { sanitized }; },
-  );
-  const source = article();
-  const first = render(source);
+test("reading preparation is reused through metadata/settings changes, and invalidated by article, source, URL or original mode", () => {
+  const source = { articleId: 1, html: article().content, baseUrl: article().url, shownOriginal: false };
   for (let index = 0; index < 50; index += 1) {
-    assert.equal(render({ ...source, status: index % 2 ? "read" : "unread", starred: index % 2, fontSize: 16 + index }), first);
+    assert.equal(sameReadingSource(source, { ...source, status: index % 2 ? "read" : "unread", starred: index % 2, fontSize: 16 + index, bodyDigest: `digest-${index}` }), true);
   }
-  assert.equal(sanitizations, 1);
-  assert.equal(parses, 1);
-  const fullText = render({ ...source, shownOriginal: true, content: "<p>Original full text.</p>" });
-  assert.notEqual(fullText, first);
-  assert.notEqual(render({ ...source, url: "https://example.org/new-base" }), first);
-  assert.notEqual(render({ ...source, id: 2 }), first);
-  assert.equal(parses, 4);
+  for (const changed of [{ shownOriginal: true }, { html: "<p>Original full text.</p>" }, { baseUrl: "https://example.org/new-base" }, { articleId: 2 }]) assert.equal(sameReadingSource(source, { ...source, ...changed }), false);
 });
 
 test("scroll resets synchronously once per displayed article and never overwrites immediate user scrolling", () => {

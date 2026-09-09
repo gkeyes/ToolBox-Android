@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { atom } from "nanostores";
 import minifluxAPI from "../api/miniflux.js";
 import {
-  getLastSyncTime, prepareArticleSync, stageArticleSync, commitArticleSync,
+  getLastSyncTime, prepareArticleSync, stageArticleSync, prepareArticleSyncCommit, commitArticleSync,
   abortArticleSync, invalidateArticleReads, addCategory, updateCategory,
   deleteFeedWithArticles, getFeedIcon, setFeedIcon,
 } from "../db/storage.js";
@@ -16,7 +16,12 @@ export const lastSync = atom(null);
 export const error = atom(null);
 let syncInterval = null;
 let accountEpoch = 0;
-let accountQueue = Promise.resolve();
+const pendingManual = [];
+const pendingAutomatic = [];
+const accountInvalidators = new Set();
+const recoveries = [];
+let activeOperation = null;
+let pumpScheduled = false;
 let iconQueue = Promise.resolve();
 let currentSync = null;
 
@@ -26,31 +31,86 @@ function cancellation() {
   return failure;
 }
 
-// Sync and article mutations share this queue so a stale sync cannot overwrite a
-// just-completed read/bookmark action. Logout invalidates even queued requests.
-export function runAccountOperation(task, { requireOnline = true } = {}) {
-  const epoch = accountEpoch;
-  const check = (needsNetwork = requireOnline) => {
+function accountCheck(epoch, requireOnline = true) {
+  return (needsNetwork = requireOnline) => {
     if (epoch !== accountEpoch || !authState.get().userId) throw cancellation();
     if (needsNetwork && (!isOnline.get() || navigator.onLine === false)) throw new Error("当前离线，请联网后重试；操作尚未执行。");
   };
-  const operation = accountQueue.then(async () => {
-    check();
-    return task(check);
+}
+
+export function onAccountInvalidated(listener) {
+  accountInvalidators.add(listener);
+  return () => accountInvalidators.delete(listener);
+}
+
+// A server acknowledgement is retained until its local durable patch succeeds.
+// Following actions, including the final sync commit, first drain this barrier.
+export function registerAccountRecovery(recovery) {
+  recoveries.push({ epoch: accountEpoch, recovery });
+}
+
+function pumpAccountQueue() {
+  if (activeOperation || pumpScheduled) return;
+  pumpScheduled = true;
+  queueMicrotask(() => {
+    pumpScheduled = false;
+    const item = pendingManual.shift() ?? pendingAutomatic.shift();
+    if (!item) return;
+    const check = accountCheck(item.epoch, item.requireOnline);
+    const operation = (async () => {
+      check(false);
+      while (recoveries.length) {
+        const pending = recoveries[0];
+        if (pending.epoch !== accountEpoch) { recoveries.shift(); continue; }
+        await pending.recovery(accountCheck(pending.epoch, false));
+        check(false);
+        if (recoveries[0] === pending) recoveries.shift();
+      }
+      check();
+      return item.task(check);
+    })();
+    activeOperation = operation;
+    operation.then(item.resolve, item.reject).finally(() => {
+      if (activeOperation === operation) activeOperation = null;
+      pumpAccountQueue();
+    });
   });
-  accountQueue = operation.catch(() => {});
+}
+
+// Automatic batches yield to pending manual intent; an already dispatched
+// operation keeps ownership through server acknowledgement and local commit.
+export function runAccountOperation(task, { requireOnline = true, priority = "manual" } = {}) {
+  const operation = new Promise((resolve, reject) => {
+    const queue = priority === "auto" ? pendingAutomatic : pendingManual;
+    queue.push({ task, requireOnline, epoch: accountEpoch, resolve, reject });
+  });
+  pumpAccountQueue();
   return operation;
 }
 
 export function cancelAccountOperations() {
   accountEpoch += 1;
+  for (const listener of accountInvalidators) listener();
+  recoveries.length = 0;
+  for (const item of [...pendingManual.splice(0), ...pendingAutomatic.splice(0)]) item.reject(cancellation());
   invalidateArticleReads();
   stopAutoSync();
-  return Promise.allSettled([accountQueue, iconQueue]);
+  return Promise.allSettled([activeOperation, iconQueue, currentSync]);
+}
+
+// Catalog and server-wide scope mutations exclude a complete sync. Waiting is outside the
+// account writer, so they cannot block the sync's final commit behind themselves.
+export function runAccountScopeOperation(task) {
+  const check = accountCheck(accountEpoch);
+  return (async () => {
+    while (currentSync) { await currentSync.catch(() => {}); check(false); }
+    check();
+    return runAccountOperation(task);
+  })();
 }
 
 export function createCachedCategory(title) {
-  return runAccountOperation(async (check) => {
+  return runAccountScopeOperation(async (check) => {
     const created = await minifluxAPI.createCategory(title);
     check(false);
     const category = { id: created.id, title: created.title };
@@ -64,7 +124,7 @@ export function createCachedCategory(title) {
 }
 
 export function renameCachedCategory(categoryId, title) {
-  return runAccountOperation(async (check) => {
+  return runAccountScopeOperation(async (check) => {
     await minifluxAPI.updateCategory(categoryId, title);
     check(false);
     await updateCategory(Number(categoryId), title);
@@ -76,7 +136,7 @@ export function renameCachedCategory(categoryId, title) {
 }
 
 export function removeCachedFeed(feedId) {
-  return runAccountOperation(async (check) => {
+  return runAccountScopeOperation(async (check) => {
     await minifluxAPI.deleteFeed(feedId);
     check(false);
     const id = Number(feedId);
@@ -132,8 +192,8 @@ const mapEntryToArticle = (entry) => ({
   enclosures: entry.enclosures || [], changed_at: entry.changed_at,
 });
 
-// Drain sibling requests on failure before releasing the account operation
-// queue, so logout or a following mutation never races an unfinished sync.
+// Drain sibling fetches before discarding their staging token. Interactive
+// mutations remain independent, and logout waits for the outstanding fetches.
 async function joinSyncRequests(tasks, check) {
   const results = await Promise.allSettled(tasks);
   check();
@@ -259,22 +319,36 @@ export function sync() {
   isSyncing.set(true);
   syncProgress.set("正在准备同步…");
   error.set(null);
-  const operation = runAccountOperation(async (check) => {
-    const snapshot = await collectSnapshot(check);
-    try {
+  const check = accountCheck(accountEpoch);
+  const operation = (async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      // Finish preceding catalog actions/recovery before reserving this sync.
+      await runAccountOperation((queuedCheck) => queuedCheck());
       check();
-      syncProgress.set("正在保存完整阅读数据…");
-      await commitArticleSync(snapshot.token, { feeds: snapshot.feeds, categories: snapshot.categories });
-      check(false);
-      const { refreshArticleStateAfterSync } = await import("./articlesStore.js");
-      await refreshArticleStateAfterSync(check);
-      check(false);
-      lastSync.set(snapshot.syncedAt);
-    } catch (failure) {
-      await abortArticleSync(snapshot.token).catch(() => {});
-      throw failure;
+      const collected = await collectSnapshot(check);
+      try {
+        check();
+        syncProgress.set("正在保存完整阅读数据…");
+        const catalogs = { feeds: collected.feeds, categories: collected.categories };
+        await prepareArticleSyncCommit(collected.token, catalogs);
+        check();
+        await runAccountOperation(async (commitCheck) => {
+          await commitArticleSync(collected.token, catalogs);
+          commitCheck(false);
+          const { refreshArticleStateAfterSync } = await import("./articlesStore.js");
+          await refreshArticleStateAfterSync(commitCheck);
+          commitCheck(false);
+          lastSync.set(collected.syncedAt);
+        });
+        return;
+      } catch (failure) {
+        await abortArticleSync(collected.token).catch(() => {});
+        check(false);
+        if (failure.code !== "SYNC_STATE_CONFLICT" || attempt === 1) throw failure;
+        syncProgress.set("文章状态已变化，正在重新读取同步结果…");
+      }
     }
-  });
+  })();
   currentSync = operation.catch((failure) => {
     if (failure.code !== "ACCOUNT_CHANGED") {
       error.set(failure);

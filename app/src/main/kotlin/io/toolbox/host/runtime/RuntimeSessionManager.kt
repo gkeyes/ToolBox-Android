@@ -100,6 +100,9 @@ internal data class HostRuntimeContinuityHandlers(
     val background: RuntimeContinuousBackgroundHandler,
     val locationWatch: RuntimeLocationWatchHandler,
     val alarms: RuntimeAlarmHandler,
+    val requireForegroundRuntime: () -> Unit = {
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
+    },
 )
 
 internal object RuntimeReminderPolicy {
@@ -192,6 +195,16 @@ internal class RuntimeSessionManager(
         background = ContinuousBackgroundHandler(runtime.toolId, runtime.versionCode),
         locationWatch = LocationWatchHandler(runtime.toolId, runtime.versionCode, runtime.declaredCapabilities),
         alarms = AlarmHandler(runtime.toolId, runtime.versionCode),
+        requireForegroundRuntime = {
+            val host = hosts[runtime.toolId]
+                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The tool runtime ended")
+            if (host.runtime !== runtime) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The tool runtime instance changed")
+            }
+            if (visibleTools.singleOrNull() != runtime.toolId || host.state != RuntimeHostState.ATTACHED) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before opening a browser")
+            }
+        },
     )
 
     suspend fun recover(reason: String) {

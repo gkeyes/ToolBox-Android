@@ -68,20 +68,22 @@ class DefaultRuntimeAuthorizationPolicy(
         val quotaDecision = quota.admit(identity, method, encodedBytes)
         if (quotaDecision is RuntimePolicyDecision.Denied) return quotaDecision
         val now = clockMillis()
-        val permitted = synchronized(rateWindows) {
+        val retryAfterMs = synchronized(rateWindows) {
             val window = rateWindows.getOrPut(identity.toolId to method.name, ::ArrayDeque)
             while (window.isNotEmpty() && now - window.first() >= RATE_WINDOW_MILLIS) window.removeFirst()
             if (window.size >= methodLimit(method.name)) {
-                false
+                // The first admitted call is the next slot to expire. Clamp clock rollback
+                // without changing the existing rolling-window limits.
+                RATE_WINDOW_MILLIS - (now - window.first()).coerceIn(0L, RATE_WINDOW_MILLIS)
             } else {
                 window.addLast(now)
-                true
+                null
             }
         }
-        return if (permitted) {
+        return if (retryAfterMs == null) {
             RuntimePolicyDecision.Allowed
         } else {
-            RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "ToolBox method rate limit exceeded")
+            RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "ToolBox method rate limit exceeded", retryAfterMs)
         }
     }
 
@@ -89,6 +91,7 @@ class DefaultRuntimeAuthorizationPolicy(
         "network.readStream" -> 1_000
         "haptics.perform" -> minOf(maxCallsPerMinute, 30)
         "clipboard.writeText" -> minOf(maxCallsPerMinute, 20)
+        "browser.open" -> minOf(maxCallsPerMinute, 10)
         "ui.toast" -> minOf(maxCallsPerMinute, 30)
         else -> maxCallsPerMinute
     }

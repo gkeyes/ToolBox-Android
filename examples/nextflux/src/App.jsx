@@ -21,7 +21,7 @@ import { checkIntegrations } from "@/stores/basicInfoStore.js";
 import SearchModal from "@/components/Search/SearchModal.jsx";
 import { useZoom } from "@/hooks/useZoom.js";
 import { useBorderRadius } from "@/hooks/useBorderRadius.js";
-import { useFontLoader } from "@/hooks/useFontLoader.js";
+import FontLoader from "@/components/FontLoader.jsx";
 
 function App() {
   const { syncInterval } = useStore(settingsState);
@@ -42,9 +42,9 @@ function App() {
   useHotkeys();
   useZoom();
   useBorderRadius();
-  useFontLoader(); // 按需加载字体
   return (
     <SidebarProvider>
+      <FontLoader />
       <FeedListSidebar />
       <SidebarInset className="min-w-0">
         <Outlet />

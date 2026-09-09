@@ -12,6 +12,7 @@ enum class ToolBoxCapabilityId {
     CLIPBOARD_WRITE,
     CLIPBOARD_READ,
     SHARE,
+    BROWSER,
     FILES_OPEN,
     FILES_SAVE,
     NETWORK,
@@ -47,7 +48,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639"
+    const val CANONICAL_SHA256: String = "dbe81127fe54d37775006add8c64747243b0b14365f2bc482cbacb7d14908998"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -55,6 +56,7 @@ object ToolBoxApiV1 {
         CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_WRITE, "clipboard.write", ContractPhase.M1, true, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_READ, "clipboard.read", ContractPhase.M3, false, emptySet(), GestureRequirement.CONFIRMED_ONE_SHOT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.SHARE, "share", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.BROWSER, "browser", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.FILES_OPEN, "files.open", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.FILES_SAVE, "files.save", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.NETWORK, "network", ContractPhase.M2, false, setOf("android.permission.INTERNET"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
@@ -112,6 +114,7 @@ object ToolBoxApiV1 {
         MethodDescriptor("background.cancelTimer", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundTimerKeyRequest", "void"),
         MethodDescriptor("clipboard.readText", ContractPhase.M3, ToolBoxCapabilityId.CLIPBOARD_READ, "void", "ClipboardReadResult"),
         MethodDescriptor("share.text", ContractPhase.M3, ToolBoxCapabilityId.SHARE, "ShareTextRequest", "void"),
+        MethodDescriptor("browser.open", ContractPhase.M3, ToolBoxCapabilityId.BROWSER, "BrowserOpenRequest", "void"),
         MethodDescriptor("files.open", ContractPhase.M3, ToolBoxCapabilityId.FILES_OPEN, "FileOpenRequest", "FileToken | null"),
         MethodDescriptor("files.read", ContractPhase.M3, null, "FileTokenRequest", "FileReadResult"),
         MethodDescriptor("files.save", ContractPhase.M3, ToolBoxCapabilityId.FILES_SAVE, "FileSaveRequest", "FileToken | null"),

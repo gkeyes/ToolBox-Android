@@ -81,7 +81,7 @@ test("entering an article does not undo immediate scrolling; status changes reus
   expect(await page.locator(".article-scroll-area").evaluate((element) => element.scrollTop)).toBeGreaterThanOrEqual(200);
   const before = await page.evaluate(() => ({
     reads: window.__nextfluxTest.calls.filter((call) => call.method === "readArticle").length,
-    sanitizations: window.__nextfluxTest.sanitizations[96],
+    preparations: window.__nextfluxTest.readingRequests.filter((request) => request.baseUrl === "https://example.org/articles/96").length,
     patches: window.__nextfluxTest.results.filter((result) => result.method === "patchState" && result.ok).length,
   }));
   await page.locator(".action-buttons button").filter({ has: page.locator("svg.lucide-star") }).click();
@@ -89,11 +89,12 @@ test("entering an article does not undo immediate scrolling; status changes reus
   await settleFrames(page);
   const after = await page.evaluate(() => ({
     reads: window.__nextfluxTest.calls.filter((call) => call.method === "readArticle").length,
-    sanitizations: window.__nextfluxTest.sanitizations[96],
+    preparations: window.__nextfluxTest.readingRequests.filter((request) => request.baseUrl === "https://example.org/articles/96").length,
     sameNode: window.__nextfluxTest.originalContentNode === document.querySelector(".article-content p"),
   }));
   expect(after.reads).toBe(before.reads);
-  expect(after.sanitizations).toBe(before.sanitizations);
+  expect(before.preparations).toBeGreaterThan(0);
+  expect(after.preparations).toBe(before.preparations);
   expect(after.sameNode).toBe(true);
 
   const readerToggle = page.locator(".action-buttons button").filter({ has: page.locator("svg.lucide-file-text") });
@@ -122,6 +123,7 @@ test("offscreen images keep their layout, reuse a Blob, and stay leased while th
   const observations = await installFixture(page);
   await openFixture(page);
   await page.locator('[data-article-id="96"]').click();
+  await expect(page.locator(".article-body")).toHaveAttribute("data-reading-complete", "true");
   const image = page.locator('.article-content img[alt="Fixture image 96"]');
   await expect.poll(() => image.evaluate((element) => element.complete && element.naturalWidth === 640 && Boolean(element.closest('div[style*="aspect-ratio"]')))).toBe(true);
   const before = await image.evaluate((element) => {

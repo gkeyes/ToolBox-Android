@@ -220,7 +220,7 @@ private fun List<PermissionItem>.permissionGroups(): List<Pair<String, List<Perm
 private fun PermissionItem.category(): String = when (capability) {
     "storage", "storage.secure", "device.basic", "haptics" -> "基础能力"
     "clipboard.write", "clipboard.read", "share", "files.open", "files.save", "camera" -> "内容与文件"
-    "network", "notifications", "shortcuts" -> "网络与系统"
+    "network", "browser", "notifications", "shortcuts" -> "网络与系统"
     else -> "后台与位置"
 }
 
@@ -230,6 +230,7 @@ private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
     "clipboard.write", "clipboard.read" -> ToolBoxIconKey.Clipboard
     "share" -> ToolBoxIconKey.Share
     "network" -> ToolBoxIconKey.Globe
+    "browser" -> ToolBoxIconKey.Globe
     "device.basic" -> ToolBoxIconKey.Device
     "haptics" -> ToolBoxIconKey.Haptics
     "notifications" -> ToolBoxIconKey.Notifications

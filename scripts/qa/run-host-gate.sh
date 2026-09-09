@@ -142,6 +142,7 @@ run_gate admitted-unit \
     --tests 'io.toolbox.core.data.CatalogAndStorageRepositoryTest' \
     --tests 'io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest' \
     --tests 'io.toolbox.tool.packagekit.ManifestValidatorTest' \
+    --tests 'io.toolbox.tool.runtime.RuntimeBrowserUrlTest' \
     --tests 'io.toolbox.tool.runtime.RuntimeRpcDispatcherTest' || overall_exit=1
 
 printf '%s\n' \

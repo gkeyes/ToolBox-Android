@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.6.6 (22)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.6.7 (23)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -148,7 +148,7 @@ Miuix `ToolBoxSwitchSettingRow`，整行与开关都可操作。只在 handler �
 
 首次安装默认打开：`storage`、`storage.secure`、`device.basic`、`clipboard.write`、`haptics`。
 `network`、`notifications`、`background.tasks`、`background.runtime`、`location.background`、
-`alarms`、文件、分享、读取剪贴板、相机、定位和快捷方式默认关闭。切换系统型能力时使用 Activity Result API 请求真实系统授权；拒绝就不
+`alarms`、文件、分享、`browser`（浏览器打开）、读取剪贴板、相机、定位和快捷方式默认关闭。切换系统型能力时使用 Activity Result API 请求真实系统授权；拒绝就不
 写工具 grant，并提供前往系统设置的明确路径。回到前台和每次副作用调用前重算系统状态。
 
 更新同一工具不重置已有选择：读取提交时的当前 grant，只保留新 manifest 仍声明的能力，
@@ -181,6 +181,11 @@ capability descriptor、JS shim method table、`sdk/toolbox-api.d.ts` 和 manife
 
 每个 handler 在 dispatcher 中按顺序检查：支持情况 → 声明 → grant → 系统状态 → 手势/
 上下文 → 速率/配额 → handler。失败返回稳定结构化错误，不返回伪成功。
+
+错误对象保留必需的 `code`、`message`，可选增加 `retryAfterMs`：非负有限整数毫秒，
+表示当前限流窗口的剩余时间。限流器应返回实际窗口剩余量，JS shim 只透传符合约束的值；
+旧宿主及其他错误可省略此字段。该字段仅帮助页面安排调用节奏，不保证等待后一定成功，
+也不免除重新检查前台、权限和真实手势；交互能力不应在等待结束后自动重试。
 
 ### 6.2 M1 基础 API
 
@@ -240,6 +245,14 @@ ToolBox 首页“最近使用”只显示图标，按可用宽度和至少 48 dp
 
 - `clipboard.read`：一次性真实手势 + 原生确认，绝不记录读取内容。
 - `share`：系统 Sharesheet，仅 text/允许的 FileToken，不构造任意 intent。
+- `browser.open(url)`：独立 `browser` 能力，权限中文名“浏览器打开”，默认关闭；不依赖
+  `network` 或 Android 运行时权限。RPC 参数为 `{url}`，仅接受长度不超过 2048 字符的
+  HTTP/HTTPS 绝对 URL；拒绝凭据、控制字符、非法 URL 和额外/非法参数。需要前台和近期
+  真实触摸，每工具每分钟最多 10 次。宿主仅构造 `ACTION_VIEW`，并固定使用
+  `ACTION_MAIN` + `CATEGORY_APP_BROWSER` selector 将目标限定为浏览器；不接受工具传入
+  action、package、component、selector 或 extras，无任意 App fallback。系统无浏览器或
+  拒绝启动时返回 typed error；`Promise<void>` 成功只代表系统接受启动，不证明网页加载成功。
+  WebView 自身的外部导航、popup 和任意 scheme 继续阻断。
 - `files.open` / `files.save`：SAF、短期不可伪造 FileToken，不暴露路径、不持久化 URI grant。
 - `shortcuts`：显式 MainActivity intent 携带不透明 tool ID，启动时重新验证 generation。
 - `camera`：系统拍照 contract + exported=false FileProvider 临时 URI，不开放 WebView 摄像头。
@@ -416,9 +429,9 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 检查通过后直接构建一次签名 release APK，不另行构建重复的 candidate APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.6 (22) 上传 `toolbox-v0.6.6-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.6.7 (23) 上传 `toolbox-v0.6.7-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
-代码优化与资源裁剪，不改变数据库或权限能力集合。Room、WorkManager、Kotlin serialization 的
+代码优化与资源裁剪，不改变数据库结构；新增的 `browser` 能力仍按声明和默认关闭策略生效。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug
 后旧任务无法创建，不用整个模块的 keep 规则抵消优化。R8 映射随提交独立归档。
 GitHub 对普通存储、分片替换、回滚和撤权竞态执行指定的模拟器 instrumentation；其他设备场景仍由用户验证。NextFlux 的移动视口浏览器测试使用合成数据并运行生产 Worker，不访问真实账号，也不截图。

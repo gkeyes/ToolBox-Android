@@ -24,5 +24,14 @@ python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 - `node scripts/check-developer-help.mjs`：静态检查手册、嵌入源码与接口覆盖，不启动 Gradle。
 
 网络已支持 GET、POST、PUT、PATCH、DELETE、HEAD、普通认证 Header 和请求体；始终受
-manifest 域名、HTTPS、地址检查及消息预算约束。持续运行使用 `background.start/listSessions`；
+network 声明与授权、HTTPS、TLS 校验及消息预算约束。持续运行使用 `background.start/listSessions`；
 `background.list` 仍表示 WorkManager 任务。具体示例均在完整手册中。
+
+`ToolBox.browser.open(url)` 在系统浏览器中打开 HTTP/HTTPS 绝对地址。单独声明 `browser`，
+并由用户开启“浏览器打开”权限；不依赖 network 或 Android 运行时权限。调用需要前台和近期
+真实触摸，URL 最多 2048 个字符且不能含凭据或控制字符，每分钟最多 10 次。成功仅表示系统
+接受启动，不表示目标网页已加载；不会退回任意 App 跳转或 WebView 导航。
+
+接口错误仍提供 `code` 和 `message`；限流错误可以附带可选的 `retryAfterMs`，表示限流窗口
+剩余的非负有限整数毫秒。页面可据此提示等待时间；旧宿主或其他错误可不带此字段。需要用户
+手势的能力应等用户再次点击，不能在倒计时结束后自动重试。

@@ -59,6 +59,7 @@ export const closeArticleQuery = (queryId) => getCache().closeQuery(queryId);
 
 export const prepareArticleSync = (options) => getCache().prepareSync(options);
 export const stageArticleSync = (token, articles) => getCache().applySyncBatch(token, articles);
+export const prepareArticleSyncCommit = (token, catalogs) => getCache().prepareSyncCommit(token, catalogs);
 export const abortArticleSync = (token) => getCache().abortSync(token);
 export async function commitArticleSync(token, catalogs) {
   const result = await getCache().commitSync(token, catalogs);

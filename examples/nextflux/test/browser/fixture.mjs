@@ -4,14 +4,16 @@
 export async function installFixture(page, options = {}) {
   const blocked = [];
   const pageErrors = [];
+  const fixtureUrl = new URL(options.baseURL || "http://127.0.0.1:4173");
+  if (fixtureUrl.protocol !== "http:" || fixtureUrl.hostname !== "127.0.0.1") throw new Error("Fixture requires a local CI server");
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.route("**/*", (route) => {
     const url = route.request().url();
-    if (url.startsWith("http://127.0.0.1:4173/") || /^(blob:|data:)/.test(url)) return route.continue();
+    if (new URL(url).origin === fixtureUrl.origin || /^(blob:|data:)/.test(url)) return route.continue();
     blocked.push(url);
     return route.abort("blockedbyclient");
   });
-  await page.addInitScript(({ reduceMotion = true, markAsReadOnScroll = false, aiEnabled = false, hasIntegrations = false } = {}) => {
+  await page.addInitScript(({ reduceMotion = true, markAsReadOnScroll = false, aiEnabled = false, hasIntegrations = false, articleBodies = {}, timestamp: fixtureTimestamp } = {}) => {
     const server = "https://miniflux.xiaochen.win";
     const aiServer = "https://fixture-ai.example";
     const clone = (value) => structuredClone(value);
@@ -19,6 +21,7 @@ export async function installFixture(page, options = {}) {
       workerUrls: [], calls: [], results: [], held: [], holds: [],
       storageCalls: [], network: [], unexpectedNetwork: [], revoked: [],
       sanitizations: {}, createdBlobs: [], streams: [], heldNetwork: [],
+      browserCalls: [], clipboardCalls: [], shareCalls: [], readingRequests: [], highlightRequests: [],
     };
     window.__nextfluxTest = state;
     const canvas = document.createElement("canvas");
@@ -28,8 +31,9 @@ export async function installFixture(page, options = {}) {
     context.fillStyle = "#2873a6";
     context.fillRect(0, 0, 640, 360);
     const png = canvas.toDataURL("image/png").split(",")[1];
-    const timestamp = new Date().toISOString();
+    const timestamp = fixtureTimestamp || new Date().toISOString();
     const body = (id, original = false) => {
+      if (!original && typeof articleBodies[id] === "string") return articleBodies[id];
       const marker = `FIXTURE_${original ? "ORIGINAL" : "BODY"}_${id}`;
       const count = id >= 94 ? 60 : 2;
       const image = id >= 94 ? `<img src="${server}/proxy/fixture/image${id}" alt="Fixture image ${id}">` : "";
@@ -123,8 +127,17 @@ export async function installFixture(page, options = {}) {
     state.emitAIChunk = (content) => enqueueStream(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
     state.finishAIStream = () => enqueueStream("data: [DONE]\n\n", true);
     window.ToolBox = {
-      async ready() { return { hostVersion: "0.6.6", apiVersion: "1.0" }; },
+      async ready() { return { hostVersion: "0.6.7", apiVersion: "1.0" }; },
       storage,
+      browser: {
+        async open(url) {
+          state.browserCalls.push(url);
+          if (state.holdBrowser) await new Promise((resolve) => { state.releaseBrowser = resolve; });
+          if (state.browserFailure) throw { code: state.browserFailure };
+        },
+      },
+      clipboard: { async writeText(text) { state.clipboardCalls.push(text); } },
+      share: { async text(text) { state.shareCalls.push(text); } },
       network: {
         async request(payload) {
           const url = new URL(payload.url);
@@ -134,6 +147,11 @@ export async function installFixture(page, options = {}) {
             state.unexpectedNetwork.push(record);
             throw { code: "NETWORK_BLOCKED" };
           }
+          // Snapshot GET data before a held native response. A sync arriving
+          // after a user mutation must really contain the older server state.
+          const entrySnapshot = url.pathname === "/v1/entries" && record.method === "GET"
+            ? articles.map((article) => ({ ...article, feed: { ...feeds[0], category: categories[0] }, starred: Boolean(article.starred) }))
+            : null;
           const holdIndex = networkHolds.indexOf(url.pathname);
           if (holdIndex >= 0) {
             networkHolds.splice(holdIndex, 1);
@@ -141,6 +159,19 @@ export async function installFixture(page, options = {}) {
           }
           if (url.pathname.startsWith("/proxy/fixture/")) return { status: 200, headers: { "content-type": "image/png" }, bodyEncoding: "base64", body: png };
           if (url.pathname === "/v1/me") return response({ id: 1, username: "fixture-user" });
+          if (url.pathname === "/v1/feeds" && record.method === "GET") return response(feeds.map((feed) => ({ ...feed, feed_url: feed.url, category: categories.find((category) => category.id === feed.categoryId) })));
+          if (url.pathname === "/v1/categories" && record.method === "GET") return response(categories);
+          if (entrySnapshot) {
+            const params = url.searchParams;
+            const entries = entrySnapshot.filter((entry) =>
+              (!params.has("status") || entry.status === params.get("status")) &&
+              (!params.has("starred") || entry.starred === (params.get("starred") === "true")) &&
+              (!params.has("changed_after") || Date.parse(entry.changed_at) / 1000 > Number(params.get("changed_after"))) &&
+              (!params.has("after") || Date.parse(entry.created_at) / 1000 > Number(params.get("after"))));
+            entries.sort((a, b) => params.get("direction") === "asc" ? a.id - b.id : b.id - a.id);
+            const offset = Number(params.get("offset") || 0);
+            return response({ total: entries.length, entries: entries.slice(offset, offset + Number(params.get("limit") || 100)) });
+          }
           if (url.pathname === "/v1/integrations/status") return response({ has_integrations: hasIntegrations });
           if (/^\/v1\/feeds\/\d+\/icon$/.test(url.pathname)) return response({ id: 1, mime_type: "image/png", data: `image/png;base64,${png}` });
           if (url.pathname === "/v1/entries" && record.method === "PUT") {
@@ -219,6 +250,8 @@ export async function installFixture(page, options = {}) {
         });
       }
       postMessage(data, ...transfer) {
+        if (data?.type === "reading:start") state.readingRequests.push({ id: data.id, baseUrl: data.baseUrl });
+        if (data?.type === "highlight:run") state.highlightRequests.push({ id: data.id, language: data.language });
         if (data?.type === "cache:request") {
           const args = ["readArticle", "readMetadata", "readQueryPage", "closeQuery"].includes(data.method) ? [...data.args] : [];
           const request = { id: data.id, method: data.method, args };

@@ -1,4 +1,5 @@
 import groovy.json.JsonSlurper
+import java.math.BigDecimal
 import java.security.MessageDigest
 
 plugins {
@@ -29,7 +30,10 @@ val verifyToolBoxApiContract by tasks.registering {
     val rpcFile = rootProject.layout.projectDirectory.file(
         "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt",
     )
-    inputs.files(contractFile, kotlinFile, sdkFile, schemaFile, validatorFile, rpcFile)
+    val bridgeFile = rootProject.layout.projectDirectory.file(
+        "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebMessageBridge.kt",
+    )
+    inputs.files(contractFile, kotlinFile, sdkFile, schemaFile, validatorFile, rpcFile, bridgeFile)
 
     doLast {
         @Suppress("UNCHECKED_CAST")
@@ -44,8 +48,8 @@ val verifyToolBoxApiContract by tasks.registering {
         val contract = objectValue(JsonSlurper().parseText(contractText))
         val capabilities = arrayValue(contract["capabilities"]).map(::objectValue)
         val capabilityIds = capabilities.map { it["id"] as String }
-        check(capabilityIds.size == 18 && capabilityIds.distinct().size == capabilityIds.size) {
-            "Canonical ToolBox API v1 must contain exactly 18 unique capabilities"
+        check(capabilityIds.size == 19 && capabilityIds.distinct().size == capabilityIds.size) {
+            "Canonical ToolBox API v1 must contain exactly 19 unique capabilities"
         }
         val methods = arrayValue(contract["methods"]).map(::objectValue)
         val methodNames = methods.map { it["name"] as String }
@@ -86,10 +90,56 @@ val verifyToolBoxApiContract by tasks.registering {
         check(sdkMethodNames == methodNames) { "TypeScript methods do not match the canonical order" }
         val errorCodes = arrayValue(contract["errorCodes"]).map { it as String }
         check(unionValues("ToolBoxErrorCode") == errorCodes) { "TypeScript error codes drifted from the canonical contract" }
+        val rpcText = rpcFile.asFile.readText()
         val rpcErrors = Regex("enum class RuntimeRpcErrorCode \\{([^}]+)}")
-            .find(rpcFile.asFile.readText())?.groupValues?.get(1)
+            .find(rpcText)?.groupValues?.get(1)
             ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
         check(rpcErrors == errorCodes) { "Runtime error codes drifted from the canonical contract" }
+
+        val errorResponse = objectValue(contract["errorResponse"])
+        val requiredErrorFields = arrayValue(errorResponse["required"]).map { it as String }
+        check(errorResponse["type"] == "object" && requiredErrorFields == listOf("code", "message")) {
+            "Canonical errors must require code and message while keeping retryAfterMs optional"
+        }
+        val errorProperties = objectValue(errorResponse["properties"])
+        check(objectValue(errorProperties["code"])["type"] == "string" &&
+            objectValue(errorProperties["message"])["type"] == "string") {
+            "Canonical error code and message must remain strings"
+        }
+        val retryAfter = objectValue(errorProperties["retryAfterMs"])
+        val retryMinimum = retryAfter["minimum"] as? Number
+        val retryMaximum = retryAfter["maximum"] as? Number
+        check(retryAfter["type"] == "integer" &&
+            retryMinimum != null && BigDecimal(retryMinimum.toString()).compareTo(BigDecimal.ZERO) == 0 &&
+            retryMaximum != null && BigDecimal(retryMaximum.toString()).compareTo(BigDecimal("9007199254740991")) == 0) {
+            "Canonical retryAfterMs must be a non-negative JavaScript safe integer"
+        }
+        val sdkError = Regex("export interface ToolBoxApiError \\{([^}]+)}")
+            .find(sdkText)?.groupValues?.get(1) ?: error("TypeScript ToolBoxApiError was not found")
+        for ((field, type) in listOf("code" to "ToolBoxErrorCode", "message" to "string")) {
+            check(Regex("(?m)^\\s*$field\\s*:\\s*$type\\s*;\\s*$").containsMatchIn(sdkError)) {
+                "TypeScript ToolBoxApiError must retain required $field: $type"
+            }
+        }
+        check(Regex("(?m)^\\s*retryAfterMs\\?\\s*:\\s*number\\s*;\\s*$").containsMatchIn(sdkError)) {
+            "TypeScript ToolBoxApiError must expose optional retryAfterMs?: number"
+        }
+        for (type in listOf("RuntimeRpcError", "Denied", "RuntimeHandlerException", "RuntimeBackgroundTaskError")) {
+            val constructor = Regex("\\bclass\\s+$type\\s*\\(([^)]*)\\)", RegexOption.DOT_MATCHES_ALL)
+                .find(rpcText)?.groupValues?.get(1) ?: error("Runtime error type $type was not found")
+            check(Regex("\\bval\\s+retryAfterMs\\s*:\\s*Long\\?\\s*=\\s*null\\b").containsMatchIn(constructor)) {
+                "$type must expose optional retryAfterMs: Long? = null"
+            }
+        }
+
+        val shimText = Regex("private fun shim\\([\\s\\S]*?return \"\"\"([\\s\\S]*?)\"\"\"\\.trimIndent\\(\\)")
+            .find(bridgeFile.asFile.readText())?.groupValues?.get(1)
+            ?: error("Runtime JS shim was not found")
+        val shimMethods = Regex("\\bcall\\(\\s*['\"]([^'\"]+)['\"]")
+            .findAll(shimText).map { it.groupValues[1] }.toSet()
+        check(shimMethods == methodNames.toSet()) {
+            "Runtime JS shim methods drifted: missing=${methodNames.toSet() - shimMethods}, unexpected=${shimMethods - methodNames.toSet()}"
+        }
 
         val schema = objectValue(JsonSlurper().parseText(schemaFile.asFile.readText()))
         val properties = objectValue(schema["properties"])

@@ -79,13 +79,14 @@
     },
     "permissions": {
       "type": "array",
-      "maxItems": 18,
+      "maxItems": 19,
       "allOf": [
         {"contains":{"properties":{"name":{"const":"storage"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"storage.secure"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"clipboard.write"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"clipboard.read"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"share"}},"required":["name"]},"minContains":0,"maxContains":1},
+        {"contains":{"properties":{"name":{"const":"browser"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"files.open"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"files.save"}},"required":["name"]},"minContains":0,"maxContains":1},
         {"contains":{"properties":{"name":{"const":"network"}},"required":["name"]},"minContains":0,"maxContains":1},
@@ -115,6 +116,7 @@
               "clipboard.write",
               "clipboard.read",
               "share",
+              "browser",
               "files.open",
               "files.save",
               "network",

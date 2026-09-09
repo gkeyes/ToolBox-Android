@@ -6,7 +6,7 @@ internal object ManifestValidator {
     private val apiPattern = Regex("^1\\.0$")
     private val domainPattern = Regex("^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
     private val allowedPermissions = setOf(
-        "storage", "storage.secure", "clipboard.write", "clipboard.read", "share",
+        "storage", "storage.secure", "clipboard.write", "clipboard.read", "share", "browser",
         "files.open", "files.save", "network", "device.basic", "haptics", "notifications",
         "shortcuts", "camera", "location", "background.tasks", "background.runtime",
         "location.background", "alarms",
@@ -72,7 +72,7 @@ internal object ManifestValidator {
 
     private fun parsePermissions(value: JsonValue): List<ManifestPermission> {
         val values = value.asArray("permissions")
-        if (values.size > 18) throw JsonFormatException("permissions exceeds 18 items")
+        if (values.size > 19) throw JsonFormatException("permissions exceeds 19 items")
         val seen = mutableSetOf<String>()
         return values.mapIndexed { index, item ->
             val permission = item.asObject("permissions[$index]")

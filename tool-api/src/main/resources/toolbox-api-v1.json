@@ -6,6 +6,7 @@
     {"id":"clipboard.write","phase":"M1","defaultGrant":true,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"clipboard.read","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"CONFIRMED_ONE_SHOT","context":"FOREGROUND_ONLY"},
     {"id":"share","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
+    {"id":"browser","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"files.open","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"files.save","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"network","phase":"M2","defaultGrant":false,"systemPermissions":["android.permission.INTERNET"],"gesture":"NONE","context":"FOREGROUND_OR_DELEGATED_BACKGROUND"},
@@ -62,6 +63,7 @@
     {"name":"background.cancelTimer","phase":"M3","capability":"background.runtime","request":"BackgroundTimerKeyRequest","result":"void"},
     {"name":"clipboard.readText","phase":"M3","capability":"clipboard.read","request":"void","result":"ClipboardReadResult"},
     {"name":"share.text","phase":"M3","capability":"share","request":"ShareTextRequest","result":"void"},
+    {"name":"browser.open","phase":"M3","capability":"browser","request":"BrowserOpenRequest","result":"void"},
     {"name":"files.open","phase":"M3","capability":"files.open","request":"FileOpenRequest","result":"FileToken | null"},
     {"name":"files.read","phase":"M3","capability":null,"request":"FileTokenRequest","result":"FileReadResult"},
     {"name":"files.save","phase":"M3","capability":"files.save","request":"FileSaveRequest","result":"FileToken | null"},
@@ -74,5 +76,14 @@
     {"name":"alarms.list","phase":"M3","capability":"alarms","request":"void","result":"AlarmSummary[]"},
     {"name":"alarms.cancel","phase":"M3","capability":"alarms","request":"AlarmIdRequest","result":"void"}
   ],
-  "errorCodes": ["UNSUPPORTED","INVALID_REQUEST","INVALID_SESSION","WRONG_ORIGIN","NOT_MAIN_FRAME","NOT_DECLARED","PERMISSION_DENIED","SYSTEM_PERMISSION_DENIED","USER_GESTURE_REQUIRED","BUSY","RATE_LIMITED","QUOTA_EXCEEDED","CANCELLED","SESSION_ENDED","NOT_FOUND","DUPLICATE_TASK","NETWORK_BLOCKED","NETWORK_UNAVAILABLE","NETWORK_TIMEOUT","INTERNAL_ERROR"]
+  "errorCodes": ["UNSUPPORTED","INVALID_REQUEST","INVALID_SESSION","WRONG_ORIGIN","NOT_MAIN_FRAME","NOT_DECLARED","PERMISSION_DENIED","SYSTEM_PERMISSION_DENIED","USER_GESTURE_REQUIRED","BUSY","RATE_LIMITED","QUOTA_EXCEEDED","CANCELLED","SESSION_ENDED","NOT_FOUND","DUPLICATE_TASK","NETWORK_BLOCKED","NETWORK_UNAVAILABLE","NETWORK_TIMEOUT","INTERNAL_ERROR"],
+  "errorResponse": {
+    "type": "object",
+    "required": ["code", "message"],
+    "properties": {
+      "code": {"type":"string","description":"One of errorCodes."},
+      "message": {"type":"string"},
+      "retryAfterMs": {"type":"integer","minimum":0,"maximum":9007199254740991,"description":"Optional non-negative safe integer remaining rate-limit window in milliseconds. A pacing hint, not a guarantee that a later call will succeed."}
+    }
+  }
 }

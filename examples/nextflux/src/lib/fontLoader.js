@@ -164,7 +164,7 @@ export const SYSTEM_FONTS = [
 ];
 
 // 扁平化所有自定义字体配置（用于快速查找）
-const ALL_CUSTOM_FONTS = {};
+const ALL_CUSTOM_FONTS = Object.create(null);
 Object.values(FONT_CATEGORIES).forEach((category) => {
   category.fonts.forEach((font) => {
     ALL_CUSTOM_FONTS[font.value] = font;
@@ -181,6 +181,7 @@ const faces = new Map();
 const loadedFonts = new Set();
 const statuses = new Map();
 const listeners = new Set();
+const unicodeRanges = new WeakMap();
 let requests = Promise.resolve();
 let lastRequest = 0;
 const MODERN_USER_AGENT = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
@@ -211,6 +212,26 @@ export function parseUnicodeRanges(value) {
 export function fontFaceMatchesText(face, text) {
   const ranges = parseUnicodeRanges(face.unicodeRange);
   return Array.from(text).some((char) => ranges.some(([start, end]) => char.codePointAt(0) >= start && char.codePointAt(0) <= end));
+}
+
+function fontFaceMatchesPoints(face, points) {
+  let cached = unicodeRanges.get(face);
+  if (!cached || cached.value !== face.unicodeRange) {
+    cached = { value: face.unicodeRange, ranges: parseUnicodeRanges(face.unicodeRange) };
+    unicodeRanges.set(face, cached);
+  }
+  // Binary search the bounded, deduplicated input once per range rather than
+  // allocating/traversing the same text again for every font-face definition.
+  return cached.ranges.some(([start, end]) => {
+    let low = 0;
+    let high = points.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (points[middle] < start) low = middle + 1;
+      else high = middle;
+    }
+    return low < points.length && points[low] <= end;
+  });
 }
 
 export function parseFontCss(css, base, family) {
@@ -280,9 +301,32 @@ function getMetadata(config) {
   });
 }
 
-function loadFace(family, face) {
+function checkCancelled(signal) {
+  if (signal?.aborted) throw new DOMException("字体加载已取消。", "AbortError");
+}
+
+// The native request API has no per-request AbortSignal. Stop this consumer
+// promptly; shared bounded downloads may finish, but cancelled readers cannot
+// install a face or schedule another subset.
+function waitForFontWork(work, signal) {
+  if (!signal) return work;
+  checkCancelled(signal);
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(new DOMException("字体加载已取消。", "AbortError"));
+    signal.addEventListener("abort", aborted, { once: true });
+    work.then((value) => {
+      signal.removeEventListener("abort", aborted);
+      resolve(value);
+    }, (error) => {
+      signal.removeEventListener("abort", aborted);
+      reject(error);
+    });
+  });
+}
+
+async function loadFace(family, face, signal) {
   const key = JSON.stringify([family, face]);
-  return memoize(faces, key, async () => {
+  const work = memoize(faces, key, async () => {
     const source = await memoize(files, face.url, async () => {
       const response = await fontRequest(face.url, "font");
       const bytes = readBytes(response, MAX_FONT_BYTES);
@@ -293,9 +337,12 @@ function loadFace(family, face) {
     });
     const font = new FontFace(family, source, { weight: face.weight, style: face.style, unicodeRange: face.unicodeRange, display: "swap" });
     await font.load();
-    document.fonts.add(font);
     return font;
   });
+  const font = await waitForFontWork(work, signal);
+  checkCancelled(signal);
+  document.fonts.add(font);
+  return font;
 }
 
 export function getFontStatus(family) { return statuses.get(family) || { loading: false, error: null }; }
@@ -308,21 +355,23 @@ const activeLoads = new Map();
 export function isFontLoaded(family) { return SYSTEM_FONTS.some((font) => font.value === family) || loadedFonts.has(family); }
 
 export async function loadFont(family, text = "Aa 中文", { signal } = {}) {
-  const checkCancelled = () => { if (signal?.aborted) throw new DOMException("字体加载已取消。", "AbortError"); };
-  checkCancelled();
+  checkCancelled(signal);
   if (SYSTEM_FONTS.some((font) => font.value === family)) return;
   const config = ALL_CUSTOM_FONTS[family];
   if (!config) throw new Error("所选字体不存在，请重新选择。");
   activeLoads.set(family, (activeLoads.get(family) || 0) + 1);
   updateStatus(family, { loading: true, error: null });
   try {
-    const definitions = await getMetadata(config);
+    const definitions = await waitForFontWork(getMetadata(config), signal);
+    checkCancelled(signal);
+    const points = [...new Set(Array.from(text, (char) => char.codePointAt(0)))].sort((left, right) => left - right);
     // Selection happens locally; the provider only sees fixed font asset URLs.
-    for (const face of definitions.filter((item) => fontFaceMatchesText(item, text))) {
-      checkCancelled();
-      await loadFace(family, face);
+    for (let index = 0; index < definitions.length; index += 1) {
+      if (index > 0 && index % 16 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      checkCancelled(signal);
+      if (fontFaceMatchesPoints(definitions[index], points)) await loadFace(family, definitions[index], signal);
     }
-    checkCancelled();
+    checkCancelled(signal);
     loadedFonts.add(family);
   } catch (error) {
     if (error.name !== "AbortError") updateStatus(family, { loading: false, error: error.message || "字体加载失败，当前使用系统字体。" });

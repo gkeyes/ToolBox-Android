@@ -1,3 +1,4 @@
+import { waitForRateLimit } from "./rate-limit.js";
 import { deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
 
@@ -59,6 +60,7 @@ export function createArticleCache(storage, options = {}) {
   let epoch = 0;
   let serial = 0;
   let writer = Promise.resolve();
+  let stagingWriter = Promise.resolve();
   let syncStage = null;
   let clearing = null;
   let clearingFailed = false;
@@ -75,8 +77,13 @@ export function createArticleCache(storage, options = {}) {
   let sweptVersion = 0;
   const tokenPrefix = options.tokenPrefix || globalThis.crypto.randomUUID().replaceAll("-", "");
   const digest = options.digest || bodyDigest;
+  const deriveMetadata = options.deriveMetadata || deriveArticleMetadata;
+  const yieldBackground = async (expectedEpoch) => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    checkEpoch(expectedEpoch);
+  };
   const checkEpoch = (value) => { if (value !== epoch) throw cancelled(); };
-  const checkStage = (stage) => { checkEpoch(stage.epoch); if (!stages.has(stage)) throw cancelled(); };
+  const checkStage = (stage) => { checkEpoch(stage.epoch); if (!stages.has(stage) || stage.aborted) throw cancelled(); };
   const enqueue = (operation) => {
     const expectedEpoch = epoch;
     const pending = writer.then(() => { checkEpoch(expectedEpoch); return operation(); });
@@ -84,22 +91,18 @@ export function createArticleCache(storage, options = {}) {
     return pending;
   };
 
-  async function native(method, args, expectedEpoch = epoch) {
-    checkEpoch(expectedEpoch);
-    try { const result = await storage[method](...args); checkEpoch(expectedEpoch); return result; }
-    catch (error) {
+  async function native(method, args, expectedEpoch = epoch, intent = () => true) {
+    while (true) {
       checkEpoch(expectedEpoch);
-      if (error?.code !== "RATE_LIMITED") throw error;
-      // Admission rejection happens before mutation. Yield in cancellable
-      // intervals; reads never join the writer or this backoff.
-      const until = Date.now() + 60000;
-      while (Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
+      if (!intent()) return;
+      try { const result = await storage[method](...args); checkEpoch(expectedEpoch); return result; }
+      catch (error) {
         checkEpoch(expectedEpoch);
+        if (error?.code !== "RATE_LIMITED") throw error;
+        // Only native admission rejection is replayable. GC rechecks every key
+        // after waiting; account invalidation cancels reads and writes promptly.
+        if (!await waitForRateLimit(error, () => { checkEpoch(expectedEpoch); return intent(); }, options.rateLimit)) return;
       }
-      const result = await storage[method](...args);
-      checkEpoch(expectedEpoch);
-      return result;
     }
   }
 
@@ -175,7 +178,7 @@ export function createArticleCache(storage, options = {}) {
   function newStage(settings = {}) {
     const stage = {
       token: `${tokenPrefix}.${++serial}`, epoch, count: 0, writes: [], bytes: 0,
-      refs: new Set(), base: snapshot, maps: null, changes: new Map(), changesAt: new Map(), ...settings,
+      refs: new Set(), retainedRefs: new Set(), base: snapshot, maps: null, changes: new Map(), changesAt: new Map(), ...settings,
     };
     stages.add(stage);
     return stage;
@@ -185,9 +188,11 @@ export function createArticleCache(storage, options = {}) {
     checkStage(stage);
     if (!stage.writes.length) return;
     const writes = stage.writes;
-    await native("apply", [{ set: writes.map(({ key, value }) => ({ key, value })) }], stage.epoch);
+    await native("apply", [{ set: writes.map(({ key, value }) => ({ key, value })) }], stage.epoch, () => { checkStage(stage); return true; });
+    checkStage(stage);
     stage.writes = [];
     stage.bytes = 0;
+    if (stage.background) await yieldBackground(stage.epoch);
   }
 
   async function queueValue(stage, key, value) {
@@ -277,31 +282,16 @@ export function createArticleCache(storage, options = {}) {
     return { root, maps, nodes, refs };
   }
 
-  function collectRefs(root, maps, nodes) {
-    const refs = new Set();
-    const visit = (key) => {
-      if (refs.has(key)) return;
-      refs.add(key);
-      const node = nodes.get(key);
-      if (!node) throw invalid();
-      if (node.kind === "branch") for (const child of Object.values(node.entries)) visit(child);
-    };
-    for (const table of TABLES) if (root.tables[table]) visit(root.tables[table].key);
-    for (const article of maps.articles.values()) refs.add(article.bodyRef);
-    return refs;
-  }
-
-  async function updateTree(stage, table, nextMap, nodes) {
-    const before = stage.base.maps[table];
-    const dirty = new Set();
-    for (const [id, row] of nextMap) if (before.get(id) !== row) dirty.add(Math.floor(id / FANOUT));
-    for (const id of before.keys()) if (!nextMap.has(id)) dirty.add(Math.floor(id / FANOUT));
+  // Callers supply dirty IDs; status commits never enumerate the article map.
+  async function updateTree(stage, table, nextMap, nodes, dirtyIds, replaced) {
+    const dirty = new Set([...dirtyIds].map((id) => Math.floor(id / FANOUT)));
     let tree = stage.base.root.tables[table];
     if (!dirty.size) return tree;
     const leafRefs = new Map();
     for (const bucket of dirty) {
       const rows = [];
       for (let id = bucket * FANOUT; id < (bucket + 1) * FANOUT && id <= Number.MAX_SAFE_INTEGER; id += 1) {
+        options.onIndexAccess?.({ kind: "row", table, id });
         const row = nextMap.get(id);
         if (row) rows.push(row);
       }
@@ -326,6 +316,10 @@ export function createArticleCache(storage, options = {}) {
       }
     }
     const replace = async (oldRef, currentLevel, changes) => {
+      if (oldRef) {
+        options.onIndexAccess?.({ kind: "node", table, key: oldRef });
+        replaced.add(oldRef);
+      }
       const previous = oldRef ? nodes.get(oldRef) : null;
       if (oldRef && (!previous || previous.kind !== "branch" || previous.level !== currentLevel)) throw invalid();
       const entries = { ...previous?.entries };
@@ -336,6 +330,7 @@ export function createArticleCache(storage, options = {}) {
         grouped.get(slot).push([bucket, ref]);
       }
       for (const [slot, values] of grouped) {
+        if (currentLevel === 0 && entries[slot]) replaced.add(entries[slot]);
         const ref = currentLevel === 0 ? values[0][1] : await replace(entries[slot], currentLevel - 1, values);
         if (ref === null) delete entries[slot]; else entries[slot] = ref;
       }
@@ -349,25 +344,99 @@ export function createArticleCache(storage, options = {}) {
     return key ? { key, level } : null;
   }
 
-  async function commit(stage, maps, { syncedAt = stage.base.root.lastSyncTime, account = stage.base.root.account, retireLegacy = false, counts } = {}) {
+  function dirtyRows(before, after) {
+    if (before === after) return new Set();
+    const dirty = new Set();
+    for (const [id, row] of after) if (before.get(id) !== row) dirty.add(id);
+    for (const id of before.keys()) if (!after.has(id)) dirty.add(id);
+    return dirty;
+  }
+
+  function rememberConfirmed(stage) {
+    if (!syncStage || syncStage === stage || !stage.confirmed) return;
+    for (const [id, fields] of stage.confirmed) {
+      syncStage.confirmed.set(id, { ...syncStage.confirmed.get(id), ...fields });
+    }
+  }
+
+  // This synchronous publication is reached only after the exact root is known
+  // durable. Readers holding a row already own its immutable metadata/body lease.
+  function publishCommit(stage, next) {
+    if (next.preparedSnapshot) {
+      snapshot = { ...next.preparedSnapshot, root: next.root };
+      countIndexes.set(snapshot, next.counts);
+      for (const ref of [...stage.gcCandidates, ...stage.refs]) if (!snapshot.refs.has(ref)) retired.add(ref);
+      stages.delete(stage);
+      scheduleGc();
+      return;
+    }
+    const { root, maps, additions, replaced, bodyAdded, bodyRemoved, counts, articleChanges } = next;
+    if (syncStage && syncStage !== stage) {
+      for (const ref of [...replaced, ...bodyRemoved, ...bodyAdded, ...additions.keys()]) syncStage.gcCandidates.add(ref);
+    }
+    const nodes = stage.base.nodes;
+    const refs = stage.base.refs;
+    for (const ref of replaced) { nodes.delete(ref); refs.delete(ref); retired.add(ref); }
+    for (const [ref, node] of additions) {
+      if (!replaced.has(ref)) { nodes.set(ref, node); refs.add(ref); }
+    }
+    for (const ref of bodyRemoved) { refs.delete(ref); retired.add(ref); }
+    for (const ref of bodyAdded) refs.add(ref);
+    if (articleChanges) {
+      for (const [id, row] of articleChanges) {
+        if (row) maps.articles.set(id, row); else maps.articles.delete(id);
+      }
+    }
+    for (const ref of stage.refs) if (!refs.has(ref)) retired.add(ref);
+    snapshot = { root, maps, nodes, refs };
+    if (counts) countIndexes.set(snapshot, counts);
+    countValue(snapshot);
+    rememberConfirmed(stage);
+    stages.delete(stage);
+    scheduleGc();
+  }
+
+  async function buildDelta(stage, maps, articleChanges) {
+    checkStage(stage);
+    const additions = new Map();
+    const replaced = new Set();
+    const nodes = { get: (key) => additions.get(key) ?? stage.base.nodes.get(key), set: (key, node) => additions.set(key, node) };
+    const tables = {};
+    const bodyAdded = new Set();
+    const bodyRemoved = new Set();
+    for (const table of TABLES) {
+      const dirty = table === "articles" && articleChanges ? new Set(articleChanges.keys()) : dirtyRows(stage.base.maps[table], maps[table]);
+      const view = table === "articles" && articleChanges
+        ? { get: (id) => articleChanges.has(id) ? articleChanges.get(id) : maps.articles.get(id) } : maps[table];
+      if (table === "articles") for (const id of dirty) {
+        const before = stage.base.maps.articles.get(id)?.bodyRef;
+        const after = view.get(id)?.bodyRef;
+        if (before !== after) { if (before) bodyRemoved.add(before); if (after) bodyAdded.add(after); }
+      }
+      tables[table] = await updateTree(stage, table, view, nodes, dirty, replaced);
+    }
+    await flush(stage);
+    return { maps, tables, additions, replaced, bodyAdded, bodyRemoved, articleChanges };
+  }
+
+  async function commit(stage, maps, { syncedAt = stage.base.root.lastSyncTime, account = stage.base.root.account,
+    retireLegacy = false, counts, articleChanges } = {}) {
     checkStage(stage);
     if (snapshot !== stage.base) throw fail("缓存已更新，请重新同步。", "BUSY");
-    const nodes = new Map(stage.base.nodes);
-    const tables = {};
-    for (const table of TABLES) tables[table] = await updateTree(stage, table, maps[table], nodes);
-    await flush(stage);
+    const delta = await buildDelta(stage, maps, articleChanges);
     const root = { version: 3, revision: stage.base.root.revision + 1, transaction: stage.token,
-      account, tables, lastSyncTime: syncedAt };
+      account, tables: delta.tables, lastSyncTime: syncedAt };
+    return commitRoot(stage, { ...delta, root, counts }, retireLegacy);
+  }
+
+  async function commitRoot(stage, next, retireLegacy = false) {
+    const { root } = next;
     if (!Number.isSafeInteger(root.revision)) throw invalid();
-    const refs = collectRefs(root, maps, nodes);
-    const next = { root, maps, nodes: new Map([...nodes].filter(([key]) => refs.has(key))), refs };
-    if (counts) countIndexes.set(next, counts);
     const change = { set: [{ key: ROOT_KEY, value: root }], remove: retireLegacy ? [LEGACY_MANIFEST_KEY] : [] };
     try { await native("apply", [change], stage.epoch); }
     catch (error) {
       checkStage(stage);
-      // A committed native transaction can outlive its lost reply. Only the
-      // exact transaction id proves success; never replay an uncertain commit.
+      // Lost replies are resolved by transaction ID, never by replaying a root.
       let observed;
       try { [observed] = await readMany([ROOT_KEY], stage.epoch); }
       catch (cause) {
@@ -379,20 +448,15 @@ export function createArticleCache(storage, options = {}) {
       if (!same(observed, root)) throw error;
     }
     checkStage(stage);
-    for (const ref of snapshot.refs) if (!next.refs.has(ref)) retired.add(ref);
-    for (const ref of stage.refs) if (!next.refs.has(ref)) retired.add(ref);
-    snapshot = next;
-    countValue(snapshot);
-    stages.delete(stage);
-    scheduleGc();
-    return clone({ version: 3, revision: root.revision, lastSyncTime: root.lastSyncTime, account: root.account });
+    publishCommit(stage, next);
+    return metaValue();
   }
 
   async function settleCommit() {
     if (!uncertainCommit) return;
     const pending = uncertainCommit;
     const [root] = await readMany([ROOT_KEY]);
-    if (same(root, pending.next.root)) snapshot = pending.next;
+    if (same(root, pending.next.root)) publishCommit(pending.stage, pending.next);
     else if (!same(root, pending.stage.base.root) && !(root === null && pending.stage.base.root.revision === 0)) {
       if (!root || !same(root.account, pending.stage.base.root.account)) throw cancelled();
       snapshot = await restore(root, epoch);
@@ -411,11 +475,15 @@ export function createArticleCache(storage, options = {}) {
     if (!record(article) || !validId(article.id)) throw invalid();
     const body = { content: article.content ?? "", enclosures: article.enclosures ?? [] };
     if (typeof body.content !== "string" || !Array.isArray(body.enclosures)) throw invalid();
+    if (previous?.bodyRef) stage.retainedRefs.add(previous.bodyRef);
     const hash = await digest(body);
     checkStage(stage);
     const bodyRef = previous?.bodyDigest === hash ? previous.bodyRef : await writeDocument(stage, body, true);
     const { content, enclosures, feed, originalContent, bodyRef: ignoredRef, ...metadata } = article;
-    return { ...metadata, ...deriveArticleMetadata(article), bodyRef, bodyDigest: hash };
+    const derived = previous?.bodyDigest === hash && previous.title === article.title && previous.url === article.url
+      ? { titleText: previous.titleText, previewText: previous.previewText, coverUrl: previous.coverUrl }
+      : deriveMetadata(article);
+    return { ...metadata, ...derived, bodyRef, bodyDigest: hash };
   }
 
   function mapRows(table, values, before = new Map()) {
@@ -489,6 +557,8 @@ export function createArticleCache(storage, options = {}) {
       query.filter === "starred" ? row.starred === 1 : row.status !== "removed") &&
     (query.statusNot === undefined || row.status !== query.statusNot) &&
     (!query.keyword || row.title?.toLowerCase().includes(query.keyword.toLowerCase()));
+  const selectedRows = (current, wanted) => wanted.ids
+    ? [...wanted.ids].map((id) => current.maps.articles.get(id)).filter(Boolean) : current.maps.articles.values();
   const criteria = (query = {}) => ({ ...query, feedIds: query.feedIds ? new Set(query.feedIds) : null, ids: query.ids ? new Set(query.ids) : null });
   function countValue(current, feedIds) {
     if (!countIndexes.has(current)) {
@@ -519,7 +589,7 @@ export function createArticleCache(storage, options = {}) {
   function protectedKey(key) {
     if (key === ROOT_KEY) return true;
     const ref = key.replace(/\.p\d+$/, "");
-    return snapshot.refs.has(ref) || pins.has(ref) || [...stages].some((stage) => stage.refs.has(ref));
+    return snapshot.refs.has(ref) || pins.has(ref) || [...stages].some((stage) => stage.refs.has(ref) || stage.retainedRefs.has(ref));
   }
 
   function collectGarbage() {
@@ -528,28 +598,52 @@ export function createArticleCache(storage, options = {}) {
     gcPromise = (async () => {
       if (loaded) await loaded;
       if (uncertainCommit) return;
-      // No root means migration has not committed: the legacy snapshot is live.
       const [root] = await readMany([ROOT_KEY], expectedEpoch);
       if (!root || root.version !== 3 || !same(root, snapshot.root)) return;
+      let pending = [];
+      let bytes = 32;
+      const skippedRefs = new Set();
+      const flushRemove = async () => {
+        if (!pending.length) return;
+        const change = { remove: pending };
+        pending = []; bytes = 32;
+        const intent = () => {
+          if (uncertainCommit) return false;
+          change.remove = change.remove.filter((key) => {
+            if (!protectedKey(key)) return true;
+            skippedRefs.add(key.replace(/\.p\d+$/, ""));
+            return false;
+          });
+          return change.remove.length > 0;
+        };
+        try { await native("apply", [change], expectedEpoch, intent); }
+        catch (error) { sweepVersion += 1; scheduleGc(); throw error; }
+        await yieldBackground(expectedEpoch);
+      };
+      const removeKey = async (key) => {
+        const size = jsonBytes(key) + 1;
+        if (pending.length && (pending.length >= BATCH_KEYS || bytes + size > BATCH_BYTES)) await flushRemove();
+        if (!uncertainCommit && !protectedKey(key)) { pending.push(key); bytes += size; }
+      };
       if (sweptVersion !== sweepVersion) {
         const version = sweepVersion;
         const keys = await native("keys", [], expectedEpoch);
-        for (let offset = 0; offset < keys.length; offset += BATCH_KEYS) {
-          checkEpoch(expectedEpoch);
+        for (let index = 0; index < keys.length; index += 1) {
           if (uncertainCommit) return;
-          const remove = keys.slice(offset, offset + BATCH_KEYS).filter((key) =>
-            (key.startsWith(CACHE_PREFIX) || key.startsWith(LEGACY_PREFIX)) && !protectedKey(key));
-          if (remove.length) await native("apply", [{ remove }], expectedEpoch);
+          const key = keys[index];
+          if (key.startsWith(CACHE_PREFIX) || key.startsWith(LEGACY_PREFIX)) await removeKey(key);
+          if (index && index % BATCH_KEYS === 0) await yieldBackground(expectedEpoch);
         }
-        sweptVersion = version;
+        await flushRemove();
+        if (!uncertainCommit) sweptVersion = version;
       } else {
-        // Normal commits already know their superseded document references.
-        // Read only those small headers; never enumerate the entire archive
-        // because a card was marked read or an icon was refreshed.
+        // Coalesce keys across retired documents. A state update no longer pays
+        // one native remove transaction per leaf/branch/body reference.
         const candidates = [...retired].filter((ref) => !protectedKey(ref));
-        for (let offset = 0; offset < candidates.length; offset += 3) {
+        const completed = [];
+        for (let offset = 0; offset < candidates.length; offset += BATCH_KEYS) {
           if (uncertainCommit) return;
-          const refs = candidates.slice(offset, offset + 3);
+          const refs = candidates.slice(offset, offset + BATCH_KEYS);
           const headers = await readMany(refs, expectedEpoch);
           for (let index = 0; index < refs.length; index += 1) {
             const ref = refs[index]; const header = headers[index];
@@ -560,16 +654,15 @@ export function createArticleCache(storage, options = {}) {
                   !Array.isArray(header.partBytes) || header.partBytes.length !== header.parts))) {
               sweepVersion += 1; retired.delete(ref); scheduleGc(); continue;
             }
-            const keys = [ref];
-            if (typeof header.text !== "string") for (let part = 0; part < header.parts; part += 1) keys.push(`${ref}.p${part}`);
-            for (let start = 0; start < keys.length; start += BATCH_KEYS) {
-              if (uncertainCommit || protectedKey(ref)) break;
-              try { await native("apply", [{ remove: keys.slice(start, start + BATCH_KEYS) }], expectedEpoch); }
-              catch (error) { sweepVersion += 1; scheduleGc(); throw error; }
-            }
-            if (!protectedKey(ref) && !uncertainCommit) retired.delete(ref);
+            // Delete the header last, so a failed earlier batch is recoverable.
+            if (typeof header.text !== "string") for (let part = 0; part < header.parts; part += 1) await removeKey(`${ref}.p${part}`);
+            await removeKey(ref);
+            completed.push(ref);
           }
+          await yieldBackground(expectedEpoch);
         }
+        await flushRemove();
+        if (!uncertainCommit) for (const ref of completed) if (!protectedKey(ref) && !skippedRefs.has(ref)) retired.delete(ref);
       }
     })().finally(() => { gcPromise = null; if (gcAgain) { gcAgain = false; scheduleGc(); } });
     return gcPromise;
@@ -579,35 +672,33 @@ export function createArticleCache(storage, options = {}) {
     return enqueue(async () => {
       await initialize();
       await settleCommit();
-      if (syncStage) throw fail("同步正在保存，请稍后重试。", "BUSY");
       if (!Array.isArray(patches)) throw invalid();
-      const stage = newStage();
-      const articles = new Map(snapshot.maps.articles);
-      const changed = new Set();
+      const stage = newStage({ confirmed: new Map() });
+      const changes = new Map();
       const counts = countValue(snapshot);
       try {
         for (const patch of patches) {
           if (!record(patch) || !validId(patch.id) || (patch.status !== undefined && !["read", "unread", "removed"].includes(patch.status)) ||
               (patch.starred !== undefined && patch.starred !== 0 && patch.starred !== 1)) throw invalid();
-          const previous = articles.get(patch.id);
+          const previous = changes.has(patch.id) ? changes.get(patch.id) : snapshot.maps.articles.get(patch.id);
           if (!previous) continue;
-          const next = { ...previous, ...(patch.status === undefined ? {} : { status: patch.status }), ...(patch.starred === undefined ? {} : { starred: patch.starred }) };
-          if (same(previous, next)) continue;
-          if (next.status === "removed") articles.delete(patch.id); else articles.set(patch.id, next);
-          changed.add(patch.id);
+          const fields = { ...(patch.status === undefined ? {} : { status: patch.status }), ...(patch.starred === undefined ? {} : { starred: patch.starred }) };
+          stage.confirmed.set(patch.id, { ...stage.confirmed.get(patch.id), ...fields });
+          const next = { ...previous, ...fields };
+          changes.set(patch.id, next.status === "removed" ? null : next);
         }
-        for (const id of changed) {
+        for (const [id, after] of changes) {
           const before = stage.base.maps.articles.get(id);
-          const after = articles.get(id);
-          if (same(before, after)) { articles.set(id, before); changed.delete(id); continue; }
+          if (same(before, after)) { changes.delete(id); continue; }
           for (const [row, direction] of [[before, -1], [after, 1]]) {
             if (!row) continue;
             if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
             if (row.starred === 1) counts.starred[row.feedId] = (counts.starred[row.feedId] || 0) + direction;
           }
         }
-        if (changed.size) await commit(stage, { ...snapshot.maps, articles }, { counts });
-        return { articles: [...changed].map((id) => publicRow(articles.get(id))).filter(Boolean),
+        if (changes.size) await commit(stage, snapshot.maps, { counts, articleChanges: changes });
+        else rememberConfirmed(stage);
+        return { articles: [...changes.keys()].map((id) => publicRow(snapshot.maps.articles.get(id))).filter(Boolean),
           counts: countValue(snapshot), revision: snapshot.root.revision };
       } finally { releaseStage(stage); }
     });
@@ -651,7 +742,7 @@ export function createArticleCache(storage, options = {}) {
       if (syncedAt !== null && (typeof syncedAt !== "string" || !Number.isFinite(Date.parse(syncedAt)))) throw invalid();
       // full is a server fetch policy, not permission to discard readable local
       // history after a legacy checkpoint reset. Truly first sync starts empty.
-      syncStage = newStage({ syncedAt, account: settings.account ?? snapshot.root.account });
+      syncStage = newStage({ syncedAt, account: settings.account ?? snapshot.root.account, background: true, confirmed: new Map(), gcCandidates: new Set() });
       return syncStage.token;
     });
   }
@@ -663,11 +754,15 @@ export function createArticleCache(storage, options = {}) {
   }
 
   async function applySyncBatch(token, rows) {
-    return enqueue(async () => {
+    // Body compression/staging is independent of interactive root commits.
+    const operation = stagingWriter.then(async () => {
       const stage = requireSync(token);
+      if (stage.preparing || stage.prepared) throw fail("同步结果已完成暂存。", "BUSY");
       if (!Array.isArray(rows)) throw invalid();
-      for (const article of rows) {
+      for (let index = 0; index < rows.length; index += 1) {
+        if (index && index % 32 === 0) await yieldBackground(stage.epoch);
         checkStage(stage);
+        const article = rows[index];
         if (!record(article) || !validId(article.id)) throw invalid();
         const changedAt = Date.parse(article.changed_at);
         const previousTime = stage.changesAt.get(article.id);
@@ -677,7 +772,7 @@ export function createArticleCache(storage, options = {}) {
         }
         if (article.status === "removed") stage.changes.set(article.id, null);
         else {
-          const previous = stage.changes.has(article.id) ? stage.changes.get(article.id) : stage.base.maps.articles.get(article.id);
+          const previous = stage.changes.has(article.id) ? stage.changes.get(article.id) : snapshot.maps.articles.get(article.id);
           const row = await articleRow(stage, article, previous);
           stage.changes.set(article.id, same(previous, row) ? previous : row);
         }
@@ -685,32 +780,124 @@ export function createArticleCache(storage, options = {}) {
       await flush(stage);
       return { staged: stage.changes.size };
     });
+    stagingWriter = operation.catch(() => {});
+    return operation;
+  }
+
+  const overlayFields = (row, fields) => fields && Object.entries(fields).some(([key, value]) => row[key] !== value)
+    ? { ...row, ...fields } : row;
+
+  function assertSyncConflicts(stage, maps) {
+    for (const [id, fields] of stage.confirmed) {
+      const incoming = stage.changes.has(id) ? stage.changes.get(id) : maps.articles.get(id);
+      if (!incoming || fields.status === "removed" || !maps.feeds.has(incoming.feedId)) {
+        throw fail("同步期间文章被删除，已保留已确认的操作，请重新同步。", "SYNC_STATE_CONFLICT");
+      }
+    }
+  }
+
+  function applyDeltaToCandidate(base, delta) {
+    const { maps, tables, additions, replaced, bodyAdded, bodyRemoved, articleChanges } = delta;
+    for (const ref of replaced) { base.nodes.delete(ref); base.refs.delete(ref); }
+    for (const [ref, node] of additions) if (!replaced.has(ref)) { base.nodes.set(ref, node); base.refs.add(ref); }
+    for (const ref of bodyRemoved) base.refs.delete(ref);
+    for (const ref of bodyAdded) base.refs.add(ref);
+    if (articleChanges) for (const [id, row] of articleChanges) {
+      if (row) maps.articles.set(id, row); else maps.articles.delete(id);
+    }
+    return { root: { ...base.root, tables }, maps, nodes: base.nodes, refs: base.refs };
+  }
+
+  async function prepareSyncCommit(token, catalog) {
+    await stagingWriter;
+    const stage = requireSync(token);
+    if (stage.prepared) return { token };
+    if (stage.preparing) { await stage.preparing; return { token }; }
+    const preparation = (async () => {
+      // Capture metadata/index references atomically, then build the candidate
+      // outside the interactive writer. The copies belong only to this sync.
+      await enqueue(async () => {
+        await settleCommit();
+        requireSync(token);
+        stage.base = { root: snapshot.root, maps: { ...snapshot.maps, articles: new Map(snapshot.maps.articles) },
+          nodes: new Map(snapshot.nodes), refs: new Set(snapshot.refs) };
+        stage.retainedRefs = new Set(stage.base.refs);
+      });
+      checkStage(stage);
+      const maps = { ...stage.base.maps,
+        feeds: mapRows("feeds", catalog.feeds, stage.base.maps.feeds),
+        categories: mapRows("categories", catalog.categories, stage.base.maps.categories),
+        articles: new Map(stage.base.maps.articles),
+      };
+      assertSyncConflicts(stage, maps);
+      for (const [id, row] of stage.changes) {
+        if (row) maps.articles.set(id, overlayFields(row, stage.confirmed.get(id))); else maps.articles.delete(id);
+      }
+      for (const [id, row] of maps.articles) if (!maps.feeds.has(row.feedId) || row.status === "removed") maps.articles.delete(id);
+      maps.feedIcons = new Map([...maps.feedIcons].filter(([id]) => maps.feeds.has(id)));
+      const delta = await buildDelta(stage, maps);
+      checkStage(stage);
+      for (const ref of [...delta.replaced, ...delta.bodyRemoved]) stage.gcCandidates.add(ref);
+      const candidate = applyDeltaToCandidate(stage.base, delta);
+      stage.prepared = candidate;
+      countValue(candidate);
+    })();
+    stage.preparing = preparation;
+    try { await preparation; return { token }; }
+    finally { stage.preparing = null; }
   }
 
   async function commitSync(token, catalog) {
+    await prepareSyncCommit(token, catalog);
     return enqueue(async () => {
+      await settleCommit();
       const stage = requireSync(token);
       try {
-        const maps = { ...stage.base.maps,
-          feeds: mapRows("feeds", catalog.feeds, stage.base.maps.feeds),
-          categories: mapRows("categories", catalog.categories, stage.base.maps.categories),
-          articles: new Map(stage.base.maps.articles),
-        };
-        for (const [id, row] of stage.changes) { if (row) maps.articles.set(id, row); else maps.articles.delete(id); }
-        for (const [id, row] of maps.articles) if (!maps.feeds.has(row.feedId) || row.status === "removed") maps.articles.delete(id);
-        maps.feedIcons = new Map([...maps.feedIcons].filter(([id]) => maps.feeds.has(id)));
-        return await commit(stage, maps, { syncedAt: stage.syncedAt, account: stage.account });
+        const candidate = stage.prepared;
+        assertSyncConflicts(stage, candidate.maps);
+        const changes = new Map();
+        const counts = countValue(candidate);
+        // Only fields confirmed during this round override the fetched result.
+        // Unrelated fetched fields, including bodies, remain in the candidate.
+        for (const [id, fields] of stage.confirmed) {
+          const before = candidate.maps.articles.get(id);
+          const after = overlayFields(before, fields);
+          if (before === after) continue;
+          changes.set(id, after);
+          for (const [row, direction] of [[before, -1], [after, 1]]) {
+            if (row.status === "unread") counts.unread[row.feedId] = (counts.unread[row.feedId] || 0) + direction;
+            if (row.starred === 1) counts.starred[row.feedId] = (counts.starred[row.feedId] || 0) + direction;
+          }
+        }
+        stage.base = candidate;
+        stage.background = false;
+        const delta = await buildDelta(stage, candidate.maps, changes);
+        for (const ref of delta.replaced) stage.gcCandidates.add(ref);
+        const preparedSnapshot = applyDeltaToCandidate(candidate, delta);
+        // The final root is based on the latest committed revision, after all
+        // earlier interactions/recovery have completed in the writer queue.
+        stage.base = snapshot;
+        const root = { version: 3, revision: snapshot.root.revision + 1, transaction: stage.token,
+          account: stage.account, tables: preparedSnapshot.root.tables, lastSyncTime: stage.syncedAt };
+        return await commitRoot(stage, { root, preparedSnapshot, counts });
       } finally { releaseStage(stage); if (syncStage === stage) syncStage = null; }
     });
   }
 
   async function abortSync(token) {
-    return enqueue(async () => {
-      if (!syncStage || syncStage.token !== token) return;
-      releaseStage(syncStage);
+    const abandoned = await enqueue(() => {
+      if (!syncStage || syncStage.token !== token) return null;
+      const stage = syncStage;
+      stage.aborted = true;
       syncStage = null;
-      scheduleGc();
+      // Capture the current work, then drain outside the writer. A pending
+      // preparation may itself be waiting to capture its base on this queue.
+      return { stage, pending: [stagingWriter, stage.preparing] };
     });
+    if (!abandoned) return;
+    await Promise.allSettled(abandoned.pending);
+    releaseStage(abandoned.stage);
+    scheduleGc();
   }
 
   function clear() {
@@ -721,6 +908,8 @@ export function createArticleCache(storage, options = {}) {
     const initializing = loaded;
     const operation = enqueue(async () => {
       await initializing?.catch(() => {});
+      await stagingWriter.catch(() => {});
+      await Promise.allSettled([...stages].map((stage) => stage.preparing));
       await gcPromise?.catch(() => {});
       stages.clear();
       syncStage = null;
@@ -761,11 +950,11 @@ export function createArticleCache(storage, options = {}) {
     readMetadata: (id) => selectSnapshot((current) => publicRow(current.maps.articles.get(Number(id)))),
     async selectIds(query) {
       const wanted = criteria(query);
-      return selectSnapshot((current) => [...current.maps.articles.values()].filter((row) => matches(row, wanted)).map((row) => row.id));
+      return selectSnapshot((current) => [...selectedRows(current, wanted)].filter((row) => matches(row, wanted)).map((row) => row.id));
     },
     async selectMetadata(query) {
       const wanted = criteria(query);
-      return selectSnapshot((current) => [...current.maps.articles.values()].filter((row) => matches(row, wanted)).map(publicRow));
+      return selectSnapshot((current) => [...selectedRows(current, wanted)].filter((row) => matches(row, wanted)).map(publicRow));
     },
     counts: (feedIds) => selectSnapshot((current) => countValue(current, feedIds)),
     async readArticle(id) {
@@ -796,7 +985,7 @@ export function createArticleCache(storage, options = {}) {
       const wanted = criteria(query);
       const field = query.field ?? "published_at";
       if (!["published_at", "created_at"].includes(field)) throw fail("文章排序字段无效。", "INVALID_REQUEST");
-      const rows = [...current.maps.articles.values()].filter((row) => matches(row, wanted));
+      const rows = [...selectedRows(current, wanted)].filter((row) => matches(row, wanted));
       options.onIndexBuild?.({ kind: "query", rows: rows.length });
       rows.sort((a, b) => {
         const left = a[field] ?? ""; const right = b[field] ?? "";
@@ -819,7 +1008,7 @@ export function createArticleCache(storage, options = {}) {
         hasMore: offset + ids.length < query.ids.length, revision: snapshot.root.revision };
     },
     async closeQuery(queryId) { queries.delete(queryId); },
-    patchState, prepareSync, applySyncBatch, commitSync, abortSync, clear,
+    patchState, prepareSync, applySyncBatch, prepareSyncCommit, commitSync, abortSync, clear,
     // Explicit idle maintenance entry point also permits deterministic fault
     // injection in Node tests; production reads never await this operation.
     collectGarbage,

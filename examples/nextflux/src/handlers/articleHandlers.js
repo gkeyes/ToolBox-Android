@@ -4,6 +4,7 @@ import {
   activeArticle,
   updateArticleStarred,
   updateArticleStatus,
+  queueArticleRead,
   markAllAsRead,
   markAboveAsRead,
   markBelowAsRead,
@@ -23,7 +24,7 @@ export const handleMarkStatus = async (article) => {
 // Automatic reading events have an explicit target. Re-entering a virtualized
 // card cannot turn an acknowledged read back into unread.
 export const handleMarkRead = async (article) => {
-  try { await updateArticleStatus(article, "read"); }
+  try { await queueArticleRead(article); }
   catch (err) {
     if (err.code !== "ACCOUNT_CHANGED") toast.error(err.message || "操作失败，请检查网络后重试。");
   }

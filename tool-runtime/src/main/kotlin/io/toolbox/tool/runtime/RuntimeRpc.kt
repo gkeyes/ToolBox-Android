@@ -74,7 +74,20 @@ enum class RuntimeRpcErrorCode {
 data class RuntimeRpcError(
     val code: RuntimeRpcErrorCode,
     val message: String,
-)
+    val retryAfterMs: Long? = null,
+) {
+    init { requireValidRetryAfterMs(retryAfterMs) }
+}
+
+internal fun requireValidRetryAfterMs(value: Long?) {
+    require(value == null || value in 0..9_007_199_254_740_991L)
+}
+
+internal fun RuntimeRpcError.toRpcValue(): RpcValue.ObjectValue = RpcValue.ObjectValue(buildMap {
+    put("code", RpcValue.StringValue(code.name))
+    put("message", RpcValue.StringValue(message))
+    retryAfterMs?.let { put("retryAfterMs", RpcValue.Number(it.toDouble())) }
+})
 
 sealed interface RuntimeRpcResponse {
     val id: String
@@ -85,7 +98,9 @@ sealed interface RuntimeRpcResponse {
 
 sealed interface RuntimePolicyDecision {
     data object Allowed : RuntimePolicyDecision
-    data class Denied(val code: RuntimeRpcErrorCode, val message: String) : RuntimePolicyDecision
+    data class Denied(val code: RuntimeRpcErrorCode, val message: String, val retryAfterMs: Long? = null) : RuntimePolicyDecision {
+        init { requireValidRetryAfterMs(retryAfterMs) }
+    }
 }
 
 interface RuntimeAuthorizationPolicy {
@@ -102,7 +117,10 @@ interface RuntimeAuthorizationPolicy {
 class RuntimeHandlerException(
     val errorCode: RuntimeRpcErrorCode,
     override val message: String,
-) : Exception(message)
+    val retryAfterMs: Long? = null,
+) : Exception(message) {
+    init { requireValidRetryAfterMs(retryAfterMs) }
+}
 
 fun interface RuntimeToastHandler {
     suspend fun show(message: String)
@@ -264,7 +282,10 @@ data class RuntimeBackgroundTaskSummary(
 data class RuntimeBackgroundTaskError(
     val code: RuntimeRpcErrorCode,
     val message: String,
-)
+    val retryAfterMs: Long? = null,
+) {
+    init { requireValidRetryAfterMs(retryAfterMs) }
+}
 
 data class RuntimeBackgroundTaskRunResult(
     val taskId: String,
@@ -333,6 +354,11 @@ fun interface RuntimeShareTextHandler {
     suspend fun shareText(text: String)
 }
 
+/** The native launcher must invoke beforeLaunch immediately before its foreground side effect. */
+fun interface RuntimeBrowserOpenHandler {
+    suspend fun open(url: String, beforeLaunch: suspend () -> Unit)
+}
+
 data class RuntimeFileToken(
     val token: String,
     val name: String,
@@ -390,6 +416,7 @@ interface RuntimeNetworkDomainHandler {
 data class RuntimeM3Handlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
+    val browserOpen: RuntimeBrowserOpenHandler? = null,
     val files: RuntimeFilesHandler? = null,
     val shortcuts: RuntimeShortcutHandler? = null,
     val camera: RuntimeCameraHandler? = null,
@@ -407,14 +434,17 @@ class RuntimeRpcDispatcher(
     private val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
     private val recentGestureWindowMillis: Long = 5_000L,
     private val maxResponseBytes: Int = DEFAULT_MAX_RESPONSE_BYTES,
+    private val browserLaunchGuard: suspend () -> Unit = {
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
+    },
 ) {
     init {
         require(maxResponseBytes >= MIN_RESPONSE_BYTES)
     }
 
     suspend fun dispatch(request: RuntimeRpcRequest, inbound: RuntimeInboundContext): RuntimeRpcResponse {
-        fun failure(code: RuntimeRpcErrorCode, message: String) =
-            RuntimeRpcResponse.Failure(request.id, RuntimeRpcError(code, message))
+        fun failure(code: RuntimeRpcErrorCode, message: String, retryAfterMs: Long? = null) =
+            RuntimeRpcResponse.Failure(request.id, RuntimeRpcError(code, message, retryAfterMs))
 
         if (!isSafeRuntimeRequestId(request.id)) {
             return RuntimeRpcResponse.Failure(
@@ -455,7 +485,7 @@ class RuntimeRpcDispatcher(
                 method.capability
             }
         } catch (failure: RuntimeHandlerException) {
-            return failure(failure.errorCode, failure.message)
+            return failure(failure.errorCode, failure.message, failure.retryAfterMs)
         } catch (_: IllegalArgumentException) {
             return failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
         }
@@ -482,7 +512,7 @@ class RuntimeRpcDispatcher(
         }
         when (val decision = authorization.admit(identity, method, request.encodedBytes)) {
             RuntimePolicyDecision.Allowed -> Unit
-            is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message)
+            is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message, decision.retryAfterMs)
         }
         if (!authorization.isCurrent(identity)) {
             m2Handlers.network?.cancelStreams()
@@ -504,7 +534,7 @@ class RuntimeRpcDispatcher(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: RuntimeHandlerException) {
-            failure(failure.errorCode, failure.message)
+            failure(failure.errorCode, failure.message, failure.retryAfterMs)
         } catch (_: IllegalArgumentException) {
             failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
         } catch (_: Exception) {
@@ -756,6 +786,21 @@ class RuntimeRpcDispatcher(
             requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", MAX_SHARE_TEXT_CHARS))
             RpcValue.Null
         }
+        "browser.open" -> {
+            params.requireOnly("url")
+            val url = validateRuntimeBrowserUrl(params.requiredString("url", 2_048))
+            requireHandler(m3Handlers.browserOpen).open(url) {
+                if (!authorization.isCurrent(identity)) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
+                }
+                if (!authorization.isGranted(identity, ToolBoxCapabilityId.BROWSER)) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Browser permission was disabled before launch")
+                }
+                // Runs after suspending authorization reads, on the launcher's Main dispatcher.
+                browserLaunchGuard()
+            }
+            RpcValue.Null
+        }
         "files.open" -> requireHandler(m3Handlers.files)
             .open(params.optionalMimeTypes())
             ?.toRpcValue()
@@ -986,12 +1031,7 @@ class RuntimeRpcDispatcher(
             error?.let {
                 put(
                     "error",
-                    RpcValue.ObjectValue(
-                        mapOf(
-                            "code" to RpcValue.StringValue(it.code.name),
-                            "message" to RpcValue.StringValue(it.message),
-                        ),
-                    ),
+                    RuntimeRpcError(it.code, it.message, it.retryAfterMs).toRpcValue(),
                 )
             }
         })

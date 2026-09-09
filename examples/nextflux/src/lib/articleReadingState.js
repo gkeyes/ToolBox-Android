@@ -71,20 +71,11 @@ export function startArticleRead(articleId, { load, getCurrent, publish, notFoun
   return { done, cancel() { cancelled = true; } };
 }
 
-// Keep the parsed React tree across metadata, typography and list updates.
-// Only the displayed article's current source is retained; closing the reader
-// releases the cache with its component instance.
-export function createArticleContentRenderer(sanitize, parse) {
-  let previous = null;
-  return (article) => {
-    const key = [article?.id, article?.bodyDigest, article?.content, article?.url];
-    if (previous && key.every((value, index) => value === previous.key[index])) {
-      return previous.result;
-    }
-    const result = parse(sanitize(article?.content, article?.url));
-    previous = { key, result };
-    return result;
-  };
+// React.memo and the reading effect share these primitive source fields. Status,
+// cached metadata and typography changes cannot restart safe body preparation.
+export function sameReadingSource(previous, next) {
+  return previous.articleId === next.articleId && previous.html === next.html &&
+    previous.baseUrl === next.baseUrl && Boolean(previous.shownOriginal) === Boolean(next.shownOriginal);
 }
 
 export function createArticleScrollReset() {

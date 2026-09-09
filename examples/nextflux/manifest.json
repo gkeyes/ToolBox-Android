@@ -4,12 +4,12 @@
   "name": "NextFlux",
   "shortName": "NextFlux",
   "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要及后台同步。",
-  "version": "1.0.4",
-  "versionCode": 5,
+  "version": "1.0.5",
+  "versionCode": 6,
   "entry": "index.html",
   "icon": "web-app-manifest-512x512.png",
   "apiVersion": "1.0",
-  "minHostVersion": "0.6.6",
+  "minHostVersion": "0.6.7",
   "categories": [
     "阅读",
     "效率"
@@ -38,6 +38,11 @@
     {
       "name": "share",
       "reason": "通过 Android 分享面板分享文章链接。",
+      "required": false
+    },
+    {
+      "name": "browser",
+      "reason": "点击链接后使用系统浏览器打开网页。",
       "required": false
     },
     {

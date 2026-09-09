@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639";
+export type ToolBoxContractSha256 = "dbe81127fe54d37775006add8c64747243b0b14365f2bc482cbacb7d14908998";
 
 export type ToolBoxCapability =
   | "storage"
@@ -6,6 +6,7 @@ export type ToolBoxCapability =
   | "clipboard.write"
   | "clipboard.read"
   | "share"
+  | "browser"
   | "files.open"
   | "files.save"
   | "network"
@@ -62,6 +63,7 @@ export type ToolBoxMethodName =
   | "background.cancelTimer"
   | "clipboard.readText"
   | "share.text"
+  | "browser.open"
   | "files.open"
   | "files.read"
   | "files.save"
@@ -107,6 +109,8 @@ export interface StorageApplyRequest {
 export interface ToolBoxApiError {
   code: ToolBoxErrorCode;
   message: string;
+  /** Optional non-negative safe integer milliseconds (at most Number.MAX_SAFE_INTEGER) remaining in the rate-limit window. A pacing hint; recheck permissions, context and gestures before retrying. Older hosts and other errors may omit it. */
+  retryAfterMs?: number;
 }
 
 export interface ReadyResult {
@@ -371,6 +375,10 @@ export interface ToolBoxApi {
   };
   share: {
     text(text: string): Promise<void>;
+  };
+  browser: {
+    /** Opens an absolute HTTP/HTTPS URL (at most 2048 characters, without credentials or control characters) in a system browser. Requires the separate, default-off browser capability, foreground context and a recent real touch; at most 10 calls per minute. No network capability or Android runtime permission is required. Resolves when the system accepts the launch, not when the page loads. */
+    open(url: string): Promise<void>;
   };
   files: {
     open(mimeTypes?: string[]): Promise<FileToken | null>;

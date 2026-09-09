@@ -34,7 +34,7 @@ test("selected font only loads matching character subsets through credential-fre
   const oldFontFace = globalThis.FontFace;
   globalThis.window = { ToolBox: { network: { request: async (payload) => {
     payloads.push(payload);
-    if (payload.url.startsWith("https://fonts.googleapis.com/")) return { status: 200, body: css("Inter", "https://fonts.gstatic.com/s/inter/latin.woff2") + css("Inter", "https://fonts.gstatic.com/s/inter/chinese.woff2", "U+4E00-9FFF"), bodyEncoding: "text" };
+    if (payload.url.startsWith("https://fonts.googleapis.com/")) return { status: 200, body: css("Inter", "https://fonts.gstatic.com/s/inter/latin.woff2") + css("Inter", "https://fonts.gstatic.com/s/inter/chinese.woff2", "U+4E00-9FFF") + css("Inter", "https://fonts.gstatic.com/s/inter/emoji.woff2", "U+1F600-1F64F"), bodyEncoding: "text" };
     return { status: 200, body: btoa("wOF2test-font"), bodyEncoding: "base64" };
   } } } };
   globalThis.document = { fonts: { add: (face) => installed.push(face) } };
@@ -54,6 +54,10 @@ test("selected font only loads matching character subsets through credential-fre
     await loadFont("Inter", "Hello");
     assert.equal(payloads.length, 2);
     assert.equal(getFontStatus("Inter").error, null);
+    await loadFont("Inter", "中😀");
+    assert.equal(payloads.length, 4);
+    assert.equal(payloads.some((payload) => payload.url.endsWith("/chinese.woff2")), true);
+    assert.equal(payloads.some((payload) => payload.url.endsWith("/emoji.woff2")), true);
   } finally { globalThis.window = oldWindow; globalThis.document = oldDocument; globalThis.FontFace = oldFontFace; }
 });
 
@@ -63,4 +67,43 @@ test("missing native network fails closed and keeps a retryable error status", a
   assert.equal(getFontStatus("Geist").loading, false);
   assert.match(getFontStatus("Geist").error, /ToolBox/);
   assert.equal(Object.values(FONT_CATEGORIES).flatMap((category) => category.fonts).length, 21);
+});
+
+test("cancellation during face decoding does not install stale fonts and allows a cached retry", async () => {
+  const previous = { window: globalThis.window, document: globalThis.document, FontFace: globalThis.FontFace };
+  const installed = [];
+  const payloads = [];
+  let finishDecoding;
+  let decodingStarted;
+  const decoding = new Promise((resolve) => { finishDecoding = resolve; });
+  const started = new Promise((resolve) => { decodingStarted = resolve; });
+  globalThis.window = { ToolBox: { network: { request: async (payload) => {
+    payloads.push(payload);
+    if (payload.url.startsWith("https://fonts.googleapis.com/")) return { status: 200, body: css("Nunito Sans", "https://fonts.gstatic.com/s/nunitosans/cancel-test.woff2"), bodyEncoding: "text" };
+    return { status: 200, body: btoa("wOF2test-font"), bodyEncoding: "base64" };
+  } } } };
+  globalThis.document = { fonts: { add: (face) => installed.push(face) } };
+  globalThis.FontFace = class {
+    async load() { decodingStarted(); await decoding; return this; }
+  };
+  try {
+    const controller = new AbortController();
+    const work = loadFont("Nunito Sans", "Hello", { signal: controller.signal });
+    await started;
+    controller.abort();
+    await assert.rejects(work, { name: "AbortError" });
+    assert.equal(getFontStatus("Nunito Sans").loading, false);
+    assert.equal(getFontStatus("Nunito Sans").error, null);
+    finishDecoding();
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(installed.length, 0);
+    await loadFont("Nunito Sans", "Hello");
+    assert.equal(installed.length, 1);
+    assert.equal(payloads.length, 2, "the non-cancelled consumer can reuse the bounded shared download");
+  } finally {
+    finishDecoding();
+    globalThis.window = previous.window;
+    globalThis.document = previous.document;
+    globalThis.FontFace = previous.FontFace;
+  }
 });

@@ -19,6 +19,7 @@ function serializeError(error, depth = 0) {
     message: typeof error?.message === "string" ? error.message : String(error ?? "未知错误"),
   };
   if (typeof error?.code === "string") result.code = error.code;
+  if (Number.isInteger(error?.retryAfterMs) && error.retryAfterMs >= 0) result.retryAfterMs = error.retryAfterMs;
   if (error?.cause !== undefined && depth < 4) {
     const cause = error.cause;
     result.cause = cause !== null && typeof cause === "object"
@@ -33,6 +34,7 @@ function restoreError(value, depth = 0) {
   const error = new Error(typeof value?.message === "string" ? value.message : "阅读缓存操作失败，请重试。");
   if (typeof value?.name === "string") error.name = value.name;
   if (typeof value?.code === "string") error.code = value.code;
+  if (Number.isInteger(value?.retryAfterMs) && value.retryAfterMs >= 0) error.retryAfterMs = value.retryAfterMs;
   if (value?.cause !== undefined && depth < 4) {
     error.cause = value.cause !== null && typeof value.cause === "object"
       ? restoreError(value.cause, depth + 1) : value.cause;
@@ -152,6 +154,7 @@ export function createWorkerArticleCache(storage) {
     patchState: (patches) => request("patchState", [patches]),
     prepareSync: (options) => request("prepareSync", [options]),
     applySyncBatch: (token, articles) => request("applySyncBatch", [token, articles]),
+    prepareSyncCommit: (token, catalog) => request("prepareSyncCommit", [token, catalog]),
     commitSync: (token, catalog) => request("commitSync", [token, catalog]),
     abortSync: (token) => request("abortSync", [token]),
     clear() {

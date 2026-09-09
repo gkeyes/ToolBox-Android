@@ -62,6 +62,28 @@ test('native BUSY rejects its correlated request and permits retry', async () =>
   await retry;
 });
 
+test('browser.open sends only its URL and fulfills with undefined after native acceptance', async () => {
+  const { api, messages, reply } = fixture();
+  const pending = api.browser.open('https://example.com/article');
+  assert.equal(messages[0].method, 'browser.open');
+  assert.deepEqual(messages[0].params, { url: 'https://example.com/article' });
+  reply(messages[0]);
+  assert.equal(await pending, undefined);
+});
+
+test('native optional retryAfterMs survives the production error shim without automatic replay', async () => {
+  const { api, bridge, messages } = fixture();
+  for (const retryAfterMs of [undefined, 0, 1, 60000, Number.MAX_SAFE_INTEGER]) {
+    const pending = api.browser.open('https://example.com/article');
+    const error = { code: 'RATE_LIMITED', message: 'Wait before retrying' };
+    if (retryAfterMs !== undefined) error.retryAfterMs = retryAfterMs;
+    const request = messages.at(-1);
+    bridge.onmessage({ data: JSON.stringify({ id: request.id, ok: false, error }) });
+    await assert.rejects(pending, error => error.code === 'RATE_LIMITED' && error.retryAfterMs === retryAfterMs);
+  }
+  assert.equal(messages.length, 5);
+});
+
 
 test('ordinary storage batches preserve their wire shape, key order, and typed errors', async () => {
   const { api, bridge, messages, reply } = fixture();

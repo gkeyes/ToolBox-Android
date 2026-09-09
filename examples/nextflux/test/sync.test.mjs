@@ -300,7 +300,7 @@ test("offline icons use cache and unsubscribe commits feed, articles, and icon a
 });
 
 
-test("sync overlaps independent requests and drains failed work before releasing the account queue", async () => {
+test("sync overlaps independent requests while interactions remain available and failed staging is drained", async () => {
   await reset();
   const started = [];
   const gates = [deferred(), deferred(), deferred(), deferred()];
@@ -333,7 +333,7 @@ test("sync overlaps independent requests and drains failed work before releasing
   assert.deepEqual(incrementalStarted, ["changed", "new"]);
   newGate.reject(new Error("page failed"));
   await tick();
-  assert.equal(nextOperationStarted, false, "the sibling request still owns the account operation");
+  assert.equal(nextOperationStarted, true, "a pending sibling fetch does not own the interactive account queue");
   changedGate.resolve([entry(3)]);
   await failure;
   await queued;
@@ -572,5 +572,119 @@ test("an article response arriving after logout cannot refill the active article
   await cancelled;
   assert.equal(articles.activeArticle.get(), null);
   assert.deepEqual(articles.filteredArticles.get(), []);
+  await assertLoggedOutCache();
+});
+
+test("an acknowledged interaction finishes during a paused sync fetch and survives its stale result", async () => {
+  await reset(); await sync.sync();
+  const paused = deferred(); const release = deferred();
+  fakeApi.getChangedEntries = async () => { paused.resolve(); return release.promise; };
+  const checkpoint = db.getLastSyncTime().toISOString();
+  const refreshing = sync.sync();
+  await paused.promise;
+  await articles.updateArticleStatus(await db.getArticleMetadata(1), "read");
+  assert.equal((await db.getArticleMetadata(1)).status, "read");
+  assert.equal(db.getLastSyncTime().toISOString(), checkpoint);
+  release.resolve([{ ...entry(1), content: "new synced content", starred: true }]);
+  await refreshing;
+  const updated = await db.getArticleById(1);
+  assert.equal(updated.status, "read");
+  assert.equal(updated.starred, 1, "only the confirmed read field overrides the fetched state");
+  assert.equal(updated.content, "new synced content");
+});
+
+test("sync recovers a confirmed server state locally before publishing a prebuilt stale candidate", async () => {
+  await reset(); await sync.sync();
+  const original = await db.getArticleMetadata(1);
+  articles.filteredArticles.set([original]);
+  articles.activeArticle.set(original);
+  const fetching = deferred(); const finishFetch = deferred();
+  fakeApi.getChangedEntries = async () => { fetching.resolve(); return finishFetch.promise; };
+  let statusRequests = 0;
+  fakeApi.updateEntriesStatus = async () => { statusRequests += 1; };
+  const refreshing = sync.sync();
+  await fetching.promise;
+  rejectRoot = true;
+  await assert.rejects(articles.updateArticleStatus(original, "read"), { code: "LOCAL_STATE_PENDING" });
+  assert.equal((await db.getArticleMetadata(1)).status, "unread");
+  assert.equal(articles.activeArticle.get().status, "unread");
+  rejectRoot = false;
+  finishFetch.resolve([{ ...entry(1), content: "server body after recovery" }]);
+  await refreshing;
+  assert.equal(statusRequests, 1, "recovery must never repeat the server mutation");
+  assert.equal((await db.getArticleById(1)).status, "read");
+  assert.equal((await db.getArticleById(1)).content, "server body after recovery");
+  assert.equal(articles.activeArticle.get().status, "read");
+  assert.equal(feeds.unreadCounts.get()[1], 0);
+});
+
+test("repeated deletion conflicts retry the entire sync once and retain the old checkpoint", async () => {
+  await reset(); await sync.sync();
+  const checkpoint = db.getLastSyncTime().toISOString();
+  let rounds = 0;
+  fakeApi.getChangedEntries = async () => {
+    rounds += 1;
+    await articles.updateArticleStatus(await db.getArticleMetadata(1), rounds === 1 ? "read" : "unread");
+    return [entry(1, "removed")];
+  };
+  await assert.rejects(sync.sync(), { code: "SYNC_STATE_CONFLICT" });
+  assert.equal(rounds, 2);
+  assert.equal(db.getLastSyncTime().toISOString(), checkpoint);
+  assert.equal((await db.getArticleMetadata(1)).status, "unread");
+  assert.equal(await db.getArticlesCount([1]), 1);
+  assert.equal(sync.isSyncing.get(), false);
+});
+
+test("catalog mutations wait outside the writer while article actions remain available during sync", async () => {
+  await reset(); await sync.sync();
+  const fetching = deferred(); const finishFetch = deferred();
+  fakeApi.getChangedEntries = async () => { fetching.resolve(); return finishFetch.promise; };
+  const order = [];
+  fakeApi.createCategory = async (title) => { order.push("category"); return { id: 12, title }; };
+  const refreshing = sync.sync(); await fetching.promise;
+  const changingCatalog = sync.createCachedCategory("after sync");
+  await articles.updateArticleStatus(await db.getArticleMetadata(1), "read");
+  assert.deepEqual(order, []);
+  assert.equal((await db.getArticleMetadata(1)).status, "read");
+  finishFetch.resolve([]); await refreshing; await changingCatalog;
+  assert.deepEqual(order, ["category"]);
+  assert.equal((await db.getCategories()).some(({ id }) => id === 12), true);
+});
+
+test("mark-all waits for staged new articles so its server scope and durable IDs agree", async () => {
+  await reset(); await sync.sync();
+  const staged = deferred(); const finishFetch = deferred();
+  fakeApi.getChangedEntries = async (_since, check, onPage) => {
+    await onPage([entry(2)]); staged.resolve(); await finishFetch.promise; check();
+  };
+  let scopeCalls = 0;
+  fakeApi.markAllAsRead = async () => { scopeCalls += 1; };
+  const refreshing = sync.sync(); await staged.promise;
+  const marking = articles.markAllAsRead("feed", 1);
+  await tick();
+  assert.equal(scopeCalls, 0, "server scope waits outside the final commit queue");
+  finishFetch.resolve(); await refreshing; await marking;
+  assert.equal(scopeCalls, 1);
+  assert.equal((await db.getArticleMetadata(1)).status, "read");
+  assert.equal((await db.getArticleMetadata(2)).status, "read");
+  assert.equal(await db.getUnreadCount(1), 0);
+});
+
+test("logout invalidates a storage admission wait before waiting for the account writer", { timeout: 4000 }, async () => {
+  await reset(); await sync.sync();
+  const entered = deferred(); let attempts = 0;
+  beforeApply = ({ set }) => {
+    if (set.length && !set.some(({ key }) => key === CACHE_ROOT)) {
+      attempts += 1; entered.resolve();
+      throw Object.assign(new Error("native admission window full"), { code: "RATE_LIMITED", retryAfterMs: 60000 });
+    }
+  };
+  const changing = articles.updateArticleStatus(await db.getArticleMetadata(1), "read");
+  const cancelled = assert.rejects(changing, { code: "ACCOUNT_CHANGED" });
+  await entered.promise;
+  await auth.logout(); await cancelled;
+  assert.equal(attempts, 1, "the rejected old-account write is never replayed after logout");
+  assert.equal(auth.authState.get().userId, "");
+  assert.equal(await db.getArticleById(1), null);
   await assertLoggedOutCache();
 });

@@ -15,10 +15,121 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeRpcDispatcherTest {
+    @Test
+    fun browserOpeningRequiresItsOwnGrantFreshGestureAndCurrentForegroundSession() = runTest {
+        val policy = MutablePolicy()
+        val session = identity.copy(declaredCapabilities = setOf("browser"))
+        var launches = 0
+        var beforeNativeCheck: () -> Unit = {}
+        var foreground = true
+        val handler = RuntimeBrowserOpenHandler { url, beforeLaunch ->
+            beforeNativeCheck()
+            beforeLaunch()
+            assertEquals("https://example.com/article", url)
+            launches++
+        }
+        fun dispatcher(current: RuntimeSessionIdentity = session) = RuntimeRpcDispatcher(
+            current, policy, RuntimeM1Handlers(), m3Handlers = RuntimeM3Handlers(browserOpen = handler),
+            browserLaunchGuard = {
+                if (!foreground) throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Tool moved to background")
+            },
+        )
+        val params = RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://example.com/article")))
+        val rpc = request("browser.open", params)
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, 100)
+        assertFailure(RuntimeRpcErrorCode.NOT_DECLARED, dispatcher(session.copy(declaredCapabilities = setOf("network"))).dispatch(rpc, inbound))
+        assertFailure(RuntimeRpcErrorCode.WRONG_ORIGIN, dispatcher().dispatch(rpc, inbound.copy(sourceOrigin = "https://other.invalid")))
+        assertFailure(RuntimeRpcErrorCode.NOT_MAIN_FRAME, dispatcher().dispatch(rpc, inbound.copy(isMainFrame = false)))
+        for (stale in listOf(rpc.copy(nonce = "stale"), rpc.copy(generation = "old"), rpc.copy(versionCode = 1), rpc.copy(toolId = "io.toolbox.other"))) {
+            assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher().dispatch(stale, inbound))
+        }
+        for (age in listOf(null, -1L, 5_001L)) {
+            assertFailure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, dispatcher().dispatch(rpc, inbound.copy(recentTouchAgeMillis = age)))
+        }
+        policy.granted = false
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher().dispatch(rpc, inbound))
+        policy.granted = true
+        for (invalid in listOf(
+            RpcValue.ObjectValue(emptyMap()),
+            RpcValue.ObjectValue(mapOf("url" to RpcValue.Number(1.0))),
+            RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("intent://example.com/"))),
+            RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://example.com/%zz"))),
+        ) + listOf("package", "component", "intent", "extras", "headers").map { name ->
+            RpcValue.ObjectValue(params.value + (name to RpcValue.StringValue("forbidden")))
+        }) assertFailure(RuntimeRpcErrorCode.INVALID_REQUEST, dispatcher().dispatch(rpc.copy(params = invalid), inbound))
+
+        // The handler reaches the main-thread boundary after the dispatcher has already
+        // checked authorization; simulate changes during that dispatch interval.
+        beforeNativeCheck = { policy.current = false }
+        assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher().dispatch(rpc, inbound))
+        policy.current = true
+        beforeNativeCheck = { policy.granted = false }
+        assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher().dispatch(rpc, inbound))
+        policy.granted = true
+        beforeNativeCheck = { foreground = false }
+        assertFailure(RuntimeRpcErrorCode.SESSION_ENDED, dispatcher().dispatch(rpc, inbound))
+        assertEquals(0, launches)
+        foreground = true
+        beforeNativeCheck = {}
+        assertTrue(dispatcher().dispatch(rpc, inbound) is RuntimeRpcResponse.Success)
+        assertEquals(emptySet<String>(), policy.checkedSystemPermissions)
+        assertEquals(1, launches)
+    }
+
+    @Test
+    fun retryAfterMillisecondsRemainOptionalBoundedAndReachPolicyAndHandlerFailures() = runTest {
+        for (value in listOf<Long?>(null, 0L, 1L, 60_000L, 9_007_199_254_740_991L)) {
+            assertEquals(value, RuntimeRpcError(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", value).retryAfterMs)
+            assertEquals(value, RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", value).retryAfterMs)
+            assertEquals(value, RuntimeHandlerException(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", value).retryAfterMs)
+            val wire = RuntimeRpcError(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", value).toRpcValue()
+            assertEquals(RpcValue.StringValue("RATE_LIMITED"), wire.value["code"])
+            assertEquals(RpcValue.StringValue("Wait"), wire.value["message"])
+            assertEquals(value?.let { RpcValue.Number(it.toDouble()) }, wire.value["retryAfterMs"])
+            assertEquals(value != null, "retryAfterMs" in RuntimeRpcJson.encodeValue(wire))
+        }
+        for (invalid in listOf(-1L, 9_007_199_254_740_992L, Long.MAX_VALUE)) {
+            assertThrows(IllegalArgumentException::class.java) { RuntimeRpcError(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", invalid) }
+            assertThrows(IllegalArgumentException::class.java) { RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", invalid) }
+            assertThrows(IllegalArgumentException::class.java) { RuntimeHandlerException(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", invalid) }
+        }
+        val policy = MutablePolicy()
+        val dispatcher = RuntimeRpcDispatcher(identity, policy, RuntimeM1Handlers(
+            clipboardWrite = RuntimeClipboardWriteHandler { throw RuntimeHandlerException(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", 321L) },
+        ))
+        policy.decision = RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "Wait", 123L)
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, 1L)
+        assertEquals(123L, (dispatcher.dispatch(request(), inbound) as RuntimeRpcResponse.Failure).error.retryAfterMs)
+        policy.decision = RuntimePolicyDecision.Allowed
+        assertEquals(321L, (dispatcher.dispatch(request(), inbound) as RuntimeRpcResponse.Failure).error.retryAfterMs)
+        assertNull((dispatcher.dispatch(request().copy(nonce = "stale"), inbound) as RuntimeRpcResponse.Failure).error.retryAfterMs)
+    }
+
+    @Test
+    fun rateLimitWaitUsesTheOldestCallAndNeverRaisesExistingLimits() = runTest {
+        var clock = 1_000L
+        val policy = DefaultRuntimeAuthorizationPolicy(
+            object : RuntimeGrantStateSource {
+                override suspend fun currentVersionCode(toolId: String) = identity.versionCode
+                override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId) = true
+            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> RuntimePolicyDecision.Allowed }, { clock },
+        )
+        val method = checkNotNull(ToolBoxApiV1.method("browser.open"))
+        repeat(10) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
+        assertEquals(60_000L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
+        clock = 60_999L
+        assertEquals(1L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
+        clock = 0L // Defensive clock rollback remains a bounded wait.
+        assertEquals(60_000L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
+        clock = 61_000L
+        assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256))
+    }
+
     @Test
     fun ordinaryStorageBatchesValidateEveryEntryAndAllAuthorizationLayersBeforeEffects() = runTest {
         var reads = 0

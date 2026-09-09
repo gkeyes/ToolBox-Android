@@ -2,6 +2,7 @@ import axios from "axios";
 import { authState, logout } from "../stores/authStore.js";
 import { toast } from "sonner";
 import { SERVER_URL, basicAuth, toolboxAxiosAdapter } from "../toolbox/network.js";
+import { waitForRateLimit } from "../toolbox/rate-limit.js";
 
 // 创建 axios 实例
 const createApiClient = () => {
@@ -44,9 +45,11 @@ const createApiClient = () => {
 
 // 创建 API 客户端实例
 let apiClient = createApiClient();
+let authGeneration = 0;
 
 // 监听认证状态变化
 authState.listen((newAuth) => {
+  authGeneration += 1;
   apiClient.defaults.baseURL = SERVER_URL;
   if (newAuth?.authType === "token") {
     apiClient.defaults.headers["X-Auth-Token"] = newAuth.token;
@@ -60,10 +63,52 @@ authState.listen((newAuth) => {
   }
 });
 
+function cancelled() {
+  return Object.assign(new Error("登录状态或操作意图已改变，此次操作已停止。"), { code: "CANCELLED" });
+}
+
+function checkAuthGeneration(generation) {
+  if (generation !== authGeneration) {
+    throw Object.assign(new Error("登录状态已改变，此次操作已停止。"), { code: "ACCOUNT_CHANGED" });
+  }
+}
+
+// Every caller, including ordinary fetches without a supplied check, stays
+// bound to the credentials with which it started during an admission wait.
+function operationCheck(check) {
+  const generation = authGeneration;
+  return async () => {
+    checkAuthGeneration(generation);
+    if (await check?.() === false) throw cancelled();
+    checkAuthGeneration(generation);
+  };
+}
+
+async function withAdmissionRetry(operation, check) {
+  const generation = authGeneration;
+  const current = operationCheck(check);
+  while (true) {
+    await current();
+    // Optional mutation hooks distinguish a sent toggle from one the host
+    // rejected before execution. Waiting checks never mark a batch as sent.
+    if (await check?.beforeRequest?.() === false) throw cancelled();
+    checkAuthGeneration(generation);
+    try {
+      const result = await operation();
+      checkAuthGeneration(generation);
+      return result;
+    } catch (error) {
+      if (error?.code !== "RATE_LIMITED" || error?.response) throw error;
+      await check?.onRateLimited?.(error);
+      if (!await waitForRateLimit(error, current)) throw cancelled();
+    }
+  }
+}
+
 // 获取所有订阅源
-export const getFeeds = async () => {
+export const getFeeds = async (check) => {
   try {
-    const response = await apiClient.get("/v1/feeds");
+    const response = await withAdmissionRetry(() => apiClient.get("/v1/feeds"), check);
     return response.data;
   } catch (error) {
     console.error("获取订阅源失败:", error);
@@ -72,11 +117,11 @@ export const getFeeds = async () => {
 };
 
 // 获取指定订阅源的文章
-export const getFeedEntries = async (feedId, params = {}) => {
+export const getFeedEntries = async (feedId, params = {}, check) => {
   try {
-    const response = await apiClient.get("/v1/feeds/" + feedId + "/entries", {
+    const response = await withAdmissionRetry(() => apiClient.get("/v1/feeds/" + feedId + "/entries", {
       params: { direction: "desc", limit: 50, ...params },
-    });
+    }), check);
     return response.data.entries;
   } catch (error) {
     console.error("获取文章失败:", error);
@@ -84,18 +129,19 @@ export const getFeedEntries = async (feedId, params = {}) => {
   }
 };
 
-export const updateEntriesStatus = async (entryIds, status) => {
-  await apiClient.put("/v1/entries", { entry_ids: entryIds, status });
+export const updateEntriesStatus = async (entryIds, status, check) => {
+  await withAdmissionRetry(() => {
+    // A retry check may remove IDs superseded by a later manual intent.
+    if (!entryIds.length) throw cancelled();
+    return apiClient.put("/v1/entries", { entry_ids: [...entryIds], status });
+  }, check);
 };
 
 // 更新文章阅读状态
-export const updateEntryStatus = async (entry) => {
+export const updateEntryStatus = async (entry, check) => {
   try {
     const status = entry.status === "read" ? "unread" : "read";
-    await apiClient.put("/v1/entries", {
-      entry_ids: [entry.id],
-      status,
-    });
+    await updateEntriesStatus([entry.id], status, check);
   } catch (error) {
     console.error(
       `标记文章${entry.status === "read" ? "已读" : "未读"}失败:`,
@@ -106,9 +152,9 @@ export const updateEntryStatus = async (entry) => {
 };
 
 // 更新文章星标状态
-export const updateEntryStarred = async (entry) => {
+export const updateEntryStarred = async (entry, check) => {
   try {
-    await apiClient.put(`/v1/entries/${entry.id}/bookmark`);
+    await withAdmissionRetry(() => apiClient.put(`/v1/entries/${entry.id}/bookmark`), check);
   } catch (error) {
     console.error("更新文章星标状态失败:", error);
     throw error;
@@ -120,36 +166,21 @@ export const updateEntryStarred = async (entry) => {
 // Keep the upstream synchronization batch size. The adaptive fallback below
 // only handles a single response exceeding ToolBox's transport budget.
 const SYNC_PAGE_SIZE = 1000;
-async function waitForNetworkWindow(check) {
-  // ToolBox's rolling request window is 60 seconds. Check cancellation while
-  // yielding so logout does not have to wait for this entire backoff.
-  const until = Date.now() + 60000;
-  while (Date.now() < until) {
-    check();
-    await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
-  }
-  check();
-}
-async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = () => {}) {
+async function fetchEntryPage(endpoint, filters, offset, requestedSize, check) {
   let pageSize = requestedSize;
-  let retriedRateLimit = false;
+  const current = operationCheck(check);
   while (true) {
-    check();
+    await current();
     try {
-      const { data } = await apiClient.get(endpoint, {
+      const { data } = await withAdmissionRetry(() => apiClient.get(endpoint, {
         params: { ...filters, offset, limit: pageSize },
         toolboxMaxResponseBytes: 4 * 1024 * 1024,
-      });
-      check();
+      }), current);
+      await current();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
       return { data, pageSize };
     } catch (error) {
-      check();
-      if (error.code === "RATE_LIMITED" && !retriedRateLimit) {
-        retriedRateLimit = true;
-        await waitForNetworkWindow(check);
-        continue;
-      }
+      await current();
       if (error.code !== "QUOTA_EXCEEDED" || pageSize <= 1) throw error;
       pageSize = Math.max(1, Math.floor(pageSize / 2));
     }
@@ -157,7 +188,8 @@ async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = 
 }
 
 // Stable ID order avoids the publication-time reordering of the visual list.
-export async function getEntriesInBatches(endpoint, params = {}, check = () => {}, onPage) {
+export async function getEntriesInBatches(endpoint, params = {}, check, onPage) {
+  const current = operationCheck(check);
   const initialOffset = params.offset || 0;
   const filters = { order: "id", direction: "asc", ...params };
   delete filters.limit;
@@ -167,7 +199,7 @@ export async function getEntriesInBatches(endpoint, params = {}, check = () => {
   let offset = initialOffset;
   let pageSize = SYNC_PAGE_SIZE;
   while (true) {
-    const result = await fetchEntryPage(endpoint, filters, offset, pageSize, check);
+    const result = await fetchEntryPage(endpoint, filters, offset, pageSize, current);
     pageSize = result.pageSize;
     const { entries: batch, total } = result.data;
     if (!batch.length && Number.isFinite(total) && offset < total) {
@@ -184,7 +216,7 @@ export async function getEntriesInBatches(endpoint, params = {}, check = () => {
     // another. Collection remains available for callers that need an array.
     if (onPage) await onPage(fresh);
     else entries.push(...fresh);
-    check();
+    await current();
     offset += batch.length;
     if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return onPage ? undefined : entries;
   }
@@ -203,13 +235,14 @@ export const getNewEntries = async (lastSyncTime, check, onPage) => {
 };
 
 // 标记全部已读
-export const markAllAsRead = async (type, id = null) => {
+export const markAllAsRead = async (type, id = null, check) => {
+  const current = operationCheck(check);
   try {
     let endpoint = "/v1/entries";
 
     // 如果是用户级别的标记已读，先获取用户信息
     if (type === "all") {
-      const response = await apiClient.get("/v1/me");
+      const response = await withAdmissionRetry(() => apiClient.get("/v1/me"), current);
       const userId = response.data.id;
       endpoint = `/v1/users/${userId}/mark-all-as-read`;
     } else if (type === "feed" && id) {
@@ -218,7 +251,8 @@ export const markAllAsRead = async (type, id = null) => {
       endpoint = `/v1/categories/${id}/mark-all-as-read`;
     }
 
-    await apiClient.put(endpoint);
+    await current();
+    await withAdmissionRetry(() => apiClient.put(endpoint), check);
   } catch (error) {
     console.error("标记全部已读失败:", error);
     throw error;
@@ -317,9 +351,9 @@ export const updateCategory = async (categoryId, title) => {
 };
 
 // 获取所有分类
-export const getCategories = async () => {
+export const getCategories = async (check) => {
   try {
-    const response = await apiClient.get("/v1/categories");
+    const response = await withAdmissionRetry(() => apiClient.get("/v1/categories"), check);
     return response.data;
   } catch (error) {
     console.error("获取分类列表失败:", error);

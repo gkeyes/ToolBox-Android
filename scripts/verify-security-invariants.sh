@@ -11,6 +11,7 @@ needles=(
   'allowFileAccess = true'
   'allowContentAccess = true'
   'allowUniversalAccessFromFileURLs = true'
+  'Intent.parseUri('
 )
 
 reasons=(
@@ -20,6 +21,7 @@ reasons=(
   'WebView file access must remain disabled.'
   'WebView content access must remain disabled.'
   'Universal file URL access must remain disabled.'
+  'Tool URLs must never be parsed into caller-controlled Android Intents; browser.open uses a fixed browser selector.'
 )
 
 while IFS= read -r -d '' source_file; do

@@ -116,6 +116,7 @@ object SupportedToolCapabilities {
         "clipboard.write",
         "clipboard.read",
         "share",
+        "browser",
         "files.open",
         "files.save",
         "network",

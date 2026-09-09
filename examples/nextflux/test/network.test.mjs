@@ -124,6 +124,22 @@ test("native errors retain known codes and discard potentially sensitive message
   });
 });
 
+test("native rate limits retain only a valid numeric remaining window", async () => {
+  host(async () => { throw { code: "RATE_LIMITED", retryAfterMs: 1375, message: "secret body", config: { token: "secret" } }; });
+  await assert.rejects(request("/v1/entries"), (error) => {
+    assert.equal(error.code, "RATE_LIMITED");
+    assert.equal(error.retryAfterMs, 1375);
+    assert.doesNotMatch(JSON.stringify(error), /secret/);
+    return true;
+  });
+  for (const retryAfterMs of [undefined, -1, 1.5, Infinity, "1375"]) {
+    host(async () => { throw { code: "RATE_LIMITED", retryAfterMs }; });
+    await assert.rejects(request("/v1/entries"), (error) => error.code === "RATE_LIMITED" && error.retryAfterMs === undefined);
+  }
+  host(async () => { throw { code: "NETWORK_TIMEOUT", retryAfterMs: 1375 }; });
+  await assert.rejects(request("/v1/entries"), (error) => error.code === "NETWORK_TIMEOUT" && error.retryAfterMs === undefined);
+});
+
 test("base64 responses and Basic credentials preserve Unicode UTF-8", () => {
   const value = "中文 / café";
   const base64 = Buffer.from(value).toString("base64");
@@ -286,7 +302,7 @@ test("pagination stops after account cancellation and rejects incomplete results
 });
 
 
-test("ToolBox rate limiting waits once without dropping or restarting a page", async (t) => {
+test("ToolBox rate limiting retains the older-host wait without dropping or restarting a page", async (t) => {
   const { getEntriesInBatches } = await import("../src/api/miniflux.js");
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   const offsets = [];
@@ -317,6 +333,126 @@ test("ToolBox rate limiting waits once without dropping or restarting a page", a
   t.mock.timers.tick(1000);
   await failure;
   assert.equal(requests, 1, "logout cancels backoff before another network request");
+});
+
+test("repeated admission rejections use each remaining window for the same page", async (t) => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const offsets = [];
+  host(async ({ url }) => {
+    offsets.push(Number(new URL(url).searchParams.get("offset")));
+    if (offsets.length <= 2) throw { code: "RATE_LIMITED", retryAfterMs: offsets.length === 1 ? 1500 : 250 };
+    return { status: 200, headers: {}, body: '{"total":1,"entries":[{"id":1}]}', bodyEncoding: "text" };
+  });
+  const result = getEntriesInBatches("/v1/entries");
+  await new Promise(setImmediate);
+  t.mock.timers.tick(1000);
+  await new Promise(setImmediate);
+  assert.deepEqual(offsets, [0]);
+  t.mock.timers.tick(500);
+  await new Promise(setImmediate);
+  assert.deepEqual(offsets, [0, 0]);
+  t.mock.timers.tick(249);
+  await new Promise(setImmediate);
+  assert.deepEqual(offsets, [0, 0]);
+  t.mock.timers.tick(1);
+  assert.deepEqual(await result, [{ id: 1 }]);
+  assert.deepEqual(offsets, [0, 0, 0]);
+});
+
+test("automatic read retry refilters pending IDs before marking the batch sent", async (t) => {
+  const { updateEntriesStatus } = await import("../src/api/miniflux.js");
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const ids = [1, 2];
+  const cancelled = new Set();
+  const payloads = [];
+  let phase = "queued";
+  const check = () => {
+    if (phase === "queued") ids.splice(0, ids.length, ...ids.filter((id) => !cancelled.has(id)));
+    return ids.length > 0;
+  };
+  check.beforeRequest = () => { phase = "sent"; };
+  check.onRateLimited = () => { phase = "queued"; };
+  host(async ({ body }) => {
+    assert.equal(phase, "sent");
+    payloads.push(JSON.parse(body));
+    if (payloads.length === 1) throw { code: "RATE_LIMITED", retryAfterMs: 500 };
+    return { status: 204, headers: {}, body: "", bodyEncoding: "text" };
+  });
+  const updating = updateEntriesStatus(ids, "read", check);
+  await new Promise(setImmediate);
+  assert.equal(phase, "queued", "native admission rejection makes unsent intent cancellable");
+  cancelled.add(1);
+  t.mock.timers.tick(500);
+  await updating;
+  assert.deepEqual(payloads, [{ entry_ids: [1, 2], status: "read" }, { entry_ids: [2], status: "read" }]);
+});
+
+test("bookmark admission retry rechecks intent and does not resend a cancelled toggle", async (t) => {
+  const { updateEntryStarred } = await import("../src/api/miniflux.js");
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  let active = true;
+  let requests = 0;
+  host(async () => { requests += 1; throw { code: "RATE_LIMITED", retryAfterMs: 100 }; });
+  const updating = updateEntryStarred({ id: 1 }, () => active);
+  const rejected = assert.rejects(updating, { code: "CANCELLED" });
+  await new Promise(setImmediate);
+  active = false;
+  t.mock.timers.tick(100);
+  await rejected;
+  assert.equal(requests, 1);
+});
+
+test("bookmark HTTP 429 and uncertain failures never replay the toggle", async () => {
+  const { updateEntryStarred } = await import("../src/api/miniflux.js");
+  for (const failure of [null, { code: "NETWORK_TIMEOUT" }, { code: "INTERNAL_ERROR" }]) {
+    let requests = 0;
+    let admissionRejections = 0;
+    const check = () => {};
+    check.onRateLimited = () => { admissionRejections += 1; };
+    host(async () => {
+      requests += 1;
+      if (failure) throw failure;
+      return { status: 429, headers: { "Retry-After": "1" }, body: "", bodyEncoding: "text" };
+    });
+    await assert.rejects(updateEntryStarred({ id: 1 }, check), (error) => error.code !== "RATE_LIMITED");
+    assert.equal(requests, 1);
+    assert.equal(admissionRejections, 0);
+  }
+});
+
+test("acknowledged bookmark toggle survives a newer intent while it was in flight", async () => {
+  const { updateEntryStarred } = await import("../src/api/miniflux.js");
+  const dispatched = deferred();
+  const response = deferred();
+  let active = true;
+  let requests = 0;
+  host(async () => { requests += 1; dispatched.resolve(); await response.promise;
+    return { status: 204, headers: {}, body: "", bodyEncoding: "text" };
+  });
+  const updating = updateEntryStarred({ id: 1 }, () => active);
+  await dispatched.promise;
+  active = false;
+  response.resolve();
+  await updating;
+  assert.equal(requests, 1, "the caller can commit the acknowledged state before the next intent");
+});
+
+test("ordinary fetches without a caller check cancel admission wait after account changes", async (t) => {
+  const { getFeeds } = await import("../src/api/miniflux.js");
+  const { authState } = await import("../src/stores/authStore.js");
+  const previous = authState.get();
+  t.after(() => authState.set(previous));
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  let requests = 0;
+  host(async () => { requests += 1; throw { code: "RATE_LIMITED", retryAfterMs: 3000 }; });
+  const fetching = getFeeds();
+  const rejected = assert.rejects(fetching, { code: "ACCOUNT_CHANGED" });
+  await new Promise(setImmediate);
+  authState.set({ ...previous, userId: "another-account" });
+  t.mock.timers.tick(1000);
+  await rejected;
+  assert.equal(requests, 1);
 });
 
 

@@ -222,6 +222,7 @@ ToolBox读取当前已安装版本的这张图，供工具列表、最近使用�
 - clipboard.write：写入剪贴板；默认开启；需要近期真实触摸。
 - clipboard.read：读取剪贴板；默认关闭；需要真实手势及原生确认。
 - share：系统分享；默认关闭；需要近期真实触摸。
+- browser：浏览器打开；默认关闭；需要前台和近期真实触摸；不依赖 network 或 Android 运行时权限。
 - files.open：选择并读取文件；默认关闭；需要近期真实触摸。
 - files.save：保存文件；默认关闭；需要近期真实触摸。
 - network：原生 HTTPS 请求；默认关闭；系统条件：INTERNET。
@@ -244,7 +245,7 @@ Android 授权属于 ToolBox App，工具开关属于当前小工具；两者都
 
 ToolBox 自动在顶层网页注入 window.ToolBox，不需要下载或手动引入 SDK 脚本。sdk/toolbox-api.d.ts 是类型声明文件，不是浏览器执行文件。
 
-先等待 ToolBox.ready() 再进行原生调用。剪贴板、触觉、文件、相机、分享和快捷方式等交互，要在按钮的真实点击回调中及时发起；不要先等待长网络请求再尝试使用该手势。不能用 JS 自报 userGesture:true 代替触摸。
+先等待 ToolBox.ready() 再进行原生调用。剪贴板、触觉、文件、相机、分享、浏览器打开和快捷方式等交互，要在按钮的真实点击回调中及时发起；不要先等待长网络请求再尝试使用该手势。不能用 JS 自报 userGesture:true 代替触摸。
 
 strict 模式使用本地外链脚本和样式，不要写内联 script、onclick 字符串、eval、new Function、远程脚本或 CDN 依赖。构建工具产出的资源要一起打包。网络数据用 ToolBox.network.request；不要依赖页面 fetch、WebSocket、iframe 或远程子资源绕过ToolBox网络权限。
 
@@ -648,7 +649,7 @@ TaskState 为 QUEUED、RUNNING、COMPLETED、CANCELLED；RunOutcome 为 SUCCEEDE
 
 ## 系统能力
 
-文件、相机、分享等均通过 ToolBox 接口打开真实系统界面。
+文件、相机、分享、浏览器打开等均通过 ToolBox 接口打开真实系统界面。
 
 ### 文件选择、读取与保存
 
@@ -702,6 +703,54 @@ const accepted = await ToolBox.shortcuts.pin("我的工具");
 ```
 
 以上是三个独立操作的调用形式，不应把整段绑定到一次点击连续弹出三个系统界面。
+
+### 在浏览器打开网页
+
+browser.open(url) 返回 Promise<void>，在系统浏览器中打开 HTTP/HTTPS 绝对地址。先在 permissions 中加入 {"name":"browser","reason":"在浏览器阅读原文"}，再由用户到工具权限页开启“浏览器打开”。它是独立能力，不依赖 network，也不会请求 Android 运行时权限。
+
+URL 最多 2048 个字符，不能包含用户名、密码或控制字符；相对地址、无效地址及 HTTP/HTTPS 之外的 scheme 均返回 INVALID_REQUEST。RPC 只接受 {url}，不能传 action、package、component、selector 或 extras。需要前台和近期真实触摸，每工具每分钟最多 10 次；页面加载、后台定时器和等待长请求后的旧手势不能打开浏览器。
+
+成功只表示系统接受了浏览器启动请求，不表示网页已加载或用户已阅读。宿主只选择浏览器；没有可用浏览器或系统拒绝启动时返回错误，不会改为打开任意 App。普通链接导航、window.open 或修改 location 仍不能绕过 WebView 导航限制。
+
+下面两段分别加入 HTML 和外链脚本；按钮的目标地址应在点击前准备好。旧宿主可能没有 browser.open，先检查接口并提示升级，不模拟打开成功。
+
+```html
+<button id="open-article" type="button" disabled>在浏览器阅读原文</button>
+<p id="browser-status" role="status" aria-live="polite">正在准备</p>
+```
+
+```js
+(async function () {
+  const api = window.ToolBox;
+  const button = document.getElementById("open-article");
+  const status = document.getElementById("browser-status");
+  if (!api?.browser?.open) {
+    status.textContent = "请使用支持浏览器打开的 ToolBox 版本";
+    return;
+  }
+  try {
+    await api.ready();
+  } catch (error) {
+    status.textContent = (error.code || "ERROR") + "：工具尚未就绪";
+    return;
+  }
+  button.disabled = false;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await api.browser.open("https://example.com/article");
+      status.textContent = "系统已接受浏览器打开请求";
+    } catch (error) {
+      const waitMs = error.retryAfterMs;
+      status.textContent = error.code === "RATE_LIMITED" && Number.isSafeInteger(waitMs) && waitMs >= 0
+        ? "请等待约 " + Math.ceil(waitMs / 1000) + " 秒后再次点击"
+        : (error.code || "ERROR") + "：未能打开，请检查浏览器、工具权限并重新点击";
+    } finally {
+      button.disabled = false;
+    }
+  });
+})();
+```
 
 ### 一次定位与位置监听
 
@@ -950,7 +999,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 - WRONG_ORIGIN、NOT_MAIN_FRAME：只在当前工具顶层页面调用，不要从 iframe、worker 或任意网站调用。
 - NETWORK_BLOCKED：检查 manifest 域名、HTTPS、端口、重定向目标和地址类型。
 - NETWORK_UNAVAILABLE、NETWORK_TIMEOUT：连接、读取失败或请求超时，检查网络并退避重试；与权限或域名阻止不同。
-- RATE_LIMITED：降低调用频率并等待，不要即时无限重试。
+- RATE_LIMITED：降低调用频率并等待；如果错误带 retryAfterMs，可用它提示剩余等待时间，不要即时无限重试。
 - QUOTA_EXCEEDED：单次消息、文件或响应超限，使用分片或分页传输。ToolBox 0.6.5 起不对持久存储总容量设配额。
 - BUSY：当前系统交互或操作尚未完成，等结束后再试。
 - DUPLICATE_TASK：后台任务 key 已存在，复用已有任务或选择新的业务标识。
@@ -959,6 +1008,8 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 - INTERNAL_ERROR：保留错误码、操作路径、ToolBox/工具版本，再提供截图反馈；不要附带 Token 或私人文件内容。
 
 空白页还要检查 index.html 的 charset/viewport、相对资源路径、外链脚本及 CSP 限制。普通浏览器能显示页面，不代表ToolBox已授予网络、文件或后台权限。
+
+接口错误始终保留 code 和 message，可选的 retryAfterMs 是当前限流窗口剩余的非负安全整数毫秒，上限为 Number.MAX_SAFE_INTEGER（9007199254740991）。旧宿主或其他错误可以省略该字段；字段不存在时使用有上限的退避或提示用户稍后重试，不能把缺省当作立即可用。等待时间是节奏提示，之后仍可能因其他调用、撤权、离开前台或手势过期而失败；浏览器打开、分享、剪贴板等交互能力应等用户再次点击，不自动重试副作用操作。
 
 ### 四个内置范例怎么参考
 
@@ -978,7 +1029,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639";
+export type ToolBoxContractSha256 = "dbe81127fe54d37775006add8c64747243b0b14365f2bc482cbacb7d14908998";
 
 export type ToolBoxCapability =
   | "storage"
@@ -986,6 +1037,7 @@ export type ToolBoxCapability =
   | "clipboard.write"
   | "clipboard.read"
   | "share"
+  | "browser"
   | "files.open"
   | "files.save"
   | "network"
@@ -1042,6 +1094,7 @@ export type ToolBoxMethodName =
   | "background.cancelTimer"
   | "clipboard.readText"
   | "share.text"
+  | "browser.open"
   | "files.open"
   | "files.read"
   | "files.save"
@@ -1087,6 +1140,8 @@ export interface StorageApplyRequest {
 export interface ToolBoxApiError {
   code: ToolBoxErrorCode;
   message: string;
+  /** Optional non-negative safe integer milliseconds (at most Number.MAX_SAFE_INTEGER) remaining in the rate-limit window. A pacing hint; recheck permissions, context and gestures before retrying. Older hosts and other errors may omit it. */
+  retryAfterMs?: number;
 }
 
 export interface ReadyResult {
@@ -1351,6 +1406,10 @@ export interface ToolBoxApi {
   };
   share: {
     text(text: string): Promise<void>;
+  };
+  browser: {
+    /** Opens an absolute HTTP/HTTPS URL (at most 2048 characters, without credentials or control characters) in a system browser. Requires the separate, default-off browser capability, foreground context and a recent real touch; at most 10 calls per minute. No network capability or Android runtime permission is required. Resolves when the system accepts the launch, not when the page loads. */
+    open(url: string): Promise<void>;
   };
   files: {
     open(mimeTypes?: string[]): Promise<FileToken | null>;

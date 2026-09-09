@@ -7,6 +7,21 @@ import org.junit.Test
 
 class ManifestValidatorTest {
     @Test
+    fun browserCapabilityIsRecognizedIndependentlyOfNetworkAndRejectsDuplicateDeclarations() {
+        val permission = "{\"name\":\"browser\",\"reason\":\"Read the original page\",\"required\":true}"
+        val source = manifest(30_000, "0.6.7").toString(Charsets.UTF_8)
+            .replace("{\"name\":\"network\",\"reason\":\"Fetch data\"}", permission)
+            .replace("\"network\":{\"allowDomains\":[\"api.example.com\"],\"timeoutMs\":30000},", "")
+        val parsed = ManifestValidator.parse(source.toByteArray(), PackageLimits())
+        assertEquals(listOf("browser"), parsed.permissions.map { it.name })
+        assertEquals(null, parsed.network)
+        assertTrue("browser" in io.toolbox.tool.packagekit.lifecycle.SupportedToolCapabilities.All)
+        assertThrows(JsonFormatException::class.java) {
+            ManifestValidator.parse(source.replace(permission, "$permission,$permission").toByteArray(), PackageLimits())
+        }
+    }
+
+    @Test
     fun networkTimeoutAcceptsThe60MinuteCeilingAndRequiresACompatibleHost() {
         assertEquals(3_600_000, parse(3_600_000).network?.timeoutMs)
 

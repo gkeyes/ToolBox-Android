@@ -1,5 +1,6 @@
 import { atom, map } from "nanostores";
-import { runAccountOperation } from "./syncStore.js";
+import { runAccountOperation, runAccountScopeOperation, registerAccountRecovery, onAccountInvalidated } from "./syncStore.js";
+import { createAutoReadQueue } from "../toolbox/auto-read.js";
 import {
   getFeeds, getArticleMetadata, getCachedArticleMetadata, getArticleIds,
   getArticleCounts, openArticleQuery, readArticleQueryPage, closeArticleQuery,
@@ -27,6 +28,19 @@ let queryGeneration = 0;
 let querySession = null;
 const stateOverrides = new Map();
 export const getArticleQueryGeneration = () => queryGeneration;
+const autoReadQueue = createAutoReadQueue({
+  run: runAccountOperation,
+  selectIds: (ids) => getArticleIds({ ids, statusNot: "read" }),
+  send: (ids, check) => minifluxAPI.updateEntriesStatus(ids, "read", check),
+  save: saveAcknowledged,
+});
+onAccountInvalidated(() => {
+  const failure = new Error("登录状态已改变，此次操作已停止。");
+  failure.code = "ACCOUNT_CHANGED";
+  autoReadQueue.cancelAll(failure);
+});
+
+export const queueArticleRead = (article) => autoReadQueue.enqueue(article.id);
 
 export function resetArticleQuery() {
   queryGeneration += 1;
@@ -151,21 +165,34 @@ async function saveAcknowledged(patches, check) {
   try { result = await patchArticleState(patches); }
   catch (failure) {
     check(false);
-    throw new Error("服务器已保存，但本地缓存保存失败；请刷新同步后再操作。", { cause: failure });
+    // The server result is known. Recovery only replays the local field patch;
+    // retrying a bookmark toggle on the server could undo the user's action.
+    registerAccountRecovery(async (recoveryCheck) => {
+      recoveryCheck(false);
+      const recovered = await patchArticleState(patches);
+      // A lost commit reply can make replay a no-op after the worker confirms
+      // its original root. Read the acknowledged rows even if articles is [].
+      const articles = await getCachedArticleMetadata({ ids: patches.map((patch) => patch.id) });
+      publishUpdates({ ...recovered, articles }, recoveryCheck);
+    });
+    const recoveryFailure = new Error("服务器已保存，但本地缓存保存失败；下次操作会先重试本地保存。", { cause: failure });
+    recoveryFailure.code = "LOCAL_STATE_PENDING";
+    throw recoveryFailure;
   }
   publishUpdates(result, check);
 }
 
 export function updateArticleStatus(article, desiredStatus) {
+  autoReadQueue.cancelUnsent(article.id);
   return runAccountOperation(async (check) => {
     const current = await getArticleMetadata(article.id);
     check();
     if (!current) throw new Error("该文章已不在本地缓存，请刷新后重试。");
     const status = desiredStatus ?? (current.status === "read" ? "unread" : "read");
     if (current.status === status) return;
-    await minifluxAPI.updateEntriesStatus([current.id], status);
+    await minifluxAPI.updateEntriesStatus([current.id], status, check);
     await saveAcknowledged([{ id: current.id, status }], check);
-  });
+  }, { priority: "manual" });
 }
 
 export function updateArticleStarred(article) {
@@ -173,19 +200,21 @@ export function updateArticleStarred(article) {
     const current = await getArticleMetadata(article.id);
     check();
     if (!current) throw new Error("该文章已不在本地缓存，请刷新后重试。");
-    await minifluxAPI.updateEntryStarred(current);
+    await minifluxAPI.updateEntryStarred(current, check);
     await saveAcknowledged([{ id: current.id, starred: current.starred === 1 ? 0 : 1 }], check);
-  });
+  }, { priority: "manual" });
 }
 
 export function markAllAsRead(type = "all", id = null) {
-  return runAccountOperation(async (check) => {
+  // This server-wide scope can include articles absent from the current cache.
+  // Wait outside the writer until the whole sync has published those articles.
+  return runAccountScopeOperation(async (check) => {
     const feeds = await getFeeds();
     const feedIds = feeds.filter((feed) => type === "feed" ? feed.id === Number(id) :
       type === "category" ? feed.categoryId === Number(id) : true).map((feed) => feed.id);
     const ids = await getArticleIds({ feedIds, statusNot: "read" });
     check();
-    await minifluxAPI.markAllAsRead(type, id);
+    await minifluxAPI.markAllAsRead(type, id, check);
     await saveAcknowledged(ids.map((id) => ({ id, status: "read" })), check);
   });
 }
@@ -200,9 +229,9 @@ function markRangeAsRead(articleId, direction) {
     const ids = await getArticleIds({ ids: selected, statusNot: "read" });
     if (!ids.length) return;
     check();
-    await minifluxAPI.updateEntriesStatus(ids, "read");
+    await minifluxAPI.updateEntriesStatus(ids, "read", check);
     await saveAcknowledged(ids.map((id) => ({ id, status: "read" })), check);
-  });
+  }, { priority: "manual" });
 }
 export const markAboveAsRead = (id) => markRangeAsRead(id, "above");
 export const markBelowAsRead = (id) => markRangeAsRead(id, "below");

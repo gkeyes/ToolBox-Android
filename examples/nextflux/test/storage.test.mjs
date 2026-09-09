@@ -230,14 +230,23 @@ test("18,518 complete articles grow the COW directory and survive restore withou
   assert.ok(jsonBytes(rows) > 6 * 1024 * 1024);
   await seed(cache, rows);
   assert.ok(store.data.get(ROOT_KEY).tables.articles.level >= 1);
-  const reopened = engine(store);
+  const accesses = [];
+  const reopened = engine(store, { onIndexAccess: (event) => accesses.push(event) });
   assert.equal((await reopened.selectIds()).length, rows.length);
   for (let offset = 0; offset < rows.length; offset += 128) {
     const expected = rows.slice(offset, offset + 128);
     const actual = await Promise.all(expected.map((row) => reopened.readArticle(row.id)));
     actual.forEach((row, index) => assert.equal(row.content, expected[index].content));
   }
+  const bodies = new Set((await storedArticles(store)).map((row) => row.bodyRef));
+  store.resetCalls(); accesses.length = 0;
   await reopened.patchState([{ id: 18517, status: "read" }]);
+  assert.equal(accesses.filter(({ kind }) => kind === "row").length, 128, "one bucket, independent of library size");
+  assert.ok(accesses.filter(({ kind }) => kind === "node").length <= 2, "only the two directory ancestors");
+  assert.ok(accesses.every(({ table }) => table === "articles"));
+  assert.equal(store.reads.length, 0, "the loaded metadata index needs no native body or index reads");
+  assert.ok(store.writes.flatMap(({ set }) => set).every(({ key }) => !bodies.has(key.replace(/\.p\d+$/, ""))));
+  assert.equal(store.writes.filter(rootWrite).length, 1);
   assert.equal((await engine(store).readMetadata(18517)).status, "read");
   assert.equal((await engine(store).selectIds()).length, rows.length);
 });
@@ -305,4 +314,163 @@ test("db metadata queries preserve hidden feeds, counts and sorting through the 
     await db.clearArticleCache(); assert.equal(db.getLastSyncTime(), null);
     assert.equal([...store.data.keys()].filter((key) => key.startsWith(CACHE_PREFIX)).length, 1);
   } finally { delete globalThis.ToolBox; }
+});
+
+test("staging bodies and index candidates yield to acknowledged state commits", async () => {
+  const store = fakeStorage();
+  const started = deferred(); const release = deferred();
+  let pauseBody = false;
+  const cache = engine(store, { digest: async (body) => {
+    if (pauseBody && body.content === "new body") { started.resolve(); await release.promise; }
+    return JSON.stringify(body);
+  } });
+  await seed(cache, [article(1)]);
+  const oldCheckpoint = (await cache.meta()).lastSyncTime;
+  const token = await cache.prepareSync({ syncedAt: "2026-09-10T00:00:00.000Z" });
+  pauseBody = true;
+  const staging = cache.applySyncBatch(token, [article(1, { content: "new body", starred: 1 })]);
+  await started.promise;
+  await cache.patchState([{ id: 1, status: "read" }]);
+  assert.equal((await cache.readMetadata(1)).status, "read");
+  assert.equal((await cache.readArticle(1)).content, article(1).content);
+  assert.equal((await cache.meta()).lastSyncTime, oldCheckpoint);
+  await assert.rejects(cache.prepareSync(), { code: "BUSY" });
+  await assert.rejects(cache.updateCatalog({ feeds: [] }), { code: "BUSY" });
+  release.resolve(); await staging;
+  const prepared = deferred(); const finishPreparation = deferred();
+  let paused = false;
+  store.beforeApply(async (change) => {
+    if (!paused && !rootWrite(change) && change.set.length) {
+      paused = true; prepared.resolve(); await finishPreparation.promise;
+    }
+  });
+  const building = cache.prepareSyncCommit(token, { feeds: [{ id: 1 }], categories: [] });
+  await prepared.promise;
+  await cache.patchState([{ id: 1, starred: 0 }]);
+  assert.equal((await cache.readMetadata(1)).starred, 0);
+  finishPreparation.resolve(); await building;
+  store.beforeApply(undefined);
+  store.resetCalls();
+  await cache.commitSync(token, { feeds: [{ id: 1 }], categories: [] });
+  assert.equal(store.writes.filter(rootWrite).length, 1);
+  assert.equal((await cache.readArticle(1)).content, "new body");
+  assert.equal((await cache.readMetadata(1)).status, "read");
+  assert.equal((await cache.readMetadata(1)).starred, 0, "explicit no-op intent overrides stale incoming starred state");
+  assert.equal((await cache.meta()).lastSyncTime, "2026-09-10T00:00:00.000Z");
+  const restored = engine(store);
+  assert.equal((await restored.readArticle(1)).status, "read");
+  assert.equal((await restored.readArticle(1)).starred, 0);
+});
+
+test("a prepared sync rebases only confirmed fields and discards a deletion conflict without a checkpoint", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1), article(2)]);
+  const token = await cache.prepareSync({ syncedAt: "2026-09-10T00:00:00.000Z" });
+  await cache.applySyncBatch(token, [article(1, { content: "fresh body", title: "fresh title", starred: 1 }), article(2)]);
+  await cache.prepareSyncCommit(token, { feeds: [{ id: 1 }], categories: [] });
+  await cache.patchState([{ id: 1, status: "read" }]);
+  await cache.commitSync(token, { feeds: [{ id: 1 }], categories: [] });
+  const row = await cache.readArticle(1);
+  assert.equal(row.status, "read"); assert.equal(row.starred, 1);
+  assert.equal(row.content, "fresh body"); assert.equal(row.title, "fresh title");
+  const checkpoint = await cache.meta();
+  const conflicting = await cache.prepareSync({ syncedAt: "2026-09-11T00:00:00.000Z" });
+  await cache.applySyncBatch(conflicting, [{ id: 2, status: "removed" }]);
+  await cache.patchState([{ id: 2, starred: 1 }]);
+  const committedRoot = structuredClone(store.data.get(ROOT_KEY));
+  await assert.rejects(cache.commitSync(conflicting, { feeds: [{ id: 1 }], categories: [] }), { code: "SYNC_STATE_CONFLICT" });
+  await cache.abortSync(conflicting);
+  assert.deepEqual(store.data.get(ROOT_KEY), committedRoot);
+  assert.equal((await cache.meta()).lastSyncTime, checkpoint.lastSyncTime);
+  assert.equal((await engine(store).readMetadata(2)).starred, 1);
+});
+
+test("unchanged body title and URL reuse derived metadata while URL changes recompute it", async () => {
+  const store = fakeStorage(); let parsed = 0;
+  const cache = engine(store, { deriveMetadata: (row) => {
+    parsed += 1;
+    return { titleText: row.title, previewText: row.content, coverUrl: `${row.url}/cover` };
+  } });
+  const source = article(1, { url: "https://example.com/first" });
+  await seed(cache, [source]);
+  const [{ bodyRef }] = await storedArticles(store);
+  assert.equal(parsed, 1);
+  store.resetCalls();
+  await seed(cache, [{ ...source, status: "read" }]);
+  assert.equal(parsed, 1);
+  assert.equal(store.reads.flat().some((key) => key.startsWith(bodyRef)), false);
+  assert.equal(store.writes.flatMap(({ set }) => set).some(({ key }) => key.startsWith(bodyRef)), false);
+  await seed(cache, [{ ...source, url: "https://example.com/second" }]);
+  assert.equal(parsed, 2);
+  assert.equal((await cache.readMetadata(1)).coverUrl, "https://example.com/second/cover");
+});
+
+test("GC coalesces retired references across documents within native key and byte limits", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, Array.from({ length: 256 }, (_, index) => article(index * 128)));
+  await cache.collectGarbage();
+  await cache.patchState(Array.from({ length: 256 }, (_, index) => ({ id: index * 128, status: "read" })));
+  store.resetCalls();
+  await cache.collectGarbage();
+  const removals = store.writes.filter(({ remove }) => remove.length);
+  assert.ok(removals.length >= 2, "more than 256 old physical keys are retired");
+  assert.ok(removals.length <= 4, "retired keys share transactions instead of one transaction per reference");
+  assert.equal(removals[0].remove.length, 256);
+  for (const change of removals) {
+    assert.ok(change.remove.length <= 256);
+    assert.ok(jsonBytes(change) <= 1024 * 1024);
+  }
+  assert.equal((await engine(store).selectIds()).length, 256);
+  assert.equal((await cache.readArticle(128)).status, "read");
+});
+
+test("aborting a throttled staging write cancels its retry before reclaiming staged references", async () => {
+  const store = fakeStorage(); let now = 0;
+  const sleeping = deferred(); const wake = deferred();
+  const cache = engine(store, { rateLimit: { now: () => now, sleep: async (ms) => {
+    sleeping.resolve(); await wake.promise; now += ms;
+  } } });
+  await seed(cache, [article(1)]);
+  const committedRoot = structuredClone(store.data.get(ROOT_KEY));
+  let attempts = 0;
+  store.beforeApply((change) => {
+    if (!rootWrite(change) && change.set.length) {
+      attempts += 1;
+      throw Object.assign(new Error("admission limited"), { code: "RATE_LIMITED", retryAfterMs: 30 });
+    }
+  });
+  const token = await cache.prepareSync();
+  const staging = cache.applySyncBatch(token, [article(2)]);
+  const cancelled = assert.rejects(staging, { code: "ACCOUNT_CHANGED" });
+  await sleeping.promise;
+  const aborting = cache.abortSync(token);
+  await tick(); wake.resolve();
+  await Promise.all([aborting, cancelled]);
+  assert.equal(attempts, 1, "cancelled stage never dispatches the delayed write");
+  assert.deepEqual(store.data.get(ROOT_KEY), committedRoot);
+  store.beforeApply(undefined);
+  await cache.collectGarbage();
+  assert.equal((await cache.readArticle(1)).content, article(1).content);
+  assert.equal(await cache.readArticle(2), null);
+});
+
+test("clear drains index preparation before publishing and collecting the empty account root", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  const token = await cache.prepareSync();
+  await cache.applySyncBatch(token, [article(2)]);
+  const entered = deferred(); const release = deferred(); let paused = false;
+  store.beforeApply(async (change) => {
+    if (!paused && !rootWrite(change) && change.set.length) { paused = true; entered.resolve(); await release.promise; }
+  });
+  const preparing = cache.prepareSyncCommit(token, { feeds: [{ id: 1 }], categories: [] });
+  const cancelled = assert.rejects(preparing, { code: "ACCOUNT_CHANGED" });
+  await entered.promise;
+  const clearing = cache.clear();
+  await tick();
+  assert.equal(store.data.get(ROOT_KEY).cleared, undefined, "empty root waits for in-flight native preparation");
+  release.resolve(); await Promise.all([clearing, cancelled]);
+  assert.deepEqual([...store.data.keys()], [ROOT_KEY]);
+  assert.equal(store.data.get(ROOT_KEY).cleared, true);
+  assert.equal(await cache.readArticle(2), null);
 });

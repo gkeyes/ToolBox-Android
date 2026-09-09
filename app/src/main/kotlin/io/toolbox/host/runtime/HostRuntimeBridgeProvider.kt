@@ -90,6 +90,18 @@ internal class HostRuntimeBridgeProvider(
             context = applicationContext,
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
+            authorizeBrowserLaunch = {
+                val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
+                if (current?.versionCode != runtime.versionCode) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
+                }
+                if (current.permissions.none { it.capability == "browser" }) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_DECLARED, "Browser permission is not declared by this tool")
+                }
+                if (!grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.BROWSER)) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Enable browser access in this tool's permissions")
+                }
+            },
         )
         val networkDomains = HostNetworkDomainHandler {
             val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
@@ -122,6 +134,7 @@ internal class HostRuntimeBridgeProvider(
             hostVersion = hostVersion,
             generation = "${runtime.toolId}:${runtime.versionCode}:${UUID.randomUUID()}",
             maxPayloadBytes = runtime.maxBridgePayloadBytes,
+            browserLaunchGuard = continuity.requireForegroundRuntime,
         )
     }
 

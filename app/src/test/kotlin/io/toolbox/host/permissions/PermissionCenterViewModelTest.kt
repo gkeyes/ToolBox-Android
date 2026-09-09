@@ -156,6 +156,15 @@ class PermissionCenterViewModelTest {
         assertFalse(state.items.single { it.capability == "network" }.enabled)
         assertFalse(state.items.single { it.capability == "notifications" }.enabled)
         assertFalse(state.items.single { it.capability == "background.runtime" }.enabled)
+        val browser = state.items.single { it.capability == "browser" }
+        assertFalse(browser.enabled)
+        assertEquals("浏览器打开", browser.title)
+        assertTrue(browser.androidPermissions.isEmpty())
+
+        viewModel.setEnabled("browser", true)
+        viewModel.state.first { current -> current.items.any { it.capability == "browser" && it.enabled } }
+        assertTrue(repositories.grants.observeGrants(TOOL_ID).first().single { it.capability == "browser" }.granted)
+        assertFalse(repositories.grants.observeGrants(TOOL_ID).first().single { it.capability == "network" }.granted)
 
         viewModel.setEnabled("network", true)
         viewModel.state.first { current -> current.items.any { it.capability == "network" && it.enabled } }
@@ -492,7 +501,7 @@ class PermissionCenterViewModelTest {
 private const val TOOL_ID = "io.toolbox.example"
 private const val COARSE_LOCATION = "android.permission.ACCESS_COARSE_LOCATION"
 private const val BACKGROUND_LOCATION = "android.permission.ACCESS_BACKGROUND_LOCATION"
-private val FIXTURE_CAPABILITIES = listOf("storage", "storage.secure", "network", "notifications", "background.runtime")
+private val FIXTURE_CAPABILITIES = listOf("storage", "storage.secure", "network", "notifications", "background.runtime", "browser")
 
 private fun fixtureManifest(
     minHostVersion: String = BuildConfig.VERSION_NAME,

@@ -204,6 +204,7 @@ private fun String.capabilityTitle(): String = when (this) {
     "clipboard.write" -> "写入剪贴板"
     "clipboard.read" -> "读取剪贴板"
     "share" -> "系统分享"
+    "browser" -> "浏览器打开"
     "files.open" -> "打开文件"
     "files.save" -> "保存文件"
     "network" -> "网络"
