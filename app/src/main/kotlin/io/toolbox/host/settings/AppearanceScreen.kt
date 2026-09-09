@@ -93,7 +93,7 @@ internal fun AppearanceContent(
         }
 
         item("color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-        item("color-title") { SectionHeader("明暗与颜色") }
+        item("color-title") { SectionHeader("明暗模式") }
         item("color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("color-settings") {
             ToolBoxGroupedSurface {
@@ -106,7 +106,14 @@ internal fun AppearanceContent(
                     )
                     if (index < 2) ToolBoxGroupDivider()
                 }
-                ToolBoxGroupDivider()
+            }
+        }
+
+        item("system-color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("system-color-title") { SectionHeader("系统颜色") }
+        item("system-color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+        item("system-color-settings") {
+            ToolBoxGroupedSurface {
                 ToolBoxSwitchSettingRow(
                     title = "系统取色",
                     modifier = Modifier.testTag(HostTestTags.AppearanceSystemColor),

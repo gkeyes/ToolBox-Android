@@ -467,9 +467,9 @@ internal fun liquidGlassMaterials(
     glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.48f),
     glassFallback = colors.surface,
     glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
-    navigationSelectionTint = colors.surface.copy(alpha = if (dark) 0.82f else 0.72f),
-    navigationSelectionHighlight = Color.White.copy(alpha = if (dark) 0.16f else 0.74f),
-    navigationSelectionBorder = Color.White.copy(alpha = if (dark) 0.20f else 0.88f),
+    navigationSelectionTint = colors.softPrimary,
+    navigationSelectionHighlight = colors.softPrimary,
+    navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
     blurRadius = 32.dp,
     noiseFactor = 0.015f,
 )

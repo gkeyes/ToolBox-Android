@@ -374,7 +374,13 @@ private fun RowScope.LiquidGlassNavigationItem(
         animationSpec = tween(160),
         label = "navigation item press",
     )
-    val color = if (selected) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.colors.textSecondary
+    val colors = ToolBoxThemeTokens.colors
+    val color = if (selected) {
+        io.toolbox.core.ui.theme.readableForeground(
+            colors.primary,
+            listOf(ToolBoxThemeTokens.materials.navigationSelectionTint, colors.surface),
+        )
+    } else colors.textSecondary
     Row(
         modifier = Modifier
             .weight(1f)

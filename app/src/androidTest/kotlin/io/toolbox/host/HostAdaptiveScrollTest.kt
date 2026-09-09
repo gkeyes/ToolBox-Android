@@ -276,7 +276,7 @@ class HostAdaptiveScrollTest {
                 canRetry = true,
             )
         }
-        composeRule.onNodeWithText("降低透明度").assertDoesNotExist()
+        composeRule.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("重试").performScrollTo().assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1, retries) }
     }

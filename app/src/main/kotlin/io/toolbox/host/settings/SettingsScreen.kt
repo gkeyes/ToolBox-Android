@@ -42,7 +42,6 @@ internal fun SettingsScreen(
         onToolPermissions = onToolPermissions,
         onDeveloperHelp = onDeveloperHelp,
         onAbout = onAbout,
-        onReduceTransparencyChanged = viewModel::setReduceTransparency,
         onBackgroundEnabledChange = viewModel::setBackgroundEnabled,
     )
 }
@@ -56,7 +55,6 @@ internal fun SettingsContent(
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
-    onReduceTransparencyChanged: (Boolean) -> Unit = {},
     onBackgroundEnabledChange: (Boolean) -> Unit = {},
 ) {
     LazyColumn(
@@ -80,13 +78,6 @@ internal fun SettingsContent(
                     icon = ToolBoxIconKey.Palette,
                     onClick = onAppearance,
                     enabled = state.loaded,
-                )
-                ToolBoxGroupDivider()
-                ToolBoxSwitchSettingRow(
-                    title = "降低透明度", summary = "以实色保留层次与可读性",
-                    checked = state.settings.reduceTransparency,
-                    onCheckedChange = onReduceTransparencyChanged, enabled = state.loaded,
-                    icon = ToolBoxIconKey.Palette,
                 )
             }
         }
