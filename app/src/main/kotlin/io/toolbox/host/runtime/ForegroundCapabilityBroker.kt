@@ -2,7 +2,6 @@ package io.toolbox.host.runtime
 
 import android.Manifest
 import android.app.AlertDialog
-import android.app.PendingIntent
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context

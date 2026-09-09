@@ -68,7 +68,12 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
 
         if (live != null && Build.VERSION.SDK_INT >= 36) {
             live.request.shortText?.takeIf(String::isNotBlank)?.let(builder::setShortCriticalText)
-            if (support.androidLiveAllowed) runCatching { builder.setRequestPromotedOngoing(true) }
+            // Promotion was added in Android 16's first minor release, not API 36.0.
+            if (support.androidLiveAllowed &&
+                Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1
+            ) {
+                runCatching { builder.setRequestPromotedOngoing(true) }
+            }
         }
         if (live != null && support.hyperOsSupported) {
             runCatching { buildHyperOsV3(card, title, body, accent, toolIcon) }

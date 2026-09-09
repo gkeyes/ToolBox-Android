@@ -4,35 +4,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -49,30 +42,23 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.IconButton
 
 enum class ToolBoxIconKey {
-    Home,
     Tools,
     Settings,
     Add,
     Search,
-    More,
     Back,
     ChevronRight,
     Shield,
     Refresh,
-    OpenInNew,
-    Debug,
     Folder,
     Clipboard,
     Globe,
     Lock,
     Code,
     Calculator,
-    QrCode,
-    Text,
     Clock,
     Check,
     Close,
-    Delete,
     Note,
     Palette,
     Device,
@@ -122,30 +108,23 @@ fun ToolBoxIconButton(
 }
 
 internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
-    ToolBoxIconKey.Home -> Icons.Outlined.Home
     ToolBoxIconKey.Tools -> Icons.Outlined.Apps
     ToolBoxIconKey.Settings -> Icons.Outlined.Settings
     ToolBoxIconKey.Add -> Icons.Outlined.Add
     ToolBoxIconKey.Search -> Icons.Outlined.Search
-    ToolBoxIconKey.More -> Icons.Outlined.MoreVert
     ToolBoxIconKey.Back -> Icons.AutoMirrored.Outlined.ArrowBack
     ToolBoxIconKey.ChevronRight -> Icons.AutoMirrored.Outlined.KeyboardArrowRight
     ToolBoxIconKey.Shield -> Icons.Outlined.Shield
     ToolBoxIconKey.Refresh -> Icons.Outlined.Refresh
-    ToolBoxIconKey.OpenInNew -> Icons.AutoMirrored.Outlined.OpenInNew
-    ToolBoxIconKey.Debug -> Icons.Outlined.BugReport
     ToolBoxIconKey.Folder -> Icons.Outlined.Folder
     ToolBoxIconKey.Clipboard -> Icons.Outlined.ContentPaste
     ToolBoxIconKey.Globe -> Icons.Outlined.Public
     ToolBoxIconKey.Lock -> Icons.Outlined.Lock
     ToolBoxIconKey.Code -> Icons.Outlined.Code
     ToolBoxIconKey.Calculator -> Icons.Outlined.Calculate
-    ToolBoxIconKey.QrCode -> Icons.Outlined.QrCode
-    ToolBoxIconKey.Text -> Icons.Outlined.TextFields
     ToolBoxIconKey.Clock -> Icons.Outlined.AccessTime
     ToolBoxIconKey.Check -> Icons.Outlined.Check
     ToolBoxIconKey.Close -> Icons.Outlined.Close
-    ToolBoxIconKey.Delete -> Icons.Outlined.DeleteOutline
     ToolBoxIconKey.Note -> Icons.Outlined.Description
     ToolBoxIconKey.Palette -> Icons.Outlined.Palette
     ToolBoxIconKey.Device -> Icons.Outlined.Devices

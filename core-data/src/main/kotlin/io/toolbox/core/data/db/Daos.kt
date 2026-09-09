@@ -42,12 +42,6 @@ internal interface ToolDao {
     @Update
     suspend fun update(entity: ToolEntity)
 
-    @Query("UPDATE tools SET pinnedOrder = :pinnedOrder WHERE id = :toolId")
-    suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): Int
-
-    @Query("UPDATE tools SET categoryId = :categoryId WHERE id = :toolId")
-    suspend fun setCategory(toolId: String, categoryId: String?): Int
-
     @Query("UPDATE tools SET lastOpenedAt = :timestamp WHERE id = :toolId")
     suspend fun recordOpened(toolId: String, timestamp: Long): Int
 

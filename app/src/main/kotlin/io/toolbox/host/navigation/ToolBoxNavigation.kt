@@ -491,9 +491,9 @@ private fun ToolManagerRouteContent(
     }
     // A modal can outlive its base surface (for example, an external shortcut).
     // Keep its invalidation live rather than freezing a destructive confirmation.
-    val catalogState by catalogViewModel.state.collectAsStateWhileVisible(
-        uiVisible || catalogViewModel.state.value.uninstallConfirmation != null,
-    )
+    val catalogState by catalogViewModel.state.collectAsStateWhileVisible(uiVisible) {
+        it.uninstallConfirmation != null
+    }
     val importState by importViewModel.state.collectAsStateWhileVisible(uiVisible)
     ToolManagerContent(
         state = catalogState,

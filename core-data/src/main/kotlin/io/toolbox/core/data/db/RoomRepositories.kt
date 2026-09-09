@@ -25,7 +25,6 @@ import io.toolbox.core.data.TaskState
 import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
-import io.toolbox.core.data.isValidCategoryId
 import io.toolbox.core.data.isValidTaskId
 import io.toolbox.core.data.isValidTaskKey
 import io.toolbox.core.data.isValidTransactionId
@@ -159,18 +158,6 @@ internal class RoomCatalogLifecycleRepository(
 internal class RoomCatalogOrganizationRepository(
     private val database: ToolBoxDatabase,
 ) : CatalogOrganizationRepository {
-    override suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): DataResult<Unit> {
-        if (toolId.isBlank()) return DataResult.Failure.InvalidInput("toolId")
-        if (pinnedOrder != null && pinnedOrder < 0) return DataResult.Failure.InvalidInput("pinnedOrder")
-        return update("setPinnedOrder") { database.tools().setPinnedOrder(toolId, pinnedOrder) }
-    }
-
-    override suspend fun setCategory(toolId: String, categoryId: String?): DataResult<Unit> {
-        if (toolId.isBlank()) return DataResult.Failure.InvalidInput("toolId")
-        if (!categoryId.isValidCategoryId()) return DataResult.Failure.InvalidInput("categoryId")
-        return update("setCategory") { database.tools().setCategory(toolId, categoryId) }
-    }
-
     override suspend fun recordOpened(toolId: String, timestamp: Long): DataResult<Unit> {
         if (toolId.isBlank()) return DataResult.Failure.InvalidInput("toolId")
         if (timestamp < 0) return DataResult.Failure.InvalidInput("timestamp")

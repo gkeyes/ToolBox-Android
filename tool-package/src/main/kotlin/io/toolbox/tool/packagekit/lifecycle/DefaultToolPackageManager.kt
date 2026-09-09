@@ -4,7 +4,6 @@ import io.toolbox.core.data.BundleLocator
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogRepository
-import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
 import io.toolbox.core.data.InstallTransaction
@@ -17,8 +16,6 @@ import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.DefaultPackageInspector
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageLimits
-import io.toolbox.tool.packagekit.PackageRejection
-import io.toolbox.tool.packagekit.PackageRejectionCode
 import io.toolbox.tool.packagekit.PreparationResult
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.SecurityProfile

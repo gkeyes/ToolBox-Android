@@ -300,12 +300,6 @@ private class RecordingCatalogOrganizationRepository(
 ) : CatalogOrganizationRepository {
     val opened = mutableListOf<Pair<String, Long>>()
 
-    override suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): DataResult<Unit> =
-        error("not used")
-
-    override suspend fun setCategory(toolId: String, categoryId: String?): DataResult<Unit> =
-        error("not used")
-
     override suspend fun recordOpened(toolId: String, timestamp: Long): DataResult<Unit> {
         val result = persist(toolId, timestamp)
         if (result is DataResult.Success) opened += toolId to timestamp
