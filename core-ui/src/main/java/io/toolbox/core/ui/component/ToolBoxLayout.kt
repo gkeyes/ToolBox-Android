@@ -62,7 +62,6 @@ import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
-import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
@@ -453,29 +452,6 @@ private fun RowScope.LiquidGlassNavigationItem(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
             maxLines = 1,
-        )
-    }
-}
-
-@Composable
-fun ToolBoxFloatingActionButton(
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: ToolBoxIconKey = ToolBoxIconKey.Add,
-) {
-    FloatingActionButton(
-        onClick = onClick,
-        modifier = modifier.semantics {
-            this.contentDescription = contentDescription
-            role = Role.Button
-        },
-        containerColor = ToolBoxThemeTokens.colors.primary,
-    ) {
-        ToolBoxIcon(
-            icon = icon,
-            contentDescription = null,
-            tint = ToolBoxThemeTokens.colors.onPrimary,
         )
     }
 }

@@ -1,82 +1,32 @@
-# Host performance baseline protocol
+# Host performance capture protocol
 
-> P1 status: **NOT_MEASURED**. The capture entry point and offline contract tests
-> are not physical-device evidence. No startup, scrolling, memory or UI improvement
-> has been measured. Debug is for diagnosis only; compare optimized, non-debuggable
-> builds with the same profiling/instrumentation configuration.
+Usage and interpretation for `scripts/perf/capture-host.sh` and
+`scripts/perf/summarize-trace.py`. This document does not record a current baseline
+or measured improvement. Keep exact A/B commit SHAs, APK hashes, build receipts
+and results with each authorized comparison; old delivery records remain in Git
+and the corresponding CI artifacts.
 
-## Current screenshot-test policy
+Automated screenshot tests and their CI gate are retired; receipts report
+`HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`, never PASS. IDE-only debug
+previews and capture-contract tests are not device performance evidence.
 
-The user subsequently requested permanent removal of automated screenshot tests,
-their Gradle plugin, reference PNGs and CI gate. Only IDE-only debug previews remain.
-New receipts report `HOST_SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST`, not PASS.
-The P0/P1 screenshot results below are historical evidence; they must not reinstate
-this retired test or imply later UI acceptance. Performance/device requirements
-and the retained compilation, security and behavioral tests are unchanged.
+## Environment and inputs
 
-## P0 identity and evidence
+Use a dedicated test device with synthetic fixtures and an operator-reviewed
+semantic replay for the selected scene. The wrapper does not install, uninstall,
+clear data, force-stop or change device settings. Device setup and replay must
+stay within the operator's authorization.
 
-The plan reviewed `0eda7dd355cd28353cab30a7cc8c5b4b9546ef98`. Current P0 is
-`3b9747601c389694c1a8622fcacd97de7c35d960` on `codex/refactor-lightweight-v2`.
-Only the invalid historical-palette control was removed; current screenshot
-validation, production UI, dependencies and security boundaries were retained.
-
-- [Android CI 33977011655, attempt 1](https://github.com/gkeyes/ToolBox-Android/actions/runs/33977011655):
-  public Actions API reports all three jobs successful: verify `101335381679`,
-  optimized candidate `101335381524`, release delivery `101335747293`.
-- Release artifact `9972692069` (`toolbox-v0.3.8-release-<full SHA>`), version
-  `0.3.8 (12)`: downloaded APK is **4,968,798 bytes**, SHA-256
-  `c145211ab39fae232ae1f197693fe8fb9ca5262ddfa93b204fa7079c2ca70d1d`.
-  This is the existing release, not a newly built P1 APK or a candidate relabelled
-  as release. The receipt reports R8/resource shrinking and screenshot validation
-  PASS; device/instrumentation execution and minified runtime remain NOT_RUN.
-- Local evidence at continuation: `/workspace/.ci-diagnostics/release-33977011655/`
-  and `/workspace/uploads/toolbox-v0.3.8-release-3b97476.apk` (hash independently
-  recomputed). Actions artifact digests identify ZIPs, not the APK inside them.
-- P1 measurement-preparation commit `1646d7f14608d2dcca0b044b9c105171a37c82f4`
-  subsequently passed all three jobs in
-  [Android CI 33981424797](https://github.com/gkeyes/ToolBox-Android/actions/runs/33981424797),
-  verified through the Actions API. This is P1 build/test evidence, not a device
-  performance result or approval of later UI changes. P1 retained the original
-  reference images. The separate catalog UI sample was not visually approved;
-  later removal of screenshot tests is a user-requested policy change, not visual approval.
-
-Keep the **P1 instrumented candidate before performance/UI changes** as the initial
-end-to-end baseline. For attribution of an individual optimization, compare its
-accepted parent with that change only, keeping the UI identical. For the later
-F1 change, A is `0224623089c06c70c2fc97066050ecae3fa11f60`, not the earlier
-pre-redesign APK. Rebuild A/B with the same candidate profileable overlay, trace
-labels, R8 and compilation mode; the uninstrumented P0 release cannot satisfy
-the new trace-coverage checks. None of these new comparisons has been measured.
-Record exact A/B SHAs and APK hashes; retain the P0 identity above for provenance.
-
-## Environment and safety
-
-Use an explicitly dedicated test device/environment, not the user's current
-installation, a system clone with unknown contents, or a real database export.
-The existing candidate retains `io.toolbox.host` and may have a diagnostic signing
-key. This protocol does **not** change applicationId/signing or install, uninstall,
-clear data, force-stop, change animation scales, compilation mode or refresh rate.
-Any setup/replay action with side effects needs separate operator authorization
-on the dedicated device. Never install the candidate over the user's app.
-
-The candidate-only manifest enables shell profiling, leaving release unchanged.
-Before measurement, verify the built/merged candidate manifest is profileable,
-non-debuggable, R8/resource optimized; verify release did not gain profileability.
-Independent merged-manifest/APK profiling verification is still **NOT_RUN**;
-the subsequent P1 CI compilation result alone does not establish profiling access.
+Compare optimized, non-debuggable `candidate` builds with identical profiling,
+trace labels, R8 and ART configuration. Verify the merged/APK manifest is
+shell-profileable and release remains unchanged. The wrapper checks the local
+and installed single-base APK SHA and installed profiling/debug flags; it rejects
+split APKs. Debug measurements cannot stand in for optimized frame times.
 
 Prerequisites: Bash, Python 3 (standard library), `timeout`, `sha256sum`, ADB,
-a connected dedicated Android device, a current `trace_processor_shell`, the exact
-installed single-base APK (splits currently rejected), and an operator-reviewed
-semantic replay script. The entry point checks the local/installed APK SHA and
-installed profileable/non-debuggable flags before replay.
-
-At this continuation the Alpine runtime has no ADB, JDK, Android SDK or trace
-processor. No device was queried or changed. A tested device-specific semantic
-replay and deterministic 20/50/100 fixtures have **not** been supplied; these are
-explicit prerequisites, not a claim that end-to-end A–F automation already exists.
-No benchmark module is introduced just to fill this gap.
+a connected dedicated device, a current `trace_processor_shell`, the exact
+installed APK and the reviewed replay. The repository does not supply a generic
+device-specific replay or a prepopulated fixture installation.
 
 ## Capture entry point
 
@@ -155,7 +105,7 @@ does not move IO/WebView work, alter caches, navigation or background semantics.
 |---|---|
 | `coreData.create` | Existing bootstrap dependency acquisition; may include cached acquisition, not all startup work or TTFD |
 | `host.catalog.publish` | Catalog mapping/publication, not proof the screen is drawn/interactive |
-| `tool.recordOpened` | Recent-open persistence; after F1 it runs after queuing navigation and includes statistics serialization wait. Not click-to-shell or a readiness metric; completion never triggers another navigation |
+| `tool.recordOpened` | Recent-open persistence; runs after queuing navigation and includes statistics serialization wait. Not click-to-shell or a readiness metric; completion never triggers another navigation |
 | `icon.catalog.lookup/recheck` | Initial catalog lookup and post-decode version recheck, including suspension |
 | `icon.cache.hit/miss/evict` | Count markers, not user-action durations; only actual LRU eviction counts as evict |
 | `icon.decode` | Read/decode inside the granted decode slot; not queue/lock wait |
@@ -174,7 +124,7 @@ performance estimates. Counts are not necessarily gestures/successful opens.
 TTID/TTFD, input readiness and FrameTimeline metrics are **NOT_DERIVED** here;
 they still require validated device measurement, not renamed page callbacks.
 
-## A–F protocol (replaces the old flow lettering)
+## A–F protocol
 
 Use the same device, resolution, observed refresh rate, WebView provider/version,
 data, build optimization and ART mode for A/B. Alternate runs and record thermal
@@ -191,12 +141,12 @@ slow results. Do not mix Debug recomposition counts with optimized frame times.
 | E — mixed | Real background demo + notification updates while doing B/C | UI frame deadlines, RPC queue, main thread, independent notification correctness |
 | F — lifecycle | Ordinary open/close 30 times; background reentry separately; recreate Activity; separate process recovery | PSS/Java/native/graphics trend, WebView/Activity/Job/VM counts, no illegal reuse or stopped background work |
 
-Search is a supplementary trace in B/D with deterministic fixture-only queries;
-no unconditional debounce, pagination or profile generation is justified yet.
+Search is a supplementary trace in B/D with deterministic fixture-only queries.
 Memory before/after dumps alone do **not** prove object release or no leaks.
 
-## Initial acceptance targets (freeze after valid baseline)
+## Proposed targets for an authorized comparison
 
+Freeze targets against a valid baseline before comparing; these are not CI gates.
 Correctness comes first: no crash/ANR, navigation/query/scroll/grant loss, or stopped
 legal background sessions. Initial tap-feedback target P95≤100ms is not the
 160/180ms transition duration. List targets: FrameTimeline jank≤3% and
@@ -209,74 +159,3 @@ not trade one core path for another or change statistics to manufacture gains.
 Ordinary sessions must release bounded objects without linear memory growth;
 legal retained-background memory is accounted separately. Unsupported metrics
 are NOT_MEASURED, not zero. Record sample count and quantile method for every P95.
-
-## Investigation order — hypotheses, not measured bottleneck ranking
-
-| Item | Current source evidence | Next measurement / possible change / risk |
-|---|---|---|
-| F1 | Later user-authorized continuation queues navigation before cancellable, serialized statistics; queued same-tool requests coalesce and known-deleted tools are filtered at consumption | Deterministic JVM regression is being added; C tap/shell/readiness and actual runtime regression still required. No measured latency improvement; runtime qualification is unchanged |
-| F2 | `icons/ToolIconLoader.kt:load` queries before cache.get; 4MiB/256px, two decode slots | B lookup/hit/evict/decode plus allocations; use full immutable version key only with safe invalidation; no blind capacity increase |
-| F5 | `navigation/ToolBoxNavigation.kt` enables runtime after entry animation; `runtime/RuntimeSessionManager.kt:ensureRuntime` then prepares | C shell/prepare/create gaps; evaluate safe IO overlap, not off-main WebView or another pool; cancellation/update/permit risks |
-| F4 | Permission VM still uses passed Activity store; retained route composition survives hiding. A later slice pauses only home catalog/import/running UI subscriptions under a fully presented runtime, except open destructive confirmations | D/F collector/object/return-frame evidence remains unmeasured. Source stays live and resume initializes current StateFlow value before the source return animation; no grant/runtime/job lifetime changes |
-
-F1/F2 first, F5 next and F4 lifecycle review are a **source-led investigation
-order**, not timing evidence. Raw trace ranges, measured cost and attribution are
-NOT_MEASURED for all four. P1 itself included no performance implementation or UI
-redesign. Subsequently, catalog/detail clarity landed in `e981b6f`; screenshot
-tests were explicitly retired in `0224623`, which passed default-branch CI
-[33984763500](https://github.com/gkeyes/ToolBox-Android/actions/runs/33984763500).
-The user then requested continued plan execution without waiting for device tests.
-The F1 continuation changes only statistics/navigation ordering, defines
-lastOpenedAt as an accepted request timestamp, serializes writes to avoid stale
-completion order, and reports statistics failure separately. JVM deferred-write,
-duplicate, cancellation and deletion fixtures are behavioral evidence only, not
-performance data. Safe prepare/animation overlap, version-key icon fast paths,
-route collector scoping and settings/startup work are not implemented by that F1
-change. A separate settings-only UI commit removes the persistent saved hint and
-redundant subtitles, groups the existing destinations, and puts the selected theme
-at the row end with explanation in the existing dialog. It does not modify settings
-persistence, grants or background cancellation, and has no measured performance
-result. A subsequent narrow F6/P-D change makes Loading/Error use System theme
-and keys system-bar application by window and icon polarity at each composition
-site. It does not add synchronous settings IO, change six-mode persistence,
-reschedule first-frame recovery/maintenance, or remove branch-entry initialization.
-The saved non-system preference is still unknown before settings arrive; native
-starting-window appearance and actual flash/frame timing are not verified. The
-retained behavioral instrumentation suite gains a six-mode/live-configuration
-window-flag matrix (execution NOT_RUN), not a screenshot or startup measurement.
-Other startup scheduling/readiness and investigation items remain open. The
-preceding settings fix `7773220` passed CI
-[34008474117](https://github.com/gkeyes/ToolBox-Android/actions/runs/34008474117);
-that result does not certify this later startup change. Do not infer visual
-approval or device readiness from CI.
-
-The later P-C covered-home slice uses local source/visibility keys, preserving the
-retained composition and list state while detaching only selected UI collectors.
-It resumes during entry/return, not just after the runtime route has been removed.
-Window-level uninstall/stop confirmations keep live invalidation. A production
-running-group/VM fixture regression checks frozen UI versus still-live producer,
-latest-value return, and disappearance of a confirmed session without calling stop;
-instrumentation execution is NOT_RUN. It does not scope permission VMs, stop their
-manifest/grant observers, or alter background sessions and security mutations.
-The icon fast path is still pending: current UI projection exposes versionCode,
-not the full ToolVersion identity, and post-mutation invalidation cannot simply be
-replaced by trusting a stale caller snapshot. No cache size/decode changes made.
-
-## Results / remaining gates
-
-| Scene / metric | A | B | Samples / variation | Change | Conclusion |
-|---|---|---|---|---|---|
-| Host usable P50/P90 | — | — | — | — | NOT_MEASURED |
-| Warm-icon jank / P95 overrun | — | — | — | — | NOT_MEASURED |
-| Tool interactive P50/P90 | — | — | — | — | NOT_MEASURED |
-| Return / Tab switching | — | — | — | — | NOT_MEASURED |
-| Repeated open/close objects / PSS | — | — | — | — | NOT_MEASURED |
-
-P1 Android CI build/test is now successful (run above). Still required: independent
-merged-manifest/APK profiling verification; same-config comparison APKs; dedicated
-device/provider/thermal context; real fixtures
-and semantic replay; A–F captures with verified trace coverage; TTID/TTFD/input
-and FrameTimeline extraction; object lifecycle analysis; native screenshots and
-separate visual video. Offline capture tests protect failure/status/filtering
-contracts only, never substitute for these gates. See `TESTING.md` for commands
-and their actual PASS/FAIL/NOT_RUN status.

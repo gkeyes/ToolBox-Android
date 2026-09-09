@@ -47,11 +47,6 @@ interface ToolPackageInspector {
     suspend fun validate(input: PackageInput): PackageValidationResult
 }
 
-object ToolPackageInspectors {
-    fun create(privateTemporaryDirectory: Path, limits: PackageLimits = PackageLimits()): ToolPackageInspector =
-        DefaultPackageInspector(privateTemporaryDirectory, limits)
-}
-
 data class ArchiveSummary(
     val compressedBytes: Long,
     val extractedBytes: Long,
