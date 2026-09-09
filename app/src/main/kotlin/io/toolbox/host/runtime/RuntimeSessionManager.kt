@@ -7,7 +7,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -326,8 +325,6 @@ internal class RuntimeSessionManager(
             }
         }
     }
-
-    fun activeSessionCount(): Int = sessionsByTool.values.sumOf(Map<String, StoredRuntimeSession>::size)
 
     fun hasBackgroundLocationWatch(): Boolean = watchesByTool.values.any { watches ->
         watches.values.any(ActiveLocationWatch::allowBackground)

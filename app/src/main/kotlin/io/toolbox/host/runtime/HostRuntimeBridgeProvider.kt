@@ -36,7 +36,6 @@ import io.toolbox.tool.runtime.RuntimeGrantStateSource
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeHapticsHandler
 import io.toolbox.tool.runtime.RuntimeM1Handlers
-import io.toolbox.tool.runtime.RuntimeM2Handlers
 import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeQuotaChecker
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode

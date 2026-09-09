@@ -9,7 +9,6 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.WorkInfo
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.CoreDataRepositories

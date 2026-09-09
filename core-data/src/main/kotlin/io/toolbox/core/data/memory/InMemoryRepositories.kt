@@ -27,7 +27,6 @@ import io.toolbox.core.data.TaskState
 import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
-import io.toolbox.core.data.isValidCategoryId
 import io.toolbox.core.data.isValidTaskId
 import io.toolbox.core.data.isValidTaskKey
 import io.toolbox.core.data.isValidTransactionId
@@ -211,16 +210,6 @@ private class InMemoryCatalogLifecycleRepository(
 private class InMemoryCatalogOrganizationRepository(
     private val state: InMemoryCoreState,
 ) : CatalogOrganizationRepository {
-    override suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): DataResult<Unit> =
-        update(toolId, "pinnedOrder", pinnedOrder == null || pinnedOrder >= 0) {
-            it.copy(metadata = it.metadata.copy(pinnedOrder = pinnedOrder))
-        }
-
-    override suspend fun setCategory(toolId: String, categoryId: String?): DataResult<Unit> =
-        update(toolId, "categoryId", categoryId.isValidCategoryId()) {
-            it.copy(metadata = it.metadata.copy(categoryId = categoryId))
-        }
-
     override suspend fun recordOpened(toolId: String, timestamp: Long): DataResult<Unit> =
         update(toolId, "timestamp", timestamp >= 0) { it.copy(lastOpenedAt = timestamp) }
 

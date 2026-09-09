@@ -12,7 +12,6 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.host.background.BackgroundAuthorization
-import io.toolbox.host.background.BackgroundExecutionPolicy
 import io.toolbox.host.background.BackgroundHostOperations
 import io.toolbox.host.background.BackgroundManifestPolicy
 import io.toolbox.host.background.BackgroundManifestPolicyResolver
@@ -47,7 +46,6 @@ import io.toolbox.tool.runtime.RuntimeBackgroundTaskRunResult
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskSpec
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskState
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskSummary
-import io.toolbox.tool.runtime.RuntimeBridgeConfiguration
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeM2Handlers
 import io.toolbox.tool.runtime.RuntimeNotificationHandler

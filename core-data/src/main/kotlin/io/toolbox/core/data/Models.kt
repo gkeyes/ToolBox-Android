@@ -126,7 +126,6 @@ data class HostSettings(
 
 object CoreDataLimits {
     const val MAX_TRANSACTION_ID_LENGTH = 128
-    const val MAX_CATEGORY_ID_LENGTH = 128
     const val MAX_TASK_ID_LENGTH = 128
     const val MAX_TASK_KEY_LENGTH = 64
     const val MAX_TASK_SPEC_BYTES = 64 * 1024
@@ -135,9 +134,6 @@ object CoreDataLimits {
 
 internal fun String.isValidTransactionId(): Boolean =
     isNotBlank() && length <= CoreDataLimits.MAX_TRANSACTION_ID_LENGTH
-
-internal fun String?.isValidCategoryId(): Boolean =
-    this == null || (isNotBlank() && length <= CoreDataLimits.MAX_CATEGORY_ID_LENGTH)
 
 internal fun String.isValidTaskId(): Boolean =
     isNotBlank() && length <= CoreDataLimits.MAX_TASK_ID_LENGTH
@@ -150,15 +146,8 @@ sealed interface DataResult<out T> {
 
     sealed interface Failure : DataResult<Nothing> {
         data class InvalidInput(val field: String) : Failure
-        data class DuplicateVersion(val toolId: String, val versionCode: Int) : Failure
         data class DuplicateTransaction(val transactionId: String) : Failure
         data class DuplicateTaskKey(val toolId: String, val key: String) : Failure
-        data class NonMonotonicVersion(
-            val toolId: String,
-            val attemptedVersionCode: Int,
-            val currentVersionCode: Int,
-        ) : Failure
-
         data class InvalidState(val subject: String) : Failure
         data class NotFound(val subject: String) : Failure
         data class QuotaExceeded(val quotaBytes: Long, val attemptedBytes: Long) : Failure

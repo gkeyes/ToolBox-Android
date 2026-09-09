@@ -15,8 +15,6 @@ interface CatalogLifecycleRepository {
 }
 
 interface CatalogOrganizationRepository {
-    suspend fun setPinnedOrder(toolId: String, pinnedOrder: Int?): DataResult<Unit>
-    suspend fun setCategory(toolId: String, categoryId: String?): DataResult<Unit>
     suspend fun recordOpened(toolId: String, timestamp: Long): DataResult<Unit>
 }
 
