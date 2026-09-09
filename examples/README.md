@@ -2,7 +2,7 @@
 
 这里集中收录本地小工具的源码与可导入安装包。主表列出各工具的最新收录版本，历史版本另行保留。原本的本地文件保留。
 
-在 GitHub 打开包文件链接后，选择 **Download raw file** 保存 `.tbx`；NextFlux 从所链接 CI 的 Artifacts 下载。再到 ToolBox 的工具页导入。可以使用 ToolBox 0.6.7 导入下表各包；“最低 ToolBox”来自包内声明，不表示本轮重新验证了每个旧版本的运行表现。
+在 GitHub 打开包文件链接后，选择 **Download raw file** 保存 `.tbx`；需要从源码重新打包时，使用 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 并从 Artifacts 下载。再到 ToolBox 的工具页导入。可以使用 ToolBox 0.6.7 导入下表各包；“最低 ToolBox”来自包内声明，不表示本轮重新验证了每个旧版本的运行表现。
 
 | 小工具 | 版本 | 最低 ToolBox | 用途 | 文件 |
 | --- | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 | GitHub 构建守望 | 1.0.6 | 0.3.5 | GitHub Actions 构建进度 | [下载](packages/github-actions-watcher-v1.0.6.tbx) · [源码](github-actions-watcher/) |
 | 健康档案 | 1.0.11 | 0.6.1 | 本地健康记录、趋势与可选 AI 整理 | [下载](packages/health-records-v1.0.11.tbx) · [源码](health-records/) |
 | 稳力 | 1.0.2 | 0.6.4 | 离线节奏训练 | [下载](packages/kegel-trainer-v1.0.2.tbx) · [源码](kegel-trainer/) |
-| NextFlux | 1.0.5 | 0.6.7 | Miniflux 阅读、AI 摘要与同步 | [CI 产物](https://github.com/gkeyes/ToolBox-Android/actions/workflows/android.yml) · [源码](nextflux/) |
+| NextFlux | 1.0.5 | 0.6.7 | Miniflux 阅读、AI 摘要与同步 | [CI 产物](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) · [源码](nextflux/) |
 | 通知实验室 | 1.0.0 | 0.3.2 | 通知示例，ToolBox 内置 | [下载](packages/notification-lab-v1.0.0.tbx) · [源码](notification-lab/) |
 | 仓位计算器 | 1.0.0 | 0.2.0 | 仓位计算，ToolBox 内置 | [下载](packages/position-calculator-v1.0.0.tbx) · [源码](position-calculator/) |
 | 快速笔记 | 1.0.0 | 0.2.0 | 本地笔记，ToolBox 内置 | [下载](packages/quick-notes-v1.0.0.tbx) · [源码](quick-notes/) |
@@ -22,6 +22,24 @@
 - 各小工具目录保留源码、说明和封装入口；健康档案的运行源码位于 `health-records/web/`，对应最新收录的 1.0.11。
 - `packages/` 只放带版本号的 `.tbx` 和 [SHA-256 清单](packages/SHA256SUMS.txt)，不放 APK、缓存、账号、个人记录或开发环境。
 - NextFlux 需要前端编译，使用 GitHub 产物；其他静态小工具按各自说明封装。发布新包时递增版本，使用新文件名，不覆盖已交付文件。
+
+## 通用 TBX CI
+
+在 Actions 中打开 **TBX CI → Run workflow**，选择分支，然后填写 `tool`：
+
+- 单个：`nextflux` 或 `github-actions-watcher`。
+- 多个：`nextflux,health-records`，以逗号分隔。
+- 全部：`all`。
+
+当前支持 `background-task-demo`、`game-2048`、`github-actions-watcher`、`health-records`、`kegel-trainer`、`nextflux`、`notification-lab`、`position-calculator`、`quick-notes`、`stock-monitor`。工作流只接受已登记名称，不执行输入中的命令或任意路径。
+
+推送和 PR 按改动目录选择小工具；SDK、协议、导入器、共享打包脚本及宿主版本等共同依赖变化时检查全部已登记工具。每个工具使用独立任务，保留自己的测试与构建方式，执行两次打包字节比较、清单及完整性检查和当前宿主生产导入器验证。没有现有单元测试的工具会在回执记录 `NOT_AVAILABLE`，不记为通过；NextFlux 继续运行生产 Worker 的无截图浏览器交互检查。
+
+每个成功任务上传 `<工具目录>-v<清单版本>-<提交号>` artifact，其中包含带版本号的 `.tbx`、`SHA256SUMS.txt` 和 `BUILD_AND_TEST_RECEIPT.txt`。它们是 CI 产物，不会自动发布 GitHub Release 或覆盖 `examples/packages/` 中的历史包。
+
+Android CI 保留宿主构建、安全检查、模拟器测试、APK 签名和内置示例验证。独立 TBX 由 TBX CI 验证交付；两个工作流各自报告结果，APK 回执不代替 TBX 检查结果。
+
+新增工具在 [tbx-targets.json](../scripts/ci/tbx-targets.json) 登记清单位置、检查文件和打包入口即可，无需再建专属工作流。打包命令以工具目录为工作目录，`{output}` 为 CI 新建输出路径，`{version}` 来自清单；沿用固定输出路径的脚本通过 `built_path` 指定产物。构建脚本 [tbx.py](../scripts/ci/tbx.py) 只允许在 GitHub Actions 执行构建，`plan --tool all` 可只读核对已登记清单。
 
 ## 本次整理
 

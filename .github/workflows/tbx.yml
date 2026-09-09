@@ -1,0 +1,177 @@
+name: TBX CI
+run-name: TBX · ${{ inputs.tool || 'changed tools' }} · ${{ github.ref_name }}
+
+on:
+  push:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - "examples/**"
+      - ".github/workflows/tbx.yml"
+      - "scripts/ci/**"
+      - "scripts/tests/test_tbx_ci.py"
+      - "scripts/package-tool.py"
+      - "scripts/package-examples.sh"
+      - "schema/**"
+      - "sdk/**"
+      - "tool-api/**"
+      - "tool-package/**"
+      - "tool-runtime/**"
+      - "core-*/**"
+      - "app/build.gradle.kts"
+      - "app/src/main/kotlin/io/toolbox/host/runtime/**"
+      - "app/src/main/kotlin/io/toolbox/host/permissions/**"
+      - "gradle/**"
+      - "gradlew*"
+      - "gradle.properties"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+  pull_request:
+    paths:
+      - "examples/**"
+      - ".github/workflows/tbx.yml"
+      - "scripts/ci/**"
+      - "scripts/tests/test_tbx_ci.py"
+      - "scripts/package-tool.py"
+      - "scripts/package-examples.sh"
+      - "schema/**"
+      - "sdk/**"
+      - "tool-api/**"
+      - "tool-package/**"
+      - "tool-runtime/**"
+      - "core-*/**"
+      - "app/build.gradle.kts"
+      - "app/src/main/kotlin/io/toolbox/host/runtime/**"
+      - "app/src/main/kotlin/io/toolbox/host/permissions/**"
+      - "gradle/**"
+      - "gradlew*"
+      - "gradle.properties"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: "Tool directory name, comma-separated names, or all (see examples/README.md)"
+        type: string
+        required: true
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    name: Select and validate TBX targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      count: ${{ steps.targets.outputs.count }}
+    steps:
+      - name: Check out repository and change history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify selection and delivery metadata rules
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p test_tbx_ci.py -v
+
+      - name: Select registered tools
+        id: targets
+        env:
+          TBX_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.tool || 'changed' }}
+        run: python3 scripts/ci/tbx.py plan --tool "$TBX_SELECTION"
+
+  package:
+    name: TBX · ${{ matrix.tool }}
+    needs: select
+    if: ${{ needs.select.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TBX_TOOL: ${{ matrix.tool }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - name: Test, build and verify reproducible packages
+        run: python3 scripts/ci/tbx.py build --tool "$TBX_TOOL"
+
+      - name: Verify configured browser interactions without screenshots
+        id: browser
+        if: ${{ matrix.browser }}
+        working-directory: examples/${{ matrix.tool }}
+        run: |
+          npx --no-install playwright install --with-deps chromium
+          npm run test:browser
+
+      - name: Retain browser interaction results
+        if: ${{ always() && matrix.browser }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.tool }}-interactions-${{ github.sha }}
+          path: examples/${{ matrix.tool }}/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK 37 for the production importer
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            build-tools;37.0.0
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+
+      - name: Verify production importer accepts the selected TBX
+        id: importer
+        # The existing test reads package/identity from environment variables;
+        # those bytes are not declared Gradle inputs. Never reuse another tool's result.
+        run: >-
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks
+          :tool-package:testDebugUnitTest
+          --tests io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest.standalonePackageUnderTestPassesProductionImportLifecycle
+
+      - name: Retain production importer results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.tool }}-importer-${{ github.sha }}
+          path: |
+            tool-package/build/test-results/testDebugUnitTest/
+            tool-package/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Assemble checksummed delivery and accurate receipt
+        env:
+          TBX_IMPORTER_RESULT: ${{ steps.importer.outcome }}
+          TBX_BROWSER_RESULT: ${{ steps.browser.outcome }}
+        run: python3 scripts/ci/tbx.py receipt --tool "$TBX_TOOL"
+
+      - name: Upload verified standalone TBX
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.tool }}-v${{ env.TBX_VERSION }}-${{ github.sha }}
+          path: build/tbx/${{ matrix.tool }}/delivery/
+          if-no-files-found: error
+          retention-days: 14

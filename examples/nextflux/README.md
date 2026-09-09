@@ -13,7 +13,7 @@
 
 ## 功能与适配
 
-本版安装包由 [GitHub Actions](https://github.com/gkeyes/ToolBox-Android/actions/workflows/android.yml) 构建交付；先升级 ToolBox 0.6.7，再导入 NextFlux 1.0.5。自动同步默认每 15 分钟执行；需要离开页面后继续同步时，在“设置 → 常规”点击“离开页面后继续同步”，并开启 ToolBox 中该工具的网络、后台运行权限及后台保障。同步拉取 Miniflux 已抓到的文章；立即抓取某个订阅可使用该订阅菜单里的“刷新”。
+本版安装包由 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 构建交付，手动运行时填写 `tool=nextflux`；先升级 ToolBox 0.6.7，再导入 NextFlux 1.0.5。自动同步默认每 15 分钟执行；需要离开页面后继续同步时，在“设置 → 常规”点击“离开页面后继续同步”，并开启 ToolBox 中该工具的网络、后台运行权限及后台保障。同步拉取 Miniflux 已抓到的文章；立即抓取某个订阅可使用该订阅菜单里的“刷新”。
 
 保留 NextFlux 的阅读和管理流程：订阅发现与添加、分类新增和重命名、订阅编辑与取消、OPML 导入、隐藏订阅、文章筛选与搜索、已读及收藏、范围标记、抓取原文、图片查看、文章分享、第三方服务保存、阅读排版、主题、语言及快捷键。界面继续使用上游 React 与 HeroUI，ToolBox仅提供 ToolBox 运行壳和原生能力。
 

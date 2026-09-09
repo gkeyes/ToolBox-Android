@@ -1,0 +1,86 @@
+{
+  "background-task-demo": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/examples/background-task-demo.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "app.js", "icon.png", "integrity.json"]
+  },
+  "game-2048": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh", "{output}"],
+    "expected_files": ["manifest.json", "index.html", "style.css", "game.js", "app.js", "icon.svg", "integrity.json"]
+  },
+  "github-actions-watcher": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": ["*.test.js"],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/github-actions-watcher/github-actions-watcher-v{version}.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "github-model.js", "app.js", "icon.png", "integrity.json"],
+    "manifest_fields": {
+      "apiVersion": "1.0",
+      "network.maxResponseBytes": 4194304,
+      "limits.maxBridgePayloadBytes": 8388608,
+      "network.allowDomains": ["api.github.com"]
+    },
+    "permissions": ["storage", "storage.secure", "network", "notifications", "background.runtime"]
+  },
+  "health-records": {
+    "manifest": "web/manifest.json",
+    "javascript": ["web/*.js"],
+    "tests": ["tests/*.test.mjs"],
+    "package": ["bash", "package.sh", "{output}"]
+  },
+  "kegel-trainer": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh", "{output}"],
+    "expected_files": ["manifest.json", "index.html", "style.css", "app.js", "icon.png", "audio/prepare.ogg", "audio/contract.ogg", "audio/relax.ogg", "audio/complete.ogg", "integrity.json"]
+  },
+  "nextflux": {
+    "manifest": "manifest.json",
+    "npm": true,
+    "browser": true,
+    "javascript": [],
+    "tests": [],
+    "package": ["python3", "package.py", "--output", "{output}"]
+  },
+  "notification-lab": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/examples/notification-lab.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "app.js", "icon.png", "integrity.json"]
+  },
+  "position-calculator": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/examples/position-calculator.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "app.js", "icon.png", "integrity.json"]
+  },
+  "quick-notes": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": [],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/examples/quick-notes.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "app.js", "icon.png", "integrity.json"]
+  },
+  "stock-monitor": {
+    "manifest": "manifest.json",
+    "javascript": ["*.js"],
+    "tests": ["*.test.js"],
+    "package": ["bash", "package.sh"],
+    "built_path": "build/examples/stock-monitor.tbx",
+    "expected_files": ["manifest.json", "index.html", "style.css", "live-summary.js", "app.js", "icon.svg", "integrity.json"],
+    "forbidden_text": ["notifications.focus"]
+  }
+}

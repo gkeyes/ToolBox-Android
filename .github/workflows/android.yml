@@ -3,13 +3,29 @@ name: Android CI
 on:
   push:
     branches: ["codex/refactor-lightweight-v2"]
-    paths-ignore:
-      - "examples/github-actions-watcher/**"
-      - ".github/workflows/github-actions-watcher.yml"
+    paths:
+      - "**"
+      - "!examples/**"
+      - "examples/position-calculator/**"
+      - "examples/quick-notes/**"
+      - "examples/background-task-demo/**"
+      - "examples/notification-lab/**"
+      - "!.github/workflows/tbx.yml"
+      - "!.github/workflows/nextflux-performance.yml"
+      - "!scripts/ci/**"
+      - "!scripts/tests/test_tbx_ci.py"
   pull_request:
-    paths-ignore:
-      - "examples/github-actions-watcher/**"
-      - ".github/workflows/github-actions-watcher.yml"
+    paths:
+      - "**"
+      - "!examples/**"
+      - "examples/position-calculator/**"
+      - "examples/quick-notes/**"
+      - "examples/background-task-demo/**"
+      - "examples/notification-lab/**"
+      - "!.github/workflows/tbx.yml"
+      - "!.github/workflows/nextflux-performance.yml"
+      - "!scripts/ci/**"
+      - "!scripts/tests/test_tbx_ci.py"
   workflow_dispatch:
 
 permissions:
@@ -46,50 +62,19 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
 
-      - name: Set up Node 22 for NextFlux
+      - name: Set up Node 22 for API and developer help checks
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: examples/nextflux/package-lock.json
-
-      - name: Test and package NextFlux
-        working-directory: examples/nextflux
-        run: |
-          npm ci --ignore-scripts
-          npm test
-          npm run build
-          python3 package.py
-
-      - name: Verify NextFlux worker and reading interactions without screenshots
-        working-directory: examples/nextflux
-        run: |
-          npx --no-install playwright install --with-deps chromium
-          npm run test:browser
-
-      - name: Retain NextFlux interaction results
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: nextflux-interactions-${{ github.sha }}
-          path: examples/nextflux/test-results/
-          if-no-files-found: ignore
-          retention-days: 14
 
       - name: Verify offline developer help and generic packager
         run: |
           node scripts/check-developer-help.mjs
           node --test scripts/tests/runtime-bridge.test.mjs
           node --test tool-runtime/src/test/js/network-stream.test.mjs
-          node --test examples/health-records/tests/*.test.mjs
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
 
       - name: Verify protocol, security, compilation and runtime behavior
-        env:
-          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.5.tbx
-          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "6"
-          TOOLBOX_PACKAGE_EXPECTED_ID: io.toolbox.nextflux
-          TOOLBOX_PACKAGE_HOST_VERSION: "0.6.7"
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
@@ -120,36 +105,6 @@ jobs:
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
           if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Record NextFlux delivery checksums and verification boundaries
-        run: |
-          delivery_dir="$GITHUB_WORKSPACE/build/nextflux"
-          {
-            printf 'BUILD_COMMIT=%s\n' "$GITHUB_SHA"
-            printf 'VERSION_NAME=1.0.5\nVERSION_CODE=6\nMIN_HOST_VERSION=0.6.7\n'
-            printf 'NODE_REGRESSIONS=PASS\nPACKAGE_VALIDATION=PASS\n'
-            printf 'BROWSER_INTERACTIONS=PASS_SYNTHETIC_DATA_PRODUCTION_WORKER\n'
-            printf 'HOST_STORAGE_ROOM_TRANSACTIONS=PASS_GITHUB_EMULATOR\nHOST_BROWSER_INTENT_AND_DISPATCH_GUARDS=PASS_GITHUB_EMULATOR\n'
-            printf 'SYSTEM_BROWSER_PAGE_AND_RETURN=NOT_RUN_USER_OWNED\n'
-            printf 'SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\n'
-            printf 'PHYSICAL_DEVICE_PERFORMANCE=NOT_RUN_USER_OWNED\n'
-            printf 'REAL_ACCOUNT_AND_AI_VALIDATION=NOT_RUN\n'
-          } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
-          (
-            cd "$delivery_dir"
-            sha256sum nextflux-v1.0.5.tbx BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
-          )
-
-      - name: Upload verified NextFlux package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: nextflux-v1.0.5-${{ github.sha }}
-          path: |
-            build/nextflux/nextflux-v1.0.5.tbx
-            build/nextflux/SHA256SUMS.txt
-            build/nextflux/BUILD_AND_TEST_RECEIPT.txt
-          if-no-files-found: error
           retention-days: 14
 
       - name: Upload host gate evidence
@@ -309,28 +264,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify stock monitor package is reproducible and uses the public API
-        run: |
-          node --check examples/stock-monitor/app.js
-          node --check examples/stock-monitor/live-summary.js
-          node --test examples/stock-monitor/live-summary.test.js
-          ! grep -R --line-number --fixed-strings 'notifications.focus' examples/stock-monitor
-          first_sum="$RUNNER_TEMP/stock-monitor-first.sha256"
-          second_sum="$RUNNER_TEMP/stock-monitor-second.sha256"
-          bash examples/stock-monitor/package.sh
-          shasum -a 256 build/examples/stock-monitor.tbx | awk '{print $1}' > "$first_sum"
-          bash examples/stock-monitor/package.sh
-          shasum -a 256 build/examples/stock-monitor.tbx | awk '{print $1}' > "$second_sum"
-          diff -u "$first_sum" "$second_sum"
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          manifest = json.loads(Path("examples/stock-monitor/manifest.json").read_text())
-          assert manifest["version"] == "1.1.1"
-          assert manifest["versionCode"] == 3
-          assert manifest["minHostVersion"] == "0.3.2"
-          PY
-
       - name: Assemble checksummed delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
@@ -376,7 +309,7 @@ jobs:
             printf 'STORAGE_BATCH_ROOM_EMULATOR=PASS\n'
             printf 'BROWSER_INTENT_AND_DISPATCH_GUARDS_EMULATOR=PASS\n'
             printf 'SYSTEM_BROWSER_PAGE_AND_RETURN=NOT_RUN_USER_OWNED\n'
-            printf 'NEXTFLUX_WORKER_BROWSER_INTERACTIONS=PASS_SYNTHETIC_DATA\n'
+            printf 'STANDALONE_TBX_VALIDATION=SEPARATE_TBX_CI\n'
             printf 'ANDROID_INSTRUMENTATION_EXECUTION=STORAGE_AND_BROWSER_GITHUB_EMULATOR\n'
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
