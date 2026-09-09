@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -47,15 +48,15 @@ class RuntimeExitConfirmationTest {
         val originalView = currentView
 
         pressBack()
-        composeRule.onNodeWithText("返回 ToolBox？").assertIsDisplayed()
+        waitForDialog(visible = true)
         composeRule.runOnIdle { assertEquals(0, exits) }
         composeRule.onNodeWithText("继续使用").performClick()
-        composeRule.onNodeWithText("返回 ToolBox？").assertDoesNotExist()
+        waitForDialog(visible = false)
 
         pressBack()
-        composeRule.onNodeWithText("返回 ToolBox？").assertIsDisplayed()
+        waitForDialog(visible = true)
         pressBack()
-        composeRule.onNodeWithText("返回 ToolBox？").assertDoesNotExist()
+        waitForDialog(visible = false)
         composeRule.runOnIdle {
             assertEquals(0, exits)
             assertEquals(1, creations)
@@ -68,7 +69,13 @@ class RuntimeExitConfirmationTest {
         composeRule.runOnIdle { assertEquals(1, exits) }
         // Consume further Back events during the existing return transition.
         pressBack()
-        composeRule.onNodeWithText("返回 ToolBox？").assertDoesNotExist()
+        waitForDialog(visible = false)
         composeRule.runOnIdle { assertEquals(1, exits) }
+    }
+
+    private fun waitForDialog(visible: Boolean) {
+        val title = composeRule.onNodeWithText("返回 ToolBox？")
+        composeRule.waitUntil(timeoutMillis = 10_000) { title.isDisplayed() == visible }
+        if (visible) title.assertIsDisplayed() else title.assertDoesNotExist()
     }
 }

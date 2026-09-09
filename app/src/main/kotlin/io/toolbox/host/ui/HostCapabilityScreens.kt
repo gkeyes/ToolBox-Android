@@ -29,7 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
@@ -98,33 +102,46 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) {
     BackHandler {
         if (!leaving) visible = !visible
     }
-    OverlayDialog(
-        show = visible,
-        title = "返回 ToolBox？",
-        summary = "即将离开当前小工具，返回 ToolBox。请确认需要保留的内容已保存。",
-        onDismissRequest = { visible = false },
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-        ) {
-            ToolBoxTextButton(
-                label = "继续使用",
-                onClick = { visible = false },
-                modifier = Modifier.weight(1f),
-                contentColor = ToolBoxThemeTokens.colors.textPrimary,
-            )
-            ToolBoxPrimaryButton(
-                label = "返回 ToolBox",
-                onClick = {
-                    if (visible && !leaving) {
-                        visible = false
-                        leaving = true
-                        onConfirm()
+    if (visible) {
+        // Runtime has no Miuix Scaffold popup host. Use a window above the retained WebView.
+        Dialog(onDismissRequest = { visible = false }) {
+            SurfaceCard {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    AppText(
+                        "返回 ToolBox？",
+                        modifier = Modifier.semantics { heading() },
+                        textStyle = ToolBoxThemeTokens.textStyles.title,
+                    )
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                    AppText(
+                        "即将离开当前小工具，返回 ToolBox。请确认需要保留的内容已保存。",
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    )
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+                    ) {
+                        ToolBoxTextButton(
+                            label = "继续使用",
+                            onClick = { visible = false },
+                            modifier = Modifier.weight(1f),
+                            contentColor = ToolBoxThemeTokens.colors.textPrimary,
+                        )
+                        ToolBoxPrimaryButton(
+                            label = "返回 ToolBox",
+                            onClick = {
+                                if (visible && !leaving) {
+                                    visible = false
+                                    leaving = true
+                                    onConfirm()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                },
-                modifier = Modifier.weight(1f),
-            )
+                }
+            }
         }
     }
 }
