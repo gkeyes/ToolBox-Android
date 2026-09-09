@@ -11,7 +11,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 
 ## 开发基线
 
-当前候选为 `0.6.5 (21)`，由 GitHub 使用同一签名密钥构建 release APK，可覆盖已交付版本，
+当前候选为 `0.6.6 (22)`，由 GitHub 使用同一签名密钥构建 release APK，可覆盖已交付版本，
 并增加可即时切换的 Miuix / Liquid Glass 双主题。新安装默认 Liquid Glass 且跟随系统明暗；升级用户
 保留原 Miuix 外观与颜色选择。版本升级会保留工具、权限和设置，
 不需要卸载。
@@ -22,6 +22,7 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 并提供独立 NextFlux 阅读器，包含 OpenAI 兼容 AI 摘要。
 0.6.4 将联网控制统一为每工具的网络权限开关，移除域名二次授权和 DNS/IP 地址范围拦截，兼容代理 Fake-IP；最近使用改为纯图标行，可见数量随可用宽度自动适配。
 0.6.5 移除小工具持久存储总容量配额，由设备剩余空间决定可保存容量。普通数据按键分片保存，避免大缓存反复整体重写；旧 storageBytes 声明兼容接受但不再限制容量。NextFlux 1.0.3 恢复上游每页 1000 篇与完整同步范围，取消缓存淘汰。
+0.6.6 增加普通存储 `getMany` 与原子 `apply`，保留权限和工具隔离。配套 NextFlux 1.0.4 将正文与轻量列表数据分开，在同源 Worker 中处理缓存，修复分页等待、正文重复解析和图片离屏高度变化。
 本次不改变 Room `version = 1` 的表结构，不新增数据库迁移。
 
 设置只保留外观、后台保障、工具权限和 Developer Help。外观页统一管理界面风格、明暗、系统取色与
@@ -43,10 +44,10 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
    watch、精确闹钟，以及剪贴板、分享、SAF、快捷方式和相机。0.2 WorkManager 任务 API 冻结兼容。
 
 仓位计算器、快速笔记、后台任务演示和通知实验室四个范例继续内置。行情哨兵作为独立 `.tbx`
-交付，不加入 APK assets；宿主候选仅交付 APK、SHA256 清单和同提交测试回执，不重新发布独立小工具。
+交付，不加入 APK assets；本轮交付宿主 APK、配套 NextFlux TBX、SHA256 清单和同提交测试回执，其他独立小工具沿用原包。
 
 全部 10 个小工具的版本、源码及可导入包见 [小工具目录](examples/README.md)。安装包统一收录在
-`examples/packages/`，包括 NextFlux、健康档案、GitHub 构建守望、2048 和稳力。
+`examples/packages/`，包括 NextFlux 历史包、健康档案、GitHub 构建守望、2048 和稳力；本轮 NextFlux 1.0.4 从目录中链接的 GitHub CI 下载。
 
 ## 本地运行
 
@@ -68,10 +69,10 @@ ToolBox 是 Android 13+ 的轻量 `.tbx` 小工具宿主。它导入包含 HTML/
 用它覆盖 GitHub 同签名版本。不要用 debug 构建评价页面帧性能。
 
 GitHub Actions 在安全不变量、API 合同、静态编译、最小单元与优化构建通过后上传
-`toolbox-v0.6.5-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
+`toolbox-v0.6.6-release.apk`、`SHA256SUMS.txt` 和构建回执。构建会核对 APK 不可调试、固定签名、
 版本、后台任务类名与内置资源；R8 映射独立归档以便排查崩溃，不放进安装包。
 系统权限、SAF、相机、通知、持续运行、后台位置、精确闹钟和 HyperOS 增强通知由用户在小米真机
-上验证；自动交付流程不启动模拟器，也不把未执行的设备测试写成通过。
+上验证。GitHub 仅在模拟器执行指定的存储事务回归，并在移动视口浏览器运行 NextFlux 合成数据交互测试；这些结果不替代真机性能或真实服务验证。
 
 按用户要求，自动截图测试及其插件、PNG 基线和 CI 门禁已删除，今后不运行该测试。
 `app/src/debug` 仅保留 Android Studio 手动 Compose 预览，不比较图片、不影响交付；

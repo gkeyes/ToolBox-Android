@@ -26,6 +26,7 @@ import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.runtime.UserNetworkDomainStore
+import io.toolbox.host.runtime.awaitRuntimeStandardStorageIdle
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageRejection
@@ -292,6 +293,7 @@ internal class ProductionHostBackgroundOperations(
     }
 
     override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
+        if (capability == "storage") awaitRuntimeStandardStorageIdle(toolId)
         if (capability == "storage.secure") {
             check(clearRuntimeSecureStorage(toolId, repositories.keyValues)) { "Secure storage cleanup failed" }
         }

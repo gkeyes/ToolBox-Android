@@ -7,8 +7,9 @@ import { memo } from "react";
 import { Image } from "@/components/ui/Image.jsx";
 
 function ArticleCardCover({ imageUrl }) {
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState({ source: imageUrl, loaded: false, error: false });
+  const error = state.source === imageUrl && state.error;
+  const loading = state.source !== imageUrl || !state.loaded;
   const imgRef = useRef(null);
   const { cardImageSize } = useStore(settingsState);
 
@@ -45,11 +46,13 @@ function ArticleCardCover({ imageUrl }) {
       )}
     >
       <Image
+        key={imageUrl}
         alt=""
         src={imageUrl}
-        onLoad={() => setLoading(false)}
-        onError={() => setError(true)}
+        onLoad={() => setState({ source: imageUrl, loaded: true, error: false })}
+        onError={() => setState({ source: imageUrl, loaded: false, error: true })}
         loading="eager"
+        decoding="async"
         className={cn(
           "object-cover",
           cardImageSize === "large"

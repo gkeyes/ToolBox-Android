@@ -28,7 +28,14 @@ interface PermissionGrantRepository {
     suspend fun revoke(toolId: String, capability: String): DataResult<Unit>
 }
 
+/** Reads bounded groups of rows from one pinned database snapshot. */
+interface ToolKvSnapshot {
+    suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue>
+}
+
 interface ToolKvRepository {
+    /** The snapshot belongs to this tool and is valid only for the duration of action. */
+    suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T
     fun observe(toolId: String, key: String): Flow<ToolKvValue?>
     suspend fun put(
         toolId: String,

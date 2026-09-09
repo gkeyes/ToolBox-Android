@@ -303,6 +303,12 @@ class RuntimeBridgeSession internal constructor(
                 pending.delete(response.id);
                 response.ok ? waiter.resolve(response.result) : waiter.reject(Object.assign(new Error(response.error.message), response.error));
               };
+              const invalidStorageMutation = () => Object.assign(new Error('Storage mutation must contain JSON values'), { code: 'INVALID_REQUEST' });
+              const storageJson = (_, value) => {
+                if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol' ||
+                    typeof value === 'bigint' || (typeof value === 'number' && !Number.isFinite(value))) throw invalidStorageMutation();
+                return value;
+              };
               const call = (method, params = {}) => new Promise((resolve, reject) => {
                 if (pending.size >= 32) {
                   reject(Object.assign(new Error('Too many pending ToolBox requests'), { code: 'BUSY' }));
@@ -314,7 +320,7 @@ class RuntimeBridgeSession internal constructor(
                   nativeBridge.postMessage(JSON.stringify({
                     id, method, params, nonce: $nonce, toolId: $toolId,
                     versionCode: ${identity.versionCode}, generation: $generation
-                  }));
+                  }, method === 'storage.apply' ? storageJson : undefined));
                 } catch (error) {
                   pending.delete(id);
                   reject(error);
@@ -391,6 +397,9 @@ class RuntimeBridgeSession internal constructor(
                 crypto: { sha256: value => call('crypto.sha256', { value: bytes(value) }) },
                 storage: {
                   get: key => call('storage.get', { key }),
+                  getMany: keys => call('storage.getMany', { keys }),
+                  apply: mutation => mutation && typeof mutation === 'object' && !Array.isArray(mutation)
+                    ? call('storage.apply', mutation) : Promise.reject(invalidStorageMutation()),
                   set: (key, value) => call('storage.set', { key, value }),
                   remove: key => call('storage.remove', { key }),
                   keys: () => call('storage.keys'),

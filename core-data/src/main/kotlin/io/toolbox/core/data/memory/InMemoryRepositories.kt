@@ -24,6 +24,7 @@ import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
+import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.isValidCategoryId
@@ -265,6 +266,14 @@ private class InMemoryPermissionGrantRepository(private val state: InMemoryCoreS
 }
 
 private class InMemoryToolKvRepository(private val state: InMemoryCoreState) : ToolKvRepository {
+    override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T {
+        val snapshot = state.mutex.withLock { state.keyValues.value }
+        return action(object : ToolKvSnapshot {
+            override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> =
+                keys.mapNotNull { key -> snapshot[toolId to key]?.let { key to it } }.toMap()
+        })
+    }
+
     override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =
         state.keyValues.map { it[toolId to key] }
 

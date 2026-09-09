@@ -93,6 +93,9 @@ internal interface ToolKvDao {
     @Query("SELECT * FROM tool_kv WHERE toolId = :toolId AND `key` = :key")
     suspend fun get(toolId: String, key: String): ToolKvEntity?
 
+    @Query("SELECT * FROM tool_kv WHERE toolId = :toolId AND `key` IN (:keys)")
+    suspend fun getMany(toolId: String, keys: List<String>): List<ToolKvEntity>
+
     @Query("SELECT `key` FROM tool_kv WHERE toolId = :toolId ORDER BY `key`")
     suspend fun keys(toolId: String): List<String>
 
@@ -101,6 +104,12 @@ internal interface ToolKvDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: ToolKvEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAll(entities: List<ToolKvEntity>)
+
+    @Query("DELETE FROM tool_kv WHERE toolId = :toolId AND `key` IN (:keys)")
+    suspend fun deleteMany(toolId: String, keys: List<String>): Int
 
     @Query("DELETE FROM tool_kv WHERE toolId = :toolId AND `key` = :key")
     suspend fun delete(toolId: String, key: String): Int

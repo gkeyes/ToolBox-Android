@@ -1,0 +1,35 @@
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./test/browser",
+  testMatch: "**/*.spec.mjs",
+  outputDir: "test-results/artifacts",
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: [["line"], ["json", { outputFile: "test-results/results.json" }]],
+  use: {
+    baseURL: "http://127.0.0.1:4173",
+    headless: true,
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true,
+    locale: "en-US",
+    colorScheme: "light",
+    screenshot: "off",
+    video: "off",
+    trace: "off",
+  },
+  projects: [{ name: "chromium-mobile", use: { browserName: "chromium" } }],
+  webServer: {
+    command: "python3 -m http.server 4173 --bind 127.0.0.1 --directory dist",
+    url: "http://127.0.0.1:4173",
+    reuseExistingServer: false,
+    timeout: 10_000,
+    stdout: "pipe",
+    stderr: "pipe",
+  },
+});

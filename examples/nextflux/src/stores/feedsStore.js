@@ -3,8 +3,7 @@ import { persistentAtom } from "@nanostores/persistent";
 import {
   getFeeds,
   getCategories,
-  getUnreadCount,
-  getStarredCount,
+  getArticleCounts,
 } from "../db/storage";
 import { filter } from "@/stores/articlesStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
@@ -142,15 +141,9 @@ export async function loadFeeds() {
       ? storedFeeds
       : storedFeeds.filter((feed) => !feed.hide_globally);
 
-    // 获取未读和收藏计数
-    const unreadCount = {};
-    const starredCount = {};
-    for (const feed of filteredFeeds) {
-      unreadCount[feed.id] = await getUnreadCount(feed.id);
-      starredCount[feed.id] = await getStarredCount(feed.id);
-    }
-    unreadCounts.set(unreadCount);
-    starredCounts.set(starredCount);
+    const counts = await getArticleCounts(filteredFeeds.map((feed) => feed.id));
+    unreadCounts.set(counts.unread);
+    starredCounts.set(counts.starred);
   } catch (err) {
     error.set("加载订阅源失败");
     console.error(err);

@@ -61,6 +61,21 @@ jobs:
           npm run build
           python3 package.py
 
+      - name: Verify NextFlux worker and reading interactions without screenshots
+        working-directory: examples/nextflux
+        run: |
+          npx --no-install playwright install --with-deps chromium
+          npm run test:browser
+
+      - name: Retain NextFlux interaction results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-interactions-${{ github.sha }}
+          path: examples/nextflux/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Verify offline developer help and generic packager
         run: |
           node scripts/check-developer-help.mjs
@@ -71,19 +86,68 @@ jobs:
 
       - name: Verify protocol, security, compilation and runtime behavior
         env:
-          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.3.tbx
-          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "4"
+          TOOLBOX_PACKAGE_UNDER_TEST: ${{ github.workspace }}/build/nextflux/nextflux-v1.0.4.tbx
+          TOOLBOX_PACKAGE_EXPECTED_VERSION_CODE: "5"
           TOOLBOX_PACKAGE_EXPECTED_ID: io.toolbox.nextflux
-          TOOLBOX_PACKAGE_HOST_VERSION: "0.6.5"
+          TOOLBOX_PACKAGE_HOST_VERSION: "0.6.6"
         run: >-
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
+      - name: Enable accelerated storage test emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify production Room storage transactions
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest
+
+      - name: Retain storage transaction results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: storage-transactions-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Record NextFlux delivery checksums and verification boundaries
+        run: |
+          delivery_dir="$GITHUB_WORKSPACE/build/nextflux"
+          {
+            printf 'BUILD_COMMIT=%s\n' "$GITHUB_SHA"
+            printf 'VERSION_NAME=1.0.4\nVERSION_CODE=5\nMIN_HOST_VERSION=0.6.6\n'
+            printf 'NODE_REGRESSIONS=PASS\nPACKAGE_VALIDATION=PASS\n'
+            printf 'BROWSER_INTERACTIONS=PASS_SYNTHETIC_DATA_PRODUCTION_WORKER\n'
+            printf 'HOST_STORAGE_ROOM_TRANSACTIONS=PASS_GITHUB_EMULATOR\n'
+            printf 'SCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\n'
+            printf 'PHYSICAL_DEVICE_PERFORMANCE=NOT_RUN_USER_OWNED\n'
+            printf 'REAL_ACCOUNT_AND_AI_VALIDATION=NOT_RUN\n'
+          } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
+          (
+            cd "$delivery_dir"
+            sha256sum nextflux-v1.0.4.tbx BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
+          )
+
       - name: Upload verified NextFlux package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: nextflux-v1.0.3-${{ github.sha }}
-          path: build/nextflux/nextflux-v1.0.3.tbx
+          name: nextflux-v1.0.4-${{ github.sha }}
+          path: |
+            build/nextflux/nextflux-v1.0.4.tbx
+            build/nextflux/SHA256SUMS.txt
+            build/nextflux/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -98,7 +162,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package optimized v0.6.5 release delivery
+    name: Package optimized v0.6.6 release delivery
     needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
@@ -163,7 +227,7 @@ jobs:
           mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/release/mapping.txt"
           badging_path="$RUNNER_TEMP/toolbox-release-badging.txt"
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$badging_path"
-          grep -F "package: name='io.toolbox.host' versionCode='21' versionName='0.6.5'" "$badging_path"
+          grep -F "package: name='io.toolbox.host' versionCode='22' versionName='0.6.6'" "$badging_path"
           if grep -q '^application-debuggable' "$badging_path"; then
             printf 'Release APK must not be debuggable.\n' >&2
             exit 1
@@ -278,13 +342,13 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/release/app-release.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.6.5-release.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.6.6-release.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.6.5\n'
-            printf 'VERSION_CODE=21\n'
+            printf 'VERSION_NAME=0.6.6\n'
+            printf 'VERSION_CODE=22\n'
             printf 'BUILD_TYPE=release\n'
             printf 'APK_DEBUGGABLE=false\n'
             printf 'R8_MINIFICATION=PASS\n'
@@ -308,29 +372,31 @@ jobs:
             printf 'LIVE_NOTIFICATION_COLOR_REGRESSION=COMPILED_NOT_RUN_USER_OWNED\n'
             printf 'ANDROID_INSTRUMENTATION_COMPILE=PASS\n'
             printf 'RUNTIME_CONTENT_SURFACE_REGRESSION=COMPILED_NOT_RUN_USER_OWNED\n'
-            printf 'ANDROID_INSTRUMENTATION_EXECUTION=NOT_RUN_USER_OWNED\n'
+            printf 'STORAGE_BATCH_ROOM_EMULATOR=PASS\n'
+            printf 'NEXTFLUX_WORKER_BROWSER_INTERACTIONS=PASS_SYNTHETIC_DATA\n'
+            printf 'ANDROID_INSTRUMENTATION_EXECUTION=STORAGE_ONLY_GITHUB_EMULATOR\n'
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'MINIFIED_RUNTIME_DEVICE_TEST=NOT_RUN_USER_OWNED\n'
             printf 'APK_SOURCE=app/build/outputs/apk/release/app-release.apk\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
             printf 'EMBEDDED_EXAMPLE_BYTES=PASS\n'
-            printf 'DELIVERY_FILES=toolbox-v0.6.5-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.6.6-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.6.5-release.apk \
+              toolbox-v0.6.6-release.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.6.5 release delivery
+      - name: Upload verified v0.6.6 release delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.6.5-release-${{ github.sha }}
+          name: toolbox-v0.6.6-release-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.6.5-release.apk
+            build/ci-delivery/toolbox-v0.6.6-release.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error

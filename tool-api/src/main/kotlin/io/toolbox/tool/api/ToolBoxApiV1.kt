@@ -47,7 +47,7 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "52897e7e73aae041ec272d8d63576f24e9626f55b34c0c1f7b38b7c2f8acecf8"
+    const val CANONICAL_SHA256: String = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
@@ -75,6 +75,8 @@ object ToolBoxApiV1 {
         MethodDescriptor("ui.toast", ContractPhase.M1, null, "ToastRequest", "void"),
         MethodDescriptor("crypto.sha256", ContractPhase.M1, null, "Sha256Request", "Sha256Result"),
         MethodDescriptor("storage.get", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageKeyRequest", "JsonValue | null"),
+        MethodDescriptor("storage.getMany", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageKeysRequest", "(JsonValue | null)[]"),
+        MethodDescriptor("storage.apply", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageApplyRequest", "void"),
         MethodDescriptor("storage.set", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageSetRequest", "void"),
         MethodDescriptor("storage.remove", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageKeyRequest", "void"),
         MethodDescriptor("storage.keys", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "void", "string[]"),

@@ -1,358 +1,308 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash, randomBytes } from "node:crypto";
-import { CACHE_PREFIX, createArticleCache, jsonBytes } from "../src/toolbox/cache.js";
+import { randomBytes } from "node:crypto";
+import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
+import { CACHE_PREFIX, ROOT_KEY, jsonBytes } from "../src/toolbox/cache.js";
+import { fakeStorage, engine, seed, article, storedArticles, rootWrite, deferred, tick } from "./cache-fixtures.mjs";
 
-function fakeStorage() {
-  const data = new Map();
-  const secure = new Map();
-  let fail = () => false;
-  let peak = 0;
-  let used = 0;
-  const sizes = new Map();
-  const api = {
-    get: async (key) => structuredClone(data.get(key) ?? null),
-    async set(key, value) {
-      if (fail(key)) throw new Error("simulated write failure");
-      assert.ok(jsonBytes({ key, value }) < 8 * 1024 * 1024, "storage RPC fits the declared bridge payload");
-      const itemBytes = jsonBytes(value);
-      const size = used - (sizes.get(key) || 0) + itemBytes;
-      peak = Math.max(peak, size);
-      used = size;
-      sizes.set(key, itemBytes);
-      data.set(key, structuredClone(value));
-    },
-    remove: async (key) => {
-      used -= sizes.get(key) || 0;
-      sizes.delete(key);
-      data.delete(key);
-    },
-    keys: async () => [...data.keys()],
-    secure: {
-      get: async (key) => structuredClone(secure.get(key) ?? null),
-      set: async (key, value) => { secure.set(key, structuredClone(value)); },
-      remove: async (key) => { secure.delete(key); },
-    },
-  };
-  return { api, data, secure, failWhen: (fn) => { fail = fn; }, peak: () => peak };
-}
-
-test("cache survives reopen and preserves UTF-16 boundary characters without browser storage", async () => {
+test("startup and page queries restore metadata without reading the body library", async () => {
   const store = fakeStorage();
-  const cache = createArticleCache(store.api);
-  const article = { id: 1, feedId: 2, content: "中文📰\\\"".repeat(70000), status: "unread" };
-  await cache.transact(["articles", "feeds", "meta"], (s) => {
-    s.articles = [article];
-    s.feeds = [{ id: 2, title: "测试" }];
-    s.meta.lastSyncTime = "2026-09-08T00:00:00.000Z";
-  });
-  const restored = await createArticleCache(store.api).read();
-  assert.deepEqual(restored.articles, [article]);
-  assert.equal(restored.feeds[0].id, 2);
-  assert.equal(restored.meta.lastSyncTime, "2026-09-08T00:00:00.000Z");
-  assert.equal(store.data.get(`${CACHE_PREFIX}manifest`).tables.articles.codec, "gzip-base64");
+  await seed(engine(store), [article(1), article(2, { starred: 1 }), article(300)]);
+  const bodyRefs = (await storedArticles(store)).map((row) => row.bodyRef);
+  store.resetCalls();
+  const builds = [];
+  const cache = engine(store, { onIndexBuild: (event) => builds.push(event) });
+  await cache.initialize();
+  const query = await cache.openQuery({ feedIds: [1], filter: "unread", pageSize: 1 });
+  assert.deepEqual((await cache.readQueryPage(query.queryId, 1)).items.map((row) => row.id), [300]);
+  assert.deepEqual((await cache.readQueryPage(query.queryId, 2)).items.map((row) => row.id), [2]);
+  const item = (await cache.readQueryPage(query.queryId, 3)).items[0];
+  assert.equal("content" in item, false);
+  assert.equal("bodyRef" in item, false);
+  assert.equal(item.titleText, "Article 1");
+  assert.equal(item.previewText, "文章 1");
+  assert.ok(item.bodyDigest);
+  await cache.patchState([{ id: 1, status: "read" }]);
+  assert.equal((await cache.readQueryPage(query.queryId, 3)).items[0].status, "read");
+  assert.equal(builds.filter(({ kind }) => kind === "query").length, 1);
+  assert.equal(store.reads.flat().some((key) => bodyRefs.some((ref) => key === ref || key.startsWith(`${ref}.`))), false);
+  await cache.closeQuery(query.queryId);
+  const nextQuery = await cache.openQuery({ feedIds: [1], filter: "unread" });
+  assert.equal(builds.filter(({ kind }) => kind === "query").length, 2);
+  await cache.closeQuery(nextQuery.queryId);
+  assert.equal((await cache.readArticle(2)).content, article(2).content);
 });
 
-test("failed staged write retains prior committed cache and a later mutation recovers", async () => {
-  const store = fakeStorage();
-  const cache = createArticleCache(store.api);
-  await cache.transact(["articles"], (s) => { s.articles = [{ id: 1, content: "previous" }]; });
-  store.failWhen((key) => key.endsWith("manifest"));
-  await assert.rejects(cache.transact(["articles"], (s) => { s.articles = [{ id: 2, content: "uncommitted" }]; }));
-  assert.equal((await cache.read()).articles[0].id, 1);
-  const reopened = createArticleCache(store.api);
-  assert.equal((await reopened.read()).articles[0].id, 1);
-  store.failWhen(() => false);
-  await reopened.transact(["articles"], (s) => { s.articles.push({ id: 3 }); });
-  assert.deepEqual((await reopened.read()).articles.map((v) => v.id), [1, 3]);
-  assert.equal([...store.data.keys()].some((v) => v.includes("uncommitted")), false);
+test("state patches touch no bodies and update counts without a full scan", async () => {
+  const store = fakeStorage(); const scans = [];
+  const cache = engine(store, { onIndexBuild: (event) => scans.push(event) });
+  await seed(cache, [article(1), article(2, { starred: 1 }), article(256)]);
+  const bodies = (await storedArticles(store)).map((row) => row.bodyRef);
+  const bodyValues = bodies.map((ref) => structuredClone(store.data.get(ref)));
+  const built = scans.length;
+  store.resetCalls();
+  const result = await cache.patchState([{ id: 1, status: "read", starred: 1 }, { id: 2, starred: 0 },
+    { id: 256, status: "read" }, { id: 256, status: "unread" }]);
+  assert.deepEqual(result.articles.map((row) => row.id), [1, 2]);
+  assert.deepEqual(result.counts, { unread: { 1: 2 }, starred: { 1: 1 } });
+  assert.deepEqual(await cache.counts([1]), result.counts);
+  assert.equal(scans.length, built);
+  assert.equal(store.reads.flat().some((key) => bodies.some((ref) => key.startsWith(ref))), false);
+  assert.equal(store.writes.flatMap(({ set }) => set).some(({ key }) => bodies.some((ref) => key.startsWith(ref))), false);
+  bodies.forEach((ref, index) => assert.deepEqual(store.data.get(ref), bodyValues[index]));
+  const restored = engine(store);
+  assert.equal((await restored.readArticle(1)).content, article(1).content);
+  assert.equal((await restored.readMetadata(1)).status, "read");
+  assert.deepEqual(await restored.counts(), result.counts);
 });
 
-test("all 18518 articles exceeding 6 MiB survive compression, update and reopen without truncation", async () => {
-  const store = fakeStorage();
-  const cache = createArticleCache(store.api);
-  const articles = Array.from({ length: 18518 }, (_, id) => ({
-    id, title: `完整文章 ${id}`, feedId: 1, status: "unread",
-    content: `<p>📰\"中文\\ ${createHash("sha256").update(String(id)).digest("hex")}</p>`.repeat(12),
-    published_at: String(id).padStart(5, "0"),
-  }));
-  assert.ok(jsonBytes(articles) > 6 * 1024 * 1024);
-  await cache.transact(["articles", "meta"], (s) => {
-    s.articles = articles;
-    s.meta.lastSyncTime = "2026-09-09T00:00:00.000Z";
-  });
-  assert.deepEqual((await createArticleCache(store.api).read()).articles, articles);
-  await cache.transact(["articles"], (s) => { s.articles[0].status = "read"; });
-  const expected = structuredClone(articles);
-  expected[0].status = "read";
-  const reopened = await createArticleCache(store.api).read();
-  assert.deepEqual(reopened.articles, expected);
-  assert.equal(reopened.meta.lastSyncTime, "2026-09-09T00:00:00.000Z");
+test("fixed query IDs avoid paging gaps while changed status is current and removed rows disappear", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [1, 2, 3, 4, 5].map((id) => article(id)));
+  const query = await cache.openQuery({ feedIds: [1], filter: "unread", pageSize: 2, direction: "asc" });
+  assert.deepEqual((await cache.readQueryPage(query.queryId, 1)).items.map((row) => row.id), [1, 2]);
+  await cache.patchState([{ id: 1, status: "read" }, { id: 3, status: "read" }, { id: 4, status: "removed" }]);
+  const second = await cache.readQueryPage(query.queryId, 2);
+  assert.deepEqual(second.items.map((row) => [row.id, row.status]), [[3, "read"]]);
+  assert.equal(second.hasMore, true);
+  assert.deepEqual((await cache.readQueryPage(query.queryId, 3)).items.map((row) => row.id), [5]);
+  await cache.updateCatalog({ removeFeedIds: [1] });
+  assert.deepEqual((await cache.readQueryPage(query.queryId, 1)).items, []);
 });
 
-test("less-compressible archive survives two generations exceeding the old 50 MiB quota", async () => {
-  const store = fakeStorage();
-  const cache = createArticleCache(store.api);
-  // 20 MiB of independent binary payload models high-entropy article contents.
-  // It remains above 2 MiB after gzip, with two base64 generations above 50 MiB.
-  const articles = Array.from({ length: 128 }, (_, id) => ({
-    id, feedId: 1, status: "unread", content: randomBytes(160 * 1024).toString("base64"),
-  }));
-  await cache.transact(["articles"], (s) => { s.articles = articles; });
-  const keys = store.data.get(`${CACHE_PREFIX}manifest`).tables.articles.keys;
-  const encodedLength = keys.reduce((total, key) => total + store.data.get(key).length, 0);
-  assert.ok(encodedLength * 3 / 4 - 2 > 2 * 1024 * 1024);
-  assert.ok(keys.length > 2);
-  assert.equal(store.data.get(keys[0]).length, 1024 * 1024);
-  assert.ok(keys.every((key) => store.data.get(key).length <= 1024 * 1024));
-  await cache.transact(["articles"], (s) => { s.articles[0].status = "read"; });
-  assert.ok(store.peak() > 50 * 1024 * 1024);
-  const restored = await createArticleCache(store.api).read();
-  assert.equal(restored.articles.length, articles.length);
-  for (const [index, article] of restored.articles.entries()) {
-    assert.equal(article.id, articles[index].id);
-    assert.equal(article.content, articles[index].content);
-    assert.equal(article.status, index === 0 ? "read" : "unread");
+test("reads do not join a blocked root commit or garbage collection", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  const query = await cache.openQuery({ feedIds: [1] });
+  const entered = deferred(); const release = deferred();
+  store.beforeApply(async (change) => { if (rootWrite(change)) { entered.resolve(); await release.promise; } });
+  const changing = cache.patchState([{ id: 1, status: "read" }]);
+  await entered.promise;
+  assert.equal((await cache.readMetadata(1)).status, "unread");
+  assert.equal((await cache.readQueryPage(query.queryId)).items[0].status, "unread");
+  assert.equal((await cache.readArticle(1)).content, article(1).content);
+  release.resolve(); await changing; store.beforeApply(undefined);
+  const gcEntered = deferred(); const gcRelease = deferred();
+  store.beforeKeys(async () => { gcEntered.resolve(); await gcRelease.promise; });
+  const gc = cache.collectGarbage(); await gcEntered.promise;
+  assert.equal((await cache.readMetadata(1)).status, "read");
+  assert.equal((await cache.readArticle(1)).content, article(1).content);
+  gcRelease.resolve(); await gc;
+});
+
+test("a body reader pins its old version across sync publication and GC", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1, { content: "old body" })]);
+  const [{ bodyRef }] = await storedArticles(store);
+  const entered = deferred(); const release = deferred(); let paused = false;
+  store.beforeGet(async (keys) => { if (!paused && keys.includes(bodyRef)) { paused = true; entered.resolve(); await release.promise; } });
+  const oldReading = cache.readArticle(1); await entered.promise;
+  await seed(cache, [article(1, { content: "new body" })]);
+  await cache.collectGarbage(); assert.equal(store.data.has(bodyRef), true);
+  release.resolve(); assert.equal((await oldReading).content, "old body");
+  assert.equal((await cache.readArticle(1)).content, "new body");
+  await cache.collectGarbage(); assert.equal(store.data.has(bodyRef), false);
+});
+
+test("normal state commits reclaim known old pages without another full keys scan", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1), article(256)]);
+  let scans = 0;
+  store.beforeKeys(() => { scans += 1; });
+  await cache.collectGarbage();
+  assert.equal(scans, 1);
+  await cache.patchState([{ id: 1, status: "read" }]);
+  await cache.collectGarbage();
+  assert.equal(scans, 1);
+  assert.equal((await cache.readArticle(1)).content, article(1).content);
+  await cache.clear();
+  assert.equal(scans, 2, "logout performs a full sweep of all cache generations");
+  assert.deepEqual([...store.data.keys()], [ROOT_KEY]);
+});
+
+test("failed root write retains complete articles and checkpoint and a later sync recovers", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  const previous = structuredClone(store.data.get(ROOT_KEY));
+  store.failWhen(rootWrite);
+  await assert.rejects(seed(cache, [article(2)], { syncedAt: "2026-09-10T00:00:00.000Z" }), /simulated write failure/);
+  assert.deepEqual(store.data.get(ROOT_KEY), previous);
+  assert.deepEqual(await cache.selectIds(), [1]);
+  assert.deepEqual(await engine(store).selectIds(), [1]);
+  assert.equal((await cache.meta()).lastSyncTime, previous.lastSyncTime);
+  store.failWhen(() => false); await seed(cache, [article(3)]);
+  assert.deepEqual(await engine(store).selectIds(), [1, 3]);
+});
+
+test("invalid body values reject before publishing an unreadable root", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  const root = structuredClone(store.data.get(ROOT_KEY));
+  for (const bad of [{ content: {} }, { enclosures: "invalid" }]) {
+    await assert.rejects(seed(cache, [article(2, bad)]), { code: "CACHE_INVALID" });
+    assert.deepEqual(store.data.get(ROOT_KEY), root);
+    assert.deepEqual(await cache.selectIds(), [1]);
   }
 });
 
-test("native storage rate rejection waits one method window and retries the same operation", async () => {
-  const store = fakeStorage();
-  const limited = new Set(["get", "set", "remove", "keys"]);
-  const api = Object.fromEntries([...limited].map((method) => [method, async (...args) => {
-    if (limited.delete(method)) throw Object.assign(new Error("method rate limited"), { code: "RATE_LIMITED" });
-    return store.api[method](...args);
-  }]));
-  const originalTimeout = globalThis.setTimeout;
-  const waits = [];
-  try {
-    globalThis.setTimeout = (callback, duration) => {
-      waits.push(duration);
-      queueMicrotask(callback);
-      return 0;
-    };
-    const cache = createArticleCache(api);
-    await cache.transact(["articles"], (s) => { s.articles = [{ id: 1 }]; });
-    assert.deepEqual((await createArticleCache(api).read()).articles, [{ id: 1 }]);
-    await cache.clear();
-    assert.equal(store.data.size, 0);
-    assert.deepEqual(waits, [60000, 60000, 60000, 60000]);
-    assert.equal(limited.size, 0);
-  } finally {
-    globalThis.setTimeout = originalTimeout;
-  }
+test("incremental sync reuses bodies, retains newer removal and atomically prunes unsubscribed feeds", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1), article(2, { feedId: 2 }), article(3)], { feeds: [{ id: 1 }, { id: 2 }] });
+  const body = (await storedArticles(store)).find((row) => row.id === 1).bodyRef;
+  store.resetCalls();
+  const token = await cache.prepareSync({ syncedAt: "2026-09-10T00:00:00.000Z" });
+  await cache.applySyncBatch(token, [article(1, { status: "read" }), { id: 3, status: "removed", changed_at: "2026-09-10T12:00:00Z" }]);
+  await cache.applySyncBatch(token, [article(3, { changed_at: "2026-09-10T11:00:00Z" })]);
+  await cache.commitSync(token, { feeds: [{ id: 1 }], categories: [] });
+  assert.deepEqual(await cache.selectIds(), [1]);
+  assert.equal((await storedArticles(store))[0].bodyRef, body);
+  assert.equal(store.writes.flatMap(({ set }) => set).some(({ key }) => key.startsWith(body)), false);
 });
 
-test("failed compressed shard write preserves articles and checkpoint through reopen", async () => {
-  const store = fakeStorage();
-  const cache = createArticleCache(store.api);
-  await cache.transact(["articles", "meta"], (s) => {
-    s.articles = [{ id: 1, content: "original 中文📰" }];
-    s.meta.lastSyncTime = "2026-09-08T00:00:00.000Z";
-  });
-  const original = await cache.read();
-  const committedManifest = structuredClone(store.data.get(`${CACHE_PREFIX}manifest`));
-  const content = randomBytes(1600000).toString("base64");
-  store.failWhen((key) => key === `${CACHE_PREFIX}articles.2.1`);
-  await assert.rejects(cache.transact(["articles", "meta"], (s) => {
-    s.articles = [{ id: 2, content }];
-    s.meta.lastSyncTime = "2026-09-09T00:00:00.000Z";
-  }), /simulated write failure/);
-  assert.equal(typeof store.data.get(`${CACHE_PREFIX}articles.2.0`), "string");
-  assert.deepEqual(store.data.get(`${CACHE_PREFIX}manifest`), committedManifest);
-  assert.deepEqual(await cache.read(), original);
-  const reopened = createArticleCache(store.api);
-  assert.deepEqual(await reopened.read(), original);
-  assert.equal(store.data.has(`${CACHE_PREFIX}articles.2.0`), false);
-  store.failWhen(() => false);
-  await reopened.transact(["articles"], (s) => { s.articles.push({ id: 3, content }); });
-  assert.deepEqual((await createArticleCache(store.api).read()).articles, [...original.articles, { id: 3, content }]);
-});
-
-test("feeds, categories, icons and metadata have no artificial per-table retention caps", async () => {
-  const store = fakeStorage();
-  const expected = {
-    feeds: [{ id: 1, title: "订阅".repeat(100000) }],
-    categories: [{ id: 2, title: "分类".repeat(30000) }],
-    feedIcons: [{ feedId: 1, data: "x".repeat(600000) }],
-    meta: { lastSyncTime: "2026-09-09T00:00:00.000Z", note: "x".repeat(2048) },
-  };
-  await createArticleCache(store.api).transact(Object.keys(expected), (s) => { Object.assign(s, expected); });
-  const actual = await createArticleCache(store.api).read();
-  for (const table of Object.keys(expected)) assert.deepEqual(actual[table], expected[table]);
-});
-
-test("legacy v1 remains readable, resets checkpoint, and migrates only after a successful commit", async () => {
-  const store = fakeStorage();
-  const articles = [{ id: 7, content: "legacy 中文📰" }];
-  const articleKey = `${CACHE_PREFIX}articles.4.0`;
-  const metaKey = `${CACHE_PREFIX}meta.4.0`;
-  const legacy = { generation: 4, tables: { articles: [articleKey], meta: [metaKey] } };
-  await store.api.set(articleKey, JSON.stringify(articles));
-  await store.api.set(metaKey, JSON.stringify({ lastSyncTime: "2026-09-08T00:00:00.000Z" }));
-  await store.api.set(`${CACHE_PREFIX}manifest`, legacy);
-  const cache = createArticleCache(store.api);
-  const restored = await cache.read();
-  assert.deepEqual(restored.articles, articles);
-  assert.equal(restored.meta.lastSyncTime, undefined);
-  assert.deepEqual(store.data.get(`${CACHE_PREFIX}manifest`), legacy);
-  assert.equal(store.data.has(articleKey), true);
-  store.failWhen((key) => key === `${CACHE_PREFIX}manifest`);
-  await assert.rejects(cache.transact(["feeds"], (s) => { s.feeds = [{ id: 1 }]; }));
-  assert.equal(store.data.has(articleKey), true);
-  assert.equal(store.data.has(metaKey), true);
-  assert.deepEqual((await createArticleCache(store.api).read()).articles, articles);
-  store.failWhen(() => false);
-  await cache.transact(["feeds"], (s) => { s.feeds = [{ id: 1 }]; });
-  assert.equal(store.data.get(`${CACHE_PREFIX}manifest`).version, 2);
-  assert.equal(store.data.has(articleKey), false);
-  assert.equal(store.data.has(metaKey), false);
-  const migrated = await createArticleCache(store.api).read();
-  assert.deepEqual(migrated.articles, articles);
-  assert.equal(migrated.meta.lastSyncTime, undefined);
-  assert.deepEqual(migrated.feeds, [{ id: 1 }]);
-});
-
-test("host disk write failure preserves committed rows and their checkpoint", async () => {
-  const store = fakeStorage();
-  const diskError = Object.assign(new Error("simulated host disk write failure"), { code: "INTERNAL_ERROR" });
-  const api = {
-    ...store.api,
-    async set(key, value) {
-      // Fail after the replacement article shard has reached storage, before
-      // the new checkpoint can be written or the manifest can switch snapshots.
-      if (key === `${CACHE_PREFIX}meta.2.0`) throw diskError;
-      return store.api.set(key, value);
-    },
-  };
-  const cache = createArticleCache(api);
-  await cache.transact(["articles", "meta"], (s) => {
-    s.articles = [{ id: 1, content: "saved" }];
-    s.meta.lastSyncTime = "2026-09-08T00:00:00.000Z";
-  });
-  const before = await cache.read();
-  await assert.rejects(cache.transact(["articles", "meta"], (s) => {
-    s.articles.push({ id: 2, content: randomBytes(10000).toString("base64") });
-    s.meta.lastSyncTime = "2026-09-09T00:00:00.000Z";
-  }), (error) => error === diskError);
-  assert.equal(store.data.has(`${CACHE_PREFIX}articles.2.0`), true);
-  assert.deepEqual(await cache.read(), before);
-  assert.deepEqual(await createArticleCache(store.api).read(), before);
-});
-
-test("plain JSON fallback preserves Unicode across shard boundaries without compression APIs", async () => {
-  const compression = globalThis.CompressionStream;
-  const decompression = globalThis.DecompressionStream;
-  try {
-    globalThis.CompressionStream = undefined;
-    globalThis.DecompressionStream = undefined;
-    const store = fakeStorage();
-    const cache = createArticleCache(store.api);
-    const article = { id: 1, content: "中📰\\\"\ud800".repeat(70000) };
-    await cache.transact(["articles"], (s) => { s.articles = [article]; });
-    const entry = store.data.get(`${CACHE_PREFIX}manifest`).tables.articles;
-    assert.equal(entry.codec, "json");
-    assert.ok(entry.keys.length > 1);
-    for (const key of entry.keys) {
-      const shard = store.data.get(key);
-      assert.equal(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(shard), false);
-    }
-    assert.deepEqual((await createArticleCache(store.api).read()).articles, [article]);
-  } finally {
-    globalThis.CompressionStream = compression;
-    globalThis.DecompressionStream = decompression;
-  }
-});
-
-test("malformed compression and invalid manifest references reject without deleting committed data", async () => {
-  for (const corrupt of [
-    (data, entry) => { data.set(entry.keys[0], "not base64!"); },
-    (data, entry) => { data.set(entry.keys[0], btoa("not a gzip stream")); },
-    (data, entry) => { data.set(entry.keys[0], data.get(entry.keys[0]).slice(0, -4)); },
-    (_data, entry) => { entry.codec = "unknown"; },
-    (_data, entry) => { entry.keys = [`${CACHE_PREFIX}feeds.1.0`]; },
-    (_data, entry) => { entry.keys = [`${CACHE_PREFIX}articles.2.0`]; },
-    (_data, entry) => { entry.keys.push(entry.keys[0]); },
-    (_data, entry) => { entry.keys = "invalid"; },
-    (data, entry) => { data.delete(entry.keys[0]); },
-    (data, entry) => { entry.codec = "json"; data.set(entry.keys[0], "{}"); },
-    (_data, _entry, saved) => { saved.version = "2"; },
-    (_data, _entry, saved) => { saved.generation = -1; },
-    (_data, _entry, saved) => { saved.tables = []; },
-  ]) {
-    const store = fakeStorage();
-    await createArticleCache(store.api).transact(["articles"], (s) => { s.articles = [{ id: 1 }]; });
-    const saved = store.data.get(`${CACHE_PREFIX}manifest`);
-    corrupt(store.data, saved.tables.articles, saved);
-    const before = structuredClone(store.data);
-    await assert.rejects(createArticleCache(store.api).initialize(), /阅读缓存.*请退出登录后重新同步/);
-    assert.deepEqual(store.data, before);
-  }
-});
-
-test("concurrent mutations serialize and logout clears only this cache namespace", async () => {
-  const store = fakeStorage();
+test("clear rejects queued mutations, blocks new reads and preserves preferences and secure keys", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
   await store.api.set("nextflux.preferences.v1", { language: "zh-CN" });
   await store.api.secure.set("auth", "credential");
-  const cache = createArticleCache(store.api);
-  await Promise.all([1, 2, 3].map((id) => cache.transact(["articles"], (s) => { s.articles.push({ id }); })));
-  assert.deepEqual((await cache.read()).articles.map((v) => v.id), [1, 2, 3]);
-  await cache.clear();
-  assert.deepEqual((await cache.read()).articles, []);
-  assert.equal([...store.data.keys()].some((v) => v.startsWith(CACHE_PREFIX)), false);
+  const entered = deferred(); const release = deferred();
+  store.beforeApply(async ({ set }) => { if (set.some(({ key, value }) => key === ROOT_KEY && value.cleared)) { entered.resolve(); await release.promise; } });
+  const queued = cache.patchState([{ id: 1, status: "read" }]);
+  const rejected = assert.rejects(queued, (error) => error.code === "ACCOUNT_CHANGED");
+  const clearing = cache.clear(); await entered.promise;
+  let readFinished = false;
+  const reading = cache.readMetadata(1).then((value) => { readFinished = true; return value; });
+  await tick(); assert.equal(readFinished, false);
+  release.resolve(); await clearing; await rejected;
+  assert.equal(await reading, null);
+  assert.deepEqual([...store.data.keys()].filter((key) => key.startsWith("nextflux.cache.")), [ROOT_KEY]);
+  assert.equal(store.data.get(ROOT_KEY).cleared, true);
+  assert.equal(store.data.get(ROOT_KEY).lastSyncTime, null);
   assert.deepEqual(await store.api.get("nextflux.preferences.v1"), { language: "zh-CN" });
   assert.equal(await store.api.secure.get("auth"), "credential");
+});
+
+test("an empty cache binds login while a different account cannot display its data", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  const account = { serverUrl: "https://example.com", userId: "1" };
+  await cache.initialize(null); await cache.initialize(account);
+  await seed(cache, [article(1)], { account });
+  await assert.rejects(cache.initialize({ ...account, userId: "2" }), (error) => error.code === "ACCOUNT_CHANGED");
+  await assert.rejects(engine(store).initialize({ ...account, userId: "2" }), (error) => error.code === "ACCOUNT_CHANGED");
+  await cache.clear(); await cache.initialize({ ...account, userId: "2" });
+  assert.deepEqual(await cache.selectIds(), []);
+});
+
+test("aborted staged writes are reclaimed after the initial orphan sweep", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  await cache.collectGarbage();
+  const committed = new Map(store.data);
+  const token = await cache.prepareSync({ syncedAt: "2026-09-10T00:00:00.000Z" });
+  await cache.applySyncBatch(token, [article(2)]);
+  assert.ok(store.data.size > committed.size);
+  await cache.abortSync(token);
+  await cache.collectGarbage();
+  assert.deepEqual(store.data, committed);
+});
+
+test("logout reclaims a pinned old body after its late read is invalidated", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  await seed(cache, [article(1)]);
+  await cache.collectGarbage();
+  const [{ bodyRef }] = await storedArticles(store);
+  const entered = deferred(); const release = deferred();
+  store.beforeGet(async (keys) => { if (keys.includes(bodyRef)) { entered.resolve(); await release.promise; } });
+  const reading = cache.readArticle(1);
+  const rejected = assert.rejects(reading, { code: "ACCOUNT_CHANGED" });
+  await entered.promise;
+  await cache.clear();
+  assert.equal(store.data.has(bodyRef), true);
+  release.resolve(); await rejected;
+  store.beforeGet(undefined);
+  await cache.collectGarbage();
+  assert.deepEqual([...store.data.keys()], [ROOT_KEY]);
+});
+
+test("18,518 complete articles grow the COW directory and survive restore without retention limits", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  const rows = Array.from({ length: 18518 }, (_, id) => article(id, { content: `<p>中文📰 \\" ${id}</p>`.repeat(40) }));
+  assert.ok(jsonBytes(rows) > 6 * 1024 * 1024);
+  await seed(cache, rows);
+  assert.ok(store.data.get(ROOT_KEY).tables.articles.level >= 1);
+  const reopened = engine(store);
+  assert.equal((await reopened.selectIds()).length, rows.length);
+  for (let offset = 0; offset < rows.length; offset += 128) {
+    const expected = rows.slice(offset, offset + 128);
+    const actual = await Promise.all(expected.map((row) => reopened.readArticle(row.id)));
+    actual.forEach((row, index) => assert.equal(row.content, expected[index].content));
+  }
+  await reopened.patchState([{ id: 18517, status: "read" }]);
+  assert.equal((await engine(store).readMetadata(18517)).status, "read");
+  assert.equal((await engine(store).selectIds()).length, rows.length);
+});
+
+test("high-entropy bodies and oversized catalog values retain exact contents", async () => {
+  const store = fakeStorage(); const cache = engine(store);
+  const rows = Array.from({ length: 128 }, (_, id) => article(id, { content: randomBytes(320 * 1024).toString("base64") }));
+  const feeds = [{ id: 1, title: "订阅".repeat(100000) }];
+  await seed(cache, rows, { feeds, categories: [{ id: 2, title: "分类".repeat(30000) }] });
+  await cache.updateCatalog({ upsertFeedIcons: [{ feedId: 1, data: "x".repeat(600000) }] });
+  assert.ok([...store.data.values()].reduce((total, value) => total + jsonBytes(value), 0) > 50 * 1024 * 1024);
+  const reopened = engine(store);
+  assert.deepEqual(await reopened.getCatalog("feeds"), feeds);
+  assert.equal((await reopened.getCatalogItem("feedIcons", 1)).data.length, 600000);
+  await reopened.patchState([{ id: 0, starred: 1 }]);
+  const afterPatch = engine(store);
+  for (const row of rows) assert.equal((await afterPatch.readArticle(row.id)).content, row.content);
 });
 
 test("preferences hydrate in stateless mode and AI secrets only enter secure storage", async () => {
   Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new Error("localStorage disabled"); } });
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, get() { throw new Error("IndexedDB disabled"); } });
   const store = fakeStorage();
-  await store.api.set("nextflux.preferences.v1", { settings: JSON.stringify({ fontSize: 19 }), language: "zh-CN" });
-  await store.api.secure.set("nextflux.ai-key.v1", "test-private-ai-key");
-  const prefs = await import("../src/toolbox/preferences.js");
-  await prefs.initializePreferences({ storage: store.api });
-  const { settingsState, updateSettings } = await import("../src/stores/settingsStore.js");
-  assert.equal(settingsState.get().fontSize, 19);
-  assert.equal(settingsState.get().aiApiKey, "test-private-ai-key");
-  updateSettings({ fontSize: 22, aiApiKey: "replacement-private-ai-key" });
-  await prefs.flushPreferences();
-  const raw = await store.api.get("nextflux.preferences.v1");
-  assert.equal(JSON.parse(raw.settings).fontSize, 22);
-  assert.equal("aiApiKey" in JSON.parse(raw.settings), false);
-  assert.equal(JSON.stringify([...store.data.values()]).includes("private-ai-key"), false);
-  assert.equal(await store.api.secure.get("nextflux.ai-key.v1"), "replacement-private-ai-key");
-  store.failWhen((key) => key === "nextflux.preferences.v1");
-  updateSettings({ fontSize: 24 });
-  await assert.rejects(prefs.flushPreferences(), /simulated write failure/);
-  delete globalThis.localStorage;
-  delete globalThis.indexedDB;
+  try {
+    await store.api.set("nextflux.preferences.v1", { settings: JSON.stringify({ fontSize: 19 }), language: "zh-CN" });
+    await store.api.secure.set("nextflux.ai-key.v1", "test-private-ai-key");
+    const prefs = await import("../src/toolbox/preferences.js");
+    await prefs.initializePreferences({ storage: store.api });
+    const { settingsState, updateSettings } = await import("../src/stores/settingsStore.js");
+    assert.equal(settingsState.get().fontSize, 19);
+    updateSettings({ fontSize: 22, aiApiKey: "replacement-private-ai-key" }); await prefs.flushPreferences();
+    const raw = await store.api.get("nextflux.preferences.v1");
+    assert.equal(JSON.parse(raw.settings).fontSize, 22);
+    assert.equal("aiApiKey" in JSON.parse(raw.settings), false);
+    assert.equal(JSON.stringify([...store.data.values()]).includes("private-ai-key"), false);
+    assert.equal(await store.api.secure.get("nextflux.ai-key.v1"), "replacement-private-ai-key");
+    store.failWhen(({ set }) => set.some(({ key }) => key === "nextflux.preferences.v1"));
+    updateSettings({ fontSize: 24 }); await assert.rejects(prefs.flushPreferences(), /simulated write failure/);
+  } finally { delete globalThis.localStorage; delete globalThis.indexedDB; }
 });
 
-test("storage queries reflect read/starred mutations and exclude removed or hidden feed articles", async () => {
-  const store = fakeStorage();
-  globalThis.ToolBox = { storage: store.api };
-  const db = await import("../src/db/storage.js");
-  await db.initializeArticleCache();
-  await db.addFeeds([{ id: 1, title: "visible" }, { id: 2, hide_globally: true }]);
-  await db.addArticles([
-    { id: 1, feedId: 1, title: "Match older", status: "unread", starred: 0, published_at: "2026-09-07" },
-    { id: 2, feedId: 1, title: "Match newer", status: "unread", starred: 1, published_at: "2026-09-08" },
-    { id: 3, feedId: 2, title: "Match hidden", status: "read", starred: 0, published_at: "2026-09-09" },
-  ]);
-  assert.equal(await db.getUnreadCount(1), 2);
-  assert.equal(await db.getStarredCount(1), 1);
-  assert.deepEqual((await db.getArticlesByPage([1], "all", 1, 1)).map((v) => v.id), [2]);
-  assert.deepEqual((await db.searchArticles("match")).map((v) => v.id), [2, 1]);
-  assert.equal((await db.getArticleById(2)).feed.title, "visible");
-  const article = await db.getArticleById(2);
-  await db.addArticles([{ ...article, status: "read", starred: 0 }, { id: 1, status: "removed" }]);
-  assert.equal(await db.getUnreadCount(1), 0);
-  assert.equal(await db.getStarredCount(1), 0);
-  assert.equal(await db.getArticlesCount([1]), 1);
-  await db.setLastSyncTime(new Date("2026-09-08T00:00:00.000Z"));
-  assert.equal(db.getLastSyncTime().toISOString(), "2026-09-08T00:00:00.000Z");
-  await db.clearArticleCache();
-  assert.equal(db.getLastSyncTime(), null);
-  delete globalThis.ToolBox;
+test("db metadata queries preserve hidden feeds, counts and sorting through the Worker contract", async () => {
+  const store = fakeStorage(); globalThis.ToolBox = { storage: store.api };
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  try {
+    const bundle = await build({ absWorkingDir: root, entryPoints: ["src/db/storage.js"], bundle: true, write: false,
+      format: "esm", platform: "node", plugins: [{ name: "direct-cache-for-node-test", setup(plugin) {
+        plugin.onResolve({ filter: /cache-client\.js$/ }, () => ({ path: "cache-client", namespace: "test-worker" }));
+        plugin.onLoad({ filter: /.*/, namespace: "test-worker" }, () => ({ resolveDir: root,
+          contents: "export { createArticleCache as createWorkerArticleCache } from './src/toolbox/cache.js';" }));
+      } }] });
+    const db = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+    await db.initializeArticleCache();
+    await db.addFeeds([{ id: 1, title: "visible" }, { id: 2, hide_globally: true }]);
+    await db.addArticles([article(1, { title: "Match older" }), article(2, { title: "Match newer", starred: 1 }),
+      article(3, { feedId: 2, title: "Match hidden", status: "read" })]);
+    assert.equal(await db.getUnreadCount(1), 2); assert.equal(await db.getStarredCount(1), 1);
+    assert.deepEqual((await db.getArticlesByPage([1], "all", 1, 1)).map((row) => row.id), [2]);
+    assert.deepEqual((await db.searchArticles("match")).map((row) => row.id), [2, 1]);
+    assert.equal((await db.getCachedArticleMetadata()).some((row) => "content" in row), false);
+    await db.patchArticleState([{ id: 2, status: "read", starred: 0 }, { id: 1, status: "removed" }]);
+    assert.equal(await db.getUnreadCount(1), 0); assert.equal(await db.getArticlesCount([1]), 1);
+    await db.setLastSyncTime(new Date("2026-09-08T00:00:00.000Z"));
+    assert.equal(db.getLastSyncTime().toISOString(), "2026-09-08T00:00:00.000Z");
+    await db.clearArticleCache(); assert.equal(db.getLastSyncTime(), null);
+    assert.equal([...store.data.keys()].filter((key) => key.startsWith(CACHE_PREFIX)).length, 1);
+  } finally { delete globalThis.ToolBox; }
 });

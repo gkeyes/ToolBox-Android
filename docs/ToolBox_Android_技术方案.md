@@ -20,7 +20,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ### 1.1 当前开发基线
 
-- 当前候选为 `0.6.4 (20)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
+- 当前候选为 `0.6.6 (22)`，沿用 GitHub 固定签名，可覆盖安装，不清除工具、授权或设置。
 - Room schema 继续为 `version = 1`，本次不改变表结构；不写 `Migration`、`AutoMigration`、
   Room `Migration`、`AutoMigration` 或 `fallbackToDestructiveMigration`。外观字段只使用 DataStore
   `DataMigration` 做一次性补齐，不接触 Room。
@@ -190,6 +190,7 @@ capability descriptor、JS shim method table、`sdk/toolbox-api.d.ts` 和 manife
 | `ui.toast` | 无 | 文本长度限制，Toast 不代表业务完成。 |
 | `crypto.sha256` | 无 | 对上限内 UTF-8/字节求摘要。 |
 | `storage.*` | `storage` | key 长度与 JSON 值校验。0.6.5 起不设每工具持久存储总容量配额，旧 storageBytes 字段仅兼容接受；可保存量由设备剩余空间决定。普通值按键分片保存，旧文档首次修改时原子迁移；写入失败保留旧数据。 |
+| `storage.getMany` / `storage.apply` | `storage` | 0.6.6 起提供最多 256 键的保序快照读取与原子批量写删；遵守现有消息大小限制。apply 的重复键、写删冲突和非法参数在写入前整体拒绝；普通存储锁内再次核对版本与授权。 |
 | `storage.secure.*` | `storage.secure` | 每工具/版本 Keystore 隔离；大密文分片保存，替换与清理为原子操作；关闭/更新/卸载销毁。 |
 | `device.basic` | `device.basic` | 仅 API level、locale、timezone、screen class。 |
 | `haptics.perform` | `haptics` | 枚举效果并限流，需要近期真实触摸。 |
@@ -415,12 +416,12 @@ manifest、权限、网络、后台生命周期、普通/实时通知、系统�
 GitHub Actions 的 verify 顺序为：协议一致性 → 安全静态检查 → Kotlin 编译 → 最小单元测试；
 检查通过后直接构建一次签名 release APK，不另行构建重复的 candidate APK。自动截图测试、插件和 PNG 基线已按用户
 明确要求删除，不再运行；保留 debug 的 IDE 手动预览，回执标记截图验证已移除而不是 PASS。
-0.6.4 (20) 上传 `toolbox-v0.6.4-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
+0.6.6 (22) 上传 `toolbox-v0.6.6-release.apk`、`SHA256SUMS.txt` 和构建/测试回执；
 APK 内含四个范例，独立小工具不纳入本轮宿主交付。release 使用原固定签名，关闭调试，启用 R8
 代码优化与资源裁剪，不改变数据库或权限能力集合。Room、WorkManager、Kotlin serialization 的
 运行时入口使用依赖自带 consumer rules；交付检查持久化 Worker 类名未被改名，避免覆盖 debug
 后旧任务无法创建，不用整个模块的 keep 规则抵消优化。R8 映射随提交独立归档。
-自动交付流程不启动模拟器；
+GitHub 对普通存储、分片替换、回滚和撤权竞态执行指定的模拟器 instrumentation；其他设备场景仍由用户验证。NextFlux 的移动视口浏览器测试使用合成数据并运行生产 Worker，不访问真实账号，也不截图。
 回执必须明确设备测试和超级岛展示未执行。相机、SAF、
 Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由用户在候选 APK 上真机验证。
 

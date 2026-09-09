@@ -1,10 +1,13 @@
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { approvedImageSource, acquireImage, loadProxyMedia } from "../src/toolbox/media.js";
+import { approvedImageSource, acquireImage, clearMediaCache, loadProxyMedia } from "../src/toolbox/media.js";
 import { safeContentUrl, cleanAttributes } from "../src/toolbox/content.js";
 
 const origin = "https://miniflux.xiaochen.win";
 const proxy = `${origin}/proxy/signature/aW1hZ2U=`;
+
+beforeEach(() => clearMediaCache());
+afterEach(() => clearMediaCache());
 
 test("media accepts only exact-origin signed proxy URLs, bounded raster data and trusted local assets", () => {
   assert.equal(approvedImageSource(proxy)?.url, proxy);
@@ -30,7 +33,7 @@ test("article attributes remove executable styles, handlers, srcset and non-web 
   for (const value of ["javascript:alert(1)", "data:text/html,x", "file:///a", "https://user:password@example.org", "java\nscript:alert(1)"]) assert.equal(safeContentUrl(value), null);
 });
 
-test("image proxy uses native network with no credentials, deduplicates and revokes on final release", async () => {
+test("image proxy uses native network with no credentials and reuses a released Blob", async () => {
   const calls = [];
   const revoked = [];
   const originalCreate = URL.createObjectURL;
@@ -48,11 +51,18 @@ test("image proxy uses native network with no credentials, deduplicates and revo
     assert.equal(calls[0].url, proxy);
     assert.equal(calls[0].maxResponseBytes, 2 * 1024 * 1024);
     a.release(); assert.equal(revoked.length, 0);
-    b.release(); b.release(); assert.deepEqual(revoked, ["blob:test-image"]);
+    b.release(); b.release(); assert.deepEqual(revoked, []);
+    const reused = acquireImage(proxy);
+    assert.equal(reused.url, "blob:test-image");
+    assert.equal(await reused.promise, "blob:test-image");
+    assert.equal(calls.length, 1);
+    reused.release();
+    clearMediaCache();
+    assert.deepEqual(revoked, ["blob:test-image"]);
     assert.equal(approvedImageSource("blob:test-image"), null);
     assert.throws(() => acquireImage("https://evil.example/image.png"), /代理/);
     assert.equal(calls.length, 1);
-  } finally { URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; delete globalThis.window; }
+  } finally { clearMediaCache(); URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; delete globalThis.window; }
 });
 
 test("media rejects unexpected MIME and external URLs and releases a loaded audio Blob", async () => {
@@ -127,6 +137,28 @@ test("failed shared image can retry without old references removing the recovere
     retried.release();
     assert.equal(approvedImageSource(blob)?.kind, "local");
     sharedSuccess.release();
+    assert.equal(approvedImageSource(blob)?.kind, "local");
+    clearMediaCache();
     assert.equal(approvedImageSource(blob), null);
   } finally { first.release(); sharedFailure.release(); delete globalThis.window; }
+});
+
+test("account teardown discards a late image or media reply before Blob creation", async () => {
+  const pending = [];
+  const originalCreate = URL.createObjectURL;
+  let created = 0;
+  URL.createObjectURL = () => { created += 1; return `blob:late-${created}`; };
+  globalThis.window = { ToolBox: { network: { request: () => new Promise((resolve) => pending.push(resolve)) } } };
+  try {
+    const image = acquireImage(proxy);
+    const imageRejected = assert.rejects(image.promise, { code: "CANCELLED" });
+    const audio = loadProxyMedia(proxy, "audio");
+    const audioRejected = assert.rejects(audio, { code: "CANCELLED" });
+    clearMediaCache();
+    pending[0]({ status: 200, headers: { "content-type": "image/png" }, bodyEncoding: "base64", body: "aGVsbG8=" });
+    pending[1]({ status: 200, headers: { "content-type": "audio/mpeg" }, bodyEncoding: "base64", body: "aGVsbG8=" });
+    await Promise.all([imageRejected, audioRejected]);
+    assert.equal(created, 0);
+    image.release();
+  } finally { clearMediaCache(); URL.createObjectURL = originalCreate; delete globalThis.window; }
 });

@@ -1,16 +1,12 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { Ripple } from "m3-ripple";
 import { Clock, ArrowUpFromLine, Star, Circle, CircleDot } from "lucide-react";
-import {
-  cleanTitle,
-  cn,
-  extractFirstImage,
-  extractTextFromHtml,
-} from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { formatPublishDate } from "@/lib/format";
 import ArticleCardCover from "./ArticleCardCover.jsx";
 import {
   handleMarkStatus,
+  handleMarkRead,
   handleMarkAboveAsRead,
 } from "@/handlers/articleHandlers.js";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -41,16 +37,13 @@ export default function ArticleCard({ article }) {
     position: { x: 0, y: 0 },
   });
 
-  const imageUrl = useMemo(() => extractFirstImage(article), [article]);
+  const imageUrl = article.coverUrl;
   const feedTitle = useMemo(() => {
     const feed = $feeds.find((f) => f.id === article.feedId);
     return feed?.title || article.feedId;
   }, [article.feedId, $feeds]);
 
-  const previewContent = useMemo(
-    () => extractTextFromHtml(article.content).slice(0, 300),
-    [article.content],
-  );
+  const previewContent = article.previewText || "";
 
   useEffect(() => {
     // 如果文章已读或未启用滚动标记已读,则不需要观察
@@ -67,9 +60,9 @@ export default function ArticleCard({ article }) {
             hasBeenVisible.current = true;
           }
           // 只有当卡片完全在视口顶部以上,且之前显示过时才标记已读
-          else if (hasBeenVisible.current && cardRect.top < rootRect.top) {
+          else if (hasBeenVisible.current && rootRect && cardRect.top < rootRect.top) {
             // console.log(cardRect.bottom, rootRect.top, '标记已读');
-            handleMarkStatus(article);
+            handleMarkRead(article);
             observer.unobserve(entry.target);
           }
         });
@@ -87,9 +80,7 @@ export default function ArticleCard({ article }) {
     }
 
     return () => {
-      if (cardRef.current) {
-        observer.unobserve(cardRef.current);
-      }
+      observer.disconnect();
     };
   }, [article, markAsReadOnScroll]);
 
@@ -101,7 +92,7 @@ export default function ArticleCard({ article }) {
         : `${basePath}/article/${article.id}`;
     navigate(toUrl);
     if (article.status !== "read") {
-      await handleMarkStatus(article);
+      await handleMarkRead(article);
     }
   };
 
@@ -182,7 +173,7 @@ export default function ArticleCard({ article }) {
                     WebkitLineClamp: titleLines === 0 ? "none" : titleLines,
                   }}
                 >
-                  {cleanTitle(article.title)}
+                  {article.titleText ?? article.title}
                 </h3>
                 {showReadingTime && (
                   <div className="text-xs text-muted flex items-center gap-1">

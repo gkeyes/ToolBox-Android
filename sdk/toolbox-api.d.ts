@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "52897e7e73aae041ec272d8d63576f24e9626f55b34c0c1f7b38b7c2f8acecf8";
+export type ToolBoxContractSha256 = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639";
 
 export type ToolBoxCapability =
   | "storage"
@@ -25,6 +25,8 @@ export type ToolBoxMethodName =
   | "ui.toast"
   | "crypto.sha256"
   | "storage.get"
+  | "storage.getMany"
+  | "storage.apply"
   | "storage.set"
   | "storage.remove"
   | "storage.keys"
@@ -96,6 +98,11 @@ export type ToolBoxErrorCode =
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface StorageApplyRequest {
+  readonly set?: readonly { readonly key: string; readonly value: JsonValue }[];
+  readonly remove?: readonly string[];
+}
 
 export interface ToolBoxApiError {
   code: ToolBoxErrorCode;
@@ -303,6 +310,10 @@ export interface ToolBoxApi {
   /** Since host 0.6.5, persisted storage has no per-tool capacity quota; available device space applies. Legacy limits.storageBytes is ignored. Writes remain atomic. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
+    /** Host 0.6.6+: reads up to 256 keys from one snapshot, preserving order and duplicates. Missing keys return null. Subject to the existing response size limit. */
+    getMany(keys: readonly string[]): Promise<(JsonValue | null)[]>;
+    /** Host 0.6.6+: atomically applies at most 256 total keys. Duplicate keys (including write/remove conflicts) and invalid entries reject the entire batch. Empty batches are a no-op. */
+    apply(mutation: StorageApplyRequest): Promise<void>;
     set(key: string, value: JsonValue): Promise<void>;
     remove(key: string): Promise<void>;
     keys(): Promise<string[]>;

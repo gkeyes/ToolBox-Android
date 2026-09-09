@@ -1,5 +1,6 @@
 import { atom } from "nanostores";
 import { SERVER_URL, assertServerUrl, basicAuth, request, responseText, httpError } from "../toolbox/network.js";
+import { initializeArticleCache, invalidateArticleReads } from "../db/storage.js";
 
 const AUTH_KEY = "nextflux.auth";
 const defaultValue = {
@@ -66,6 +67,9 @@ export async function login(serverUrl, username, password, token) {
     authType: token ? "token" : "basic",
     userId: user.id,
   };
+  // A failed logout may have retained another account's cache. Verify its
+  // binding before persisting or publishing the newly authenticated account.
+  await initializeArticleCache({ serverUrl: SERVER_URL, userId: String(user.id) });
   try {
     await secureStorage().set(AUTH_KEY, nextAuth);
   } catch {
@@ -77,8 +81,11 @@ export async function login(serverUrl, username, password, token) {
 
 export function logout() {
   if (logoutPending) return logoutPending;
+  invalidateArticleReads();
   authState.set({ ...defaultValue });
   logoutPending = (async () => {
+    const { clearMediaCache } = await import("../toolbox/media.js");
+    clearMediaCache();
     const { cancelAccountOperations, lastSync } = await import("./syncStore.js");
     const draining = cancelAccountOperations();
     const { stopContinuousSync } = await import("../toolbox/background.js");
@@ -89,8 +96,7 @@ export function logout() {
       import("../db/storage.js"), import("./articlesStore.js"), import("./feedsStore.js"),
     ]);
     await Promise.all([secureStorage().remove(AUTH_KEY), clearArticleCache()]);
-    articles.activeArticle.set(null);
-    articles.filteredArticles.set([]);
+    articles.resetArticleState();
     feeds.feeds.set([]);
     feeds.categories.set([]);
     feeds.unreadCounts.set({});

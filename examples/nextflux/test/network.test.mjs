@@ -1,8 +1,76 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { SERVER_URL, assertServerUrl, request, responseText, basicAuth, toolboxAxiosAdapter } from "../src/toolbox/network.js";
+import { createArticleCache, ROOT_KEY } from "../src/toolbox/cache.js";
 
-function host(handler) { globalThis.window = { ToolBox: { network: { request: handler } } }; }
+const ordinaryValues = new Map([[ROOT_KEY, {
+  version: 3, revision: 1, transaction: "previous-account", lastSyncTime: null,
+  account: { serverUrl: SERVER_URL, userId: "7" },
+  tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+}]]);
+const ordinaryWrites = [];
+let beforeOrdinaryRead;
+const authStorage = {
+  get: async (key) => structuredClone(ordinaryValues.get(key) ?? null),
+  getMany: async (keys) => {
+    const values = keys.map((key) => structuredClone(ordinaryValues.get(key) ?? null));
+    await beforeOrdinaryRead?.(keys);
+    return values;
+  },
+  async apply({ set = [], remove = [] } = {}) {
+    const next = new Map(ordinaryValues);
+    for (const { key, value } of set) next.set(key, structuredClone(value));
+    for (const key of remove) next.delete(key);
+    ordinaryValues.clear();
+    for (const [key, value] of next) ordinaryValues.set(key, value);
+    ordinaryWrites.push({ set, remove });
+  },
+  keys: async () => [...ordinaryValues.keys()],
+  secure: {},
+};
+
+// Only the Worker transport is replaced. Account binding is enforced by the
+// production v3 engine; the app has no Node or main-thread fallback.
+const cacheRequests = [];
+class LoginCacheWorker {
+  constructor() {
+    this.listeners = new Map();
+    this.cache = createArticleCache(authStorage, { autoGc: false });
+    this.terminated = false;
+  }
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(listener);
+  }
+  removeEventListener(type, listener) { this.listeners.get(type)?.delete(listener); }
+  terminate() { this.terminated = true; }
+  emit(message) {
+    if (this.terminated) return;
+    for (const listener of this.listeners.get("message") || []) listener({ data: structuredClone(message) });
+  }
+  postMessage(value) {
+    const message = structuredClone(value);
+    cacheRequests.push(message);
+    void Promise.resolve().then(() => this.cache[message.method](...message.args)).then(
+      (result) => this.emit({ type: "cache:result", id: message.id, ok: true, value: result }),
+      (error) => this.emit({ type: "cache:result", id: message.id, ok: false,
+        error: { name: error.name, message: error.message, code: error.code } }),
+    );
+  }
+}
+const originalWorker = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+Object.defineProperty(globalThis, "Worker", { configurable: true, writable: true, value: LoginCacheWorker });
+after(() => {
+  if (originalWorker) Object.defineProperty(globalThis, "Worker", originalWorker);
+  else delete globalThis.Worker;
+});
+
+function host(handler) { globalThis.window = { ToolBox: { network: { request: handler }, storage: authStorage } }; }
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
 
 test("exact server origin rejects alternate hosts, ports and embedded credentials", () => {
   assert.equal(assertServerUrl("/v1/me").href, `${SERVER_URL}/v1/me`);
@@ -73,15 +141,28 @@ test("cancelled requests are not dispatched", async () => {
 });
 
 
-test("login persists credentials only through secure storage and restores them before UI", async () => {
+test("login verifies the cache account before persisting credentials and restores them before UI", { timeout: 10000 }, async (t) => {
   const { login, restoreAuth, authState } = await import("../src/stores/authStore.js");
   let saved;
   host(async () => ({ status: 200, headers: {}, body: '{"id":7,"username":"reader"}', bodyEncoding: "text" }));
-  window.ToolBox.storage = { secure: {
+  window.ToolBox.storage.secure = {
     set: async (key, value) => { saved = { key, value }; },
     get: async () => saved?.value || null,
-  } };
-  await login(SERVER_URL, "", "", "test-only-token");
+  };
+  const readingCache = deferred();
+  const releaseCache = deferred();
+  t.after(() => { beforeOrdinaryRead = undefined; releaseCache.resolve(); });
+  beforeOrdinaryRead = async (keys) => {
+    if (keys.includes(ROOT_KEY)) { readingCache.resolve(); await releaseCache.promise; }
+  };
+  const loggingIn = login(SERVER_URL, "", "", "test-only-token");
+  await readingCache.promise;
+  assert.equal(saved, undefined, "credentials cannot be saved while account verification is pending");
+  assert.equal(authState.get().userId, "");
+  assert.deepEqual(cacheRequests.find(({ method }) => method === "initialize").args,
+    [{ serverUrl: SERVER_URL, userId: "7" }]);
+  releaseCache.resolve();
+  await loggingIn;
   assert.equal(saved.key, "nextflux.auth");
   assert.equal(saved.value.token, "test-only-token");
   assert.equal(saved.value.password, "");
@@ -99,11 +180,27 @@ test("login rejects alternate origin and fails closed when secure persistence fa
   const { login, authState } = await import("../src/stores/authStore.js");
   let calls = 0;
   host(async () => { calls += 1; return { status: 200, headers: {}, body: '{"id":7,"username":"reader"}', bodyEncoding: "text" }; });
-  window.ToolBox.storage = { secure: { set: async () => { throw new Error("secret-native-error"); } } };
+  window.ToolBox.storage.secure = { set: async () => { throw new Error("secret-native-error"); } };
   await assert.rejects(login("https://evil.test", "", "", "secret"));
   assert.equal(calls, 0);
   await assert.rejects(login(SERVER_URL, "", "", "secret"), /安全存储/);
   assert.equal(authState.get().userId, "");
+});
+
+test("login rejects a cache bound to another account without saving credentials or clearing it", async () => {
+  const { login, authState } = await import("../src/stores/authStore.js");
+  const previousState = structuredClone(authState.get());
+  const previousCache = structuredClone([...ordinaryValues]);
+  const previousWrites = ordinaryWrites.length;
+  let credentialWrites = 0;
+  host(async () => ({ status: 200, headers: {}, body: '{"id":8,"username":"another-reader"}', bodyEncoding: "text" }));
+  window.ToolBox.storage.secure = { set: async () => { credentialWrites += 1; } };
+  await assert.rejects(login(SERVER_URL, "", "", "new-account-token"), { code: "ACCOUNT_CHANGED" });
+  assert.equal(credentialWrites, 0);
+  assert.deepEqual(authState.get(), previousState);
+  assert.equal(authState.get().userId, "");
+  assert.deepEqual([...ordinaryValues], previousCache);
+  assert.equal(ordinaryWrites.length, previousWrites, "account mismatch cannot delete or rebind the retained cache");
 });
 
 
@@ -232,4 +329,111 @@ test("repeated server pages fail without imposing a page-count limit", async () 
   });
   await assert.rejects(getEntriesInBatches("/v1/entries"), /重复返回同一页/);
   assert.equal(requests, 2);
+});
+
+test("streamed sync awaits every page consumer and does not return a collected archive", { timeout: 10000 }, async (t) => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  const ready = [deferred(), deferred()];
+  const release = [deferred(), deferred()];
+  t.after(() => release.forEach((gate) => gate.resolve()));
+  const offsets = [];
+  const pages = [];
+  const consumed = [];
+  const total = 2005;
+  host(async ({ url }) => {
+    const offset = Number(new URL(url).searchParams.get("offset"));
+    assert.equal(consumed.length, offsets.length, "the previous consumer finishes before the next request starts");
+    offsets.push(offset);
+    return { status: 200, headers: {}, body: JSON.stringify({ total,
+      entries: Array.from({ length: Math.min(1000, total - offset) }, (_, index) => ({ id: offset + index + 1 })),
+    }), bodyEncoding: "text" };
+  });
+  const streaming = getEntriesInBatches("/v1/entries", {}, () => {}, async (page) => {
+    const index = pages.length;
+    pages.push(page);
+    if (index < ready.length) {
+      ready[index].resolve();
+      await release[index].promise;
+    }
+    consumed.push(index);
+  });
+  await ready[0].promise;
+  assert.deepEqual(offsets, [0]);
+  await new Promise(setImmediate);
+  assert.deepEqual(offsets, [0], "first staged page applies backpressure");
+  release[0].resolve();
+  await ready[1].promise;
+  assert.deepEqual(offsets, [0, 1000]);
+  await new Promise(setImmediate);
+  assert.deepEqual(offsets, [0, 1000], "later pages also apply backpressure");
+  release[1].resolve();
+  assert.equal(await streaming, undefined);
+  assert.deepEqual(offsets, [0, 1000, 2000]);
+  assert.deepEqual(pages.map((page) => page.length), [1000, 1000, 5]);
+  assert.deepEqual(pages.flatMap((page) => page.map(({ id }) => id)), Array.from({ length: total }, (_, index) => index + 1));
+});
+
+test("a failed streamed page consumer stops pagination without returning partial success", async () => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  const offsets = [];
+  let batches = 0;
+  const failure = new Error("staged cache write failed");
+  host(async ({ url }) => {
+    const offset = Number(new URL(url).searchParams.get("offset"));
+    offsets.push(offset);
+    return { status: 200, headers: {}, body: JSON.stringify({ total: 3000,
+      entries: Array.from({ length: 1000 }, (_, index) => ({ id: offset + index + 1 })),
+    }), bodyEncoding: "text" };
+  });
+  await assert.rejects(getEntriesInBatches("/v1/entries", {}, () => {}, async () => {
+    batches += 1;
+    if (batches === 2) throw failure;
+  }), (error) => error === failure);
+  assert.deepEqual(offsets, [0, 1000]);
+  assert.equal(batches, 2);
+});
+
+test("cancellation while a streamed consumer is pending prevents the next page", { timeout: 10000 }, async (t) => {
+  const { getEntriesInBatches } = await import("../src/api/miniflux.js");
+  const ready = deferred();
+  const release = deferred();
+  t.after(() => release.resolve());
+  let cancelled = false;
+  let calls = 0;
+  host(async () => {
+    calls += 1;
+    return { status: 200, headers: {}, body: '{"total":2,"entries":[{"id":1}]}', bodyEncoding: "text" };
+  });
+  const running = getEntriesInBatches("/v1/entries", {}, () => {
+    if (cancelled) throw new Error("account cancelled");
+  }, async () => {
+    ready.resolve();
+    await release.promise;
+  });
+  const rejected = assert.rejects(running, /account cancelled/);
+  await ready.promise;
+  cancelled = true;
+  release.resolve();
+  await rejected;
+  assert.equal(calls, 1);
+});
+
+test("changed, new and starred stream wrappers forward the consumer and retain their filters", async () => {
+  const { getChangedEntries, getNewEntries, getAllStarredEntries } = await import("../src/api/miniflux.js");
+  const since = new Date("2026-09-09T00:00:00Z");
+  const requests = [];
+  host(async ({ url }) => {
+    requests.push(new URL(url).searchParams);
+    return { status: 200, headers: {}, body: '{"total":1,"entries":[{"id":1}]}', bodyEncoding: "text" };
+  });
+  const pages = [];
+  const onPage = async (page) => { pages.push(page); };
+  assert.equal(await getChangedEntries(since, () => {}, onPage), undefined);
+  assert.equal(await getNewEntries(since, () => {}, onPage), undefined);
+  assert.equal(await getAllStarredEntries(() => {}, onPage), undefined);
+  assert.equal(requests[0].get("changed_after"), String(Math.floor(since.getTime() / 1000)));
+  assert.equal(requests[1].get("after"), String(Math.floor(since.getTime() / 1000)));
+  assert.equal(requests[2].get("starred"), "true");
+  assert.equal(requests[2].get("status"), "read");
+  assert.deepEqual(pages, [[{ id: 1 }], [{ id: 1 }], [{ id: 1 }]]);
 });

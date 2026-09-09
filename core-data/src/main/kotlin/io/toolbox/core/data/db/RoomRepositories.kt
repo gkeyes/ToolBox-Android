@@ -22,6 +22,7 @@ import io.toolbox.core.data.PermissionGrant
 import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
+import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.isValidCategoryId
@@ -230,6 +231,18 @@ internal class RoomPermissionGrantRepository(
 internal class RoomToolKvRepository(
     private val database: ToolBoxDatabase,
 ) : ToolKvRepository {
+    override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T =
+        database.withTransaction {
+            action(object : ToolKvSnapshot {
+                override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> = buildMap {
+                    // Leave headroom for toolId below SQLite's conservative 999 bind limit.
+                    for (batch in keys.chunked(256)) {
+                        for (row in database.keyValues().getMany(toolId, batch)) put(row.key, row.toDomain())
+                    }
+                }
+            })
+        }
+
     override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =
         database.keyValues().observe(toolId, key).map { it?.toDomain() }
 
@@ -257,8 +270,8 @@ internal class RoomToolKvRepository(
             }
             database.withTransaction {
                 if (database.tools().get(toolId) == null) return@withTransaction DataResult.Failure.NotFound("tool")
-                for (key in removeKeys) database.keyValues().delete(toolId, key)
-                for (row in rows) database.keyValues().put(row)
+                for (batch in removeKeys.chunked(256)) database.keyValues().deleteMany(toolId, batch)
+                database.keyValues().putAll(rows)
                 DataResult.Success(Unit)
             }
         } catch (cancelled: CancellationException) {

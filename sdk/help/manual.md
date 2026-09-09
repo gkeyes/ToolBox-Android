@@ -272,6 +272,8 @@ console.log(ready.apiVersion, digest.hex, device.screenClass);
 
 storage.get(key) 返回保存的 JSON 值，键不存在时返回 null。set(key, value) 保存 JSON 值；remove(key) 删除单项；keys() 列出键；clear() 清空当前工具的普通存储。key 最多 128 个字符，不能用它存储函数、DOM 对象或未序列化的二进制数据。
 
+宿主 0.6.6 起，storage.getMany(keys) 在同一个数据库快照内读取最多 256 个键，按传入顺序返回，重复键保留对应位置，缺失值为 null。storage.apply({ set: [{ key, value }], remove: [key] }) 将整批写入和删除放在一个事务中，最多 256 个键；重复写入、重复删除、写删冲突或非法参数会整体拒绝。两个数组均可省略，空批次不修改数据。整批请求和返回仍遵守工具原有消息大小限制；超出返回限制时整次读取报 QUOTA_EXCEEDED。只有普通 storage 提供这两个批量方法，storage.secure 不提供。
+
 ToolBox 0.6.5 起不设每工具持久存储总容量配额，可保存量由设备剩余空间决定。旧 manifest.limits.storageBytes 字段仍兼容接受，但不再用于限制容量，新工具可以省略。普通存储按键保存，大值由宿主分片；单次调用仍受桥消息大小约束。写入失败保留旧值，不会自动淘汰数据。
 
 storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。0.6.5 起大密文也分片保存，更新与清理保持原子性。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
@@ -976,7 +978,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 除事件订阅外，原生接口返回 Promise；订阅接口返回取消订阅函数。示例代码中的 await 应放在 async 函数或真正的 ES module 中，不要把它直接放进普通 script 的顶层。
 
 ```ts sdk/toolbox-api.d.ts
-export type ToolBoxContractSha256 = "52897e7e73aae041ec272d8d63576f24e9626f55b34c0c1f7b38b7c2f8acecf8";
+export type ToolBoxContractSha256 = "9f9ec7cf57bbfde3d77bbb83bfeed50f009669db287a9a1e7f8417fe11023639";
 
 export type ToolBoxCapability =
   | "storage"
@@ -1003,6 +1005,8 @@ export type ToolBoxMethodName =
   | "ui.toast"
   | "crypto.sha256"
   | "storage.get"
+  | "storage.getMany"
+  | "storage.apply"
   | "storage.set"
   | "storage.remove"
   | "storage.keys"
@@ -1074,6 +1078,11 @@ export type ToolBoxErrorCode =
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface StorageApplyRequest {
+  readonly set?: readonly { readonly key: string; readonly value: JsonValue }[];
+  readonly remove?: readonly string[];
+}
 
 export interface ToolBoxApiError {
   code: ToolBoxErrorCode;
@@ -1281,6 +1290,10 @@ export interface ToolBoxApi {
   /** Since host 0.6.5, persisted storage has no per-tool capacity quota; available device space applies. Legacy limits.storageBytes is ignored. Writes remain atomic. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
+    /** Host 0.6.6+: reads up to 256 keys from one snapshot, preserving order and duplicates. Missing keys return null. Subject to the existing response size limit. */
+    getMany(keys: readonly string[]): Promise<(JsonValue | null)[]>;
+    /** Host 0.6.6+: atomically applies at most 256 total keys. Duplicate keys (including write/remove conflicts) and invalid entries reject the entire batch. Empty batches are a no-op. */
+    apply(mutation: StorageApplyRequest): Promise<void>;
     set(key: string, value: JsonValue): Promise<void>;
     remove(key: string): Promise<void>;
     keys(): Promise<string[]>;

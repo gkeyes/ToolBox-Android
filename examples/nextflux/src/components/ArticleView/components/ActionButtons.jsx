@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   handleMarkStatus,
+  handleMarkRead,
   handleToggleStar,
   handleToggleContent,
 } from "@/handlers/articleHandlers.js";
@@ -69,7 +70,7 @@ export default function ActionButtons() {
       const prevArticle = $articles[currentIndex - 1];
       navigate(`${basePath}/article/${prevArticle.id}`);
       if (prevArticle.status !== "read") {
-        await handleMarkStatus(prevArticle);
+        await handleMarkRead(prevArticle);
       }
     }
   };
@@ -80,7 +81,7 @@ export default function ActionButtons() {
       const nextArticle = $articles[currentIndex + 1];
       navigate(`${basePath}/article/${nextArticle.id}`);
       if (nextArticle.status !== "read") {
-        await handleMarkStatus(nextArticle);
+        await handleMarkRead(nextArticle);
       }
     }
   };

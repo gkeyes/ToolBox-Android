@@ -7,12 +7,15 @@ import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.InstallTransaction
 import io.toolbox.core.data.InstallTransactionState
 import io.toolbox.core.data.SecurityProfile
+import io.toolbox.core.data.ToolKvSnapshot
 import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.core.data.memory.InMemoryCoreData
 import io.toolbox.tool.runtime.RpcValue
+import io.toolbox.tool.runtime.RuntimeStorageMutation
+import io.toolbox.tool.runtime.RuntimeStorageSet
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import kotlinx.coroutines.flow.Flow
@@ -122,6 +125,115 @@ class RuntimeStandardStorageTest {
         expectFailure(RuntimeRpcErrorCode.INVALID_REQUEST) { allowed.set("bad\nkey", RpcValue.Null) }
         allowed.clear()
         assertEquals("ciphertext", repository.observe(TOOL_ID, SECURE).first()!!.valueJson)
+    }
+
+    @Test
+    fun batchesPreserveOrderNullsAndIsolationWhileReplacingOnlyAffectedChunks() = runBlocking {
+        val repository = installedData().keyValues
+        val storage = handler(repository)
+        storage.apply(RuntimeStorageMutation(set = listOf(
+            RuntimeStorageSet("article", RpcValue.StringValue("😀正文".repeat(100_000))),
+            RuntimeStorageSet("remove", RpcValue.Bool(true)),
+            RuntimeStorageSet("null", RpcValue.Null),
+        )))
+        repository.put(TOOL_ID, SECURE, "ciphertext", 1)
+        storage.apply(RuntimeStorageMutation(
+            set = listOf(RuntimeStorageSet("article", RpcValue.StringValue("short")), RuntimeStorageSet("added", RpcValue.Number(2.0))),
+            remove = listOf("remove"),
+        ))
+        assertEquals(listOf(RpcValue.Number(2.0), null, RpcValue.StringValue("short"), RpcValue.Null, RpcValue.Number(2.0)),
+            storage.getMany(listOf("added", "missing", "article", "null", "added")))
+        assertEquals(4, repository.keys(TOOL_ID).size)
+        assertEquals("ciphertext", repository.observe(TOOL_ID, SECURE).first()!!.valueJson)
+        assertEquals(emptyList<RpcValue?>(), storage.getMany(emptyList()))
+        storage.apply(RuntimeStorageMutation())
+        assertEquals(4, repository.keys(TOOL_ID).size)
+    }
+
+    @Test
+    fun malformedBatchesRejectBeforeReadingOrWritingAndRecheckRevocationBeforeCommit() = runBlocking {
+        val backing = installedData().keyValues
+        var reads = 0
+        var writes = 0
+        var granted = true
+        var revokeAfterRead = false
+        val repository = object : ToolKvRepository by backing {
+            override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T {
+                reads++
+                return backing.readSnapshot(toolId, action).also { if (revokeAfterRead) granted = false }
+            }
+            override suspend fun replace(toolId: String, removeKeys: Set<String>, values: Map<String, String>, updatedAt: Long): DataResult<Unit> {
+                writes++
+                return backing.replace(toolId, removeKeys, values, updatedAt)
+            }
+        }
+        val storage = StandardToolKvStorageHandler(TOOL_ID, repository, { 1 }, { granted })
+        val item = RuntimeStorageSet("same", RpcValue.Null)
+        val invalid = listOf(
+            RuntimeStorageMutation(set = listOf(item, item)),
+            RuntimeStorageMutation(remove = listOf("same", "same")),
+            RuntimeStorageMutation(set = listOf(item), remove = listOf("same")),
+            RuntimeStorageMutation(set = listOf(item, RuntimeStorageSet("bad\nkey", RpcValue.Bool(true)))),
+            RuntimeStorageMutation(remove = List(257) { "key$it" }),
+        )
+        for (mutation in invalid) expectFailure(RuntimeRpcErrorCode.INVALID_REQUEST) { storage.apply(mutation) }
+        expectFailure(RuntimeRpcErrorCode.INVALID_REQUEST) { storage.getMany(List(257) { "key$it" }) }
+        expectFailure(RuntimeRpcErrorCode.INVALID_REQUEST) { storage.getMany(listOf("good", "bad\nkey")) }
+        assertEquals(0, reads)
+        assertEquals(0, writes)
+        revokeAfterRead = true
+        expectFailure(RuntimeRpcErrorCode.PERMISSION_DENIED) { storage.apply(RuntimeStorageMutation(set = listOf(item))) }
+        assertEquals(0, writes)
+        expectFailure(RuntimeRpcErrorCode.PERMISSION_DENIED) { storage.getMany(listOf("same")) }
+        assertEquals(1, reads)
+        assertEquals(emptyList<String>(), backing.keys(TOOL_ID))
+    }
+
+    @Test
+    fun batchSnapshotRemainsConsistentWhenRowsChangeBetweenHeaderAndChunkQueries() = runBlocking {
+        val backing = installedData().keyValues
+        val storage = handler(backing)
+        suspend fun rows(): Map<String, String> {
+            val keys = backing.keys(TOOL_ID).toSet()
+            return backing.readSnapshot(TOOL_ID) { it.getMany(keys).mapValues { (_, row) -> row.valueJson } }
+        }
+        val old = RpcValue.StringValue("old".repeat(100_000))
+        val fresh = RpcValue.StringValue("new".repeat(150_000))
+        storage.apply(RuntimeStorageMutation(set = listOf(RuntimeStorageSet("body", old), RuntimeStorageSet("version", RpcValue.Number(1.0)))))
+        val oldRows = rows()
+        storage.apply(RuntimeStorageMutation(set = listOf(RuntimeStorageSet("body", fresh), RuntimeStorageSet("version", RpcValue.Number(2.0)))))
+        val freshRows = rows()
+        backing.replace(TOOL_ID, freshRows.keys, oldRows, 1)
+        var batchReads = 0
+        val repository = object : ToolKvRepository by backing {
+            override fun observe(toolId: String, key: String): Flow<ToolKvValue?> = error("Batch reads must use snapshot queries")
+            override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T =
+                backing.readSnapshot(toolId) { snapshot ->
+                    action(object : ToolKvSnapshot {
+                        override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> {
+                            batchReads++
+                            val result = snapshot.getMany(keys)
+                            if (batchReads == 1) backing.replace(TOOL_ID, oldRows.keys, freshRows, 2)
+                            return result
+                        }
+                    })
+                }
+        }
+        assertEquals(listOf(old, RpcValue.Number(1.0)), handler(repository).getMany(listOf("body", "version")))
+        assertEquals(2, batchReads)
+        assertEquals(listOf(fresh, RpcValue.Number(2.0)), storage.getMany(listOf("body", "version")))
+    }
+
+    @Test
+    fun batchResponseLimitIncludesRepeatedValuesAndLeavesDataIntact() = runBlocking {
+        val repository = installedData().keyValues
+        val writer = handler(repository)
+        val value = RpcValue.StringValue("正文".repeat(20_000))
+        writer.set("article", value)
+        val reader = StandardToolKvStorageHandler(TOOL_ID, repository, { 1 }, maxBatchResponseBytes = 150_000)
+        assertEquals(listOf(value), reader.getMany(listOf("article")))
+        expectFailure(RuntimeRpcErrorCode.QUOTA_EXCEEDED) { reader.getMany(listOf("article", "article")) }
+        assertEquals(value, writer.get("article"))
     }
 
     private suspend fun installedData(): CoreDataRepositories = InMemoryCoreData.create().also { data ->

@@ -41,6 +41,9 @@ import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeQuotaChecker
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.RuntimeSessionIdentity
+import io.toolbox.tool.runtime.RuntimeBatchStorageHandler
+import io.toolbox.tool.runtime.RuntimeStorageMutation
+import io.toolbox.tool.runtime.RuntimeStorageSet
 import io.toolbox.tool.runtime.RuntimeStorageHandler
 import io.toolbox.tool.runtime.RuntimeToastHandler
 import java.security.KeyStore
@@ -113,7 +116,7 @@ internal class HostRuntimeBridgeProvider(
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
-            handlers = createM1Handlers(runtime.toolId),
+            handlers = createM1Handlers(runtime),
             m2Handlers = m2Handlers,
             m3Handlers = m3Handlers,
             hostVersion = hostVersion,
@@ -122,19 +125,24 @@ internal class HostRuntimeBridgeProvider(
         )
     }
 
-    private fun createM1Handlers(toolId: String): RuntimeM1Handlers = RuntimeM1Handlers(
+    private fun createM1Handlers(runtime: PreparedToolRuntime): RuntimeM1Handlers = RuntimeM1Handlers(
         toast = AndroidToastHandler(applicationContext),
         storage = StandardToolKvStorageHandler(
-            toolId = toolId,
+            toolId = runtime.toolId,
             repository = keyValues,
             nowMillis = nowMillis,
+            canAccess = {
+                grantState.currentVersionCode(runtime.toolId) == runtime.versionCode &&
+                    grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE)
+            },
+            maxBatchResponseBytes = runtime.maxBridgePayloadBytes,
         ),
         secureStorage = AndroidKeyStoreCipher.isAvailable().takeIf { it }?.let {
             createRuntimeSecureStorageHandler(
-                toolId = toolId,
+                toolId = runtime.toolId,
                 repository = keyValues,
                 nowMillis = nowMillis,
-                canAccess = { grantState.isGranted(toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
+                canAccess = { grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
             )
         },
         deviceBasic = AndroidBasicDeviceHandler(applicationContext),
@@ -155,6 +163,11 @@ internal class RepositoryRuntimeGrantStateSource(
             .first()
             .firstOrNull { it.capability == ToolBoxApiV1.capability(capability).wireName }
             ?.granted == true
+}
+
+/** Revocation denies queued callers and drains the already admitted ordinary operation. */
+internal suspend fun awaitRuntimeStandardStorageIdle(toolId: String) {
+    ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Standard).withLock { }
 }
 
 internal suspend fun clearRuntimeSecureStorage(
@@ -267,24 +280,107 @@ internal class StandardToolKvStorageHandler(
     private val repository: ToolKvRepository,
     private val nowMillis: () -> Long,
     private val canAccess: suspend () -> Boolean = { true },
-) : RuntimeStorageHandler {
+    private val maxBatchResponseBytes: Int = 8 * 1024 * 1024,
+) : RuntimeBatchStorageHandler {
     override suspend fun get(key: String): RpcValue? = withAccess {
         val physicalKey = physicalKey(key)
         readValue(physicalKey) ?: loadLegacyDocument()?.get(key)
     }
 
-    override suspend fun set(key: String, value: RpcValue) = withAccess {
-        val physicalKey = physicalKey(key)
-        if (!migrateLegacyDocument(key, value)) {
-            checkResult(repository.replace(toolId, existingRows(physicalKey), encodeRows(physicalKey, value), nowMillis()))
+    override suspend fun getMany(keys: List<String>): List<RpcValue?> = withAccess {
+        if (keys.size > MAX_BATCH_KEYS) invalidBatch()
+        val requested = keys.map { it to physicalKey(it) }
+        repository.readSnapshot(toolId) { snapshot ->
+            val decoded = mutableMapOf<String, Pair<RpcValue?, Int>>()
+            val result = mutableListOf<RpcValue?>()
+            var resultBytes = 2L // Array delimiters; the bridge checks the full envelope too.
+            var legacyLoaded = false
+            var legacy: Map<String, RpcValue>? = null
+            // Bound temporary row materialization even if every requested value is large.
+            for (batch in requested.chunked(READ_WINDOW_KEYS)) {
+                val needed = batch.map { it.second }.toSet() - decoded.keys
+                val headers = if (needed.isEmpty()) emptyMap() else snapshot.getMany(needed)
+                for ((logical, physical) in batch) {
+                    val (value, bytes) = decoded[physical] ?: run {
+                        val record = headers[physical]?.valueJson?.let { RuntimeValueJson.decodeObject(it) ?: unreadable() }
+                        val value = when {
+                            record == null -> {
+                                if (!legacyLoaded) {
+                                    val rows = snapshot.getMany(setOf(ToolStorageNamespace.Standard.documentKey))
+                                    legacy = rows[ToolStorageNamespace.Standard.documentKey]?.valueJson?.let(::decodeLegacyDocument)
+                                    legacyLoaded = true
+                                }
+                                legacy?.get(logical)
+                            }
+                            record.keys == setOf("value") -> record.getValue("value")
+                            else -> {
+                                val count = chunkCount(record)
+                                if (count > maxBatchResponseBytes / (CHUNK_CHARS - 1) + 1) batchResponseTooLarge()
+                                var valueBytes = 0L
+                                val encoded = buildString {
+                                    for (parts in (0 until count).toList().chunked(READ_WINDOW_KEYS)) {
+                                        val chunks = snapshot.getMany(parts.map { "$physical.$it" }.toSet())
+                                        for (part in parts) {
+                                            val row = chunks["$physical.$part"] ?: unreadable()
+                                            val text = (RuntimeValueJson.decode(row.valueJson) as? RpcValue.StringValue)?.value ?: unreadable()
+                                            if (text.length > CHUNK_CHARS) unreadable()
+                                            valueBytes += text.toByteArray(Charsets.UTF_8).size
+                                            if (resultBytes + valueBytes > maxBatchResponseBytes) batchResponseTooLarge()
+                                            append(text)
+                                        }
+                                    }
+                                }
+                                RuntimeValueJson.decode(encoded) ?: unreadable()
+                            }
+                        }
+                        val bytes = RuntimeValueJson.encode(value ?: RpcValue.Null).toByteArray(Charsets.UTF_8).size
+                        (value to bytes).also { decoded[physical] = it }
+                    }
+                    resultBytes += bytes + if (result.isEmpty()) 0 else 1
+                    if (resultBytes > maxBatchResponseBytes) batchResponseTooLarge()
+                    result += value
+                }
+            }
+            result
         }
     }
 
-    override suspend fun remove(key: String) = withAccess {
-        val physicalKey = physicalKey(key)
-        if (!migrateLegacyDocument(key, null)) {
-            checkResult(repository.replace(toolId, existingRows(physicalKey), emptyMap(), nowMillis()))
+    override suspend fun set(key: String, value: RpcValue) = apply(RuntimeStorageMutation(set = listOf(RuntimeStorageSet(key, value))))
+
+    override suspend fun remove(key: String) = apply(RuntimeStorageMutation(remove = listOf(key)))
+
+    override suspend fun apply(mutation: RuntimeStorageMutation) = withAccess {
+        val changedKeys = mutation.set.map { it.key } + mutation.remove
+        if (changedKeys.size > MAX_BATCH_KEYS || changedKeys.distinct().size != changedKeys.size) invalidBatch()
+        val changedPhysicalKeys = changedKeys.map(::physicalKey).toSet()
+        // Encode every requested value before reading or mutating persisted rows.
+        val rows = linkedMapOf<String, String>()
+        for ((key, value) in mutation.set) rows.putAll(encodeRows(physicalKey(key), value))
+        if (changedKeys.isEmpty()) return@withAccess
+        val removeRows = repository.readSnapshot(toolId) { snapshot ->
+            val existing = snapshot.getMany(changedPhysicalKeys + ToolStorageNamespace.Standard.documentKey)
+            val legacyRow = existing[ToolStorageNamespace.Standard.documentKey]
+            val legacy = legacyRow?.valueJson?.let(::decodeLegacyDocument).orEmpty()
+            val headers = existing + snapshot.getMany(legacy.keys.map(::physicalKey).toSet() - existing.keys)
+            val removed = linkedSetOf<String>()
+            for (key in changedPhysicalKeys) {
+                val record = headers[key]?.valueJson?.let { RuntimeValueJson.decodeObject(it) ?: unreadable() } ?: continue
+                removed += key
+                if (record.keys != setOf("value")) repeat(chunkCount(record)) { removed += "$key.$it" }
+            }
+            if (legacyRow != null) {
+                // Existing v2 rows win over legacy values, matching get(). Mutations and
+                // migration share one commit, so failure leaves the legacy document intact.
+                for ((key, value) in legacy) {
+                    val physical = physicalKey(key)
+                    if (physical !in changedPhysicalKeys && physical !in headers) rows.putAll(encodeRows(physical, value))
+                }
+                removed += ToolStorageNamespace.Standard.documentKey
+            }
+            removed
         }
+        if (!canAccess()) throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Storage permission is disabled")
+        checkResult(repository.replace(toolId, removeRows, rows, nowMillis()))
     }
 
     override suspend fun keys(): List<String> = withAccess {
@@ -297,6 +393,7 @@ internal class StandardToolKvStorageHandler(
         val rows = repository.keys(toolId).filterTo(linkedSetOf()) {
             it.startsWith(ROW_PREFIX) || it == ToolStorageNamespace.Standard.documentKey
         }
+        if (!canAccess()) throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Storage permission is disabled")
         checkResult(repository.replace(toolId, rows, emptyMap(), nowMillis()))
     }
 
@@ -306,20 +403,13 @@ internal class StandardToolKvStorageHandler(
 
     private suspend fun loadLegacyDocument(): Map<String, RpcValue>? {
         val encoded = repository.observe(toolId, ToolStorageNamespace.Standard.documentKey).first()?.valueJson ?: return null
+        return decodeLegacyDocument(encoded)
+    }
+
+    private fun decodeLegacyDocument(encoded: String): Map<String, RpcValue> {
         val document = RuntimeValueJson.decodeObject(encoded) ?: unreadable()
         for (key in document.keys) physicalKey(key)
         return document
-    }
-
-    private suspend fun migrateLegacyDocument(changedKey: String, value: RpcValue?): Boolean {
-        val document = loadLegacyDocument()?.toMutableMap() ?: return false
-        if (value == null) document.remove(changedKey) else document[changedKey] = value
-        val rows = linkedMapOf<String, String>()
-        for ((key, child) in document) rows.putAll(encodeRows(physicalKey(key), child))
-        // Apply the requested mutation in the migration transaction.
-        // The old document remains intact if any part of the replacement fails.
-        checkResult(repository.replace(toolId, setOf(ToolStorageNamespace.Standard.documentKey), rows, nowMillis()))
-        return true
     }
 
     private suspend fun readRecord(key: String): Map<String, RpcValue>? {
@@ -340,15 +430,6 @@ internal class StandardToolKvStorageHandler(
             }
         }
         return RuntimeValueJson.decode(encoded) ?: unreadable()
-    }
-
-    private suspend fun existingRows(key: String): Set<String> {
-        val record = readRecord(key) ?: return emptySet()
-        if (record.keys == setOf("value")) return setOf(key)
-        return buildSet {
-            add(key)
-            repeat(chunkCount(record)) { add("$key.$it") }
-        }
     }
 
     private fun chunkCount(record: Map<String, RpcValue>): Int {
@@ -396,9 +477,15 @@ internal class StandardToolKvStorageHandler(
         }
     }
 
+    private fun batchResponseTooLarge(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Storage batch response is too large; request fewer keys")
+
+    private fun invalidBatch(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Storage batches allow at most 256 keys, without duplicate mutations")
+
     private fun unreadable(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values cannot be read")
 
     private companion object {
+        const val READ_WINDOW_KEYS = 16
+        const val MAX_BATCH_KEYS = 256
         const val ROW_PREFIX = "toolbox.runtime.v2.standard.key."
         // Even worst-case JSON escaping stays below a 2 MiB Android CursorWindow.
         const val CHUNK_CHARS = 128 * 1024

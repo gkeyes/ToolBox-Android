@@ -157,7 +157,7 @@ async function fetchEntryPage(endpoint, filters, offset, requestedSize, check = 
 }
 
 // Stable ID order avoids the publication-time reordering of the visual list.
-export async function getEntriesInBatches(endpoint, params = {}, check = () => {}) {
+export async function getEntriesInBatches(endpoint, params = {}, check = () => {}, onPage) {
   const initialOffset = params.offset || 0;
   const filters = { order: "id", direction: "asc", ...params };
   delete filters.limit;
@@ -173,28 +173,33 @@ export async function getEntriesInBatches(endpoint, params = {}, check = () => {
     if (!batch.length && Number.isFinite(total) && offset < total) {
       throw new Error("同步结果不完整，请重试。");
     }
-    const previousCount = entries.length;
+    const fresh = [];
     for (const entry of batch) {
-      if (!seen.has(entry.id)) { seen.add(entry.id); entries.push(entry); }
+      if (!seen.has(entry.id)) { seen.add(entry.id); fresh.push(entry); }
     }
-    if (batch.length && entries.length === previousCount) {
+    if (batch.length && !fresh.length) {
       throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
     }
+    // The streaming consumer durably stages each bounded page before requesting
+    // another. Collection remains available for callers that need an array.
+    if (onPage) await onPage(fresh);
+    else entries.push(...fresh);
+    check();
     offset += batch.length;
-    if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return entries;
+    if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return onPage ? undefined : entries;
   }
 }
 
 // 获取变更文章
-export const getChangedEntries = async (lastSyncTime, check) => {
+export const getChangedEntries = async (lastSyncTime, check, onPage) => {
   const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { changed_after: timestamp }, check);
+  return getEntriesInBatches("/v1/entries", { changed_after: timestamp }, check, onPage);
 };
 
 // 获取新文章
-export const getNewEntries = async (lastSyncTime, check) => {
+export const getNewEntries = async (lastSyncTime, check, onPage) => {
   const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { after: timestamp }, check);
+  return getEntriesInBatches("/v1/entries", { after: timestamp }, check, onPage);
 };
 
 // 标记全部已读
@@ -221,10 +226,10 @@ export const markAllAsRead = async (type, id = null) => {
 };
 
 // Unread starred entries are included in unread sync; retrieve read bookmarks here.
-export const getAllStarredEntries = (check) => getEntriesInBatches("/v1/entries", {
+export const getAllStarredEntries = (check, onPage) => getEntriesInBatches("/v1/entries", {
   starred: true,
   status: "read",
-}, check);
+}, check, onPage);
 
 // 获取文章原始内容
 export const fetchEntryContent = async (entryId) => {

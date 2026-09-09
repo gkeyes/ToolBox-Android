@@ -61,3 +61,36 @@ test('native BUSY rejects its correlated request and permits retry', async () =>
   reply(messages[1]);
   await retry;
 });
+
+
+test('ordinary storage batches preserve their wire shape, key order, and typed errors', async () => {
+  const { api, bridge, messages, reply } = fixture();
+  const read = api.storage.getMany(['second', 'missing', 'first', 'second']);
+  assert.equal(messages[0].method, 'storage.getMany');
+  assert.deepEqual(messages[0].params, { keys: ['second', 'missing', 'first', 'second'] });
+  reply(messages[0], [2, null, { text: '完整正文' }, 2]);
+  assert.equal(JSON.stringify(await read), JSON.stringify([2, null, { text: '完整正文' }, 2]));
+  const mutation = { set: [{ key: 'root', value: { generation: 3 } }, { key: 'nullable', value: null }], remove: ['old'] };
+  const write = api.storage.apply(mutation);
+  assert.equal(messages[1].method, 'storage.apply');
+  assert.deepEqual(messages[1].params, mutation);
+  reply(messages[1]);
+  await write;
+  const rejected = api.storage.apply({ set: [{ key: 'root', value: 4 }], remove: ['root'] });
+  bridge.onmessage({ data: JSON.stringify({ id: messages[2].id, ok: false, error: { code: 'INVALID_REQUEST', message: 'Conflicting mutation' } }) });
+  await assert.rejects(rejected, error => error.code === 'INVALID_REQUEST');
+  assert.equal(api.storage.secure.getMany, undefined);
+  assert.equal(api.storage.secure.apply, undefined);
+});
+
+test('invalid batch JSON never reaches native storage or consumes a pending slot', async () => {
+  const { api, messages, reply } = fixture();
+  for (const mutation of [undefined, null, [], { set: [{ key: 'a', value: undefined }] },
+    { set: [{ key: 'a', value: { nested: NaN } }] }, { set: [{ key: 'a', value: [() => 1] }] }]) {
+    await assert.rejects(api.storage.apply(mutation), error => error.code === 'INVALID_REQUEST');
+  }
+  assert.equal(messages.length, 0);
+  const write = api.storage.apply({});
+  reply(messages[0]);
+  await write;
+});

@@ -25,6 +25,8 @@
     {"name":"ui.toast","phase":"M1","capability":null,"request":"ToastRequest","result":"void"},
     {"name":"crypto.sha256","phase":"M1","capability":null,"request":"Sha256Request","result":"Sha256Result"},
     {"name":"storage.get","phase":"M1","capability":"storage","request":"StorageKeyRequest","result":"JsonValue | null"},
+    {"name":"storage.getMany","phase":"M1","capability":"storage","request":"StorageKeysRequest","result":"(JsonValue | null)[]"},
+    {"name":"storage.apply","phase":"M1","capability":"storage","request":"StorageApplyRequest","result":"void"},
     {"name":"storage.set","phase":"M1","capability":"storage","request":"StorageSetRequest","result":"void"},
     {"name":"storage.remove","phase":"M1","capability":"storage","request":"StorageKeyRequest","result":"void"},
     {"name":"storage.keys","phase":"M1","capability":"storage","request":"void","result":"string[]"},

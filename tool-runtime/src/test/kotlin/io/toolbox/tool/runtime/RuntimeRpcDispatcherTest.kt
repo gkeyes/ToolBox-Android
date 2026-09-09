@@ -20,6 +20,73 @@ import org.junit.Test
 
 class RuntimeRpcDispatcherTest {
     @Test
+    fun ordinaryStorageBatchesValidateEveryEntryAndAllAuthorizationLayersBeforeEffects() = runTest {
+        var reads = 0
+        var writes = 0
+        var applied: RuntimeStorageMutation? = null
+        val handler = object : RuntimeBatchStorageHandler {
+            override suspend fun getMany(keys: List<String>): List<RpcValue?> {
+                reads++
+                return keys.map { if (it == "missing") null else RpcValue.StringValue(it) }
+            }
+            override suspend fun apply(mutation: RuntimeStorageMutation) { writes++; applied = mutation }
+            override suspend fun get(key: String): RpcValue? = error("No per-key reads")
+            override suspend fun set(key: String, value: RpcValue) = error("No per-key writes")
+            override suspend fun remove(key: String) = error("No per-key removes")
+            override suspend fun keys(): List<String> = emptyList()
+            override suspend fun clear() = Unit
+        }
+        val policy = MutablePolicy()
+        val session = identity.copy(declaredCapabilities = setOf("storage"))
+        fun dispatcher(current: RuntimeSessionIdentity = session) = RuntimeRpcDispatcher(current, policy, RuntimeM1Handlers(storage = handler))
+        val inbound = RuntimeInboundContext(identity.exactOrigin, true, null)
+        fun obj(vararg pairs: Pair<String, RpcValue>) = RpcValue.ObjectValue(mapOf(*pairs))
+        fun strings(vararg keys: String) = RpcValue.ArrayValue(keys.map(RpcValue::StringValue))
+        val read = request("storage.getMany", obj("keys" to strings("b", "missing", "a", "b")))
+        val write = request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(obj("key" to RpcValue.StringValue("new"), "value" to RpcValue.Null))), "remove" to strings("old")))
+        for (rpc in listOf(read, write)) {
+            assertFailure(RuntimeRpcErrorCode.NOT_DECLARED, dispatcher(session.copy(declaredCapabilities = emptySet())).dispatch(rpc, inbound))
+            assertFailure(RuntimeRpcErrorCode.WRONG_ORIGIN, dispatcher().dispatch(rpc, inbound.copy(sourceOrigin = "https://other.invalid")))
+            assertFailure(RuntimeRpcErrorCode.NOT_MAIN_FRAME, dispatcher().dispatch(rpc, inbound.copy(isMainFrame = false)))
+            assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher().dispatch(rpc.copy(nonce = "wrong"), inbound))
+            assertFailure(RuntimeRpcErrorCode.INVALID_SESSION, dispatcher().dispatch(rpc.copy(toolId = "io.toolbox.other"), inbound))
+            policy.granted = false
+            assertFailure(RuntimeRpcErrorCode.PERMISSION_DENIED, dispatcher().dispatch(rpc, inbound))
+            policy.granted = true
+            policy.decision = RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Too large")
+            assertFailure(RuntimeRpcErrorCode.QUOTA_EXCEEDED, dispatcher().dispatch(rpc, inbound))
+            policy.decision = RuntimePolicyDecision.Allowed
+        }
+        val item = obj("key" to RpcValue.StringValue("same"), "value" to RpcValue.Null)
+        val malformed = listOf(
+            request("storage.getMany", obj()),
+            request("storage.getMany", obj("keys" to RpcValue.StringValue("not-array"))),
+            request("storage.getMany", obj("keys" to strings("good", "bad\nkey"))),
+            request("storage.getMany", obj("keys" to RpcValue.ArrayValue(List(257) { RpcValue.StringValue("key$it") }))),
+            request("storage.getMany", obj("keys" to strings("good"), "unexpected" to RpcValue.Null)),
+            request("storage.apply", obj("set" to RpcValue.Null)),
+            request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(obj("key" to RpcValue.StringValue("missing-value")))))),
+            request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(item, item)))),
+            request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(obj("key" to RpcValue.StringValue(" "), "value" to RpcValue.Null))))),
+            request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(obj("key" to RpcValue.StringValue("nan"), "value" to obj("nested" to RpcValue.Number(Double.NaN))))))),
+            request("storage.apply", obj("set" to RpcValue.ArrayValue(listOf(item)), "remove" to strings("same"))),
+            request("storage.apply", obj("remove" to strings("same", "same"))),
+            request("storage.apply", obj("remove" to RpcValue.ArrayValue(List(257) { RpcValue.StringValue("key$it") }))),
+            request("storage.apply", obj("unexpected" to RpcValue.Bool(true))),
+        )
+        for (rpc in malformed) assertFailure(RuntimeRpcErrorCode.INVALID_REQUEST, dispatcher().dispatch(rpc, inbound))
+        assertEquals(0, reads)
+        assertEquals(0, writes)
+        val result = dispatcher().dispatch(read, inbound) as RuntimeRpcResponse.Success
+        assertEquals(RpcValue.ArrayValue(listOf(RpcValue.StringValue("b"), RpcValue.Null, RpcValue.StringValue("a"), RpcValue.StringValue("b"))), result.result)
+        assertTrue(dispatcher().dispatch(write, inbound) is RuntimeRpcResponse.Success)
+        assertEquals(RuntimeStorageMutation(listOf(RuntimeStorageSet("new", RpcValue.Null)), listOf("old")), applied)
+        assertEquals(1, reads)
+        assertEquals(1, writes)
+        assertFailure(RuntimeRpcErrorCode.UNSUPPORTED, dispatcher().dispatch(request("storage.secure.getMany", obj("keys" to strings("a"))), inbound))
+    }
+
+    @Test
     fun legacyDomainMethodsRequireNetworkGrantAndSessionWithoutDomainOrGestureApproval() = runTest {
         var authorized = 0
         val handler = object : RuntimeNetworkDomainHandler {

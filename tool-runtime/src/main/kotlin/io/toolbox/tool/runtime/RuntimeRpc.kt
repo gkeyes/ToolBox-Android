@@ -116,6 +116,19 @@ interface RuntimeStorageHandler {
     suspend fun clear()
 }
 
+data class RuntimeStorageSet(val key: String, val value: RpcValue)
+
+data class RuntimeStorageMutation(
+    val set: List<RuntimeStorageSet> = emptyList(),
+    val remove: List<String> = emptyList(),
+)
+
+/** Ordinary storage only: secure storage deliberately has no batch interface. */
+interface RuntimeBatchStorageHandler : RuntimeStorageHandler {
+    suspend fun getMany(keys: List<String>): List<RpcValue?>
+    suspend fun apply(mutation: RuntimeStorageMutation)
+}
+
 fun interface RuntimeDeviceBasicHandler {
     suspend fun getBasicInfo(): RuntimeBasicDeviceInfo
 }
@@ -520,6 +533,16 @@ class RuntimeRpcDispatcher(
             mapOf("hex" to RpcValue.StringValue(sha256(params.requiredBytes("value", MAX_HASH_BYTES)))),
         )
         "storage.get" -> requireHandler(handlers.storage).get(params.requiredKey()) ?: RpcValue.Null
+        "storage.getMany" -> {
+            params.requireOnly("keys")
+            val keys = params.storageKeys("keys")
+            RpcValue.ArrayValue(requireHandler(handlers.storage as? RuntimeBatchStorageHandler).getMany(keys).map { it ?: RpcValue.Null })
+        }
+        "storage.apply" -> {
+            val mutation = params.storageMutation()
+            requireHandler(handlers.storage as? RuntimeBatchStorageHandler).apply(mutation)
+            RpcValue.Null
+        }
         "storage.set" -> {
             requireHandler(handlers.storage).set(params.requiredKey(), params.required("value"))
             RpcValue.Null
@@ -1028,6 +1051,46 @@ class RuntimeRpcDispatcher(
         val result = (required(name) as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
         require(result.length in 1..maxChars)
         return result
+    }
+
+    private fun RpcValue.ObjectValue.storageKeys(name: String): List<String> {
+        val entries = (required(name) as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException(name)
+        require(entries.size <= 256)
+        return entries.map { entry ->
+            val key = (entry as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
+            require(key.isNotBlank() && key.length <= MAX_KEY_CHARS && key.none(Char::isISOControl))
+            key
+        }
+    }
+
+    private fun RpcValue.ObjectValue.storageMutation(): RuntimeStorageMutation {
+        requireOnly("set", "remove")
+        val set = value["set"]?.let { raw ->
+            val entries = (raw as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException("set")
+            require(entries.size <= 256)
+            entries.map { entry ->
+                val item = entry as? RpcValue.ObjectValue ?: throw IllegalArgumentException("set")
+                item.requireOnly("key", "value")
+                val key = item.requiredKey()
+                require(key.isNotBlank())
+                val value = item.required("value")
+                requireStorageJson(value)
+                RuntimeStorageSet(key, value)
+            }
+        }.orEmpty()
+        val remove = if ("remove" in value) storageKeys("remove") else emptyList()
+        val keys = set.map { it.key } + remove
+        require(keys.size <= 256 && keys.distinct().size == keys.size)
+        return RuntimeStorageMutation(set, remove)
+    }
+
+    private fun requireStorageJson(value: RpcValue) {
+        when (value) {
+            is RpcValue.Number -> require(value.value.isFinite())
+            is RpcValue.ArrayValue -> value.value.forEach(::requireStorageJson)
+            is RpcValue.ObjectValue -> value.value.values.forEach(::requireStorageJson)
+            else -> Unit
+        }
     }
 
     private fun RpcValue.ObjectValue.requiredKey(): String {

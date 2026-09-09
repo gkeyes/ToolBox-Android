@@ -2,8 +2,9 @@ import { toast } from "sonner";
 import { atom } from "nanostores";
 import minifluxAPI from "../api/miniflux.js";
 import {
-  getCachedArticles, getLastSyncTime, commitSyncSnapshot, addCategory,
-  updateCategory, deleteFeedWithArticles, getFeedIcon, setFeedIcon,
+  getLastSyncTime, prepareArticleSync, stageArticleSync, commitArticleSync,
+  abortArticleSync, invalidateArticleReads, addCategory, updateCategory,
+  deleteFeedWithArticles, getFeedIcon, setFeedIcon,
 } from "../db/storage.js";
 import { settingsState } from "./settingsStore.js";
 import { authState } from "./authStore.js";
@@ -43,6 +44,7 @@ export function runAccountOperation(task, { requireOnline = true } = {}) {
 
 export function cancelAccountOperations() {
   accountEpoch += 1;
+  invalidateArticleReads();
   stopAutoSync();
   return Promise.allSettled([accountQueue, iconQueue]);
 }
@@ -127,7 +129,7 @@ const mapEntryToArticle = (entry) => ({
   url: entry.url, content: entry.content, status: entry.status,
   starred: entry.starred ? 1 : 0, published_at: entry.published_at,
   created_at: entry.created_at, reading_time: entry.reading_time,
-  enclosures: entry.enclosures || [],
+  enclosures: entry.enclosures || [], changed_at: entry.changed_at,
 });
 
 // Drain sibling requests on failure before releasing the account operation
@@ -150,82 +152,106 @@ async function collectSnapshot(accountCheck) {
     requestFailure ||= failure;
     throw failure;
   })), check);
-  // Start time (not completion time) leaves concurrent server changes eligible
-  // for the next incremental sync, with the existing 24-hour overlap as well.
+  // Starting before network requests preserves the existing overlap semantics.
   const syncedAt = new Date();
-  syncProgress.set("正在读取订阅和文章…");
   const previous = getLastSyncTime();
-  const cached = previous ? await getCachedArticles() : [];
-  check();
-  const articleMap = new Map(cached.map((article) => [article.id, article]));
+  const auth = authState.get();
+  const token = await prepareArticleSync({
+    full: !previous, syncedAt: syncedAt.toISOString(),
+    account: { serverUrl: auth.serverUrl, userId: String(auth.userId) },
+  });
   const entryChanges = new Map();
-  const addEntries = (entries) => {
-    for (const entry of entries) {
-      // Parallel endpoints can overlap. Keep the fresher server record even
-      // when its response arrives first; retain deletion timestamps as well.
-      const changedAt = Date.parse(entry.changed_at);
-      const previousChange = entryChanges.get(entry.id);
-      if (Number.isFinite(changedAt)) {
-        if (previousChange !== undefined && changedAt <= previousChange) continue;
-        entryChanges.set(entry.id, changedAt);
-      }
-      if (entry.status === "removed") articleMap.delete(entry.id);
-      else articleMap.set(entry.id, mapEntryToArticle(entry));
-    }
-  };
-  // Metadata and the two independent article streams use at most four requests
-  // at once. Each stream retains sequential, adaptive, bounded pagination.
-  const collectArticles = async () => {
-    if (!previous) {
-      const unread = async () => {
-        let offset = 0;
-        let total = Infinity;
-        let pageSize = 1000;
-        while (offset < total) {
-          check();
-          const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
-          check();
-          if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
-            throw new Error("同步返回的文章列表无效，请重试。");
-          }
-          total = page.total;
-          if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
-          addEntries(page.entries);
-          offset += page.entries.length;
-          syncProgress.set(`正在同步文章 · ${offset} / ${total}`);
-          // Remember quota/server reductions for the rest of this sync.
-          if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
+  let staging = Promise.resolve();
+  const addEntries = (entries, priority) => {
+    const operation = staging.then(async () => {
+      check();
+      const changed = [];
+      for (const entry of entries) {
+        const timestamp = Date.parse(entry.changed_at);
+        const old = entryChanges.get(entry.id);
+        if (old) {
+          if (Number.isFinite(timestamp) && Number.isFinite(old.timestamp)) {
+            // Equal server versions keep changed/unread before created/starred,
+            // independent of which parallel response happens to arrive first.
+            if (timestamp < old.timestamp || (timestamp === old.timestamp && priority >= old.priority)) continue;
+          } else if (priority <= old.priority) continue;
         }
-      };
-      const [, starred] = await join([
-        unread(), minifluxAPI.getAllStarredEntries(check),
-      ]);
-      addEntries(starred);
-    } else {
-      const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
-      const [changed, created] = await join([
-        minifluxAPI.getChangedEntries(since, check), minifluxAPI.getNewEntries(since, check),
-      ]);
-      // Merge by server change time; older servers without it retain the
-      // previous deterministic changed-then-created fallback.
-      addEntries(changed);
-      addEntries(created);
-    }
+        entryChanges.set(entry.id, { timestamp, priority });
+        changed.push(mapEntryToArticle(entry));
+      }
+      if (changed.length) await stageArticleSync(token, changed);
+      check();
+    });
+    staging = operation.catch((failure) => { requestFailure ||= failure; });
+    return operation;
   };
-  const [serverFeeds, serverCategories] = await join([
-    minifluxAPI.getFeeds(), minifluxAPI.getCategories(), collectArticles(),
-  ]);
-  return {
-    feeds: serverFeeds.map((feed) => ({
-      id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,
-      crawler: feed.crawler, hide_globally: feed.hide_globally,
-      categoryId: feed.category?.id, parsing_error_count: feed.parsing_error_count,
-      scraper_rules: feed.scraper_rules, keeplist_rules: feed.keeplist_rules,
-      blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
-    })),
-    categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
-    articles: [...articleMap.values()], syncedAt,
+  const consume = async (method, args, priority) => {
+    const collected = await method(...args, (batch) => addEntries(batch, priority));
+    // Keeps the collection API usable for existing consumers and injected tests.
+    if (Array.isArray(collected)) await addEntries(collected, priority);
   };
+  syncProgress.set("正在读取订阅和文章…");
+  try {
+    const collectArticles = async () => {
+      if (!previous) {
+        const unread = async () => {
+          let offset = 0;
+          let total = Infinity;
+          let pageSize = 1000;
+          const seen = new Set();
+          while (offset < total) {
+            check();
+            const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
+            check();
+            if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
+              throw new Error("同步返回的文章列表无效，请重试。");
+            }
+            total = page.total;
+            if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
+            const fresh = page.entries.filter((entry) => {
+              if (seen.has(entry.id)) return false;
+              seen.add(entry.id);
+              return true;
+            });
+            if (page.entries.length && !fresh.length) throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
+            await addEntries(fresh, 0);
+            offset += page.entries.length;
+            syncProgress.set(`正在同步文章 · ${offset} / ${total}`);
+            if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
+          }
+        };
+        await join([unread(), consume(minifluxAPI.getAllStarredEntries, [check], 1)]);
+      } else {
+        const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
+        await join([
+          consume(minifluxAPI.getChangedEntries, [since, check], 0),
+          consume(minifluxAPI.getNewEntries, [since, check], 1),
+        ]);
+      }
+    };
+    // Four requests at most; each article stream awaits its bounded staging
+    // batch. The window never accumulates the archive's complete article bodies.
+    const [serverFeeds, serverCategories] = await join([
+      minifluxAPI.getFeeds(), minifluxAPI.getCategories(), collectArticles(),
+    ]);
+    await staging;
+    check();
+    return {
+      token, syncedAt,
+      feeds: serverFeeds.map((feed) => ({
+        id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,
+        crawler: feed.crawler, hide_globally: feed.hide_globally,
+        categoryId: feed.category?.id, parsing_error_count: feed.parsing_error_count,
+        scraper_rules: feed.scraper_rules, keeplist_rules: feed.keeplist_rules,
+        blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
+      })),
+      categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
+    };
+  } catch (failure) {
+    await staging;
+    await abortArticleSync(token).catch(() => {});
+    throw failure;
+  }
 }
 
 export function sync() {
@@ -235,11 +261,19 @@ export function sync() {
   error.set(null);
   const operation = runAccountOperation(async (check) => {
     const snapshot = await collectSnapshot(check);
-    check();
-    syncProgress.set("正在保存完整阅读数据…");
-    await commitSyncSnapshot(snapshot);
-    check(false);
-    lastSync.set(snapshot.syncedAt);
+    try {
+      check();
+      syncProgress.set("正在保存完整阅读数据…");
+      await commitArticleSync(snapshot.token, { feeds: snapshot.feeds, categories: snapshot.categories });
+      check(false);
+      const { refreshArticleStateAfterSync } = await import("./articlesStore.js");
+      await refreshArticleStateAfterSync(check);
+      check(false);
+      lastSync.set(snapshot.syncedAt);
+    } catch (failure) {
+      await abortArticleSync(snapshot.token).catch(() => {});
+      throw failure;
+    }
   });
   currentSync = operation.catch((failure) => {
     if (failure.code !== "ACCOUNT_CHANGED") {

@@ -8,11 +8,31 @@ const fakeApi = {};
 const data = new Map();
 const secrets = new Map();
 const writes = [];
-let rejectManifest = false;
+const CACHE_ROOT = "nextflux.cache.v3.root";
+let rejectRoot = false;
+let beforeApply;
 const storage = {
   get: async (key) => structuredClone(data.get(key) ?? null),
+  getMany: async (keys) => {
+    assert.ok(keys.length <= 256, "ordinary storage reads remain bounded");
+    return keys.map((key) => structuredClone(data.get(key) ?? null));
+  },
+  async apply({ set = [], remove = [] } = {}) {
+    const keys = [...set.map(({ key }) => key), ...remove];
+    assert.ok(keys.length <= 256, "ordinary storage batches remain bounded");
+    assert.equal(new Set(keys).size, keys.length, "a transaction cannot write or remove a key twice");
+    await beforeApply?.({ set, remove });
+    if (rejectRoot && set.some(({ key }) => key === CACHE_ROOT)) throw new Error("cache write failed");
+    const next = new Map(data);
+    for (const { key, value } of set) next.set(key, structuredClone(value));
+    for (const key of remove) next.delete(key);
+    // No await between the map swap's writes: readers see one complete batch.
+    data.clear();
+    for (const [key, value] of next) data.set(key, value);
+    writes.push(...set.map(({ key }) => key));
+  },
   async set(key, value) {
-    if (rejectManifest && key.endsWith("manifest")) throw new Error("cache write failed");
+    if (rejectRoot && key === CACHE_ROOT) throw new Error("cache write failed");
     writes.push(key);
     data.set(key, structuredClone(value));
   },
@@ -28,6 +48,7 @@ Object.defineProperty(globalThis, "navigator", { configurable: true, value: { on
 globalThis.window = { addEventListener() {}, removeEventListener() {}, ToolBox: { storage } };
 globalThis.ToolBox = window.ToolBox;
 globalThis.__nextfluxSyncTestApi = fakeApi;
+globalThis.__nextfluxCacheResponseHook = null;
 const bundle = await build({
   absWorkingDir: root,
   stdin: { contents: `
@@ -36,19 +57,41 @@ const bundle = await build({
     export * as auth from './src/stores/authStore.js';
     export * as db from './src/db/storage.js';
     export * as feeds from './src/stores/feedsStore.js';
+    export * as settings from './src/stores/settingsStore.js';
   `, resolveDir: root },
   bundle: true, write: false, format: "esm", platform: "node",
   alias: { "@": `${root}src` },
-  plugins: [{ name: "mock-network-only", setup(plugin) {
+  plugins: [{ name: "mock-network-and-worker-boundary", setup(plugin) {
+    // Run the production cache engine in Node. The hook pauses its response at
+    // the worker boundary; production still requires the dedicated Worker.
+    plugin.onResolve({ filter: /(?:^|\/)toolbox\/cache-client\.js$/ }, () => ({ path: "cache-client", namespace: "test-cache-client" }));
+    plugin.onLoad({ filter: /.*/, namespace: "test-cache-client" }, () => ({
+      resolveDir: root,
+      contents: `
+        import { createArticleCache } from './src/toolbox/cache.js';
+        export function createWorkerArticleCache(storage) {
+          const cache = createArticleCache(storage);
+          return new Proxy(cache, { get(target, property) {
+            const method = Reflect.get(target, property);
+            if (typeof method !== 'function') return method;
+            return async (...args) => {
+              const result = await method.apply(target, args);
+              await globalThis.__nextfluxCacheResponseHook?.(property, args, result);
+              return result;
+            };
+          } });
+        }
+      `,
+    }));
     plugin.onResolve({ filter: /(?:^|\/)api\/miniflux(?:\.js)?$/ }, () => ({ path: "miniflux", namespace: "mock-api" }));
     plugin.onLoad({ filter: /.*/, namespace: "mock-api" }, () => ({ contents: "export default globalThis.__nextfluxSyncTestApi;" }));
     plugin.onResolve({ filter: /^sonner$/ }, () => ({ path: "sonner", namespace: "mock-toast" }));
     plugin.onLoad({ filter: /.*/, namespace: "mock-toast" }, () => ({ contents: "export const toast = { error() {} };" }));
   } }],
 });
-const { sync, articles, auth, db, feeds } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
+const { sync, articles, auth, db, feeds, settings } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 await db.initializeArticleCache();
-const entry = (id, status = "unread") => ({ id, feed: { id: 1 }, title: `Article ${id}`, content: "正文", status, starred: false, published_at: `2026-09-${String(id).padStart(2, "0")}` });
+const entry = (id, status = "unread") => ({ id, feed: { id: 1 }, title: `Article ${id}`, content: "正文", status, starred: false, published_at: new Date(Date.UTC(2026, 8, 9, 0, 0, id)).toISOString() });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function deferred() {
   let resolve;
@@ -56,17 +99,31 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
+async function assertLoggedOutCache() {
+  assert.deepEqual([...data.keys()].filter((key) => key.startsWith("nextflux.cache.")), [CACHE_ROOT],
+    "logout removes article shards and legacy entrypoints, retaining only the empty v3 marker");
+  const marker = await storage.get(CACHE_ROOT);
+  assert.equal(marker.version, 3);
+  assert.equal(marker.cleared, true);
+  assert.equal(marker.account, null);
+  assert.equal(marker.lastSyncTime, null);
+  assert.ok(Object.values(marker.tables).every((value) => value === null));
+}
 async function reset() {
+  rejectRoot = false;
+  beforeApply = undefined;
+  globalThis.__nextfluxCacheResponseHook = null;
   await sync.cancelAccountOperations();
   await db.clearArticleCache();
   sync.isOnline.set(true);
   navigator.onLine = true;
-  auth.authState.set({ userId: 1, token: "fixture", authType: "token" });
-  articles.filteredArticles.set([]);
-  articles.activeArticle.set(null);
+  auth.authState.set({ serverUrl: "https://miniflux.xiaochen.win", userId: 1, token: "fixture", authType: "token" });
+  articles.resetArticleState();
+  articles.filter.set("all");
+  articles.pageSize.set(30);
+  settings.settingsState.set({ ...settings.settingsState.get(), sortDirection: "asc", sortField: "published_at", showHiddenFeeds: false });
   feeds.unreadCounts.set({});
   feeds.starredCounts.set({});
-  rejectManifest = false;
   writes.length = 0;
   for (const key of Object.keys(fakeApi)) delete fakeApi[key];
   Object.assign(fakeApi, {
@@ -76,15 +133,14 @@ async function reset() {
     getAllStarredEntries: async () => [],
     getChangedEntries: async () => [],
     getNewEntries: async () => [],
-    updateEntryStatus: async () => {},
     updateEntryStarred: async () => {},
     updateEntriesStatus: async () => {},
     markAllAsRead: async () => {},
   });
 }
 
-// One serial scenario uses real production stores and persistence; only the API
-// and toast delivery are substituted so controlled races are reproducible.
+// The scenarios use real production stores and cache persistence. Network/toast
+// delivery and the Worker transport boundary are substituted for controlled races.
 test("sync commits pages once, preserves checkpoint on failure, and cancels in-flight logout", async () => {
   await reset();
   const calls = [];
@@ -96,19 +152,23 @@ test("sync commits pages once, preserves checkpoint on failure, and cancels in-f
   assert.equal(sync.sync(), first, "overlapping refreshes join the same work");
   await first;
   assert.deepEqual(calls, [0, 1, 2]);
-  assert.equal(writes.filter((key) => key.endsWith("manifest")).length, 1, "all pages plus checkpoint commit once");
+  assert.equal(writes.filter((key) => key === CACHE_ROOT).length, 1, "all pages plus checkpoint commit once");
   const previous = db.getLastSyncTime().toISOString();
+  const previousRoot = structuredClone(data.get(CACHE_ROOT));
   assert.equal(await db.getArticlesCount([1]), 3);
   fakeApi.getChangedEntries = async () => [entry(4)];
   fakeApi.getNewEntries = async () => { throw new Error("page failed"); };
   await assert.rejects(sync.sync(), /page failed/);
   assert.equal(db.getLastSyncTime().toISOString(), previous);
+  assert.deepEqual(data.get(CACHE_ROOT), previousRoot);
   assert.equal(await db.getArticleById(4), null);
   fakeApi.getNewEntries = async () => [];
-  rejectManifest = true;
+  rejectRoot = true;
   await assert.rejects(sync.sync(), /cache write failed/);
   assert.equal(db.getLastSyncTime().toISOString(), previous);
-  rejectManifest = false;
+  assert.deepEqual(data.get(CACHE_ROOT), previousRoot);
+  assert.equal(await db.getArticleById(4), null);
+  rejectRoot = false;
   const gate = deferred();
   fakeApi.getChangedEntries = () => gate.promise;
   const running = sync.sync();
@@ -122,7 +182,7 @@ test("sync commits pages once, preserves checkpoint on failure, and cancels in-f
   assert.equal(auth.authState.get().userId, "");
   assert.equal(db.getLastSyncTime(), null);
   assert.equal(await db.getArticlesCount([1]), 0);
-  assert.equal([...data.keys()].some((key) => key.startsWith("nextflux.cache.")), false);
+  await assertLoggedOutCache();
 });
 
 test("read/bookmark operations never write cache on offline or rejected API and keep counts ordered", async () => {
@@ -131,41 +191,49 @@ test("read/bookmark operations never write cache on offline or rejected API and 
   const original = await db.getArticleById(1);
   articles.filteredArticles.set([original]);
   articles.activeArticle.set(original);
+  const beforeRejectedOperations = writes.length;
   navigator.onLine = false;
   await assert.rejects(articles.updateArticleStatus(original), /离线/);
   assert.equal((await db.getArticleById(1)).status, "unread");
+  assert.equal(writes.length, beforeRejectedOperations);
   navigator.onLine = true;
   fakeApi.updateEntryStarred = async () => { throw new Error("API rejected"); };
   await assert.rejects(articles.updateArticleStarred(original), /API rejected/);
   assert.equal((await db.getArticleById(1)).starred, 0);
   assert.equal(articles.filteredArticles.get()[0].starred, 0);
+  fakeApi.updateEntriesStatus = async () => { throw new Error("status rejected"); };
+  await assert.rejects(articles.updateArticleStatus(original), /status rejected/);
+  assert.equal((await db.getArticleById(1)).status, "unread");
+  assert.equal(writes.length, beforeRejectedOperations, "offline and rejected API operations cannot write storage");
   const gate = deferred();
-  fakeApi.updateEntryStatus = () => gate.promise;
+  fakeApi.updateEntriesStatus = () => gate.promise;
+  const writesBeforeAcknowledgement = writes.length;
   const changing = articles.updateArticleStatus(original);
   await tick();
   assert.equal((await db.getArticleById(1)).status, "unread", "no write before acknowledgement");
+  assert.equal(writes.length, writesBeforeAcknowledgement, "no storage write before acknowledgement");
   gate.resolve();
   await changing;
   assert.equal((await db.getArticleById(1)).status, "read");
   assert.equal(feeds.unreadCounts.get()[1], 0);
   assert.equal(articles.activeArticle.get().status, "read");
-  fakeApi.updateEntryStatus = async () => {};
-  rejectManifest = true;
+  fakeApi.updateEntriesStatus = async () => {};
+  rejectRoot = true;
   await assert.rejects(articles.updateArticleStatus(original), /服务器已保存.*缓存保存失败/);
   assert.equal((await db.getArticleById(1)).status, "read");
-  rejectManifest = false;
+  rejectRoot = false;
 });
 
 test("mark all includes offscreen cached articles and range mutation uses one server batch", async () => {
   await reset();
   fakeApi.getUnreadEntriesByPage = async () => ({ total: 3, entries: [entry(1), entry(2), entry(3)] });
   await sync.sync();
-  const all = await db.getCachedArticles();
+  const all = (await db.getCachedArticleMetadata()).sort((left, right) => left.id - right.id);
   articles.filteredArticles.set(all.slice(0, 1));
   await articles.markAllAsRead("feed", 1);
   assert.equal(await db.getUnreadCount(1), 0);
   assert.equal((await db.getArticleById(3)).status, "read");
-  await db.addArticles(all);
+  await db.patchArticleState(all.map(({ id }) => ({ id, status: "unread" })));
   articles.filteredArticles.set(all);
   const batches = [];
   fakeApi.updateEntriesStatus = async (ids, status) => { batches.push({ ids, status }); };
@@ -201,10 +269,10 @@ test("category, unsubscribe, and icon responses cannot mutate cache or stores af
     await loggingOut;
     assert.deepEqual(await db.getFeeds(), []);
     assert.deepEqual(await db.getCategories(), []);
-    assert.equal(await db.getFeedIcon(1), undefined);
+    assert.equal(await db.getFeedIcon(1), null);
     assert.deepEqual(feeds.feeds.get(), []);
     assert.deepEqual(feeds.categories.get(), []);
-    assert.equal([...data.keys()].some((key) => key.startsWith("nextflux.cache.")), false);
+    await assertLoggedOutCache();
   }
 });
 
@@ -217,18 +285,18 @@ test("offline icons use cache and unsubscribe commits feed, articles, and icon a
   assert.equal((await sync.loadAccountFeedIcon(1)).data, "image/png;base64,aGVsbG8=");
   navigator.onLine = true;
   fakeApi.deleteFeed = async () => {};
-  rejectManifest = true;
+  rejectRoot = true;
   await assert.rejects(sync.removeCachedFeed(1), /cache write failed/);
   assert.equal((await db.getFeeds()).length, 1);
   assert.equal(await db.getArticlesCount([1]), 1);
   assert.ok(await db.getFeedIcon(1));
-  rejectManifest = false;
+  rejectRoot = false;
   writes.length = 0;
   await sync.removeCachedFeed(1);
-  assert.equal(writes.filter((key) => key.endsWith("manifest")).length, 1);
+  assert.equal(writes.filter((key) => key === CACHE_ROOT).length, 1);
   assert.deepEqual(await db.getFeeds(), []);
   assert.equal(await db.getArticlesCount([1]), 0);
-  assert.equal(await db.getFeedIcon(1), undefined);
+  assert.equal(await db.getFeedIcon(1), null);
 });
 
 
@@ -364,5 +432,145 @@ test("queued feed icons yield to sync and remain invalidated by logout", async (
   pendingIcon.resolve({ mime_type: "image/png", data: "fixture" });
   await Promise.all([firstFailure, secondFailure, loggingOut]);
   assert.equal(count, 1, "queued icon never dispatches after logout");
-  assert.equal(await db.getFeedIcon(4), undefined);
+  assert.equal(await db.getFeedIcon(4), null);
+});
+
+test("sync readers keep the committed snapshot while the next root is blocked", { timeout: 10000 }, async (t) => {
+  await reset();
+  await sync.sync();
+  const oldCheckpoint = db.getLastSyncTime().toISOString();
+  const oldRoot = structuredClone(data.get(CACHE_ROOT));
+  const reachedCommit = deferred();
+  const releaseCommit = deferred();
+  t.after(() => { beforeApply = undefined; releaseCommit.resolve(); });
+  beforeApply = async ({ set }) => {
+    if (set.some(({ key }) => key === CACHE_ROOT)) {
+      reachedCommit.resolve();
+      await releaseCommit.promise;
+    }
+  };
+  fakeApi.getChangedEntries = async (_since, check, onPage) => {
+    check();
+    await onPage([{ ...entry(1, "read"), content: "更新后的完整正文" }, entry(2)]);
+    return undefined;
+  };
+  const refreshing = sync.sync();
+  await reachedCommit.promise;
+  try {
+    assert.deepEqual(data.get(CACHE_ROOT), oldRoot);
+    assert.equal(db.getLastSyncTime().toISOString(), oldCheckpoint);
+    assert.equal((await db.getArticleById(1)).content, "正文");
+    assert.equal((await db.getArticleById(1)).status, "unread");
+    assert.equal(await db.getArticleById(2), null);
+    assert.equal(await db.getArticlesCount([1]), 1);
+    const visible = await articles.loadArticles(1);
+    assert.deepEqual(visible.articles.map(({ id }) => id), [1], "pagination does not wait for the writer");
+  } finally {
+    beforeApply = undefined;
+    releaseCommit.resolve();
+  }
+  await refreshing;
+  assert.equal((await db.getArticleById(1)).content, "更新后的完整正文");
+  assert.equal((await db.getArticleById(1)).status, "read");
+  assert.equal(await db.getArticlesCount([1]), 2);
+});
+
+test("unread pagination keeps its ID sequence when visible and future rows become read", async () => {
+  await reset();
+  fakeApi.getUnreadEntriesByPage = async () => ({ total: 65, entries: Array.from({ length: 65 }, (_, index) => entry(index + 1)) });
+  await sync.sync();
+  articles.filter.set("unread");
+  const first = await articles.loadArticles(1);
+  assert.deepEqual(first.articles.map(({ id }) => id), Array.from({ length: 30 }, (_, index) => index + 1));
+  await articles.updateArticleStatus(first.articles[0], "read");
+  await articles.updateArticleStatus(await db.getArticleMetadata(31), "read");
+  await articles.loadArticles(1, "feed", 2, true);
+  await articles.loadArticles(1, "feed", 3, true);
+  const listed = articles.filteredArticles.get();
+  assert.deepEqual(listed.map(({ id }) => id), Array.from({ length: 65 }, (_, index) => index + 1));
+  assert.equal(new Set(listed.map(({ id }) => id)).size, 65);
+  assert.equal(listed[0].status, "read");
+  assert.equal(listed[30].status, "read", "a later page receives the latest acknowledged state");
+  assert.equal(feeds.unreadCounts.get()[1], 63);
+  assert.equal(articles.hasMore.get(), false);
+});
+
+test("a query skips deleted rows without reordering its remaining pages", async () => {
+  await reset();
+  fakeApi.getUnreadEntriesByPage = async () => ({ total: 65, entries: Array.from({ length: 65 }, (_, index) => entry(index + 1)) });
+  await sync.sync();
+  await articles.loadArticles(1);
+  await db.patchArticleState([{ id: 31, status: "removed" }]);
+  await articles.loadArticles(1, "feed", 2, true);
+  await articles.loadArticles(1, "feed", 3, true);
+  assert.deepEqual(articles.filteredArticles.get().map(({ id }) => id),
+    Array.from({ length: 65 }, (_, index) => index + 1).filter((id) => id !== 31));
+  assert.equal(articles.hasMore.get(), false);
+});
+
+test("an old filter response cannot replace or append to the new query", { timeout: 10000 }, async (t) => {
+  await reset();
+  fakeApi.getAllStarredEntries = async () => [{ ...entry(2, "read"), starred: true }];
+  await sync.sync();
+  const responseReady = deferred();
+  const releaseResponse = deferred();
+  t.after(() => { globalThis.__nextfluxCacheResponseHook = null; releaseResponse.resolve(); });
+  let paused = false;
+  globalThis.__nextfluxCacheResponseHook = async (method) => {
+    if (method !== "readQueryPage" || paused) return;
+    paused = true;
+    responseReady.resolve();
+    await releaseResponse.promise;
+  };
+  articles.filter.set("unread");
+  const oldQuery = articles.loadArticles(1);
+  await responseReady.promise;
+  articles.filter.set("starred");
+  const newQuery = await articles.loadArticles(1);
+  assert.deepEqual(newQuery.articles.map(({ id }) => id), [2]);
+  releaseResponse.resolve();
+  assert.equal(await oldQuery, null);
+  assert.deepEqual(articles.filteredArticles.get().map(({ id }) => id), [2]);
+  assert.equal(articles.currentPage.get(), 1);
+  assert.equal(articles.hasMore.get(), false);
+});
+
+test("automatic read requests target read explicitly and do not toggle it back", async () => {
+  await reset();
+  await sync.sync();
+  const original = await db.getArticleMetadata(1);
+  const targets = [];
+  fakeApi.updateEntriesStatus = async (ids, status) => { targets.push({ ids, status }); };
+  await Promise.all([
+    articles.updateArticleStatus(original, "read"),
+    articles.updateArticleStatus(original, "read"),
+  ]);
+  await articles.updateArticleStatus(original, "read");
+  assert.deepEqual(targets, [{ ids: [1], status: "read" }]);
+  assert.equal((await db.getArticleById(1)).status, "read");
+  assert.equal(feeds.unreadCounts.get()[1], 0);
+});
+
+test("an article response arriving after logout cannot refill the active article", { timeout: 10000 }, async (t) => {
+  await reset();
+  await sync.sync();
+  articles.activeArticle.set(await db.getArticleMetadata(1));
+  const responseReady = deferred();
+  const releaseResponse = deferred();
+  t.after(() => { globalThis.__nextfluxCacheResponseHook = null; releaseResponse.resolve(); });
+  globalThis.__nextfluxCacheResponseHook = async (method) => {
+    if (method !== "readArticle") return;
+    responseReady.resolve();
+    await releaseResponse.promise;
+  };
+  const reading = db.getArticleById(1).then((article) => articles.activeArticle.set(article));
+  const cancelled = assert.rejects(reading, { code: "ACCOUNT_CHANGED" });
+  await responseReady.promise;
+  await auth.logout();
+  assert.equal(articles.activeArticle.get(), null);
+  releaseResponse.resolve();
+  await cancelled;
+  assert.equal(articles.activeArticle.get(), null);
+  assert.deepEqual(articles.filteredArticles.get(), []);
+  await assertLoggedOutCache();
 });
