@@ -249,26 +249,123 @@
   background-color: var(--background);
 }
 
-/* ToolBox native-action fallbacks use the existing NextFlux palette. */
-.toolbox-link-dialog, .toolbox-start-error {
+/* Startup errors retain their existing presentation. */
+.toolbox-start-error {
   color: var(--color-foreground, #222);
   background: var(--color-background, #fff);
   padding: 24px;
   border: 1px solid #8883;
   border-radius: 20px;
   width: min(440px, calc(100vw - 32px));
-  margin: auto;
+  margin: 15vh auto auto;
   box-shadow: 0 12px 48px #0002;
 }
-.toolbox-link-dialog::backdrop { background: #0006; }
-.toolbox-link-dialog h2, .toolbox-start-error h1 { font-size: 20px; font-weight: 600; }
-.toolbox-link-dialog p, .toolbox-start-error p { margin: 12px 0; line-height: 1.6; }
-.toolbox-link-address { overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
-.toolbox-link-dialog > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.toolbox-link-dialog button, .toolbox-start-error button {
+.toolbox-start-error h1 { font-size: 20px; font-weight: 600; }
+.toolbox-start-error p { margin: 12px 0; line-height: 1.6; }
+.toolbox-start-error button {
   min-height: 48px; padding: 8px 16px; border-radius: 12px; background: #8882; cursor: pointer;
 }
-.toolbox-start-error { margin-top: 15vh; }
+
+/* OpenDesign link sheet; theme tokens keep custom NextFlux palettes intact. */
+.toolbox-link-dialog {
+  box-sizing: border-box;
+  width: min(328px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 22px;
+  overflow: auto;
+  color: var(--overlay-foreground, var(--foreground, #222));
+  background: var(--overlay, var(--background, #fff));
+  border: 1px solid var(--border, #8883);
+  border-radius: 24px;
+  box-shadow: 0 24px 54px #0004, inset 0 1px 0 color-mix(in oklch, var(--foreground, #222) 8%, transparent);
+}
+.toolbox-link-dialog[open] { animation: toolbox-link-enter .22s ease both; }
+.toolbox-link-dialog::backdrop {
+  background: #0006;
+  backdrop-filter: blur(8px) saturate(.8);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .toolbox-link-dialog {
+    background: color-mix(in oklch, var(--overlay, var(--background, #fff)) 92%, transparent);
+    backdrop-filter: blur(28px) saturate(1.25);
+  }
+}
+.toolbox-link-dialog h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.3;
+  font-weight: 740;
+  letter-spacing: -.035em;
+}
+.toolbox-link-dialog p {
+  margin: 8px 0 16px;
+  color: var(--muted, #666);
+  font-size: .875rem;
+  line-height: 1.5;
+}
+.toolbox-link-dialog .toolbox-link-address {
+  margin: 0;
+  padding: 10px 12px;
+  color: inherit;
+  background: color-mix(in oklch, var(--foreground, #222) 5%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border, #8883) 82%, transparent);
+  border-radius: 12px;
+  font-family: ui-monospace, monospace;
+  font-size: .75rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  max-height: 25dvh;
+  overflow: auto;
+}
+.toolbox-link-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 18px;
+}
+.toolbox-link-dialog button {
+  min-height: 48px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  font-size: .875rem;
+  line-height: 1.4;
+  font-weight: 680;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: transform .15s ease, background .15s ease;
+}
+.toolbox-link-dialog .toolbox-link-primary {
+  color: var(--accent-foreground, #fff);
+  background: var(--accent, #1264cc);
+  border-color: var(--accent, #1264cc);
+}
+.toolbox-link-dialog .toolbox-link-secondary {
+  color: inherit;
+  background: color-mix(in oklch, var(--foreground, #222) 5%, transparent);
+  border-color: color-mix(in oklch, var(--border, #8883) 88%, transparent);
+}
+.toolbox-link-dialog button:enabled:active { transform: scale(.98); }
+.toolbox-link-dialog button:focus-visible { outline: 2px solid var(--focus, var(--accent, #1264cc)); outline-offset: 3px; }
+.toolbox-link-dialog button:disabled { opacity: .55; cursor: wait; }
+@media (hover: hover) {
+  .toolbox-link-dialog .toolbox-link-primary:enabled:hover { background: color-mix(in oklch, var(--accent, #1264cc) 88%, black); }
+  .toolbox-link-dialog .toolbox-link-secondary:enabled:hover { background: color-mix(in oklch, var(--foreground, #222) 9%, transparent); }
+}
+@keyframes toolbox-link-enter {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toolbox-link-dialog[open] { animation: none; }
+  .toolbox-link-dialog button { transition: none; }
+  .toolbox-link-dialog button:enabled:active { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .toolbox-link-dialog { background: var(--overlay, var(--background, #fff)); backdrop-filter: none; }
+  .toolbox-link-dialog::backdrop { backdrop-filter: none; }
+}
 
 /* Size controls by their component role, never by their accessible name. */
 .nextflux-toolbar-button,
