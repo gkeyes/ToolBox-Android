@@ -55,7 +55,7 @@ debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定�
   承载各会话的独立通知和停止入口。位置、闹钟、分享、浏览器打开、SAF、快捷方式和相机
   使用对应的原生能力；卸载清理工具数据、权限和后台资源。
 
-当前宿主为 **0.7.2 (26)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
+当前宿主为 **0.7.3 (27)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
 授权和设置；Room schema 保持 v1。功能边界与最低宿主要求以技术方案和 SDK 手册为准。
 
 ## 小工具与开发入口
@@ -88,7 +88,10 @@ python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 SHA256 清单和同提交回执。release 关闭调试，启用 R8 和资源裁剪；映射独立归档。
 本地 `candidate` 未配置固定签名时使用 debug key，不能覆盖已交付的 GitHub 同签名版本。
 
-GitHub 模拟器执行指定的存储事务与浏览器启动回归，NextFlux 浏览器测试使用合成数据。
+GitHub 模拟器执行指定的存储事务、浏览器启动、外观与后台交互回归；
+`RuntimeExitConfirmationTest` 覆盖返回确认、取消、再次返回关闭弹窗、WebView 不重建及重复返回防护。
+小工具的系统侧滑返回/返回键先提示“返回 ToolBox？”，选择“继续使用”留在当前页面，确认才退出。
+NextFlux 浏览器测试使用合成数据。
 [NextFlux 性能比较](examples/nextflux/test/performance/README.md) 说明同配置前后对比方法；
 [宿主性能采集](docs/performance/BASELINE.md) 说明授权真机测量的输入与结果解释。
 这些证据不替代 Android 真机、真实服务或 HyperOS 展示验证。

@@ -32,7 +32,7 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 - HyperX Compose is optional and must be pinned as source/submodule; never track its moving `main` in production.
 - Implement the light design board first. Preserve semantic colors, spacing and information hierarchy rather than drawing phone frames.
 - Support font scaling, TalkBack, 48 dp touch targets and adaptive layouts.
-- Keep the runtime content-first: fill the system safe area without host floating buttons, title/overflow chrome, bottom navigation or technical status strips. System edge-back exits the tool.
+- Keep the runtime content-first: fill the system safe area without host floating buttons, title/overflow chrome, bottom navigation or technical status strips. System edge-back or Back opens a native return-to-ToolBox confirmation; only confirmation exits the tool, while dismissal preserves the running page.
 - Mini-app pages must use an interior right swipe to return one level; at the root, stay in the tool. Preserve existing horizontal controls and accessible back buttons. Mini-apps implement this against their own navigation state; the host must not intercept all content swipes.
 - Per-tool permissions are real Miuix toggles backed by capability grants. A toggle never bypasses the manifest, Android system permission, user-gesture, quota or origin checks above.
 

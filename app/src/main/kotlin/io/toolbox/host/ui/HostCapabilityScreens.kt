@@ -2,6 +2,8 @@ package io.toolbox.host.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +17,10 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -42,7 +50,7 @@ internal fun RuntimeShellScreen(
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
 
-    BackHandler(onBack = onBack)
+    RuntimeExitConfirmation(onConfirm = onBack)
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -78,6 +86,45 @@ internal fun RuntimeShellScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/** Confirms host-level Back without detaching or replacing the running WebView. */
+@Composable
+internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) {
+    var visible by rememberSaveable { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf(false) }
+    BackHandler {
+        if (!leaving) visible = !visible
+    }
+    OverlayDialog(
+        show = visible,
+        title = "返回 ToolBox？",
+        summary = "即将离开当前小工具，返回 ToolBox。请确认需要保留的内容已保存。",
+        onDismissRequest = { visible = false },
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+        ) {
+            ToolBoxTextButton(
+                label = "继续使用",
+                onClick = { visible = false },
+                modifier = Modifier.weight(1f),
+                contentColor = ToolBoxThemeTokens.colors.textPrimary,
+            )
+            ToolBoxPrimaryButton(
+                label = "返回 ToolBox",
+                onClick = {
+                    if (visible && !leaving) {
+                        visible = false
+                        leaving = true
+                        onConfirm()
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

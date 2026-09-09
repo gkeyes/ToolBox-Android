@@ -76,6 +76,12 @@ class HostNavigationTest {
         runtimeShell.assertIsDisplayed()
 
         androidx.test.espresso.Espresso.pressBack()
+        waitForVisibleText("返回 ToolBox？")
+        composeRule.onNodeWithText("继续使用").performClick()
+        runtimeShell.assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBack()
+        waitForVisibleText("返回 ToolBox？")
+        composeRule.onNodeWithText("返回 ToolBox").performClick()
         waitForVisibleText("后台任务")
         composeRule.onNodeWithText("后台任务").performClick()
         waitForVisibleText("没有后台任务")
