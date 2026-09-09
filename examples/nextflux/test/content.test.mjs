@@ -14,7 +14,12 @@ const textOf = (operations) => operations.filter((item) => item.type === "text")
 test("safe SAX nodes drop active/foreign content and ignore all untrusted metadata and executable attributes", () => {
   const operations = parse('<p onclick="steal()" style="color:red">safe<script>bad</script><style>bad</style><svg><a>bad</a></svg><math>bad</math><template><img src="https://evil.org">bad</template><form>bad<input></form><span data-media-kind="video" data-media-url="https://evil.org" data-reading-local-anchor="evil">visible</span></p>');
   assert.equal(textOf(operations), "safevisible");
-  assert.deepEqual(operations.filter((item) => item.type === "element").map((item) => item.tag), ["p", "span"]);
+  const elements = operations.filter((item) => item.type === "element");
+  // In HTML mode <form> implicitly closes <p>. The unmatched final </p>
+  // creates an empty paragraph; dropping the form must retain that safe repair.
+  assert.deepEqual(elements.map((item) => item.tag), ["p", "span", "p"]);
+  assert.ok(elements.every((item) => item.parent === 0));
+  assert.ok(!operations.some((item) => item.parent === elements.at(-1).id));
   assert.ok(operations.every((item) => !item.attrs || Object.keys(item.attrs).length === 0));
 });
 
