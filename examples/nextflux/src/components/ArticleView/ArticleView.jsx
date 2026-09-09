@@ -258,7 +258,7 @@ const ArticleView = () => {
         <motion.div
           key={articleId ? "content" : "empty"}
           className={cn(
-            "flex-1 p-0 h-screen fixed md:static inset-0 z-20",
+            "min-w-0 flex-1 p-0 h-screen fixed md:static inset-0 z-20",
             !articleId ? "hidden md:flex md:flex-1" : "",
             floatingSidebar ? "" : "md:pr-2 md:py-2",
           )}

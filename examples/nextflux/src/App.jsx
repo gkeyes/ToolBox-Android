@@ -46,7 +46,7 @@ function App() {
   return (
     <SidebarProvider>
       <FeedListSidebar />
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <Outlet />
       </SidebarInset>
       <SettingsModal />
