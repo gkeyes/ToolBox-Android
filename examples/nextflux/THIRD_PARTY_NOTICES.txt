@@ -18,8 +18,18 @@ by SHA-256; each package below points to the full retained text(s). Where a pack
 omits its license file, a same-project license reference is identified explicitly.
 Repository references for omitted license files record the exact retrieved commit.
 
-Lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
-Inventory entries: 229
+Cleanup reconciliation: all original inventory entries and full license texts
+are retained as a conservative superset. Linux build-tool package entries
+are added from this verification platform, with explicit same-project license
+references where platform packages omit their own files. Every installed
+production package/version is covered. Remaining versions and integrity
+hashes are unchanged. Six new optional WASI lock entries were verified inside
+the same hash-checked Tailwind Oxide archive, not independently upgraded.
+Original location fields describe the source inventory.
+Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
+
+Lockfile SHA-256: 9a7bee870123e02612c66a216e7e78d0ecdd1368c5c65e104505dc0b396e3e57
+Inventory entries: 236
 Distinct license/notice texts: 118
 
 DEPENDENCY INVENTORY
@@ -1398,6 +1408,58 @@ zwitch@2.0.4
   Project: wooorm/zwitch
   License text SHA-256: ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d
 
+
+@esbuild/linux-x64@0.25.12
+  Location: node_modules/@esbuild/linux-x64
+  Declared license: MIT
+  Project: git+https://github.com/evanw/esbuild.git
+  License source: same-project esbuild@0.25.12 (platform package omits a license file)
+  License text SHA-256: b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681
+  Verified license source: node_modules/esbuild/LICENSE.md
+
+@rollup/rollup-linux-x64-gnu@4.60.3
+  Location: node_modules/@rollup/rollup-linux-x64-gnu
+  Declared license: MIT
+  Project: git+https://github.com/rollup/rollup.git
+  License source: same-project rollup@4.60.3 (platform package omits a license file)
+  License text SHA-256: fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8
+  Verified license source: node_modules/rollup/LICENSE.md
+
+@rollup/rollup-linux-x64-musl@4.60.3
+  Location: node_modules/@rollup/rollup-linux-x64-musl
+  Declared license: MIT
+  Project: git+https://github.com/rollup/rollup.git
+  License source: same-project rollup@4.60.3 (platform package omits a license file)
+  License text SHA-256: fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8
+  Verified license source: node_modules/rollup/LICENSE.md
+
+@tailwindcss/oxide-linux-x64-gnu@4.3.0
+  Location: node_modules/@tailwindcss/oxide-linux-x64-gnu
+  Declared license: MIT
+  Project: git+https://github.com/tailwindlabs/tailwindcss.git
+  License text SHA-256: 60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985
+  Verified license source: node_modules/@tailwindcss/oxide-linux-x64-gnu/LICENSE
+
+@tailwindcss/oxide-linux-x64-musl@4.3.0
+  Location: node_modules/@tailwindcss/oxide-linux-x64-musl
+  Declared license: MIT
+  Project: git+https://github.com/tailwindlabs/tailwindcss.git
+  License text SHA-256: 60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985
+  Verified license source: node_modules/@tailwindcss/oxide-linux-x64-musl/LICENSE
+
+lightningcss-linux-x64-gnu@1.32.0
+  Location: node_modules/lightningcss-linux-x64-gnu
+  Declared license: MPL-2.0
+  Project: https://github.com/parcel-bundler/lightningcss.git
+  License text SHA-256: 5eba353fe5076ac3432177f8ab1cf75e3afcd0584251e37c3bfead5f447d040e
+  Verified license source: node_modules/lightningcss-linux-x64-gnu/LICENSE
+
+lightningcss-linux-x64-musl@1.32.0
+  Location: node_modules/lightningcss-linux-x64-musl
+  Declared license: MPL-2.0
+  Project: https://github.com/parcel-bundler/lightningcss.git
+  License text SHA-256: 5eba353fe5076ac3432177f8ab1cf75e3afcd0584251e37c3bfead5f447d040e
+  Verified license source: node_modules/lightningcss-linux-x64-musl/LICENSE
 
 FULL LICENSE AND NOTICE TEXTS
 
