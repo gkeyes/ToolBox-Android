@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -52,26 +51,28 @@ import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
-import io.toolbox.host.runtime.RuntimeSessionManager
+import io.toolbox.host.catalog.RunningToolsViewModel
+import io.toolbox.host.catalog.RunningToolsUiState
+import io.toolbox.host.ui.RunningToolRow
+import io.toolbox.host.ui.RunningToolsStopDialog
+import io.toolbox.host.ui.FeedbackSurface
+import io.toolbox.host.ui.FeedbackTone
+import androidx.compose.runtime.key
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.SectionHeader
-import java.text.DateFormat
-import java.util.Date
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun BackgroundSafeguardsScreen(
     viewModel: SettingsViewModel,
-    runtimeSessions: RuntimeSessionManager,
+    runningTools: RunningToolsViewModel,
     onBack: () -> Unit,
     onReady: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
     val settings by viewModel.state.collectAsStateWithLifecycle()
-    val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
+    val runningState by runningTools.state.collectAsStateWithLifecycle()
     var refreshGeneration by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(settings.loaded) {
@@ -120,12 +121,16 @@ internal fun BackgroundSafeguardsScreen(
 
     BackgroundSafeguardsContent(
         settings = settings,
-        sessions = sessions,
+        runningState = runningState,
         systemState = systemState,
         focusState = focusState,
         onBack = onBack,
         onSetBackgroundEnabled = viewModel::setBackgroundEnabled,
-        onStopSession = { session -> scope.launch { runtimeSessions.stopSession(session.sessionId) } },
+        onStopSession = { runningTools.requestStop(it.sessionId) },
+        onStopAll = runningTools::requestStopAll,
+        onCancelStop = runningTools::cancelStop,
+        onConfirmStop = runningTools::confirmStop,
+        onDismissFeedback = runningTools::dismissFeedback,
         onOpenNotifications = {
             if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -173,12 +178,16 @@ internal fun BackgroundSafeguardsScreen(
 @Composable
 internal fun BackgroundSafeguardsContent(
     settings: io.toolbox.host.settings.SettingsUiState,
-    sessions: List<RuntimeBackgroundSessionUi>,
+    runningState: RunningToolsUiState,
     systemState: BackgroundSystemState,
     focusState: LiveNotificationSupportState,
     onBack: () -> Unit,
     onSetBackgroundEnabled: (Boolean) -> Unit,
     onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
+    onStopAll: () -> Unit,
+    onCancelStop: () -> Unit,
+    onConfirmStop: () -> Unit,
+    onDismissFeedback: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenBackgroundLocation: () -> Unit,
     onOpenExactAlarms: () -> Unit,
@@ -186,6 +195,7 @@ internal fun BackgroundSafeguardsContent(
     onOpenHyperOsAutoStart: () -> Unit,
     onOpenHyperOsBatteryPolicy: () -> Unit,
 ) {
+    val sessions = runningState.sessions
     val glassState = rememberToolBoxGlassState()
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -228,18 +238,33 @@ internal fun BackgroundSafeguardsContent(
             }
 
             item("sessions-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-            item("sessions-title") { SectionHeader("正在运行") }
+            item("sessions-title") { SectionHeader("正在运行", "${sessions.size} 个") }
+            runningState.feedback?.let { feedback ->
+                item("stop-error") { FeedbackSurface(feedback.message, FeedbackTone.Error, true, onDismissFeedback) }
+            }
             item("sessions") {
                 ToolBoxGroupedSurface {
                     if (sessions.isEmpty()) {
                         SystemStatusRow("没有持续运行环境", "运行页面主动启动后会显示在这里")
                     } else {
                         sessions.forEachIndexed { index, session ->
-                            ActiveSessionRow(
-                                session = session,
-                                onStop = { onStopSession(session) },
-                            )
+                            key(session.sessionId) {
+                                RunningToolRow(
+                                    session = session, tool = null,
+                                    stopping = runningState.stoppingSessionId == session.sessionId,
+                                    canStop = runningState.stoppingSessionId == null,
+                                    onOpen = null, onStop = { onStopSession(session) },
+                                )
+                            }
                             if (index != sessions.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        }
+                        if (sessions.size > 2) {
+                            ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                            ToolBoxDestructiveButton(
+                                label = "全部停止", onClick = onStopAll,
+                                enabled = runningState.stoppingSessionId == null,
+                                modifier = Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.oneHalf),
+                            )
                         }
                     }
                 }
@@ -306,31 +331,7 @@ internal fun BackgroundSafeguardsContent(
             }
         }
     }
-}
-
-@Composable
-private fun ActiveSessionRow(
-    session: RuntimeBackgroundSessionUi,
-    onStop: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
-    ) {
-        AppText(session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
-        AppText(
-            "开始于 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.startedAt))}",
-            color = ToolBoxThemeTokens.colors.textSecondary,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata,
-        )
-        ToolBoxDestructiveButton(
-            label = "停止此环境",
-            onClick = onStop,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
+    RunningToolsStopDialog(runningState, onCancelStop, onConfirmStop)
 }
 
 @Composable

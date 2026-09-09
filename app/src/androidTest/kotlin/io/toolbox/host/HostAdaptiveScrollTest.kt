@@ -70,6 +70,34 @@ class HostAdaptiveScrollTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun backgroundTasksUseSeparateStopTargetsAndShowBulkActionOnlyAboveTwo() {
+        val sessions = (1..3).map { index ->
+            io.toolbox.host.runtime.RuntimeBackgroundSessionUi("session-$index", "tool-$index", "工具 $index", index.toLong(), index)
+        }
+        val state = mutableStateOf(io.toolbox.host.catalog.RunningToolsUiState(sessions = sessions.take(2)))
+        val stopped = mutableListOf<String>()
+        var stopAll = 0
+        composeRule.activity.setContent {
+            ToolBoxTheme {
+                io.toolbox.host.background.BackgroundSafeguardsContent(
+                    settings = SettingsUiState(loaded = true), runningState = state.value,
+                    systemState = io.toolbox.host.background.BackgroundSystemState(true, true, true, true),
+                    focusState = io.toolbox.host.background.LiveNotificationSupportState(0, false, false, false, false),
+                    onBack = {}, onSetBackgroundEnabled = {}, onStopSession = { stopped += it.sessionId },
+                    onStopAll = { stopAll++ }, onCancelStop = {}, onConfirmStop = {}, onDismissFeedback = {},
+                    onOpenNotifications = {}, onOpenBackgroundLocation = {}, onOpenExactAlarms = {},
+                    onOpenBatteryOptimization = {}, onOpenHyperOsAutoStart = {}, onOpenHyperOsBatteryPolicy = {},
+                )
+            }
+        }
+        composeRule.onNodeWithText("全部停止").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("停止工具 1后台运行").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(listOf("session-1"), stopped); state.value = state.value.copy(sessions = sessions) }
+        composeRule.onNodeWithText("全部停止").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, stopAll) }
+    }
+
+    @Test
     fun systemBarsFollowAllThemeModesAndLiveSystemConfiguration() {
         val theme = mutableStateOf(ToolBoxThemeMode.System)
         val systemDark = mutableStateOf(false)

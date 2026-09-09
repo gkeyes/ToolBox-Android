@@ -174,12 +174,13 @@ fun BackgroundSafeguardsPreview() {
     ToolBoxTheme {
         BackgroundSafeguardsContent(
             settings = PreviewHostFixtures.settings,
-            sessions = PreviewHostFixtures.runtimeSessions,
+            runningState = io.toolbox.host.catalog.RunningToolsUiState(sessions = PreviewHostFixtures.runtimeSessions),
             systemState = PreviewHostFixtures.backgroundSystemState,
             focusState = PreviewHostFixtures.liveNotificationSupport,
             onBack = {},
             onSetBackgroundEnabled = {},
             onStopSession = {},
+            onStopAll = {}, onCancelStop = {}, onConfirmStop = {}, onDismissFeedback = {},
             onOpenNotifications = {},
             onOpenBackgroundLocation = {},
             onOpenExactAlarms = {},

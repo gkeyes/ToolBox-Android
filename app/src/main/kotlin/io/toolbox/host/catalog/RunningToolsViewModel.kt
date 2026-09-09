@@ -14,6 +14,7 @@ internal data class RunningToolsUiState(
     val sessions: List<RuntimeBackgroundSessionUi> = emptyList(),
     val confirmation: RuntimeBackgroundSessionUi? = null,
     val stoppingSessionId: String? = null,
+    val batchConfirmation: List<RuntimeBackgroundSessionUi> = emptyList(),
     val feedback: CatalogFeedback.Failure? = null,
 )
 
@@ -30,6 +31,9 @@ internal class RunningToolsViewModel(
                 mutableState.update { state ->
                     state.copy(
                         sessions = current,
+                        batchConfirmation = state.batchConfirmation.filter { selected ->
+                            current.any { it.sessionId == selected.sessionId && it.toolId == selected.toolId }
+                        },
                         confirmation = state.confirmation?.takeIf { selected ->
                             current.any { it.sessionId == selected.sessionId && it.toolId == selected.toolId }
                         },
@@ -42,11 +46,16 @@ internal class RunningToolsViewModel(
     fun requestStop(sessionId: String) {
         if (state.value.stoppingSessionId != null) return
         val session = sessions.value.firstOrNull { it.sessionId == sessionId } ?: return
-        mutableState.update { it.copy(confirmation = session, feedback = null) }
+        mutableState.update { it.copy(confirmation = session, batchConfirmation = emptyList(), feedback = null) }
+    }
+
+    fun requestStopAll() {
+        if (state.value.stoppingSessionId != null || sessions.value.size <= 2) return
+        mutableState.update { it.copy(confirmation = null, batchConfirmation = sessions.value.toList(), feedback = null) }
     }
 
     fun cancelStop() {
-        mutableState.update { it.copy(confirmation = null) }
+        mutableState.update { it.copy(confirmation = null, batchConfirmation = emptyList()) }
     }
 
     fun dismissFeedback() {
@@ -54,24 +63,37 @@ internal class RunningToolsViewModel(
     }
 
     fun confirmStop() {
-        val selected = state.value.confirmation ?: return
         if (state.value.stoppingSessionId != null) return
-        if (sessions.value.none { it.sessionId == selected.sessionId && it.toolId == selected.toolId }) {
+        // Confirm only the snapshot shown in the dialog, never sessions started afterwards.
+        val selected = state.value.confirmation?.let(::listOf) ?: state.value.batchConfirmation
+        val targets = selected.filter { target ->
+            sessions.value.any { it.sessionId == target.sessionId && it.toolId == target.toolId }
+        }
+        if (targets.isEmpty()) {
             cancelStop()
             return
         }
-        mutableState.update { it.copy(confirmation = null, stoppingSessionId = selected.sessionId, feedback = null) }
+        mutableState.update { it.copy(confirmation = null, batchConfirmation = emptyList(), stoppingSessionId = targets.first().sessionId, feedback = null) }
         viewModelScope.launch {
+            var failed = false
             try {
-                stopSession(selected.sessionId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                mutableState.update {
-                    it.copy(feedback = CatalogFeedback.Failure("BACKGROUND_STOP_FAILED", "停止未完成，请重试。"))
+                for (target in targets) {
+                    if (sessions.value.none { it.sessionId == target.sessionId && it.toolId == target.toolId }) continue
+                    mutableState.update { it.copy(stoppingSessionId = target.sessionId) }
+                    try {
+                        val stopped = stopSession(target.sessionId)
+                        if (!stopped && sessions.value.any { it.sessionId == target.sessionId }) failed = true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        failed = true
+                    }
                 }
             } finally {
-                mutableState.update { it.copy(stoppingSessionId = null) }
+                mutableState.update { it.copy(
+                    stoppingSessionId = null,
+                    feedback = if (failed) CatalogFeedback.Failure("BACKGROUND_STOP_FAILED", "部分后台运行未能停止，请重试。") else null,
+                ) }
             }
         }
     }

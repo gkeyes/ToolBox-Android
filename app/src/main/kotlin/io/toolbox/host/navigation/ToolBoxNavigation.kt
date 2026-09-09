@@ -463,7 +463,10 @@ private fun SecondaryRouteContent(
 
         BackgroundSafeguardsRoute -> BackgroundSafeguardsScreen(
             viewModel = settingsViewModel,
-            runtimeSessions = dependencies.runtimeSessions,
+            runningTools = remember(dependencies, viewModelStoreOwner) {
+                ViewModelProvider(viewModelStoreOwner, HostFeatureViewModelFactory(dependencies))
+                    .get("host.safeguards-running-tools", RunningToolsViewModel::class.java)
+            },
             onBack = onBack,
             onReady = onReady,
         )
