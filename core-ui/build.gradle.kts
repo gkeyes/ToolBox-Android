@@ -40,7 +40,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.miuix.icons)
     implementation(libs.miuix.squircle)
-    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit4)
