@@ -10,6 +10,7 @@ import {
   activeArticle,
   articleContentRevision,
   imageGalleryActive,
+  getAcknowledgedArticleState,
 } from "@/stores/articlesStore.js";
 import { Separator, ScrollShadow } from "@heroui/react";
 import EmptyPlaceholder from "@/components/ArticleList/components/EmptyPlaceholder";
@@ -77,6 +78,7 @@ const ArticleView = () => {
     const request = startArticleRead(articleId, {
       load: getArticleById,
       getCurrent: () => activeArticle.get(),
+      getAcknowledgedState: getAcknowledgedArticleState,
       publish: (article) => activeArticle.set(article),
       notFound: () => {
         activeArticle.set(null);

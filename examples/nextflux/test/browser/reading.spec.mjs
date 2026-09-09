@@ -62,6 +62,21 @@ test("real Worker migration and unread pagination keep a fixed sequence and disc
   await verifyBoundary(page, observations);
 });
 
+test("a first article opened before automatic read acknowledgement displays the confirmed state after a delayed body response", async ({ page }) => {
+  const observations = await installFixture(page);
+  await openFixture(page);
+  await page.evaluate(() => window.__nextfluxTest.holdNext("readArticle", { articleId: 96 }));
+  await page.locator('[data-article-id="96"]').click();
+  await expect.poll(() => page.evaluate(() => window.__nextfluxTest.held.length)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__nextfluxTest.results.filter((result) => result.method === "patchState" && result.ok).length)).toBe(1);
+  await expect(page.locator(".article-title")).toHaveCount(0);
+  await page.evaluate(() => window.__nextfluxTest.releaseHeld());
+  await expect(page.locator(".article-title")).toHaveText("Article 96");
+  await expect(page.locator('.action-buttons button[aria-label="Unread"]')).toBeVisible();
+  expect(await page.evaluate(() => window.__nextfluxTest.network.filter((call) => call.method === "PUT" && call.path === "/v1/entries").map(({ ids, status }) => ({ ids, status })))).toEqual([{ ids: [96], status: "read" }]);
+  await verifyBoundary(page, observations);
+});
+
 test("entering an article does not undo immediate scrolling; status changes reuse content and late navigation reads are ignored", async ({ page }) => {
   const observations = await installFixture(page, { reduceMotion: false });
   await openFixture(page);

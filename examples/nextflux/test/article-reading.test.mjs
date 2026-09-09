@@ -76,6 +76,38 @@ test("a delayed content read preserves newly acknowledged read/starred state and
   assert.equal(nextArticle.shownOriginal, false);
 });
 
+test("a first-open body read preserves state acknowledged before an active reader exists", async () => {
+  for (const previous of [null, article(2)]) {
+    const pending = deferred();
+    let current = previous, acknowledged;
+    const request = startArticleRead(1, {
+      load: () => pending.promise, getCurrent: () => current,
+      getAcknowledgedState: () => acknowledged,
+      publish: (next) => { current = next; }, notFound: assert.fail, onError: assert.fail,
+    });
+    acknowledged = { status: "read", starred: 1, revision: 3 };
+    pending.resolve(article());
+    await request.done;
+    assert.equal(current.id, 1);
+    assert.equal(current.status, "read");
+    assert.equal(current.starred, 1);
+    assert.equal(current.content, article().content);
+  }
+});
+
+test("state acknowledged before a body read cannot overwrite a later server snapshot", async () => {
+  const acknowledged = { status: "read", starred: 1, revision: 3 };
+  let current = null;
+  const request = startArticleRead(1, {
+    load: async () => article(), getCurrent: () => current,
+    getAcknowledgedState: () => acknowledged,
+    publish: (next) => { current = next; }, notFound: assert.fail, onError: assert.fail,
+  });
+  await request.done;
+  assert.equal(current.status, "unread");
+  assert.equal(current.starred, 0);
+});
+
 test("quick A to B navigation ignores a late A result and a cancelled read error", async () => {
   const first = deferred();
   const second = deferred();

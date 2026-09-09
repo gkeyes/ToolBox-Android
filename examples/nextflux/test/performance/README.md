@@ -19,11 +19,23 @@ uses the same HTML, timestamp, viewport, browser binary and settings.
   18,518-article storage unit fixture does not establish browser performance at
   that scale.
 
-Reading scenarios measure the first visit after app/cache readiness, then a warm
-reopen in the same context. Both visits begin unread; the normal card action
-marks read, and the measured toolbar action returns the article to unread.
+Reading scenarios measure the first body visit after app/cache readiness, then
+a warm reopen in the same context. Both builds select **All** through the UI.
+Before each timed visit, the article's context menu performs **Mark as Read**;
+the harness requires a successful persisted patch and the menu changing to
+**Mark as Unread**, then closes it. Both timed visits therefore begin already
+read, and the measured toolbar action returns the article to unread. The raw
+preparation phase is retained separately; automatic read-on-open cost is excluded.
 The cold/warm definition concerns article/cache/module reuse, not OS disk-cache
 purging or an Android application cold start.
+
+Baseline `8d4e9ba` showed an existing issue in
+[GitHub run 34321452271](https://github.com/gkeyes/ToolBox-Android/actions/runs/34321452271):
+opening unread article 96 completed its native `PUT read` and cache `patchState`,
+but the toolbar retained `Read` and `lucide-circle-dot`. The required `Unread`
+button assertion failed. That failed run remains evidence of the defect. The
+comparison uses identical real UI preparation for both builds; it neither changes
+the baseline product nor relaxes the full-text or read-to-unread assertions.
 
 First-readable and complete-body times run from trusted primary pointerdown on
 the card to two

@@ -27,6 +27,7 @@ export const visibleRange = atom({ startIndex: 0, endIndex: 0 });
 let queryGeneration = 0;
 let querySession = null;
 const stateOverrides = new Map();
+export const getAcknowledgedArticleState = (id) => stateOverrides.get(Number(id));
 export const getArticleQueryGeneration = () => queryGeneration;
 const autoReadQueue = createAutoReadQueue({
   run: runAccountOperation,

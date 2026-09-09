@@ -13,7 +13,7 @@ class DeveloperHelpDocumentTest {
         val document = parseHelpDocument(source)
         assertEquals(source, document.source)
         assertEquals(7, document.chapters.size)
-        assertEquals(30, document.chapters.sumOf { it.articles.size })
+        assertEquals(31, document.chapters.sumOf { it.articles.size })
         assertTrue(document.chapters.all { it.summary.isNotBlank() })
         assertTrue(document.search("background.setTimer").isNotEmpty())
         assertTrue(document.search("manifest 图标").flatMap { it.articles }.any {
@@ -25,6 +25,11 @@ class DeveloperHelpDocumentTest {
         listOf("openStream", "readStream", "cancelStream").forEach { method ->
             assertTrue("Copyable stream example is missing $method", streamCode.text.contains("ToolBox.network.$method("))
         }
+        val browserArticle = document.search("browser.open").flatMap { it.articles }
+            .single { it.title == "在浏览器打开网页" }
+        val browserCode = browserArticle.blocks.single { it.code && it.label == "js" }
+        assertTrue(browserCode.text.contains("api.browser.open("))
+        assertTrue(browserCode.text.contains("error.retryAfterMs"))
         val sdk = document.chapters.flatMap { it.articles }.flatMap { it.blocks }
             .single { it.label == "ts sdk/toolbox-api.d.ts" }
         assertTrue(sdk.code)

@@ -53,16 +53,25 @@ export function mergeArticleForReading(current, loaded, atRequestStart) {
   return next;
 }
 
-export function startArticleRead(articleId, { load, getCurrent, publish, notFound, onError }) {
+export function startArticleRead(articleId, { load, getCurrent, getAcknowledgedState = () => undefined, publish, notFound, onError }) {
   let cancelled = false;
   const atRequestStart = getCurrent();
+  const acknowledgedAtStart = getAcknowledgedState(articleId);
   const done = (async () => {
     try {
       const loaded = await load(articleId);
       if (cancelled) return;
       if (!loaded) { notFound(); return; }
       const current = getCurrent();
-      const next = mergeArticleForReading(current, loaded, atRequestStart);
+      let next = mergeArticleForReading(current, loaded, atRequestStart);
+      const acknowledged = getAcknowledgedState(articleId);
+      // First-open reads have no active reader object for publishUpdates to
+      // modify. Preserve state durably acknowledged while this body was loading.
+      // An older acknowledgement must not override a later server snapshot.
+      if (acknowledged && acknowledged !== acknowledgedAtStart &&
+          (next.status !== acknowledged.status || next.starred !== acknowledged.starred)) {
+        next = { ...next, status: acknowledged.status, starred: acknowledged.starred };
+      }
       if (next !== current) publish(next);
     } catch (error) {
       if (!cancelled) onError(error);
