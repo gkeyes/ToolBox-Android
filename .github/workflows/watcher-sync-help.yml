@@ -1,0 +1,51 @@
+name: Sync watcher notification SDK help
+on:
+  push:
+    branches: ["codex/fix-github-watcher-live-notification"]
+    paths: [".github/workflows/watcher-sync-help.yml"]
+permissions:
+  contents: write
+jobs:
+  sync:
+    if: github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/codex/fix-github-watcher-live-notification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: codex/fix-github-watcher-live-notification
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Refresh only the embedded SDK declaration
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+          path = Path('sdk/help/manual.md')
+          manual = path.read_text(encoding='utf-8')
+          pattern = re.compile(r'(^```[^\n]* sdk/toolbox-api\.d\.ts\n)(.*?)(^```$)', re.M | re.S)
+          matches = list(pattern.finditer(manual))
+          assert len(matches) == 1, 'Expected one embedded SDK declaration'
+          match = matches[0]
+          previous = subprocess.check_output(['git', 'show', 'b9b0e8b235a2e1ec17722f27781e3c9cadab80d6:sdk/toolbox-api.d.ts'], text=True)
+          assert match.group(2).rstrip() == previous.rstrip(), 'Embedded declaration changed concurrently'
+          current = Path('sdk/toolbox-api.d.ts').read_text(encoding='utf-8').rstrip() + '\n'
+          path.write_text(manual[:match.start(2)] + current + manual[match.end(2):], encoding='utf-8')
+          PY
+          node scripts/check-developer-help.mjs
+          node --test examples/github-actions-watcher/github-model.test.js examples/github-actions-watcher/app.test.js
+          git diff --check
+      - name: Commit only the synchronized manual
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = sdk/help/manual.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- sdk/help/manual.md
+          git commit -m 'docs: synchronize embedded SDK live notification omission semantics'
+          git push origin HEAD:refs/heads/codex/fix-github-watcher-live-notification
+          git show --stat --oneline HEAD >> "$GITHUB_STEP_SUMMARY"
