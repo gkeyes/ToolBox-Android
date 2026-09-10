@@ -1206,7 +1206,9 @@ export interface LiveNotificationRequest {
   readonly sessionId: string;
   readonly title: string;
   readonly primaryText: string;
+  /** Optional supplementary text; omit together with body for a title-first minimal live card (host 0.7.5+). */
   readonly secondaryText?: string;
+  /** Optional expanded prose. Host 0.7.5+ does not repeat primaryText when this is omitted. */
   readonly body?: string;
   readonly shortText?: string;
   readonly updatedAt?: number;
