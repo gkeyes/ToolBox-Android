@@ -17,7 +17,7 @@ jobs:
       - name: Apply reviewed source-only changes
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = ab239f41c0c67f55b7355ce7d4e8014189140a08
+          test "$(git rev-parse HEAD^)" = fddad26398f75a023d519580d626251f7d8dbeb9
           python3 - <<'PY'
           from pathlib import Path
           def edit(path, old, new):
@@ -29,12 +29,12 @@ jobs:
                   val installed = if (candidate is PackageInstallResult.ConfirmationRequired) {
                       manager.confirmInstall(candidate.confirmation.id)
                   } else candidate
-                  assertEquals(PackageInstallResult.Installed(TOOL_ID, versionCode, versionCode > 1), installed)'''.replace('\n          ', '\n'))
+                  assertEquals(PackageInstallResult.Installed(TOOL_ID, versionCode, versionCode > 1), installed)''')
           edit('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeProfileManager.kt',
             '''        val acquired = withContext(Dispatchers.Main.immediate) { RuntimeWebViewLifecycle.beginCleanup(toolId) }
                   check(acquired) { "Tool runtime is still in use" }
                   try {
-                      return action()'''.replace('\n          ', '\n'),
+                      return action()''',
             '''        // Acquisition must not be lost to prompt cancellation when dispatching back to IO.
                   val acquired = withContext(NonCancellable + Dispatchers.Main.immediate) {
                       RuntimeWebViewLifecycle.beginCleanup(toolId)
@@ -42,7 +42,7 @@ jobs:
                   check(acquired) { "Tool runtime is still in use" }
                   try {
                       coroutineContext.ensureActive()
-                      return action()'''.replace('\n          ', '\n'))
+                      return action()''')
           path = 'app/src/androidTest/kotlin/io/toolbox/host/runtime/TbxUpgradeRuntimeTest.kt'
           edit(path, 'import kotlinx.coroutines.CompletableDeferred\n', 'import kotlinx.coroutines.CompletableDeferred\nimport kotlinx.coroutines.cancelAndJoin\n')
           edit(path, '                .preferredIsolationMode == RuntimeIsolationMode.DEDICATED_PROFILE\n', '                .preferredIsolationMode == RuntimeIsolationMode.DEDICATED_PROFILE\n            android.util.Log.i("TbxUpgradeTest", "PROFILE_RETENTION_ASSERTED=$dedicated")\n')
@@ -76,7 +76,7 @@ jobs:
                   }
               }
 
-          '''.replace('\n          ', '\n')
+          '''
           edit(path, '    @Test\n    fun versionReplacementDrainsStorage', test + '    @Test\n    fun versionReplacementDrainsStorage')
           PY
           git diff --check
