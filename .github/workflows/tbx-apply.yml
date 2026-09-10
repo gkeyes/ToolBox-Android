@@ -1,0 +1,26 @@
+name: Apply reviewed credential fix once
+on:
+  push:
+    branches: ["fix/tbx-update-credential-retention"]
+    paths: [".github/workflows/tbx-apply.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ github.ref == 'refs/heads/fix/tbx-update-credential-retention' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 2
+      - name: Apply reviewed source changes on the dedicated branch only
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 5fe559b5eb2a57af6de828aeaeb6ceefd27c88fb
+          python3 scripts/ci/apply-tbx-credential-fix.py
+          git diff --check
+          rm scripts/ci/apply-tbx-credential-fix.py .github/workflows/tbx-apply.yml
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: preserve credentials during identity-confirmed TBX replacement'
+          git push origin HEAD:refs/heads/fix/tbx-update-credential-retention
