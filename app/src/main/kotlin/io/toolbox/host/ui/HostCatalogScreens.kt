@@ -208,16 +208,18 @@ internal fun ImportReplacementDialog(
         title = when (confirmation?.kind) {
             HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
             HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
+            HostImportConfirmationKind.UPDATE -> "更新并保留工具数据？"
             null -> null
         },
         summary = confirmation?.let {
             val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
             val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
-            if (it.kind == HostImportConfirmationKind.SAME_VERSION) {
-                "${it.toolName} 当前为 $installed，待安装为 $incoming，两者 versionCode 相同。继续会覆盖现有工具文件，并停止其运行和后台任务；普通存储与仍有效的权限选择会保留。"
-            } else {
-                "${it.toolName} 当前为 $installed，待安装为 $incoming。较低版本可能无法读取新版数据；继续会停止其运行和后台任务，普通存储与仍有效的权限选择会保留。"
+            val replacement = when (it.kind) {
+                HostImportConfirmationKind.SAME_VERSION -> "两者 versionCode 相同，将覆盖现有工具文件。"
+                HostImportConfirmationKind.DOWNGRADE -> "较低版本可能无法读取新版数据。"
+                HostImportConfirmationKind.UPDATE -> "无法通过原工具的签名确认此次更新的身份。"
             }
+            "${it.toolName} 当前为 $installed，待安装为 $incoming。$replacement 继续会停止旧运行和后台任务，并允许这份更新使用已保存的登录信息、设置与仍有效的权限。原来关闭的权限不会开启。仅在信任此包来源时继续。"
         },
         onDismissRequest = onCancelImport,
     ) {

@@ -13,14 +13,14 @@ internal object IntegrityVerifier {
         metadata: Map<String, ByteArray>,
         actualHashes: Map<String, String>,
         limits: PackageLimits,
-    ) {
+    ): String? {
         val integrityBytes = metadata["integrity.json"]
         val signatureBytes = metadata["signature.json"]
         if (integrityBytes == null) {
             if (signatureBytes != null) {
                 reject(PackageRejectionCode.INTEGRITY_MALFORMED, "signature.json requires integrity.json")
             }
-            return
+            return null
         }
         val expectedHashes = try {
             parseIntegrity(integrityBytes, limits)
@@ -42,7 +42,7 @@ internal object IntegrityVerifier {
         if (mismatch != null) {
             reject(PackageRejectionCode.INTEGRITY_HASH_MISMATCH, "Content hash mismatch: $mismatch")
         }
-        if (signatureBytes != null) verifySignature(signatureBytes, integrityBytes)
+        return signatureBytes?.let { verifySignature(it, integrityBytes) }
     }
 
     private fun parseIntegrity(bytes: ByteArray, limits: PackageLimits): Map<String, String> {
@@ -69,7 +69,7 @@ internal object IntegrityVerifier {
         return result
     }
 
-    private fun verifySignature(bytes: ByteArray, integrityBytes: ByteArray) {
+    private fun verifySignature(bytes: ByteArray, integrityBytes: ByteArray): String {
         val parsed = try {
             val root = StrictJson.parse(bytes).asObject("signature")
             root.requireOnly(
@@ -113,6 +113,7 @@ internal object IntegrityVerifier {
         if (!valid) {
             reject(PackageRejectionCode.SIGNATURE_INVALID, "Ed25519 signature is invalid")
         }
+        return expectedKeyId
     }
 
     private fun decodeCanonicalBase64(value: String): ByteArray {

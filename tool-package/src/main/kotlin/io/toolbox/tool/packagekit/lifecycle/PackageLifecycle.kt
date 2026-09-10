@@ -32,8 +32,20 @@ interface ToolPackageManager {
 }
 
 interface ToolStateCleanup {
+    /** Holds the host's runtime/storage barrier until publication, commit or rollback has finished. */
+    suspend fun <T> withVersionReplacement(
+        toolId: String,
+        previousVersionCode: Int,
+        nextVersionCode: Int,
+        action: suspend () -> T,
+    ): T {
+        beforeVersionReplacement(toolId, previousVersionCode, nextVersionCode)
+        return action()
+    }
+
     suspend fun beforeVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) = Unit
 
+    /** Retryable metadata/cache invalidation only. Never erase data or stop a later runtime here. */
     suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int)
 
     suspend fun beforeUninstall(toolId: String) = Unit
@@ -84,7 +96,7 @@ data class PackageVersionConfirmation(
     val kind: PackageVersionConfirmationKind,
 )
 
-enum class PackageVersionConfirmationKind { SAME_VERSION, DOWNGRADE }
+enum class PackageVersionConfirmationKind { SAME_VERSION, DOWNGRADE, UPDATE }
 
 sealed interface PackageUninstallResult {
     data class Uninstalled(val toolId: String) : PackageUninstallResult
@@ -102,6 +114,7 @@ data class PackageOperationFailure(val code: PackageOperationFailureCode, val me
 enum class PackageOperationFailureCode {
     BUSY,
     CONFIRMATION_EXPIRED,
+    SIGNING_IDENTITY_CHANGED,
     UNSUPPORTED_REQUIRED_CAPABILITY,
     UNSUPPORTED_HOST_VERSION,
     DATA_FAILURE,

@@ -7,6 +7,7 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
 import io.toolbox.core.data.InstallTransaction
+import io.toolbox.core.data.InstalledTool
 import io.toolbox.core.data.InstallTransactionRepository
 import io.toolbox.core.data.InstallTransactionState
 import io.toolbox.core.data.PermissionGrant
@@ -20,11 +21,8 @@ import io.toolbox.tool.packagekit.PreparationResult
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.SecurityProfile
 import io.toolbox.tool.packagekit.HostVersionPolicy
-import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -35,11 +33,11 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 
 internal class DefaultToolPackageManager(
-    filesRoot: Path,
+    private val filesRoot: Path,
     private val catalog: CatalogRepository,
     private val lifecycle: CatalogLifecycleRepository,
     private val transactions: InstallTransactionRepository,
-    limits: PackageLimits,
+    private val limits: PackageLimits,
     private val supportedCapabilities: Set<String>,
     private val hostVersion: String,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -173,9 +171,28 @@ internal class DefaultToolPackageManager(
             )
         }
         val previous = catalog.observeTool(manifest.id).first()
+        // A confirmation authorizes this private prepared package against this exact old install,
+        // including its integrity hash and installedAt, not just a reusable version number.
+        if (confirmedCurrentVersion != null && previous?.currentVersion != confirmedCurrentVersion) {
+            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+            return failed(PackageOperationFailureCode.CONFIRMATION_EXPIRED, "The installed package changed; select the update again")
+        }
+        val previousSigningKey = if (previous == null) null else try {
+            runInterruptible { installedSigningKey(filesRoot, previous.currentVersion, limits) }
+        } catch (cancelled: CancellationException) {
+            discardPrepared(prepared)
+            throw cancelled
+        } catch (_: Exception) {
+            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+            return failed(PackageOperationFailureCode.STORAGE_FAILURE, "The installed package identity could not be verified; existing data was preserved")
+        }
+        if (previousSigningKey != null && previousSigningKey != prepared.signingKeyId) {
+            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+            return failed(PackageOperationFailureCode.SIGNING_IDENTITY_CHANGED, "The update is not signed by the installed package key")
+        }
         if (
             previous != null &&
-            manifest.versionCode <= previous.currentVersion.versionCode &&
+            (manifest.versionCode <= previous.currentVersion.versionCode || previousSigningKey == null) &&
             previous.currentVersion != confirmedCurrentVersion
         ) {
             val confirmationId = UUID.randomUUID().toString()
@@ -192,10 +209,10 @@ internal class DefaultToolPackageManager(
                     installedVersionCode = previous.currentVersion.versionCode,
                     incomingVersionName = manifest.version,
                     incomingVersionCode = manifest.versionCode,
-                    kind = if (manifest.versionCode == previous.currentVersion.versionCode) {
-                        PackageVersionConfirmationKind.SAME_VERSION
-                    } else {
-                        PackageVersionConfirmationKind.DOWNGRADE
+                    kind = when {
+                        manifest.versionCode == previous.currentVersion.versionCode -> PackageVersionConfirmationKind.SAME_VERSION
+                        manifest.versionCode < previous.currentVersion.versionCode -> PackageVersionConfirmationKind.DOWNGRADE
+                        else -> PackageVersionConfirmationKind.UPDATE
                     },
                 ),
             )
@@ -230,118 +247,121 @@ internal class DefaultToolPackageManager(
             failAndClean(transaction, prepared, "TEMP_CLEANUP_FAILED")
             return PackageInstallResult.Failed(it)
         }
-        val replacingSameVersion = previous?.currentVersion?.versionCode == manifest.versionCode
-        if (replacingSameVersion) {
-            try {
-                cleanup.beforeVersionReplacement(
-                    manifest.id,
-                    requireNotNull(previous).currentVersion.versionCode,
-                    manifest.versionCode,
-                )
-            } catch (cancelled: CancellationException) {
-                failAndClean(transaction, null, "CANCELLED")
-                throw cancelled
-            } catch (_: Exception) {
-                failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
-                return failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
-            }
-        }
-        if (previous != null) {
-            try {
-                runInterruptible {
-                    storage.recordReplacementCleanup(
-                        transactionId = transactionId,
-                        toolId = manifest.id,
-                        previousVersionCode = previous.currentVersion.versionCode,
-                        nextVersionCode = manifest.versionCode,
-                    )
+        return try {
+            if (previous == null) {
+                publishAndCommit(prepared, transaction, null, cleanup)
+            } else {
+                cleanup.withVersionReplacement(manifest.id, previous.currentVersion.versionCode, manifest.versionCode) {
+                    publishAndCommit(prepared, transaction, previous, cleanup)
                 }
-            } catch (cancelled: CancellationException) {
-                failAndClean(transaction, null, "CANCELLED")
-                throw cancelled
-            } catch (_: Exception) {
-                failAndClean(transaction, null, "REPLACEMENT_MARKER_FAILED")
-                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package update could not be prepared safely")
             }
-        }
-        try {
-            runInterruptible { storage.publish(transactionId, manifest.id, manifest.versionCode) }
-        } catch (_: FileAlreadyExistsException) {
-            failAndClean(transaction, null, "FILE_COLLISION")
-            return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package target already exists")
         } catch (cancelled: CancellationException) {
             failAndClean(transaction, null, "CANCELLED")
             throw cancelled
         } catch (_: Exception) {
-            failAndClean(transaction, null, "PUBLISH_FAILED")
-            return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be published atomically")
+            failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
+            failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
         }
-        if (previous != null && !replacingSameVersion) {
+    }
+
+    private suspend fun publishAndCommit(
+        prepared: PreparedPackage,
+        transaction: InstallTransaction,
+        previous: InstalledTool?,
+        cleanup: ToolStateCleanup,
+    ): PackageInstallResult {
+        try {
+            val manifest = prepared.manifest
+            val transactionId = transaction.id
+            if (previous != null) {
+                try {
+                    runInterruptible {
+                        storage.recordReplacementCleanup(
+                            transactionId = transactionId,
+                            toolId = manifest.id,
+                            previousVersionCode = previous.currentVersion.versionCode,
+                            nextVersionCode = manifest.versionCode,
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    failAndClean(transaction, null, "CANCELLED")
+                    throw cancelled
+                } catch (_: Exception) {
+                    failAndClean(transaction, null, "REPLACEMENT_MARKER_FAILED")
+                    return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package update could not be prepared safely")
+                }
+            }
             try {
-                cleanup.beforeVersionReplacement(
-                    manifest.id,
-                    previous.currentVersion.versionCode,
-                    manifest.versionCode,
-                )
+                runInterruptible { storage.publish(transactionId, manifest.id, manifest.versionCode) }
+            } catch (_: FileAlreadyExistsException) {
+                failAndClean(transaction, null, "FILE_COLLISION")
+                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package target already exists")
             } catch (cancelled: CancellationException) {
                 failAndClean(transaction, null, "CANCELLED")
                 throw cancelled
             } catch (_: Exception) {
-                failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
-                return failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
+                failAndClean(transaction, null, "PUBLISH_FAILED")
+                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be published atomically")
             }
-        }
-        when (val marking = transactions.markCommitting(transactionId, now())) {
-            is DataResult.Failure -> {
-                failAndClean(transaction, null, "TRANSACTION_FAILED")
-                return PackageInstallResult.Failed(dataFailure(marking))
+            when (val marking = transactions.markCommitting(transactionId, now())) {
+                is DataResult.Failure -> {
+                    failAndClean(transaction, null, "TRANSACTION_FAILED")
+                    return PackageInstallResult.Failed(dataFailure(marking))
+                }
+                is DataResult.Success -> Unit
             }
-            is DataResult.Success -> Unit
-        }
-        val installedAt = now()
-        val attempt = CatalogInstallAttempt(
-            transactionId = transactionId,
-            metadata = ToolMetadata(
-                id = manifest.id,
-                name = manifest.name,
-                securityProfile = when (manifest.securityProfile) {
-                    SecurityProfile.STRICT -> DataSecurityProfile.STRICT
-                    SecurityProfile.COMPAT -> DataSecurityProfile.COMPAT
-                },
-                installedAt = installedAt,
-                categoryId = manifest.categories.firstOrNull(),
-            ),
-            version = ToolVersion(
-                toolId = manifest.id,
-                versionCode = manifest.versionCode,
-                version = manifest.version,
-                bundleLocator = BundleLocator(storage.bundleLocator(manifest.id, manifest.versionCode)),
-                bundleBytes = prepared.archive.extractedBytes,
-                integrityHash = aggregateHash(prepared.fileHashes),
-                installedAt = installedAt,
-            ),
-            initialGrants = manifest.permissions.map { permission ->
-                PermissionGrant(
-                    toolId = manifest.id,
-                    capability = permission.name,
-                    granted = permission.name in DEFAULT_GRANTED_CAPABILITIES,
-                    updatedAt = installedAt,
-                )
-            },
-        )
-        return when (val commit = lifecycle.commitInstall(attempt)) {
-            is DataResult.Failure -> {
-                failAndClean(transaction, null, "CATALOG_REJECTED")
-                PackageInstallResult.Failed(dataFailure(commit))
-            }
-            is DataResult.Success -> {
-                completeCommittedInstall(transaction, previous?.currentVersion?.versionCode, cleanup)
-                PackageInstallResult.Installed(
+            val installedAt = now()
+            val attempt = CatalogInstallAttempt(
+                transactionId = transactionId,
+                metadata = ToolMetadata(
+                    id = manifest.id,
+                    name = manifest.name,
+                    securityProfile = when (manifest.securityProfile) {
+                        SecurityProfile.STRICT -> DataSecurityProfile.STRICT
+                        SecurityProfile.COMPAT -> DataSecurityProfile.COMPAT
+                    },
+                    installedAt = installedAt,
+                    categoryId = manifest.categories.firstOrNull(),
+                ),
+                version = ToolVersion(
                     toolId = manifest.id,
                     versionCode = manifest.versionCode,
-                    updated = previous != null,
-                )
+                    version = manifest.version,
+                    bundleLocator = BundleLocator(storage.bundleLocator(manifest.id, manifest.versionCode)),
+                    bundleBytes = prepared.archive.extractedBytes,
+                    integrityHash = aggregatePackageHash(prepared.fileHashes),
+                    installedAt = installedAt,
+                ),
+                initialGrants = manifest.permissions.map { permission ->
+                    PermissionGrant(
+                        toolId = manifest.id,
+                        capability = permission.name,
+                        granted = permission.name in DEFAULT_GRANTED_CAPABILITIES,
+                        updatedAt = installedAt,
+                    )
+                },
+            )
+            return when (val commit = lifecycle.commitInstall(attempt)) {
+                is DataResult.Failure -> {
+                    failAndClean(transaction, null, "CATALOG_REJECTED")
+                    PackageInstallResult.Failed(dataFailure(commit))
+                }
+                is DataResult.Success -> {
+                    completeCommittedInstall(transaction, previous?.currentVersion?.versionCode, cleanup)
+                    PackageInstallResult.Installed(
+                        toolId = manifest.id,
+                        versionCode = manifest.versionCode,
+                        updated = previous != null,
+                    )
+                }
             }
+        } catch (cancelled: CancellationException) {
+            // Rollback is still inside the runtime/storage barrier, including Room cancellation.
+            failAndClean(transaction, null, "CANCELLED")
+            throw cancelled
+        } catch (_: Exception) {
+            failAndClean(transaction, null, "COMMIT_FAILED")
+            return failed(PackageOperationFailureCode.DATA_FAILURE, "Package commit failed; existing data was preserved")
         }
     }
 
@@ -475,6 +495,12 @@ internal class DefaultToolPackageManager(
         prepared: PreparedPackage?,
         failureCode: String,
     ) = withContext(NonCancellable + ioDispatcher) {
+        // Cancellation may be delivered after Room committed. Never roll back a committed
+        // install (or an uncertain DB result); its owner/cleanup markers drive recovery.
+        when (val committed = lifecycle.findCommittedInstall(transaction.id)) {
+            is DataResult.Failure -> return@withContext
+            is DataResult.Success -> if (committed.value != null) return@withContext
+        }
         runCatching { transactions.fail(transaction.id, now(), failureCode) }
         runCatching {
             runInterruptible {
@@ -503,17 +529,6 @@ internal class DefaultToolPackageManager(
         storage.acquireMutationLock()
     } catch (_: Exception) {
         null
-    }
-
-    private fun aggregateHash(hashes: Map<String, String>): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        hashes.toSortedMap().forEach { (path, hash) ->
-            val pathBytes = path.toByteArray(StandardCharsets.UTF_8)
-            digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(pathBytes.size).array())
-            digest.update(pathBytes)
-            digest.update(hash.lowercase().toByteArray(StandardCharsets.US_ASCII))
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun dataFailure(result: DataResult.Failure): PackageOperationFailure =

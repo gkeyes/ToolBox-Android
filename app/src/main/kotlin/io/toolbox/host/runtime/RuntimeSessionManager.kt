@@ -45,6 +45,8 @@ import io.toolbox.tool.runtime.ToolRuntimePreparer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -123,7 +125,7 @@ internal class RuntimeSessionManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val stateByTool = ConcurrentHashMap<String, MutableStateFlow<RuntimeUiState>>()
     private val hosts = mutableMapOf<String, RuntimeHost>()
-    private val openingTools = mutableSetOf<String>()
+    private val openingTools = mutableMapOf<String, Job>()
     private val visibleTools = mutableSetOf<String>()
     private val sessionsByTool = mutableMapOf<String, MutableMap<String, StoredRuntimeSession>>()
     private val notificationIds = RuntimeNotificationIds()
@@ -270,6 +272,9 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        // An IO preparation may not own a WebView yet. Drain it before a same-version
+        // replacement can publish new files or an old opener can acquire the new profile.
+        openingTools[toolId]?.cancelAndJoin()
         stopTool(toolId)
         visibleTools -= toolId
         destroyHost(toolId)
@@ -382,10 +387,12 @@ internal class RuntimeSessionManager(
     }
 
     private suspend fun ensureRuntime(toolId: String, restoreReason: String?) {
-        if (hosts[toolId] != null || !openingTools.add(toolId)) {
+        if (hosts[toolId] != null || toolId in openingTools) {
             restoreReason?.let { reason -> hosts[toolId]?.emitRestore(reason) }
             return
         }
+        val openingJob = checkNotNull(currentCoroutineContext()[Job])
+        openingTools[toolId] = openingJob
         stateFlow(toolId).value = RuntimeUiState.Loading
         try {
             val prepared = HostTrace.bestEffortAsyncSection("tool.prepare") {
@@ -453,7 +460,7 @@ internal class RuntimeSessionManager(
                 "工具运行环境准备失败，请重试。",
             )
         } finally {
-            openingTools -= toolId
+            if (openingTools[toolId] === openingJob) openingTools.remove(toolId)
         }
     }
 

@@ -279,7 +279,7 @@ ToolBox 0.6.5 起不设每工具持久存储总容量配额，可保存量由设
 
 storage.secure.get/set/remove 使用相同 JSON 值形式，但由 Android Keystore 保护。0.6.5 起大密文也分片保存，更新与清理保持原子性。使用前声明 storage.secure。Token 由工具自己读取并加入网络 Header，不存在 credentialId 或ToolBox凭据管理接口。
 
-普通存储在工具更新后保留；安全存储在关闭其授权、工具更新或删除时会清理，更新后需要重新输入 Token。临时文件令牌和 sessionId 不能作为可跨版本复用的数据保存。
+ToolBox 0.7.6 起，同身份更新保留普通存储、安全存储密文及原密钥和可安全继承的 WebView 数据。未签名工具更新须在宿主确认后才能使用旧登录信息和仍有效的授权；原来关闭的权限不会开启。已签名工具的签名主体变化或变为未签名时拒绝替换。主动关闭安全存储授权或删除工具仍会清理密钥和密文；此前已删除的数据不能恢复。请先更新宿主，再更新工具包。临时文件令牌、sessionId 和后台运行实例不能跨版本复用。
 
 ```js
 await ToolBox.storage.set("settings", { refreshSeconds: 60 });

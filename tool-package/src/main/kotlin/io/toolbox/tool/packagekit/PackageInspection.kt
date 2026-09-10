@@ -133,6 +133,7 @@ internal data class PreparedPackage(
     val bundleDirectory: Path,
     val fileHashes: Map<String, String>,
     val temporaryDirectory: Path,
+    val signingKeyId: String?,
 )
 
 internal sealed interface PreparationResult {

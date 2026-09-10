@@ -154,7 +154,10 @@ internal class HostRuntimeBridgeProvider(
                 toolId = runtime.toolId,
                 repository = keyValues,
                 nowMillis = nowMillis,
-                canAccess = { grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
+                canAccess = {
+                    grantState.currentVersionCode(runtime.toolId) == runtime.versionCode &&
+                        grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE_SECURE)
+                },
             )
         },
         deviceBasic = AndroidBasicDeviceHandler(applicationContext),
@@ -176,6 +179,12 @@ internal class RepositoryRuntimeGrantStateSource(
             .firstOrNull { it.capability == ToolBoxApiV1.capability(capability).wireName }
             ?.granted == true
 }
+
+/** No runtime is admitted while the host holds these locks for a version replacement. */
+internal suspend fun <T> withRuntimeStorageQuiescent(toolId: String, action: suspend () -> T): T =
+    ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Standard).withLock {
+        ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Secure).withLock { action() }
+    }
 
 /** Revocation denies queued callers and drains the already admitted ordinary operation. */
 internal suspend fun awaitRuntimeStandardStorageIdle(toolId: String) {
@@ -687,7 +696,7 @@ private class AndroidKeyStoreCipher(
 
     fun encrypt(plaintext: String): String = try {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.init(Cipher.ENCRYPT_MODE, key(createIfMissing = true))
         val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
         JSONObject()
             .put("v", FORMAT_VERSION)
@@ -708,7 +717,7 @@ private class AndroidKeyStoreCipher(
         val ciphertext = decoder.decode(value.getString("ciphertext"))
         require(iv.size == GCM_IV_BYTES && ciphertext.isNotEmpty())
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.init(Cipher.DECRYPT_MODE, key(createIfMissing = false), GCMParameterSpec(GCM_TAG_BITS, iv))
         String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     } catch (failure: RuntimeHandlerException) {
         throw failure
@@ -716,9 +725,13 @@ private class AndroidKeyStoreCipher(
         throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Secure storage data cannot be read")
     }
 
-    private fun key(): SecretKey {
+    private fun key(createIfMissing: Boolean): SecretKey {
         val store = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         (store.getKey(alias, null) as? SecretKey)?.let { return it }
+        if (!createIfMissing) throw RuntimeHandlerException(
+            RuntimeRpcErrorCode.INTERNAL_ERROR,
+            "Secure storage key is missing; existing ciphertext was not changed",
+        )
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
         generator.init(
             KeyGenParameterSpec.Builder(
