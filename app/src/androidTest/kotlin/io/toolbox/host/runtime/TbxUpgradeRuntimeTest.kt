@@ -19,6 +19,7 @@ import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.RuntimeIsolationMode
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -48,6 +49,7 @@ class TbxUpgradeRuntimeTest {
             assertNotNull(original)
             val dedicated = RuntimeProfileManager(f.application.filesDir).providerCapabilities()
                 .preferredIsolationMode == RuntimeIsolationMode.DEDICATED_PROFILE
+            android.util.Log.i("TbxUpgradeTest", "PROFILE_RETENTION_ASSERTED=$dedicated")
             if (dedicated) assertEquals(true, evaluate(oldPage, "localStorage.setItem('fixture-browser-data','keep');true"))
             val origin = RuntimeIdentity.origin(f.toolId)
             val profile = RuntimeIdentity.profileName(f.toolId)
@@ -120,6 +122,36 @@ class TbxUpgradeRuntimeTest {
                 f.assertLogin(f.page(), "1")
             }
         } finally { f.close() }
+    }
+
+    @Test
+    fun cancelledCommitReleasesBarrierAndRestoresOldBundleAndLogin() = runBlocking(Dispatchers.IO) {
+        withTimeout(30_000) {
+            val f = UpgradeFixture()
+            try {
+                f.install(1)
+                f.login(f.page())
+                val original = f.envelope.read()
+                for (version in listOf(2, 1)) {
+                    val entered = CompletableDeferred<Unit>()
+                    val waiting = object : CatalogLifecycleRepository by f.stores.repositories.lifecycle {
+                        override suspend fun commitInstall(attempt: CatalogInstallAttempt): DataResult<CommitInstallOutcome> {
+                            entered.complete(Unit)
+                            awaitCancellation()
+                        }
+                    }
+                    val installer = ProductionHostPackageOperations(f.application, f.stores.repositories.copy(lifecycle = waiting),
+                        f.dependencies.runtimeDataCleaner, f.dependencies.backgroundOperations)
+                    val pending = installer.importPackage(f.bytes(version, "cancelled")) as HostImportResult.ConfirmationRequired
+                    val update = async { installer.confirmImport(pending.confirmation.id) }
+                    entered.await()
+                    update.cancelAndJoin()
+                    assertEquals(1, f.stores.repositories.catalog.observeTool(f.toolId).first()!!.currentVersion.versionCode)
+                    assertEquals(original, f.envelope.read())
+                    f.assertLogin(f.page(), "1")
+                }
+            } finally { f.close() }
+        }
     }
 
     @Test
