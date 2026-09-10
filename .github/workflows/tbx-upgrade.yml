@@ -48,6 +48,8 @@ jobs:
       - name: Validate client persistence without contacting real services
         run: |
           node --test examples/github-actions-watcher/app.test.js
+          npm ci --prefix examples/nextflux --ignore-scripts
+          node --test examples/nextflux/test/network.test.mjs
           node scripts/check-developer-help.mjs
       - name: Enable runner KVM
         run: |
