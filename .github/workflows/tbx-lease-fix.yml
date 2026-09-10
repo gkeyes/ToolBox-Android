@@ -1,0 +1,89 @@
+name: Apply preserved-data lease guard once
+on:
+  push:
+    branches: ["fix/tbx-update-credential-retention"]
+    paths: [".github/workflows/tbx-lease-fix.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ github.ref == 'refs/heads/fix/tbx-update-credential-retention' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 2
+      - name: Apply reviewed source-only changes
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = c101462cd37a5f2b6f12991e11b4ca1543ad806e
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeProfileManager.kt')
+          text = p.read_text()
+          a = text.index('    override suspend fun <T> withPreservedData(')
+          b = text.index('    override suspend fun <T> clearThenRun(', a)
+          text = text[:a] + '''    override suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T {
+                  // Record ownership inside the dispatched block: prompt cancellation can discard its result.
+                  var acquired = false
+                  try {
+                      withContext(Dispatchers.Main.immediate) { acquired = RuntimeWebViewLifecycle.beginCleanup(toolId) }
+                      check(acquired) { "Tool runtime is still in use" }
+                      return action()
+                  } finally {
+                      if (acquired) withContext(NonCancellable + Dispatchers.Main.immediate) {
+                          RuntimeWebViewLifecycle.finishCleanup(toolId)
+                      }
+                  }
+              }
+
+          ''' + text[b:]
+          p.write_text(text)
+          p = Path('app/src/androidTest/kotlin/io/toolbox/host/runtime/TbxUpgradeRuntimeTest.kt')
+          text = p.read_text().replace('import kotlinx.coroutines.CompletableDeferred\n', 'import kotlinx.coroutines.CompletableDeferred\nimport kotlinx.coroutines.CoroutineDispatcher\nimport kotlinx.coroutines.Job\nimport kotlinx.coroutines.launch\nimport kotlin.coroutines.CoroutineContext\nimport java.util.concurrent.atomic.AtomicInteger\n', 1)
+          test = '''    @Test
+              fun cancellationOnDispatchBackDoesNotLeakPreservedProfileLease() = runBlocking(Dispatchers.IO) {
+                  val f = UpgradeFixture()
+                  try {
+                      val dispatches = AtomicInteger()
+                      val dispatcher = object : CoroutineDispatcher() {
+                          override fun dispatch(context: CoroutineContext, block: Runnable) {
+                              // Dispatch 1 starts the caller; dispatch 2 returns from the Main-thread acquisition.
+                              if (dispatches.incrementAndGet() == 2) context[Job]!!.cancel()
+                              Dispatchers.IO.dispatch(context, block)
+                          }
+                      }
+                      val update = launch(dispatcher) {
+                          f.dependencies.runtimeDataCleaner.withPreservedData(f.toolId) {
+                              error("Cancelled update must not execute")
+                          }
+                      }
+                      withTimeout(30_000) { update.join() }
+                      assertTrue(update.isCancelled)
+                      val permit = f.dependencies.runtimePermitProvider.acquireRuntimePermit(f.toolId, false)
+                      assertTrue("Cancelled acquisition leaked the profile lease", permit is RuntimeCreationPermitResult.Ready)
+                      kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+                          (permit as RuntimeCreationPermitResult.Ready).permit.close()
+                      }
+                  } finally { f.close() }
+              }
+
+          '''
+          marker = '    @Test\n    fun cancelledCommitReleasesBarrier'
+          assert marker in text
+          p.write_text(text.replace(marker, test + marker, 1))
+          p = Path('examples/github-actions-watcher/README.md')
+          text = p.read_text()
+          old = '更新工具后按宿主规则重新开启网络、通知和后台权限；安全存储中的 Token 如被清理，需要重新填写。'
+          assert old in text
+          text = text.replace(old, '请先更新到 ToolBox 0.7.6 或更高版本，再更新工具包。正常同身份更新保留已保存 Token 和仍有效的权限选择；未签名更新需先在宿主确认，原来关闭的权限不会开启。旧宿主已清理的 Token 仍需重新填写。', 1)
+          old = '当前宿主在导入新版 `.tbx` 时会清除安全存储，因此更新工具包后仍需重新保存。这是宿主更新策略，本轮未改变。'
+          assert old in text
+          text = text.replace(old, 'ToolBox 0.7.6 起，经身份校验或明确确认的更新会保留安全存储和原密钥。主动关闭安全存储权限或卸载工具仍会清理 Token，不要用关闭再开启权限来尝试恢复。', 1)
+          p.write_text(text)
+          PY
+          git diff --check
+          git add tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeProfileManager.kt app/src/androidTest/kotlin/io/toolbox/host/runtime/TbxUpgradeRuntimeTest.kt examples/github-actions-watcher/README.md
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: release acquired profile lease even when dispatched result is cancelled'
+          git push origin HEAD:refs/heads/fix/tbx-update-credential-retention
