@@ -118,7 +118,7 @@ jobs:
           retention-days: 14
 
   delivery:
-    name: Package optimized v0.7.3 release delivery
+    name: Package optimized v0.7.4 release delivery
     needs: verify
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
@@ -183,7 +183,7 @@ jobs:
           mapping_path="$GITHUB_WORKSPACE/app/build/outputs/mapping/release/mapping.txt"
           badging_path="$RUNNER_TEMP/toolbox-release-badging.txt"
           "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk_path" > "$badging_path"
-          grep -F "package: name='io.toolbox.host' versionCode='27' versionName='0.7.3'" "$badging_path"
+          grep -F "package: name='io.toolbox.host' versionCode='28' versionName='0.7.4'" "$badging_path"
           if grep -q '^application-debuggable' "$badging_path"; then
             printf 'Release APK must not be debuggable.\n' >&2
             exit 1
@@ -276,13 +276,13 @@ jobs:
 
           apk_path="$GITHUB_WORKSPACE/app/build/outputs/apk/release/app-release.apk"
           [[ -f "$apk_path" ]]
-          cp "$apk_path" "$delivery_dir/toolbox-v0.7.3-release.apk"
+          cp "$apk_path" "$delivery_dir/toolbox-v0.7.4-release.apk"
 
           {
             printf 'BUILD_COMMIT=%s\n' "$(git rev-parse HEAD)"
             printf 'BUILD_REF=%s\n' "$GITHUB_REF"
-            printf 'VERSION_NAME=0.7.3\n'
-            printf 'VERSION_CODE=27\n'
+            printf 'VERSION_NAME=0.7.4\n'
+            printf 'VERSION_CODE=28\n'
             printf 'BUILD_TYPE=release\n'
             printf 'APK_DEBUGGABLE=false\n'
             printf 'R8_MINIFICATION=PASS\n'
@@ -317,22 +317,22 @@ jobs:
             printf 'APK_SOURCE=app/build/outputs/apk/release/app-release.apk\n'
             printf 'EMBEDDED_EXAMPLES=position-calculator.tbx,quick-notes.tbx,background-task-demo.tbx,notification-lab.tbx\n'
             printf 'EMBEDDED_EXAMPLE_BYTES=PASS\n'
-            printf 'DELIVERY_FILES=toolbox-v0.7.3-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
+            printf 'DELIVERY_FILES=toolbox-v0.7.4-release.apk,SHA256SUMS.txt,BUILD_AND_TEST_RECEIPT.txt\n'
           } > "$delivery_dir/BUILD_AND_TEST_RECEIPT.txt"
 
           (
             cd "$delivery_dir"
             LC_ALL=C shasum -a 256 \
-              toolbox-v0.7.3-release.apk \
+              toolbox-v0.7.4-release.apk \
               BUILD_AND_TEST_RECEIPT.txt > SHA256SUMS.txt
           )
 
-      - name: Upload verified v0.7.3 release delivery
+      - name: Upload verified v0.7.4 release delivery
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.7.3-release-${{ github.sha }}
+          name: toolbox-v0.7.4-release-${{ github.sha }}
           path: |
-            build/ci-delivery/toolbox-v0.7.3-release.apk
+            build/ci-delivery/toolbox-v0.7.4-release.apk
             build/ci-delivery/SHA256SUMS.txt
             build/ci-delivery/BUILD_AND_TEST_RECEIPT.txt
           if-no-files-found: error
