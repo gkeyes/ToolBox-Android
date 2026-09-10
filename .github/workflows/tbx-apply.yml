@@ -17,10 +17,12 @@ jobs:
       - name: Apply reviewed source changes on the dedicated branch only
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 5fe559b5eb2a57af6de828aeaeb6ceefd27c88fb
+          test "$(git rev-parse HEAD^)" = 4fcd5e9e553aaefec8e2707857c0f73ea6d0f94b
           python3 scripts/ci/apply-tbx-credential-fix.py
+          git restore -- .github/workflows/android.yml
           git diff --check
-          rm scripts/ci/apply-tbx-credential-fix.py .github/workflows/tbx-apply.yml
+          rm scripts/ci/apply-tbx-credential-fix.py
           git add -A
+          if git diff --cached --name-only | grep -q '^.github/workflows/'; then exit 1; fi
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: preserve credentials during identity-confirmed TBX replacement'
           git push origin HEAD:refs/heads/fix/tbx-update-credential-retention
