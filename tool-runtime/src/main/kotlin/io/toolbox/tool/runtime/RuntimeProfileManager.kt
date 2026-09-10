@@ -178,16 +178,16 @@ class RuntimeProfileManager internal constructor(
     }
 
     override suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T {
-        // Acquisition must not be lost to prompt cancellation when dispatching back to IO.
-        val acquired = withContext(NonCancellable + Dispatchers.Main.immediate) {
-            RuntimeWebViewLifecycle.beginCleanup(toolId)
-        }
-        check(acquired) { "Tool runtime is still in use" }
+        // Record ownership inside the dispatched block: prompt cancellation can discard its result.
+        var acquired = false
         try {
-            coroutineContext.ensureActive()
+            withContext(Dispatchers.Main.immediate) { acquired = RuntimeWebViewLifecycle.beginCleanup(toolId) }
+            check(acquired) { "Tool runtime is still in use" }
             return action()
         } finally {
-            withContext(NonCancellable + Dispatchers.Main.immediate) { RuntimeWebViewLifecycle.finishCleanup(toolId) }
+            if (acquired) withContext(NonCancellable + Dispatchers.Main.immediate) {
+                RuntimeWebViewLifecycle.finishCleanup(toolId)
+            }
         }
     }
 

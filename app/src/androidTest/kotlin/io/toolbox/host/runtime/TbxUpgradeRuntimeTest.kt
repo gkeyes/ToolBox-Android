@@ -19,6 +19,11 @@ import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.RuntimeIsolationMode
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.coroutines.CoroutineContext
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -120,6 +125,33 @@ class TbxUpgradeRuntimeTest {
                 assertEquals(old, f.stores.repositories.catalog.observeTool(f.toolId).first())
                 assertEquals(original, f.envelope.read())
                 f.assertLogin(f.page(), "1")
+            }
+        } finally { f.close() }
+    }
+
+    @Test
+    fun cancellationOnDispatchBackDoesNotLeakPreservedProfileLease() = runBlocking(Dispatchers.IO) {
+        val f = UpgradeFixture()
+        try {
+            val dispatches = AtomicInteger()
+            val dispatcher = object : CoroutineDispatcher() {
+                override fun dispatch(context: CoroutineContext, block: Runnable) {
+                    // Dispatch 1 starts the caller; dispatch 2 returns from the Main-thread acquisition.
+                    if (dispatches.incrementAndGet() == 2) context[Job]!!.cancel()
+                    Dispatchers.IO.dispatch(context, block)
+                }
+            }
+            val update = launch(dispatcher) {
+                f.dependencies.runtimeDataCleaner.withPreservedData(f.toolId) {
+                    error("Cancelled update must not execute")
+                }
+            }
+            withTimeout(30_000) { update.join() }
+            assertTrue(update.isCancelled)
+            val permit = f.dependencies.runtimePermitProvider.acquireRuntimePermit(f.toolId, false)
+            assertTrue("Cancelled acquisition leaked the profile lease", permit is RuntimeCreationPermitResult.Ready)
+            kotlinx.coroutines.withContext(Dispatchers.Main.immediate) {
+                (permit as RuntimeCreationPermitResult.Ready).permit.close()
             }
         } finally { f.close() }
     }
