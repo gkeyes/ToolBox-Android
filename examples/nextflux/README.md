@@ -1,15 +1,19 @@
 # NextFlux for ToolBox
 
-基于 [electh/nextflux](https://github.com/electh/nextflux) 的 ToolBox 小工具适配版，版本 **1.0.6（7）**。上游基线为 `a9f97de654d00f62cbbad877d583fae7cd76ec59`；原始项目说明及其许可原文保存在 [UPSTREAM.md](UPSTREAM.md)，依赖许可保存在 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
+基于 [electh/nextflux](https://github.com/electh/nextflux) 的 ToolBox 小工具适配版，版本 **1.0.7（8）**。上游基线为 `a9f97de654d00f62cbbad877d583fae7cd76ec59`；原始项目说明及其许可原文保存在 [UPSTREAM.md](UPSTREAM.md)，依赖许可保存在 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
 
 本版连接固定服务端 **https://miniflux.xiaochen.win**，需要 **ToolBox 0.6.7 或更新版本**。它是 Miniflux 客户端，订阅抓取、完整文章库和账号数据由 Miniflux 服务端管理。安装包不包含账号密码、Token 或 AI 密钥，使用时需输入自己的真实凭据。
 
 ## 安装与首次使用
 
-1. 将构建生成的 `nextflux-v1.0.6.tbx` 导入 ToolBox。
+1. 将构建生成的 `nextflux-v1.0.7.tbx` 导入 ToolBox。
 2. 在小工具详情的权限页面开启 **存储、安全存储、网络**。这三项是启动和登录所需权限；清单中的 `required` 声明不代替实际授权。未签名严格模式不会自动授予高风险权限。
 3. 打开 NextFlux，使用该 Miniflux 服务器的 API Token，或用户名和密码登录。
 4. 首次同步完成后即可阅读。浏览器打开、复制、分享和 OPML 导入分别需要对应权限。后台同步需同时开启小工具的后台运行权限及ToolBox所需的后台保障。
+
+## 1.0.7 更新
+
+保留 1.0.6 外链弹窗改版；正文显示时规范化缺少 Emoji 选择符或选择符位于末尾的键帽组合，修复部分 Android WebView 将 `#⃣`、`6⃣️` 显示成方框的问题。原始文章、链接地址、代码块和行内代码保持不变。
 
 ## 1.0.6 更新
 
@@ -17,7 +21,7 @@
 
 ## 功能与适配
 
-仓库支持通过 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 构建交付，手动运行时填写 `tool=nextflux`；先升级 ToolBox 0.6.7，再导入 NextFlux 1.0.6。自动同步默认每 15 分钟执行；需要离开页面后继续同步时，在“设置 → 常规”点击“离开页面后继续同步”，并开启 ToolBox 中该工具的网络、后台运行权限及后台保障。同步拉取 Miniflux 已抓到的文章；立即抓取某个订阅可使用该订阅菜单里的“刷新”。
+仓库支持通过 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 构建交付，手动运行时填写 `tool=nextflux`；先升级 ToolBox 0.6.7，再导入 NextFlux 1.0.7。自动同步默认每 15 分钟执行；需要离开页面后继续同步时，在“设置 → 常规”点击“离开页面后继续同步”，并开启 ToolBox 中该工具的网络、后台运行权限及后台保障。同步拉取 Miniflux 已抓到的文章；立即抓取某个订阅可使用该订阅菜单里的“刷新”。
 
 保留 NextFlux 的阅读和管理流程：订阅发现与添加、分类新增和重命名、订阅编辑与取消、OPML 导入、隐藏订阅、文章筛选与搜索、已读及收藏、范围标记、抓取原文、图片查看、文章分享、第三方服务保存、阅读排版、主题、语言及快捷键。界面继续使用上游 React 与 HeroUI，ToolBox仅提供 ToolBox 运行壳和原生能力。
 
@@ -52,7 +56,7 @@ python3 package.py --check
 python3 package.py
 ```
 
-`package.py` 使用仓库现有的 `scripts/package-tool.py`。它只收集生产 `dist`、清单、上游说明、第三方许可与生成的来源记录；不收集源码、测试、浏览器测试桥或 `node_modules`。默认输出为仓库根目录下的 `build/nextflux/nextflux-v1.0.6.tbx`，已有文件会被拒绝覆盖。修改版本后应同时更新清单、依赖包元数据及交付名称。
+`package.py` 使用仓库现有的 `scripts/package-tool.py`。它只收集生产 `dist`、清单、上游说明、第三方许可与生成的来源记录；不收集源码、测试、浏览器测试桥或 `node_modules`。默认输出为仓库根目录下的 `build/nextflux/nextflux-v1.0.7.tbx`，已有文件会被拒绝覆盖。修改版本后应同时更新清单、依赖包元数据及交付名称。
 
 `--check` 在临时目录检查清单和真实 ZIP，不生成最终交付包。打包门槛为：最多 512 个条目、压缩包最多 20 MiB、解压总量最多 80 MiB、单文件最多 20 MiB，以及整体和单文件压缩比不超过 100。正式打包只有在这些检查通过后才创建输出文件，并报告 SHA-256。
 

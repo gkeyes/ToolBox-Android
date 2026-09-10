@@ -17,6 +17,16 @@ export function createReadingParser(html, baseUrl) {
   const stack = [{ id: 0, blocked: false, depth: 0 }];
   let queuedText = 0;
   const emit = (operation) => { pending.push(operation); queuedText += operation.text?.length || 0; };
+  let textTail = "", textParent = 0;
+  const emitDisplayText = (parent, text) => {
+    // Older WebViews only recognize keycaps with VS16 before the enclosing mark.
+    // This is a display stream; stored HTML, attributes and literal code stay raw.
+    const display = text.replace(/([0-9#*])\ufe0f?\u20e3\ufe0f?/gu, "$1\ufe0f\u20e3");
+    for (let index = 0; index < display.length; index += INPUT_CHUNK) {
+      emit({ type: "text", parent, text: display.slice(index, index + INPUT_CHUNK) });
+    }
+  };
+  const flushText = () => { emitDisplayText(textParent, textTail); textTail = ""; };
   const openCodeLine = (code) => {
     code.lineId = nextId++;
     emit({ type: "element", id: code.lineId, parent: code.parent, tag: "span", attrs: {}, codeLine: true });
@@ -34,8 +44,9 @@ export function createReadingParser(html, baseUrl) {
   };
   const parser = new Parser({
     onopentag(tag, attributes) {
+      flushText();
       const parent = stack.at(-1);
-      const entry = { tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code };
+      const entry = { tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code" };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -84,6 +95,15 @@ export function createReadingParser(html, baseUrl) {
       const parent = stack.at(-1);
       if (parent.blocked || !text) return;
       if (parent.code) { appendCode(parent.code, text); return; }
+      if (!parent.literalText) {
+        const combined = textTail + text;
+        // Hold at most three code units across entities and tokenizer chunks.
+        // Flush at markup boundaries so differently styled text is not rewritten.
+        textTail = combined.match(/[0-9#*](?:\ufe0f\u20e3?|\u20e3\ufe0f?)?$/u)?.[0] || "";
+        textParent = parent.id;
+        emitDisplayText(parent.id, combined.slice(0, combined.length - textTail.length));
+        return;
+      }
       // Text callbacks may span tokenizer chunks (entities/raw text). Split them
       // as well, including huge articles containing one uninterrupted text node.
       for (let index = 0; index < text.length; index += INPUT_CHUNK) {
@@ -91,12 +111,14 @@ export function createReadingParser(html, baseUrl) {
       }
     },
     onclosetag() {
+      flushText();
       const entry = stack.pop();
       if (entry.code && !entry.ownsCode && /^(p|div|h[1-6])$/.test(entry.tag) && !entry.blocked) appendCode(entry.code, "\n");
       if (entry.ownsMedia) emit({ type: "media", ...entry.media });
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });
       if (entry.linkWithImage) emit({ type: "imageLink", parent: entry.id, id: nextId++, href: entry.attrs.href });
     },
+    onend() { flushText(); },
   }, { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true, xmlMode: false });
   return {
     next() {
