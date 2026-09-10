@@ -458,6 +458,7 @@ ToolBox 0.3.6 起，不同工具的持续会话分别显示独立通知卡，独
 
 可选：
 - secondaryText：最多 96 个字符；body：最多 256 个字符。
+- ToolBox 0.7.5 起，省略 body 不会自动重复状态正文；同时省略 secondaryText 与 body 时，普通通知及 HyperOS 卡片按 title、primaryText、可选 progress 排列，不补充底行或额外时间。显式提供的附加信息仍保留。shortText 仅用于独立的紧凑摘要。
 - shortText：最多 12 个字符，供状态栏或岛摘要使用。
 - updatedAt：Unix 毫秒，不是秒。
 - progress：0–100 的整数；不需要进度时省略。

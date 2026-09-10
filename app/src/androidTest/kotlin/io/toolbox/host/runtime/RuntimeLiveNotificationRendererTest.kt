@@ -184,6 +184,87 @@ class RuntimeLiveNotificationRendererTest {
         )
     }
 
+    @Test
+    fun minimalLiveContentKeepsTitleStatusAndProgressWithoutInventingOptionalRows() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val renderer = RuntimeLiveNotificationRenderer(context)
+        // Deliberately not the watcher ID: omission semantics belong to the generic renderer.
+        val session = RuntimeBackgroundSessionUi("minimal-session", "io.example.generic", "其他工具", 1L, 0x550010)
+        val open = RuntimeForegroundService.openSessionPendingIntent(context, session.toolId, session.sessionId)
+        val stop = RuntimeForegroundService.stopSessionPendingIntent(context, session.toolId, session.sessionId)
+        val states = listOf(
+            Triple(0, "排队中", RuntimeLiveNotificationTone.NEUTRAL),
+            Triple(65, "运行中", RuntimeLiveNotificationTone.NEUTRAL),
+            Triple(100, "构建成功", RuntimeLiveNotificationTone.POSITIVE),
+            Triple(100, "构建失败", RuntimeLiveNotificationTone.NEGATIVE),
+            Triple(100, "已取消", RuntimeLiveNotificationTone.NEUTRAL),
+            Triple(65, "网络离线", RuntimeLiveNotificationTone.WARNING),
+            Triple(65, "限流等待", RuntimeLiveNotificationTone.WARNING),
+        )
+        try {
+            listOf(false, true).forEach { hyperOs ->
+                val support = LiveNotificationSupportState(if (hyperOs) 3 else 0, hyperOs, false, hyperOs, hyperOs)
+                states.forEach { (progress, label, tone) ->
+                    val primary = "$progress% · $label"
+                    val request = RuntimeLiveNotificationRequest(
+                        sessionId = session.sessionId, title = "owner/repo", primaryText = primary,
+                        secondaryText = null, body = null, shortText = "$progress%", updatedAt = 1L,
+                        progress = progress, accentColor = null, tone = tone,
+                    )
+                    val live = RuntimeLiveNotificationUi(session.toolId, session.toolName, request, 1L, 2L)
+                    // Build rich then minimal content for the same session to catch stale expanded rows.
+                    val rich = live.copy(request = request.copy(secondaryText = "附加信息", body = "明确提供的正文"))
+                    val richNotification = parcelCopy(renderer.build(RuntimeNotificationCard(session, rich), support, open, stop))
+                    assertEquals("明确提供的正文", richNotification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString())
+                    assertEquals("$primary · 附加信息", richNotification.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+                    assertEquals("附加信息", richNotification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT).toString())
+                    if (hyperOs) {
+                        val richPayload = JSONObject(checkNotNull(richNotification.extras.getString("miui.focus.param"))).getJSONObject("param_v2")
+                        assertEquals(primary, richPayload.getJSONObject("baseInfo").getString("title"))
+                        assertEquals("owner/repo", richPayload.getJSONObject("baseInfo").getString("content"))
+                        assertEquals("明确提供的正文", richPayload.getJSONObject("iconTextInfo").getString("subContent"))
+                    }
+                    val notification = parcelCopy(renderer.build(RuntimeNotificationCard(session, live), support, open, stop))
+                    assertEquals("owner/repo", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+                    assertEquals(primary, notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+                    assertNull(notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+                    assertNull(notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+                    assertNull(notification.extras.getString(Notification.EXTRA_TEMPLATE))
+                    assertEquals(progress, notification.extras.getInt(Notification.EXTRA_PROGRESS))
+                    assertEquals(100, notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+                    assertFalse(notification.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+                    assertEquals(open, notification.contentIntent)
+                    assertEquals(listOf("打开", "停止当前"), notification.actions.map { it.title.toString() })
+                    assertEquals(listOf(open, stop), notification.actions.map { it.actionIntent })
+                    assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
+                    if (hyperOs) {
+                        val payload = JSONObject(checkNotNull(notification.extras.getString("miui.focus.param"))).getJSONObject("param_v2")
+                        listOf("baseInfo", "iconTextInfo").forEach { name ->
+                            val info = payload.getJSONObject(name)
+                            assertEquals("owner/repo", info.getString("title"))
+                            assertEquals(primary, info.getString("content"))
+                            listOf("subTitle", "subContent", "extraTitle").forEach { assertTrue(info.isNull(it)) }
+                        }
+                        val bar = payload.getJSONObject("multiProgressInfo")
+                        assertEquals(progress, bar.getInt("progress"))
+                        assertEquals(0, bar.getInt("points"))
+                        listOf("title", "content", "subTitle", "subContent").forEach { assertTrue(bar.isNull(it)) }
+                    } else {
+                        assertNull(notification.extras.getString("miui.focus.param"))
+                    }
+                    // Explicit secondary text must not cause a missing body to be fabricated either.
+                    val secondaryOnly = live.copy(request = request.copy(secondaryText = "附加信息"))
+                    val secondaryNotification = parcelCopy(renderer.build(RuntimeNotificationCard(session, secondaryOnly), support, open, stop))
+                    assertNull(secondaryNotification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+                    assertEquals("$primary · 附加信息", secondaryNotification.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+                }
+            }
+        } finally {
+            open.cancel()
+            stop.cancel()
+        }
+    }
+
     private fun assertNoForcedFocusForeground(payload: JSONObject) {
         val fields = setOf(
             "colorTitle", "colorTitleDark", "colorContent", "colorContentDark",

@@ -297,34 +297,16 @@
     return { label: "已结束", tone: "neutral", color: "#7A7F87" };
   }
 
-  function shortSha(run) {
-    return String(run?.head_sha || "").slice(0, 7);
-  }
-
   function buildNotificationSummary(repoName, run, estimate, warning) {
     const presentation = statePresentation(run, warning);
-    if (!run) {
-      return {
-        title: `${repoName} · 构建守望`,
-        primaryText: presentation.label,
-        secondaryText: "正在等待新的 workflow run",
-        body: "后台守望保持运行",
-        shortText: "等待",
-        progress: 0,
-        ...presentation
-      };
-    }
-    const workflow = run.name || run.display_title || "GitHub Actions";
-    const progressText = run.status === "in_progress" ? `${estimate.progress}%` : presentation.label;
-    const current = [estimate.job, estimate.step].filter(Boolean).join(" · ") || presentation.label;
-    const branchSha = [run.head_branch, shortSha(run)].filter(Boolean).join(" · ");
+    const estimatedProgress = Number(estimate?.progress);
+    const progress = !run ? 0 : run.status === "completed" ? 100
+      : clamp(Number.isFinite(estimatedProgress) ? Math.round(estimatedProgress) : 0, 0, 98);
     return {
-      title: `${repoName} · ${workflow}`,
-      primaryText: progressText,
-      secondaryText: current,
-      body: [current, branchSha].filter(Boolean).join("\n"),
-      shortText: run.status === "in_progress" ? `${estimate.progress}%` : presentation.label.slice(0, 12),
-      progress: run.status === "completed" ? 100 : estimate.progress,
+      title: repoName,
+      primaryText: `${progress}% · ${presentation.label}`,
+      shortText: `${progress}%`,
+      progress,
       ...presentation
     };
   }

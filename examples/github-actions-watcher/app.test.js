@@ -101,6 +101,7 @@ async function monitoringApp(remote, restored, options = {}) {
     timingModels: { "7:main:push": model.buildTimingModel([], {}) },
   };
   const requests = [];
+  const liveCalls = [];
   const secure = options.secure || new Map([["github-actions-watcher-token", "fixture-token"]]);
   const timers = new Map();
   let timerListener;
@@ -127,6 +128,7 @@ async function monitoringApp(remote, restored, options = {}) {
       requests.push({ pathname, authorization: request.headers.Authorization });
       if (remote.wait) await remote.wait;
       if (remote.requestError) throw remote.requestError;
+      if (remote.response) return remote.response;
       let data;
       if (pathname === "/repos/fixture/repo") data = { full_name: "fixture/repo", default_branch: "main" };
       else if (pathname === "/repos/fixture/repo/actions/workflows") data = { workflows: [{ id: 7, state: "active", name: "Android CI" }] };
@@ -144,7 +146,11 @@ async function monitoringApp(remote, restored, options = {}) {
       status: async () => ({ sessionId: "fixture-session" }),
       setTimer: async (key, interval) => { timers.set(key, interval); },
     },
-    notifications: { post: async () => {}, live: { start: async () => {}, update: async () => {}, end: async () => {} } },
+    notifications: { post: async () => {}, live: {
+      start: async request => { liveCalls.push({ method: "start", request: structuredClone(request) }); },
+      update: async request => { liveCalls.push({ method: "update", request: structuredClone(request) }); },
+      end: async () => {},
+    } },
   };
   vm.runInNewContext(source, {
     window: { ToolBox: api, GitHubWatcherModel: model, addEventListener() {} },
@@ -159,6 +165,12 @@ async function monitoringApp(remote, restored, options = {}) {
   await flush();
   return {
     node, snapshot: () => structuredClone(saved),
+    liveCalls: () => structuredClone(liveCalls),
+    backgroundTick: async milliseconds => {
+      now += milliseconds;
+      timerListener({ key: "github-actions-watcher-clock" });
+      await flush();
+    },
     jobRequests: () => requests.filter(request => request.pathname.endsWith("/jobs")).length,
     requestCount: () => requests.length,
     usedToken: token => requests.length > 0 && requests.every(request => request.authorization === `Bearer ${token}`),
@@ -352,4 +364,84 @@ test("terminal details stay pending and retry when the final jobs response fails
       assert.equal(app.node("job-list").children[0].children[0].children[2].dataset.result, "success");
     });
   }
+});
+
+function assertMinimalLiveRequest(request, label, progress = request.progress) {
+  assert.deepEqual(Object.keys(request).sort(), [
+    "accentColor", "primaryText", "progress", "sessionId", "shortText", "title", "tone", "updatedAt"
+  ].sort());
+  assert.equal(request.sessionId, "fixture-session");
+  assert.equal(request.title, "fixture/repo");
+  assert.equal(request.primaryText, `${progress}% · ${label}`);
+  assert.equal(request.progress, progress);
+  assert.equal(request.shortText, `${progress}%`);
+  assert.ok(Number.isInteger(progress) && progress >= 0 && progress <= 100);
+}
+
+test("actual live start and background updates keep the minimal layout without app overrides", async () => {
+  const app = await monitoringApp({ run: activeRun, jobs: activeJobs });
+  assert.equal(app.liveCalls()[0].method, "start");
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "运行中");
+  const requests = app.requestCount();
+  const calls = app.liveCalls().length;
+  await app.backgroundTick(10_000);
+  assert.equal(app.requestCount(), requests, "clock updates must not fetch GitHub");
+  assert.equal(app.liveCalls().length, calls + 1);
+  assert.equal(app.liveCalls().at(-1).method, "update");
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "运行中", app.snapshot().progressByRun[model.runKey(activeRun)]);
+  assert.match(app.node("job-list").textContent, /Set up Android SDK 37/);
+});
+
+test("actual queued/waiting and terminal notifications share the same percentage/status layout", async () => {
+  for (const status of ["queued", "waiting", "pending", "requested"]) {
+    const app = await monitoringApp({ run: { ...activeRun, status }, jobs: [] });
+    assertMinimalLiveRequest(app.liveCalls().at(-1).request, "排队中");
+  }
+  for (const [conclusion, label, tone] of [
+    ["success", "构建成功", "positive"], ["failure", "构建失败", "negative"],
+    ["cancelled", "已取消", "neutral"], ["timed_out", "构建超时", "negative"]
+  ]) {
+    const remote = { run: activeRun, jobs: activeJobs };
+    const app = await monitoringApp(remote);
+    remote.run = { ...activeRun, status: "completed", conclusion, updated_at: "2026-09-03T08:06:05Z" };
+    remote.jobs = completedJobs(conclusion);
+    await app.poll();
+    const last = app.liveCalls().at(-1);
+    assert.equal(last.method, "update");
+    assertMinimalLiveRequest(last.request, label, 100);
+    assert.equal(last.request.tone, tone);
+    assert.match(app.node("job-list").textContent, /Set up Android SDK 37/);
+  }
+});
+
+test("offline and rate-limit warnings replace the status, survive clock ticks and recover", async () => {
+  const remote = { run: activeRun, jobs: activeJobs };
+  const app = await monitoringApp(remote);
+  remote.requestError = Object.assign(new Error("fixture offline"), { code: "NETWORK_UNAVAILABLE" });
+  await app.poll();
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "网络离线");
+  assert.equal(app.liveCalls().at(-1).request.tone, "warning");
+  await app.backgroundTick(10_000);
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "网络离线");
+  remote.requestError = null;
+  remote.response = {
+    status: 403,
+    headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Date.parse("2026-09-03T08:07:00Z") / 1000) },
+    body: JSON.stringify({ message: "API rate limit exceeded" })
+  };
+  await app.poll();
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "限流等待");
+  const requests = app.requestCount();
+  const calls = app.liveCalls().length;
+  await app.refresh();
+  assert.equal(app.requestCount(), requests, "known rate-limit window must not make another request");
+  assert.equal(app.liveCalls().length, calls + 1, "the fast path must also refresh the warning");
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "限流等待");
+  await app.backgroundTick(10_000);
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "限流等待");
+  remote.response = null;
+  await app.tick(60_000);
+  await app.poll();
+  assertMinimalLiveRequest(app.liveCalls().at(-1).request, "运行中");
+  assert.equal(app.liveCalls().at(-1).request.tone, "neutral");
 });

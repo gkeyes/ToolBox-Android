@@ -2,13 +2,13 @@
 
 这里集中收录本地小工具的源码与可导入安装包。主表列出各工具的最新收录版本，历史版本另行保留。原本的本地文件保留。
 
-在 GitHub 打开包文件链接后，选择 **Download raw file** 保存 `.tbx`；需要从源码重新打包时，使用 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 并从 Artifacts 下载。再到 ToolBox 的工具页导入。可以使用 ToolBox 0.6.7 导入下表各包；“最低 ToolBox”来自包内声明，不表示本轮重新验证了每个旧版本的运行表现。
+在 GitHub 打开包文件链接后，选择 **Download raw file** 保存 `.tbx`；需要从源码重新打包时，使用 [TBX CI](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) 并从 Artifacts 下载。再到 ToolBox 的工具页导入。请按下表最低 ToolBox 版本选择宿主；“最低 ToolBox”来自包内声明，不表示本轮重新验证了每个旧版本的运行表现。
 
 | 小工具 | 版本 | 最低 ToolBox | 用途 | 文件 |
 | --- | --- | --- | --- | --- |
 | 后台任务演示 | 1.0.0 | 0.2.0 | 后台任务示例，ToolBox 内置 | [下载](packages/background-task-demo-v1.0.0.tbx) · [源码](background-task-demo/) |
 | 2048 | 1.0.0 | 0.2.0 | 离线数字合并游戏 | [下载](packages/game-2048-v1.0.0.tbx) · [源码](game-2048/) |
-| GitHub 构建守望 | 1.0.6 | 0.3.5 | GitHub Actions 构建进度 | [下载](packages/github-actions-watcher-v1.0.6.tbx) · [源码](github-actions-watcher/) |
+| GitHub 构建守望 | 1.0.7 | 0.7.5 | GitHub Actions 三层实时进度通知 | [CI 产物](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) · [源码](github-actions-watcher/) · [旧版 1.0.6](packages/github-actions-watcher-v1.0.6.tbx) |
 | 健康档案 | 1.0.11 | 0.6.1 | 本地健康记录、趋势与可选 AI 整理 | [下载](packages/health-records-v1.0.11.tbx) · [源码](health-records/) |
 | 稳力 | 1.0.2 | 0.6.4 | 离线节奏训练 | [下载](packages/kegel-trainer-v1.0.2.tbx) · [源码](kegel-trainer/) |
 | NextFlux | 1.0.5 | 0.6.7 | Miniflux 阅读、AI 摘要与同步 | [CI 产物](https://github.com/gkeyes/ToolBox-Android/actions/workflows/tbx.yml) · [源码](nextflux/) |
