@@ -68,6 +68,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.squircle.squircleBorder
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -536,6 +537,7 @@ fun ToolBoxDestructiveButton(
     }
 }
 
+/** Standalone actions have an outline; actions embedded in a row can opt out. */
 @Composable
 fun ToolBoxTextButton(
     label: String,
@@ -543,11 +545,21 @@ fun ToolBoxTextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     contentColor: Color = ToolBoxThemeTokens.colors.primary,
+    outlined: Boolean = true,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val outlineModifier = if (outlined) {
+        Modifier.squircleBorder(
+            width = 1.dp,
+            color = toolBoxTextButtonOutlineColor(ToolBoxThemeTokens.colors.textSecondary, enabled, pressed),
+            cornerRadius = ButtonDefaults.CornerRadius,
+        )
+    } else Modifier
     TextButton(
         text = label,
         onClick = onClick,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget).then(outlineModifier),
         enabled = enabled,
         minHeight = ToolBoxThemeTokens.sizes.touchTarget,
         colors = ButtonDefaults.textButtonColors(
@@ -559,8 +571,16 @@ fun ToolBoxTextButton(
         textStyle = ToolBoxThemeTokens.textStyles.body.copy(
             color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
         ),
+        interactionSource = interactionSource,
     )
 }
+
+internal fun toolBoxTextButtonOutlineColor(foreground: Color, enabled: Boolean, pressed: Boolean): Color =
+    foreground.copy(alpha = when {
+        !enabled -> 0.36f
+        pressed -> 1f
+        else -> 0.78f
+    })
 
 @Composable
 fun ToolBoxRunningStatusButton(

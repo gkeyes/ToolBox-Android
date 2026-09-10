@@ -1,11 +1,51 @@
 package io.toolbox.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import io.toolbox.core.ui.component.toolBoxTextButtonOutlineColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ToolBoxContrastTest {
+    @Test
+    fun secondaryActionOutlinesStayVisibleAcrossThemesAndTransparencyModes() {
+        for (dark in listOf(false, true)) {
+            val colors = liquidGlassColors(dark, Color(0xFF1264CC), Color.White)
+            val normal = toolBoxTextButtonOutlineColor(colors.textSecondary, enabled = true, pressed = false)
+            val pressed = toolBoxTextButtonOutlineColor(colors.textSecondary, enabled = true, pressed = true)
+            val disabled = toolBoxTextButtonOutlineColor(colors.textSecondary, enabled = false, pressed = false)
+            for (reduced in listOf(false, true)) {
+                val surfaces = listOf(colors.background, colors.surface, colors.surfaceMuted) +
+                    listOf(0.64f, 0.86f).map { alpha ->
+                        colors.surface.copy(alpha = if (reduced) 1f else alpha).compositeOver(colors.background)
+                    }
+                for (surface in surfaces) {
+                    val normalContrast = contrastRatio(normal.compositeOver(surface), surface)
+                    assertTrue(normalContrast >= 3f)
+                    assertTrue(contrastRatio(pressed.compositeOver(surface), surface) > normalContrast)
+                    // Disabled controls stay recognizable, but quieter than enabled actions.
+                    val disabledContrast = contrastRatio(disabled.compositeOver(surface), surface)
+                    assertTrue(disabledContrast >= 1.5f && disabledContrast < normalContrast)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun disabledSecondaryOutlineNeverUsesThePressedAppearance() {
+        for (colors in listOf(LightToolBoxColors, DarkToolBoxColors)) {
+            val foreground = colors.textSecondary
+            assertEquals(foreground.copy(alpha = 0.78f), toolBoxTextButtonOutlineColor(foreground, true, false))
+            assertEquals(foreground, toolBoxTextButtonOutlineColor(foreground, true, true))
+            assertEquals(foreground.copy(alpha = 0.36f), toolBoxTextButtonOutlineColor(foreground, false, false))
+            assertEquals(
+                toolBoxTextButtonOutlineColor(foreground, false, false),
+                toolBoxTextButtonOutlineColor(foreground, false, true),
+            )
+        }
+    }
+
     @Test
     fun standardThemesKeepSmallTextAndActionLabelsReadable() {
         for (colors in listOf(LightToolBoxColors, DarkToolBoxColors)) {

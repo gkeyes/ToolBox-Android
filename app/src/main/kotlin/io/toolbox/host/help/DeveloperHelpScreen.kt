@@ -313,6 +313,7 @@ private fun LazyListScope.helpArticleBlocks(
                             ToolBoxTextButton(
                                 label = if (copiedKey == key) "已复制" else "复制",
                                 onClick = { onCopy(key, block.text) },
+                                outlined = false,
                                 modifier = Modifier.semantics {
                                     contentDescription = "复制" + article.title + "中的" + block.label.ifBlank { "代码" }
                                 },

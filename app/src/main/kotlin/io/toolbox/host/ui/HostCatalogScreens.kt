@@ -411,6 +411,7 @@ private fun CatalogToolRow(
             ToolBoxTextButton(
                 label = "管理",
                 onClick = onDetails,
+                outlined = false,
                 modifier = Modifier
                     .widthIn(min = ToolBoxThemeTokens.sizes.touchTarget)
                     .semantics { contentDescription = "管理${tool.name}" },
