@@ -37,9 +37,10 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         val live = card.presentation
         val title = live?.request?.title ?: card.session.toolName
         val content = live?.request?.let { request ->
-            listOfNotNull(request.primaryText, request.secondaryText).joinToString(" · ")
+            listOfNotNull(request.primaryText, request.secondaryText?.takeIf(String::isNotBlank)).joinToString(" · ")
         } ?: "后台环境运行中，可打开工具或停止当前会话"
-        val body = live?.request?.body ?: content
+        // An omitted live body means no expanded prose, not a copy of the status line.
+        val body = if (live == null) content else live.request.body?.takeIf(String::isNotBlank)
         val updatedAt = live?.request?.updatedAt ?: live?.receivedAt ?: card.session.startedAt
         val accent = live?.request?.accentColor?.let(::parseColor)
             ?: live?.request?.tone?.let(::toneColor)
@@ -50,7 +51,6 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setLargeIcon(toolIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher))
             .setContentTitle(title)
             .setContentText(content)
-            .setStyle(Notification.BigTextStyle().bigText(body))
             .setContentIntent(open)
             .setWhen(updatedAt)
             .setShowWhen(true)
@@ -59,10 +59,11 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .setCategory(Notification.CATEGORY_STATUS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setSubText(live?.request?.secondaryText)
             .addAction(Notification.Action.Builder(null, "打开", open).build())
             .addAction(Notification.Action.Builder(null, "停止当前", stopCurrent).build())
             .apply {
+                body?.let { setStyle(Notification.BigTextStyle().bigText(it)) }
+                live?.request?.secondaryText?.takeIf(String::isNotBlank)?.let { setSubText(it) }
                 live?.request?.progress?.let { setProgress(100, it, false) }
             }
 
@@ -85,7 +86,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
     private fun buildHyperOsV3(
         card: RuntimeNotificationCard,
         notificationTitle: String,
-        notificationBody: String,
+        notificationBody: String?,
         accent: Int,
         toolIcon: Bitmap?,
     ) = FocusNotification.buildV3 {
@@ -93,7 +94,8 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         val request = live.request
         val displayValue = request.primaryText
         val displayTitle = request.title
-        val displaySecondary = request.secondaryText
+        val displaySecondary = request.secondaryText?.takeIf(String::isNotBlank)
+        val minimalContent = displaySecondary == null && notificationBody == null
         val accentHex = String.format("#%06X", 0xFFFFFF and accent)
         val icon = createPicture(
             "tool-icon-${card.session.sessionId}",
@@ -114,20 +116,29 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         aodPic = icon
         baseInfo {
             type = 1
-            title = displayValue
-            content = displayTitle
+            title = if (minimalContent) displayTitle else displayValue
+            content = if (minimalContent) displayValue else displayTitle
             subTitle = displaySecondary
             subContent = notificationBody
-            extraTitle = request.updatedAt?.let(::formatTime)
+            extraTitle = if (minimalContent) null else request.updatedAt?.let(::formatTime)
             showDivider = false
             showContentDivider = false
         }
         iconTextInfo {
             type = 1
-            title = displayValue
-            content = displayTitle
+            title = if (minimalContent) displayTitle else displayValue
+            content = if (minimalContent) displayValue else displayTitle
             subTitle = displaySecondary
             subContent = notificationBody
+        }
+        if (minimalContent) {
+            request.progress?.let { value ->
+                multiProgressInfo {
+                    progress = value
+                    color = accentHex
+                    points = 0
+                }
+            }
         }
         island {
             business = "toolbox_live"
@@ -145,12 +156,12 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             }
             bigIslandArea {
                 textInfo = com.xzakota.hyper.notification.island.model.TextInfo().apply {
-                    title = displayValue
-                    frontTitle = displayTitle.take(16)
-                    content = displaySecondary
+                    title = if (minimalContent) displayTitle else displayValue
+                    frontTitle = if (minimalContent) null else displayTitle.take(16)
+                    content = if (minimalContent) displayValue else displaySecondary
                     showHighlightColor = false
-                    narrowFont = true
-                    isTitleDigit = displayValue.any(Char::isDigit)
+                    narrowFont = !minimalContent
+                    isTitleDigit = !minimalContent && displayValue.any(Char::isDigit)
                     turnAnim = true
                 }
             }

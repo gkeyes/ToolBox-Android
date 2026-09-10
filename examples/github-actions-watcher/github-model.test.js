@@ -201,13 +201,44 @@ test("run filtering and primary priority handle multiple workflows and branches"
   assert.equal(model.choosePrimaryRun(filtered).id, 3);
 });
 
-test("notification summary has one coherent job and step line", () => {
-  const run = { name: "Android CI", status: "in_progress", head_branch: "main", head_sha: "abcdef123456" };
-  const summary = model.buildNotificationSummary("owner/repo", run, { progress: 42, job: "verify", step: "unit tests" });
-  assert.equal(summary.primaryText, "42%");
-  assert.equal(summary.secondaryText, "verify · unit tests");
-  assert.equal((summary.body.match(/verify/g) || []).length, 1);
-  assert.match(summary.body, /main · abcdef1/);
+test("live summary has only repository, percentage/status and matching progress in every state", () => {
+  const details = { name: "Android CI", head_branch: "feature/private", head_sha: "abcdef123456" };
+  const estimate = { progress: 65, job: "verify", step: "unit tests", elapsedMs: 1000, remainingMs: 3000 };
+  const scenarios = [
+    [null, null, 0, "等待构建"],
+    [{ status: "in_progress" }, null, 65, "运行中"],
+    ...["queued", "waiting", "pending", "requested"].map(status => [{ status }, null, 65, "排队中"]),
+    [{ status: "completed", conclusion: "success" }, null, 100, "构建成功"],
+    [{ status: "completed", conclusion: "failure" }, null, 100, "构建失败"],
+    [{ status: "completed", conclusion: "cancelled" }, null, 100, "已取消"],
+    [{ status: "completed", conclusion: "timed_out" }, null, 100, "构建超时"],
+    [{ status: "in_progress" }, "offline", 65, "网络离线"],
+    [{ status: "in_progress" }, "rate_limit", 65, "限流等待"],
+    [null, "offline", 0, "网络离线"],
+    [null, "rate_limit", 0, "限流等待"]
+  ];
+  for (const [state, warning, progress, label] of scenarios) {
+    const run = state && { ...details, ...state };
+    const summary = model.buildNotificationSummary("owner/repo", run, estimate, warning);
+    assert.deepEqual(summary, {
+      title: "owner/repo", primaryText: `${progress}% · ${label}`, shortText: `${progress}%`,
+      progress, ...model.statePresentation(run, warning)
+    });
+    assert.equal(Object.hasOwn(summary, "secondaryText"), false);
+    assert.equal(Object.hasOwn(summary, "body"), false);
+  }
+});
+
+test("live percentage is a finite integer shared by text and bar, with terminal precedence", () => {
+  for (const [input, expected] of [[64.6, 65], [-1, 0], [150, 98], [NaN, 0], [undefined, 0]]) {
+    const summary = model.buildNotificationSummary("owner/repo", { status: "in_progress" }, { progress: input });
+    assert.equal(summary.progress, expected);
+    assert.equal(summary.primaryText, `${expected}% · 运行中`);
+    assert.equal(summary.shortText, `${expected}%`);
+  }
+  const completed = model.buildNotificationSummary("owner/repo", { status: "completed", conclusion: "failure" }, { progress: 42 });
+  assert.equal(completed.progress, 100);
+  assert.equal(completed.primaryText, "100% · 构建失败");
 });
 
 test("failure, cancellation, rate limit and offline map to stable colors", () => {

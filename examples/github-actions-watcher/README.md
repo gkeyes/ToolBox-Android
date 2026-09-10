@@ -2,11 +2,17 @@
 
 独立交付的 ToolBox `.tbx`，只读监控一个 GitHub 仓库中手动选择的 Actions workflow。
 
-1.0.6 需要 ToolBox 0.3.5 或更新版本。包内和页面均使用用户提供的白色猫剪影 PNG；保留终态步骤同步修复、刷新状态与 Token 持久化反馈，并将宿主状态收进标题行以减少顶部占用。
+1.0.7 需要 ToolBox 0.7.5 或更新版本。包内和页面均使用用户提供的白色猫剪影 PNG；保留终态步骤同步修复、刷新状态与 Token 持久化反馈，并将宿主状态收进标题行以减少顶部占用。
 
 顶部每秒更新下一次刷新倒计时，同步中显示等待时长，失败后显示重试倒计时，后台调度延迟会明确提示。此倒计时不额外请求 GitHub，认证/匿名基础轮询间隔不变。
 
 使用 4 MiB 网络响应与 8 MiB 消息上限容纳 GitHub 的完整构建列表；响应过大、超时、连接失败与域名阻止会显示不同错误，不把它们统一描述为断网。更新工具后按宿主规则重新开启网络、通知和后台权限；安全存储中的 Token 如被清理，需要重新填写。
+
+## 实时通知
+
+实时卡片只包含仓库全名（owner/repo）、“百分比 · 状态”和同值进度条；不展示 workflow、job/step、分支、SHA、耗时或剩余时间。离线和限流警示替换这一行的状态，不追加重复底行。终态 100% 表示本次构建已结束，成功、失败和取消仍由状态文字区分。
+
+工具内详情、后台轮询、终态保留窗口、独立结果通知以及打开/停止操作不变。旧宿主会补出正文，因此此版声明最低宿主 0.7.5；自动截图测试保持退役，HyperOS 设备上的最终展示仍需人工验证。
 
 ## 能力
 
@@ -28,7 +34,7 @@ node --test examples/github-actions-watcher/github-model.test.js examples/github
 bash examples/github-actions-watcher/package.sh
 ```
 
-产物位于 `build/github-actions-watcher/github-actions-watcher-v1.0.6.tbx`。
+产物位于 `build/github-actions-watcher/github-actions-watcher-v1.0.7.tbx`。
 
 ## 图标来源
 

@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.6";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.7";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -709,6 +709,7 @@
     if (state.rateResetAt && state.rateRemaining === 0 && Date.now() < state.rateResetAt) {
       state.warning = "rate_limit";
       state.warningMessage = `额度将在 ${formatClock(state.rateResetAt)} 恢复`;
+      await updateLiveNotification();
       renderDashboard();
       return;
     }
@@ -763,28 +764,13 @@
   }
 
   function liveRequestFor(run) {
-    const estimate = run ? calculateEstimate(run) : { progress: 0, elapsedMs: 0, remainingMs: null, overrunMs: 0, sampleCount: 0, job: "", step: "" };
+    const estimate = run ? calculateEstimate(run) : { progress: 0 };
     const warning = ["rate_limit", "offline"].includes(state.warning) ? state.warning : null;
     const summary = model.buildNotificationSummary(state.config.fullName, run, estimate, warning);
-    let primaryText = summary.primaryText;
-    let secondaryText = summary.secondaryText;
-    let body = summary.body;
-    if (run?.status === "in_progress") {
-      primaryText = `${estimate.progress}% · 已用 ${formatDuration(estimate.elapsedMs, true)}`;
-      const eta = estimate.remainingMs !== null
-        ? `剩余约 ${formatDuration(estimate.remainingMs, true)}`
-        : estimate.overrunMs > 0
-          ? `超均值 ${formatDuration(estimate.overrunMs, true)}`
-          : "正在估算时间";
-      secondaryText = [estimate.job, estimate.step, eta].filter(Boolean).join(" · ");
-      body = [run.head_branch, String(run.head_sha || "").slice(0, 7), `基于最近 ${estimate.sampleCount} 次构建`].filter(Boolean).join(" · ");
-    }
     return {
       sessionId: state.sessionId,
       title: cleanText(summary.title, 64),
-      primaryText: cleanText(primaryText, 32),
-      secondaryText: cleanText(secondaryText, 96),
-      body: cleanText(body, 256),
+      primaryText: cleanText(summary.primaryText, 32),
       shortText: cleanText(summary.shortText, 12),
       updatedAt: Date.now(),
       progress: summary.progress,
