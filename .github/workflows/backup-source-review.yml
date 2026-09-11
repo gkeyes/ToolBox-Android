@@ -1,0 +1,43 @@
+name: Recover backup source for review
+on:
+  push:
+    branches: ["codex/backup-restore"]
+    paths: [".github/workflows/backup-source-review.yml"]
+permissions:
+  contents: read
+jobs:
+  recover-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read preserved source objects without executing them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, bz2, hashlib, json, os, pathlib, urllib.request
+          root = 'https://api.github.com/repos/gkeyes/ToolBox-Android'
+          def get(path):
+              request = urllib.request.Request(root + '/' + path, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+          tree = get('git/trees/759886a194e5aef8649a6919325182cf667698eb?recursive=1')
+          assert not tree.get('truncated')
+          entries = {item['path']: item for item in tree['tree']}
+          parts = []
+          for i in range(1, 7):
+              entry = entries[f'.github/backup-transfer/part-{i:02d}.txt']
+              blob = get('git/blobs/' + entry['sha'])
+              parts.append(base64.b64decode(blob['content']).decode('ascii').strip())
+          source = bz2.decompress(base64.b64decode(''.join(parts), validate=True))
+          out = pathlib.Path('recovered-source'); out.mkdir()
+          (out / 'backup.patch').write_bytes(source)
+          (out / 'sha256.txt').write_text(hashlib.sha256(source).hexdigest() + '\n')
+          print('Recovered source bytes:', len(source))
+          print('SHA256:', hashlib.sha256(source).hexdigest())
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: recovered-backup-source
+          path: recovered-source/
+          retention-days: 3
