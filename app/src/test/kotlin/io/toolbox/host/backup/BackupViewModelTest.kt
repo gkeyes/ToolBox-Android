@@ -16,12 +16,19 @@ class BackupViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val models = mutableListOf<BackupViewModel>()
     @Before fun before() { Dispatchers.setMain(dispatcher) }
-    @After fun after() { models.forEach { it.viewModelScope.cancel() }; dispatcher.scheduler.runCurrent(); Dispatchers.resetMain() }
+    @After fun after() {
+        try { runTest(dispatcher) { models.forEach { it.viewModelScope.coroutineContext[Job]?.cancelAndJoin() } } }
+        finally { Dispatchers.resetMain() }
+    }
     private fun model(engine: FakeEngine = FakeEngine()) = BackupViewModel(engine, object : BackupDocumentIO {
         override suspend fun open(location: String) = ByteArrayInputStream(byteArrayOf(1))
         override suspend fun save(file: File, location: String, progress: (String, Int) -> Unit, published: () -> Unit) { progress("write", 90); published() }
     }).also(models::add)
-    private suspend inline fun <reified T : BackupUiState> BackupViewModel.await() = state.first { it is T } as T
+    private suspend inline fun <reified T : BackupUiState> BackupViewModel.await(): T {
+        val ready = state.first { it is T } as T
+        assertFalse("Actionable UI state must not leave a busy operation behind", busy)
+        return ready
+    }
 
     @Test fun exportRequiresConsentAndPickerCancellationCleansTemporaryFile() = runTest(dispatcher) {
         val engine = FakeEngine(); val model = model(engine)
