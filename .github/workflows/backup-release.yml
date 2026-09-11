@@ -76,7 +76,7 @@ jobs:
           chmod 600 "$TOOLBOX_SIGNING_STORE_FILE"
           keytool -exportcert -keystore "$TOOLBOX_SIGNING_STORE_FILE" -storepass:env TOOLBOX_SIGNING_STORE_PASSWORD -alias "$TOOLBOX_SIGNING_KEY_ALIAS" > "$signing_dir/certificate.der" 2>/dev/null
           cert="$(sha256sum "$signing_dir/certificate.der" | awk '{print $1}')"
-          test "$cert" = "$ORIGINAL_CERT"
+          test "$cert" = "$ORIGINAL_CERT" || { echo 'Signing certificate differs from the original release' >&2; exit 1; }
           unset SIGNING_KEYSTORE_BASE64
           ./gradlew --no-daemon verifySecurityInvariants :tool-api:verifyToolBoxApiContract :app:assembleRelease :app:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest 2>&1 | tee build/release-evidence/release-build.log
       - name: Compare old and new APK certificates and release identity
@@ -98,18 +98,30 @@ jobs:
           apk="app/build/outputs/apk/release/app-release.apk"
           "$tools/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/original-release.apk" > build/release-evidence/original-signature.txt
           "$tools/apksigner" verify --verbose --print-certs "$apk" > build/release-evidence/release-signature.txt
-          for evidence in original release; do
-            actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "build/release-evidence/$evidence-signature.txt")"
-            test "$actual" = "$ORIGINAL_CERT"
-          done
           "$tools/aapt" dump badging "$apk" > build/release-evidence/release-badging.txt
-          grep -F "package: name='io.toolbox.host' versionCode='30' versionName='0.7.6'" build/release-evidence/release-badging.txt
-          if grep -q '^application-debuggable' build/release-evidence/release-badging.txt; then
-            echo 'Refusing to publish a debuggable APK' >&2
-            exit 1
-          fi
-          test -s app/build/outputs/mapping/release/mapping.txt
-          grep -Fx 'io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:' app/build/outputs/mapping/release/mapping.txt
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          evidence = Path('build/release-evidence')
+          expected = os.environ['ORIGINAL_CERT']
+          for name in ('original', 'release'):
+              text = (evidence / f'{name}-signature.txt').read_text()
+              assert 'Number of signers: 1' in text, f'{name}: expected exactly one signer'
+              # Recent apksigner labels this V2 Signer rather than Signer #1.
+              certificates = re.findall(r'^.*certificate SHA-256 digest: ([0-9a-fA-F]{64})\s*$', text, re.MULTILINE)
+              assert certificates, f'{name}: signing certificate digest is missing'
+              assert {value.lower() for value in certificates} == {expected}, f'{name}: certificate differs from the original APK'
+              print(f'{name} APK: signature valid and original certificate matched')
+          badging = (evidence / 'release-badging.txt').read_text()
+          package = next((line for line in badging.splitlines() if line.startswith('package: ')), '')
+          fields = dict(re.findall(r"(\w+)='([^']*)'", package))
+          for key, value in {'name': 'io.toolbox.host', 'versionCode': '30', 'versionName': '0.7.6'}.items():
+              assert fields.get(key) == value, f'Unexpected {key}: {fields.get(key)}'
+          assert not re.search(r'^application-debuggable', badging, re.MULTILINE), 'Refusing to publish a debuggable APK'
+          mapping = Path('app/build/outputs/mapping/release/mapping.txt').read_text()
+          assert 'io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:' in mapping.splitlines(), 'Background worker name must remain stable after R8'
+          print('Release identity, non-debuggable manifest and R8 worker mapping verified')
+          PY
           cp "$apk" build/release-delivery/ToolBox-0.7.6-backup-restore-release.apk
           {
             printf 'BUILD_COMMIT=%s\n' "$GITHUB_SHA"
@@ -149,5 +161,6 @@ jobs:
             tool-package/build/test-results/testDebugUnitTest/
             tool-runtime/build/test-results/testDebugUnitTest/
             app/build/outputs/mapping/release/
+            app/build/outputs/apk/release/
           if-no-files-found: warn
           retention-days: 90
