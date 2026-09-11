@@ -1,0 +1,152 @@
+name: Signed backup restore release
+
+on:
+  push:
+    branches: ["codex/backup-restore"]
+    paths: [".github/workflows/backup-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: signed-backup-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/codex/backup-restore'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TESTED_SOURCE: 50de4a50080656fbd8e4567f09d69b4a96bab006
+      TESTED_RUN: "34634012814"
+      ORIGINAL_CERT: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the exact behavior-tested application sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$TESTED_SOURCE" HEAD -- . ':!.github/workflows/backup-release.yml'
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TESTED_RUN" > "$RUNNER_TEMP/tested-run.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads((Path(os.environ['RUNNER_TEMP']) / 'tested-run.json').read_text())
+          assert run['head_sha'] == os.environ['TESTED_SOURCE'], 'Tested source SHA changed'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Behavior tests must pass before release'
+          PY
+          mkdir -p build/release-delivery build/release-evidence
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-37.0
+            build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Build optimized release using the existing private signing key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_BASE64 }}
+          TOOLBOX_SIGNING_STORE_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_PASSWORD }}
+          TOOLBOX_SIGNING_KEY_ALIAS: ${{ secrets.TOOLBOX_ANDROID_KEY_ALIAS }}
+          TOOLBOX_SIGNING_KEY_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SIGNING_KEYSTORE_BASE64:?Original signing key is required; no fallback key will be generated}"
+          : "${TOOLBOX_SIGNING_STORE_PASSWORD:?Original store password is required}"
+          : "${TOOLBOX_SIGNING_KEY_ALIAS:?Original signing alias is required}"
+          : "${TOOLBOX_SIGNING_KEY_PASSWORD:?Original key password is required}"
+          signing_dir="$RUNNER_TEMP/toolbox-release-signing"
+          mkdir -p "$signing_dir"
+          chmod 700 "$signing_dir"
+          trap 'rm -rf "$signing_dir"' EXIT
+          export TOOLBOX_SIGNING_STORE_FILE="$signing_dir/toolbox.p12"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$TOOLBOX_SIGNING_STORE_FILE"
+          chmod 600 "$TOOLBOX_SIGNING_STORE_FILE"
+          keytool -exportcert -keystore "$TOOLBOX_SIGNING_STORE_FILE" -storepass:env TOOLBOX_SIGNING_STORE_PASSWORD -alias "$TOOLBOX_SIGNING_KEY_ALIAS" > "$signing_dir/certificate.der" 2>/dev/null
+          cert="$(sha256sum "$signing_dir/certificate.der" | awk '{print $1}')"
+          test "$cert" = "$ORIGINAL_CERT"
+          unset SIGNING_KEYSTORE_BASE64
+          ./gradlew --no-daemon verifySecurityInvariants :tool-api:verifyToolBoxApiContract :app:assembleRelease :app:testReleaseUnitTest :core-data:testReleaseUnitTest :tool-package:testReleaseUnitTest :tool-runtime:testReleaseUnitTest 2>&1 | tee build/release-evidence/release-build.log
+      - name: Compare old and new APK certificates and release identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/10180752317/zip" > "$RUNNER_TEMP/original-release.zip"
+          python3 - <<'PY'
+          import hashlib, os, zipfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          with zipfile.ZipFile(root / 'original-release.zip') as archive:
+              apk = archive.read('toolbox-v0.7.6-release.apk')
+          assert hashlib.sha256(apk).hexdigest() == '46606345e404c669df680752bca44b44d6c14157a0dd648e3e0e15bc345a3bdb', 'Original release APK does not match the recorded build'
+          (root / 'original-release.apk').write_bytes(apk)
+          PY
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          apk="app/build/outputs/apk/release/app-release.apk"
+          "$tools/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/original-release.apk" > build/release-evidence/original-signature.txt
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > build/release-evidence/release-signature.txt
+          for evidence in original release; do
+            actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "build/release-evidence/$evidence-signature.txt")"
+            test "$actual" = "$ORIGINAL_CERT"
+          done
+          "$tools/aapt" dump badging "$apk" > build/release-evidence/release-badging.txt
+          grep -F "package: name='io.toolbox.host' versionCode='30' versionName='0.7.6'" build/release-evidence/release-badging.txt
+          if grep -q '^application-debuggable' build/release-evidence/release-badging.txt; then
+            echo 'Refusing to publish a debuggable APK' >&2
+            exit 1
+          fi
+          test -s app/build/outputs/mapping/release/mapping.txt
+          grep -Fx 'io.toolbox.host.background.ToolBoxBackgroundWorker -> io.toolbox.host.background.ToolBoxBackgroundWorker:' app/build/outputs/mapping/release/mapping.txt
+          cp "$apk" build/release-delivery/ToolBox-0.7.6-backup-restore-release.apk
+          {
+            printf 'BUILD_COMMIT=%s\n' "$GITHUB_SHA"
+            printf 'BUILD_REF=%s\n' "$GITHUB_REF"
+            printf 'TESTED_APPLICATION_SOURCE=%s\n' "$TESTED_SOURCE"
+            printf 'SOURCE_IDENTICAL_EXCEPT_RELEASE_WORKFLOW=PASS\n'
+            printf 'DEBUG_BEHAVIOR_TEST_RUN=%s\n' "$TESTED_RUN"
+            printf 'RELEASE_UNIT_TESTS=PASS\n'
+            printf 'BUILD_TYPE=release\nAPPLICATION_ID=io.toolbox.host\nVERSION_NAME=0.7.6\nVERSION_CODE=30\nAPK_DEBUGGABLE=false\n'
+            printf 'R8_MINIFICATION=PASS\nRESOURCE_SHRINKING=ENABLED\n'
+            printf 'APK_SIGNING_CERT_SHA256=%s\n' "$ORIGINAL_CERT"
+            printf 'ORIGINAL_RELEASE_SOURCE=34df8468b4e6762e322f6bfbc7b1b816a89c2603\nORIGINAL_RELEASE_ARTIFACT=10180752317\n'
+            printf 'OLD_AND_NEW_APK_CERTIFICATE_MATCH=PASS\nAPK_SIGNATURE_VERIFICATION=PASS\n'
+            printf 'DEVICE_VALIDATION=NOT_RUN\nMINIFIED_RUNTIME_DEVICE_TEST=NOT_RUN\nSCREENSHOT_VALIDATION=REMOVED_BY_USER_REQUEST\n'
+          } > build/release-delivery/BUILD_AND_SIGNING_RECEIPT.txt
+          cp build/release-evidence/original-signature.txt build/release-evidence/release-signature.txt build/release-delivery/
+          (cd build/release-delivery && sha256sum *.apk *.txt > SHA256SUMS)
+      - name: Upload signed release only after all checks passed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-backup-signed-release-${{ github.sha }}
+          path: build/release-delivery/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Ensure the private key is removed
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/toolbox-release-signing"
+      - name: Preserve non-secret build and test evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-backup-release-evidence-${{ github.sha }}
+          path: |
+            build/release-evidence/
+            app/build/test-results/testReleaseUnitTest/
+            core-data/build/test-results/testReleaseUnitTest/
+            tool-package/build/test-results/testReleaseUnitTest/
+            tool-runtime/build/test-results/testReleaseUnitTest/
+            app/build/outputs/mapping/release/
+          if-no-files-found: warn
+          retention-days: 90
