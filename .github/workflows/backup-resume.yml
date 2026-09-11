@@ -1,4 +1,4 @@
-name: Recover and verify backup implementation
+name: Retrieve preserved backup source
 
 on:
   push:
@@ -6,99 +6,47 @@ on:
     paths: [".github/workflows/backup-resume.yml"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  recover-and-verify:
+  retrieve:
     if: github.ref == 'refs/heads/codex/backup-restore'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          fetch-depth: 0
-      - name: Recover exact preserved source without overwriting concurrent changes
+      - name: Retrieve only the known source objects for local review
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          set -euo pipefail
-          test "$GITHUB_REPOSITORY" = 'gkeyes/ToolBox-Android'
-          git fetch origin refs/heads/codex/backup-restore
-          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
-          test "$(git rev-parse HEAD^)" = 'c46ac7fefefc48d19b4a6059560910c4d6f0a7b5'
           python3 - <<'PY'
           import base64, bz2, hashlib, json, os, urllib.request
           from pathlib import Path
-          root = 'https://api.github.com/repos/gkeyes/ToolBox-Android/'
+          root = 'https://api.github.com/repos/gkeyes/ToolBox-Android'
           def get(endpoint):
-              req = urllib.request.Request(root + endpoint, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-              with urllib.request.urlopen(req, timeout=60) as response:
+              req = urllib.request.Request(root + '/' + endpoint, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=30) as response:
                   return json.load(response)
-          repo = get('')
-          branch = repo['default_branch']
-          if branch != 'codex/refactor-lightweight-v2':
-              raise SystemExit('Default branch changed; manual reconciliation required, no source changes applied')
-          head = get('git/ref/heads/' + branch)['object']['sha']
-          if head != '34df8468b4e6762e322f6bfbc7b1b816a89c2603':
-              raise SystemExit('Default branch advanced; manual reconciliation required, no source changes applied')
-          tree = get('git/trees/759886a194e5aef8649a6919325182cf667698eb?recursive=1')
-          if tree.get('truncated'):
-              raise SystemExit('Source tree truncated')
-          entries = {item['path']: item for item in tree['tree']}
+          blobs = ['55e02621754d3abe80c708230f89b80d6527bdb3', '5322156717de99fa841ee5786905c8d52ce92c60', '2ec927c430d9f981b1d5f65674ab3bff0bdc8dcc', 'ce4157d2e632bb0d2a362bac6c6f484dd1fb703a', 'c8af6ea4eeb919a65390f9333eba82bc9bb66758', 'c51f4570c8ae35d46fd3bd5ae23905ba75e01d2f']
           chunks = []
-          for index in range(1, 7):
-              item = entries[f'.github/backup-transfer/part-{index:02d}.txt']
-              if item['type'] != 'blob':
-                  raise SystemExit('Unexpected source object type')
-              blob = get('git/blobs/' + item['sha'])
-              if blob['encoding'] != 'base64':
-                  raise SystemExit('Unexpected source blob encoding')
+          for sha in blobs:
+              blob = get('git/blobs/' + sha)
+              if blob['encoding'] != 'base64' or blob['size'] > 10000:
+                  raise SystemExit('Unexpected source object')
               chunks.append(base64.b64decode(blob['content']).decode('ascii').strip())
-          patch = bz2.decompress(base64.b64decode(''.join(chunks), validate=True))
-          if hashlib.sha256(patch).hexdigest() != '72df1eeaaf73f52a2d59aa59e45466916a3c33c79ea26939ae44c4b94761e056':
-              raise SystemExit('Source transfer integrity mismatch; nothing applied')
-          Path('/tmp/backup-implementation.patch').write_bytes(patch)
+          packed = base64.b64decode(''.join(chunks), validate=True)
+          decoder = bz2.BZ2Decompressor()
+          patch = decoder.decompress(packed, max_length=4000000)
+          if not decoder.eof or decoder.unused_data:
+              raise SystemExit('Invalid or oversized source archive')
+          Path('preserved-backup.patch').write_bytes(patch)
+          Path('SHA256SUMS.txt').write_text(hashlib.sha256(patch).hexdigest() + '  preserved-backup.patch\n')
+          print('Retrieved source patch bytes:', len(patch))
           PY
-          git apply --check /tmp/backup-implementation.patch
-          git apply --index /tmp/backup-implementation.patch
-          git rm .github/workflows/backup-source-transfer.yml .github/workflows/backup-resume.yml
-          test "$(git write-tree)" = 'fd45d7dac449614efe480056c77a18312cfde673'
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: implement local backup restore with validation and durable rollback'
-          git push origin HEAD:refs/heads/codex/backup-restore
-          git rev-parse HEAD > /tmp/backup-source-sha.txt
-          git archive --format=zip --output=/tmp/backup-source.zip HEAD
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          distribution: temurin
-          java-version: "21"
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
-        with:
-          packages: >-
-            platform-tools
-            platforms;android-37.0
-            build-tools;37.0.0
-      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - name: Compile Android and run existing unit-test tasks
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin :app:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest 2>&1 | tee /tmp/backup-build.log
-      - name: Preserve exact source and validation evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: backup-recovery-evidence-${{ github.run_id }}
+          name: preserved-backup-source
           path: |
-            /tmp/backup-source.zip
-            /tmp/backup-source-sha.txt
-            /tmp/backup-implementation.patch
-            /tmp/backup-build.log
-            app/build/test-results/
-            core-data/build/test-results/
-            tool-package/build/test-results/
-            app/build/outputs/apk/debug/
-          if-no-files-found: warn
-          retention-days: 14
+            preserved-backup.patch
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
