@@ -46,6 +46,10 @@ object RuntimeWebViewTheme {
         if (context.update(dark, configuration)) {
             webView.setBackgroundColor(if (dark) Color.BLACK else Color.WHITE)
             webView.dispatchConfigurationChanged(Configuration(context.resources.configuration))
+            // Native preference changes are asynchronous. Schedule a rendering traversal
+            // for attached documents without navigating or touching page-owned CSS.
+            webView.requestLayout()
+            webView.postInvalidateOnAnimation()
         }
     }
 }

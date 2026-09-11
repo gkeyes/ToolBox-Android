@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -21,6 +23,12 @@ class RuntimeThemeInheritanceTest {
             assertTrue(f.stores.repositories.settings.update { it.copy(theme = ThemeMode.DARK) } is DataResult.Success)
             f.install(1)
             val page = f.page()
+            // Wait for the real visible document's first frame before measuring live
+            // changes. evaluateJavascript alone also works in non-rendering WebViews.
+            evaluateThemeView(page, "window.firstThemeFrame=false;requestAnimationFrame(function(){window.firstThemeFrame=true});true")
+            withTimeout(10_000) {
+                while (evaluateThemeView(page, "window.firstThemeFrame") != true) delay(50)
+            }
             assertEquals(true, evaluateThemeView(page, "matchMedia('(prefers-color-scheme: dark)').matches"))
             evaluateThemeView(page, "window.themeSentinel = 'same-document'; window.themeEvents = 0; window.themeQuery = matchMedia('(prefers-color-scheme: dark)'); window.themeQuery.addEventListener('change', function(){window.themeEvents++});true")
             assertTrue(f.stores.repositories.settings.update { it.copy(theme = ThemeMode.LIGHT) } is DataResult.Success)
@@ -37,10 +45,18 @@ class RuntimeThemeInheritanceTest {
     }
 
     private suspend fun awaitThemeEvent(page: WebView, dark: Boolean, minimumEvents: Int) {
-        // Query evaluation may already see the new mode before the frame's change event.
-        withTimeout(10_000) {
-            while (evaluateThemeView(page, "window.themeQuery.matches === $dark && window.themeEvents >= $minimumEvents") != true) delay(50)
+        // Observe the delivered event first. Reading matches on every poll can flush
+        // style before the renderer processes the queued MediaQueryList notification.
+        val delivered = withTimeoutOrNull(10_000) {
+            while (evaluateThemeView(page, "window.themeEvents >= $minimumEvents") != true) delay(50)
+            true
+        } == true
+        val snapshot = evaluateThemeView(page, "JSON.stringify({events:window.themeEvents,existing:window.themeQuery.matches,fresh:matchMedia('(prefers-color-scheme: dark)').matches,css:getComputedStyle(document.body).backgroundColor,visibility:document.visibilityState,frame:window.firstThemeFrame})")
+        val view = withContext(Dispatchers.Main) {
+            "attached=${page.isAttachedToWindow},shown=${page.isShown},window=${page.windowVisibility},size=${page.width}x${page.height}"
         }
+        assertTrue("Expected dark=$dark events>=$minimumEvents; $view; $snapshot", delivered)
+        assertEquals(dark, evaluateThemeView(page, "window.themeQuery.matches"))
     }
 
     @Test fun systemModeTracksConfigurationButExplicitLightStaysLight() = runBlocking(Dispatchers.IO) {
