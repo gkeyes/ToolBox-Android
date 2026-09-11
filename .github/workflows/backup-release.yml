@@ -49,12 +49,13 @@ jobs:
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
         with:
+          log-accepted-android-sdk-licenses: false
           packages: >-
             platform-tools
             platforms;android-37.0
             build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - name: Build optimized release using the existing private signing key
+      - name: Build optimized release and run admitted unit tests with the original signing key
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_BASE64 }}
           TOOLBOX_SIGNING_STORE_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_PASSWORD }}
@@ -77,7 +78,7 @@ jobs:
           cert="$(sha256sum "$signing_dir/certificate.der" | awk '{print $1}')"
           test "$cert" = "$ORIGINAL_CERT"
           unset SIGNING_KEYSTORE_BASE64
-          ./gradlew --no-daemon verifySecurityInvariants :tool-api:verifyToolBoxApiContract :app:assembleRelease :app:testReleaseUnitTest :core-data:testReleaseUnitTest :tool-package:testReleaseUnitTest :tool-runtime:testReleaseUnitTest 2>&1 | tee build/release-evidence/release-build.log
+          ./gradlew --no-daemon verifySecurityInvariants :tool-api:verifyToolBoxApiContract :app:assembleRelease :app:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest 2>&1 | tee build/release-evidence/release-build.log
       - name: Compare old and new APK certificates and release identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -116,7 +117,7 @@ jobs:
             printf 'TESTED_APPLICATION_SOURCE=%s\n' "$TESTED_SOURCE"
             printf 'SOURCE_IDENTICAL_EXCEPT_RELEASE_WORKFLOW=PASS\n'
             printf 'DEBUG_BEHAVIOR_TEST_RUN=%s\n' "$TESTED_RUN"
-            printf 'RELEASE_UNIT_TESTS=PASS\n'
+            printf 'ADMITTED_DEBUG_UNIT_TESTS=PASS\nRELEASE_UNIT_TEST_TASK=NOT_AVAILABLE_IN_PROJECT\n'
             printf 'BUILD_TYPE=release\nAPPLICATION_ID=io.toolbox.host\nVERSION_NAME=0.7.6\nVERSION_CODE=30\nAPK_DEBUGGABLE=false\n'
             printf 'R8_MINIFICATION=PASS\nRESOURCE_SHRINKING=ENABLED\n'
             printf 'APK_SIGNING_CERT_SHA256=%s\n' "$ORIGINAL_CERT"
@@ -143,10 +144,10 @@ jobs:
           name: toolbox-backup-release-evidence-${{ github.sha }}
           path: |
             build/release-evidence/
-            app/build/test-results/testReleaseUnitTest/
-            core-data/build/test-results/testReleaseUnitTest/
-            tool-package/build/test-results/testReleaseUnitTest/
-            tool-runtime/build/test-results/testReleaseUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            core-data/build/test-results/testDebugUnitTest/
+            tool-package/build/test-results/testDebugUnitTest/
+            tool-runtime/build/test-results/testDebugUnitTest/
             app/build/outputs/mapping/release/
           if-no-files-found: warn
           retention-days: 90
