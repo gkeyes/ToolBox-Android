@@ -117,3 +117,7 @@ NextFlux 浏览器测试使用合成数据。
 [AssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)、
 [原生消息桥](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge)。
 第三方用途与授权信息见 [Third-party notices](THIRD_PARTY_NOTICES.md)，各独立小工具另保留自己的许可与上游来源。
+
+## 本地备份与恢复
+
+设置中提供宿主配置、完整工具包、ToolBox 存储及可迁移安全数据的 ZIP 导出/恢复。操作与迁移限制见 [备份与恢复](docs/备份与恢复.md)。

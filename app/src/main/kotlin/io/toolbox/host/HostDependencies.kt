@@ -47,6 +47,7 @@ internal class HostDependencies(
         (io.toolbox.tool.runtime.PreparedToolRuntime) -> io.toolbox.host.runtime.HostRuntimeContinuityHandlers,
     ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
     private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
+    private val backupDatabase: io.toolbox.core.data.backup.BackupDatabase? = null,
 ) {
     val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
 
@@ -89,12 +90,21 @@ internal class HostDependencies(
         )
     }
 
+    val packageMutations = io.toolbox.core.data.DataMutationLock()
+    val backupService by lazy {
+        io.toolbox.host.backup.HostBackupService(application, repositories, checkNotNull(backupDatabase),
+            packageOperations, packageMutations, backgroundOperations, runtimeSessions::backupRuntimeIds)
+    }
+    fun backupViewModel() = io.toolbox.host.backup.BackupViewModel(
+        backupService, io.toolbox.host.backup.AndroidBackupDocumentIO(application.contentResolver),
+    )
+
     val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        packageOperationsFactory(runtimeDataCleaner, backgroundOperations)
+        io.toolbox.host.backup.SerializedPackageOperations(packageOperationsFactory(runtimeDataCleaner, backgroundOperations), packageMutations)
     }
 
     val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects)
+        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects, mutationLock = packageMutations)
     }
 
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
@@ -115,6 +125,7 @@ internal fun interface HostDependenciesFactory {
 
 internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
     override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) { io.toolbox.host.backup.HostBackupService.recover(application, stores) }
         val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
         lateinit var dependencies: HostDependencies
         dependencies = HostDependencies(
@@ -142,6 +153,7 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
                 )
             },
             runtimeM2HandlerFactory = backgroundOperations,
+            backupDatabase = stores.backup,
         )
         backgroundOperations.attachRuntimeSessions(dependencies.runtimeSessions)
         return dependencies
@@ -243,6 +255,10 @@ internal class HostDependenciesViewModel(
             } catch (cancelled: CancellationException) {
                 openedStores?.close()
                 throw cancelled
+            } catch (failure: io.toolbox.tool.packagekit.backup.BackupException) {
+                openedStores?.close()
+                mutableState.value = HostBootstrapState.Error(HostBootstrapErrorCode.PRIVATE_STORAGE_UNAVAILABLE,
+                    io.toolbox.host.backup.backupMessage(failure))
             } catch (failure: CoreDataInitializationException) {
                 openedStores?.close()
                 mutableState.value = HostBootstrapState.Error(
@@ -303,6 +319,7 @@ internal class HostFeatureViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
+        io.toolbox.host.backup.BackupViewModel::class.java.isAssignableFrom(modelClass) -> dependencies.backupViewModel() as T
         RunningToolsViewModel::class.java.isAssignableFrom(modelClass) -> RunningToolsViewModel(
             sessions = dependencies.runtimeSessions.sessions,
             stopSession = dependencies.runtimeSessions::stopSession,

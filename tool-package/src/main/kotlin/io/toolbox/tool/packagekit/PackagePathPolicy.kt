@@ -13,7 +13,9 @@ internal object PackagePathPolicy {
     private val drivePath = Regex("^[A-Za-z]:")
     private val encodedSeparatorOrDot = Regex("%(?:2e|2f|5c)", RegexOption.IGNORE_CASE)
 
-    fun validate(raw: String, limits: PackageLimits): SafePackagePath {
+    fun validate(raw: String, limits: PackageLimits): SafePackagePath = validate(raw, limits.maxPathCharacters)
+
+    fun validate(raw: String, maxPathCharacters: Int): SafePackagePath {
         if (raw.isEmpty() || raw.indexOf('\u0000') >= 0 || raw.contains('\\')) {
             reject(PackageRejectionCode.PATH_INVALID, "Empty, NUL and backslash paths are forbidden")
         }
@@ -28,8 +30,8 @@ internal object PackagePathPolicy {
             reject(PackageRejectionCode.PATH_INVALID, "Empty, dot or parent path segment is forbidden: $raw")
         }
         val normalized = Normalizer.normalize(withoutTrailingSlash, Normalizer.Form.NFC)
-        if (normalized.length > limits.maxPathCharacters) {
-            reject(PackageRejectionCode.PATH_TOO_LONG, "Path exceeds ${limits.maxPathCharacters} characters: $raw")
+        if (normalized.length > maxPathCharacters) {
+            reject(PackageRejectionCode.PATH_TOO_LONG, "Path exceeds $maxPathCharacters characters: $raw")
         }
         return SafePackagePath(
             normalized = normalized,

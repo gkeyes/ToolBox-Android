@@ -264,6 +264,7 @@ internal fun ToolBoxNavigation(
                                 onToolPermissions = { navigate(ToolPermissionsRoute) },
                                 onDeveloperHelp = { navigate(DeveloperHelpRoute) },
                                 onAbout = { navigate(AboutRoute) },
+                                onBackupRestore = { navigate(BackupRestoreRoute) },
                             )
 
                             else -> error("Route is not a primary destination: $currentPrimaryRoute")
@@ -419,6 +420,14 @@ private fun SecondaryRouteContent(
     when (route) {
         ImportRoute -> ImportScreen(importViewModel, onPickPackage, onBack, onReady)
         AboutRoute -> AboutScreen(onBack, onReady)
+        BackupRestoreRoute -> {
+            val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
+            val backup = remember(dependencies, owner) {
+                ViewModelProvider(owner, HostFeatureViewModelFactory(dependencies))
+                    .get("host.backup", io.toolbox.host.backup.BackupViewModel::class.java)
+            }
+            io.toolbox.host.backup.BackupScreen(backup, onBack, onReady)
+        }
 
         is ToolDetailRoute -> ToolDetailRouteContent(
             toolId = route.toolId,

@@ -26,6 +26,7 @@ internal class PermissionMutationRunner(
     private val sideEffects: HostPermissionSideEffects,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val now: () -> Long = System::currentTimeMillis,
+    private val mutationLock: io.toolbox.core.data.DataMutationLock = io.toolbox.core.data.DataMutationLock(),
 ) {
     private val pending = mutableMapOf<String, Deferred<PermissionMutationResult>>()
     internal val activeToolCount: Int get() = synchronized(pending) { pending.size }
@@ -38,7 +39,7 @@ internal class PermissionMutationRunner(
             val previous = pending[toolId]
             val mutation = scope.async(start = CoroutineStart.LAZY) {
                 previous?.join()
-                action()
+                mutationLock.run { action() }
             }
             pending[toolId] = mutation
             mutation.invokeOnCompletion {

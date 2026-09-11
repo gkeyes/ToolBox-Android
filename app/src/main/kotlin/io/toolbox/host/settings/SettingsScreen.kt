@@ -32,6 +32,7 @@ internal fun SettingsScreen(
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
+    onBackupRestore: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsContent(
@@ -42,6 +43,7 @@ internal fun SettingsScreen(
         onToolPermissions = onToolPermissions,
         onDeveloperHelp = onDeveloperHelp,
         onAbout = onAbout,
+        onBackupRestore = onBackupRestore,
         onBackgroundEnabledChange = viewModel::setBackgroundEnabled,
     )
 }
@@ -55,6 +57,7 @@ internal fun SettingsContent(
     onToolPermissions: () -> Unit,
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
+    onBackupRestore: () -> Unit = {},
     onBackgroundEnabledChange: (Boolean) -> Unit = {},
 ) {
     LazyColumn(
@@ -104,6 +107,11 @@ internal fun SettingsContent(
                 )
             }
         }
+        item("backup-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("backup") { ToolBoxGroupedSurface {
+            ToolBoxSettingRow("备份与恢复", summary = "宿主设置、工具包与应用数据", icon = ToolBoxIconKey.Folder,
+                onClick = onBackupRestore, enabled = state.loaded, modifier = Modifier.testTag("settings_backup_restore"))
+        } }
         item("support-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
         item("support-title") { SectionHeader("支持") }
         item("before-support") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
