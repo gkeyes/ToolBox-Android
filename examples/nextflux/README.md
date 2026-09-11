@@ -1,6 +1,6 @@
 # NextFlux for ToolBox
 
-基于 [electh/nextflux](https://github.com/electh/nextflux) 的 ToolBox 小工具适配版，版本 **1.0.7（8）**。上游基线为 `a9f97de654d00f62cbbad877d583fae7cd76ec59`；原始项目说明及其许可原文保存在 [UPSTREAM.md](UPSTREAM.md)，依赖许可保存在 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
+基于 [electh/nextflux](https://github.com/electh/nextflux) 的 ToolBox 小工具适配版，版本 **1.0.8（9）**。上游基线为 `a9f97de654d00f62cbbad877d583fae7cd76ec59`；原始项目说明及其许可原文保存在 [UPSTREAM.md](UPSTREAM.md)，依赖许可保存在 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
 
 本版连接固定服务端 **https://miniflux.xiaochen.win**，需要 **ToolBox 0.6.7 或更新版本**。它是 Miniflux 客户端，订阅抓取、完整文章库和账号数据由 Miniflux 服务端管理。安装包不包含账号密码、Token 或 AI 密钥，使用时需输入自己的真实凭据。
 
