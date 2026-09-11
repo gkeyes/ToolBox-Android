@@ -21,7 +21,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 /** Real host session fixture, with a unique catalog/settings namespace and installed package. */
-internal class UpgradeFixture {
+internal class RuntimeThemeFixture {
     val application = ApplicationProvider.getApplicationContext<Application>()
     private val suffix = UUID.randomUUID().toString().replace("-", "")
     private val toolId = "io.toolbox.theme.t$suffix"
@@ -68,7 +68,7 @@ internal class UpgradeFixture {
     }
 }
 
-internal suspend fun evaluate(webView: WebView, script: String): Any? = withContext(Dispatchers.Main) {
+internal suspend fun evaluateThemeView(webView: WebView, script: String): Any? = withContext(Dispatchers.Main) {
     val result = CompletableDeferred<String>()
     webView.evaluateJavascript(script) { result.complete(it) }
     val value = JSONTokener(withTimeout(5_000) { result.await() }).nextValue()
