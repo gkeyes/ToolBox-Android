@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 interface RuntimeDataCleaner {
+    /** Exclusive stopped-runtime mutation; unlike clearThenRun, preserves browsing data and mode. */
+    suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T
+
     suspend fun <T> clearThenRun(
         toolId: String,
         action: suspend () -> T,
@@ -170,6 +173,20 @@ class RuntimeProfileManager internal constructor(
         } finally {
             if (!delivered) {
                 withContext(NonCancellable + Dispatchers.Main.immediate) { permit.close() }
+            }
+        }
+    }
+
+    override suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T {
+        // Record ownership inside the dispatched block: prompt cancellation can discard its result.
+        var acquired = false
+        try {
+            withContext(Dispatchers.Main.immediate) { acquired = RuntimeWebViewLifecycle.beginCleanup(toolId) }
+            check(acquired) { "Tool runtime is still in use" }
+            return action()
+        } finally {
+            if (acquired) withContext(NonCancellable + Dispatchers.Main.immediate) {
+                RuntimeWebViewLifecycle.finishCleanup(toolId)
             }
         }
     }

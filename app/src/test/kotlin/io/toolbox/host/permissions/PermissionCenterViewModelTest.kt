@@ -494,7 +494,12 @@ class PermissionCenterViewModelTest {
             override val displayName = "permission-fixture.tbx"
             override fun openStream() = ByteArrayInputStream(bytes)
         }
-        assertEquals(PackageInstallResult.Installed(TOOL_ID, versionCode, versionCode > 1), manager.importAndInstall(input))
+        val candidate = manager.importAndInstall(input)
+        // The fixture is unsigned: explicitly approve this update without changing any grants.
+        val installed = if (candidate is PackageInstallResult.ConfirmationRequired) {
+            manager.confirmInstall(candidate.confirmation.id)
+        } else candidate
+        assertEquals(PackageInstallResult.Installed(TOOL_ID, versionCode, versionCode > 1), installed)
     }
 }
 

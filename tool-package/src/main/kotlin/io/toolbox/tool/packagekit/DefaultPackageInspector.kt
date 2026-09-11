@@ -64,7 +64,7 @@ internal class DefaultPackageInspector(
                 reject(PackageRejectionCode.MANIFEST_INVALID, error.message ?: "manifest.json is invalid")
             }
             BundleEntryValidator.validate(manifest, extracted.bundleDirectory, extracted.hashes)
-            IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits)
+            val signingKeyId = IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits)
             Files.deleteIfExists(archivePath)
             PreparationResult.Prepared(
                 PreparedPackage(
@@ -78,6 +78,7 @@ internal class DefaultPackageInspector(
                     bundleDirectory = extracted.bundleDirectory,
                     fileHashes = extracted.hashes,
                     temporaryDirectory = temporaryDirectory,
+                    signingKeyId = signingKeyId,
                 ),
             )
         } catch (error: InspectionRejected) {

@@ -34,6 +34,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DirectPackageLifecycleTest {
+    // Continuous signed versions share one ephemeral fixture identity; never a production key.
+    private val signer = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+
     @Test
     fun validUtf8EntrySplitAtSniffBoundaryIsAccepted() = runBlocking {
         val root = Files.createTempDirectory("tool-package-utf8-boundary")
@@ -522,11 +525,88 @@ class DirectPackageLifecycleTest {
         }
     }
 
+    @Test
+    fun unsignedUpdateRequiresCandidateConfirmationWithoutChangingExistingChoices() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-unsigned-update")
+        try {
+            val data = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(root.toFile(), data.catalog, data.lifecycle, data.installs)
+            assertTrue(manager.importAndInstall(ByteInput("v1.tbx", packageBytes(signed = false))) is PackageInstallResult.Installed)
+            data.keyValues.put(TOOL_ID, "retained", "value", 1)
+            data.grants.put(PermissionGrant(TOOL_ID, "network", true, 2))
+            data.grants.put(PermissionGrant(TOOL_ID, "storage", false, 3))
+            val choices = data.grants.observeGrants(TOOL_ID).first()
+            val pending = manager.importAndInstall(ByteInput("v2.tbx", packageBytes(versionCode = 2, signed = false)))
+                as PackageInstallResult.ConfirmationRequired
+            assertEquals(PackageVersionConfirmationKind.UPDATE, pending.confirmation.kind)
+            assertEquals(1, data.catalog.observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+            assertFalse(Files.exists(root.resolve("miniapps/$TOOL_ID/versions/2")))
+            assertEquals(choices, data.grants.observeGrants(TOOL_ID).first())
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 2, true), manager.confirmInstall(pending.confirmation.id))
+            assertEquals(choices, data.grants.observeGrants(TOOL_ID).first())
+            assertEquals("value", data.keyValues.observe(TOOL_ID, "retained").first()!!.valueJson)
+            assertTrue(manager.confirmInstall(pending.confirmation.id) is PackageInstallResult.Failed)
+        } finally { deleteTree(root) }
+    }
+
+    @Test
+    fun signingChangesAndSignedToUnsignedDoNotReplaceExistingInstallation() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-signing-change")
+        try {
+            val data = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(root.toFile(), data.catalog, data.lifecycle, data.installs)
+            assertTrue(manager.importAndInstall(ByteInput("v1.tbx", packageBytes())) is PackageInstallResult.Installed)
+            val old = data.catalog.observeTool(TOOL_ID).first()
+            data.keyValues.put(TOOL_ID, "retained", "value", 1)
+            for (bytes in listOf(
+                packageBytes(versionCode = 2, signed = false),
+                packageBytes(versionCode = 2, signingPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()),
+            )) {
+                val result = manager.importAndInstall(ByteInput("changed.tbx", bytes)) as PackageInstallResult.Failed
+                assertEquals(PackageOperationFailureCode.SIGNING_IDENTITY_CHANGED, result.failure.code)
+                assertEquals(old, data.catalog.observeTool(TOOL_ID).first())
+                assertEquals("value", data.keyValues.observe(TOOL_ID, "retained").first()!!.valueJson)
+                assertNoTransientFiles(root)
+            }
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 2, true), manager.importAndInstall(ByteInput("same-signer.tbx", packageBytes(versionCode = 2))))
+        } finally { deleteTree(root) }
+    }
+
+    @Test
+    fun confirmationRejectsChangedOldInstallAndTamperedPreparedCandidate() = runBlocking {
+        val root = Files.createTempDirectory("tool-package-bound-confirmation")
+        try {
+            val data = InMemoryCoreData.create()
+            val manager = ToolPackageManagers.create(root.toFile(), data.catalog, data.lifecycle, data.installs)
+            manager.importAndInstall(ByteInput("v1.tbx", packageBytes(signed = false)))
+            val pending = manager.importAndInstall(ByteInput("v2.tbx", packageBytes(versionCode = 2, signed = false)))
+                as PackageInstallResult.ConfirmationRequired
+            // Even same versionCode with different installedAt/hash is a different old install.
+            val old = data.catalog.observeTool(TOOL_ID).first()!!
+            val tx = "external-update"
+            data.installs.begin(InstallTransaction(tx, TOOL_ID, 1, InstallTransactionState.PREPARING, 9, 9))
+            data.lifecycle.commitInstall(CatalogInstallAttempt(tx, old.metadata,
+                old.currentVersion.copy(installedAt = 9), data.grants.observeGrants(TOOL_ID).first()))
+            val stale = manager.confirmInstall(pending.confirmation.id) as PackageInstallResult.Failed
+            assertEquals(PackageOperationFailureCode.CONFIRMATION_EXPIRED, stale.failure.code)
+            val next = manager.importAndInstall(ByteInput("v2.tbx", packageBytes(versionCode = 2, signed = false)))
+                as PackageInstallResult.ConfirmationRequired
+            Files.walk(root.resolve("miniapps/.imports")).use { paths ->
+                val html = paths.filter { it.fileName.toString() == "index.html" }.findFirst().orElseThrow()
+                Files.writeString(html, "<!doctype html><html><body>altered</body></html>")
+            }
+            assertTrue(manager.confirmInstall(next.confirmation.id) is PackageInstallResult.Failed)
+            assertEquals(1, data.catalog.observeTool(TOOL_ID).first()!!.currentVersion.versionCode)
+            assertNoTransientFiles(root)
+        } finally { deleteTree(root) }
+    }
+
     private fun packageBytes(
         versionCode: Int = 1,
         minHostVersion: String = "0.2.0",
         entryHtml: ByteArray = HTML,
-        signed: Boolean = false,
+        signed: Boolean = true,
+        signingPair: java.security.KeyPair = signer,
         corruptIntegrity: Boolean = false,
         corruptSignature: Boolean = false,
         extra: Map<String, ByteArray> = emptyMap(),
@@ -539,7 +619,7 @@ class DirectPackageLifecycleTest {
         val entries = linkedMapOf<String, ByteArray>().apply {
             putAll(content)
             put("integrity.json", integrity)
-            if (signed) put("signature.json", signature(integrity, corruptSignature).toByteArray())
+            if (signed) put("signature.json", signature(integrity, corruptSignature, signingPair).toByteArray())
         }
         return zip(entries)
     }
@@ -556,8 +636,7 @@ class DirectPackageLifecycleTest {
         return "{\"schemaVersion\":1,\"algorithm\":\"SHA-256\",\"files\":{$files}}"
     }
 
-    private fun signature(integrity: ByteArray, corrupt: Boolean): String {
-        val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+    private fun signature(integrity: ByteArray, corrupt: Boolean, pair: java.security.KeyPair): String {
         val value = Signature.getInstance("Ed25519").run {
             initSign(pair.private)
             update(integrity)

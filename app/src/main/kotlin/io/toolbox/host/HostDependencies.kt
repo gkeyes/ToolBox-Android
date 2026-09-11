@@ -61,6 +61,9 @@ internal class HostDependencies(
     )
 
     val runtimeDataCleaner: RuntimeDataCleaner = object : RuntimeDataCleaner {
+        override suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T =
+            deferredRuntimeProfileManager.value.withPreservedData(toolId, action)
+
         override suspend fun <T> clearThenRun(
             toolId: String,
             action: suspend () -> T,

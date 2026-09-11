@@ -45,7 +45,7 @@ internal data class HostImportConfirmation(
     val kind: HostImportConfirmationKind,
 )
 
-internal enum class HostImportConfirmationKind { SAME_VERSION, DOWNGRADE }
+internal enum class HostImportConfirmationKind { SAME_VERSION, DOWNGRADE, UPDATE }
 
 internal sealed interface HostImportCancellationResult {
     data object Cancelled : HostImportCancellationResult

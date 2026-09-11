@@ -504,3 +504,13 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 本独立仓库的宿主只呈现 OpenDesign Liquid Glass；Miuix 是底层控件依赖，不提供第二主题入口。
 唯一视觉规范见 [DESIGN.md](../DESIGN.md)。导入增加原生结果页，复用原导入器；其余包、权限、网络、
 WebView 和数据库合同不变。旧主题风格字段仅为读取历史设置保留，不再控制宿主外观。
+
+## TBX 更新数据保留（0.7.6）
+
+版本替换在宿主释放旧运行时（包括正在创建的实例）后，持有独占 profile 与普通／安全存储屏障，完成文件发布、Room 提交或提交前回滚。更新收尾仅失效图标缓存；卸载和用户主动关闭安全存储继续执行删除。现存三行 replacement-cleanup 标记重放同一非破坏性收尾，不停止提交后新建的运行时。
+
+从目录记录 hash 锁定的旧 bundle 验证原 Ed25519 主体，不建立发布者信任库。签名一致可按版本策略更新；旧包未签名时复用导入确认，将批准绑定到私有候选包及完整旧 ToolVersion。已签名包更换主体或变为未签名均拒绝原位替换。确认不会通过关闭再开启权限实现；用户关闭的权限保持关闭，新增能力默认关闭。
+
+存储逻辑 key、命名空间、origin、profile 名和 KeyStore alias 不变，不修改 Room schema。解密仅取已有密钥；缺密钥或密文损坏报错且不创建替代密钥或覆盖记录。旧版本已删除的原密钥／密文不能通过此修复恢复。
+
+回归入口：`TbxUpgradePersistenceTest`、`TbxUpgradeRuntimeTest`、`TbxUpgradeProcessTest`、`DirectPackageLifecycleTest`。前者保留了在 48bedb53 宿主实现上运行失败的原密文保留断言；后续同一断言须通过。过程重启仅由 GitHub 隔离模拟器分两次 instrumentation 验证，中间不重装或清数据。实际运行结果以 CI 产物为准，编译不等于执行，不包含截图或真机验收。
