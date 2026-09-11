@@ -1,13 +1,10 @@
 name: Apply checked backup implementation
-
 on:
   push:
     branches: ["codex/backup-restore"]
     paths: [".github/workflows/backup-resume.yml"]
-
 permissions:
   contents: write
-
 jobs:
   apply-and-compile:
     if: github.ref == 'refs/heads/codex/backup-restore'
@@ -17,47 +14,40 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
-      - name: Apply the exact patch already checked in an isolated checkout
+      - name: Apply verified application sources only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch origin refs/heads/codex/backup-restore
-          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+          git fetch origin refs/heads/codex/backup-restore refs/heads/codex/refactor-lightweight-v2
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/codex/backup-restore)"
+          test "$(git rev-parse origin/codex/refactor-lightweight-v2)" = '34df8468b4e6762e322f6bfbc7b1b816a89c2603'
           python3 - <<'PY'
           import base64, bz2, hashlib, json, os, urllib.request
           from pathlib import Path
-          root = 'https://api.github.com/repos/gkeyes/ToolBox-Android'
-          def get(endpoint):
-              req = urllib.request.Request(root + ('/' + endpoint if endpoint else ''), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-              with urllib.request.urlopen(req, timeout=30) as response:
-                  return json.load(response)
-          repo = get('')
-          if repo['default_branch'] != 'codex/refactor-lightweight-v2':
-              raise SystemExit('Default branch changed; no source changes applied')
-          if get('git/ref/heads/codex/refactor-lightweight-v2')['object']['sha'] != '34df8468b4e6762e322f6bfbc7b1b816a89c2603':
-              raise SystemExit('Default branch advanced; no source changes applied')
           blobs = ['55e02621754d3abe80c708230f89b80d6527bdb3', '5322156717de99fa841ee5786905c8d52ce92c60', '2ec927c430d9f981b1d5f65674ab3bff0bdc8dcc', 'ce4157d2e632bb0d2a362bac6c6f484dd1fb703a', 'c8af6ea4eeb919a65390f9333eba82bc9bb66758', 'c51f4570c8ae35d46fd3bd5ae23905ba75e01d2f']
           chunks = []
           for sha in blobs:
-              blob = get('git/blobs/' + sha)
+              req = urllib.request.Request('https://api.github.com/repos/gkeyes/ToolBox-Android/git/blobs/' + sha, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  blob = json.load(response)
               if blob['encoding'] != 'base64' or blob['size'] > 10000:
                   raise SystemExit('Unexpected source object')
               chunks.append(base64.b64decode(blob['content']).decode('ascii').strip())
           decoder = bz2.BZ2Decompressor()
           patch = decoder.decompress(base64.b64decode(''.join(chunks), validate=True), max_length=4000000)
           if not decoder.eof or decoder.unused_data or hashlib.sha256(patch).hexdigest() != '72df1eeaaf73f52a2d59aa59e45466916a3c33c79ea26939ae44c4b94761e056':
-              raise SystemExit('Source integrity mismatch; no source changes applied')
+              raise SystemExit('Source integrity mismatch; nothing applied')
           Path('/tmp/backup-implementation.patch').write_bytes(patch)
           PY
-          git apply --check /tmp/backup-implementation.patch
-          git apply --index /tmp/backup-implementation.patch
-          git rm .github/workflows/backup-resume.yml .github/workflows/backup-source-transfer.yml
+          git apply --exclude='.github/*' --check /tmp/backup-implementation.patch
+          git apply --exclude='.github/*' --index /tmp/backup-implementation.patch
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: add local backup restore service UI archive validation and rollback tests'
-          git push origin HEAD:refs/heads/codex/backup-restore
+          git commit -m 'feat: implement local backup restore service UI validation and rollback tests'
           git rev-parse HEAD | tee /tmp/implementation-sha.txt
+          git archive --format=zip --output=/tmp/implementation-source.zip HEAD
+          git push origin HEAD:refs/heads/codex/backup-restore
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
@@ -69,17 +59,18 @@ jobs:
             platforms;android-37.0
             build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - name: Compile actual Android implementation and run unit tests
+      - name: Compile implementation and execute unit tests
         run: |
           set -euo pipefail
           ./gradlew --no-daemon verifySecurityInvariants :tool-api:verifyToolBoxApiContract :app:assembleDebug :app:compileDebugAndroidTestKotlin :core-data:compileDebugAndroidTestKotlin :app:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest 2>&1 | tee /tmp/implementation-build.log
-      - name: Preserve compilation evidence
+      - name: Preserve actual source and evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: backup-implementation-build-${{ github.run_id }}
           path: |
             /tmp/implementation-sha.txt
+            /tmp/implementation-source.zip
             /tmp/implementation-build.log
             app/build/test-results/
             core-data/build/test-results/
