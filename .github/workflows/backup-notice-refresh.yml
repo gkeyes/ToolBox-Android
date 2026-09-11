@@ -1,0 +1,52 @@
+name: Reconcile Nextflux version metadata
+on:
+  push:
+    branches: ["codex/backup-restore"]
+    paths: [".github/workflows/backup-notice-refresh.yml"]
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - name: Preserve every license text and verify dependency graph before metadata update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/codex/backup-restore
+          test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
+          python3 - <<'PY'
+          import hashlib, json, re, subprocess
+          from pathlib import Path
+          root = Path('examples/nextflux')
+          before = json.loads(subprocess.check_output(['git', 'show', '34df8468b4e6762e322f6bfbc7b1b816a89c2603:examples/nextflux/package-lock.json']))
+          data = (root / 'package-lock.json').read_bytes()
+          after = json.loads(data)
+          version = after['version']
+          for lock in (before, after):
+              lock.pop('version')
+              lock['packages'][''].pop('version')
+          assert before == after, 'Dependencies changed: regenerate full license inventory, do not update metadata only'
+          p = root / 'THIRD_PARTY_NOTICES.txt'
+          original = p.read_text()
+          updated, count = re.subn(r'^Lockfile SHA-256: [0-9a-f]{64}$', 'Lockfile SHA-256: ' + hashlib.sha256(data).hexdigest(), original, flags=re.M)
+          assert count == 1
+          updated, count = re.subn(r'^Application metadata updated to .*; dependency graph and license inventory unchanged\.$', f'Application metadata updated to {version}; dependency graph and license inventory unchanged.', updated, flags=re.M)
+          assert count == 1
+          assert original.split('DEPENDENCY INVENTORY\n', 1)[1] == updated.split('DEPENDENCY INVENTORY\n', 1)[1]
+          p.write_text(updated)
+          p = root / 'README.md'
+          text = p.read_text().replace('版本 **1.0.7（8）**', '版本 **1.0.8（9）**')
+          p.write_text(text)
+          print('All dependency versions, integrity hashes and complete license texts preserved.')
+          PY
+          git diff --check
+          git add examples/nextflux/THIRD_PARTY_NOTICES.txt examples/nextflux/README.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: reconcile Nextflux 1.0.8 package provenance without changing licenses'
+          git push origin HEAD:refs/heads/codex/backup-restore
