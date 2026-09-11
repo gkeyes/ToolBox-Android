@@ -1,6 +1,7 @@
 package io.toolbox.host.runtime
 
 import android.content.res.Configuration
+import android.webkit.WebView
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.ThemeMode
 import kotlinx.coroutines.Dispatchers
@@ -21,20 +22,25 @@ class RuntimeThemeInheritanceTest {
             f.install(1)
             val page = f.page()
             assertEquals(true, evaluateThemeView(page, "matchMedia('(prefers-color-scheme: dark)').matches"))
-            evaluateThemeView(page, "window.themeSentinel = 'same-document'; window.themeEvents = 0; matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){window.themeEvents++});true")
+            evaluateThemeView(page, "window.themeSentinel = 'same-document'; window.themeEvents = 0; window.themeQuery = matchMedia('(prefers-color-scheme: dark)'); window.themeQuery.addEventListener('change', function(){window.themeEvents++});true")
             assertTrue(f.stores.repositories.settings.update { it.copy(theme = ThemeMode.LIGHT) } is DataResult.Success)
-            withTimeout(10_000) {
-                while (evaluateThemeView(page, "matchMedia('(prefers-color-scheme: dark)').matches") != false) delay(50)
-            }
+            awaitThemeEvent(page, dark = false, minimumEvents = 1)
+            assertEquals("rgb(250, 250, 250)", evaluateThemeView(page, "getComputedStyle(document.body).backgroundColor"))
             assertEquals("same-document", evaluateThemeView(page, "window.themeSentinel"))
             assertTrue((evaluateThemeView(page, "window.themeEvents") as Number).toInt() > 0)
             assertSame(page, f.page())
             assertTrue(f.stores.repositories.settings.update { it.copy(theme = ThemeMode.MONET_DARK) } is DataResult.Success)
-            withTimeout(10_000) {
-                while (evaluateThemeView(page, "matchMedia('(prefers-color-scheme: dark)').matches") != true) delay(50)
-            }
+            awaitThemeEvent(page, dark = true, minimumEvents = 2)
+            assertEquals("rgb(18, 18, 18)", evaluateThemeView(page, "getComputedStyle(document.body).backgroundColor"))
             assertEquals("same-document", evaluateThemeView(page, "window.themeSentinel"))
         } finally { f.close() }
+    }
+
+    private suspend fun awaitThemeEvent(page: WebView, dark: Boolean, minimumEvents: Int) {
+        // Query evaluation may already see the new mode before the frame's change event.
+        withTimeout(10_000) {
+            while (evaluateThemeView(page, "window.themeQuery.matches === $dark && window.themeEvents >= $minimumEvents") != true) delay(50)
+        }
     }
 
     @Test fun systemModeTracksConfigurationButExplicitLightStaysLight() = runBlocking(Dispatchers.IO) {

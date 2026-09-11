@@ -42,16 +42,17 @@ class BackupScreenTest {
         compose.onNodeWithTag("backup_page").performScrollToNode(hasTestTag("backup_progress"))
         compose.onNodeWithTag("backup_progress").assertExists()
         compose.runOnIdle { state.value = BackupUiState.Result("恢复已完成", "请重新打开工具") }
-        compose.onNodeWithTag("backup_page").performScrollToNode(hasTestTag("backup_result"))
-        compose.onNodeWithTag("backup_result").assertTextEquals("恢复已完成")
+        // Card merges descendant semantics; inspect the original title node without weakening its text assertion.
+        compose.onNodeWithTag("backup_page", useUnmergedTree = true).performScrollToNode(hasTestTag("backup_result"))
+        compose.onNodeWithTag("backup_result", useUnmergedTree = true).assertTextEquals("恢复已完成")
     }
     @Test fun conflictsAndRunningTasksRequireExplicitConfirmation() {
         val root = File(compose.activity.cacheDir, "backup-ui-fixture").apply { mkdirs() }
         val preview = RestorePreview(PreparedBackup(root, BackupContents("0.7.6", 1, emptyList())), listOf(RestoreToolPlan("io.toolbox.fixture", "Fixture", "2.0", "1.0")), emptyMap(), setOf("io.toolbox.fixture"), setOf("task"), emptyList())
         var confirmed = 0
         compose.activity.setContent { ToolBoxTheme { BackupContent(BackupUiState.ConfirmRestore(preview), {}, {}, {}, {}, { confirmed++ }, {}) } }
-        compose.onNodeWithTag("backup_page").performScrollToNode(hasTestTag("backup_conflicts"))
-        compose.onNodeWithTag("backup_conflicts").assertTextContains("1 个与本机冲突", substring = true)
+        compose.onNodeWithTag("backup_page", useUnmergedTree = true).performScrollToNode(hasTestTag("backup_conflicts"))
+        compose.onNodeWithTag("backup_conflicts", useUnmergedTree = true).assertTextContains("1 个与本机冲突", substring = true)
         compose.runOnIdle { assertEquals(0, confirmed) }
         compose.onNodeWithTag("backup_page").performScrollToNode(hasTestTag("backup_confirm_restore"))
         compose.onNodeWithTag("backup_confirm_restore").performClick()

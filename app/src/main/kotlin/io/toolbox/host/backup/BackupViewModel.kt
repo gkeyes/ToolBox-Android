@@ -25,7 +25,7 @@ internal class BackupViewModel(private val operations: BackupOperations, private
     private var preview: RestorePreview? = null
     @Volatile private var publishedResult: BackupUiState.Result? = null
     private var restoring = false
-    val busy get() = job?.isActive == true
+    val busy get() = job != null
 
     fun requestExport() { if (!busy) mutableState.value = BackupUiState.ExportConsent }
     fun prepareExport() = runOperation {

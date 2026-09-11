@@ -1,10 +1,14 @@
 package io.toolbox.host.runtime
 
 import android.app.Application
+import android.view.ViewGroup
 import android.webkit.WebView
+import android.widget.FrameLayout
+import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import io.toolbox.core.data.CoreDataFactory
 import io.toolbox.host.HostImportResult
+import io.toolbox.host.MainActivity
 import io.toolbox.host.ProductionHostDependenciesFactory
 import io.toolbox.tool.packagekit.PackageInput
 import java.io.ByteArrayInputStream
@@ -28,6 +32,7 @@ internal class RuntimeThemeFixture {
     private val databaseName = "theme-$suffix.db"
     val stores = CoreDataFactory.create(application, databaseName, "theme-$suffix")
     val dependencies = ProductionHostDependenciesFactory.create(application, stores)
+    private var activity: ActivityScenario<MainActivity>? = null
 
     suspend fun install(version: Int) {
         val manifest = """{"schemaVersion":1,"id":"$toolId","name":"Theme fixture","version":"1.0.$version","versionCode":$version,"entry":"index.html","apiVersion":"1.0","minHostVersion":"0.3.3","permissions":[],"securityProfile":"strict"}"""
@@ -35,7 +40,7 @@ internal class RuntimeThemeFixture {
             ZipOutputStream(output).use { zip ->
                 for ((path, text) in mapOf(
                     "manifest.json" to manifest,
-                    "index.html" to "<!doctype html><html><head><meta name='color-scheme' content='light dark'></head><body>Theme fixture</body></html>",
+                    "index.html" to "<!doctype html><html><head><meta name='color-scheme' content='light dark'><style>body{background-color:rgb(250,250,250)}@media(prefers-color-scheme:dark){body{background-color:rgb(18,18,18)}}</style></head><body>Theme fixture</body></html>",
                 )) {
                     zip.putNextEntry(ZipEntry(path)); zip.write(text.toByteArray()); zip.closeEntry()
                 }
@@ -51,16 +56,30 @@ internal class RuntimeThemeFixture {
 
     suspend fun page(): WebView {
         dependencies.runtimeSessions.openForeground(toolId)
-        return withTimeout(20_000) {
+        val webView = withTimeout(20_000) {
             val state = dependencies.runtimeSessions.state(toolId).first {
                 it is RuntimeUiState.Error || it is RuntimeUiState.Ready && it.mainEntryLoaded
             }
             check(state is RuntimeUiState.Ready) { "Fixture runtime failed: $state" }
             state.webView
         }
+        // MediaQueryList events are delivered during rendering. An unattached WebView
+        // can answer evaluateJavascript while never producing a visible rendering frame.
+        val scenario = activity ?: ActivityScenario.launch(MainActivity::class.java).also { activity = it }
+        scenario.onActivity { host ->
+            if (webView.parent == null) {
+                host.setContentView(FrameLayout(host).apply {
+                    addView(webView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                })
+            }
+        }
+        return webView
     }
 
     suspend fun close() {
+        activity?.onActivity { host -> host.setContentView(FrameLayout(host)) }
+        activity?.close()
+        activity = null
         dependencies.runtimeSessions.releaseTool(toolId)
         dependencies.packageOperations.deleteTool(toolId)
         stores.close()

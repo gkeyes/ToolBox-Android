@@ -64,12 +64,26 @@ class BackupViewModelTest {
         engine.entered.await(); model.cancel()
         assertEquals("已取消", model.await<BackupUiState.Result>().title); assertTrue(engine.cleaned)
     }
+    @Test fun cancellationKeepsAdmissionClosedUntilRollbackCleanupFinishes() = runTest(dispatcher) {
+        val engine = FakeEngine().apply { block = true; holdCleanup = true }; val model = model(engine)
+        model.restoreSelected("local"); model.await<BackupUiState.ConfirmRestore>(); model.confirmRestore()
+        engine.entered.await(); model.cancel(); engine.cleanupEntered.await()
+        try {
+            assertTrue(model.busy)
+            model.requestExport()
+            assertTrue(model.state.value is BackupUiState.Progress)
+        } finally { engine.releaseCleanup.complete(Unit) }
+        assertEquals("已取消", model.await<BackupUiState.Result>().title)
+        assertTrue(engine.cleaned)
+    }
     private inner class FakeEngine : BackupOperations {
         override var committed = false
         var output: File? = null
         var exports = 0; var restores = 0; var refreshes = 0
         var failure: Exception? = null
-        var block = false; var cleaned = false
+        var block = false; var cleaned = false; var holdCleanup = false
+        val cleanupEntered = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
         val entered = CompletableDeferred<Unit>()
         override suspend fun export(progress: (String, Int) -> Unit): BackupExport {
             exports++; val dir = temporary.newFolder(); output = File(dir, "backup.zip").apply { writeText("fixture") }
@@ -83,7 +97,13 @@ class BackupViewModelTest {
         override suspend fun restore(preview: RestorePreview, progress: (String, Int) -> Unit): List<String> {
             restores++; entered.complete(Unit)
             try { if (block) awaitCancellation(); failure?.let { throw it }; committed = true; return emptyList() }
-            finally { cleaned = true }
+            finally {
+                withContext(NonCancellable) {
+                    cleanupEntered.complete(Unit)
+                    if (holdCleanup) releaseCleanup.await()
+                    cleaned = true
+                }
+            }
         }
     }
 }
