@@ -1,6 +1,7 @@
 package io.toolbox.host
 
 import android.app.Application
+import android.content.res.Configuration
 import io.toolbox.core.data.CoreDataFactory
 import io.toolbox.core.data.CoreDataStores
 import io.toolbox.host.background.BackgroundWorkerDependencies
@@ -29,6 +30,12 @@ class ToolBoxApplication : Application(), BackgroundWorkerDependencyOwner {
                 throw failure
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Do not initialize persistence on the main thread just because Android changed configuration.
+        dependencies?.runtimeSessions?.onSystemConfigurationChanged(newConfig)
     }
 
     override fun backgroundWorkerDependencies(): BackgroundWorkerDependencies =

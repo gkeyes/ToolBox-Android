@@ -17,6 +17,15 @@ class DataMutationLockTest {
         release.complete(Unit); joinAll(first, second)
         assertEquals(listOf("snapshot", "commit", "writer"), events)
     }
+    @Test fun packageAndRepositoryLocksRemainReentrantAcrossNestedLocks() = runBlocking {
+        val packages = DataMutationLock()
+        val repositories = DataMutationLock()
+        // Restore holds both locks and calls the ordinary installer, which re-enters them.
+        val result = withTimeout(2_000) {
+            packages.run { repositories.run { packages.run { repositories.run { "installed" } } } }
+        }
+        assertEquals("installed", result)
+    }
     @Test fun cancellationReleasesLockAndFailedRecoveryBlocksWrites() = runBlocking {
         val lock = DataMutationLock()
         val entered = CompletableDeferred<Unit>()

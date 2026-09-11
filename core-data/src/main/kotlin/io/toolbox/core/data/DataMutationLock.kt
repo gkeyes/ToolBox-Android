@@ -13,14 +13,15 @@ class DataRecoveryRequiredException : IllegalStateException("RESTORE_RECOVERY_RE
 class DataMutationLock {
     private val mutex = Mutex()
     @Volatile private var blocked = false
-    private class Owner(val lock: DataMutationLock) : AbstractCoroutineContextElement(Key) {
+    private class Owner(val locks: Set<DataMutationLock>) : AbstractCoroutineContextElement(Key) {
         companion object Key : CoroutineContext.Key<Owner>
     }
     suspend fun <T> run(action: suspend () -> T): T {
-        if (currentCoroutineContext()[Owner]?.lock === this) return action()
+        val held = currentCoroutineContext()[Owner]?.locks.orEmpty()
+        if (this in held) return action()
         return mutex.withLock {
             if (blocked) throw DataRecoveryRequiredException()
-            withContext(Owner(this)) { action() }
+            withContext(Owner(held + this)) { action() }
         }
     }
     suspend fun <T> write(action: suspend () -> DataResult<T>): DataResult<T> = try { run(action) }

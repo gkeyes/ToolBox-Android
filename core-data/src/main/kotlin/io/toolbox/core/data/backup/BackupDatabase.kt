@@ -96,8 +96,8 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
         require(categoryId == null || categoryId.length <= 200)
         database.withTransaction {
             val sql = database.openHelper.writableDatabase
-            sql.execSQL("UPDATE tools SET installedAt=?, lastOpenedAt=?, pinnedOrder=?, categoryId=? WHERE id=?", arrayOf(installedAt, lastOpenedAt, pinnedOrder, categoryId, toolId))
-            sql.execSQL("UPDATE tool_versions SET installedAt=? WHERE toolId=?", arrayOf(versionInstalledAt, toolId))
+            sql.execSQL("UPDATE tools SET installedAt=?, lastOpenedAt=?, pinnedOrder=?, categoryId=? WHERE id=?", arrayOf<Any?>(installedAt, lastOpenedAt, pinnedOrder, categoryId, toolId))
+            sql.execSQL("UPDATE tool_versions SET installedAt=? WHERE toolId=?", arrayOf<Any?>(versionInstalledAt, toolId))
         }
     }
 
