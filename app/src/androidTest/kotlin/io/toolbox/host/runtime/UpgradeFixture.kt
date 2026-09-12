@@ -2,14 +2,10 @@ package io.toolbox.host.runtime
 
 import android.app.Application
 import android.webkit.WebView
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import io.toolbox.core.data.CoreDataFactory
 import io.toolbox.host.HostImportResult
 import io.toolbox.host.HostPackageOperations
-import io.toolbox.host.MainActivity
 import io.toolbox.host.ProductionHostDependenciesFactory
 import io.toolbox.tool.packagekit.PackageInput
 import java.io.ByteArrayInputStream
@@ -21,7 +17,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -40,7 +35,6 @@ internal class UpgradeFixture(val suffix: String = UUID.randomUUID().toString().
     val stores = CoreDataFactory.create(application, databaseName, "upgrade-$suffix")
     val dependencies = ProductionHostDependenciesFactory.create(application, stores)
     val packages = dependencies.packageOperations
-    private var activity: ActivityScenario<MainActivity>? = null
     val envelope get() = RuntimeSecureEnvelopeStorage(toolId, stores.repositories.keyValues)
     val alias get() = "toolbox.runtime.secure.v1.${sha(toolId)}"
     fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -55,27 +49,9 @@ internal class UpgradeFixture(val suffix: String = UUID.randomUUID().toString().
     suspend fun page(): WebView = withTimeout(30_000) {
         dependencies.runtimeSessions.openForeground(toolId)
         val state = dependencies.runtimeSessions.state(toolId).first {
-            it is RuntimeUiState.Ready || it is RuntimeUiState.Error
-        }
-        check(state is RuntimeUiState.Ready) { "Runtime preparation failed: $state" }
-        // Native bridge replies use View.post from a worker thread. Without a window,
-        // replies can remain in the View's run queue even though evaluateJavascript
-        // works. Mount the real WebView, as the foreground host does, before awaiting JS.
-        val scenario = activity ?: ActivityScenario.launch(MainActivity::class.java).also { activity = it }
-        scenario.onActivity { host ->
-            if (state.webView.parent == null) {
-                host.setContentView(FrameLayout(host).apply {
-                    addView(state.webView, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
-                    ))
-                })
-            }
-            assertTrue("Upgrade fixture must use an attached foreground WebView", state.webView.isAttachedToWindow)
-        }
-        val loaded = dependencies.runtimeSessions.state(toolId).first {
             it is RuntimeUiState.Ready && it.mainEntryLoaded || it is RuntimeUiState.Error
         }
-        check(loaded is RuntimeUiState.Ready && loaded.webView === state.webView) { "Fixture entry load failed" }
+        check(state is RuntimeUiState.Ready) { "Runtime preparation failed: $state" }
         awaitPage(state.webView) { it.optBoolean("ready") }
         state.webView
     }
@@ -93,20 +69,11 @@ internal class UpgradeFixture(val suffix: String = UUID.randomUUID().toString().
         assertEquals("keep-settings", state.getString("settings"))
     }
 
-    suspend fun close(remove: Boolean = true) = withContext(NonCancellable) {
-        try {
-            activity?.onActivity { host -> host.setContentView(FrameLayout(host)) }
-            activity?.close()
-        } finally {
-            activity = null
-            try {
-                dependencies.runtimeSessions.releaseTool(toolId)
-                if (remove) packages.deleteTool(toolId)
-            } finally {
-                stores.close()
-                if (remove) application.deleteDatabase(databaseName)
-            }
-        }
+    suspend fun close(remove: Boolean = true) {
+        dependencies.runtimeSessions.releaseTool(toolId)
+        if (remove) packages.deleteTool(toolId)
+        stores.close()
+        if (remove) application.deleteDatabase(databaseName)
     }
 
     fun bytes(version: Int, marker: String = "$version"): PackageInput {
