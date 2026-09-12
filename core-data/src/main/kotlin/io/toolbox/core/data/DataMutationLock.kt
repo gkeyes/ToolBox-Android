@@ -24,6 +24,16 @@ class DataMutationLock {
             withContext(Owner(held + this)) { action() }
         }
     }
+    /** UI package mutations retain the installer's immediate BUSY contract, not a hidden queue. */
+    suspend fun <T> tryRun(onBusy: () -> T, action: suspend () -> T): T {
+        val held = currentCoroutineContext()[Owner]?.locks.orEmpty()
+        if (this in held) return action()
+        if (!mutex.tryLock()) return onBusy()
+        try {
+            if (blocked) throw DataRecoveryRequiredException()
+            return withContext(Owner(held + this)) { action() }
+        } finally { mutex.unlock() }
+    }
     suspend fun <T> write(action: suspend () -> DataResult<T>): DataResult<T> = try { run(action) }
         catch (_: DataRecoveryRequiredException) { DataResult.Failure.StorageFailure("RESTORE_RECOVERY_REQUIRED") }
     fun blockUntilRestart() { blocked = true }
