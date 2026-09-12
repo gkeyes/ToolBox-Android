@@ -7,10 +7,10 @@ ToolBox 是 Android 13+ 的个人 `.tbx` 小工具宿主，导入包含 HTML/CSS
 一次确认；失败或取消不留下待安装状态。工具默认空白安装，示例通过真实导入流程安装。
 所有按钮、权限和后台状态都对应实际功能，不增加审核、发布者信任或安全状态展示。
 
-## 本次界面升级
+## 界面设计来源
 
-基于 GitHub 默认分支 `codex/refactor-lightweight-v2` 的 `dc78a48baf03692d45c1877309c30412301f28ed`。
-独立工作目录 `ToolBox-OpenDesign` 保留上游历史；开发分支为原仓库的 `codex/opendesign-ui`，`upstream` 指向 `gkeyes/ToolBox-Android`。
+界面升级最初基于 `dc78a48baf03692d45c1877309c30412301f28ed`，现已合入
+GitHub 默认分支 `codex/refactor-lightweight-v2`，后续开发与交付以该分支为准。
 设计项目为 `04260a2f-f55c-40f3-ab23-0ab14063fa02`；原始文件及校验值存放于
 [design/opendesign](design/opendesign)。最新 HTML 为唯一视觉参考，真实业务继续使用 Android Compose。
 
@@ -47,7 +47,7 @@ debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定�
 
 - 原生 Compose 宿主使用 OpenDesign Liquid Glass 唯一主题，保留明暗、系统取色和降低透明度；
   颜色切换不重建导航或正在运行的 WebView。
-- 工具内容填满系统安全区域，系统返回退出工具；内部返回由小工具根据自身页面状态处理。
+- 工具内容填满系统安全区域，系统返回经确认后退出工具；内部返回由小工具根据自身页面状态处理。
 - 每工具权限开关仍受 manifest、Android 系统权限、前台/手势、origin 与限额检查约束。
 - 普通存储按键保存，提供 `getMany` 和原子 `apply`，不设每工具持久存储总容量配额；安全值
   单独使用安全存储。网络通过按工具授权的原生 HTTPS 代理，支持可取消的流式读取。
@@ -55,7 +55,7 @@ debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定�
   承载各会话的独立通知和停止入口。位置、闹钟、分享、浏览器打开、SAF、快捷方式和相机
   使用对应的原生能力；卸载清理工具数据、权限和后台资源。
 
-当前宿主为 **0.7.6 (30)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
+当前宿主为 **0.7.7 (31)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
 授权和设置；Room schema 保持 v1。功能边界与最低宿主要求以技术方案和 SDK 手册为准。
 
 ## 小工具与开发入口
@@ -98,7 +98,8 @@ SHA256 清单和同提交回执。release 关闭调试，启用 R8 和资源裁�
 备份恢复、TBX 主题继承、升级持久化和进程重启检查已并入上述入口；NextFlux 明暗切换测试
 由 TBX CI 的浏览器测试执行。不再保留功能分支专用构建或源码转移工作流。
 Release 证书必须匹配原签名指纹，版本从当前构建配置读取；不依赖旧 Actions 产物或固定测试 run ID。
-在 Actions 的 Android CI 成功运行中下载 `toolbox-v<版本>-release-<提交>`；不需要新建 tag 或 GitHub Release。
+正式安装包见 [GitHub Releases](https://github.com/gkeyes/ToolBox-Android/releases/latest)，附有 SHA256 清单和同提交回执。
+开发构建仍可在成功的 Android CI 中下载 `toolbox-v<版本>-release-<提交>`；工作流本身只生成构建产物，正式发布使用通过验证的同一份 APK。
 取消同一分支同类事件的过时运行，开发分支通过 PR 校验，避免同一次推送重复触发专用流程。
 
 GitHub 模拟器执行指定的备份、主题、升级、存储事务、浏览器启动、外观与后台交互回归；
