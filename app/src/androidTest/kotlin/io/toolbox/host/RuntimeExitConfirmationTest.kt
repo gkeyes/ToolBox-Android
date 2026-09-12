@@ -99,8 +99,13 @@ class RuntimeExitConfirmationTest {
                         view.isShown &&
                         view.hasWindowFocus() &&
                         !view.isLayoutRequested &&
-                        view.context.activityOwner() === activity &&
-                        (if (dialog) view !== activityDecor else view === activityDecor)
+                        // Main windows use an application-backed DecorContext.
+                        // Their exact decor identity already establishes ownership.
+                        (if (dialog) {
+                            view !== activityDecor && view.context.activityOwner() === activity
+                        } else {
+                            view === activityDecor
+                        })
                 }
                 target != null
             }
