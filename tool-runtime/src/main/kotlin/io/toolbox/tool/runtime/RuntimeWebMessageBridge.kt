@@ -2,6 +2,7 @@ package io.toolbox.tool.runtime
 
 import android.net.Uri
 import android.os.Looper
+import android.os.Handler
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -73,6 +74,9 @@ class RuntimeBridgeSession internal constructor(
     private val pendingEvents = ArrayDeque<String>()
     private val jobs = RuntimeSessionJobs()
     private var attachedView = WeakReference<WebView>(null)
+    // A recovered/background runtime may never have a window. View.post queues
+    // work until attachment; native replies and events must target the UI looper.
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val dispatcher = RuntimeRpcDispatcher(
         identity = identity,
         authorization = authorization,
@@ -222,8 +226,8 @@ class RuntimeBridgeSession internal constructor(
             }
             return true
         }
-        webView.post {
-            if (active.get() && eventReady.get() && eventProxy.get() === proxy) {
+        mainHandler.post {
+            if (active.get() && attachedView.get() === webView && eventReady.get() && eventProxy.get() === proxy) {
                 runCatching { proxy.postMessage(encoded) }
             }
         }
@@ -237,8 +241,8 @@ class RuntimeBridgeSession internal constructor(
             }
         }
         if (queued.isEmpty()) return
-        webView.post {
-            if (!active.get() || !eventReady.get() || eventProxy.get() !== proxy) return@post
+        mainHandler.post {
+            if (!active.get() || attachedView.get() !== webView || !eventReady.get() || eventProxy.get() !== proxy) return@post
             queued.forEach { encoded -> runCatching { proxy.postMessage(encoded) } }
         }
     }
@@ -273,14 +277,14 @@ class RuntimeBridgeSession internal constructor(
         }
         val deliver = Runnable {
             try {
-                if (active.get()) runCatching { proxy.postMessage(encoded) }
+                if (active.get() && attachedView.get() === webView) runCatching { proxy.postMessage(encoded) }
             } finally {
                 onDelivered()
             }
         }
         // Admission failures already arrive on Main: don't create an unbounded reply queue.
         if (Looper.myLooper() == Looper.getMainLooper()) deliver.run()
-        else if (!webView.post(deliver)) onDelivered()
+        else if (!mainHandler.post(deliver)) onDelivered()
     }
 
     private fun invalidRequest(id: String, code: RuntimeRpcErrorCode, message: String) =

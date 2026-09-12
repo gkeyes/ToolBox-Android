@@ -140,3 +140,9 @@ internal sealed interface PreparationResult {
     data class Prepared(val value: PreparedPackage) : PreparationResult
     data class Rejected(val rejection: PackageRejection) : PreparationResult
 }
+
+/** Preflight uses the exact same inspector as installation, without publishing a bundle. */
+object ToolPackageInspectors {
+    fun create(temporaryDirectory: java.io.File): ToolPackageInspector =
+        DefaultPackageInspector(temporaryDirectory.toPath())
+}

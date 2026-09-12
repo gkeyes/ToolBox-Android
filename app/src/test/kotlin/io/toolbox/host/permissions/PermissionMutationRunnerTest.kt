@@ -30,6 +30,35 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class PermissionMutationRunnerTest {
     @Test
+    fun restoreAdmissionRejectsNewGrantsAndWaitsForAcceptedCleanup() = runTest {
+        val gate = io.toolbox.host.backup.BackupRuntimeGate
+        gate.resume()
+        val grants = MutationGrants()
+        val cleanupEntered = CompletableDeferred<Unit>()
+        val allowCleanup = CompletableDeferred<Unit>()
+        val runner = PermissionMutationRunner(MutationPackages(), grants, mutationSideEffects { _, _ ->
+            cleanupEntered.complete(Unit)
+            allowCleanup.await()
+        }, this)
+        try {
+            assertEquals(PermissionMutationResult.Saved, runner.submit("a", "network", true, 1).await())
+            val revoke = runner.submit("a", "network", false, 1)
+            cleanupEntered.await()
+            val drain = launch { gate.pauseAndDrain() }
+            runCurrent()
+            assertTrue(gate.paused)
+            assertFalse(drain.isCompleted)
+            assertEquals(PermissionMutationResult.WriteFailed, runner.submit("b", "network", true, 1).await())
+            assertTrue(grants.observeGrants("b").first().isEmpty())
+            allowCleanup.complete(Unit)
+            drain.join()
+            revoke.join()
+            assertFalse(grants.observeGrants("a").first().single().granted)
+            assertEquals(0, runner.activeToolCount)
+        } finally { allowCleanup.complete(Unit); gate.resume() }
+    }
+
+    @Test
     fun callerCancellationKeepsSameToolFifoWithoutBlockingOtherToolsOrRetainingTails() = runTest {
         val grants = MutationGrants()
         val allowFirstWrite = CompletableDeferred<Unit>()

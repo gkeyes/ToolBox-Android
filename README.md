@@ -55,7 +55,7 @@ debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。未配置稳定�
   承载各会话的独立通知和停止入口。位置、闹钟、分享、浏览器打开、SAF、快捷方式和相机
   使用对应的原生能力；卸载清理工具数据、权限和后台资源。
 
-当前宿主为 **0.7.5 (29)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
+当前宿主为 **0.7.6 (30)**，版本来源是 [构建配置](app/build.gradle.kts)。同签名升级保留工具、
 授权和设置；Room schema 保持 v1。功能边界与最低宿主要求以技术方案和 SDK 手册为准。
 
 ## 小工具与开发入口
@@ -88,7 +88,20 @@ python3 scripts/package-tool.py sdk/templates/minimal ./my-tool-v1.0.0.tbx
 SHA256 清单和同提交回执。release 关闭调试，启用 R8 和资源裁剪；映射独立归档。
 本地 `candidate` 未配置固定签名时使用 debug key，不能覆盖已交付的 GitHub 同签名版本。
 
-GitHub 模拟器执行指定的存储事务、浏览器启动、外观与后台交互回归；
+工作流只保留两个长期入口：
+
+| 工作流 | 触发与职责 |
+|---|---|
+| Android CI | 默认分支的宿主相关提交、面向默认分支的 PR 或手动运行。执行协议、安全、模块单测和 API 35 行为回归；默认分支验证通过后交付原签名 Release。PR 和手动选择的其他分支不使用发布密钥。 |
+| TBX CI | 默认分支的工具／公共依赖改动、面向默认分支的 PR 或手动选工具。按已有目标表执行工具测试、可复现打包、浏览器行为与真实安装器校验。 |
+
+备份恢复、TBX 主题继承、升级持久化和进程重启检查已并入上述入口；NextFlux 明暗切换测试
+由 TBX CI 的浏览器测试执行。不再保留功能分支专用构建或源码转移工作流。
+Release 证书必须匹配原签名指纹，版本从当前构建配置读取；不依赖旧 Actions 产物或固定测试 run ID。
+在 Actions 的 Android CI 成功运行中下载 `toolbox-v<版本>-release-<提交>`；不需要新建 tag 或 GitHub Release。
+取消同一分支同类事件的过时运行，开发分支通过 PR 校验，避免同一次推送重复触发专用流程。
+
+GitHub 模拟器执行指定的备份、主题、升级、存储事务、浏览器启动、外观与后台交互回归；
 `RuntimeExitConfirmationTest` 覆盖返回确认、取消、再次返回关闭弹窗、WebView 不重建及重复返回防护。
 `ToolBoxContrastTest` 同时检查次要按钮边框在明暗主题、玻璃/实色底板、按下和禁用状态下的可辨识性。
 小工具的系统侧滑返回/返回键先提示“返回 ToolBox？”，选择“继续使用”留在当前页面，确认才退出。
@@ -117,3 +130,7 @@ NextFlux 浏览器测试使用合成数据。
 [AssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)、
 [原生消息桥](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge)。
 第三方用途与授权信息见 [Third-party notices](THIRD_PARTY_NOTICES.md)，各独立小工具另保留自己的许可与上游来源。
+
+## 本地备份与恢复
+
+设置中提供宿主配置、完整工具包、ToolBox 存储及可迁移安全数据的 ZIP 导出/恢复。操作与迁移限制见 [备份与恢复](docs/备份与恢复.md)。

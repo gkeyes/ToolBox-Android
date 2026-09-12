@@ -22,6 +22,12 @@ internal data class CheckedArchive(
     val extractedBytes: Long,
 )
 
+/** Independent outer-archive bounds; .tbx validation keeps its existing policy. */
+internal data class ZipReadLimits(
+    val maxExtractedBytes: Long, val maxEntries: Int, val maxEntryBytes: Long,
+    val maxPathCharacters: Int, val maxCompressionRatio: Double, val forbidCode: Boolean = true,
+)
+
 internal object ZipStructureReader {
     private const val EOCD = 0x06054b50L
     private const val CENTRAL = 0x02014b50L
@@ -29,10 +35,15 @@ internal object ZipStructureReader {
     private const val DESCRIPTOR = 0x08074b50L
     private const val MAX_EOCD_SEARCH = 65_557
 
-    fun read(archive: Path, limits: PackageLimits): CheckedArchive =
+    fun read(archive: Path, limits: PackageLimits): CheckedArchive = read(archive, ZipReadLimits(
+        limits.maxExtractedBytes, limits.maxEntries, limits.maxEntryBytes,
+        limits.maxPathCharacters, limits.maxCompressionRatio,
+    ))
+
+    fun read(archive: Path, limits: ZipReadLimits): CheckedArchive =
         RandomAccessFile(archive.toFile(), "r").use { file -> read(file, archive, limits) }
 
-    private fun read(file: RandomAccessFile, archive: Path, limits: PackageLimits): CheckedArchive {
+    private fun read(file: RandomAccessFile, archive: Path, limits: ZipReadLimits): CheckedArchive {
         val eocd = findEocd(file)
         val entriesOnDisk = u16(eocd, 8)
         val entryCount = u16(eocd, 10)
@@ -79,7 +90,7 @@ internal object ZipStructureReader {
             val nextCentral = file.filePointer
             validateLocalAndDescriptor(file, localOffset, centralOffset, flags, method, rawName, crc32, compressed, extracted)
             file.seek(nextCentral)
-            val safePath = PackagePathPolicy.validate(rawName, limits)
+            val safePath = PackagePathPolicy.validate(rawName, limits.maxPathCharacters)
             validateTypeAndLimits(versionMadeBy, externalAttributes, safePath, compressed, extracted, limits)
             totalExtracted = addExact(totalExtracted, extracted)
             if (totalExtracted > limits.maxExtractedBytes) {
@@ -174,7 +185,7 @@ internal object ZipStructureReader {
         path: SafePackagePath,
         compressed: Long,
         extracted: Long,
-        limits: PackageLimits,
+        limits: ZipReadLimits,
     ) {
         if (versionMadeBy ushr 8 == 3) {
             val mode = (externalAttributes ushr 16).toInt() and 0xffff
@@ -188,7 +199,7 @@ internal object ZipStructureReader {
             }
         }
         if (path.directory && (compressed != 0L || extracted != 0L)) reject(PackageRejectionCode.SPECIAL_FILE, "Directory entries must not carry payload bytes")
-        PackagePathPolicy.forbiddenCode(path.normalized)?.let { reject(it, "Forbidden payload type: ${path.normalized}") }
+        if (limits.forbidCode) PackagePathPolicy.forbiddenCode(path.normalized)?.let { reject(it, "Forbidden payload type: ${path.normalized}") }
         if (!path.directory && extracted > limits.maxEntryBytes) reject(PackageRejectionCode.ENTRY_SIZE_LIMIT, "${path.normalized} exceeds the per-file limit")
         if (!path.directory && extracted > 0 && compressed == 0L) reject(PackageRejectionCode.COMPRESSION_RATIO_LIMIT, "${path.normalized} has an invalid compression ratio")
         if (!path.directory && compressed > 0 && extracted.toDouble() / compressed > limits.maxCompressionRatio) {

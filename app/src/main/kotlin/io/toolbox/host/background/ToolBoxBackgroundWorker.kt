@@ -43,7 +43,10 @@ class ToolBoxBackgroundWorker(
 ) : CoroutineWorker(appContext, parameters) {
     private val json = Json { ignoreUnknownKeys = false }
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result =
+        io.toolbox.host.backup.BackupRuntimeGate.worker { admittedWork() } ?: Result.retry()
+
+    private suspend fun admittedWork(): Result {
         val dependencies = ToolBoxBackgroundRuntime.resolve(applicationContext) ?: return Result.failure()
         pruneExpiredResults(dependencies)
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()

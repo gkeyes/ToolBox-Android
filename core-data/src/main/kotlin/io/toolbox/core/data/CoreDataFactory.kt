@@ -19,6 +19,8 @@ class CoreDataStores internal constructor(
     val repositories: CoreDataRepositories,
     private val database: ToolBoxDatabase,
 ) : AutoCloseable {
+    val backup = io.toolbox.core.data.backup.BackupDatabase(database)
+
     override fun close() {
         database.close()
     }
@@ -60,7 +62,7 @@ object CoreDataFactory {
                 installs = RoomInstallTransactionRepository(database),
                 backgroundTasks = RoomBackgroundTaskRepository(database),
                 settings = DataStoreHostSettingsRepository(settings),
-            ),
+            ).withMutationLock(),
             database = database,
         )
     }

@@ -106,44 +106,18 @@ overall_exit=0
 run_gate api-contract :tool-api:verifyToolBoxApiContract || overall_exit=1
 run_gate security verifySecurityInvariants || overall_exit=1
 run_gate compile \
-    :app:compileDebugKotlin \
-    :app:compileDebugAndroidTestKotlin \
-    :core-data:compileDebugAndroidTestKotlin \
+    :app:assembleDebug \
+    :app:assembleDebugAndroidTest \
+    :core-data:assembleDebugAndroidTest \
     :tool-runtime:compileDebugAndroidTestKotlin || overall_exit=1
 run_gate ui-contrast :core-ui:testDebugUnitTest --tests 'io.toolbox.core.ui.theme.ToolBoxContrastTest' || overall_exit=1
+# Execute the existing module test tasks without a stale per-class allowlist.
+# This includes backup/archive/rollback, settings and theme regressions as they evolve.
 run_gate admitted-unit \
     :app:testDebugUnitTest \
     :core-data:testDebugUnitTest \
     :tool-package:testDebugUnitTest \
-    :tool-runtime:testDebugUnitTest \
-    --tests 'io.toolbox.host.importflow.ToolBoxOpenDocumentTest' \
-    --tests 'io.toolbox.host.importflow.ImportViewModelTest' \
-    --tests 'io.toolbox.host.catalog.CatalogViewModelTest' \
-    --tests 'io.toolbox.host.catalog.RunningToolsViewModelTest' \
-    --tests 'io.toolbox.host.icons.InstalledToolIconReaderTest' \
-    --tests 'io.toolbox.host.icons.StaticSvgPolicyTest' \
-    --tests 'io.toolbox.host.icons.ToolIconLoadCoordinatorTest' \
-    --tests 'io.toolbox.host.ui.HostScreenLayoutContractTest' \
-    --tests 'io.toolbox.host.help.DeveloperHelpDocumentTest' \
-    --tests 'io.toolbox.host.permissions.PermissionCenterViewModelTest' \
-    --tests 'io.toolbox.host.permissions.PermissionMutationRunnerTest' \
-    --tests 'io.toolbox.host.background.BackgroundTaskPolicyTest' \
-    --tests 'io.toolbox.host.background.NetworkBoundaryTest' \
-    --tests 'io.toolbox.host.background.ToolNetworkProxyTest' \
-    --tests 'io.toolbox.host.background.RuntimeNetworkGatewayTest' \
-    --tests 'io.toolbox.host.background.BackgroundTasksPresentationTest' \
-    --tests 'io.toolbox.host.runtime.LiveNotificationCoordinatorTest' \
-    --tests 'io.toolbox.host.runtime.RuntimeNotificationRegressionTest' \
-    --tests 'io.toolbox.host.runtime.RuntimeReminderPolicyTest' \
-    --tests 'io.toolbox.host.runtime.RuntimeSecureStorageTest' \
-    --tests 'io.toolbox.host.runtime.RuntimeStandardStorageTest' \
-    --tests 'io.toolbox.host.runtime.UserNetworkDomainsTest' \
-    --tests 'io.toolbox.core.data.BackgroundTaskRepositoryTest' \
-    --tests 'io.toolbox.core.data.CatalogAndStorageRepositoryTest' \
-    --tests 'io.toolbox.tool.packagekit.lifecycle.DirectPackageLifecycleTest' \
-    --tests 'io.toolbox.tool.packagekit.ManifestValidatorTest' \
-    --tests 'io.toolbox.tool.runtime.RuntimeBrowserUrlTest' \
-    --tests 'io.toolbox.tool.runtime.RuntimeRpcDispatcherTest' || overall_exit=1
+    :tool-runtime:testDebugUnitTest || overall_exit=1
 
 printf '%s\n' \
     "timestamp_utc=$timestamp_utc" \

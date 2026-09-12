@@ -26,6 +26,7 @@ internal class PermissionMutationRunner(
     private val sideEffects: HostPermissionSideEffects,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val now: () -> Long = System::currentTimeMillis,
+    private val mutationLock: io.toolbox.core.data.DataMutationLock = io.toolbox.core.data.DataMutationLock(),
 ) {
     private val pending = mutableMapOf<String, Deferred<PermissionMutationResult>>()
     internal val activeToolCount: Int get() = synchronized(pending) { pending.size }
@@ -38,7 +39,9 @@ internal class PermissionMutationRunner(
             val previous = pending[toolId]
             val mutation = scope.async(start = CoroutineStart.LAZY) {
                 previous?.join()
-                action()
+                // Keep per-tool FIFO without serializing unrelated tools. Restore closes
+                // this admission gate and joins cancellation cleanup before changing data.
+                io.toolbox.host.backup.BackupRuntimeGate.worker(action) ?: PermissionMutationResult.WriteFailed
             }
             pending[toolId] = mutation
             mutation.invokeOnCompletion {
@@ -56,7 +59,7 @@ internal class PermissionMutationRunner(
         enabled: Boolean,
         expectedVersion: Int,
     ): PermissionMutationResult = try {
-        val current = packages.installedManifest(toolId) as? HostInstalledManifestResult.Found
+        val current = mutationLock.run { packages.installedManifest(toolId) } as? HostInstalledManifestResult.Found
         if (current == null || current.manifest.versionCode != expectedVersion ||
             current.manifest.permissions.none { it.capability == capability }
         ) {

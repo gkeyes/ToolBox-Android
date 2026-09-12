@@ -171,7 +171,7 @@ internal class RepositoryRuntimeGrantStateSource(
     private val grants: PermissionGrantRepository,
 ) : RuntimeGrantStateSource {
     override suspend fun currentVersionCode(toolId: String): Int? =
-        catalog.observeTool(toolId).first()?.currentVersion?.versionCode
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) null else catalog.observeTool(toolId).first()?.currentVersion?.versionCode
 
     override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId): Boolean =
         grants.observeGrants(toolId)
@@ -689,10 +689,12 @@ internal object ToolRuntimeStorageLocks {
         locks.getOrPut("${namespace.name}:$toolId") { Mutex() }
 }
 
-private class AndroidKeyStoreCipher(
+internal class AndroidKeyStoreCipher(
     private val toolId: String,
 ) {
     private val alias = aliasFor(toolId)
+
+    fun hasKey(): Boolean = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }.containsAlias(alias)
 
     fun encrypt(plaintext: String): String = try {
         val cipher = Cipher.getInstance(TRANSFORMATION)

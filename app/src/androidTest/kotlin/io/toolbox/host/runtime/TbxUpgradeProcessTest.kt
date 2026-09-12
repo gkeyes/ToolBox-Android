@@ -1,13 +1,19 @@
 package io.toolbox.host.runtime
 
 import android.os.Process
+import io.toolbox.tool.runtime.HardenedRuntimeWebView
+import io.toolbox.tool.runtime.RpcValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -44,6 +50,21 @@ class TbxUpgradeProcessTest {
                 f.assertLogin(f.page(), "2")
                 assertEquals(stored.getString("ciphertextSha256"), sha(f.envelope.read()!!))
             }
+            // The background/recovered runtime has no Activity or window. Exercise
+            // worker-thread RPC replies and host events without allowing attachment
+            // to flush View.post callbacks and conceal a stalled native bridge.
+            val detached = f.page()
+            withContext(Dispatchers.Main.immediate) { assertFalse(detached.isAttachedToWindow) }
+            f.assertLogin(detached, "2")
+            evaluate(detached, "window.detachedRestore=false;ToolBox.background.onRestore(function(event){window.detachedRestore=event.reason==='fixture'});true")
+            withContext(Dispatchers.Main.immediate) {
+                assertTrue(HardenedRuntimeWebView.emitEvent(detached, "background.restore",
+                    RpcValue.ObjectValue(mapOf("reason" to RpcValue.StringValue("fixture")))))
+            }
+            withTimeout(5_000) {
+                while (evaluate(detached, "window.detachedRestore") != true) delay(50)
+            }
+            withContext(Dispatchers.Main.immediate) { assertFalse(detached.isAttachedToWindow) }
             completed = true
         } finally {
             // Only the restore phase removes this synthetic fixture, after the assertions.

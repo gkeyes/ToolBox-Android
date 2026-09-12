@@ -55,10 +55,11 @@ object HardenedRuntimeWebView {
         creationPermit: RuntimeCreationPermit,
         callbacks: RuntimeWebViewCallbacks,
         bridgeProvider: RuntimeBridgeProvider,
+        darkTheme: Boolean = RuntimeWebViewTheme.isSystemDark(context.resources.configuration),
     ): RuntimeWebViewCreationResult {
         Trace.beginSection("webView.create")
         return try {
-            createTraced(context, runtime, creationPermit, callbacks, bridgeProvider)
+            createTraced(RuntimeWebViewThemeContext(context, darkTheme), runtime, creationPermit, callbacks, bridgeProvider)
         } finally {
             Trace.endSection()
         }

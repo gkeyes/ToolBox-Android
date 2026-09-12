@@ -99,6 +99,10 @@ class BackgroundTaskCoordinator(
     }
 
     suspend fun reconcile() {
+        io.toolbox.host.backup.BackupRuntimeGate.worker { reconcileAdmitted(); Unit }
+    }
+
+    private suspend fun reconcileAdmitted() {
         pruneExpiredResults()
         val toolIds = repositories.catalog.observeTools().first().map { it.metadata.id }
         if (!repositories.settings.settings.first().backgroundEnabled) {
@@ -109,8 +113,10 @@ class BackgroundTaskCoordinator(
     }
 
     suspend fun reconcile(toolIds: Collection<String>) {
-        pruneExpiredResults()
-        reconcileScheduledTasks(toolIds)
+        io.toolbox.host.backup.BackupRuntimeGate.worker {
+            pruneExpiredResults()
+            reconcileScheduledTasks(toolIds)
+        }
     }
 
     private suspend fun reconcileScheduledTasks(toolIds: Collection<String>) {
@@ -144,7 +150,11 @@ class BackgroundTaskCoordinator(
         versionCode: Int,
         request: BackgroundTaskRequest,
         intervalMinutes: Long?,
-    ): EnqueueResult = enqueueMutex.withLock {
+    ): EnqueueResult = io.toolbox.host.backup.BackupRuntimeGate.worker {
+        createAdmitted(toolId, versionCode, request, intervalMinutes)
+    } ?: EnqueueResult.Rejected("RESTORE_IN_PROGRESS")
+
+    private suspend fun createAdmitted(toolId: String, versionCode: Int, request: BackgroundTaskRequest, intervalMinutes: Long?): EnqueueResult = enqueueMutex.withLock {
         if (toolId.isBlank() || request.key.isBlank()) return@withLock EnqueueResult.Rejected("INVALID_INPUT")
         if (!request.isValid()) return@withLock EnqueueResult.Rejected("INVALID_INPUT")
         val policy = authorization.policyFor(toolId, versionCode)
@@ -215,6 +225,7 @@ class BackgroundTaskCoordinator(
     }
 
     private suspend fun schedule(task: BackgroundTask) {
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
         val input = Data.Builder().putString(ToolBoxBackgroundWorker.KEY_TASK_ID, task.taskId).build()
         val constraints = if (task.operation == BackgroundOperation.HTTP_GET) {
             Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
