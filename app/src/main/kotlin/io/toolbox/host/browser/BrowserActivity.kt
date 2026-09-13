@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -170,6 +171,8 @@ class BrowserActivity : ComponentActivity() {
                 }
             }
             page.webChromeClient = object : WebChromeClient() {
+                // Websites may log form values or response bodies; never forward these to Logcat.
+                override fun onConsoleMessage(message: ConsoleMessage): Boolean = true
                 override fun onProgressChanged(view: WebView, newProgress: Int) { loadProgress = newProgress }
                 override fun onReceivedTitle(view: WebView, newTitle: String?) { title = newTitle.orEmpty() }
                 override fun onPermissionRequest(request: PermissionRequest) {
