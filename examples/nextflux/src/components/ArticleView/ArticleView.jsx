@@ -16,7 +16,6 @@ import { Separator, ScrollShadow } from "@heroui/react";
 import EmptyPlaceholder from "@/components/ArticleList/components/EmptyPlaceholder";
 import { getFontSizeClass } from "@/lib/utils";
 import { safeContentUrl } from "@/toolbox/content.js";
-import { showLinkActions } from "@/toolbox/actions.js";
 import { settingsState } from "@/stores/settingsStore";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
@@ -193,7 +192,6 @@ const ArticleView = () => {
                     >
                       <a
                         href={safeContentUrl($activeArticle?.url) || undefined}
-                        onClick={(event) => { event.preventDefault(); showLinkActions($activeArticle?.url); }}
                         rel="noopener noreferrer"
                         target="_blank"
                       >
@@ -222,14 +220,6 @@ const ArticleView = () => {
                     speed={() => 300}
                   >
                     <div
-                      onClick={(event) => {
-                        const anchor = event.target.closest?.("a[href]");
-                        if (anchor && event.currentTarget.contains(anchor)) {
-                          if (anchor.hasAttribute("data-reading-local-anchor")) return;
-                          event.preventDefault();
-                          showLinkActions(anchor.getAttribute("href"));
-                        }
-                      }}
                       className={cn(
                         "article-content prose dark:prose-invert max-w-none",
                         "prose-pre:rounded-lg prose-pre:shadow-small",

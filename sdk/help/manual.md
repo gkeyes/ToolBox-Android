@@ -582,7 +582,7 @@ export interface ToolBoxApi {
     text(text: string): Promise<void>;
   };
   browser: {
-    /** Opens an absolute HTTP/HTTPS URL (subject to current available process heap, without credentials or control characters) in a system browser. Requires the separate, default-off browser capability, the current visible foreground tool. No per-minute allowance or touch deadline applies. No network capability or Android runtime permission is required. Resolves when the system accepts the launch, not when the page loads. */
+    /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser (host 0.7.8+). Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. Uploads, downloads and website device permissions are unsupported; the menu offers an explicit system-browser fallback. */
     open(url: string): Promise<void>;
   };
   files: {

@@ -500,6 +500,7 @@ internal class ForegroundCapabilityBroker private constructor(
                 browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->
                     withForeground(requireForegroundRuntime) { broker ->
                         launchBrowserUrl(
+                            context = broker.activity,
                             url = url,
                             beforeLaunch = { authorizeBrowserLaunch(); beforeLaunch() },
                             ensureForeground = broker::ensureActive,
