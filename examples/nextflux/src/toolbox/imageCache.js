@@ -3,7 +3,8 @@ const cancelled = () => Object.assign(new Error("图片加载已取消。"), { c
 // Only disposable image Blobs live here; article records never enter this cache.
 export function createImageCache({
   load,
-  maxActive = 24,
+  dispose = () => {},
+  maxActive = Infinity,
   maxConcurrent = 3,
   maxIdle = 12,
   maxIdleBytes = 8 * 1024 * 1024,
@@ -25,6 +26,8 @@ export function createImageCache({
 
   function forget(entry, error = cancelled()) {
     entry.invalidated = true;
+    entry.controller?.abort();
+    if (entry.blob) { dispose(entry.blob); entry.blob = null; }
     if (bySource.get(entry.source) === entry) bySource.delete(entry.source);
     idle.delete(entry);
     entries.delete(entry);
@@ -69,15 +72,18 @@ export function createImageCache({
     const check = () => {
       if (entry.epoch !== epoch || entry.invalidated || !entry.references) throw cancelled();
     };
+    let blob;
     try {
-      const blob = await load(entry.source, check);
+      blob = await load(entry.source, check, entry.controller.signal);
       check();
+      entry.blob = blob;
       entry.blobUrl = createUrl(blob);
       entry.bytes = blob.size;
       byBlob.set(entry.blobUrl, entry);
       entry.settled = true;
       entry.resolve(entry.blobUrl);
     } catch (error) {
+      if (blob && entry.blob !== blob) dispose(blob);
       forget(entry, error);
     } finally {
       running -= 1;
@@ -131,7 +137,7 @@ export function createImageCache({
       if (entry?.invalidated) throw cancelled();
       if (!entry) {
         if (source.startsWith("blob:")) throw cancelled();
-        entry = { source, epoch, references: 0, blobUrl: null, bytes: 0, settled: false, invalidated: false };
+        entry = { source, epoch, references: 0, blob: null, blobUrl: null, bytes: 0, settled: false, invalidated: false, controller: new AbortController() };
         entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
         // Admission precedes registration, so a refused image leaves no work.
         const handle = lease(entry);
@@ -142,6 +148,10 @@ export function createImageCache({
         return handle;
       }
       return lease(entry);
+    },
+    evictIdle() {
+      for (const entry of idle.keys()) forget(entry);
+      scheduleExpiry();
     },
     clear() {
       epoch += 1;

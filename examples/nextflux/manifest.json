@@ -58,7 +58,7 @@
   ],
   "network": {
     "timeoutMs": 60000,
-    "maxResponseBytes": 4194304
+    "maxResponseBytes": 67108864
   },
   "securityProfile": "strict",
   "ui": {

@@ -1,7 +1,32 @@
 import test, { afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { MEDIA_RESOURCE_BYTES } from "../src/toolbox/mediaTransport.js";
 import { approvedImageSource, acquireImage, clearMediaCache, loadProxyMedia } from "../src/toolbox/media.js";
 import { safeContentUrl, cleanAttributes } from "../src/toolbox/content.js";
+
+
+function streamMock(request) {
+  let sequence = 0;
+  const responses = new Map();
+  return {
+    async openStream(payload) {
+      const response = await request(payload);
+      const streamId = `test-${++sequence}`;
+      responses.set(streamId, response);
+      return { streamId, status: response.status, headers: response.headers };
+    },
+    async readStream(streamId) {
+      const response = responses.get(streamId);
+      responses.delete(streamId);
+      const data = response.bodyEncoding === "base64"
+        ? Uint8Array.from(atob(response.body), c => c.charCodeAt(0))
+        : new TextEncoder().encode(response.body || "");
+      return { data, done: true, receivedBytes: data.byteLength };
+    },
+    async cancelStream(streamId) { responses.delete(streamId); },
+  };
+}
+const settleMedia = () => new Promise(resolve => setImmediate(resolve));
 
 const origin = "https://miniflux.xiaochen.win";
 const proxy = `${origin}/proxy/signature/aW1hZ2U=`;
@@ -40,7 +65,7 @@ test("image proxy uses native network with no credentials and reuses a released 
   const originalRevoke = URL.revokeObjectURL;
   URL.createObjectURL = () => "blob:test-image";
   URL.revokeObjectURL = (url) => revoked.push(url);
-  globalThis.window = { ToolBox: { network: { request: async (payload) => { calls.push(payload); return { status: 200, headers: { "Content-Type": "image/png" }, bodyEncoding: "base64", body: "aGVsbG8=" }; } } } };
+  globalThis.window = { ToolBox: { network: streamMock( async (payload) => { calls.push(payload); return { status: 200, headers: { "Content-Type": "image/png" }, bodyEncoding: "base64", body: "aGVsbG8=" }; }) } };
   try {
     const a = acquireImage(proxy);
     const b = acquireImage(proxy);
@@ -49,7 +74,7 @@ test("image proxy uses native network with no credentials and reuses a released 
     assert.equal(calls.length, 1);
     assert.deepEqual(Object.keys(calls[0].headers), ["Accept"]);
     assert.equal(calls[0].url, proxy);
-    assert.equal(calls[0].maxResponseBytes, 2 * 1024 * 1024);
+    assert.equal(calls[0].maxResponseBytes, MEDIA_RESOURCE_BYTES);
     a.release(); assert.equal(revoked.length, 0);
     b.release(); b.release(); assert.deepEqual(revoked, []);
     const reused = acquireImage(proxy);
@@ -67,13 +92,13 @@ test("image proxy uses native network with no credentials and reuses a released 
 
 test("media rejects unexpected MIME and external URLs and releases a loaded audio Blob", async () => {
   const calls = [];
-  globalThis.window = { ToolBox: { network: { request: async (payload) => { calls.push(payload); return { status: 200, headers: { "content-type": "audio/mpeg" }, bodyEncoding: "base64", body: "aGVsbG8=" }; } } } };
+  globalThis.window = { ToolBox: { network: streamMock( async (payload) => { calls.push(payload); return { status: 200, headers: { "content-type": "audio/mpeg" }, bodyEncoding: "base64", body: "aGVsbG8=" }; }) } };
   try {
     await assert.rejects(loadProxyMedia("https://external.example/song.mp3", "audio"), /代理/);
     assert.equal(calls.length, 0);
     const audio = await loadProxyMedia(proxy, "audio");
     assert.match(audio.url, /^blob:/);
-    assert.equal(calls[0].maxResponseBytes, 4 * 1024 * 1024);
+    assert.equal(calls[0].maxResponseBytes, MEDIA_RESOURCE_BYTES);
     assert.deepEqual(calls[0].headers, { Accept: "audio/*" });
     audio.release(); audio.release();
     const image = acquireImage(proxy);
@@ -84,7 +109,7 @@ test("media rejects unexpected MIME and external URLs and releases a loaded audi
 
 test("in-flight image queue stays bounded and cancels released queued work", async () => {
   const pending = [];
-  globalThis.window = { ToolBox: { network: { request: () => new Promise((resolve) => pending.push(resolve)) } } };
+  globalThis.window = { ToolBox: { network: streamMock( () => new Promise((resolve) => pending.push(resolve))) } };
   const handles = [];
   try {
     for (let i = 0; i < 24; i += 1) {
@@ -92,11 +117,15 @@ test("in-flight image queue stays bounded and cancels released queued work", asy
       handle.promise.catch(() => {});
       handles.push(handle);
     }
+    await settleMedia();
     assert.equal(pending.length, 3);
-    assert.throws(() => acquireImage(`${origin}/proxy/bounded/overflow`), /图片较多/);
+    const extra = acquireImage(`${origin}/proxy/bounded/overflow`);
+    extra.promise.catch(() => {});
+    handles.push(extra); // More than 24 small images queue instead of being rejected.
     handles.forEach((handle) => handle.release());
     pending.forEach((resolve) => resolve({ status: 500, headers: {}, body: "", bodyEncoding: "text" }));
     await Promise.allSettled(handles.map((handle) => handle.promise));
+    await settleMedia();
     assert.equal(pending.length, 3);
   } finally { delete globalThis.window; }
 });
@@ -117,11 +146,11 @@ test("syntax highlighting uses the JavaScript engine and escapes code markup", a
 test("failed shared image can retry without old references removing the recovered cache entry", async () => {
   let denied = true;
   let requests = 0;
-  globalThis.window = { ToolBox: { network: { request: async () => {
+  globalThis.window = { ToolBox: { network: streamMock( async () => {
     requests += 1;
     if (denied) throw { code: "PERMISSION_DENIED" };
     return { status: 200, headers: { "content-type": "image/png" }, bodyEncoding: "base64", body: "aGVsbG8=" };
-  } } } };
+  }) } };
   const first = acquireImage(proxy);
   const sharedFailure = acquireImage(proxy);
   try {
@@ -148,12 +177,13 @@ test("account teardown discards a late image or media reply before Blob creation
   const originalCreate = URL.createObjectURL;
   let created = 0;
   URL.createObjectURL = () => { created += 1; return `blob:late-${created}`; };
-  globalThis.window = { ToolBox: { network: { request: () => new Promise((resolve) => pending.push(resolve)) } } };
+  globalThis.window = { ToolBox: { network: streamMock( () => new Promise((resolve) => pending.push(resolve))) } };
   try {
     const image = acquireImage(proxy);
     const imageRejected = assert.rejects(image.promise, { code: "CANCELLED" });
     const audio = loadProxyMedia(proxy, "audio");
     const audioRejected = assert.rejects(audio, { code: "CANCELLED" });
+    await settleMedia();
     clearMediaCache();
     pending[0]({ status: 200, headers: { "content-type": "image/png" }, bodyEncoding: "base64", body: "aGVsbG8=" });
     pending[1]({ status: 200, headers: { "content-type": "audio/mpeg" }, bodyEncoding: "base64", body: "aGVsbG8=" });
@@ -161,4 +191,15 @@ test("account teardown discards a late image or media reply before Blob creation
     assert.equal(created, 0);
     image.release();
   } finally { clearMediaCache(); URL.createObjectURL = originalCreate; delete globalThis.window; }
+});
+
+
+test("more than two small media leases are allowed and cleared together", async () => {
+  globalThis.window = { ToolBox: { network: streamMock(async () => ({ status: 200, headers: { "content-type": "audio/mpeg" }, bodyEncoding: "base64", body: "aGVsbG8=" })) } };
+  try {
+    const media = await Promise.all(Array.from({ length: 4 }, () => loadProxyMedia(proxy, "audio")));
+    assert.equal(media.length, 4);
+    clearMediaCache();
+    media.forEach(handle => handle.release());
+  } finally { clearMediaCache(); delete globalThis.window; }
 });
