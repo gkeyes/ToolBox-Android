@@ -13,12 +13,8 @@ internal data class ToolNetworkRequest(
     val headers: Map<String, String>,
     val body: ByteArray?,
     val bodyIsJson: Boolean,
-    /** Legacy options retained for source compatibility; destinations are permission-controlled. */
-    val allowedHosts: Set<String>,
-    /** Ignored: HTTPS redirects are followed within the host redirect limit. */
-    val allowRedirects: Boolean,
     val timeoutMillis: Long,
-    val maxResponseBytes: Int,
+    val maxResponseBytes: Long?,
     val acceptHttpErrors: Boolean = true,
 )
 
@@ -65,7 +61,7 @@ internal class ToolNetworkStream(
     val response: Response,
     val finalUrl: String,
     private val control: ToolNetworkStreamControl,
-    private val maxResponseBytes: Int,
+    private val maxResponseBytes: Long?,
 ) {
     private var receivedBytes = 0L
     private val reading = AtomicBoolean(false)
@@ -75,12 +71,12 @@ internal class ToolNetworkStream(
         if (!reading.compareAndSet(false, true)) throw ToolNetworkFailure("STREAM_BUSY")
         try {
             control.requireActive()
-            val buffer = ByteArray(minOf(maxChunkBytes.toLong(), maxResponseBytes - receivedBytes + 1).toInt())
+            val buffer = ByteArray(minOf(maxChunkBytes.toLong(), maxResponseBytes?.let { it - receivedBytes + 1 } ?: maxChunkBytes.toLong()).toInt())
             val count = response.body.byteStream().read(buffer)
             control.requireActive()
             if (count < 0) return ToolNetworkChunk(ByteArray(0), true, receivedBytes)
             receivedBytes += count
-            if (receivedBytes > maxResponseBytes) throw ToolNetworkFailure("RESULT_TOO_LARGE")
+            if (maxResponseBytes != null && receivedBytes > maxResponseBytes) throw ToolNetworkFailure("RESULT_TOO_LARGE")
             return ToolNetworkChunk(buffer.copyOf(count), false, receivedBytes)
         } catch (error: IOException) {
             control.requireActive()

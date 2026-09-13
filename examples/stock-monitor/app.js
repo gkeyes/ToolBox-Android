@@ -4,7 +4,6 @@
   const STORAGE_KEY = "stock-monitor-state-v1";
   const TOKEN_KEY = "twelve-data-api-key";
   const TIMER_KEY = "quote-poll";
-  const MAX_RESPONSE_BYTES = 131072;
   const DEFAULT_INTERVAL_MS = 300000;
   const VALID_INTERVALS = new Set([60000, 300000, 900000, 1800000]);
   const $ = (id) => document.getElementById(id);
@@ -42,9 +41,9 @@
       price: finitePositiveOrNull(input.price),
       previousClose: finitePositiveOrNull(input.previousClose),
       changePct: finiteNumberOrNull(input.changePct),
-      currency: typeof input.currency === "string" ? input.currency.slice(0, 12) : "CNY",
-      exchange: typeof input.exchange === "string" ? input.exchange.slice(0, 30) : "",
-      sourceTime: typeof input.sourceTime === "string" ? input.sourceTime.slice(0, 40) : "",
+      currency: typeof input.currency === "string" ? input.currency : "CNY",
+      exchange: typeof input.exchange === "string" ? input.exchange : "",
+      sourceTime: typeof input.sourceTime === "string" ? input.sourceTime : "",
       quoteAt: Number.isFinite(input.quoteAt) ? input.quoteAt : null,
       fetchedAt: Number.isFinite(input.fetchedAt) ? input.fetchedAt : null,
       error: null,
@@ -215,7 +214,7 @@
     if (error?.code === "NETWORK_BLOCKED") return "行情地址被网络策略阻止。";
     if (error?.code === "RATE_LIMITED") return "请求过于频繁，请稍后重试。";
     const message = typeof error?.message === "string" ? error.message.trim() : "";
-    return message && message.length <= 160 ? message : fallback;
+    return message || fallback;
   }
 
   function render() {
@@ -292,8 +291,6 @@
   async function requestJson(request) {
     const response = await toolbox().network.request({
       method: "GET",
-      timeoutMs: 20000,
-      maxResponseBytes: MAX_RESPONSE_BYTES,
       ...request
     });
     if (response.bodyEncoding !== "text") throw new Error("行情响应不是文本 JSON。");
@@ -334,7 +331,7 @@
 
   async function fetchTwelveData(item) {
     if (!tokenValue) throw new Error("请先保存 Twelve Data API Token。");
-    if (!/^[A-Z0-9./:_-]{1,32}$/.test(item.symbol)) throw new Error("Twelve Data 股票代码格式无效。");
+    if (!/^[A-Z0-9./:_-]+$/.test(item.symbol)) throw new Error("Twelve Data 股票代码格式无效。");
     const data = await requestJson({
       url: `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(item.symbol)}`,
       headers: { Accept: "application/json", Authorization: `apikey ${tokenValue}` }
@@ -349,8 +346,8 @@
       price,
       previousClose,
       changePct,
-      currency: String(data.currency || item.currency || "").slice(0, 12),
-      exchange: String(data.exchange || item.exchange || "全球市场").slice(0, 30),
+      currency: String(data.currency || item.currency || ""),
+      exchange: String(data.exchange || item.exchange || "全球市场"),
       sourceTime: String(data.datetime || ""),
       quoteTimestamp: Number.isFinite(Number(data.timestamp)) ? Number(data.timestamp) * 1000 : null
     };
@@ -362,7 +359,7 @@
 
   async function deliverAlert(item, kind, threshold) {
     const above = kind === "above";
-    const notificationId = `${item.id}-${kind}`.slice(0, 64);
+    const notificationId = `${item.id}-${kind}`;
     const title = `${item.name || item.symbol}价格提醒`;
     const body = `${item.symbol} 当前 ${formatPrice(item.price, item.currency)}，已${above ? "高于" : "低于"} ${formatPrice(threshold, item.currency)}。`;
     try {
@@ -568,7 +565,7 @@
 
     if (!symbol) { showFormError("请输入股票代码。"); return; }
     if (provider === "tencent" && !/^\d{6}$/.test(symbol)) { showFormError("腾讯行情需要六位 A 股代码。"); return; }
-    if (provider === "twelve" && !/^[A-Z0-9./:_-]{1,32}$/.test(symbol)) { showFormError("Twelve Data 股票代码格式无效。"); return; }
+    if (provider === "twelve" && !/^[A-Z0-9./:_-]+$/.test(symbol)) { showFormError("Twelve Data 股票代码格式无效。"); return; }
     if (Number.isNaN(upper) || Number.isNaN(lower)) { showFormError("提醒价格必须是大于 0 的数字。"); return; }
     if (upper !== null && lower !== null && lower >= upper) { showFormError("低价提醒必须小于高价提醒。"); return; }
     if (!VALID_INTERVALS.has(intervalMs)) { showFormError("监控间隔无效。"); return; }
@@ -615,7 +612,7 @@
     if (!item) return;
     state.items = state.items.filter((candidate) => candidate.id !== editingId);
     for (const kind of ["above", "below"]) {
-      const id = `${item.id}-${kind}`.slice(0, 64);
+      const id = `${item.id}-${kind}`;
       try { await toolbox().notifications.cancel(id); } catch (_) {}
     }
     try {

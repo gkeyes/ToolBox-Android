@@ -10,10 +10,21 @@
   "icon": "icon.svg",
   "apiVersion": "1.0",
   "minHostVersion": "0.2.0",
-  "categories": ["游戏", "益智"],
+  "categories": [
+    "游戏",
+    "益智"
+  ],
   "permissions": [
-    {"name": "storage", "reason": "保存当前棋局和最高分。", "required": false},
-    {"name": "haptics", "reason": "滑动和合并时提供轻触反馈。", "required": false}
+    {
+      "name": "storage",
+      "reason": "保存当前棋局和最高分。",
+      "required": false
+    },
+    {
+      "name": "haptics",
+      "reason": "滑动和合并时提供轻触反馈。",
+      "required": false
+    }
   ],
   "securityProfile": "strict",
   "ui": {
@@ -21,9 +32,5 @@
     "allowFullscreen": false,
     "statusBarStyle": "auto",
     "showHostToolbar": true
-  },
-  "limits": {
-    "storageBytes": 65536,
-    "maxBridgePayloadBytes": 4096
   }
 }

@@ -1,11 +1,9 @@
 package io.toolbox.tool.runtime
 
+import io.toolbox.core.data.ResourceCapacity
 import android.net.Uri
 import android.os.Looper
 import android.os.Handler
-import android.os.SystemClock
-import android.view.InputDevice
-import android.view.MotionEvent
 import android.webkit.WebView
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
@@ -18,13 +16,12 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
 
 fun interface RuntimeBridgeProvider {
     fun create(runtime: PreparedToolRuntime): RuntimeBridgeConfiguration
@@ -35,7 +32,6 @@ data class RuntimeBridgeConfiguration(
     val handlers: RuntimeM1Handlers,
     val hostVersion: String,
     val generation: String = "",
-    val maxPayloadBytes: Int = DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
     val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
     val browserLaunchGuard: () -> Unit = {
@@ -44,31 +40,26 @@ data class RuntimeBridgeConfiguration(
 ) {
     init {
         require(hostVersion.matches(Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")))
-        require(maxPayloadBytes in MIN_BRIDGE_PAYLOAD_BYTES..MAX_BRIDGE_PAYLOAD_BYTES)
     }
 
-    companion object {
-        const val DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES = 256 * 1024
-        const val MIN_BRIDGE_PAYLOAD_BYTES = 4 * 1024
-        const val MAX_BRIDGE_PAYLOAD_BYTES = 8 * 1024 * 1024
-    }
 }
 
 class RuntimeBridgeSession internal constructor(
     private val identity: RuntimeSessionIdentity,
     authorization: RuntimeAuthorizationPolicy,
     handlers: RuntimeM1Handlers,
-    private val maxPayloadBytes: Int,
     m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
-    private val clockMillis: () -> Long = SystemClock::elapsedRealtime,
     private val browserLaunchGuard: () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
     },
 ) {
+    // A JSON message is decoded as UTF-16. This is current allocation capacity,
+    // not the obsolete per-tool manifest quota.
+    private val maxPayloadBytes: Int
+        get() = (ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
     private val active = AtomicBoolean(true)
     private val eventReady = AtomicBoolean(false)
-    private val gestureAtMillis = AtomicLong(NO_GESTURE)
     private val inFlightIds = ConcurrentHashMap.newKeySet<String>()
     private val eventProxy = AtomicReference<JavaScriptReplyProxy?>(null)
     private val pendingEvents = ArrayDeque<String>()
@@ -83,8 +74,8 @@ class RuntimeBridgeSession internal constructor(
         handlers = handlers,
         m2Handlers = m2Handlers,
         m3Handlers = m3Handlers,
-        maxResponseBytes = maxPayloadBytes,
-        browserLaunchGuard = ::requireBrowserForegroundSession,
+        browserLaunchGuard = { browserLaunchGuard(); requireForegroundSession() },
+        foregroundInteractionGuard = { withContext(Dispatchers.Main.immediate) { requireForegroundSession() } },
     )
     private val sessionCleanup = m3Handlers.sessionCleanup
     private val network = m2Handlers.network
@@ -102,30 +93,20 @@ class RuntimeBridgeSession internal constructor(
             accept(view, message, sourceOrigin, isMainFrame, replyProxy)
         }
         WebViewCompat.addDocumentStartJavaScript(webView, shim(identity), setOf(allowedOrigin))
-        webView.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_UP && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) {
-                gestureAtMillis.set(clockMillis())
-            }
-            false
-        }
         RuntimeBridgeLifecycle.register(webView, this)
         attachedView = WeakReference(webView)
     }
 
-    private fun requireBrowserForegroundSession() {
+    private fun requireForegroundSession() {
         check(Looper.myLooper() == Looper.getMainLooper())
         val view = attachedView.get()
         if (!active.get() || view == null || !RuntimeBridgeLifecycle.isCurrent(view, this)) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The browser request belongs to an ended tool session")
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The request belongs to an ended tool session")
         }
-        browserLaunchGuard()
         if (!view.isAttachedToWindow || !view.isShown || !view.hasWindowFocus()) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before opening a browser")
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before using this capability")
         }
-        val touchedAt = gestureAtMillis.get()
-        if (touchedAt == NO_GESTURE || clockMillis() - touchedAt !in 0..5_000L) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "Tap the link again to open the browser")
-        }
+
     }
 
     private fun accept(
@@ -142,10 +123,7 @@ class RuntimeBridgeSession internal constructor(
             return
         }
         val exactSourceOrigin = sourceOrigin.toString()
-        val now = clockMillis()
-        val touchedAt = gestureAtMillis.get()
-        val touchAge = if (touchedAt == NO_GESTURE) null else now - touchedAt
-        val admitted = jobs.launch(retainedBytes = encoded.length * 2) {
+        val admitted = jobs.launch(retainedBytes = (encoded.length.toLong() * Char.SIZE_BYTES).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
             if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) {
                 replyAndAwaitDelivery(
                     webView,
@@ -175,7 +153,7 @@ class RuntimeBridgeSession internal constructor(
             try {
                 val response = dispatcher.dispatch(
                     request,
-                    RuntimeInboundContext(exactSourceOrigin, isMainFrame, touchAge),
+                    RuntimeInboundContext(exactSourceOrigin, isMainFrame),
                 )
                 replyAndAwaitDelivery(webView, replyProxy, response)
                 if (request.method == "ready" && response is RuntimeRpcResponse.Success) {
@@ -189,7 +167,7 @@ class RuntimeBridgeSession internal constructor(
             }
         }
         if (admitted == null) {
-            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Too many pending ToolBox requests"))
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Insufficient memory for pending ToolBox requests"))
         }
     }
 
@@ -203,25 +181,23 @@ class RuntimeBridgeSession internal constructor(
         eventReady.set(false)
         eventProxy.set(null)
         synchronized(pendingEvents) { pendingEvents.clear() }
-        gestureAtMillis.set(NO_GESTURE)
         runCatching { WebViewCompat.removeWebMessageListener(webView, BRIDGE_OBJECT) }
-        webView.setOnTouchListener(null)
     }
 
     internal fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean {
         if (!active.get() || !EVENT_NAME.matches(name)) return false
-        val encoded = JSONObject()
-            .put("type", "event")
-            .put("event", name)
-            .put("generation", identity.generation)
-            .put("timestamp", System.currentTimeMillis())
-            .put("data", JSONTokener(RuntimeRpcJson.encodeValue(payload)).nextValue())
-            .toString()
+        val encoded = RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+            "type" to RpcValue.StringValue("event"),
+            "event" to RpcValue.StringValue(name),
+            "generation" to RpcValue.StringValue(identity.generation),
+            "timestamp" to RpcValue.Number(System.currentTimeMillis().toDouble()),
+            "data" to payload,
+        )))
         if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) return false
         val proxy = eventProxy.get()
         if (!eventReady.get() || proxy == null) {
             synchronized(pendingEvents) {
-                if (pendingEvents.size == MAX_PENDING_EVENTS) pendingEvents.removeFirst()
+                if (encoded.length.toLong() * Char.SIZE_BYTES > ResourceCapacity.availableHeapBytes()) return false
                 pendingEvents.addLast(encoded)
             }
             return true
@@ -270,7 +246,7 @@ class RuntimeBridgeSession internal constructor(
                     response.id,
                     RuntimeRpcError(
                         RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                        "响应编码后超过 $maxPayloadBytes 字节消息上限；请减少单页数据或提高 manifest 的 limits.maxBridgePayloadBytes。",
+                        "当前可用内存不足以编码响应；请分块读取，或释放内存后重试。",
                     ),
                 ),
             )
@@ -301,7 +277,6 @@ class RuntimeBridgeSession internal constructor(
               const pending = new Map();
               const listeners = new Map();
               const earlyEvents = new Map();
-              let earlyEventCount = 0;
               let sequence = 0;
               nativeBridge.onmessage = event => {
                 let response;
@@ -313,18 +288,9 @@ class RuntimeBridgeSession internal constructor(
                       try { callback(response.data); } catch (_) {}
                     });
                   } else {
-                    if (earlyEventCount >= 64) {
-                      for (const [name, values] of earlyEvents) {
-                        if (values.length > 0) {
-                          values.shift(); earlyEventCount -= 1;
-                          if (values.length === 0) earlyEvents.delete(name);
-                          break;
-                        }
-                      }
-                    }
                     let queue = earlyEvents.get(response.event);
                     if (!queue) earlyEvents.set(response.event, queue = []);
-                    queue.push(response.data); earlyEventCount += 1;
+                    queue.push(response.data);
                   }
                   try { globalThis.dispatchEvent(new CustomEvent(`toolbox:${'$'}{response.event}`, { detail: response.data })); } catch (_) {}
                   return;
@@ -341,10 +307,6 @@ class RuntimeBridgeSession internal constructor(
                 return value;
               };
               const call = (method, params = {}) => new Promise((resolve, reject) => {
-                if (pending.size >= 32) {
-                  reject(Object.assign(new Error('Too many pending ToolBox requests'), { code: 'BUSY' }));
-                  return;
-                }
                 const id = `${'$'}{Date.now().toString(36)}-${'$'}{(++sequence).toString(36)}`;
                 pending.set(id, { resolve, reject });
                 try {
@@ -415,7 +377,6 @@ class RuntimeBridgeSession internal constructor(
                 const queued = earlyEvents.get(name);
                 if (queued) {
                   earlyEvents.delete(name);
-                  earlyEventCount -= queued.length;
                   queueMicrotask(() => queued.forEach(payload => {
                     try { listener(payload); } catch (_) {}
                   }));
@@ -508,9 +469,7 @@ class RuntimeBridgeSession internal constructor(
 
     private companion object {
         const val BRIDGE_OBJECT = "__toolboxNative"
-        const val NO_GESTURE = Long.MIN_VALUE
-        const val MAX_PENDING_EVENTS = 64
-        val EVENT_NAME = Regex("^[a-z][a-zA-Z0-9.]{1,63}$")
+        val EVENT_NAME = Regex("^[a-z][a-zA-Z0-9.]+$")
     }
 }
 
@@ -540,81 +499,96 @@ internal object RuntimeBridgeLifecycle {
         sessions[webView]?.emitEvent(webView, name, payload) == true
 }
 
-internal object RuntimeRpcJson {
+object RuntimeRpcJson {
     fun encodeValue(value: RpcValue): String = buildString { appendJson(value) }
 
+    fun parseValue(encoded: String): RpcValue {
+        val pending = ArrayDeque<Pair<Any, RpcValue>>()
+        fun allocate(source: Any?): RpcValue = when (source) {
+            null -> RpcValue.Null
+            is Boolean -> RpcValue.Bool(source)
+            is Number -> RpcValue.Number(source.toDouble().also { require(it.isFinite()) })
+            is String -> RpcValue.StringValue(source)
+            is Map<*, *> -> RpcValue.ObjectValue(linkedMapOf()).also { pending.addLast(source to it) }
+            is List<*> -> RpcValue.ArrayValue(mutableListOf()).also { pending.addLast(source to it) }
+            else -> throw IllegalArgumentException("json")
+        }
+        val result = allocate(io.toolbox.tool.packagekit.backup.BackupJson.parse(encoded.toByteArray(Charsets.UTF_8)))
+        while (pending.isNotEmpty()) {
+            val (source, target) = pending.removeLast()
+            when (target) {
+                is RpcValue.ObjectValue -> {
+                    @Suppress("UNCHECKED_CAST") val map = target.value as MutableMap<String, RpcValue>
+                    (source as Map<*, *>).forEach { (key, child) -> map[key as String] = allocate(child) }
+                }
+                is RpcValue.ArrayValue -> {
+                    @Suppress("UNCHECKED_CAST") val list = target.value as MutableList<RpcValue>
+                    (source as List<*>).forEach { list.add(allocate(it)) }
+                }
+                else -> error("JSON_CONTAINER")
+            }
+        }
+        return result
+    }
+
     fun decodeRequest(encoded: String): RuntimeRpcRequest {
-        val root = JSONTokener(encoded).nextValue() as? JSONObject ?: throw IllegalArgumentException("request")
+        val root = (parseValue(encoded) as? RpcValue.ObjectValue)?.value ?: throw IllegalArgumentException("request")
         val allowedKeys = setOf("id", "method", "nonce", "toolId", "versionCode", "generation", "params")
-        require(root.keys().asSequence().all { it in allowedKeys })
-        val params = if (root.has("params")) root.get("params") else JSONObject()
+        require(root.keys.all { it in allowedKeys })
+        fun string(name: String): String = (root[name] as? RpcValue.StringValue)?.value
+            ?.also { require(it.isNotEmpty()) } ?: throw IllegalArgumentException(name)
+        val version = (root["versionCode"] as? RpcValue.Number)?.value ?: throw IllegalArgumentException("versionCode")
+        require(version in 1.0..Int.MAX_VALUE.toDouble() && version % 1 == 0.0)
         return RuntimeRpcRequest(
-            id = root.requiredString("id", 1, 128).also { require(isSafeRuntimeRequestId(it)) },
-            method = root.requiredString("method", 1, 96),
-            nonce = root.requiredString("nonce", 16, 128),
-            toolId = root.requiredString("toolId", 5, 120),
-            versionCode = root.getInt("versionCode").also { require(it > 0) },
-            generation = root.requiredString("generation", 1, 256),
-            params = fromJson(params) as? RpcValue.ObjectValue ?: throw IllegalArgumentException("params"),
+            id = string("id").also { require(isSafeRuntimeRequestId(it)) },
+            method = string("method"),
+            nonce = string("nonce"),
+            toolId = string("toolId"),
+            versionCode = version.toInt(),
+            generation = string("generation"),
+            params = (root["params"] ?: RpcValue.ObjectValue(emptyMap())) as? RpcValue.ObjectValue
+                ?: throw IllegalArgumentException("params"),
             encodedBytes = encoded.toByteArray(Charsets.UTF_8).size,
         )
     }
 
-    fun encodeResponse(response: RuntimeRpcResponse): String = when (response) {
-        is RuntimeRpcResponse.Success -> JSONObject()
-            .put("id", response.id)
-            .put("ok", true)
-            .put("result", toJson(response.result))
-            .toString()
-        is RuntimeRpcResponse.Failure -> JSONObject()
-            .put("id", response.id)
-            .put("ok", false)
-            .put(
-                "error",
-                toJson(response.error.toRpcValue()),
-            )
-            .toString()
-    }
-
-    private fun JSONObject.requiredString(name: String, min: Int, max: Int): String =
-        getString(name).also { require(it.length in min..max) }
-
-    private fun fromJson(value: Any?): RpcValue = when (value) {
-        null, JSONObject.NULL -> RpcValue.Null
-        is Boolean -> RpcValue.Bool(value)
-        is Number -> RpcValue.Number(value.toDouble())
-        is String -> RpcValue.StringValue(value)
-        is JSONArray -> RpcValue.ArrayValue((0 until value.length()).map { fromJson(value.get(it)) })
-        is JSONObject -> RpcValue.ObjectValue(value.keys().asSequence().associateWith { fromJson(value.get(it)) })
-        else -> throw IllegalArgumentException("json")
-    }
+    fun encodeResponse(response: RuntimeRpcResponse): String = encodeValue(RpcValue.ObjectValue(when (response) {
+        is RuntimeRpcResponse.Success -> mapOf(
+            "id" to RpcValue.StringValue(response.id), "ok" to RpcValue.Bool(true), "result" to response.result,
+        )
+        is RuntimeRpcResponse.Failure -> mapOf(
+            "id" to RpcValue.StringValue(response.id), "ok" to RpcValue.Bool(false), "error" to response.error.toRpcValue(),
+        )
+    }))
 
     private fun StringBuilder.appendJson(value: RpcValue) {
-        when (value) {
-            RpcValue.Null -> append("null")
-            is RpcValue.Bool -> append(value.value)
-            is RpcValue.Number -> {
-                require(value.value.isFinite())
-                append(value.value)
-            }
-            is RpcValue.StringValue -> appendJsonString(value.value)
-            is RpcValue.ArrayValue -> {
-                append('[')
-                value.value.forEachIndexed { index, child ->
-                    if (index > 0) append(',')
-                    appendJson(child)
+        val pending = ArrayDeque<Any>()
+        pending.addLast(value)
+        while (pending.isNotEmpty()) {
+            when (val item = pending.removeLast()) {
+                is String -> append(item)
+                RpcValue.Null -> append("null")
+                is RpcValue.Bool -> append(item.value)
+                is RpcValue.Number -> { require(item.value.isFinite()); append(item.value) }
+                is RpcValue.StringValue -> appendJsonString(item.value)
+                is RpcValue.ArrayValue -> {
+                    append('[')
+                    pending.addLast("]")
+                    item.value.indices.reversed().forEach { index ->
+                        pending.addLast(item.value[index])
+                        if (index > 0) pending.addLast(",")
+                    }
                 }
-                append(']')
-            }
-            is RpcValue.ObjectValue -> {
-                append('{')
-                value.value.entries.forEachIndexed { index, (name, child) ->
-                    if (index > 0) append(',')
-                    appendJsonString(name)
-                    append(':')
-                    appendJson(child)
+                is RpcValue.ObjectValue -> {
+                    append('{')
+                    pending.addLast("}")
+                    item.value.entries.toList().asReversed().forEachIndexed { index, (name, child) ->
+                        pending.addLast(child)
+                        pending.addLast(":")
+                        pending.addLast(RpcValue.StringValue(name))
+                        if (index < item.value.size - 1) pending.addLast(",")
+                    }
                 }
-                append('}')
             }
         }
     }
@@ -641,17 +615,6 @@ internal object RuntimeRpcJson {
         append('"')
     }
 
-    private fun toJson(value: RpcValue): Any = when (value) {
-        RpcValue.Null -> JSONObject.NULL
-        is RpcValue.Bool -> value.value
-        is RpcValue.Number -> value.value
-        is RpcValue.StringValue -> value.value
-        is RpcValue.ArrayValue -> JSONArray().also { output -> value.value.forEach { output.put(toJson(it)) } }
-        is RpcValue.ObjectValue -> JSONObject().also { output ->
-            value.value.forEach { (name, child) -> output.put(name, toJson(child)) }
-        }
-    }
-
     private const val HEX = "0123456789abcdef"
 }
 
@@ -676,7 +639,6 @@ internal fun createRuntimeBridgeSession(
         handlers = configuration.handlers,
         m2Handlers = configuration.m2Handlers,
         m3Handlers = configuration.m3Handlers,
-        maxPayloadBytes = minOf(configuration.maxPayloadBytes, runtime.maxBridgePayloadBytes),
         browserLaunchGuard = configuration.browserLaunchGuard,
     )
 }

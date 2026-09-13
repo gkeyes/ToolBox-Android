@@ -27,7 +27,6 @@ internal interface BackupOperations {
 
 internal object BackupDataCodec {
     const val SECURE = "toolbox.runtime.v1.secure.values"
-    const val MAX_JSON = 32L * 1024 * 1024
     fun secureKey(key: String) = key == SECURE || key.startsWith("$SECURE.chunk.")
     // Archive host control records but never turn imported data into executable runtime requests.
     fun hostControl(key: String) = key.startsWith("__toolbox.") || key.startsWith("toolbox.host.")
@@ -56,13 +55,13 @@ internal object BackupDataCodec {
             reduceTransparency = data["reduceTransparency"]?.let(J::bool) ?: old.reduceTransparency,
         )
     }
-    fun write(file: File, value: Any?) { file.parentFile.mkdirs(); file.writeText(J.encode(value)) }
+    fun write(file: File, value: Any?) { requireNotNull(file.parentFile).mkdirs(); file.writeText(J.encode(value)) }
     fun requireSuccess(result: DataResult<*>) { if (result !is DataResult.Success) throw BackupException("DATA_WRITE") }
 }
 
 internal fun backupMessage(failure: Throwable): String = when ((failure as? BackupException)?.code) {
     "CHECKSUM", "INDEX", "CORRUPT", "PATH", "MISSING", "TOOLS" -> "归档损坏、校验不符或含非法条目。请重新导出完整备份，或选择另一份文件。"
-    "LIMIT" -> "备份超出安全处理上限。请选择较小的完整备份，并检查可用存储空间。"
+    "LIMIT", "INSUFFICIENT_MEMORY", "INSUFFICIENT_STORAGE" -> "当前可用内存或存储空间不足。请释放资源后重试。"
     "VERSION", "FORMAT", "DATA_VERSION" -> "备份格式与当前版本不兼容。请升级 ToolBox，或使用兼容版本重新导出。"
     "PACKAGE" -> "工具包未通过现有安装校验，恢复已撤销。请检查原工具包后重新导出。"
     "PREVIEW_CHANGED" -> "本机工具或任务已变化，请重新核对下方覆盖清单。"

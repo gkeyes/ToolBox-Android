@@ -235,8 +235,10 @@ internal class RuntimeSessionManager(
             if (host.runtime !== runtime) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The tool runtime instance changed")
             }
-            if (visibleTools.singleOrNull() != runtime.toolId || host.state != RuntimeHostState.ATTACHED) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before opening a browser")
+            if (visibleTools.singleOrNull() != runtime.toolId || host.state != RuntimeHostState.ATTACHED ||
+                !host.webView.isAttachedToWindow || !host.webView.isShown || !host.webView.hasWindowFocus()
+            ) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before using this capability")
             }
         },
     )
@@ -1094,7 +1096,7 @@ internal class RuntimeSessionManager(
         fun toUiState() = RuntimeUiState.Ready(runtime, webView, mainEntryLoaded)
     }
 
-    private enum class RuntimeHostState { CREATING, ATTACHED, BACKGROUND_DETACHED, RESTORING, STOPPED, FAILED }
+    private enum class RuntimeHostState { ATTACHED, BACKGROUND_DETACHED, RESTORING, STOPPED }
 
     private data class ActiveLocationWatch(
         val listener: LocationListener,

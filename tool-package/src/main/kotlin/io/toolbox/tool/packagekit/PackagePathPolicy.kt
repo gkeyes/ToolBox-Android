@@ -13,9 +13,7 @@ internal object PackagePathPolicy {
     private val drivePath = Regex("^[A-Za-z]:")
     private val encodedSeparatorOrDot = Regex("%(?:2e|2f|5c)", RegexOption.IGNORE_CASE)
 
-    fun validate(raw: String, limits: PackageLimits): SafePackagePath = validate(raw, limits.maxPathCharacters)
-
-    fun validate(raw: String, maxPathCharacters: Int): SafePackagePath {
+    fun validate(raw: String): SafePackagePath {
         if (raw.isEmpty() || raw.indexOf('\u0000') >= 0 || raw.contains('\\')) {
             reject(PackageRejectionCode.PATH_INVALID, "Empty, NUL and backslash paths are forbidden")
         }
@@ -30,8 +28,9 @@ internal object PackagePathPolicy {
             reject(PackageRejectionCode.PATH_INVALID, "Empty, dot or parent path segment is forbidden: $raw")
         }
         val normalized = Normalizer.normalize(withoutTrailingSlash, Normalizer.Form.NFC)
-        if (normalized.length > maxPathCharacters) {
-            reject(PackageRejectionCode.PATH_TOO_LONG, "Path exceeds $maxPathCharacters characters: $raw")
+        // Android private ext4/F2FS directories use a 255-byte filename component.
+        if (normalized.split('/').any { it.toByteArray(Charsets.UTF_8).size > 255 }) {
+            reject(PackageRejectionCode.PATH_TOO_LONG, "Path component exceeds the filesystem filename size")
         }
         return SafePackagePath(
             normalized = normalized,

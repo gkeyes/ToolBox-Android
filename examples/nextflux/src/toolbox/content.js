@@ -12,14 +12,14 @@ export function safeContentUrl(value, baseUrl) {
 export function cleanAttributes(tag, attributes, baseUrl) {
   const clean = {};
   for (const [name, value] of Object.entries(attributes)) {
-    if (["alt", "title"].includes(name)) clean[name] = String(value).slice(0, 2000);
-    if (["colspan", "rowspan", "start"].includes(name) && /^\d{1,3}$/.test(value)) clean[name] = value;
+    if (["alt", "title"].includes(name)) clean[name] = String(value);
+    if (["colspan", "rowspan", "start"].includes(name) && /^\d+$/.test(value)) clean[name] = value;
     // Keep article-local anchors as inert metadata, never document-global IDs.
     if ((name === "id" && tag !== "img") || (name === "name" && tag === "a")) {
-      if (value && value.length <= 512) clean["data-article-anchor"] = value;
+      if (value) clean["data-article-anchor"] = value;
     }
     if (name === "class" && tag === "code") {
-      const language = String(value).match(/(?:^|\s)(?:language-|lang-)[a-zA-Z0-9_+-]{1,40}(?=\s|$)/)?.[0]?.trim();
+      const language = String(value).match(/(?:^|\s)(?:language-|lang-)[a-zA-Z0-9_+-]+(?=\s|$)/)?.[0]?.trim();
       if (language) clean.class = language;
     }
     if (name === "href" && tag === "a") {

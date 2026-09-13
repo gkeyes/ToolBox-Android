@@ -58,44 +58,6 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-internal fun ToolManagerScreen(
-    state: CatalogUiState,
-    importState: ImportUiState,
-    listState: LazyListState,
-    onAction: (CatalogAction) -> Unit,
-    onDestination: (MainDestination) -> Unit,
-    onImport: () -> Unit,
-    onInstallExamples: () -> Unit,
-    onDismissImport: () -> Unit,
-    onOpenDetails: (String) -> Unit,
-    onConfirmImport: () -> Unit = {},
-    onCancelImport: () -> Unit = {},
-    runningTools: @Composable () -> Unit = {},
-) {
-    PrimaryScreen(
-        selected = MainDestination.Tools,
-        onDestination = onDestination,
-        title = "工具",
-        onImport = onImport,
-    ) { padding, _ ->
-        ToolManagerContent(
-            state = state,
-            importState = importState,
-            listState = listState,
-            contentPadding = padding,
-            onAction = onAction,
-            onImport = onImport,
-            onInstallExamples = onInstallExamples,
-            onDismissImport = onDismissImport,
-            onOpenDetails = onOpenDetails,
-            onConfirmImport = onConfirmImport,
-            onCancelImport = onCancelImport,
-            runningTools = runningTools,
-        )
-    }
-}
-
-@Composable
 internal fun ToolManagerContent(
     state: CatalogUiState,
     importState: ImportUiState,

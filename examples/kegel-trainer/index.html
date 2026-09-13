@@ -216,15 +216,15 @@
           <div id="custom-settings" class="custom-settings" hidden>
             <label for="contract-range">
               <span>收紧时长 <output id="contract-output" for="contract-range">3 秒</output></span>
-              <input id="contract-range" type="range" min="1" max="10" step="1" value="3" />
+              <input id="contract-range" type="number" min="1" step="1" value="3" />
             </label>
             <label for="relax-range">
               <span>放松时长 <output id="relax-output" for="relax-range">3 秒</output></span>
-              <input id="relax-range" type="range" min="1" max="20" step="1" value="3" />
+              <input id="relax-range" type="number" min="1" step="1" value="3" />
             </label>
             <label for="reps-range">
               <span>重复次数 <output id="reps-output" for="reps-range">10 次</output></span>
-              <input id="reps-range" type="range" min="5" max="15" step="1" value="10" />
+              <input id="reps-range" type="number" min="1" step="1" value="10" />
             </label>
           </div>
         </section>
@@ -305,7 +305,7 @@
   <dialog id="clear-dialog" class="confirm-dialog" aria-labelledby="clear-title">
     <form method="dialog">
       <h2 id="clear-title">清空全部训练记录？</h2>
-      <p>最近 30 次完成记录会被永久删除，这项操作无法撤销。</p>
+      <p>全部完成记录会被永久删除，这项操作无法撤销。</p>
       <div class="dialog-actions">
         <button id="keep-history-button" class="secondary-button" type="button">保留记录</button>
         <button id="confirm-clear-button" class="danger-button" type="button">清空记录</button>

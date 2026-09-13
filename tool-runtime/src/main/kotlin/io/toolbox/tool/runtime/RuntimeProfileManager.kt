@@ -108,32 +108,13 @@ internal class ManagedRuntimeCreationPermit(internal val toolId: String) : Runti
     override fun close() = RuntimeWebViewLifecycle.cancel(this)
 }
 
-class RuntimeProfileManager internal constructor(
-    privateFilesDirectory: File,
-    private val afterCleanupProofWritten: suspend () -> Unit,
-    private val onRuntimeReleaseWait: suspend () -> Unit,
-    private val capabilityOverride: RuntimeProviderCapabilities? = null,
-    private val physicalDeleteOverride: ((String) -> PhysicalDeleteResult)? = null,
-) : RuntimeDataCleaner, RuntimePermitProvider {
-    constructor(privateFilesDirectory: File) : this(privateFilesDirectory, {}, {}, null, null)
-
-    internal constructor(
-        privateFilesDirectory: File,
-        afterCleanupProofWritten: suspend () -> Unit,
-    ) : this(privateFilesDirectory, afterCleanupProofWritten, {}, null, null)
-
-    internal constructor(
-        privateFilesDirectory: File,
-        capabilities: RuntimeProviderCapabilities,
-        physicalProfileDeletion: (String) -> PhysicalDeleteResult,
-    ) : this(privateFilesDirectory, {}, {}, capabilities, physicalProfileDeletion)
-
+class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, RuntimePermitProvider {
     private val markerRoot = privateFilesDirectory.toPath().toAbsolutePath().normalize()
         .resolve(MARKER_DIRECTORY)
     private val modeRoot = privateFilesDirectory.toPath().toAbsolutePath().normalize()
         .resolve(MODE_DIRECTORY)
 
-    suspend fun providerCapabilities(): RuntimeProviderCapabilities = capabilityOverride ?: withContext(Dispatchers.Main.immediate) {
+    suspend fun providerCapabilities(): RuntimeProviderCapabilities = withContext(Dispatchers.Main.immediate) {
         RuntimeProviderCapabilities(
             multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE),
             deleteBrowsingData = WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA),
@@ -151,7 +132,7 @@ class RuntimeProfileManager internal constructor(
     ): RuntimeCreationPermitResult {
         val permit = withContext(Dispatchers.Main.immediate) {
             if (awaitExistingRuntimeRelease) {
-                RuntimeWebViewLifecycle.reserveAfterRuntimeRelease(toolId, onRuntimeReleaseWait)
+                RuntimeWebViewLifecycle.reserveAfterRuntimeRelease(toolId)
             } else {
                 RuntimeWebViewLifecycle.reserve(toolId)
             }
@@ -241,7 +222,6 @@ class RuntimeProfileManager internal constructor(
                     result
                 }
             }
-            afterCleanupProofWritten()
             coroutineContext.ensureActive()
             val value = action()
             return RuntimeDataCleanupExecution.Completed(cleanupResult, value)
@@ -360,7 +340,7 @@ class RuntimeProfileManager internal constructor(
 
     @UiThread
     private fun deleteProfile(toolId: String): PhysicalDeleteResult =
-        physicalDeleteOverride?.invoke(toolId) ?: tryPhysicalDelete(toolId)
+        tryPhysicalDelete(toolId)
 
     @UiThread
     private fun tryPhysicalDelete(toolId: String): PhysicalDeleteResult {
@@ -535,7 +515,7 @@ class RuntimeProfileManager internal constructor(
             ?: return@runCatching null
         val mode = RuntimeIsolationMode.entries.singleOrNull { it.name == modeName }
             ?: return@runCatching null
-        if (!TOOL_ID_PATTERN.matches(toolId) || toolId.length > 120) return@runCatching null
+        if (!TOOL_ID_PATTERN.matches(toolId) || toolId.length > 255) return@runCatching null
         if (!PROFILE_PATTERN.matches(profileName) || profileName != RuntimeIdentity.profileName(toolId)) {
             return@runCatching null
         }
@@ -556,7 +536,7 @@ class RuntimeProfileManager internal constructor(
             ?: return@runCatching null
         val profileName = lines[2].removePrefix("profile=").takeIf { lines[2] == "profile=$it" }
             ?: return@runCatching null
-        if (!TOOL_ID_PATTERN.matches(toolId) || toolId.length > 120) return@runCatching null
+        if (!TOOL_ID_PATTERN.matches(toolId) || toolId.length > 255) return@runCatching null
         if (!PROFILE_PATTERN.matches(profileName) || profileName != RuntimeIdentity.profileName(toolId)) {
             return@runCatching null
         }
@@ -677,8 +657,9 @@ class RuntimeProfileManager internal constructor(
         const val MARKER_STATUS = "CONTENT_CLEARED_PENDING_PROFILE_DELETE"
         const val MODE_DIRECTORY = "runtime-isolation-mode"
         const val MODE_SUFFIX = ".mode"
-        const val MAX_MARKER_BYTES = 512L
-        const val MAX_MODE_BYTES = 512L
+        // Exact serialized record: fixed keys/newlines + filesystem tool ID + profile hash.
+        val MAX_MARKER_BYTES = CleanupMarker("x".repeat(255), "tbx_" + "0".repeat(24)).encode().toByteArray().size.toLong()
+        val MAX_MODE_BYTES = RuntimeIsolationMode.entries.maxOf { IsolationModeRecord("x".repeat(255), "tbx_" + "0".repeat(24), it).encode().toByteArray().size.toLong() }
         val TOOL_ID_PATTERN = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
         val PROFILE_PATTERN = Regex("^tbx_[0-9a-f]{24}$")
     }
@@ -744,7 +725,6 @@ object RuntimeWebViewLifecycle {
     @UiThread
     internal suspend fun reserveAfterRuntimeRelease(
         toolId: String,
-        onWaiting: suspend () -> Unit,
     ): ManagedRuntimeCreationPermit? {
         while (true) {
             if (toolId in clearingToolIds) return null
@@ -757,7 +737,6 @@ object RuntimeWebViewLifecycle {
             ) {
                 continue
             }
-            onWaiting()
             lifecycleGeneration.first { it != observedGeneration }
         }
     }

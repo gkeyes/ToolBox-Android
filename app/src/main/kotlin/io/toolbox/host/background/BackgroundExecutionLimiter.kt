@@ -7,7 +7,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 
 internal object BackgroundExecutionLimiter {
-    private val globalSlots = Semaphore(permits = 2)
+    private val globalSlots = Semaphore(permits = Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
     private val toolLocks = ConcurrentHashMap<String, Mutex>()
 
     suspend fun <T> run(toolId: String, block: suspend () -> T): T =

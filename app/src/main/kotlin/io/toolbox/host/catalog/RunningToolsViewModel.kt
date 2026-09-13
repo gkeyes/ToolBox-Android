@@ -50,7 +50,7 @@ internal class RunningToolsViewModel(
     }
 
     fun requestStopAll() {
-        if (state.value.stoppingSessionId != null || sessions.value.size <= 2) return
+        if (state.value.stoppingSessionId != null || sessions.value.isEmpty()) return
         mutableState.update { it.copy(confirmation = null, batchConfirmation = sessions.value.toList(), feedback = null) }
     }
 

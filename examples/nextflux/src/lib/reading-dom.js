@@ -19,7 +19,7 @@ export function createReadingDom(root, baseUrl, addPortal) {
   const attributes = (element, tag, attrs = {}) => {
     for (const [name, value] of Object.entries(attrs)) {
       if (!SAFE_ATTRIBUTES.has(name)) continue;
-      if (name === "class" && (tag !== "code" || !/^(?:language-|lang-)[a-zA-Z0-9_+-]{1,40}$/.test(value))) continue;
+      if (name === "class" && (tag !== "code" || !/^(?:language-|lang-)[a-zA-Z0-9_+-]+$/.test(value))) continue;
       if (name === "href" && (tag !== "a" || !safeContentUrl(value))) continue;
       element.setAttribute(name, value);
     }

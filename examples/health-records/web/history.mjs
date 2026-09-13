@@ -1,10 +1,7 @@
-import { HealthError, byteSize, specimen } from "./model.mjs";
+import { HealthError, specimen } from "./model.mjs";
 import { requestAi, validateAiReport } from "./ai.mjs";
 import { historyReportLimits } from "./ai-contract.mjs";
 
-export const HISTORY_BATCH_BYTES = 12 * 1024;
-export const MAX_HISTORY_BATCHES = 12;
-const MAX_BATCH_BYTES = 64 * 1024;
 const columns = ["date", "type", "value", "normal"];
 export const HISTORY_PROMPT = "整理这一组完整历史资料。series 按原始项目名、标本、原单位分开，points 各列严格对应 columns；同名不同单位不直接比较，不猜测缺失单位或作单位换算。previousPoint（如有）只是同组上一段末点，供跨段衔接，不是新增记录。只依据本批资料填写一个章节，概述有日期和原单位的变化、参考范围变化及无法比较的情况，不逐项重抄所有行，不诊断或推测原因。没有本批未提供资料的全局结论。程序会按批次顺序合成全部章节，不需要你重建全部历史。";
 
@@ -18,31 +15,13 @@ export function buildHistoryPlan(archive) {
     }
   }
   if (!grouped.size) throw new HealthError("没有可整理的历史记录");
-  const makeBatch = index => ({ part: { index, total: MAX_HISTORY_BATCHES }, columns, ...(index === 1 ? { profile: structuredClone(archive.profile) } : {}), series: [] });
-  let batches, budget = HISTORY_BATCH_BYTES;
-  while (budget <= MAX_BATCH_BYTES) {
-    batches = []; let batch = makeBatch(1), overflow = false;
-    outer: for (const series of grouped.values()) {
-      let segment;
-      for (let i = 0; i < series.points.length; i++) {
-        if (!segment) {
-          segment = { ...series, points: [], ...(i ? { previousPoint: [...series.points[i - 1]] } : {}) };
-          batch.series.push(segment);
-        }
-        segment.points.push([...series.points[i]]);
-        if (byteSize(batch) <= budget) continue;
-        segment.points.pop(); if (!segment.points.length) batch.series.pop();
-        if (!batch.series.length || batches.length >= MAX_HISTORY_BATCHES - 1) { overflow = true; break outer; }
-        batches.push(batch); batch = makeBatch(batches.length + 1); segment = undefined; i--;
-      }
-    }
-    if (!overflow) { batches.push(batch); break; }
-    budget = budget < MAX_BATCH_BYTES ? Math.min(MAX_BATCH_BYTES, budget * 2) : MAX_BATCH_BYTES + 1;
-  }
-  if (budget > MAX_BATCH_BYTES) throw new HealthError("完整历史超过本次分组预算，未截断或发送任何资料，请按年份导出后分别整理", "QUOTA_EXCEEDED");
-  for (const payload of batches) payload.part.total = batches.length;
+  // A complete metric series is a semantic unit; retain every point and every group.
+  const batches = [...grouped.values()].map((series, index) => ({
+    part: { index: index + 1, total: grouped.size }, columns,
+    ...(index === 0 ? { profile: structuredClone(archive.profile) } : {}), series: [series],
+  }));
   const items = archive.records.reduce((sum, record) => sum + record.items.length, 0);
-  return { batches, records: archive.records.length, items, series: grouped.size, budget };
+  return { batches, records: archive.records.length, items, series: grouped.size };
 }
 
 export function createHistoryRun(plan) {

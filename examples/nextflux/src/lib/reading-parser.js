@@ -65,8 +65,6 @@ export function createReadingParser(html, baseUrl) {
         return;
       }
       if (!ALLOWED_TAGS.has(tag)) return;
-      // Flatten pathological depth without truncating any safe article text.
-      if (parent.depth >= 80) return;
       entry.id = nextId++;
       entry.depth += 1;
       const attrs = cleanAttributes(tag, attributes, baseUrl);

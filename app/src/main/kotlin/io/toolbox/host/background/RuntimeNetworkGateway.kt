@@ -18,7 +18,6 @@ import kotlinx.coroutines.withContext
 internal class RuntimeNetworkGateway(
     private val proxy: ToolNetworkProxy,
     private val policy: InstalledManifestNetwork?,
-    private val bridgePayloadBytes: Int,
     private val validateNetworkAccess: suspend () -> Unit = {},
     private val toolId: String? = null,
 ) : RuntimeNetworkHandler {
@@ -26,14 +25,15 @@ internal class RuntimeNetworkGateway(
     init { toolId?.let { NetworkDomainInvalidation.register(it, this, streams::clear) } }
 
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
-        val limit = minOf(request.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES, policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES)
-        val timeout = minOf(request.timeoutMillis ?: DEFAULT_TIMEOUT_MILLIS, policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS)
+        val limit = request.maxResponseBytes?.toLong()
+            ?: policy?.maxResponseBytes?.takeUnless { it == Int.MAX_VALUE }?.toLong()
+        val timeout = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS
         val control = streams.reserve(streamId, timeout)
         try {
             validateNetworkAccess()
             val stream = proxy.openStream(
                 ToolNetworkRequest(request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
-                    request.body, request.bodyIsJson, emptySet(), true,
+                    request.body, request.bodyIsJson,
                     timeout, limit),
                 control,
             )
@@ -77,9 +77,9 @@ internal class RuntimeNetworkGateway(
     override suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse {
         validateNetworkAccess()
         val responseLimit = minOf(
-            request.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
-            policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
-            bridgePayloadBytes,
+            request.maxResponseBytes ?: policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
+            (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES)
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         )
         return when (val result = proxy.request(
             url = request.url,
@@ -87,7 +87,7 @@ internal class RuntimeNetworkGateway(
             headers = request.headers,
             body = request.body,
             bodyIsJson = request.bodyIsJson,
-            timeoutMillis = minOf(request.timeoutMillis ?: DEFAULT_TIMEOUT_MILLIS, policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS),
+            timeoutMillis = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS,
             maxResponseBytes = responseLimit,
         )) {
             is NetworkExecution.Success -> RuntimeNetworkResponse(
@@ -112,9 +112,13 @@ internal class RuntimeNetworkGateway(
                 else "网络连接或响应读取失败，请检查网络后重试。",
             )
             is NetworkExecution.TerminalFailure -> throw when (result.errorCode) {
+                "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(
+                    RuntimeRpcErrorCode.QUOTA_EXCEEDED,
+                    "当前可用内存不足，请使用分块流读取或释放内存后重试。",
+                )
                 "RESULT_TOO_LARGE" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                    "网络响应超过 $responseLimit 字节上限；请减少单页数据，或提高 manifest 中的网络与消息大小上限。",
+                    "网络响应超过本次请求或可用内存预算（$responseLimit 字节）；请使用分块流读取。",
                 )
                 "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.INVALID_REQUEST,
@@ -132,8 +136,8 @@ internal class RuntimeNetworkGateway(
     }
 
     private companion object {
-        const val DEFAULT_RESPONSE_BYTES = 4 * 1_024 * 1_024
-        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
+        const val DEFAULT_RESPONSE_BYTES = Int.MAX_VALUE
+        const val DEFAULT_TIMEOUT_MILLIS = 0L
     }
 }
 

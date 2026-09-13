@@ -59,13 +59,13 @@ internal class InstalledToolIconReader(private val privateFilesRoot: () -> Path)
     private fun readBounded(path: Path, limit: Int): ByteArray? {
         if (Files.size(path) !in 1L..limit.toLong()) return null
         return Files.newInputStream(path, NOFOLLOW_LINKS).use { stream ->
-            stream.readNBytes(limit + 1).takeIf { it.isNotEmpty() && it.size <= limit }
+            stream.readNBytes(limit).takeIf { it.isNotEmpty() && it.size <= limit }
         }
     }
 
     companion object {
-        const val MAX_ICON_BYTES = 4 * 1024 * 1024
-        const val MAX_SVG_BYTES = 256 * 1024
-        private const val MAX_MANIFEST_BYTES = 128 * 1024
+        val MAX_ICON_BYTES: Int get() = (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val MAX_SVG_BYTES: Int get() = MAX_ICON_BYTES
+        private val MAX_MANIFEST_BYTES: Int get() = MAX_ICON_BYTES
     }
 }

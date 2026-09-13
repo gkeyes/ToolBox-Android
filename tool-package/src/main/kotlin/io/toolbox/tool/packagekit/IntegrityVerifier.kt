@@ -12,7 +12,6 @@ internal object IntegrityVerifier {
     fun verify(
         metadata: Map<String, ByteArray>,
         actualHashes: Map<String, String>,
-        limits: PackageLimits,
     ): String? {
         val integrityBytes = metadata["integrity.json"]
         val signatureBytes = metadata["signature.json"]
@@ -23,7 +22,7 @@ internal object IntegrityVerifier {
             return null
         }
         val expectedHashes = try {
-            parseIntegrity(integrityBytes, limits)
+            parseIntegrity(integrityBytes)
         } catch (error: JsonFormatException) {
             reject(PackageRejectionCode.INTEGRITY_MALFORMED, error.message ?: "Malformed integrity.json")
         } catch (error: InspectionRejected) {
@@ -45,7 +44,7 @@ internal object IntegrityVerifier {
         return signatureBytes?.let { verifySignature(it, integrityBytes) }
     }
 
-    private fun parseIntegrity(bytes: ByteArray, limits: PackageLimits): Map<String, String> {
+    private fun parseIntegrity(bytes: ByteArray): Map<String, String> {
         val root = StrictJson.parse(bytes).asObject("integrity")
         root.requireOnly("integrity", setOf("schemaVersion", "algorithm", "files"))
         if (root.required("schemaVersion").asInt("integrity.schemaVersion") != 1) {
@@ -57,7 +56,7 @@ internal object IntegrityVerifier {
         val result = linkedMapOf<String, String>()
         val collisions = mutableSetOf<String>()
         for ((rawPath, value) in root.required("files").asObject("integrity.files")) {
-            val safe = PackagePathPolicy.validate(rawPath, limits)
+            val safe = PackagePathPolicy.validate(rawPath)
             if (safe.directory || safe.normalized in setOf("integrity.json", "signature.json")) {
                 throw JsonFormatException("integrity.files contains forbidden metadata path: $rawPath")
             }
@@ -86,7 +85,6 @@ internal object IntegrityVerifier {
                 throw JsonFormatException("signature.signedFile must be integrity.json")
             }
             val keyId = root.required("keyId").asString("signature.keyId")
-            if (keyId.length !in 8..128) throw JsonFormatException("signature.keyId length is invalid")
             val publicKey = decodeCanonicalBase64(root.required("publicKey").asString("signature.publicKey"))
             val signature = decodeCanonicalBase64(root.required("signature").asString("signature.signature"))
             if (signature.size != 64) throw JsonFormatException("Ed25519 signature must be 64 bytes")

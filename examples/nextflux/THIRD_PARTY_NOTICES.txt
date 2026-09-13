@@ -2,7 +2,7 @@ NEXTFLUX FOR TOOLBOX — THIRD-PARTY NOTICES
 
 Upstream application: https://github.com/electh/nextflux
 Upstream commit: a9f97de654d00f62cbbad877d583fae7cd76ec59
-Upstream README is retained verbatim in UPSTREAM.md.
+Upstream permission statement is retained verbatim in LICENSE.
 The upstream README contains the following permission statement, without assigning
 an SPDX license identifier. It is reproduced as written and is not relabeled MIT:
 
@@ -28,8 +28,8 @@ the same hash-checked Tailwind Oxide archive, not independently upgraded.
 Original location fields describe the source inventory.
 Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
 
-Lockfile SHA-256: db1e84d9efcd1397d38e5da958bd3770152006b50f51d29607cd694bf4b0a260
-Application metadata updated to 1.0.8; dependency graph and license inventory unchanged.
+Lockfile SHA-256: c0fd29658737b7dee610a3369b65a291db770d2ef8b3b7da81c9af2bcf6e83e0
+Build-only cleanup removed unused direct dependencies and unreachable lock entries; the license inventory remains a conservative superset.
 Inventory entries: 236
 Distinct license/notice texts: 118
 

@@ -1,8 +1,8 @@
 package io.toolbox.tool.packagekit.lifecycle
 
+import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.IntegrityVerifier
-import io.toolbox.tool.packagekit.PackageLimits
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
@@ -14,7 +14,7 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 /** Derive continuity from the hash-pinned installed bundle, not from an unverified keyId or trust DB. */
-internal fun installedSigningKey(filesRoot: Path, version: ToolVersion, limits: PackageLimits): String? {
+internal fun installedSigningKey(filesRoot: Path, version: ToolVersion): String? {
     val locator = "miniapps/${version.toolId}/versions/${version.versionCode}/bundle"
     require(version.bundleLocator.value == locator) { "Installed locator changed" }
     val root = filesRoot.toAbsolutePath().normalize()
@@ -33,14 +33,8 @@ internal fun installedSigningKey(filesRoot: Path, version: ToolVersion, limits: 
             val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             require(!attributes.isSymbolicLink && (attributes.isDirectory || attributes.isRegularFile))
             if (attributes.isRegularFile) {
-                require(hashes.size < limits.maxEntries)
                 val relative = bundle.relativize(path).joinToString("/") { it.toString() }
-                val metadataLimit = when (relative) {
-                    "integrity.json" -> 1024 * 1024
-                    "signature.json" -> 64 * 1024
-                    else -> 0
-                }
-                val collected = if (metadataLimit > 0) ByteArrayOutputStream() else null
+                val collected = if (relative in setOf("integrity.json", "signature.json")) ByteArrayOutputStream() else null
                 val digest = MessageDigest.getInstance("SHA-256")
                 var fileBytes = 0L
                 Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
@@ -50,12 +44,11 @@ internal fun installedSigningKey(filesRoot: Path, version: ToolVersion, limits: 
                         val count = input.read(bytes)
                         if (count < 0) break
                         if (count == 0) continue
-                        fileBytes += count
-                        totalBytes += count
-                        require(fileBytes <= limits.maxEntryBytes && totalBytes <= limits.maxExtractedBytes)
+                        fileBytes = Math.addExact(fileBytes, count.toLong())
+                        totalBytes = Math.addExact(totalBytes, count.toLong())
                         digest.update(bytes, 0, count)
                         if (collected != null) {
-                            require(fileBytes <= metadataLimit)
+                            ResourceCapacity.requireHeapBytes(Math.multiplyExact(fileBytes, 2))
                             collected.write(bytes, 0, count)
                         }
                     }
@@ -68,7 +61,7 @@ internal fun installedSigningKey(filesRoot: Path, version: ToolVersion, limits: 
     require(totalBytes == version.bundleBytes && aggregatePackageHash(hashes) == version.integrityHash) {
         "Installed bundle differs from the committed package"
     }
-    return IntegrityVerifier.verify(metadata, hashes, limits)
+    return IntegrityVerifier.verify(metadata, hashes)
 }
 
 /** Keep the existing catalog digest format byte-for-byte unchanged. */

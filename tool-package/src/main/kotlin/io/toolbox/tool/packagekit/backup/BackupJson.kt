@@ -2,14 +2,16 @@ package io.toolbox.tool.packagekit.backup
 
 import io.toolbox.tool.packagekit.JsonValue
 import io.toolbox.tool.packagekit.StrictJson
+import io.toolbox.core.data.ResourceCapacity
 import java.io.File
 import java.math.BigDecimal
 
 /** Strict UTF-8 and duplicate-key rejection also apply to user-selected backup metadata. */
 object BackupJson {
     fun parse(bytes: ByteArray): Any? = convert(StrictJson.parse(bytes))
-    fun read(file: File, limit: Long = 4L * 1024 * 1024): Map<String, Any?> {
-        require(file.length() <= limit) { "JSON_LIMIT" }
+    fun read(file: File): Map<String, Any?> {
+        // UTF-8 source plus UTF-16 decoding can coexist with the original bytes.
+        ResourceCapacity.requireHeapBytes(Math.multiplyExact(file.length(), 3))
         return obj(parse(file.readBytes()))
     }
     @Suppress("UNCHECKED_CAST")
@@ -43,12 +45,31 @@ object BackupJson {
         is Iterable<*> -> value.joinToString(",", "[", "]") { encode(it) }
         else -> error("JSON_TYPE")
     }
-    private fun convert(value: JsonValue): Any? = when (value) {
-        is JsonValue.ObjectValue -> value.values.mapValues { convert(it.value) }
-        is JsonValue.ArrayValue -> value.values.map(::convert)
-        is JsonValue.StringValue -> value.value
-        is JsonValue.NumberValue -> value.value
-        is JsonValue.BooleanValue -> value.value
-        JsonValue.NullValue -> null
+    private fun convert(value: JsonValue): Any? {
+        val pending = ArrayDeque<Pair<JsonValue, Any>>()
+        fun allocate(source: JsonValue): Any? = when (source) {
+            is JsonValue.ObjectValue -> linkedMapOf<String, Any?>().also { pending.addLast(source to it) }
+            is JsonValue.ArrayValue -> mutableListOf<Any?>().also { pending.addLast(source to it) }
+            is JsonValue.StringValue -> source.value
+            is JsonValue.NumberValue -> source.value
+            is JsonValue.BooleanValue -> source.value
+            JsonValue.NullValue -> null
+        }
+        val result = allocate(value)
+        while (pending.isNotEmpty()) {
+            val (source, target) = pending.removeLast()
+            when (source) {
+                is JsonValue.ObjectValue -> {
+                    @Suppress("UNCHECKED_CAST") val map = target as MutableMap<String, Any?>
+                    source.values.forEach { (key, child) -> map[key] = allocate(child) }
+                }
+                is JsonValue.ArrayValue -> {
+                    @Suppress("UNCHECKED_CAST") val list = target as MutableList<Any?>
+                    source.values.forEach { list.add(allocate(it)) }
+                }
+                else -> error("JSON_CONTAINER")
+            }
+        }
+        return result
     }
 }

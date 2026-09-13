@@ -3,9 +3,6 @@ const cancelled = () => Object.assign(new Error("图片加载已取消。"), { c
 // Only disposable image Blobs live here; article records never enter this cache.
 export function createImageCache({
   load,
-  dispose = () => {},
-  maxActive = Infinity,
-  maxConcurrent = 3,
   maxIdle = 12,
   maxIdleBytes = 8 * 1024 * 1024,
   idleMs = 30000,
@@ -19,20 +16,16 @@ export function createImageCache({
   const byBlob = new Map();
   const entries = new Set();
   const idle = new Map();
-  const queue = [];
-  let running = 0;
   let epoch = 0;
   let expiryTimer = null;
 
   function forget(entry, error = cancelled()) {
     entry.invalidated = true;
     entry.controller?.abort();
-    if (entry.blob) { dispose(entry.blob); entry.blob = null; }
+    entry.blob = null;
     if (bySource.get(entry.source) === entry) bySource.delete(entry.source);
     idle.delete(entry);
     entries.delete(entry);
-    const queuedIndex = queue.indexOf(entry);
-    if (queuedIndex >= 0) queue.splice(queuedIndex, 1);
     if (entry.blobUrl) {
       byBlob.delete(entry.blobUrl);
       revokeUrl(entry.blobUrl);
@@ -68,7 +61,6 @@ export function createImageCache({
   }
 
   async function start(entry) {
-    running += 1;
     const check = () => {
       if (entry.epoch !== epoch || entry.invalidated || !entry.references) throw cancelled();
     };
@@ -83,24 +75,11 @@ export function createImageCache({
       entry.settled = true;
       entry.resolve(entry.blobUrl);
     } catch (error) {
-      if (blob && entry.blob !== blob) dispose(blob);
       forget(entry, error);
-    } finally {
-      running -= 1;
-      drain();
     }
-  }
-
-  function drain() {
-    while (running < maxConcurrent && queue.length) start(queue.shift());
   }
 
   function lease(entry) {
-    if (!entry.references) {
-      let active = 0;
-      for (const value of entries) if (value.references) active += 1;
-      if (active >= maxActive) throw new Error("当前显示的图片较多，请滚动后重试。");
-    }
     entry.references += 1;
     idle.delete(entry);
     scheduleExpiry();
@@ -139,12 +118,11 @@ export function createImageCache({
         if (source.startsWith("blob:")) throw cancelled();
         entry = { source, epoch, references: 0, blob: null, blobUrl: null, bytes: 0, settled: false, invalidated: false, controller: new AbortController() };
         entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
-        // Admission precedes registration, so a refused image leaves no work.
         const handle = lease(entry);
         entries.add(entry);
         bySource.set(source, entry);
-        queue.push(entry);
-        drain();
+        // The shared media transport owns network admission and cancellation.
+        start(entry);
         return handle;
       }
       return lease(entry);

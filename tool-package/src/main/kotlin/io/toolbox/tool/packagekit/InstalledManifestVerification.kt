@@ -12,7 +12,6 @@ data class InstalledManifest(
     val permissions: Set<String>,
     val permissionDeclarations: List<InstalledManifestPermission>,
     val network: InstalledManifestNetwork?,
-    val maxBridgePayloadBytes: Int,
     val icon: String? = null,
 )
 
@@ -23,11 +22,8 @@ data class InstalledManifestPermission(
 )
 
 data class InstalledManifestNetwork(
-    val allowDomains: Set<String>,
-    val allowRedirects: Boolean,
     val maxResponseBytes: Int,
     val timeoutMs: Int,
-    val allowUserDomains: Boolean = false,
 )
 
 sealed interface InstalledManifestVerification {
@@ -43,7 +39,7 @@ object InstalledManifestVerifier {
         expectedSecurityProfile: CatalogSecurityProfile,
     ): InstalledManifestVerification {
         val parsed = try {
-            ManifestValidator.parse(manifestBytes, PackageLimits())
+            ManifestValidator.parse(manifestBytes)
         } catch (failure: JsonFormatException) {
             return InstalledManifestVerification.Rejected(
                 failure.message ?: "Installed manifest is invalid",
@@ -79,14 +75,10 @@ object InstalledManifestVerifier {
                 },
                 network = parsed.network?.let { network ->
                     InstalledManifestNetwork(
-                        allowDomains = network.allowDomains.toCollection(linkedSetOf()),
-                        allowRedirects = network.allowRedirects,
                         maxResponseBytes = network.maxResponseBytes,
                         timeoutMs = network.timeoutMs,
-                        allowUserDomains = network.allowUserDomains,
                     )
                 },
-                maxBridgePayloadBytes = parsed.limits.maxBridgePayloadBytes,
                 icon = parsed.icon,
             ),
         )

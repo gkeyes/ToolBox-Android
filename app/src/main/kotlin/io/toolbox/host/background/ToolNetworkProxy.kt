@@ -30,19 +30,16 @@ internal fun interface ToolNetworkTransport {
 
 class ToolNetworkProxy private constructor(
     private val dns: Dns,
-    private val maxRedirects: Int,
     private val transport: ToolNetworkTransport?,
 ) {
     constructor(
         dns: Dns = Dns.SYSTEM,
-        maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
-    ) : this(dns, maxRedirects, null)
+    ) : this(dns, null)
 
     internal constructor(
         transport: ToolNetworkTransport,
         dns: Dns = Dns.SYSTEM,
-        maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
-    ) : this(dns, maxRedirects, transport)
+    ) : this(dns, transport)
 
     private val client by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         OkHttpClient.Builder()
@@ -60,45 +57,39 @@ class ToolNetworkProxy private constructor(
 
     internal fun clientForRequest(timeoutMillis: Long): OkHttpClient = client.newBuilder()
         .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .writeTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .build()
 
-    /** Legacy destination options are ignored; the caller enforces the network capability grant. */
+    /** The caller enforces the network capability grant. */
     suspend fun httpGet(
         url: String,
-        allowedHosts: Set<String> = emptySet(),
-        allowRedirects: Boolean = false,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
-        maxResponseBytes: Int = MAX_RESULT_BYTES,
+        maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
     ): NetworkExecution = request(
         url = url,
         method = NetworkRequestMethod.GET,
-        allowedHosts = allowedHosts,
-        allowRedirects = allowRedirects,
         timeoutMillis = timeoutMillis,
         maxResponseBytes = maxResponseBytes,
         acceptHttpErrors = false,
     )
 
-    /** HTTPS and resource limits apply; legacy allowlist and redirect switches are ignored. */
-    @Suppress("UNUSED_PARAMETER")
+    /** HTTPS, cross-origin credentials, cancellation and real resource capacity apply. */
     suspend fun request(
         url: String,
         method: NetworkRequestMethod,
         headers: Map<String, String> = emptyMap(),
         body: ByteArray? = null,
         bodyIsJson: Boolean = false,
-        allowedHosts: Set<String> = emptySet(),
-        allowRedirects: Boolean = true,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
         acceptHttpErrors: Boolean = true,
     ): NetworkExecution {
-        if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
+        if (timeoutMillis < 0 || timeoutMillis > Int.MAX_VALUE) {
             return NetworkExecution.TerminalFailure("INVALID_TIMEOUT")
         }
-        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
+        if (maxResponseBytes < 1) {
             return NetworkExecution.TerminalFailure("INVALID_RESPONSE_LIMIT")
         }
         val requestClient = if (transport == null) {
@@ -111,8 +102,9 @@ class ToolNetworkProxy private constructor(
         var currentMethod = method
         var currentBody = body
         var includeCallerHeaders = true
-        var redirects = 0
+        val visited = mutableSetOf<String>()
         while (true) {
+            if (!visited.add("$currentMethod $current")) return NetworkExecution.TerminalFailure("REDIRECT_LOOP")
             val validation = NetworkPolicy.validateEndpoint(current)
             if (validation != null) return NetworkExecution.TerminalFailure(validation)
             val response = try {
@@ -163,7 +155,6 @@ class ToolNetworkProxy private constructor(
             }
             response.let {
                 if (it.code in REDIRECT_CODES) {
-                    if (redirects >= maxRedirects) return NetworkExecution.TerminalFailure("TOO_MANY_REDIRECTS")
                     val location = it.location
                         ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location)
@@ -174,7 +165,6 @@ class ToolNetworkProxy private constructor(
                         currentBody = null
                     }
                     current = redirected
-                    redirects += 1
                     continue
                 }
                 if (!acceptHttpErrors) {
@@ -210,16 +200,14 @@ class ToolNetworkProxy private constructor(
             headers,
             body,
             bodyIsJson,
-            _, // Legacy allowlist is no longer an authorization boundary.
-            _, // HTTPS redirects are always followed within the redirect limit.
             timeoutMillis,
             maxResponseBytes,
             acceptHttpErrors,
         ) = options
-        if (timeoutMillis !in MIN_TIMEOUT_MILLIS..MAX_TIMEOUT_MILLIS) {
+        if (timeoutMillis < 0 || timeoutMillis > Int.MAX_VALUE) {
             throw ToolNetworkFailure("INVALID_TIMEOUT")
         }
-        if (maxResponseBytes !in 1..MAX_PROXY_RESPONSE_BYTES) {
+        if (maxResponseBytes != null && maxResponseBytes < 1) {
             throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
         }
         val requestClient = if (transport == null) clientForRequest(timeoutMillis) else null
@@ -227,8 +215,9 @@ class ToolNetworkProxy private constructor(
         var currentMethod = method
         var currentBody = body
         var includeCallerHeaders = true
-        var redirects = 0
+        val visited = mutableSetOf<String>()
         while (true) {
+            if (!visited.add("$currentMethod $current")) throw ToolNetworkFailure("REDIRECT_LOOP")
             control.requireActive()
             NetworkPolicy.validateEndpoint(current)?.let { throw ToolNetworkFailure(it) }
             val response = try {
@@ -273,7 +262,6 @@ class ToolNetworkProxy private constructor(
             control.attach(response)
             if (response.code in REDIRECT_CODES) {
                 response.use {
-                    if (redirects >= maxRedirects) throw ToolNetworkFailure("TOO_MANY_REDIRECTS")
                     val location = it.header("Location") ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location) ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
@@ -285,7 +273,6 @@ class ToolNetworkProxy private constructor(
                         currentBody = null
                     }
                     current = redirected
-                    redirects += 1
                 }
                 continue
             }
@@ -301,12 +288,8 @@ class ToolNetworkProxy private constructor(
 
     private companion object {
         const val USER_AGENT = "ToolBox/0.6.6 (Android)"
-        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
-        const val MIN_TIMEOUT_MILLIS = 1_000L
-        const val MAX_TIMEOUT_MILLIS = 3_600_000L
-        const val DEFAULT_RESPONSE_BYTES = 4 * 1_024 * 1_024
-        const val MAX_PROXY_RESPONSE_BYTES = 64 * 1_024 * 1_024
-        const val DEFAULT_MAX_REDIRECTS = 5
+        const val DEFAULT_TIMEOUT_MILLIS = 0L
+        const val DEFAULT_RESPONSE_BYTES = Int.MAX_VALUE
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }
@@ -358,6 +341,7 @@ sealed interface NetworkExecution {
 }
 
 private fun IOException.toNetworkFailure(): NetworkExecution = when {
+    this is ToolNetworkFailure && code == "INSUFFICIENT_MEMORY" -> NetworkExecution.TerminalFailure(code)
     this is InterruptedIOException -> NetworkExecution.RetryableFailure("NETWORK_TIMEOUT")
     else -> NetworkExecution.RetryableFailure("NETWORK_IO")
 }
@@ -371,20 +355,27 @@ internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
 internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
     .asSequence()
     .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
-    .mapNotNull { name -> headers[name]?.takeIf { it.length <= 4_096 }?.let { name to it } }
-    .take(64)
+    .mapNotNull { name -> headers[name]?.let { name to it } }
     .toMap(linkedMapOf())
 
 private fun ResponseBody.readBounded(maxBytes: Int): ByteArray? {
+    val knownLength = contentLength()
+    if (knownLength > maxBytes) return null
+    if (knownLength > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) {
+        throw ToolNetworkFailure("INSUFFICIENT_MEMORY")
+    }
     byteStream().use { input ->
         val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
         val buffer = ByteArray(8 * 1024)
-        var total = 0
+        var total = 0L
         while (true) {
             val read = input.read(buffer)
             if (read < 0) break
             total += read
             if (total > maxBytes) return null
+            if (total > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) {
+                throw ToolNetworkFailure("INSUFFICIENT_MEMORY")
+            }
             output.write(buffer, 0, read)
         }
         return output.toByteArray()

@@ -258,7 +258,7 @@ internal fun BackgroundSafeguardsContent(
                             }
                             if (index != sessions.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         }
-                        if (sessions.size > 2) {
+                        if (sessions.isNotEmpty()) {
                             ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                             ToolBoxDestructiveButton(
                                 label = "全部停止", onClick = onStopAll,

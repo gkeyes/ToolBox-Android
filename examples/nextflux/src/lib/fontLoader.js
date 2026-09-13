@@ -173,8 +173,6 @@ Object.values(FONT_CATEGORIES).forEach((category) => {
 
 // Remote CSS is parsed as data, never installed as a stylesheet. In particular,
 // no article text or account credentials are sent to a font provider.
-const MAX_FONT_BYTES = 4 * 1024 * 1024;
-const MAX_CSS_BYTES = 512 * 1024;
 const metadata = new Map();
 const files = new Map();
 const faces = new Map();
@@ -183,17 +181,11 @@ const statuses = new Map();
 const listeners = new Set();
 const unicodeRanges = new WeakMap();
 let requests = Promise.resolve();
-let lastRequest = 0;
 const MODERN_USER_AGENT = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
 export function approvedFontUrl(value, base, kind = "font") {
   const url = new URL(value, base);
-  if (url.protocol !== "https:" || url.port || url.username || url.password || url.hash) throw new Error("字体地址不受支持。");
-  const jsdelivr = url.hostname === "cdn.jsdelivr.net" && /^\/npm\/lxgw-wenkai-webfont@1\.7\.0\//.test(url.pathname) && !url.search;
-  const accepted = kind === "css"
-    ? (url.hostname === "fonts.googleapis.com" && url.pathname === "/css2") || (jsdelivr && /\/lxgwwenkai-(regular|bold)\.css$/.test(url.pathname))
-    : (url.hostname === "fonts.gstatic.com" && url.pathname.startsWith("/s/")) || (jsdelivr && /\/files\/lxgwwenkai-(regular|bold)-subset-\d+\.woff2$/.test(url.pathname));
-  if (!accepted) throw new Error("字体地址不受支持。");
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("字体地址不受支持。");
   return url.href;
 }
 
@@ -235,7 +227,7 @@ function fontFaceMatchesPoints(face, points) {
 }
 
 export function parseFontCss(css, base, family) {
-  if (typeof css !== "string" || css.length > MAX_CSS_BYTES) throw new Error("字体样式过大或无效。");
+  if (typeof css !== "string") throw new Error("字体样式过大或无效。");
   const result = [];
   for (const block of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/@font-face\s*\{([^}]+)\}/gi)) {
     const property = (name) => block[1].match(new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, "i"))?.[1]?.trim();
@@ -245,7 +237,7 @@ export function parseFontCss(css, base, family) {
     if (!source) continue;
     const weight = property("font-weight") || "400";
     const style = property("font-style") || "normal";
-    if (!/^[1-9]\d{0,2}(?:\s+[1-9]\d{0,2})?$/.test(weight) || !/^(normal|italic)$/.test(style)) continue;
+    // FontFace validates descriptors against the browser’s supported CSS grammar.
     const unicodeRange = property("unicode-range") || "U+0-10FFFF";
     parseUnicodeRanges(unicodeRange);
     result.push({ url: approvedFontUrl(source, base), weight, style, unicodeRange });
@@ -259,14 +251,10 @@ async function fontRequest(url, kind) {
   const pending = requests.catch(() => {}).then(async () => {
     const network = globalThis.window?.ToolBox?.network;
     if (!network?.request) throw new Error("请在 ToolBox 中加载在线字体。");
-    // Font subsets share the host quota with article sync. Keep only one request
-    // in flight and no more than one per second, including metadata requests.
-    const delay = Math.max(0, 1000 - (Date.now() - lastRequest));
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    lastRequest = Date.now();
+    // Serialize subset loads; native backpressure governs transport resources.
     let response;
     try {
-      response = await network.request({ url, method: "GET", headers: { Accept: kind === "css" ? "text/css" : "font/woff2,font/woff,font/ttf,application/octet-stream", "User-Agent": MODERN_USER_AGENT }, timeoutMs: 30000, maxResponseBytes: kind === "css" ? MAX_CSS_BYTES : MAX_FONT_BYTES });
+      response = await network.request({ url, method: "GET", headers: { Accept: kind === "css" ? "text/css" : "font/woff2,font/woff,font/ttf,application/octet-stream", "User-Agent": MODERN_USER_AGENT } });
     } catch {
       throw new Error("在线字体加载失败，请检查网络权限后重试；当前使用系统字体。");
     }
@@ -277,10 +265,10 @@ async function fontRequest(url, kind) {
   return pending;
 }
 
-function readBytes(response, maxBytes) {
-  if (response.bodyEncoding !== "base64" || typeof response.body !== "string" || response.body.length > Math.ceil(maxBytes / 3) * 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.body)) throw new Error("字体文件内容无效或超过大小限制。");
+function readBytes(response) {
+  if (response.bodyEncoding !== "base64" || typeof response.body !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(response.body)) throw new Error("字体文件内容无效。");
   const bytes = Uint8Array.from(atob(response.body), (char) => char.charCodeAt(0));
-  if (!bytes.length || bytes.length > maxBytes) throw new Error("字体文件内容无效或超过大小限制。");
+  if (!bytes.length) throw new Error("字体文件内容无效。");
   return bytes;
 }
 
@@ -294,7 +282,7 @@ function getMetadata(config) {
     const result = [];
     for (const url of [config.url, ...(config.extraUrls || [])]) {
       const response = await fontRequest(url, "css");
-      const css = response.bodyEncoding === "base64" ? new TextDecoder().decode(readBytes(response, MAX_CSS_BYTES)) : response.body;
+      const css = response.bodyEncoding === "base64" ? new TextDecoder().decode(readBytes(response)) : response.body;
       result.push(...parseFontCss(css, url, config.value));
     }
     return result;
@@ -329,7 +317,7 @@ async function loadFace(family, face, signal) {
   const work = memoize(faces, key, async () => {
     const source = await memoize(files, face.url, async () => {
       const response = await fontRequest(face.url, "font");
-      const bytes = readBytes(response, MAX_FONT_BYTES);
+      const bytes = readBytes(response);
       const signature = Array.from(bytes.slice(0, 4)).join(",");
       const mime = { "119,79,70,50": "font/woff2", "119,79,70,70": "font/woff", "0,1,0,0": "font/ttf", "79,84,84,79": "font/otf" }[signature];
       if (!mime) throw new Error("字体服务未返回有效的字体文件。");

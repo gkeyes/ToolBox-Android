@@ -29,7 +29,6 @@ internal class PermissionMutationRunner(
     private val mutationLock: io.toolbox.core.data.DataMutationLock = io.toolbox.core.data.DataMutationLock(),
 ) {
     private val pending = mutableMapOf<String, Deferred<PermissionMutationResult>>()
-    internal val activeToolCount: Int get() = synchronized(pending) { pending.size }
 
     fun submit(toolId: String, capability: String, enabled: Boolean, expectedVersion: Int): Deferred<PermissionMutationResult> =
         enqueue(toolId) { apply(toolId, capability, enabled, expectedVersion) }

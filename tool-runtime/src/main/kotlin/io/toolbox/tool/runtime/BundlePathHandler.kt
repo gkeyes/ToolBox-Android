@@ -49,7 +49,7 @@ internal class BundlePathHandler(
                 )
                 if (attributes.isSymbolicLink) return null
                 if (index < segments.lastIndex && !attributes.isDirectory) return null
-                if (index == segments.lastIndex && (!attributes.isRegularFile || attributes.size() > MAX_RESOURCE_BYTES)) {
+                if (index == segments.lastIndex && (!attributes.isRegularFile)) {
                     return null
                 }
             }
@@ -109,7 +109,4 @@ internal class BundlePathHandler(
 
     private data class Mime(val type: String, val encoding: String?)
 
-    private companion object {
-        const val MAX_RESOURCE_BYTES = 20L * 1024 * 1024
-    }
 }

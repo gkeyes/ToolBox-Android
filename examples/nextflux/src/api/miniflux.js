@@ -162,9 +162,9 @@ export const updateEntryStarred = async (entry, check) => {
 };
 
 // Fewer round trips for ordinary articles; large bodies still shrink the page
-// against ToolBox's existing response limit without advancing the offset.
+// when ToolBox reports insufficient response resources, without advancing the offset.
 // Keep the upstream synchronization batch size. The adaptive fallback below
-// only handles a single response exceeding ToolBox's transport budget.
+// only handles a single response that cannot fit the available native resources.
 const SYNC_PAGE_SIZE = 1000;
 async function fetchEntryPage(endpoint, filters, offset, requestedSize, check) {
   let pageSize = requestedSize;
@@ -174,7 +174,6 @@ async function fetchEntryPage(endpoint, filters, offset, requestedSize, check) {
     try {
       const { data } = await withAdmissionRetry(() => apiClient.get(endpoint, {
         params: { ...filters, offset, limit: pageSize },
-        toolboxMaxResponseBytes: 4 * 1024 * 1024,
       }), current);
       await current();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");

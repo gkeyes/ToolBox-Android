@@ -23,11 +23,6 @@ function persist() {
     delete settings.aiApiKey;
     snapshot.settings = JSON.stringify(settings);
   }
-  if (new TextEncoder().encode(JSON.stringify(snapshot)).length > 128 * 1024) {
-    lastWrite = Promise.reject(new Error("设置内容过长，请缩短 AI 提示词后重试。"));
-    pending = lastWrite.catch(reportFailure);
-    return;
-  }
   const operation = pending.then(async () => {
     if (aiKey !== savedAiKey) {
       if (aiKey) await storage.secure.set(AI_KEY, aiKey);

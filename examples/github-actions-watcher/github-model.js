@@ -93,7 +93,7 @@
     return active ? 180_000 : 300_000;
   }
 
-  function branchCandidates(defaultBranch, repositoryBranches, runs, limit = 100) {
+  function branchCandidates(defaultBranch, repositoryBranches, runs) {
     const values = [
       defaultBranch,
       ...(repositoryBranches || []).map((branch) => branch?.name),
@@ -106,7 +106,6 @@
       if (!branch || seen.has(branch)) continue;
       seen.add(branch);
       result.push(branch);
-      if (result.length >= limit) break;
     }
     return result;
   }

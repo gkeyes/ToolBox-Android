@@ -14,7 +14,6 @@ object HostTestTags {
     const val RuntimeShell = "runtime_shell"
     const val CatalogEmptyState = "catalog_empty_state"
     const val SettingsAppearance = "settings_appearance"
-    const val AppearanceMiuix = "appearance_miuix"
     const val AppearanceLiquidGlass = "appearance_liquid_glass"
     const val AppearanceMode = "appearance_mode"
     const val AppearanceSystemColor = "appearance_system_color"

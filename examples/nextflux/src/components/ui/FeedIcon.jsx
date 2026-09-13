@@ -8,14 +8,12 @@ import { loadAccountFeedIcon } from "@/stores/syncStore.js";
 const FeedIcon = ({ feedId }) => {
   const { feedIconShape, useGrayIcon } = useStore(settingsState);
   const [error, setError] = useState(false);
-  const [isBlurry, setIsBlurry] = useState(false);
   const [iconData, setIconData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setError(false);
-    setIsBlurry(false);
     setIsLoading(true);
     setIconData(null);
     const loadIcon = async () => {
@@ -25,7 +23,7 @@ const FeedIcon = ({ feedId }) => {
           if (cancelled) return;
 
           if (icon) {
-            if (!/^image\/(png|jpeg|gif|webp|avif|x-icon|vnd.microsoft.icon);base64,[A-Za-z0-9+/=\s]+$/.test(icon.data)) {
+            if (!/^image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/.test(icon.data)) {
               setError(true);
               return;
             }
@@ -49,17 +47,8 @@ const FeedIcon = ({ feedId }) => {
     setError(true);
   };
 
-  // 检查图片质量
-  const handleLoad = (e) => {
-    const img = e.target;
-    // 如果图片实际尺寸小于预期尺寸(32x32)，认为图片质量不佳
-    if (img.naturalWidth < 32 || img.naturalHeight < 32) {
-      setIsBlurry(true);
-    }
-  };
-
-  // 如果URL无效、图片加载失败或图片模糊，显示默认图标
-  if (error || isBlurry) {
+  // Invalid data or a native decode failure keeps the RSS fallback.
+  if (error) {
     return (
       <span
         className={cn(
@@ -83,10 +72,7 @@ const FeedIcon = ({ feedId }) => {
         isLoading && "opacity-0",
       )}
       onError={handleError}
-      onLoad={(e) => {
-        setIsLoading(false);
-        handleLoad(e);
-      }}
+      onLoad={() => setIsLoading(false)}
     />
   );
 };

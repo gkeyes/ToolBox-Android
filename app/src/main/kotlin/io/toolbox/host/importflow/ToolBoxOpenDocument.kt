@@ -107,17 +107,8 @@ internal fun safePackageDisplayName(rawDisplayName: String?): String {
         }
     }.trim('.', ' ', '_')
     if (cleaned.isEmpty()) return "selected-tool.tbx"
-    if (cleaned.codePointCount(0, cleaned.length) <= MAX_DISPLAY_NAME_CHARACTERS) return cleaned
-    val suffix = if (cleaned.endsWith(ToolBoxOpenDocument.FILE_EXTENSION, ignoreCase = true)) {
-        ToolBoxOpenDocument.FILE_EXTENSION
-    } else {
-        ""
-    }
-    val prefixCodePoints = MAX_DISPLAY_NAME_CHARACTERS - suffix.codePointCount(0, suffix.length)
-    return cleaned.substring(0, cleaned.offsetByCodePoints(0, prefixCodePoints)) + suffix
+    return cleaned
 }
-
-private const val MAX_DISPLAY_NAME_CHARACTERS = 120
 
 private fun String.containsUnsafeFormatCodePoint(): Boolean {
     var offset = 0

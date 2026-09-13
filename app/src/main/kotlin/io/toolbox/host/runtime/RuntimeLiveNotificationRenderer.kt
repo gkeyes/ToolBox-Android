@@ -109,7 +109,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         isShowNotification = true
         filterWhenNoPermission = false
         reopen = "close"
-        ticker = request.shortText ?: request.primaryText.take(12)
+        ticker = request.shortText ?: request.primaryText
         tickerPic = icon
         tickerPicDark = icon
         aodTitle = displayValue
@@ -144,7 +144,6 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             business = "toolbox_live"
             islandProperty = 1
             islandPriority = 1
-            islandTimeout = 43_200
             islandOrder = false
             highlightColor = accentHex
             smallIslandArea {
@@ -157,7 +156,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             bigIslandArea {
                 textInfo = com.xzakota.hyper.notification.island.model.TextInfo().apply {
                     title = if (minimalContent) displayTitle else displayValue
-                    frontTitle = if (minimalContent) null else displayTitle.take(16)
+                    frontTitle = if (minimalContent) null else displayTitle
                     content = if (minimalContent) displayValue else displaySecondary
                     showHighlightColor = false
                     narrowFont = !minimalContent

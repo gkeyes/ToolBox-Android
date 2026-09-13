@@ -44,8 +44,7 @@ export async function loadLegacyCache(readMany) {
       tableGeneration = generation;
     });
     const parts = await readMany(keys);
-    const bound = codec === "json" ? 256 * 1024 : 1024 * 1024;
-    if (parts.some((part) => typeof part !== "string" || !part.length || part.length > bound)) throw invalid();
+    if (parts.some((part) => typeof part !== "string" || !part.length)) throw invalid();
     let value;
     try { value = await decodeCacheValue(codec, parts.join("")); }
     catch (cause) {

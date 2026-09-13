@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ItemWrapper } from "@/components/ui/settingItem.jsx";
-import { testAiConnection } from "@/toolbox/ai-network.js";
 
 export default function AI() {
   const { t } = useTranslation();
@@ -19,7 +18,6 @@ export default function AI() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await testAiConnection({ baseUrl: localBaseUrl, apiKey: localApiKey, model: localModel });
       await updateSettings({
         aiApiKey: localApiKey,
         aiBaseUrl: localBaseUrl,
@@ -58,7 +56,7 @@ export default function AI() {
               onChange={(e) => setLocalBaseUrl(e.target.value)}
               placeholder="https://api.openai.com/v1"
             />
-            <Description>{t("settings.ai.description")} 支持自定义 HTTPS 服务；首次保存时需确认允许访问该域名。</Description>
+            <Description>{t("settings.ai.description")} 支持自定义 HTTPS 服务。</Description>
           </TextField>
         </div>
         <Separator />

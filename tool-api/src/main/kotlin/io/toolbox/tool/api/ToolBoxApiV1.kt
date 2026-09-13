@@ -48,23 +48,23 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "252f4ab85413138fc3a6d71185969af2b7396dfb97d7ccfe360c941964ef1978"
+    const val CANONICAL_SHA256: String = "ec7f01f334d242cab1304cfbca9e0f63a97fbec32dfaa510cdb83bd24d2f9c5f"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE_SECURE, "storage.secure", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_WRITE, "clipboard.write", ContractPhase.M1, true, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_READ, "clipboard.read", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.SHARE, "share", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.BROWSER, "browser", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.FILES_OPEN, "files.open", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.FILES_SAVE, "files.save", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_WRITE, "clipboard.write", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_READ, "clipboard.read", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.SHARE, "share", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.BROWSER, "browser", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.FILES_OPEN, "files.open", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.FILES_SAVE, "files.save", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.NETWORK, "network", ContractPhase.M2, false, setOf("android.permission.INTERNET"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
         CapabilityDescriptor(ToolBoxCapabilityId.DEVICE_BASIC, "device.basic", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.HAPTICS, "haptics", ContractPhase.M1, true, setOf("android.permission.VIBRATE"), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.HAPTICS, "haptics", ContractPhase.M1, true, setOf("android.permission.VIBRATE"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.NOTIFICATIONS, "notifications", ContractPhase.M2, false, setOf("android.permission.POST_NOTIFICATIONS"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
-        CapabilityDescriptor(ToolBoxCapabilityId.SHORTCUTS, "shortcuts", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.CAMERA, "camera", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.SHORTCUTS, "shortcuts", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.CAMERA, "camera", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.LOCATION, "location", ContractPhase.M3, false, setOf("android.permission.ACCESS_COARSE_LOCATION"), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
         CapabilityDescriptor(ToolBoxCapabilityId.BACKGROUND_TASKS, "background.tasks", ContractPhase.M2, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),
         CapabilityDescriptor(ToolBoxCapabilityId.BACKGROUND_RUNTIME, "background.runtime", ContractPhase.M3, false, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_OR_DELEGATED_BACKGROUND),

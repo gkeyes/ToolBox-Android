@@ -3,36 +3,6 @@ package io.toolbox.tool.packagekit
 import java.io.InputStream
 import java.nio.file.Path
 
-data class PackageLimits(
-    val maxCompressedBytes: Long = 20L * 1024 * 1024,
-    val maxExtractedBytes: Long = 80L * 1024 * 1024,
-    val maxEntries: Int = 512,
-    val maxEntryBytes: Long = 20L * 1024 * 1024,
-    val maxPathCharacters: Int = 180,
-    val maxCompressionRatio: Double = 100.0,
-    val maxManifestBytes: Long = 128L * 1024,
-) {
-    init {
-        require(maxCompressedBytes in 1..HARD_MAX_COMPRESSED_BYTES)
-        require(maxExtractedBytes in 1..HARD_MAX_EXTRACTED_BYTES)
-        require(maxEntries in 1..HARD_MAX_ENTRIES)
-        require(maxEntryBytes in 1..HARD_MAX_ENTRY_BYTES)
-        require(maxPathCharacters in 1..HARD_MAX_PATH_CHARACTERS)
-        require(maxCompressionRatio in 1.0..HARD_MAX_COMPRESSION_RATIO)
-        require(maxManifestBytes in 1..HARD_MAX_MANIFEST_BYTES)
-    }
-
-    companion object {
-        const val HARD_MAX_COMPRESSED_BYTES = 20L * 1024 * 1024
-        const val HARD_MAX_EXTRACTED_BYTES = 80L * 1024 * 1024
-        const val HARD_MAX_ENTRIES = 512
-        const val HARD_MAX_ENTRY_BYTES = 20L * 1024 * 1024
-        const val HARD_MAX_PATH_CHARACTERS = 180
-        const val HARD_MAX_COMPRESSION_RATIO = 100.0
-        const val HARD_MAX_MANIFEST_BYTES = 128L * 1024
-    }
-}
-
 interface PackageInput {
     val displayName: String
     fun openStream(): InputStream
@@ -71,17 +41,13 @@ data class ToolManifest(
     val securityProfile: SecurityProfile,
     val network: ManifestNetwork?,
     val ui: ManifestUi,
-    val limits: ManifestLimits,
 )
 
 data class ManifestPermission(val name: String, val reason: String, val required: Boolean)
 enum class SecurityProfile { STRICT, COMPAT }
 data class ManifestNetwork(
-    val allowDomains: List<String>,
-    val allowRedirects: Boolean,
     val maxResponseBytes: Int,
     val timeoutMs: Int,
-    val allowUserDomains: Boolean = false,
 )
 data class ManifestUi(
     val orientation: ManifestOrientation?,
@@ -91,7 +57,6 @@ data class ManifestUi(
 )
 enum class ManifestOrientation { UNSPECIFIED, PORTRAIT, LANDSCAPE }
 enum class ManifestStatusBarStyle { AUTO, LIGHT, DARK }
-data class ManifestLimits(val maxBridgePayloadBytes: Int)
 
 data class PackageRejection(val code: PackageRejectionCode, val detail: String)
 

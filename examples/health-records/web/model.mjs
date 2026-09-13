@@ -1,7 +1,4 @@
 export const TYPES = Object.freeze({ blood: "血常规", blood_bio: "血生化", urine: "尿常规", urine_bio: "尿生化" });
-export const MAX_ARCHIVE_BYTES = 600 * 1024;
-export const MAX_FILE_BYTES = 700 * 1024;
-export const MAX_RECORDS = 2000;
 const encoder = new TextEncoder();
 export const byteSize = (value) => encoder.encode(typeof value === "string" ? value : JSON.stringify(value)).length;
 export const copy = (value) => structuredClone(value);
@@ -19,30 +16,30 @@ export function localDate(date = new Date()) {
 export function validDate(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
-  const d = new Date(Date.UTC(year, month - 1, day));
-  return year >= 1900 && year <= 2200 && d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+  const d = new Date(0); d.setUTCFullYear(year, month - 1, day);
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
 }
 
-function text(value, max, field, required = false) {
+function text(value, field, required = false) {
   if (value == null) value = "";
   if (!["string", "number"].includes(typeof value) || (typeof value === "number" && !Number.isFinite(value))) throw new HealthError(`${field}格式不正确`);
   const result = String(value).trim();
-  if (result.length > max || (required && !result) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(result)) throw new HealthError(`${field}为空、过长或含无效字符`);
+  if ((required && !result) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(result)) throw new HealthError(`${field}为空或含无效字符`);
   return result;
 }
 
 export function normalizeItem(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HealthError("指标格式不正确");
   return {
-    name: text(value.name, 120, "指标名称", true), value: text(value.value, 120, "检验结果", true),
-    unit: text(value.unit, 80, "单位"), normal: text(value.normal, 200, "参考范围"),
+    name: text(value.name, "指标名称", true), value: text(value.value, "检验结果", true),
+    unit: text(value.unit, "单位"), normal: text(value.normal, "参考范围"),
   };
 }
 
 export function normalizeRecord(value, makeId = newId) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !validDate(value.date) || typeof value.type !== "string" || !Object.hasOwn(TYPES, value.type)) throw new HealthError("记录日期或检验类型不正确，请检查原文件");
-  if (!Array.isArray(value.items) || !value.items.length || value.items.length > 120) throw new HealthError("每份记录需包含 1–120 项指标");
-  const id = value.id == null ? makeId() : text(value.id, 100, "记录标识", true);
+  if (!Array.isArray(value.items) || !value.items.length) throw new HealthError("每份记录需包含指标");
+  const id = value.id == null ? makeId() : text(value.id, "记录标识", true);
   return { id, date: value.date, type: value.type, items: value.items.map(normalizeItem) };
 }
 
@@ -57,7 +54,6 @@ export function emptyArchive() {
 export function normalizeArchive(value, makeId = newId) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.records)) throw new HealthError("不是有效的健康档案备份，请选择旧站 user_data.json 或健康档案导出的文件");
   if (value.schemaVersion !== undefined && value.schemaVersion !== 1) throw new HealthError("此备份版本暂不支持");
-  if (value.records.length > MAX_RECORDS) throw new HealthError(`最多支持 ${MAX_RECORDS} 份记录，请拆分备份`);
   const archive = emptyArchive();
   const ids = new Set();
   archive.records = value.records.map((row) => {
@@ -66,24 +62,23 @@ export function normalizeArchive(value, makeId = newId) {
     ids.add(record.id);
     return record;
   });
-  for (const key of ["gender", "age", "height", "weight", "history"]) archive.profile[key] = text(value.profile?.[key], key === "history" ? 10000 : 40, "个人档案");
+  for (const key of ["gender", "age", "height", "weight", "history"]) archive.profile[key] = text(value.profile?.[key], "个人档案");
   const lib = value.lib || {};
-  if (typeof lib !== "object" || Array.isArray(lib) || Object.keys(lib).length > 3000) throw new HealthError("历史指标库格式不正确或过大");
-  archive.lib = Object.fromEntries(Object.entries(lib).map(([name, item]) => [text(name, 120, "历史指标名称", true), {
-    unit: text(item?.unit, 80, "历史指标单位"), normal: text(item?.normal, 200, "历史参考范围"),
+  if (typeof lib !== "object" || Array.isArray(lib)) throw new HealthError("历史指标库格式不正确");
+  archive.lib = Object.fromEntries(Object.entries(lib).map(([name, item]) => [text(name, "历史指标名称", true), {
+    unit: text(item?.unit, "历史指标单位"), normal: text(item?.normal, "历史参考范围"),
   }]));
   const aliases = value.aliasMap || {};
-  if (typeof aliases !== "object" || Array.isArray(aliases) || Object.keys(aliases).length > 3000) throw new HealthError("别名表格式不正确或过大");
-  archive.aliasMap = Object.fromEntries(Object.entries(aliases).map(([from, to]) => [text(from, 400, "别名", true), text(to, 120, "标准名称", true)]));
-  archive.healthSummary = { text: text(value.healthSummary?.text, 30000, "历史摘要"), time: text(value.healthSummary?.time, 100, "摘要时间") };
+  if (typeof aliases !== "object" || Array.isArray(aliases)) throw new HealthError("别名表格式不正确");
+  archive.aliasMap = Object.fromEntries(Object.entries(aliases).map(([from, to]) => [text(from, "别名", true), text(to, "标准名称", true)]));
+  archive.healthSummary = { text: text(value.healthSummary?.text, "历史摘要"), time: text(value.healthSummary?.time, "摘要时间") };
   archive.settings = {
     theme: ["light", "dark", "system"].includes(value.settings?.theme) ? value.settings.theme : "system",
-    model: text(value.settings?.model ?? value.config?.model, 100, "模型名称"),
+    model: text(value.settings?.model ?? value.config?.model, "模型名称"),
     aiProvider: value.settings?.aiProvider ?? "gemini",
-    minimaxModel: text(value.settings?.minimaxModel ?? "MiniMax-M3", 100, "MiniMax 模型名称"),
+    minimaxModel: text(value.settings?.minimaxModel ?? "MiniMax-M3", "MiniMax 模型名称"),
   };
   if (!["gemini", "minimax"].includes(archive.settings.aiProvider)) throw new HealthError("AI 服务设置无效，请选择 Gemini 或 MiniMax");
-  if (byteSize(archive) > MAX_ARCHIVE_BYTES) throw new HealthError("档案超过 600 KiB，请先分批导出记录。原数据未修改", "QUOTA_EXCEEDED");
   return archive;
 }
 
@@ -175,8 +170,8 @@ export function formatReference(draft) {
     if (numericValue(draft.limit) === null || !["<", "≤", ">", "≥"].includes(draft.operator)) throw new HealthError("请选择比较方式并填写有效的参考限值");
     return `${draft.operator}${draft.limit.trim()}`;
   }
-  if (draft.mode === "qualitative") return text(draft.qualitative, 200, "定性参考", true);
-  if (draft.mode === "raw") return text(draft.raw, 200, "参考范围");
+  if (draft.mode === "qualitative") return text(draft.qualitative, "定性参考", true);
+  if (draft.mode === "raw") return text(draft.raw, "参考范围");
   throw new HealthError("请选择参考范围类型");
 }
 
@@ -269,7 +264,7 @@ export function assertNoNewDuplicateMetrics(before, after) {
 }
 
 export function renameMetric(archive, key, target) {
-  const name = text(target, 120, "标准名称", true);
+  const name = text(target, "标准名称", true);
   let changed = 0;
   for (const record of archive.records) {
     for (const item of record.items) {

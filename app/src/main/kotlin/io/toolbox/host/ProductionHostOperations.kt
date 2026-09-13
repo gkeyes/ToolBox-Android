@@ -321,7 +321,7 @@ internal class ProductionHostBackgroundOperations(
 
     override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
         network = RuntimeNetworkGateway(
-            network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes,
+            network, runtime.installedManifest.network,
             validateNetworkAccess = {
                 val current = networkCatalog.observeTool(runtime.toolId).first()
                 val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
@@ -423,10 +423,8 @@ private class ActiveBundleBackgroundManifestResolver(
             toolId = manifest.id,
             versionCode = manifest.versionCode,
             declaredCapabilities = manifest.permissions,
-            networkHosts = network?.allowDomains.orEmpty(),
-            allowNetworkRedirects = network?.allowRedirects == true,
-            networkTimeoutMillis = network?.timeoutMs?.toLong() ?: 15_000L,
-            maxNetworkResponseBytes = network?.maxResponseBytes ?: 256 * 1024,
+            networkTimeoutMillis = network?.timeoutMs?.toLong() ?: 0L,
+            maxNetworkResponseBytes = network?.maxResponseBytes ?: Int.MAX_VALUE,
         )
     }
 }

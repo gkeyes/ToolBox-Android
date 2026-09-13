@@ -1,16 +1,14 @@
 import { HealthError } from "./model.mjs";
 
-const MAX_ENTRY_BYTES = 8 * 1024 * 1024, MAX_TOTAL_BYTES = 12 * 1024 * 1024;
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, byte) => {
   for (let bit = 0; bit < 8; bit++) byte = byte & 1 ? 0xedb88320 ^ (byte >>> 1) : byte >>> 1;
   return byte >>> 0;
 });
 
-async function checkEntry(bytes, file, remaining) {
+async function checkEntry(bytes, file) {
   let length = 0, crc = 0xffffffff;
   function consume(chunk) {
     length += chunk.byteLength;
-    if (length > MAX_ENTRY_BYTES || length > remaining) throw new HealthError("Excel 解压后过大，请先另存为普通小文件");
     if (length > file.size) throw new HealthError("Excel ZIP 实际解压大小与目录不一致");
     for (const byte of chunk) crc = CRC_TABLE[(crc ^ byte) & 255] ^ (crc >>> 8);
   }
@@ -55,6 +53,5 @@ async function checkEntry(bytes, file, remaining) {
 }
 
 export async function checkInflatedZipBudget(bytes, files) {
-  let total = 0;
-  for (const file of files) total += await checkEntry(bytes, file, MAX_TOTAL_BYTES - total);
+  for (const file of files) await checkEntry(bytes, file);
 }

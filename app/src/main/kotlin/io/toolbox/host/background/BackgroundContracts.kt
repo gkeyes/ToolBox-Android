@@ -8,11 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 
-internal const val MAX_ACTIVE_TASKS_PER_TOOL = 8
-internal const val MAX_PERIODIC_TASKS_PER_TOOL = 4
 internal const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
-internal const val MAX_RESULT_BYTES = 256 * 1024
-internal const val TASK_RESULT_RETENTION_MILLIS = 7L * 24L * 60L * 60L * 1_000L
 
 internal object BackgroundRetryPolicy {
     const val MAX_RETRIES = 3
@@ -60,8 +56,6 @@ data class BackgroundExecutionPolicy(
     val notificationsDeclared: Boolean,
     val notificationsGranted: Boolean,
     val notificationSystemPermissionGranted: Boolean,
-    val allowedNetworkHosts: Set<String>,
-    val allowNetworkRedirects: Boolean,
     val networkTimeoutMillis: Long,
     val maxNetworkResponseBytes: Int,
 ) {
@@ -80,8 +74,6 @@ data class BackgroundManifestPolicy(
     val toolId: String,
     val versionCode: Int,
     val declaredCapabilities: Set<String>,
-    val networkHosts: Set<String>,
-    val allowNetworkRedirects: Boolean,
     val networkTimeoutMillis: Long,
     val maxNetworkResponseBytes: Int,
 )
@@ -120,8 +112,6 @@ class RepositoryBackgroundAuthorization(
             notificationsDeclared = "notifications" in declared,
             notificationsGranted = grants["notifications"] == true,
             notificationSystemPermissionGranted = notificationPermission.isGranted(),
-            allowedNetworkHosts = manifest.networkHosts,
-            allowNetworkRedirects = manifest.allowNetworkRedirects,
             networkTimeoutMillis = manifest.networkTimeoutMillis,
             maxNetworkResponseBytes = manifest.maxNetworkResponseBytes,
         )
@@ -157,7 +147,6 @@ sealed interface BackgroundTaskRequest {
     data class HttpGet(
         override val key: String,
         val url: String,
-        val allowRedirects: Boolean = false,
     ) : BackgroundTaskRequest
 
     data class Notify(
@@ -184,6 +173,7 @@ internal data class StoredBackgroundSpec(
     val title: String? = null,
     val body: String? = null,
     val notificationId: String? = null,
+    // Decode historical task records without rejecting their obsolete field. Never used for authorization.
     val allowRedirects: Boolean = false,
 )
 

@@ -56,18 +56,11 @@
       "required": false
     }
   ],
-  "network": {
-    "timeoutMs": 60000,
-    "maxResponseBytes": 67108864
-  },
   "securityProfile": "strict",
   "ui": {
     "orientation": "unspecified",
     "allowFullscreen": false,
     "statusBarStyle": "auto",
     "showHostToolbar": true
-  },
-  "limits": {
-    "maxBridgePayloadBytes": 8388608
   }
 }

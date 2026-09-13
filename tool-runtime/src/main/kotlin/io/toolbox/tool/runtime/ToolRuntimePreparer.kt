@@ -1,5 +1,6 @@
 package io.toolbox.tool.runtime
 
+import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.core.data.InstalledTool
 import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.InstalledManifestVerification
@@ -24,7 +25,6 @@ data class PreparedToolRuntime(
     val securityProfile: io.toolbox.core.data.SecurityProfile,
     val installedManifest: InstalledManifest,
     val declaredCapabilities: Set<String> = emptySet(),
-    val maxBridgePayloadBytes: Int = RuntimeBridgeConfiguration.DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
 ) {
     val entryUrl: String get() = origin + entry
 }
@@ -68,7 +68,7 @@ class ToolRuntimePreparer(
             return failed(RuntimePreparationCode.BUNDLE_UNAVAILABLE, "工具代码目录不存在或不安全。")
         }
         val manifestFile = bundle.resolve("manifest.json")
-        val manifestBytes = readBoundedRegularFile(manifestFile, 128L * 1024)
+        val manifestBytes = readBoundedRegularFile(manifestFile)
             ?: return failed(RuntimePreparationCode.MANIFEST_INVALID, "已安装 manifest.json 不可读取。")
         val verified = InstalledManifestVerifier.verify(
             manifestBytes = manifestBytes,
@@ -110,7 +110,6 @@ class ToolRuntimePreparer(
                 securityProfile = installed.metadata.securityProfile,
                 installedManifest = manifest,
                 declaredCapabilities = manifest.permissions,
-                maxBridgePayloadBytes = manifest.maxBridgePayloadBytes,
             ),
         )
     }
@@ -135,14 +134,15 @@ class ToolRuntimePreparer(
         }
     }
 
-    private fun readBoundedRegularFile(path: Path, maxBytes: Long): ByteArray? {
+    private fun readBoundedRegularFile(path: Path): ByteArray? {
         val attributes = runCatching {
             Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         }.getOrNull() ?: return null
-        if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() !in 1..maxBytes) return null
+        if (!attributes.isRegularFile || attributes.isSymbolicLink || attributes.size() <= 0) return null
         return runCatching {
             Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
-                input.readNBytes((maxBytes + 1).toInt()).takeIf { it.size.toLong() <= maxBytes }
+                ResourceCapacity.requireHeapBytes(Math.multiplyExact(attributes.size(), 3))
+                input.readBytes().takeIf { it.size.toLong() == attributes.size() }
             }
         }.getOrNull()
     }

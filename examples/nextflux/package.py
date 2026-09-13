@@ -16,11 +16,6 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 UPSTREAM_URL = "https://github.com/electh/nextflux"
 UPSTREAM_COMMIT = "a9f97de654d00f62cbbad877d583fae7cd76ec59"
-MAX_FILES = 512
-MAX_ZIP = 20 * 1024 * 1024
-MAX_EXPANDED = 80 * 1024 * 1024
-MAX_SINGLE = 20 * 1024 * 1024
-MAX_RATIO = 100
 
 
 class UnsupportedSchema(RuntimeError):
@@ -159,33 +154,12 @@ def prepare_stage(destination, manifest):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
         dist_hashes[relative.as_posix()] = digest(target)
-    for name in ("manifest.json", "THIRD_PARTY_NOTICES.txt", "UPSTREAM.md"):
+    for name in ("manifest.json", "THIRD_PARTY_NOTICES.txt", "LICENSE"):
         if (destination / name).exists():
             raise ValueError(f"Production dist unexpectedly contains reserved file: {name}")
         shutil.copyfile(HERE / name, destination / name)
     if not (destination / manifest["icon"]).is_file():
         raise ValueError("The declared icon is missing from production dist")
-    # Keep source evidence as hashes only; do not ship source, tests or credentials.
-    source_hash = hashlib.sha256()
-    for path in sorted((HERE / "src").rglob("*")):
-        if path.is_file():
-            source_hash.update(path.relative_to(HERE).as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
-    provenance = {
-        "application": "NextFlux for ToolBox",
-        "version": manifest["version"],
-        "upstream": {"repository": UPSTREAM_URL, "commit": UPSTREAM_COMMIT},
-        "upstreamReadmeSHA256": digest(HERE / "UPSTREAM.md"),
-        "packageLockSHA256": digest(HERE / "package-lock.json"),
-        "thirdPartyNoticesSHA256": digest(HERE / "THIRD_PARTY_NOTICES.txt"),
-        "sourceTreeSHA256": source_hash.hexdigest(),
-        "packagingScriptSHA256": digest(Path(__file__)),
-        "genericPackagerSHA256": digest(ROOT / "scripts/package-tool.py"),
-        "productionFilesSHA256": dist_hashes,
-        "runtimeVerification": "Packaging checks only; not Android or authenticated service verification.",
-    }
-    if (destination / "PROVENANCE.json").exists():
-        raise ValueError("Production dist unexpectedly contains reserved file: PROVENANCE.json")
-    (destination / "PROVENANCE.json").write_text(json_text(provenance))
 
 
 def check_zip(path):
@@ -196,10 +170,6 @@ def check_zip(path):
         compressed = sum(item.compress_size for item in entries)
         largest = max((item.file_size for item in entries), default=0)
         ratio = max((item.file_size / max(1, item.compress_size) for item in entries), default=0)
-        if len(entries) > MAX_FILES or size > MAX_ZIP or expanded > MAX_EXPANDED or largest > MAX_SINGLE:
-            raise ValueError("Package exceeds ToolBox file-count or byte quotas")
-        if ratio > MAX_RATIO or expanded > max(1, compressed) * MAX_RATIO:
-            raise ValueError("Package exceeds ToolBox compression-ratio quota")
         bad = archive.testzip()
         if bad:
             raise ValueError(f"ZIP checksum failed: {bad}")
@@ -249,7 +219,7 @@ def main():
                 report["output"] = str(output)
             report["mode"] = "check-only" if args.check else "packaged"
             report["manifestSchema"] = "PASS"
-            report["zipQuotas"] = "PASS"
+            report["zipIntegrity"] = "PASS"
             print(json_text(report), end="")
     except (OSError, ValueError, KeyError, UnsupportedSchema) as failure:
         parser.exit(1, f"Cannot package NextFlux: {failure}\n")

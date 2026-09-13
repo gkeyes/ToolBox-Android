@@ -59,9 +59,9 @@ export async function openInBrowser(url) {
 export function showLinkActions(value) {
   let url;
   try {
-    if (typeof value !== "string" || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) throw new Error();
+    if (typeof value !== "string" || /[\u0000-\u0020\u007f]/.test(value)) throw new Error();
     url = new URL(value);
-    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.href.length > 2048) throw new Error();
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) throw new Error();
   } catch {
     toast.error("此链接无法使用。");
     return;

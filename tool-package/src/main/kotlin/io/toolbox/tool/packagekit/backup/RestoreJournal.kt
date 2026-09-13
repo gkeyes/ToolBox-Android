@@ -57,7 +57,7 @@ class RestoreJournal(
         if (old.exists()) {
             if (liveTree.exists()) detachLive()
             Files.move(old.toPath(), liveTree.toPath(), ATOMIC_MOVE)
-            syncDirectory(liveTree.parentFile); syncDirectory(journal)
+            syncDirectory(requireNotNull(liveTree.parentFile)); syncDirectory(journal)
             point("tree-restored")
         } else if (hadTree) {
             // A previous recovery already renamed the old tree back, with writers still blocked.
@@ -85,7 +85,7 @@ class RestoreJournal(
         val discard = File(journal, "discard")
         check(!discard.exists()) { "AMBIGUOUS_ROLLBACK_TREE" }
         Files.move(liveTree.toPath(), discard.toPath(), ATOMIC_MOVE)
-        syncDirectory(liveTree.parentFile); syncDirectory(journal)
+        syncDirectory(requireNotNull(liveTree.parentFile)); syncDirectory(journal)
         point("live-detached")
     }
     private fun retire() {
@@ -113,7 +113,7 @@ class RestoreJournal(
                 else {
                     check(Files.isRegularFile(path, NOFOLLOW_LINKS))
                     FileOutputStream(destination.toFile()).use { output ->
-                        Files.newInputStream(path).use { BackupArchive.copy(it, output, Long.MAX_VALUE) }
+                        Files.newInputStream(path).use { BackupArchive.copy(it, output) }
                         output.fd.sync()
                     }
                 }

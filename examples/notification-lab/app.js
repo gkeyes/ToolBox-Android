@@ -25,8 +25,8 @@
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
 
-  function cleanText(value, maxLength) {
-    return String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+  function cleanText(value) {
+    return String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
   }
 
   function clock(value = Date.now()) {
@@ -113,7 +113,6 @@
 
   function appendEvent(message, kind = "neutral") {
     state.events.unshift({ time: clock(), message: cleanText(message, 280), kind });
-    state.events = state.events.slice(0, 12);
     renderLog();
   }
 
