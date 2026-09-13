@@ -43,7 +43,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
    exact HTTPS origin。
 3. 使用 `WebViewCompat.addWebMessageListener`；每次调用验证 exact source origin、main
    frame、session nonce、当前工具/版本、manifest 声明、工具 grant、Android 系统权限、
-   真实手势、速率和配额。
+   对应能力的前台/近期输入规则，以及在途资源和消息大小预算；不再按分钟计数。
 4. 关闭 WebView file/content access、universal file URL access、mixed content、popup 与任意
    外部导航；不开放 WebView file chooser、媒体权限或自动跳转。
 5. 工具网络默认关闭；开启该工具的 network 权限后，由 ToolBox 原生 HTTPS 代理联网。
@@ -74,8 +74,8 @@ Room 只包含：`tools`、`tool_versions`、`permission_grants`、`tool_kv`、
 现有 KV 物理存储；会话只保存 sessionId、启动/提醒时间、恢复选项和独立通知编号，闹钟只保存 id 与调度时间，
 不保存轨迹、行情、行程、通知正文或其他业务 payload。
 
-DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTransparency`。工具数量、KV 限额、速率、任务数量与
-响应大小是代码中的内部常量，不伪装成用户设置。
+DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTransparency`。资源预算用于保护消息、内存和并发，不作为另一层授权。
+当前不设 RPC 每分钟次数配额；其余保留预算及边界应在对应实现与文档中明确。
 
 所有文件、解压、哈希、Room、DataStore 和网络工作在 IO dispatcher；Compose 只观察
 可投影的状态流。
@@ -132,7 +132,7 @@ effective capability = manifest declaration
                      ∧ per-tool enabled grant
                      ∧ host Android/system availability
                      ∧ foreground/user-gesture/context rule
-                     ∧ rate/quota policy
+                     ∧ in-flight resource / message-size budget
 ```
 
 权限页读取当前安装版本的 manifest 声明 left join grant；缺失记录就是默认策略。每行是
