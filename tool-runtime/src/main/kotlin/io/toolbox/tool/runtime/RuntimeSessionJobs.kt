@@ -1,5 +1,6 @@
 package io.toolbox.tool.runtime
 
+import io.toolbox.core.data.ResourceCapacity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -9,19 +10,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Admission happens before parsing/launching, including requests waiting on a dispatcher. */
-internal class RuntimeRequestBudget(private val maxRequests: Int, private val maxBytes: Int) {
+/** Reserve one UTF-16 working copy for parsing, including requests waiting on a dispatcher. */
+internal class RuntimeRequestBudget {
     private var requests = 0
-    private var bytes = 0
-
-    init {
-        require(maxRequests > 0 && maxBytes > 0)
-    }
+    private var bytes = 0L
 
     @Synchronized
     fun acquire(retainedBytes: Int): Boolean {
         require(retainedBytes >= 0)
-        if (requests >= maxRequests || retainedBytes > maxBytes - bytes) return false
+        if (requests == Int.MAX_VALUE || retainedBytes > ResourceCapacity.availableHeapBytes() - bytes) return false
         requests += 1
         bytes += retainedBytes
         return true
@@ -37,9 +34,9 @@ internal class RuntimeRequestBudget(private val maxRequests: Int, private val ma
 
 internal class RuntimeSessionJobs(
     dispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(
-        (java.lang.Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4),
+        java.lang.Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
     ),
-    private val localBudget: RuntimeRequestBudget = RuntimeRequestBudget(32, 16 * 1024 * 1024),
+    private val localBudget: RuntimeRequestBudget = RuntimeRequestBudget(),
     private val globalBudget: RuntimeRequestBudget = sharedBudget,
 ) {
     private val owner = SupervisorJob()
@@ -71,12 +68,12 @@ internal class RuntimeSessionJobs(
     }
 
     private companion object {
-        val sharedBudget = RuntimeRequestBudget(128, 64 * 1024 * 1024)
+        val sharedBudget = RuntimeRequestBudget()
     }
 }
 
 /** Only for error correlation; it must never be used to authorize a request. */
 internal fun runtimeRejectedRequestId(encoded: String): String =
-    requestIdPrefix.find(encoded.take(512))?.groupValues?.get(1).orEmpty()
+    requestIdPrefix.find(encoded)?.groupValues?.get(1).orEmpty()
 
-private val requestIdPrefix = Regex("""^\s*\{\s*"id"\s*:\s*"([A-Za-z0-9-]{1,128})"\s*[,}]""")
+private val requestIdPrefix = Regex("""^\s*\{\s*"id"\s*:\s*"([A-Za-z0-9-]+)"\s*[,}]""")

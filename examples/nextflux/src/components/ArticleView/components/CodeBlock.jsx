@@ -1,6 +1,5 @@
 import { themeState } from "@/stores/themeStore.js";
 import { observeCodeVisibility } from "@/lib/reading-client.js";
-import { MAX_HIGHLIGHT_CODE_CHARACTERS } from "@/lib/highlight-limits.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { Check, Copy } from "lucide-react";
@@ -29,7 +28,7 @@ export default function CodeBlock({ code, language = "text", highlights, plainEl
   }, [container, plainElement, highlighted, forceDarkCodeTheme, darkTheme, showLineNumbers]);
   useEffect(() => {
     setHighlight(null);
-    if (!highlights || code.length > MAX_HIGHLIGHT_CODE_CHARACTERS) return;
+    if (!highlights) return;
     let pending = null;
     const publishWhenUnselected = () => {
       if (!pending) return;
@@ -58,7 +57,7 @@ export default function CodeBlock({ code, language = "text", highlights, plainEl
   };
   return <>
     {language !== "text" && <span className="text-xs absolute left-3 top-2 text-muted">{language}</span>}
-    <Button className="nextflux-compact-touch-target absolute right-2 top-2" size="sm" isDisabled={isCopied} variant="ghost" isIconOnly aria-label={t("common.copy")} onPress={handleCopy}>
+    <Button className="nextflux-compact-touch-target absolute right-2 top-2" size="sm"  variant="ghost" isIconOnly aria-label={t("common.copy")} onPress={handleCopy}>
       {isCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
     </Button>
     {highlighted && <div dangerouslySetInnerHTML={{ __html: highlight.html }} />}

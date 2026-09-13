@@ -37,7 +37,7 @@ function eventReader(onReasoning, expectedFunction) {
         if (!call || call.index != null && call.index !== 0 || call.type != null && call.type !== "function" && !(hasCall && call.type === "") || !fn || typeof fn !== "object" || Array.isArray(fn)) throw invalid();
         if (call.id != null) {
           // MiniMax uses empty id/type/name placeholders on continuation deltas.
-          if (typeof call.id !== "string" || call.id.length > 200 || !call.id && !hasCall || call.id && callId && callId !== call.id) throw invalid();
+          if (typeof call.id !== "string" || !call.id && !hasCall || call.id && callId && callId !== call.id) throw invalid();
           if (call.id) callId = call.id;
         }
         if (fn.name != null) {
@@ -48,7 +48,7 @@ function eventReader(onReasoning, expectedFunction) {
         if (fn.arguments != null) {
           if (typeof fn.arguments !== "string") throw invalid();
           argumentsText += fn.arguments;
-          if (argumentsText.length > 150000) throw new HealthError("AI 输出过长，未处理结果");
+
         }
         hasCall = true;
       }
@@ -68,11 +68,9 @@ function eventReader(onReasoning, expectedFunction) {
     }
     if (stopped && (delta.content || reasoning)) throw invalid();
     content += delta.content || "";
-    if (content.length > 150000) throw new HealthError("AI 输出过长，未处理结果");
+
     if (reasoning) {
-      const remaining = 24000 - thinking.length;
-      thinking += reasoning.slice(0, remaining);
-      truncated ||= reasoning.length > remaining;
+      thinking += reasoning;
       onReasoning({ text: thinking, truncated });
     }
     if (choice.finish_reason != null && choice.finish_reason !== "") {
@@ -116,7 +114,7 @@ export async function streamAiResponse(network, request, { signal, onReasoning =
   if (signal?.aborted) throw cancelled();
   const controller = new AbortController(), decoder = new TextDecoder("utf-8", { fatal: true });
   const reader = eventReader(onReasoning, expectedFunction);
-  let streamId, cleaned = false, total = 0, body = "", failure;
+  let streamId, cleaned = false, body = "", failure;
   const cleanup = () => {
     if (!streamId || cleaned) return Promise.resolve();
     cleaned = true;
@@ -127,7 +125,6 @@ export async function streamAiResponse(network, request, { signal, onReasoning =
   const abort = (error) => { if (failure) return; failure = error; controller.abort(); void cleanup(); rejectAbort(error); };
   const externalAbort = () => abort(cancelled());
   signal?.addEventListener("abort", externalAbort, { once: true });
-  const timer = setTimeout(() => abort(new HealthError("AI 响应超时，已停止接收；原记录未修改", "TIMEOUT")), request.timeoutMs);
   try {
     onReasoning({ text: "", truncated: false });
     const opening = network.openStream(request, { signal: controller.signal }).then(async response => {
@@ -145,17 +142,13 @@ export async function streamAiResponse(network, request, { signal, onReasoning =
       const part = await Promise.race([network.readStream(streamId), aborted]);
       if (failure) throw failure;
       if (!(part?.data instanceof Uint8Array) || typeof part.done !== "boolean") throw invalid();
-      total += part.data.byteLength;
-      if (total > request.maxResponseBytes) throw new HealthError("AI 响应超过大小上限，已停止接收", "QUOTA_EXCEEDED");
       let text;
       try { text = decoder.decode(part.data, { stream: !part.done }); } catch { throw invalid(); }
       if (isError) body += text; else reader.push(text);
       if (part.done) break;
       if (!part.data.byteLength) throw invalid();
-      // Backpressure coalesces small SSE events and stays below the host read quota.
-      await Promise.race([new Promise(resolve => setTimeout(resolve, 100)), aborted]);
     }
     return { status: response.status, bodyEncoding: "text", body: isError ? body : JSON.stringify(reader.finish()) };
   } catch (error) { throw failure || error; }
-  finally { clearTimeout(timer); signal?.removeEventListener("abort", externalAbort); await cleanup(); }
+  finally { signal?.removeEventListener("abort", externalAbort); await cleanup(); }
 }

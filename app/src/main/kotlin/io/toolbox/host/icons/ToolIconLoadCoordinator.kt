@@ -6,7 +6,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 
 /** Same-tool loads/invalidation serialize; unrelated cache hits never wait for a decode. */
-internal class ToolIconLoadCoordinator(parallelDecodes: Int = 2) {
+internal class ToolIconLoadCoordinator(parallelDecodes: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)) {
     private class Entry(val mutex: Mutex = Mutex(), var users: Int = 0)
     private val entries = mutableMapOf<String, Entry>()
     private val decodes = Semaphore(parallelDecodes)

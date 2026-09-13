@@ -1,8 +1,10 @@
 package io.toolbox.host.runtime
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import io.toolbox.host.browser.BrowserActivity
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
@@ -18,20 +20,22 @@ internal fun browserViewIntent(url: String): Intent =
     }
 
 internal suspend fun launchBrowserUrl(
+    context: Context,
     url: String,
     beforeLaunch: suspend () -> Unit,
     ensureForeground: () -> Unit,
     startActivity: (Intent) -> Unit,
 ) = withContext(Dispatchers.Main.immediate) {
-    val intent = browserViewIntent(url)
+    val intent = Intent(context, BrowserActivity::class.java)
+        .setData(Uri.parse(validateRuntimeBrowserUrl(url)).normalizeScheme())
     beforeLaunch()
     // No suspension between the final Activity check and startActivity.
     ensureForeground()
     try {
         startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "没有可用浏览器，请安装或启用浏览器后重试。")
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "内置浏览器不可用，请更新 ToolBox 后重试。")
     } catch (_: SecurityException) {
-        throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统阻止了浏览器启动，请检查浏览器是否可用。")
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统阻止了内置浏览器启动，请重试。")
     }
 }

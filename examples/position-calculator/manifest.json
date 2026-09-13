@@ -10,13 +10,32 @@
   "icon": "icon.png",
   "apiVersion": "1.0",
   "minHostVersion": "0.2.0",
-  "categories": ["计算", "投资"],
+  "categories": [
+    "计算",
+    "投资"
+  ],
   "permissions": [
-    {"name": "storage", "reason": "保存上次计算参数。", "required": false},
-    {"name": "clipboard.write", "reason": "复制计算结果。", "required": false},
-    {"name": "haptics", "reason": "计算完成时提供触觉反馈。", "required": false}
+    {
+      "name": "storage",
+      "reason": "保存上次计算参数。",
+      "required": false
+    },
+    {
+      "name": "clipboard.write",
+      "reason": "复制计算结果。",
+      "required": false
+    },
+    {
+      "name": "haptics",
+      "reason": "计算完成时提供触觉反馈。",
+      "required": false
+    }
   ],
   "securityProfile": "strict",
-  "ui": {"orientation": "portrait", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true},
-  "limits": {"storageBytes": 65536, "maxBridgePayloadBytes": 4096}
+  "ui": {
+    "orientation": "portrait",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  }
 }

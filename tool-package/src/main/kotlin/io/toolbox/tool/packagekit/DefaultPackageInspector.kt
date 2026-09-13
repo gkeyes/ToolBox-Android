@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit
 
+import io.toolbox.core.data.ResourceCapacity
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -14,7 +15,6 @@ import kotlinx.coroutines.withContext
 
 internal class DefaultPackageInspector(
     private val temporaryRoot: Path,
-    private val limits: PackageLimits = PackageLimits(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ToolPackageInspector {
     override suspend fun validate(input: PackageInput): PackageValidationResult = withContext(ioDispatcher) {
@@ -52,19 +52,20 @@ internal class DefaultPackageInspector(
         val archivePath = temporaryDirectory.resolve("source.tbx")
         return try {
             Files.createDirectories(temporaryDirectory)
-            copyBounded(input, archivePath)
-            val checked = ZipStructureReader.read(archivePath, limits)
+            copyArchive(input, archivePath)
+            val checked = ZipStructureReader.read(archivePath)
+            ResourceCapacity.requireStorageBytes(temporaryDirectory.toFile(), checked.extractedBytes)
             validateMetadataBounds(checked)
-            val extracted = ZipArchiveReader.extract(archivePath, checked, temporaryDirectory, limits)
+            val extracted = ZipArchiveReader.extract(archivePath, checked, temporaryDirectory)
             val manifestBytes = extracted.metadata["manifest.json"]
                 ?: reject(PackageRejectionCode.MANIFEST_MISSING, "manifest.json is required at the archive root")
             val manifest = try {
-                ManifestValidator.parse(manifestBytes, limits)
+                ManifestValidator.parse(manifestBytes)
             } catch (error: JsonFormatException) {
                 reject(PackageRejectionCode.MANIFEST_INVALID, error.message ?: "manifest.json is invalid")
             }
             BundleEntryValidator.validate(manifest, extracted.bundleDirectory, extracted.hashes)
-            val signingKeyId = IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits)
+            val signingKeyId = IntegrityVerifier.verify(extracted.metadata, extracted.hashes)
             Files.deleteIfExists(archivePath)
             PreparationResult.Prepared(
                 PreparedPackage(
@@ -102,23 +103,16 @@ internal class DefaultPackageInspector(
         }
     }
 
-    private fun copyBounded(input: PackageInput, archivePath: Path) {
+    private fun copyArchive(input: PackageInput, archivePath: Path) {
         try {
             input.openStream().use { source ->
                 Files.newOutputStream(archivePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { target ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
                     while (true) {
                         val count = source.read(buffer)
                         if (count < 0) break
                         if (count == 0) continue
-                        total += count
-                        if (total > limits.maxCompressedBytes) {
-                            reject(
-                                PackageRejectionCode.COMPRESSED_SIZE_LIMIT,
-                                "Compressed package exceeds ${limits.maxCompressedBytes} bytes",
-                            )
-                        }
+                        ResourceCapacity.requireStorageBytes(archivePath.parent.toFile(), count.toLong())
                         target.write(buffer, 0, count)
                     }
                 }
@@ -134,17 +128,17 @@ internal class DefaultPackageInspector(
     private fun validateMetadataBounds(archive: CheckedArchive) {
         val manifest = archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "manifest.json" }
             ?: reject(PackageRejectionCode.MANIFEST_MISSING, "Exactly one root manifest.json is required")
-        if (manifest.extractedBytes > limits.maxManifestBytes) {
-            reject(PackageRejectionCode.MANIFEST_TOO_LARGE, "manifest.json exceeds ${limits.maxManifestBytes} bytes")
+        if (manifest.extractedBytes > ResourceCapacity.availableHeapBytes()) {
+            reject(PackageRejectionCode.MANIFEST_TOO_LARGE, "manifest.json exceeds available memory")
         }
         archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "integrity.json" }?.let {
-            if (it.extractedBytes > MAX_INTEGRITY_BYTES) {
-                reject(PackageRejectionCode.INTEGRITY_MALFORMED, "integrity.json exceeds $MAX_INTEGRITY_BYTES bytes")
+            if (it.extractedBytes > ResourceCapacity.availableHeapBytes()) {
+                reject(PackageRejectionCode.INTEGRITY_MALFORMED, "integrity.json exceeds available memory")
             }
         }
         archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "signature.json" }?.let {
-            if (it.extractedBytes > MAX_SIGNATURE_BYTES) {
-                reject(PackageRejectionCode.SIGNATURE_MALFORMED, "signature.json exceeds $MAX_SIGNATURE_BYTES bytes")
+            if (it.extractedBytes > ResourceCapacity.availableHeapBytes()) {
+                reject(PackageRejectionCode.SIGNATURE_MALFORMED, "signature.json exceeds available memory")
             }
         }
     }
@@ -154,8 +148,4 @@ internal class DefaultPackageInspector(
         Files.walk(path).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
     }
 
-    private companion object {
-        const val MAX_INTEGRITY_BYTES = 1024L * 1024
-        const val MAX_SIGNATURE_BYTES = 64L * 1024
-    }
 }

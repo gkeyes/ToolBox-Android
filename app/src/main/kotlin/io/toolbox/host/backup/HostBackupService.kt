@@ -18,7 +18,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.*
@@ -39,7 +38,7 @@ internal class HostBackupService(
     private val temporary: File = File(context.cacheDir, "backup-operations"),
     private val journalRoot: File = File(files, "backup-restore"),
     private val cancelScheduledWork: suspend () -> Unit = {
-        WorkManager.getInstance(context).cancelAllWorkByTag("toolbox-background").result.get(30, TimeUnit.SECONDS)
+        WorkManager.getInstance(context).cancelAllWorkByTag("toolbox-background").result.get()
         Unit
     },
     private val checkpointPoint: (String) -> Unit = {},
@@ -86,10 +85,20 @@ internal class HostBackupService(
         val bundle = File(files, tool.currentVersion.bundleLocator.value)
         check(bundle.canonicalFile.toPath().startsWith(File(files, "miniapps/$id/versions").canonicalFile.toPath()))
         val pack = File(target, "package.tbx")
-        ZipOutputStream(FileOutputStream(pack)).use { zip ->
+        val destination = object : java.io.FilterOutputStream(FileOutputStream(pack)) {
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                ResourceCapacity.requireStorageBytes(target, length.toLong())
+                out.write(bytes, offset, length)
+            }
+            override fun write(value: Int) {
+                ResourceCapacity.requireStorageBytes(target, 1)
+                out.write(value)
+            }
+        }
+        ZipOutputStream(destination).use { zip ->
             BackupArchive.regularFiles(bundle).forEach { file ->
                 zip.putNextEntry(ZipEntry(file.relativeTo(bundle).invariantSeparatorsPath))
-                file.inputStream().use { BackupArchive.copy(it, zip, PackageLimits.HARD_MAX_ENTRY_BYTES) }
+                file.inputStream().use { BackupArchive.copy(it, zip) }
                 zip.closeEntry()
             }
         }
@@ -113,7 +122,7 @@ internal class HostBackupService(
             }
         }
         if (secureBytes > 0) {
-            if (secureBytes > BackupDataCodec.MAX_JSON) warnings += "${tool.metadata.name}：安全数据较大，仅归档原加密记录，跨设备可能需要重新登录。"
+            if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
             else try {
                 val encrypted = RuntimeSecureEnvelopeStorage(id, repositories.keyValues).read()
                 if (encrypted != null) {
@@ -169,7 +178,7 @@ internal class HostBackupService(
             val keys = mutableSetOf<String>()
             var controls = 0
             dataFiles(folder, "kv").forEach { file ->
-                val row = J.read(file, BackupDataCodec.MAX_JSON)
+                val row = J.read(file)
                 if (J.int(row["dataVersion"]) != 1) { skipped = "部分数据格式不兼容，跳过整个工具，避免丢失无法识别的数据" }
                 else {
                     val key = J.string(row["key"])
@@ -179,7 +188,7 @@ internal class HostBackupService(
                     BackupArchive.unknown(row, setOf("dataVersion", "key", "valueJson", "updatedAt"), warnings)
                 }
             }
-            File(folder, "data/secure.json").takeIf(File::exists)?.let { J.read(it, BackupDataCodec.MAX_JSON) }
+            File(folder, "data/secure.json").takeIf(File::exists)?.let { J.read(it) }
             dataFiles(folder, "tasks").forEach { file ->
                 parseTask(file, tool.id, warnings)?.let { (task, _) ->
                     if (!taskIds.add(task.taskId)) throw BackupException("INDEX")
@@ -210,7 +219,7 @@ internal class HostBackupService(
                 try {
                     progress("停止已确认的运行任务", 2)
                     paused = true
-                    withTimeout(30_000) { BackupRuntimeGate.pauseAndDrain() }
+                    BackupRuntimeGate.pauseAndDrain()
                     current.forEach { background.releaseRuntime(it.metadata.id) }
                     background.cancelAll(current.map { it.metadata.id })
                     cancelScheduledWork()
@@ -266,7 +275,7 @@ internal class HostBackupService(
         BackupDataCodec.requireSuccess(repositories.keyValues.replace(plan.id, repositories.keyValues.keys(plan.id).filterNot(BackupDataCodec::secureKey).toSet(), emptyMap(), 0))
         var opaqueSecure = false
         dataFiles(folder, "kv").forEach { file ->
-            val row = J.read(file, BackupDataCodec.MAX_JSON)
+            val row = J.read(file)
             val key = J.string(row["key"])
             when {
                 BackupDataCodec.secureKey(key) -> opaqueSecure = true
@@ -301,9 +310,9 @@ internal class HostBackupService(
         val id = J.string(row["taskId"])
         if (file.name != BackupDataCodec.keyFile(id)) throw BackupException("INDEX")
         val task = BackgroundTask(id, toolId, J.int(row["versionCode"]), J.string(row["key"]), operation, J.string(row["specJson"]), J.bool(row["periodic"]), row["intervalMinutes"]?.let(J::long), state, J.long(row["createdAt"]), J.long(row["updatedAt"]), null, J.int(row["runAttempt"]))
-        require(task.taskId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")) && task.versionCode > 0)
-        require(task.key.isNotBlank() && task.key.length <= CoreDataLimits.MAX_TASK_KEY_LENGTH && task.createdAt >= 0 && task.updatedAt >= task.createdAt && task.runAttempt >= 0)
-        require(task.specJson.toByteArray().size <= CoreDataLimits.MAX_TASK_SPEC_BYTES && (!task.periodic || (task.intervalMinutes ?: 0) >= 15))
+        require(task.taskId.matches(Regex("^[A-Za-z0-9._:-]+$")) && task.versionCode > 0)
+        require(task.key.isNotBlank() && task.createdAt >= 0 && task.updatedAt >= task.createdAt && task.runAttempt >= 0)
+        require((!task.periodic || (task.intervalMinutes ?: 0) >= 15))
         val result = row["result"]?.let { value ->
             val data = J.obj(value)
             BackupArchive.unknown(data, setOf("outcome", "completedAt", "payloadJson", "errorCode", "attemptCount"), warnings)
@@ -311,14 +320,14 @@ internal class HostBackupService(
             if (outcome == null) { warnings += "未知任务结果已跳过。"; null }
             else TaskRunResult(id, outcome, J.long(data["completedAt"]), data["payloadJson"]?.let(J::string), data["errorCode"]?.let(J::string), J.int(data["attemptCount"]))
         }
-        require(result == null || (result.completedAt >= 0 && result.attemptCount >= 0 && (result.payloadJson?.toByteArray()?.size ?: 0) <= CoreDataLimits.MAX_TASK_RESULT_BYTES))
+        require(result == null || (result.completedAt >= 0 && result.attemptCount >= 0))
         return task to result
     }
     private fun validatePresentation(data: Map<String, Any?>) {
         require(J.long(data["installedAt"]) >= 0 && J.long(data["versionInstalledAt"]) >= 0)
         require(data["lastOpenedAt"] == null || J.long(data["lastOpenedAt"]) >= 0)
         require(data["pinnedOrder"] == null || J.int(data["pinnedOrder"]) >= 0)
-        require(data["categoryId"] == null || J.string(data["categoryId"]).length <= 200)
+        data["categoryId"]?.let(J::string)
     }
     private suspend fun activeTasks(tools: List<InstalledTool>): Set<String> = tools.flatMap { repositories.backgroundTasks.observeTasks(it.metadata.id).first() }
         .filter { it.state == TaskState.QUEUED || it.state == TaskState.RUNNING }.map { it.taskId }.toSet()

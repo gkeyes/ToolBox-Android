@@ -154,6 +154,18 @@ internal class PermissionCenterViewModel(
         }
     }
 
+    fun systemPermissionLaunchFailed(requestId: String) {
+        if (cleared) return
+        if (requestId.isNotEmpty()) {
+            if (pendingSystemRequest?.id != requestId) return
+            pendingSystemRequest = null
+        }
+        mutableState.value = mutableState.value.copy(
+            message = "无法打开系统闹钟授权页面，请在系统设置中检查 ToolBox 的闹钟和提醒权限后重试。",
+            showSystemSettings = false,
+        )
+    }
+
     fun dismissMessage() {
         mutableState.value = mutableState.value.copy(message = null, showSystemSettings = false)
     }
@@ -192,6 +204,7 @@ private fun String.defaultEnabled() = this in setOf(
 )
 
 private fun String.androidPermissions(): List<String> = when (this) {
+    "alarms" -> listOf(EXACT_ALARM_PERMISSION)
     "notifications" -> if (android.os.Build.VERSION.SDK_INT >= 33) listOf("android.permission.POST_NOTIFICATIONS") else emptyList()
     "location" -> listOf("android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION")
     "location.background" -> listOf("android.permission.ACCESS_BACKGROUND_LOCATION")
@@ -204,7 +217,7 @@ private fun String.capabilityTitle(): String = when (this) {
     "clipboard.write" -> "写入剪贴板"
     "clipboard.read" -> "读取剪贴板"
     "share" -> "系统分享"
-    "browser" -> "浏览器打开"
+    "browser" -> "内置浏览器"
     "files.open" -> "打开文件"
     "files.save" -> "保存文件"
     "network" -> "网络"
@@ -220,3 +233,5 @@ private fun String.capabilityTitle(): String = when (this) {
     "alarms" -> "精确闹钟"
     else -> this
 }
+
+internal const val EXACT_ALARM_PERMISSION = "android.permission.SCHEDULE_EXACT_ALARM"

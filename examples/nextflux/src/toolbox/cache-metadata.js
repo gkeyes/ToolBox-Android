@@ -57,7 +57,7 @@ function parseMetadata(html, textLimit, findImage = false) {
 function coverSource(value, articleUrl) {
   if (typeof value !== "string" || !value) return null;
   // Reuse the article image URL rules, including /proxy/ resolution and raster data.
-  // This is metadata only; media.js still owns approval, fetching and byte limits.
+  // This is metadata only; media.js still owns media fetching, validation and native resource errors.
   return cleanAttributes("img", { src: value }, articleUrl)["data-image-source"] || null;
 }
 

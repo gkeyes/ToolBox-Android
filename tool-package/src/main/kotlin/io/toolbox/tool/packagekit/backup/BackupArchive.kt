@@ -1,7 +1,7 @@
 package io.toolbox.tool.packagekit.backup
 
+import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.tool.packagekit.PackagePathPolicy
-import io.toolbox.tool.packagekit.ZipReadLimits
 import io.toolbox.tool.packagekit.ZipStructureReader
 import java.io.File
 import java.io.FileOutputStream
@@ -21,14 +21,6 @@ import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.*
 
 class BackupException(val code: String, cause: Throwable? = null) : Exception(code, cause)
-data class BackupLimits(
-    val archiveBytes: Long = 2L * 1024 * 1024 * 1024,
-    val expandedBytes: Long = 4L * 1024 * 1024 * 1024 - 1,
-    val entryBytes: Long = 256L * 1024 * 1024,
-    val entries: Int = 60_000,
-    val metadataBytes: Long = 8L * 1024 * 1024,
-    val ratio: Double = 500.0,
-)
 data class BackupTool(val id: String, val name: String, val version: String, val versionCode: Int, val dataVersion: Int = 1)
 data class BackupContents(val appVersion: String, val createdAt: Long, val tools: List<BackupTool>, val warnings: List<String> = emptyList())
 /** directory always contains the extracted content; owner also removes the private source ZIP. */
@@ -37,7 +29,7 @@ data class PreparedBackup(val directory: File, val contents: BackupContents, pri
 }
 
 /** An outer backup can contain .tbx files, but each is still subject to normal installation checks. */
-class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
+class BackupArchive {
     suspend fun write(directory: File, output: File, contents: BackupContents, progress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
         check(!output.exists()) { "OUTPUT_EXISTS" }
         validateTools(contents.tools)
@@ -59,22 +51,21 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
         checksums["manifest.json"] = hash(File(directory, "manifest.json"))
         File(directory, "checksums.json").writeText(BackupJson.encode(checksums))
         val files = regularFiles(directory)
-        if (files.size > limits.entries || files.sumOf(File::length) > limits.expandedBytes) fail("LIMIT")
         val partial = File(output.parentFile, "${output.name}.partial")
         try {
             FileOutputStream(partial).use { raw ->
-                // Level 1 also keeps valid repetitive-data exports under the reader's ratio limit.
-                val zip = ZipOutputStream(raw).apply { setLevel(Deflater.BEST_SPEED) }
-                files.forEachIndexed { index, file ->
-                    if (file.length() > limits.entryBytes) fail("LIMIT")
-                    zip.putNextEntry(ZipEntry(file.relativeTo(directory).invariantSeparatorsPath))
-                    file.inputStream().use { copy(it, zip, limits.entryBytes) }
-                    zip.closeEntry()
-                    progress(35 + (index + 1) * 60 / maxOf(1, files.size))
+                // Compression level chooses CPU cost; it does not limit accepted content.
+                ZipOutputStream(spaceChecked(raw, requireNotNull(output.parentFile))).use { zip ->
+                    zip.setLevel(Deflater.BEST_SPEED)
+                    files.forEachIndexed { index, file ->
+                        zip.putNextEntry(ZipEntry(file.relativeTo(directory).invariantSeparatorsPath))
+                        file.inputStream().use { copy(it, zip) }
+                        zip.closeEntry()
+                        progress(35 + (index + 1) * 60 / maxOf(1, files.size))
+                    }
                 }
-                zip.finish(); zip.flush(); raw.fd.sync()
+                raw.fd.sync()
             }
-            if (partial.length() > limits.archiveBytes) fail("LIMIT")
             val verification = File(directory.parentFile, "verify-${UUID.randomUUID()}")
             try { unpack(partial, verification).close() } finally { verification.deleteRecursively() }
             currentCoroutineContext().ensureActive()
@@ -88,7 +79,7 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
         try {
             check(session.mkdirs())
             val zip = File(session, "source.zip")
-            FileOutputStream(zip).use { out -> copy(input, out, limits.archiveBytes); out.fd.sync() }
+            FileOutputStream(zip).use { out -> copy(input, spaceChecked(out, session)); out.fd.sync() }
             val extracted = unpack(zip, File(session, "content"), progress)
             check(zip.delete())
             PreparedBackup(extracted.directory, extracted.contents, session)
@@ -96,10 +87,10 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
     }
 
     suspend fun unpack(zip: File, directory: File, progress: (Int) -> Unit = {}): PreparedBackup = withContext(Dispatchers.IO) {
-        if (zip.length() > limits.archiveBytes) fail("LIMIT")
         try {
-            val checked = ZipStructureReader.read(zip.toPath(), ZipReadLimits(limits.expandedBytes, limits.entries, limits.entryBytes, 240, limits.ratio, false))
+            val checked = ZipStructureReader.read(zip.toPath(), forbidCode = false)
             check(directory.mkdirs())
+            requireStorage(directory, checked.extractedBytes)
             val names = mutableSetOf<String>()
             ZipFile(zip).use { archive ->
                 checked.entries.forEachIndexed { index, entry ->
@@ -109,7 +100,8 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                     if (!entry.path.directory) {
                         names += path
                         val target = File(directory, path)
-                        check(target.parentFile.isDirectory || target.parentFile.mkdirs())
+                        val parent = requireNotNull(target.parentFile)
+                        check(parent.isDirectory || parent.mkdirs())
                         val crc = CRC32()
                         var count = 0L
                         archive.getInputStream(archive.getEntry(entry.rawName)).use { input ->
@@ -119,8 +111,9 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                                     currentCoroutineContext().ensureActive()
                                     val n = input.read(buffer)
                                     if (n < 0) break
-                                    count += n
-                                    if (count > entry.extractedBytes || count > limits.entryBytes) fail("LIMIT")
+                                    count = Math.addExact(count, n.toLong())
+                                    if (count > entry.extractedBytes) fail("CORRUPT")
+                                    requireStorage(directory, n.toLong())
                                     crc.update(buffer, 0, n); output.write(buffer, 0, n)
                                 }
                             }
@@ -130,7 +123,7 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                     progress((index + 1) * 65 / maxOf(1, checked.entries.size))
                 }
             }
-            val m = BackupJson.read(File(directory, "manifest.json"), limits.metadataBytes)
+            val m = BackupJson.read(File(directory, "manifest.json"))
             if (m["format"] != FORMAT) fail("FORMAT")
             if (BackupJson.int(m["formatVersion"]) != 1 || BackupJson.int(m["minimumReaderVersion"]) !in 1..1) fail("VERSION")
             val warnings = mutableListOf<String>()
@@ -142,7 +135,7 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
             }
             validateTools(tools)
             val index = BackupJson.obj(m["files"])
-            val sums = BackupJson.read(File(directory, "checksums.json"), limits.metadataBytes)
+            val sums = BackupJson.read(File(directory, "checksums.json"))
             if (names != index.keys + setOf("manifest.json", "checksums.json") || sums.keys != index.keys + "manifest.json") fail("INDEX")
             sums.entries.forEachIndexed { i, (path, value) ->
                 safePath(path)
@@ -163,14 +156,15 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                 if (path != "host/settings.json" && !path.startsWith("tools/") && !path.startsWith("extensions/")) fail("PATH")
             }
             if (index.keys.any { it.startsWith("extensions/") }) warnings += "扩展文件暂不应用；这些内容仍完整保留在原备份中。"
-            warnings += (m["warnings"] as? List<*>)?.map { BackupJson.string(it).take(300) }.orEmpty()
+            warnings += (m["warnings"] as? List<*>)?.map { BackupJson.string(it) }.orEmpty()
             val time = BackupJson.long(m["createdAt"])
             if (time < 0) fail("INDEX")
             PreparedBackup(directory, BackupContents(BackupJson.string(m["appVersion"]), time, tools, warnings.distinct()))
         } catch (failure: Throwable) {
             directory.deleteRecursively()
             if (failure is CancellationException || failure is BackupException) throw failure
-            throw BackupException("CORRUPT", failure)
+            val code = if (failure is IllegalArgumentException && failure.message in setOf("INSUFFICIENT_MEMORY", "INSUFFICIENT_STORAGE")) failure.message!! else "CORRUPT"
+            throw BackupException(code, failure)
         }
     }
 
@@ -179,14 +173,14 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
         private val ID = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
         private val SHA = Regex("^[0-9a-f]{64}$")
         fun validateTools(tools: List<BackupTool>) {
-            if (tools.map { it.id }.toSet().size != tools.size || tools.any { !ID.matches(it.id) || it.id.length > 150 || it.versionCode <= 0 || it.dataVersion < 1 || it.name.length > 200 || it.version.length > 100 }) fail("TOOLS")
+            if (tools.map { it.id }.toSet().size != tools.size || tools.any { !ID.matches(it.id) || it.id.length > 255 || it.versionCode <= 0 || it.dataVersion < 1 }) fail("TOOLS")
         }
         fun unknown(obj: Map<String, Any?>, known: Set<String>, warnings: MutableList<String>) {
             val count = (obj.keys - known).size
             if (count > 0) warnings += "已跳过 $count 个未知字段；原归档保留这些字段。"
         }
         fun safePath(path: String): String {
-            val normalized = PackagePathPolicy.validate(path, 240).normalized
+            val normalized = PackagePathPolicy.validate(path).normalized
             if (path.any { it.code < 32 || it == ':' } || normalized != path) fail("PATH")
             return normalized
         }
@@ -202,7 +196,7 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
             }
             return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
         }
-        suspend fun copy(input: InputStream, output: OutputStream, limit: Long): Long {
+        suspend fun copy(input: InputStream, output: OutputStream): Long {
             val buffer = ByteArray(64 * 1024)
             var total = 0L
             while (true) {
@@ -210,7 +204,6 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                 val n = input.read(buffer)
                 if (n < 0) return total
                 total = Math.addExact(total, n.toLong())
-                if (total > limit) fail("LIMIT")
                 output.write(buffer, 0, n)
             }
         }
@@ -220,6 +213,25 @@ class BackupArchive(private val limits: BackupLimits = BackupLimits()) {
                 if (Files.isSymbolicLink(path) || (!Files.isDirectory(path, NOFOLLOW_LINKS) && !Files.isRegularFile(path, NOFOLLOW_LINKS))) fail("PATH")
                 Files.isRegularFile(path, NOFOLLOW_LINKS)
             }.map { it.toFile() }.sorted().toList() }
+        }
+        private fun requireStorage(directory: File, bytes: Long) {
+            try {
+                ResourceCapacity.requireStorageBytes(directory, bytes)
+            } catch (failure: IllegalArgumentException) {
+                throw BackupException("INSUFFICIENT_STORAGE", failure)
+            }
+        }
+        // Guard the actual compressed/raw write, including ZIP headers and end records.
+        private fun spaceChecked(output: OutputStream, directory: File): OutputStream = object : OutputStream() {
+            override fun write(value: Int) {
+                requireStorage(directory, 1)
+                output.write(value)
+            }
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                requireStorage(directory, length.toLong())
+                output.write(bytes, offset, length)
+            }
+            override fun flush() = output.flush()
         }
         private fun fail(code: String): Nothing = throw BackupException(code)
     }

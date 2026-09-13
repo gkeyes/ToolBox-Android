@@ -1,19 +1,6 @@
 import { h, svg } from "./dom.mjs";
 import { numericValue, referenceRange, monthlyDays, canonicalUnit } from "./model.mjs";
 
-function sample(points, max = 120) {
-  if (points.length <= max) return points;
-  const result = [points[0]], size = Math.ceil((points.length - 2) / (max / 2 - 1));
-  for (let i = 1; i < points.length - 1; i += size) {
-    const group = points.slice(i, Math.min(points.length - 1, i + size));
-    let min = group[0], maxPoint = group[0];
-    for (const p of group) { if (p.y < min.y) min = p; if (p.y > maxPoint.y) maxPoint = p; }
-    result.push(...(min === maxPoint ? [min] : [min, maxPoint].sort((a, b) => a.x - b.x)));
-  }
-  result.push(points.at(-1));
-  return result;
-}
-
 export function trendChart(metric) {
   const points = metric.points.map((p) => ({ ...p, y: numericValue(p.value), x: Date.parse(`${p.date}T00:00:00Z`) })).filter((p) => p.y !== null).reverse();
   if (!points.length) return h("p", { class: "chart-message" }, "文字或阈值结果不连成数值曲线，请查看原始记录。");
@@ -22,7 +9,8 @@ export function trendChart(metric) {
   const sameUnit = points.every((p) => canonicalUnit(p.unit) === canonicalUnit(points[0].unit));
   const shared = sameUnit && first && !first.qualitative && Number.isFinite(first.min) && Number.isFinite(first.max) && ranges.every((r) => r && r.min === first.min && r.max === first.max && r.minClosed === first.minClosed && r.maxClosed === first.maxClosed);
   const allY = points.map((p) => p.y).concat(shared ? [first.min, first.max] : []);
-  let min = Math.min(...allY), max = Math.max(...allY);
+  let min = Infinity, max = -Infinity;
+  for (const value of allY) { min = Math.min(min, value); max = Math.max(max, value); }
   const pad = (max - min || Math.abs(max) || 1) * 0.15;
   min = min >= 0 ? Math.max(0, min - pad) : min - pad; max += pad;
   if (!Number.isFinite(max - min) || max === min) return h("p", { class: "chart-message" }, "数值跨度不适合绘图，请查看原始记录。");
@@ -45,7 +33,7 @@ export function trendChart(metric) {
     chart.append(svg("line", { x1: left, y1: lineY, x2: width - right, y2: lineY, class: "chart-grid" }));
     chart.append(svg("text", { x: left - 7, y: lineY + 4, "text-anchor": "end", class: "chart-label" }, label));
   }
-  const plotted = sample(points);
+  const plotted = points;
   if (plotted.length > 1) chart.append(svg("path", { d: plotted.map((p, i) => `${i ? "L" : "M"}${x(p).toFixed(2)},${y(p.y).toFixed(2)}`).join(" "), class: "chart-line" }));
   for (const point of plotted) {
     chart.append(svg("circle", { cx: x(point), cy: y(point.y), r: plotted.length > 30 ? 2 : 3.5, class: ["low", "high", "outside"].includes(point.status) ? "chart-dot outside" : "chart-dot" }, svg("title", {}, `${point.date} ${point.value} ${point.unit || "未注明单位"}`)));

@@ -1,7 +1,7 @@
 package io.toolbox.tool.runtime
 
+import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.tool.api.ContractPhase
-import io.toolbox.tool.api.GestureRequirement
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxApiV1
 import io.toolbox.tool.api.ToolBoxCapabilityId
@@ -34,7 +34,8 @@ data class RuntimeSessionIdentity(
 data class RuntimeInboundContext(
     val sourceOrigin: String,
     val isMainFrame: Boolean,
-    val recentTouchAgeMillis: Long?,
+    /** Legacy call context, ignored: authorization does not expire with touch age. */
+    val recentTouchAgeMillis: Long? = null,
 )
 
 data class RuntimeRpcRequest(
@@ -432,15 +433,15 @@ class RuntimeRpcDispatcher(
     private val handlers: RuntimeM1Handlers,
     private val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     private val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
-    private val recentGestureWindowMillis: Long = 5_000L,
-    private val maxResponseBytes: Int = DEFAULT_MAX_RESPONSE_BYTES,
+    private val foregroundInteractionGuard: suspend () -> Unit = {
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
+    },
     private val browserLaunchGuard: suspend () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
     },
 ) {
-    init {
-        require(maxResponseBytes >= MIN_RESPONSE_BYTES)
-    }
+    private val maxResponseBytes: Int
+        get() = (ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
 
     suspend fun dispatch(request: RuntimeRpcRequest, inbound: RuntimeInboundContext): RuntimeRpcResponse {
         fun failure(code: RuntimeRpcErrorCode, message: String, retryAfterMs: Long? = null) =
@@ -479,7 +480,7 @@ class RuntimeRpcDispatcher(
         val capability = try {
             if (method.name == "files.read") {
                 requireHandler(m3Handlers.files).capabilityFor(
-                    request.params.requiredIdentifier("token", MAX_FILE_TOKEN_CHARS),
+                    request.params.requiredIdentifier("token"),
                 )
             } else {
                 method.capability
@@ -502,13 +503,7 @@ class RuntimeRpcDispatcher(
                 if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Required Android permission is unavailable")
             }
-            if (
-                method.name != "files.read" &&
-                descriptor.gestureRequirement != GestureRequirement.NONE &&
-                (inbound.recentTouchAgeMillis == null || inbound.recentTouchAgeMillis !in 0..recentGestureWindowMillis)
-            ) {
-                return failure(RuntimeRpcErrorCode.USER_GESTURE_REQUIRED, "A recent real touch is required")
-            }
+
         }
         when (val decision = authorization.admit(identity, method, request.encodedBytes)) {
             RuntimePolicyDecision.Allowed -> Unit
@@ -530,6 +525,11 @@ class RuntimeRpcDispatcher(
             }
         }
         return try {
+            // Existing grants authorize these effects. Require the current visible tool,
+            // without a second permission or an arbitrary touch-screen countdown.
+            if (capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
+                foregroundInteractionGuard()
+            }
             RuntimeRpcResponse.Success(request.id, invoke(method.name, request.params, request.id))
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -537,8 +537,16 @@ class RuntimeRpcDispatcher(
             failure(failure.errorCode, failure.message, failure.retryAfterMs)
         } catch (_: IllegalArgumentException) {
             failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
-        } catch (_: Exception) {
-            failure(RuntimeRpcErrorCode.INTERNAL_ERROR, "The native operation failed")
+        } catch (error: Exception) {
+            // Android's Binder capacity is a system boundary, not a ToolBox text quota.
+            val causes = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+            val ipcTooLarge = generateSequence<Throwable>(error) { it.cause }.takeWhile(causes::add)
+                .any { it is android.os.TransactionTooLargeException }
+            if (ipcTooLarge) {
+                failure(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Android rejected this IPC payload; use a file for large content")
+            } else {
+                failure(RuntimeRpcErrorCode.INTERNAL_ERROR, "The native operation failed")
+            }
         }
     }
 
@@ -556,11 +564,11 @@ class RuntimeRpcDispatcher(
             ),
         )
         "ui.toast" -> {
-            requireHandler(handlers.toast).show(params.requiredString("message", MAX_TOAST_CHARS))
+            requireHandler(handlers.toast).show(params.requiredString("message", maxResponseBytes))
             RpcValue.Null
         }
         "crypto.sha256" -> RpcValue.ObjectValue(
-            mapOf("hex" to RpcValue.StringValue(sha256(params.requiredBytes("value", MAX_HASH_BYTES)))),
+            mapOf("hex" to RpcValue.StringValue(sha256(params.requiredBytes("value", maxResponseBytes)))),
         )
         "storage.get" -> requireHandler(handlers.storage).get(params.requiredKey()) ?: RpcValue.Null
         "storage.getMany" -> {
@@ -605,7 +613,7 @@ class RuntimeRpcDispatcher(
             RpcValue.Null
         }
         "clipboard.writeText" -> {
-            requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", MAX_CLIPBOARD_CHARS))
+            requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", maxResponseBytes))
             RpcValue.Null
         }
         "network.authorizeDomain" -> {
@@ -647,7 +655,7 @@ class RuntimeRpcDispatcher(
             val network = requireHandler(m2Handlers.network)
             val chunk = network.readStream(streamId, runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
             requireNetworkStreamAuthorization()
-            require(chunk.receivedBytes in 0..MAX_NETWORK_RESPONSE_BYTES.toLong())
+            require(chunk.receivedBytes in 0..MAX_SAFE_INTEGER)
             require(chunk.data.size <= runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
             streamResponseWithinBudget(requestId, RpcValue.ObjectValue(mapOf(
                 "data" to RpcValue.StringValue(Base64.getEncoder().encodeToString(chunk.data)),
@@ -663,25 +671,25 @@ class RuntimeRpcDispatcher(
         "notifications.post" -> {
             params.requireOnly("id", "title", "body")
             requireHandler(m2Handlers.notifications).post(
-                notificationId = params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
-                title = params.requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
-                body = params.requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
+                notificationId = params.requiredIdentifier("id"),
+                title = params.requiredString("title", maxResponseBytes),
+                body = params.requiredString("body", maxResponseBytes),
             )
             RpcValue.Null
         }
         "notifications.update" -> {
             params.requireOnly("id", "title", "body")
             requireHandler(m2Handlers.notifications).update(
-                notificationId = params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
-                title = params.requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
-                body = params.requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
+                notificationId = params.requiredIdentifier("id"),
+                title = params.requiredString("title", maxResponseBytes),
+                body = params.requiredString("body", maxResponseBytes),
             )
             RpcValue.Null
         }
         "notifications.cancel" -> {
             params.requireOnly("id")
             requireHandler(m2Handlers.notifications).cancel(
-                params.requiredIdentifier("id", MAX_NOTIFICATION_ID_CHARS),
+                params.requiredIdentifier("id"),
             )
             RpcValue.Null
         }
@@ -764,7 +772,7 @@ class RuntimeRpcDispatcher(
         "background.setTimer" -> {
             params.requireOnly("key", "intervalMs")
             requireHandler(m2Handlers.continuousBackground).setTimer(
-                key = params.requiredIdentifier("key", MAX_TIMER_KEY_CHARS),
+                key = params.requiredIdentifier("key"),
                 intervalMillis = params.requiredLong("intervalMs", 1, MAX_SAFE_INTEGER),
             )
             RpcValue.Null
@@ -772,7 +780,7 @@ class RuntimeRpcDispatcher(
         "background.cancelTimer" -> {
             params.requireOnly("key")
             val cancelled = requireHandler(m2Handlers.continuousBackground).cancelTimer(
-                params.requiredIdentifier("key", MAX_TIMER_KEY_CHARS),
+                params.requiredIdentifier("key"),
             )
             if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Timer was not found")
             RpcValue.Null
@@ -783,12 +791,12 @@ class RuntimeRpcDispatcher(
         }
         "share.text" -> {
             params.requireOnly("text")
-            requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", MAX_SHARE_TEXT_CHARS))
+            requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", maxResponseBytes))
             RpcValue.Null
         }
         "browser.open" -> {
             params.requireOnly("url")
-            val url = validateRuntimeBrowserUrl(params.requiredString("url", 2_048))
+            val url = validateRuntimeBrowserUrl(params.requiredString("url", maxResponseBytes))
             requireHandler(m3Handlers.browserOpen).open(url) {
                 if (!authorization.isCurrent(identity)) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
@@ -810,13 +818,13 @@ class RuntimeRpcDispatcher(
             requireHandler(m3Handlers.files).save(
                 suggestedName = params.requiredFileName(),
                 mimeType = params.requiredMimeType("mimeType"),
-                content = params.requiredBytes("content", MAX_FILE_CONTENT_BYTES),
+                content = params.requiredBytes("content", maxResponseBytes),
             )?.toRpcValue() ?: RpcValue.Null
         }
         "files.read" -> {
             params.requireOnly("token")
             val content = requireHandler(m3Handlers.files).consume(
-                params.requiredIdentifier("token", MAX_FILE_TOKEN_CHARS),
+                params.requiredIdentifier("token"),
                 runtimeFileReadRawBudget(requestId, maxResponseBytes),
             )
             require(content.size <= runtimeFileReadRawBudget(requestId, maxResponseBytes))
@@ -841,7 +849,7 @@ class RuntimeRpcDispatcher(
             }
             requireHandler(m3Handlers.location).getCurrent(
                 precise = precise,
-                timeoutMillis = params.optionalLong("timeoutMs", MIN_LOCATION_TIMEOUT_MS, MAX_LOCATION_TIMEOUT_MS)
+                timeoutMillis = params.optionalLong("timeoutMs", MIN_LOCATION_TIMEOUT_MS, MAX_SAFE_INTEGER)
                     ?: DEFAULT_LOCATION_TIMEOUT_MS,
             ).toRpcValue()
         }
@@ -860,13 +868,13 @@ class RuntimeRpcDispatcher(
                         minDistanceMeters = params.optionalFloat("minDistanceMeters", 0f) ?: 0f,
                         allowBackground = params.optionalBoolean("allowBackground") ?: false,
                     ),
-                ).also { requireIdentifier(it, MAX_WATCH_ID_CHARS) },
+                ).also { requireIdentifier(it) },
             )
         }
         "location.clearWatch" -> {
             params.requireOnly("watchId")
             val removed = requireHandler(m3Handlers.locationWatch).clearWatch(
-                params.requiredIdentifier("watchId", MAX_WATCH_ID_CHARS),
+                params.requiredIdentifier("watchId"),
             )
             if (!removed) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Location watch was not found")
             RpcValue.Null
@@ -876,7 +884,7 @@ class RuntimeRpcDispatcher(
             val now = System.currentTimeMillis()
             requireHandler(m2Handlers.alarms).schedule(
                 RuntimeAlarmSummary(
-                    alarmId = params.requiredIdentifier("id", MAX_ALARM_ID_CHARS),
+                    alarmId = params.requiredIdentifier("id"),
                     triggerAt = params.requiredLong("triggerAt", 0, MAX_SAFE_INTEGER),
                     scheduledAt = now,
                 ),
@@ -889,7 +897,7 @@ class RuntimeRpcDispatcher(
         "alarms.cancel" -> {
             params.requireOnly("id")
             val cancelled = requireHandler(m2Handlers.alarms).cancel(
-                params.requiredIdentifier("id", MAX_ALARM_ID_CHARS),
+                params.requiredIdentifier("id"),
             )
             if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Alarm was not found")
             RpcValue.Null
@@ -928,8 +936,8 @@ class RuntimeRpcDispatcher(
 
     private fun RuntimeBasicDeviceInfo.toRpcValue(): RpcValue.ObjectValue {
         require(apiLevel >= 33)
-        require(locale.length in 2..64)
-        require(timeZone.length in 1..64)
+        require(locale.isNotBlank())
+        require(timeZone.isNotBlank())
         require(screenClass in setOf("compact", "medium", "expanded"))
         return RpcValue.ObjectValue(
             mapOf(
@@ -943,12 +951,9 @@ class RuntimeRpcDispatcher(
 
     private fun RuntimeNetworkResponse.toRpcValue(): RpcValue.ObjectValue {
         require(status in 100..599)
-        require(body.toByteArray(StandardCharsets.UTF_8).size <= MAX_NETWORK_RESPONSE_BYTES)
-        require(headers.size <= MAX_NETWORK_RESPONSE_HEADERS)
         val rpcHeaders = headers.entries.associate { (name, value) ->
             require(HEADER_NAME.matches(name))
             require(name.lowercase(Locale.ROOT) !in FORBIDDEN_RESPONSE_HEADERS)
-            require(value.length <= MAX_NETWORK_HEADER_VALUE_CHARS)
             name to RpcValue.StringValue(value)
         }
         return RpcValue.ObjectValue(
@@ -963,7 +968,7 @@ class RuntimeRpcDispatcher(
 
     private fun RuntimeBackgroundTaskSummary.toRpcValue(): RpcValue.ObjectValue {
         requireTaskId(taskId)
-        requireIdentifier(key, MAX_TASK_KEY_CHARS)
+        requireIdentifier(key)
         nextRunAt?.let { require(it in 0..MAX_SAFE_INTEGER) }
         return RpcValue.ObjectValue(buildMap {
             put("kind", RpcValue.StringValue("task"))
@@ -976,7 +981,7 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RuntimeBackgroundSessionSummary.toRpcValue(): RpcValue.ObjectValue {
-        requireIdentifier(sessionId, MAX_SESSION_ID_CHARS)
+        requireIdentifier(sessionId)
         require(startedAt in 0..MAX_SAFE_INTEGER)
         return RpcValue.ObjectValue(
             mapOf(
@@ -1002,7 +1007,7 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RuntimeAlarmSummary.toRpcValue(): RpcValue.ObjectValue {
-        requireIdentifier(alarmId, MAX_ALARM_ID_CHARS)
+        requireIdentifier(alarmId)
         require(triggerAt in 0..MAX_SAFE_INTEGER)
         require(scheduledAt in 0..MAX_SAFE_INTEGER)
         return RpcValue.ObjectValue(
@@ -1018,9 +1023,8 @@ class RuntimeRpcDispatcher(
         requireTaskId(taskId)
         require(completedAt in 0..MAX_SAFE_INTEGER)
         status?.let { require(it in 100..599) }
-        body?.let { require(it.toByteArray(StandardCharsets.UTF_8).size <= MAX_BACKGROUND_RESULT_BYTES) }
         error?.let {
-            require(it.message.length in 1..MAX_ERROR_MESSAGE_CHARS)
+            require(it.message.isNotEmpty())
         }
         return RpcValue.ObjectValue(buildMap {
             put("taskId", RpcValue.StringValue(taskId))
@@ -1038,10 +1042,10 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RuntimeFileToken.toRpcValue(): RpcValue.ObjectValue {
-        requireIdentifier(token, MAX_FILE_TOKEN_CHARS)
-        require(name.isNotBlank() && name.length <= MAX_FILE_NAME_CHARS && name.none(Char::isISOControl))
+        requireIdentifier(token)
+        require(name.isNotBlank() && name.none(Char::isISOControl))
         requireMimeType(mimeType)
-        require(size in 0..MAX_FILE_TOKEN_SIZE)
+        require(size in 0..MAX_SAFE_INTEGER)
         return RpcValue.ObjectValue(
             mapOf(
                 "token" to RpcValue.StringValue(token),
@@ -1087,7 +1091,7 @@ class RuntimeRpcDispatcher(
         require(value.keys.all { it in allowed })
     }
 
-    private fun RpcValue.ObjectValue.requiredString(name: String, maxChars: Int): String {
+    private fun RpcValue.ObjectValue.requiredString(name: String, maxChars: Int = Int.MAX_VALUE): String {
         val result = (required(name) as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
         require(result.length in 1..maxChars)
         return result
@@ -1095,10 +1099,10 @@ class RuntimeRpcDispatcher(
 
     private fun RpcValue.ObjectValue.storageKeys(name: String): List<String> {
         val entries = (required(name) as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException(name)
-        require(entries.size <= 256)
+
         return entries.map { entry ->
             val key = (entry as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
-            require(key.isNotBlank() && key.length <= MAX_KEY_CHARS && key.none(Char::isISOControl))
+            require(key.isNotBlank() && key.none(Char::isISOControl))
             key
         }
     }
@@ -1107,7 +1111,7 @@ class RuntimeRpcDispatcher(
         requireOnly("set", "remove")
         val set = value["set"]?.let { raw ->
             val entries = (raw as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException("set")
-            require(entries.size <= 256)
+
             entries.map { entry ->
                 val item = entry as? RpcValue.ObjectValue ?: throw IllegalArgumentException("set")
                 item.requireOnly("key", "value")
@@ -1120,49 +1124,53 @@ class RuntimeRpcDispatcher(
         }.orEmpty()
         val remove = if ("remove" in value) storageKeys("remove") else emptyList()
         val keys = set.map { it.key } + remove
-        require(keys.size <= 256 && keys.distinct().size == keys.size)
+        require(keys.distinct().size == keys.size)
         return RuntimeStorageMutation(set, remove)
     }
 
     private fun requireStorageJson(value: RpcValue) {
-        when (value) {
-            is RpcValue.Number -> require(value.value.isFinite())
-            is RpcValue.ArrayValue -> value.value.forEach(::requireStorageJson)
-            is RpcValue.ObjectValue -> value.value.values.forEach(::requireStorageJson)
-            else -> Unit
+        val pending = ArrayDeque<RpcValue>()
+        pending.addLast(value)
+        while (pending.isNotEmpty()) {
+            when (val item = pending.removeLast()) {
+                is RpcValue.Number -> require(item.value.isFinite())
+                is RpcValue.ArrayValue -> pending.addAll(item.value)
+                is RpcValue.ObjectValue -> pending.addAll(item.value.values)
+                else -> Unit
+            }
         }
     }
 
     private fun RpcValue.ObjectValue.requiredKey(): String {
-        val key = requiredString("key", MAX_KEY_CHARS)
+        val key = requiredString("key")
         require(!key.any(Char::isISOControl))
         return key
     }
 
-    private fun RpcValue.ObjectValue.requiredIdentifier(name: String, maxChars: Int): String {
-        val identifier = requiredString(name, maxChars)
+    private fun RpcValue.ObjectValue.requiredIdentifier(name: String): String {
+        val identifier = requiredString(name)
         require(identifier == identifier.trim())
         require(identifier.none(Char::isISOControl))
         return identifier
     }
 
     private fun RpcValue.ObjectValue.requiredTaskId(): String =
-        requiredIdentifier("taskId", MAX_TASK_ID_CHARS)
+        requiredIdentifier("taskId")
 
     private fun RpcValue.ObjectValue.requiredSessionId(): String =
-        requiredIdentifier("sessionId", MAX_SESSION_ID_CHARS)
+        requiredIdentifier("sessionId")
 
     private fun requireTaskId(taskId: String) {
-        requireIdentifier(taskId, MAX_TASK_ID_CHARS)
+        requireIdentifier(taskId)
     }
 
-    private fun requireIdentifier(value: String, maxChars: Int) {
-        require(value.length in 1..maxChars)
+    private fun requireIdentifier(value: String) {
+        require(value.isNotEmpty())
         require(value == value.trim())
         require(value.none(Char::isISOControl))
     }
 
-    private fun RpcValue.ObjectValue.optionalString(name: String, maxChars: Int): String? {
+    private fun RpcValue.ObjectValue.optionalString(name: String, maxChars: Int = Int.MAX_VALUE): String? {
         val raw = value[name] ?: return null
         val string = (raw as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
         require(string.length <= maxChars)
@@ -1198,26 +1206,25 @@ class RuntimeRpcDispatcher(
         required(name) as? RpcValue.ObjectValue ?: throw IllegalArgumentException(name)
 
     private fun RpcValue.ObjectValue.optionalDisplayName(name: String): String? {
-        val result = optionalString(name, MAX_SHORTCUT_NAME_CHARS)?.trim()
+        val result = optionalString(name)?.trim()
         require(result == null || result.isNotEmpty())
         return result
     }
 
     private fun RpcValue.ObjectValue.requiredFileName(): String {
-        val name = requiredString("suggestedName", MAX_FILE_NAME_CHARS)
+        val name = requiredString("suggestedName")
         require(name == name.trim() && name !in setOf(".", ".."))
         require(name.none { it == '/' || it == '\\' || it.isISOControl() })
         return name
     }
 
     private fun RpcValue.ObjectValue.requiredMimeType(name: String): String =
-        requiredString(name, MAX_MIME_TYPE_CHARS).also(::requireMimeType)
+        requiredString(name).also(::requireMimeType)
 
     private fun RpcValue.ObjectValue.optionalMimeTypes(): List<String> {
         requireOnly("mimeTypes")
         val raw = value["mimeTypes"] ?: return emptyList()
         val types = (raw as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException("mimeTypes")
-        require(types.size <= MAX_MIME_TYPES)
         return types.map {
             ((it as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException("mimeTypes"))
                 .also(::requireMimeType)
@@ -1225,12 +1232,12 @@ class RuntimeRpcDispatcher(
     }
 
     private fun requireMimeType(value: String) {
-        require(value.length in 3..MAX_MIME_TYPE_CHARS && MIME_TYPE.matches(value))
+        require(MIME_TYPE.matches(value))
     }
 
     private fun RpcValue.ObjectValue.toNetworkRequest(): RuntimeNetworkRequest {
         requireOnly("url", "method", "headers", "body", "bodyEncoding", "timeoutMs", "maxResponseBytes")
-        val url = requiredString("url", MAX_NETWORK_URL_CHARS)
+        val url = requiredString("url", maxResponseBytes)
         require(url == url.trim() && url.none(Char::isISOControl))
         val method = when (optionalString("method", 6) ?: "GET") {
             "GET" -> RuntimeNetworkMethod.GET
@@ -1245,20 +1252,19 @@ class RuntimeRpcDispatcher(
             require(REQUEST_HEADER_NAME.matches(name))
             require(name.lowercase(Locale.ROOT) !in FORBIDDEN_REQUEST_HEADERS)
             val headerValue = (raw as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException("headers")
-            require(headerValue.length <= MAX_NETWORK_HEADER_VALUE_CHARS)
             require(headerValue.none { it == '\r' || it == '\n' || it.isISOControl() })
             headerValue
-        }.orEmpty().also { require(it.size <= MAX_NETWORK_REQUEST_HEADERS) }
+        }.orEmpty()
         val rawBody = value["body"]
         val bodyEncoding = optionalString("bodyEncoding", 8)
         val body = when {
-            bodyEncoding == "bytes" -> requiredBytes("body", MAX_NETWORK_REQUEST_BYTES)
+            bodyEncoding == "bytes" -> requiredBytes("body", maxResponseBytes)
             bodyEncoding != null -> throw IllegalArgumentException("bodyEncoding")
             rawBody == null -> null
             rawBody is RpcValue.StringValue -> rawBody.value.toByteArray(StandardCharsets.UTF_8)
             else -> RuntimeRpcJson.encodeValue(rawBody).toByteArray(StandardCharsets.UTF_8)
         }
-        body?.let { require(it.size <= MAX_NETWORK_REQUEST_BYTES) }
+        body?.let { require(it.size <= maxResponseBytes) }
         require(method !in setOf(RuntimeNetworkMethod.GET, RuntimeNetworkMethod.HEAD) || body == null)
         return RuntimeNetworkRequest(
             url = url,
@@ -1270,7 +1276,7 @@ class RuntimeRpcDispatcher(
             maxResponseBytes = optionalLong(
                 "maxResponseBytes",
                 MIN_NETWORK_RESPONSE_BYTES.toLong(),
-                MAX_NETWORK_RESPONSE_BYTES.toLong(),
+                Int.MAX_VALUE.toLong(),
             )?.toInt(),
         )
     }
@@ -1299,11 +1305,11 @@ class RuntimeRpcDispatcher(
         }
         return RuntimeLiveNotificationRequest(
             sessionId = requiredSessionId(),
-            title = requiredDisplayText("title", MAX_NOTIFICATION_TITLE_CHARS),
-            primaryText = requiredDisplayText("primaryText", MAX_LIVE_PRIMARY_CHARS),
-            secondaryText = optionalDisplayText("secondaryText", MAX_LIVE_SECONDARY_CHARS),
-            body = optionalDisplayText("body", MAX_NOTIFICATION_BODY_CHARS),
-            shortText = optionalDisplayText("shortText", MAX_LIVE_SHORT_TEXT_CHARS),
+            title = requiredDisplayText("title"),
+            primaryText = requiredDisplayText("primaryText"),
+            secondaryText = optionalDisplayText("secondaryText"),
+            body = optionalDisplayText("body"),
+            shortText = optionalDisplayText("shortText"),
             updatedAt = optionalLong("updatedAt", 0, MAX_SAFE_INTEGER),
             progress = optionalInt("progress", 0, 100),
             accentColor = accentColor,
@@ -1311,11 +1317,11 @@ class RuntimeRpcDispatcher(
         )
     }
 
-    private fun RpcValue.ObjectValue.requiredDisplayText(name: String, maxChars: Int): String =
-        requiredString(name, maxChars).also { require(it.isNotBlank() && it.none(Char::isISOControl)) }
+    private fun RpcValue.ObjectValue.requiredDisplayText(name: String): String =
+        requiredString(name).also { require(it.isNotBlank() && it.none(Char::isISOControl)) }
 
-    private fun RpcValue.ObjectValue.optionalDisplayText(name: String, maxChars: Int): String? =
-        optionalString(name, maxChars)?.also { require(it.none(Char::isISOControl)) }
+    private fun RpcValue.ObjectValue.optionalDisplayText(name: String): String? =
+        optionalString(name)?.also { require(it.none(Char::isISOControl)) }
 
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
         val allowed = if (periodic) {
@@ -1324,7 +1330,7 @@ class RuntimeRpcDispatcher(
             arrayOf("key", "operation", "constraints")
         }
         requireOnly(*allowed)
-        val key = requiredIdentifier("key", MAX_TASK_KEY_CHARS)
+        val key = requiredIdentifier("key")
         val operation = requiredObject("operation").toBackgroundOperation()
         val constraints = value["constraints"]?.let {
             (it as? RpcValue.ObjectValue ?: throw IllegalArgumentException("constraints")).toTaskConstraints()
@@ -1337,15 +1343,15 @@ class RuntimeRpcDispatcher(
         return when (type) {
             "httpGet" -> {
                 requireOnly("type", "url")
-                val url = requiredString("url", MAX_NETWORK_URL_CHARS)
+                val url = requiredString("url", maxResponseBytes)
                 require(url == url.trim() && url.none(Char::isISOControl))
                 RuntimeBackgroundTaskOperation.HttpGet(url)
             }
             "notify" -> {
                 requireOnly("type", "title", "body")
                 RuntimeBackgroundTaskOperation.Notify(
-                    title = requiredString("title", MAX_NOTIFICATION_TITLE_CHARS),
-                    body = requiredString("body", MAX_NOTIFICATION_BODY_CHARS),
+                    title = requiredString("title", maxResponseBytes),
+                    body = requiredString("body", maxResponseBytes),
                 )
             }
             else -> throw IllegalArgumentException("operation.type")
@@ -1365,12 +1371,18 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RpcValue.ObjectValue.requiredBytes(name: String, maxBytes: Int): ByteArray = when (val raw = required(name)) {
-        is RpcValue.StringValue -> raw.value.toByteArray(StandardCharsets.UTF_8)
-        is RpcValue.ArrayValue -> raw.value.map {
-            val number = (it as? RpcValue.Number)?.value ?: throw IllegalArgumentException(name)
-            require(number % 1.0 == 0.0 && number in 0.0..255.0)
-            number.toInt().toByte()
-        }.toByteArray()
+        is RpcValue.StringValue -> {
+            require(raw.value.length <= maxBytes)
+            raw.value.toByteArray(StandardCharsets.UTF_8)
+        }
+        is RpcValue.ArrayValue -> {
+            require(raw.value.size <= maxBytes)
+            ByteArray(raw.value.size) { index ->
+                val number = (raw.value[index] as? RpcValue.Number)?.value ?: throw IllegalArgumentException(name)
+                require(number % 1.0 == 0.0 && number in 0.0..255.0)
+                number.toInt().toByte()
+            }
+        }
         else -> throw IllegalArgumentException(name)
     }.also { require(it.size <= maxBytes) }
 
@@ -1380,7 +1392,7 @@ class RuntimeRpcDispatcher(
 
     private companion object {
         val SUPPORTED_CONTRACT_PHASES = setOf(ContractPhase.M1, ContractPhase.M2, ContractPhase.M3)
-        val HEADER_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$")
+        val HEADER_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
         val REQUEST_HEADER_NAME = HEADER_NAME
         val FORBIDDEN_RESPONSE_HEADERS = setOf("set-cookie", "set-cookie2", "proxy-authenticate")
         val FORBIDDEN_REQUEST_HEADERS = setOf(
@@ -1389,66 +1401,38 @@ class RuntimeRpcDispatcher(
         )
         val MIME_TYPE = Regex("^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+*\\-]+$")
         val LIVE_NOTIFICATION_COLOR = Regex("^#[0-9A-Fa-f]{6}$")
-        const val MAX_KEY_CHARS = 128
-        const val MAX_TOAST_CHARS = 200
-        const val MAX_HASH_BYTES = 1024 * 1024
-        const val MAX_CLIPBOARD_CHARS = 64 * 1024
-        const val MAX_SHARE_TEXT_CHARS = 64 * 1024
-        const val MAX_FILE_CONTENT_BYTES = 1024 * 1024
-        const val DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024
-        const val MIN_RESPONSE_BYTES = 4 * 1024
-        const val MAX_FILE_TOKEN_SIZE = 1024L * 1024L * 1024L
-        const val MAX_FILE_TOKEN_CHARS = 128
-        const val MAX_FILE_NAME_CHARS = 255
-        const val MAX_MIME_TYPE_CHARS = 127
-        const val MAX_MIME_TYPES = 16
-        const val MAX_SHORTCUT_NAME_CHARS = 64
-        const val MIN_LOCATION_TIMEOUT_MS = 1_000L
-        const val DEFAULT_LOCATION_TIMEOUT_MS = 10_000L
-        const val MAX_LOCATION_TIMEOUT_MS = 30_000L
-        const val MAX_NETWORK_URL_CHARS = 2_048
-        const val MAX_NETWORK_RESPONSE_BYTES = 64 * 1_024 * 1_024
-        const val MIN_NETWORK_RESPONSE_BYTES = 1_024
-        const val MAX_NETWORK_REQUEST_BYTES = 1_024 * 1_024
-        const val MAX_NETWORK_REQUEST_HEADERS = 32
-        const val MAX_NETWORK_RESPONSE_HEADERS = 64
-        const val MAX_NETWORK_HEADER_VALUE_CHARS = 4_096
-        const val MIN_NETWORK_TIMEOUT_MS = 1_000L
-        const val MAX_NETWORK_TIMEOUT_MS = 3_600_000L
-        const val MAX_NOTIFICATION_ID_CHARS = 64
-        const val MAX_NOTIFICATION_TITLE_CHARS = 64
-        const val MAX_NOTIFICATION_BODY_CHARS = 256
-        const val MAX_LIVE_PRIMARY_CHARS = 32
-        const val MAX_LIVE_SECONDARY_CHARS = 96
-        const val MAX_LIVE_SHORT_TEXT_CHARS = 12
-        const val MAX_TASK_ID_CHARS = 128
-        const val MAX_TASK_KEY_CHARS = 64
-        const val MAX_TIMER_KEY_CHARS = 128
-        const val MAX_SESSION_ID_CHARS = 128
-        const val MAX_WATCH_ID_CHARS = 128
-        const val MAX_ALARM_ID_CHARS = 128
-        const val MAX_BACKGROUND_RESULT_BYTES = 256 * 1024
-        const val MAX_ERROR_MESSAGE_CHARS = 256
+        private val FOREGROUND_INTERACTION_CAPABILITIES = setOf(
+            ToolBoxCapabilityId.CLIPBOARD_WRITE, ToolBoxCapabilityId.CLIPBOARD_READ,
+            ToolBoxCapabilityId.SHARE, ToolBoxCapabilityId.BROWSER,
+            ToolBoxCapabilityId.FILES_OPEN, ToolBoxCapabilityId.FILES_SAVE,
+            ToolBoxCapabilityId.HAPTICS, ToolBoxCapabilityId.SHORTCUTS, ToolBoxCapabilityId.CAMERA,
+        )
+        const val MIN_LOCATION_TIMEOUT_MS = 0L
+        const val DEFAULT_LOCATION_TIMEOUT_MS = 0L
+        const val MIN_NETWORK_RESPONSE_BYTES = 1
+        const val MIN_NETWORK_TIMEOUT_MS = 0L
+        // OkHttp represents timeout milliseconds as a non-negative Int.
+        const val MAX_NETWORK_TIMEOUT_MS = Int.MAX_VALUE.toLong()
         const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
         const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
     }
 }
 
 internal fun isSafeRuntimeRequestId(id: String): Boolean =
-    id.length in 1..128 && id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }
+    id.isNotEmpty() && id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }
 
 internal fun runtimeFileReadRawBudget(requestId: String, maxResponseBytes: Int): Int {
     require(isSafeRuntimeRequestId(requestId))
-    require(maxResponseBytes >= 4 * 1024)
+    require(maxResponseBytes >= 0)
     val availableBase64Bytes = maxResponseBytes - FILE_READ_RESPONSE_FIXED_BYTES - requestId.length
-    return availableBase64Bytes.coerceAtLeast(4) / 4 * 3
+    return availableBase64Bytes.coerceAtLeast(0) / 4 * 3
 }
 
 internal fun runtimeFileReadEncodedUpperBound(requestId: String, rawBytes: Int): Int {
     require(isSafeRuntimeRequestId(requestId))
     require(rawBytes >= 0)
-    val base64Bytes = 4 * ((rawBytes + 2) / 3)
-    return FILE_READ_RESPONSE_FIXED_BYTES + requestId.length + base64Bytes
+    val base64Bytes = 4L * ((rawBytes.toLong() + 2) / 3)
+    return (FILE_READ_RESPONSE_FIXED_BYTES + requestId.length + base64Bytes).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
 private const val FILE_READ_RESPONSE_FIXED_BYTES = 42

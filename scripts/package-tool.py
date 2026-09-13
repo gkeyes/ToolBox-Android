@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import stat
 import tempfile
@@ -15,6 +16,14 @@ import zipfile
 IGNORED = {".DS_Store", "__MACOSX", ".git", "__pycache__", "node_modules"}
 GENERATED = {"integrity.json", "signature.json"}
 ARCHIVES = {".zip", ".tbx", ".apk", ".jar", ".aar", ".7z", ".rar", ".tar", ".gz"}
+
+
+def file_digest(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def package_tool(source, destination, overwrite=False):
@@ -57,11 +66,11 @@ def package_tool(source, destination, overwrite=False):
             if normalized in normalized_names:
                 raise ValueError(f"Case or Unicode path collision: {relative}")
             normalized_names.add(normalized)
-            entries[relative] = path.read_bytes()
+            entries[relative] = path
 
     if "manifest.json" not in entries:
         raise ValueError("Missing manifest.json at the source root")
-    manifest = json.loads(entries["manifest.json"].decode("utf-8"))
+    manifest = json.loads(entries["manifest.json"].read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("manifest.json must be an object")
     entry = manifest.get("entry")
@@ -74,7 +83,7 @@ def package_tool(source, destination, overwrite=False):
     integrity = {
         "schemaVersion": 1,
         "algorithm": "SHA-256",
-        "files": {name: hashlib.sha256(entries[name]).hexdigest() for name in sorted(entries)},
+        "files": {name: file_digest(entries[name]) for name in sorted(entries)},
     }
     entries["integrity.json"] = (json.dumps(integrity, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -87,8 +96,15 @@ def package_tool(source, destination, overwrite=False):
                 info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
                 info.create_system = 3
                 info.external_attr = (stat.S_IFREG | 0o644) << 16
-                archive.writestr(info, entries[name], compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
-        digest = hashlib.sha256(temporary.read_bytes()).hexdigest()
+                info.compress_type = zipfile.ZIP_DEFLATED
+                value = entries[name]
+                if isinstance(value, Path):
+                    info.file_size = value.stat().st_size
+                    with value.open("rb") as source_file, archive.open(info, "w") as target_file:
+                        shutil.copyfileobj(source_file, target_file)
+                else:
+                    archive.writestr(info, value, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+        digest = file_digest(temporary)
         if overwrite:
             os.replace(temporary, destination)
         else:

@@ -1,5 +1,6 @@
 package io.toolbox.host.permissions
 
+import android.app.AlarmManager
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
@@ -54,19 +59,71 @@ internal fun PermissionCenterScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val alarmManager = remember(context) { context.getSystemService(AlarmManager::class.java) }
+    var exactAlarmsAllowed by remember { mutableStateOf(runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)) }
+    DisposableEffect(lifecycleOwner, alarmManager) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) exactAlarmsAllowed = runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var pendingRequestId by rememberSaveable { mutableStateOf("") }
+    var pendingExactAlarmRequestId by rememberSaveable { mutableStateOf("") }
+    val exactAlarmLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        exactAlarmsAllowed = runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+        if (pendingExactAlarmRequestId.isNotEmpty()) {
+            viewModel.systemPermissionResult(pendingExactAlarmRequestId, mapOf(EXACT_ALARM_PERMISSION to exactAlarmsAllowed))
+            pendingExactAlarmRequestId = ""
+        }
+    }
+    val openExactAlarmSettings: () -> Unit = {
+        val opened = try {
+            if (alarmManager == null) {
+                false
+            } else {
+                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                    .setData(Uri.fromParts("package", context.packageName, null))
+                val availableIntent = if (intent.resolveActivity(context.packageManager) != null) intent else {
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.fromParts("package", context.packageName, null))
+                }
+                exactAlarmLauncher.launch(availableIntent)
+                true
+            }
+        } catch (_: android.content.ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+        if (!opened) {
+            viewModel.systemPermissionLaunchFailed(pendingExactAlarmRequestId)
+            pendingExactAlarmRequestId = ""
+        }
+    }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         viewModel.systemPermissionResult(pendingRequestId, results)
         pendingRequestId = ""
     }
     LaunchedEffect(viewModel) {
         viewModel.requests.collect { request ->
-            if (pendingRequestId.isNotEmpty()) {
+            if (pendingRequestId.isNotEmpty() || pendingExactAlarmRequestId.isNotEmpty()) {
                 viewModel.systemPermissionResult(request.id, emptyMap())
                 return@collect
             }
-            pendingRequestId = request.id
-            launcher.launch(request.permissions.toTypedArray())
+            if (request.capability == "alarms") {
+                exactAlarmsAllowed = runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+                if (exactAlarmsAllowed) {
+                    viewModel.systemPermissionResult(request.id, mapOf(EXACT_ALARM_PERMISSION to true))
+                } else {
+                    pendingExactAlarmRequestId = request.id
+                    openExactAlarmSettings()
+                }
+            } else {
+                pendingRequestId = request.id
+                launcher.launch(request.permissions.toTypedArray())
+            }
         }
     }
     LaunchedEffect(state.loaded, state.message) {
@@ -76,6 +133,8 @@ internal fun PermissionCenterScreen(
         state = state,
         onBack = onBack,
         onSetEnabled = viewModel::setEnabled,
+        exactAlarmsAllowed = exactAlarmsAllowed,
+        onOpenExactAlarmSettings = openExactAlarmSettings,
         onOpenSystemSettings = {
             context.startActivity(
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(
@@ -92,6 +151,8 @@ internal fun PermissionCenterContent(
     onBack: () -> Unit,
     onSetEnabled: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
+    exactAlarmsAllowed: Boolean = true,
+    onOpenExactAlarmSettings: () -> Unit = {},
 ) {
     val glassState = rememberToolBoxGlassState()
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
@@ -183,7 +244,9 @@ internal fun PermissionCenterContent(
                                 items.forEachIndexed { index, item ->
                                     ToolBoxSwitchSettingRow(
                                         title = item.title,
-                                        summary = item.reason,
+                                        summary = if (item.capability == "alarms" && !exactAlarmsAllowed) {
+                                            "${item.reason}\n系统尚未允许闹钟和提醒。"
+                                        } else item.reason,
                                         checked = item.enabled,
                                         onCheckedChange = { enabled ->
                                             if (item.capability == "storage.secure" && !enabled) {
@@ -195,6 +258,9 @@ internal fun PermissionCenterContent(
                                         icon = item.capability.capabilityIcon(),
                                         modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
                                     )
+                                    if (item.capability == "alarms" && item.enabled && !exactAlarmsAllowed) {
+                                        ToolBoxTextButton("允许闹钟和提醒", onOpenExactAlarmSettings)
+                                    }
                                     if (index != items.lastIndex) ToolBoxGroupDivider()
                                 }
                             }

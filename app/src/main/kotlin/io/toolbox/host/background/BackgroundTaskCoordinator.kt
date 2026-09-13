@@ -103,7 +103,6 @@ class BackgroundTaskCoordinator(
     }
 
     private suspend fun reconcileAdmitted() {
-        pruneExpiredResults()
         val toolIds = repositories.catalog.observeTools().first().map { it.metadata.id }
         if (!repositories.settings.settings.first().backgroundEnabled) {
             cancelAll(toolIds)
@@ -114,7 +113,6 @@ class BackgroundTaskCoordinator(
 
     suspend fun reconcile(toolIds: Collection<String>) {
         io.toolbox.host.backup.BackupRuntimeGate.worker {
-            pruneExpiredResults()
             reconcileScheduledTasks(toolIds)
         }
     }
@@ -173,18 +171,6 @@ class BackgroundTaskCoordinator(
                 !policy.notificationSystemPermissionGranted
             ) {
                 return@withLock EnqueueResult.Rejected("NOTIFICATIONS_NOT_ALLOWED")
-            }
-        }
-
-        val currentTasks = repositories.backgroundTasks.observeTasks(toolId).first()
-        val active = currentTasks.count { it.state == TaskState.QUEUED || it.state == TaskState.RUNNING }
-        if (active >= MAX_ACTIVE_TASKS_PER_TOOL) return@withLock EnqueueResult.Rejected("TASK_QUOTA_EXCEEDED")
-        if (intervalMinutes != null) {
-            val periodic = currentTasks.count {
-                it.periodic && (it.state == TaskState.QUEUED || it.state == TaskState.RUNNING)
-            }
-            if (periodic >= MAX_PERIODIC_TASKS_PER_TOOL) {
-                return@withLock EnqueueResult.Rejected("PERIODIC_TASK_QUOTA_EXCEEDED")
             }
         }
 
@@ -298,25 +284,19 @@ class BackgroundTaskCoordinator(
                         attemptCount = current.runAttempt,
                     )
                     val cancelled = repositories.backgroundTasks.finishCancelled(current.taskId, result) is DataResult.Success
-                    if (cancelled) pruneExpiredResults()
                     cancelled
                 }
             }
         }
 
-    private suspend fun pruneExpiredResults() {
-        val cutoffMillis = (clock.nowMillis() - TASK_RESULT_RETENTION_MILLIS).coerceAtLeast(0L)
-        repositories.backgroundTasks.pruneResultsCompletedBefore(cutoffMillis)
-    }
-
     private fun BackgroundTaskRequest.isValid(): Boolean = when (this) {
-        is BackgroundTaskRequest.HttpGet -> url.length in 1..2_048
+        is BackgroundTaskRequest.HttpGet -> url.isNotBlank()
         is BackgroundTaskRequest.Notify ->
-            notificationId.isNotBlank() && title.isNotBlank() && title.length <= 64 && body.length <= 256
+            isValidNotification(notificationId, title)
     }
 
     private fun BackgroundTaskRequest.toStoredSpec(): StoredBackgroundSpec = when (this) {
-        is BackgroundTaskRequest.HttpGet -> StoredBackgroundSpec(url = url, allowRedirects = allowRedirects)
+        is BackgroundTaskRequest.HttpGet -> StoredBackgroundSpec(url = url)
         is BackgroundTaskRequest.Notify -> StoredBackgroundSpec(
             title = title,
             body = body,

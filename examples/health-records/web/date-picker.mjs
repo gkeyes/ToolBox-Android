@@ -3,8 +3,9 @@ import { validDate, HealthError } from "./model.mjs";
 import { createChoice } from "./choice.mjs";
 
 let nextId = 0;
-const monthDays = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-const dateText = ([year, month, day]) => `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+const utcDate = (year, month, day) => { const date = new Date(0); date.setUTCFullYear(year, month, day); return date; };
+const monthDays = (year, month) => utcDate(year, month, 0).getUTCDate();
+const dateText = ([year, month, day]) => `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
 export function createDatePicker(value, onChange = () => {}) {
   if (!validDate(value)) throw new HealthError("检验日期无效，请按报告核对");
@@ -32,7 +33,7 @@ export function createDatePicker(value, onChange = () => {}) {
   }
   function renderDays() {
     draft[2] = Math.min(draft[2], monthDays(draft[0], draft[1]));
-    const offset = (new Date(Date.UTC(draft[0], draft[1] - 1, 1)).getUTCDay() + 6) % 7;
+    const offset = (utcDate(draft[0], draft[1] - 1, 1).getUTCDay() + 6) % 7;
     days.replaceChildren(...Array.from({ length: offset }, () => h("span", { "aria-hidden": "true" })),
       ...Array.from({ length: monthDays(draft[0], draft[1]) }, (_, index) => {
         const day = index + 1;
@@ -43,19 +44,24 @@ export function createDatePicker(value, onChange = () => {}) {
         } }, day);
         return control;
       }));
-    previous.disabled = draft[0] === 1900 && draft[1] === 1;
-    next.disabled = draft[0] === 2200 && draft[1] === 12;
+    previous.disabled = draft[0] === 0 && draft[1] === 1;
+    next.disabled = draft[0] === 9999 && draft[1] === 12;
     pending.textContent = `待确认：${dateText(draft)}`;
   }
   function render() {
     year?.close(); month?.close();
-    year = createChoice("年份", Array.from({ length: 301 }, (_, i) => ({ value: 1900 + i, label: `${1900 + i} 年` })), { value: draft[0], scrollToSelected: true, onChange: (value) => { draft[0] = Number(value); renderDays(); } });
+    // The archive date format has exactly four year digits, including 0000–0099.
+    year = { close() {}, element: h("input", { class: "input", type: "number", min: 0, max: 9999, step: 1, value: draft[0], "aria-label": "年份", onChange: event => {
+      const value = Number(event.target.value);
+      if (!Number.isInteger(value) || value < 0 || value > 9999) return;
+      draft[0] = value; renderDays();
+    } }) };
     month = createChoice("月份", Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `${i + 1} 月` })), { value: draft[1], scrollToSelected: true, onChange: (value) => { draft[1] = Number(value); renderDays(); } });
     selectors.replaceChildren(year.element, month.element); renderDays();
   }
   function shift(delta) {
-    const date = new Date(Date.UTC(draft[0], draft[1] - 1 + delta, 1));
-    if (date.getUTCFullYear() < 1900 || date.getUTCFullYear() > 2200) return;
+    const date = utcDate(draft[0], draft[1] - 1 + delta, 1);
+    if (date.getUTCFullYear() < 0 || date.getUTCFullYear() > 9999) return;
     draft = [date.getUTCFullYear(), date.getUTCMonth() + 1, draft[2]]; render();
   }
   trigger.addEventListener("click", () => {

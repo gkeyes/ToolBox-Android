@@ -7,10 +7,6 @@ export default {
   theme: {
     extend: {
       colors: {},
-      screens: {
-        // 自定义 display-mode: standalone 媒体查询
-        standalone: { raw: "(display-mode: standalone)" },
-      },
       boxShadow: {
         custom: "var(--shadow-custom)",
         "custom-md": "var(--shadow-custom-md)",

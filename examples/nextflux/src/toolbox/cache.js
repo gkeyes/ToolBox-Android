@@ -126,7 +126,7 @@ export function createArticleCache(storage, options = {}) {
 
   function validateRef(ref) {
     if (typeof ref !== "string" || !ref.startsWith(`${CACHE_PREFIX}d.`) ||
-        !/^[A-Za-z0-9.]+$/.test(ref.slice(CACHE_PREFIX.length)) || ref.length > 112) throw invalid();
+        !/^[A-Za-z0-9.]+$/.test(ref.slice(CACHE_PREFIX.length))) throw invalid();
   }
 
   async function readDocuments(refs, expectedEpoch = epoch) {

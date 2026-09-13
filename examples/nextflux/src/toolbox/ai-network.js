@@ -1,5 +1,3 @@
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_EVENT_CHARS = 256 * 1024;
 
 export function assertAiUrl(baseUrl) {
   let url;
@@ -16,7 +14,7 @@ function safeError(code, status) {
     CANCELLED: "AI 摘要已停止。",
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
     NETWORK_TIMEOUT: "AI 服务响应超时，请稍后重试。",
-    QUOTA_EXCEEDED: "AI 响应超过大小限制，请缩短摘要后重试。",
+    QUOTA_EXCEEDED: "可用资源不足，无法继续接收 AI 响应，请稍后重试。",
     INVALID_RESPONSE: "AI 服务返回的数据格式无效。",
     INCOMPLETE_STREAM: "AI 响应意外中断，请重新生成摘要。",
     NETWORK_BLOCKED: "AI 服务连接失败，请检查 HTTPS 地址。",
@@ -33,23 +31,13 @@ function payload({ baseUrl, apiKey, body }) {
   const url = assertAiUrl(baseUrl);
   if (typeof apiKey !== "string" || !apiKey.trim()) throw new Error("请先填写 AI API Key。");
   return { url, method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(body), timeoutMs: 60000, maxResponseBytes: MAX_RESPONSE_BYTES };
+    body: JSON.stringify(body) };
 }
 
 function bridge() {
   const network = globalThis.window?.ToolBox?.network;
   if (!network) throw new Error("请在 ToolBox 中使用 AI 摘要。");
   return network;
-}
-
-export async function testAiConnection({ baseUrl, apiKey, model }) {
-  if (typeof apiKey !== "string" || !apiKey.trim()) throw new Error("请先填写 AI API Key。");
-  const data = payload({ baseUrl, apiKey, body: { model, messages: [{ role: "user", content: "hi" }], max_tokens: 1 } });
-  let response;
-  try { response = await bridge().request(data); } catch (error) { throw safeError(error?.code); }
-  if (response.status < 200 || response.status >= 300) throw safeError(null, response.status);
-  // The test needs only status; never expose provider response bodies in errors.
-  return true;
 }
 
 function waitForRead(promise, signal) {
@@ -87,15 +75,15 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let pending = "";
     let eventLines = [];
-    let eventChars = 0;
+
     let complete = false;
     let finishedChoice = false;
-    let receivedBytes = 0;
+
     const dispatch = () => {
       if (!eventLines.length) return;
       const event = eventLines.join("\n");
       eventLines = [];
-      eventChars = 0;
+
       if (event.trim() === "[DONE]") { complete = true; return; }
       let json;
       try { json = JSON.parse(event); } catch { throw safeError("INVALID_RESPONSE"); }
@@ -108,8 +96,8 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       if (!line) { dispatch(); return; }
       if (line.startsWith("data:")) {
         const value = line.slice(5).replace(/^ /, "");
-        eventChars += value.length;
-        if (eventChars > MAX_EVENT_CHARS) throw safeError("QUOTA_EXCEEDED");
+
+
         eventLines.push(value);
       }
     };
@@ -118,8 +106,8 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       try { chunk = await waitForRead(network.readStream(streamId), signal); }
       catch (error) { throw safeError(signal?.aborted ? "CANCELLED" : error?.code); }
       if (signal?.aborted) throw safeError("CANCELLED");
-      receivedBytes += chunk.data?.byteLength || 0;
-      if (receivedBytes > MAX_RESPONSE_BYTES) throw safeError("QUOTA_EXCEEDED");
+
+
       try { pending += decoder.decode(chunk.data || new Uint8Array(), { stream: !chunk.done }); }
       catch { throw safeError("INVALID_RESPONSE"); }
       let index;
@@ -127,7 +115,7 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
         processLine(pending.slice(0, index).replace(/\r$/, ""));
         pending = pending.slice(index + 1);
       }
-      if (pending.length > MAX_EVENT_CHARS) throw safeError("QUOTA_EXCEEDED");
+
       if (chunk.done) {
         if (!complete && pending) processLine(pending.replace(/\r$/, ""));
         if (!complete) dispatch();

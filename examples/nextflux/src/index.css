@@ -3,6 +3,12 @@
 
 @config '../tailwind.config.js';
 
+@custom-variant standalone {
+  @media (display-mode: standalone) {
+    @slot;
+  }
+}
+
 @layer base {
   :root {
     --shadow-custom: 0 0 5px 0 rgba(0, 0, 0, 0.02),

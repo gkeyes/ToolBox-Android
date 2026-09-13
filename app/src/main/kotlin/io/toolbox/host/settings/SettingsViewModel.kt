@@ -7,7 +7,6 @@ import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.HostSettings
 import io.toolbox.core.data.HostSettingsRepository
 import io.toolbox.core.data.ThemeMode
-import io.toolbox.core.data.ThemeStyle
 import io.toolbox.host.HostBackgroundOperations
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,8 +38,6 @@ internal class SettingsViewModel(
     }
 
     fun selectTheme(theme: ThemeMode) = updateAppearance { it.copy(theme = theme) }
-
-    fun selectThemeStyle(style: ThemeStyle) = updateAppearance { it.copy(themeStyle = style) }
 
     fun setReduceTransparency(enabled: Boolean) =
         updateAppearance { it.copy(reduceTransparency = enabled) }

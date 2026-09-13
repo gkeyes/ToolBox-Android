@@ -7,7 +7,6 @@ android {
     compileSdk = 37
     defaultConfig {
         minSdk = 33
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -21,10 +20,4 @@ dependencies {
     implementation(project(":tool-package"))
     implementation(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.core)
-
-    testImplementation(libs.junit4)
-    testImplementation(libs.kotlinx.coroutines.test)
-
-    androidTestImplementation(libs.androidx.test.ext.junit)
-    androidTestImplementation(libs.androidx.test.runner)
 }

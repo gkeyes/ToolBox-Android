@@ -38,6 +38,5 @@ export function imageDimensions(bytes, mimeType) {
     }
   }
   if (!width || !height) throw new HealthError("无法读取图片尺寸，请另存为普通 JPG 或 PNG");
-  if (width * height > 24_000_000 || width > 16000 || height > 16000) throw new HealthError("图片分辨率过大，请裁切到检验表格后重试");
   return { width, height };
 }

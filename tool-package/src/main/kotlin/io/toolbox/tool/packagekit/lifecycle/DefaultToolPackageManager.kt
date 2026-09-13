@@ -16,7 +16,6 @@ import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.DefaultPackageInspector
 import io.toolbox.tool.packagekit.PackageInput
-import io.toolbox.tool.packagekit.PackageLimits
 import io.toolbox.tool.packagekit.PreparationResult
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.SecurityProfile
@@ -37,14 +36,13 @@ internal class DefaultToolPackageManager(
     private val catalog: CatalogRepository,
     private val lifecycle: CatalogLifecycleRepository,
     private val transactions: InstallTransactionRepository,
-    private val limits: PackageLimits,
     private val supportedCapabilities: Set<String>,
     private val hostVersion: String,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ToolPackageManager {
     private val storage = LifecycleStorage(filesRoot)
-    private val inspector = DefaultPackageInspector(filesRoot.resolve("miniapps/.imports"), limits, ioDispatcher)
+    private val inspector = DefaultPackageInspector(filesRoot.resolve("miniapps/.imports"), ioDispatcher)
     private val pendingConfirmations = mutableMapOf<String, PendingVersionConfirmation>()
 
     override suspend fun recoverPendingMutations(
@@ -178,7 +176,7 @@ internal class DefaultToolPackageManager(
             return failed(PackageOperationFailureCode.CONFIRMATION_EXPIRED, "The installed package changed; select the update again")
         }
         val previousSigningKey = if (previous == null) null else try {
-            runInterruptible { installedSigningKey(filesRoot, previous.currentVersion, limits) }
+            runInterruptible { installedSigningKey(filesRoot, previous.currentVersion) }
         } catch (cancelled: CancellationException) {
             discardPrepared(prepared)
             throw cancelled

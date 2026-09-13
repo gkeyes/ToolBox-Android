@@ -4,7 +4,6 @@ import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.InstallTransactionRepository
 import io.toolbox.tool.packagekit.PackageInput
-import io.toolbox.tool.packagekit.PackageLimits
 import io.toolbox.tool.packagekit.PackageRejection
 import java.io.File
 
@@ -64,7 +63,6 @@ object ToolPackageManagers {
         catalog: CatalogRepository,
         lifecycle: CatalogLifecycleRepository,
         transactions: InstallTransactionRepository,
-        limits: PackageLimits = PackageLimits(),
         supportedCapabilities: Set<String> = SupportedToolCapabilities.All,
         hostVersion: String = "0.3.3",
     ): ToolPackageManager = DefaultToolPackageManager(
@@ -72,7 +70,6 @@ object ToolPackageManagers {
         catalog = catalog,
         lifecycle = lifecycle,
         transactions = transactions,
-        limits = limits,
         supportedCapabilities = supportedCapabilities,
         hostVersion = hostVersion,
     )

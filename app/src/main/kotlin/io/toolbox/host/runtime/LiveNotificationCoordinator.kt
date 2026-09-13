@@ -3,7 +3,7 @@ package io.toolbox.host.runtime
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.launch
 
 internal data class RuntimeLiveNotificationUi(
@@ -40,7 +40,6 @@ internal class LiveNotificationCoordinator(
 ) {
     private val presentations = linkedMapOf<String, RuntimeLiveNotificationUi>()
     private var sequence = 0L
-    private var lastRefreshAt: Long? = null
     private var pendingRefresh: Job? = null
 
     fun start(toolId: String, toolName: String, request: RuntimeLiveNotificationRequest) {
@@ -79,26 +78,18 @@ internal class LiveNotificationCoordinator(
     fun snapshot(): List<RuntimeLiveNotificationUi> = presentations.values.toList()
 
     private fun scheduleRefresh(immediate: Boolean = false) {
-        val now = nowMillis()
-        val last = lastRefreshAt
-        val elapsed = last?.let { (now - it).coerceAtLeast(0L) }
-        if (immediate || elapsed == null || elapsed >= REFRESH_COALESCE_MILLIS) {
+        if (immediate) {
             pendingRefresh?.cancel()
             pendingRefresh = null
-            lastRefreshAt = now
             onSnapshotChanged()
             return
         }
         if (pendingRefresh?.isActive == true) return
         pendingRefresh = scope.launch {
-            delay((REFRESH_COALESCE_MILLIS - elapsed).coerceAtLeast(1L))
+            // Merge updates queued in the same dispatch turn without imposing a refresh interval.
+            yield()
             pendingRefresh = null
-            lastRefreshAt = nowMillis()
             onSnapshotChanged()
         }
-    }
-
-    private companion object {
-        const val REFRESH_COALESCE_MILLIS = 500L
     }
 }

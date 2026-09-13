@@ -23,7 +23,7 @@ export function referenceEditor(raw = "", onDirty = () => {}) {
       const label = createChoice("定性参考", ["阴性", "阳性", "未检出"].map((value) => ({ value, label: value })), { value: draft.qualitative, onChange: (value) => { draft.qualitative = value; onDirty(); } }).element;
       label.classList.add("wide"); controls.replaceChildren(label);
     } else {
-      const label = field("报告参考原文", h("input", { class: "input", value: draft.raw, maxlength: 200, placeholder: "特殊范围可按报告原文填写", onInput: (e) => { draft.raw = e.target.value; onDirty(); } }));
+      const label = field("报告参考原文", h("input", { class: "input", value: draft.raw, placeholder: "特殊范围可按报告原文填写", onInput: (e) => { draft.raw = e.target.value; onDirty(); } }));
       label.classList.add("wide"); controls.replaceChildren(label);
     }
   }
@@ -32,9 +32,9 @@ export function referenceEditor(raw = "", onDirty = () => {}) {
 }
 
 function itemFields(item, onDirty) {
-  const name = h("input", { class: "input", value: item.name || "", required: true, maxlength: 120, placeholder: "如：白细胞", onInput: onDirty });
-  const value = h("input", { class: "input", value: item.value ?? "", required: true, maxlength: 120, placeholder: "数值或文字结果", onInput: onDirty });
-  const unit = h("input", { class: "input", value: item.unit || "", maxlength: 80, placeholder: "按报告填写", onInput: onDirty });
+  const name = h("input", { class: "input", value: item.name || "", required: true, placeholder: "如：白细胞", onInput: onDirty });
+  const value = h("input", { class: "input", value: item.value ?? "", required: true, placeholder: "数值或文字结果", onInput: onDirty });
+  const unit = h("input", { class: "input", value: item.unit || "", placeholder: "按报告填写", onInput: onDirty });
   const nameLabel = field("指标名称", name); nameLabel.classList.add("wide");
   const reference = referenceEditor(item.normal, onDirty);
   return {
@@ -90,7 +90,6 @@ export function createRecordEditor(record, { save, cancel, history, editing = fa
   function reindex() { rows.forEach((row, i) => { row.title.textContent = `指标 ${i + 1}`; row.remove.setAttribute("aria-label", `删除指标 ${i + 1}`); }); }
   function add(item = { name: "", value: "", unit: "", normal: "" }, fromHistory = false, review = null) {
     if (saving) return;
-    if (rows.length >= 120) { error.textContent = "每份报告最多 120 项指标"; error.hidden = false; return; }
     const fields = itemFields(item, markDirty), title = h("h3", {}, `指标 ${rows.length + 1}`);
     const row = { fields, title, element: null, remove: null, review, reviewControl: null };
     if (review) {

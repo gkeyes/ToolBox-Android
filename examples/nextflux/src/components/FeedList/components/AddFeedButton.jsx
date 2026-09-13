@@ -15,7 +15,6 @@ export default function AddFeedButton() {
     try {
       const token = await window.ToolBox.files.open(["text/xml", "application/xml", "text/x-opml", "application/octet-stream"]);
       if (!token) return;
-      if (token.size > 2 * 1024 * 1024) throw new Error("请选择不超过 2 MB 的 OPML 文件。");
       const bytes = await window.ToolBox.files.read(token.token);
       const xml = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       await minifluxAPI.importOPML({ text: async () => xml });

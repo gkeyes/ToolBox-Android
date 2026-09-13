@@ -70,13 +70,12 @@ def main() -> None:
         "BUILD_TYPE": "release", "APK_DEBUGGABLE": "false", "R8_MINIFICATION": "PASS",
         "RESOURCE_SHRINKING": "ENABLED", "APK_SIGNING_CERT_SHA256": expected,
         "ORIGINAL_CERTIFICATE_MATCH": "PASS", "HOST_VERIFY_JOB": "success",
-        "HOST_BACKUP_THEME_UPGRADE_API35_EMULATOR": "PASS", "PROCESS_RESTART_API35_EMULATOR": "PASS",
-        "EMBEDDED_EXAMPLE_BYTES_AND_REPRODUCIBILITY": "PASS",
+        "EMBEDDED_EXAMPLE_BYTES": "PASS",
         "STANDALONE_TBX_VALIDATION": "SEPARATE_TBX_CI",
         "HOST_SCREENSHOT_VALIDATION": "REMOVED_BY_USER_REQUEST",
         "REAL_DEVICE": "NOT_RUN", "REAL_SERVER_LOGIN": "NOT_RUN", "MINIFIED_RUNTIME_DEVICE_TEST": "NOT_RUN",
     }
-    (delivery / "BUILD_AND_TEST_RECEIPT.txt").write_text("".join(f"{key}={value}\n" for key, value in receipt.items()))
+    (delivery / "BUILD_RECEIPT.txt").write_text("".join(f"{key}={value}\n" for key, value in receipt.items()))
     sums = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in sorted(delivery.iterdir())]
     (delivery / "SHA256SUMS.txt").write_text("".join(sums))
     with Path(os.environ["GITHUB_ENV"]).open("a") as handle:

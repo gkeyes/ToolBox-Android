@@ -67,6 +67,7 @@
   });
 
   const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+  const positive = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
   const defaultNow = () => {
     if (typeof performance !== "undefined" && typeof performance.now === "function") {
       return performance.now();
@@ -290,9 +291,9 @@
       keepAwake: typeof stored.keepAwake === "boolean" ? stored.keepAwake : DEFAULT_PREFERENCES.keepAwake,
       volume: clamp(Number(stored.volume) || DEFAULT_PREFERENCES.volume, 0, 100),
       custom: {
-        contract: clamp(Number(stored.custom?.contract) || DEFAULT_PREFERENCES.custom.contract, 1, 10),
-        relax: clamp(Number(stored.custom?.relax) || DEFAULT_PREFERENCES.custom.relax, 1, 20),
-        reps: clamp(Number(stored.custom?.reps) || DEFAULT_PREFERENCES.custom.reps, 5, 15)
+        contract: positive(stored.custom?.contract, DEFAULT_PREFERENCES.custom.contract),
+        relax: positive(stored.custom?.relax, DEFAULT_PREFERENCES.custom.relax),
+        reps: positive(stored.custom?.reps, DEFAULT_PREFERENCES.custom.reps)
       }
     };
   }
@@ -306,7 +307,7 @@
       && typeof entry.mode === "string"
       && Number.isFinite(entry.reps)
       && Number.isFinite(entry.durationMs)
-    )).slice(0, 30);
+    ));
   }
 
   function persistPreferences() {
@@ -697,7 +698,7 @@
       reps: currentSession.reps,
       durationMs: Math.round(state.elapsedMs)
     };
-    history = [entry, ...history].slice(0, 30);
+    history = [entry, ...history];
     persistHistory();
     renderHistory();
 
@@ -743,13 +744,9 @@
   }
 
   function updateCustomPreference(name, value) {
-    const limits = {
-      contract: [1, 10],
-      relax: [1, 20],
-      reps: [5, 15]
-    };
-    const [minimum, maximum] = limits[name];
-    preferences.custom[name] = clamp(Number(value), minimum, maximum);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0 || name === "reps" && !Number.isSafeInteger(numeric)) return;
+    preferences.custom[name] = numeric;
     persistPreferences();
     syncControls();
     renderSetup();

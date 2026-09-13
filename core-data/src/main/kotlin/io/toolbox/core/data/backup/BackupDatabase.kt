@@ -93,7 +93,6 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
     suspend fun restorePresentation(toolId: String, installedAt: Long, versionInstalledAt: Long, lastOpenedAt: Long?, pinnedOrder: Int?, categoryId: String?) {
         require(installedAt >= 0 && versionInstalledAt >= 0 && (lastOpenedAt == null || lastOpenedAt >= 0))
         require(pinnedOrder == null || pinnedOrder >= 0)
-        require(categoryId == null || categoryId.length <= 200)
         database.withTransaction {
             val sql = database.openHelper.writableDatabase
             sql.execSQL("UPDATE tools SET installedAt=?, lastOpenedAt=?, pinnedOrder=?, categoryId=? WHERE id=?", arrayOf<Any?>(installedAt, lastOpenedAt, pinnedOrder, categoryId, toolId))
@@ -103,12 +102,11 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
 
     /** Imported work is archival only. No pending work, alarm, permission or active session is scheduled. */
     suspend fun restoreTaskHistory(task: BackgroundTask, result: TaskRunResult?) {
-        require(task.taskId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
-        require(task.key.isNotBlank() && task.key.length <= CoreDataLimits.MAX_TASK_KEY_LENGTH)
+        require(task.taskId.matches(Regex("^[A-Za-z0-9._:-]+$")))
+        require(task.key.isNotBlank())
         require(task.createdAt >= 0 && task.updatedAt >= task.createdAt && task.runAttempt >= 0)
-        require(task.specJson.toByteArray().size <= CoreDataLimits.MAX_TASK_SPEC_BYTES)
         require(!task.periodic || (task.intervalMinutes != null && task.intervalMinutes >= 15))
-        require(result == null || (result.taskId == task.taskId && result.completedAt >= 0 && result.attemptCount >= 0 && (result.payloadJson?.toByteArray()?.size ?: 0) <= CoreDataLimits.MAX_TASK_RESULT_BYTES))
+        require(result == null || (result.taskId == task.taskId && result.completedAt >= 0 && result.attemptCount >= 0))
         database.withTransaction {
             check(task.versionCode > 0 && database.versions().get(task.toolId) != null)
             check(database.backgroundTasks().get(task.taskId) == null)

@@ -10,11 +10,26 @@
   "icon": "icon.png",
   "apiVersion": "1.0",
   "minHostVersion": "0.3.2",
-  "categories": ["开发", "通知"],
+  "categories": [
+    "开发",
+    "通知"
+  ],
   "permissions": [
-    {"name": "storage", "reason": "保存当前测试样本和自动更新状态。", "required": false},
-    {"name": "notifications", "reason": "发布、更新和取消普通通知及实时通知。", "required": false},
-    {"name": "background.runtime", "reason": "离开页面后继续更新实时通知。", "required": false}
+    {
+      "name": "storage",
+      "reason": "保存当前测试样本和自动更新状态。",
+      "required": false
+    },
+    {
+      "name": "notifications",
+      "reason": "发布、更新和取消普通通知及实时通知。",
+      "required": false
+    },
+    {
+      "name": "background.runtime",
+      "reason": "离开页面后继续更新实时通知。",
+      "required": false
+    }
   ],
   "securityProfile": "strict",
   "ui": {
@@ -22,9 +37,5 @@
     "allowFullscreen": false,
     "statusBarStyle": "auto",
     "showHostToolbar": true
-  },
-  "limits": {
-    "storageBytes": 131072,
-    "maxBridgePayloadBytes": 65536
   }
 }

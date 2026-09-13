@@ -190,7 +190,7 @@ export default function EditFeedModal() {
                     <Button
                       size="sm"
                       isIconOnly
-                      isDisabled={isCopied}
+
                       variant="ghost"
                       className="rounded-field"
                       onPress={() => {

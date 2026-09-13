@@ -3,7 +3,6 @@ package io.toolbox.core.data.db
 import androidx.room.withTransaction
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.BackgroundTaskRepository
-import io.toolbox.core.data.CatalogCommitHook
 import io.toolbox.core.data.CatalogEntry
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
@@ -11,7 +10,6 @@ import io.toolbox.core.data.CatalogOrganizationRepository
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.CommittedInstall
-import io.toolbox.core.data.CoreDataLimits
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
 import io.toolbox.core.data.InstallTransaction
@@ -48,7 +46,6 @@ internal class RoomCatalogRepository(
 
 internal class RoomCatalogLifecycleRepository(
     private val database: ToolBoxDatabase,
-    private val commitHook: CatalogCommitHook = CatalogCommitHook.None,
 ) : CatalogLifecycleRepository {
     override suspend fun findCommittedInstall(transactionId: String): DataResult<CommittedInstall?> {
         if (!transactionId.isValidTransactionId()) return DataResult.Failure.InvalidInput("transactionId")
@@ -121,7 +118,6 @@ internal class RoomCatalogLifecycleRepository(
                 }
                 database.grants().deleteAll(attempt.metadata.id)
                 database.grants().insertAll(nextGrants)
-                commitHook.beforeCommit()
                 val completed = database.installs().transition(
                     attempt.transactionId,
                     listOf(InstallTransactionState.COMMITTING.name),
@@ -613,11 +609,6 @@ private fun validateTask(task: BackgroundTask): DataResult.Failure? = when {
     task.toolId.isBlank() -> DataResult.Failure.InvalidInput("toolId")
     task.versionCode < 1 -> DataResult.Failure.InvalidInput("versionCode")
     !task.key.isValidTaskKey() -> DataResult.Failure.InvalidInput("key")
-    task.specJson.toByteArray(StandardCharsets.UTF_8).size > CoreDataLimits.MAX_TASK_SPEC_BYTES ->
-        DataResult.Failure.QuotaExceeded(
-            CoreDataLimits.MAX_TASK_SPEC_BYTES.toLong(),
-            task.specJson.toByteArray(StandardCharsets.UTF_8).size.toLong(),
-        )
     task.state != TaskState.QUEUED -> DataResult.Failure.InvalidInput("state")
     task.createdAt < 0 || task.updatedAt < task.createdAt -> DataResult.Failure.InvalidInput("updatedAt")
     task.runAttempt != 0 -> DataResult.Failure.InvalidInput("runAttempt")
@@ -628,15 +619,10 @@ private fun validateTask(task: BackgroundTask): DataResult.Failure? = when {
 }
 
 private fun validateResult(result: TaskRunResult): DataResult.Failure? {
-    val bytes = result.payloadJson?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0
     return when {
         !result.taskId.isValidTaskId() -> DataResult.Failure.InvalidInput("taskId")
         result.completedAt < 0 -> DataResult.Failure.InvalidInput("completedAt")
         result.attemptCount < 0 -> DataResult.Failure.InvalidInput("attemptCount")
-        bytes > CoreDataLimits.MAX_TASK_RESULT_BYTES -> DataResult.Failure.QuotaExceeded(
-            CoreDataLimits.MAX_TASK_RESULT_BYTES.toLong(),
-            bytes.toLong(),
-        )
         else -> null
     }
 }

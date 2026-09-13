@@ -11,13 +11,7 @@ function dateText(value, XLSX, date1904) {
 }
 
 export function workbookToArchive(workbook, XLSX, makeId) {
-  if (!Array.isArray(workbook.SheetNames) || workbook.SheetNames.length > 16) throw new HealthError("Excel 工作表数量过多");
-  for (const name of workbook.SheetNames) {
-    const ref = workbook.Sheets[name]?.["!ref"];
-    if (!ref) continue;
-    const range = XLSX.utils.decode_range(ref);
-    if (range.e.r > 20000 || range.e.c > 63 || (range.e.r + 1) * (range.e.c + 1) > 200000) throw new HealthError("Excel 表格过大，请只保留健康档案相关工作表");
-  }
+  if (!Array.isArray(workbook.SheetNames)) throw new HealthError("Excel 工作表目录无效");
   const dataName = ["HealthData", "Data"].find((n) => workbook.SheetNames.includes(n)) || workbook.SheetNames[0];
   if (!dataName) throw new HealthError("Excel 中没有数据工作表");
   const headers = XLSX.utils.sheet_to_json(workbook.Sheets[dataName], { header: 1, raw: true })[0] || [];
@@ -85,7 +79,7 @@ export function checkZipBudget(bytes) {
   }
   if (end < 0) throw new HealthError("Excel ZIP 目录损坏");
   const entries = view.getUint16(end + 10, true), directorySize = view.getUint32(end + 12, true), directoryStart = view.getUint32(end + 16, true);
-  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || view.getUint16(end + 8, true) !== entries || entries > 256 || directoryStart + directorySize !== end) throw new HealthError("Excel ZIP 目录超限、分卷或损坏，请另存为普通小文件");
+  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || view.getUint16(end + 8, true) !== entries || directoryStart + directorySize !== end) throw new HealthError("Excel ZIP 目录分卷或损坏，请另存为普通 Excel 文件");
   function checkExtra(start, length) {
     const stop = start + length;
     for (let cursor = start; cursor < stop;) {
@@ -97,7 +91,7 @@ export function checkZipBudget(bytes) {
     }
   }
   const spans = [], files = [];
-  let offset = directoryStart, total = 0;
+  let offset = directoryStart;
   for (let i = 0; i < entries; i++) {
     if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) throw new HealthError("Excel ZIP 条目损坏");
     const flags = view.getUint16(offset + 8, true), method = view.getUint16(offset + 10, true);
@@ -106,8 +100,7 @@ export function checkZipBudget(bytes) {
     const nextOffset = offset + 46 + nameLength + extraLength + view.getUint16(offset + 32, true);
     if (nextOffset > end || view.getUint16(offset + 34, true)) throw new HealthError("Excel ZIP 条目损坏或不支持分卷");
     checkExtra(offset + 46 + nameLength, extraLength);
-    total += size;
-    if (flags & 65 || ![0, 8].includes(method) || size > 8 * 1024 * 1024 || total > 12 * 1024 * 1024) throw new HealthError("Excel 加密或解压后过大，请先另存为普通小文件");
+    if (flags & 65 || ![0, 8].includes(method)) throw new HealthError("Excel 使用了不支持的加密或压缩格式");
     const local = view.getUint32(offset + 42, true);
     if (local + 30 > directoryStart || view.getUint32(local, true) !== 0x04034b50) throw new HealthError("Excel ZIP 本地条目损坏");
     const localName = view.getUint16(local + 26, true), localExtra = view.getUint16(local + 28, true);

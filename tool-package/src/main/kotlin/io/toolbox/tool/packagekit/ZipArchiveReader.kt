@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit
 
+import io.toolbox.core.data.ResourceCapacity
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -14,12 +15,11 @@ internal data class ExtractedArchive(
 )
 
 internal object ZipArchiveReader {
-    fun extract(archive: Path, checked: CheckedArchive, sessionDirectory: Path, limits: PackageLimits): ExtractedArchive {
+    fun extract(archive: Path, checked: CheckedArchive, sessionDirectory: Path): ExtractedArchive {
         val bundle = sessionDirectory.resolve("bundle")
         Files.createDirectories(bundle)
         val hashes = linkedMapOf<String, String>()
         val metadata = linkedMapOf<String, ByteArray>()
-        var actualTotal = 0L
         ZipFile(archive.toFile()).use { zip ->
             val byName = zip.entries().asSequence().associateBy { it.name }
             for (entry in checked.entries) {
@@ -42,10 +42,10 @@ internal object ZipArchiveReader {
                                 val count = input.read(buffer)
                                 if (count < 0) break
                                 if (count == 0) continue
-                                actualEntry += count
-                                actualTotal += count
-                                if (actualEntry > limits.maxEntryBytes) reject(PackageRejectionCode.ENTRY_SIZE_LIMIT, "${entry.path.normalized} exceeded its declared limit while reading")
-                                if (actualTotal > limits.maxExtractedBytes) reject(PackageRejectionCode.TOTAL_SIZE_LIMIT, "Archive exceeded its total limit while reading")
+                                actualEntry = Math.addExact(actualEntry, count.toLong())
+                                if (actualEntry > entry.extractedBytes) reject(PackageRejectionCode.EXTRACTION_FAILED, "Entry expands beyond its ZIP declaration")
+                                ResourceCapacity.requireStorageBytes(bundle.toFile(), count.toLong())
+                                metadataBuffer?.let { ResourceCapacity.requireHeapBytes((it.size().toLong() + count) * 2) }
                                 digest.update(buffer, 0, count)
                                 crc32.update(buffer, 0, count)
                                 output.write(buffer, 0, count)

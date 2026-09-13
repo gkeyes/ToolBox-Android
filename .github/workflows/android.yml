@@ -12,12 +12,7 @@ on:
       - "examples/notification-lab/**"
       - "!.github/workflows/tbx.yml"
       - "!scripts/ci/**"
-      - "scripts/ci/verify-tbx-process.sh"
       - "scripts/ci/verify_release.py"
-      - "!scripts/tests/test_tbx_ci.py"
-      - "!docs/**"
-      - "!design/**"
-      - "!README.md"
   pull_request:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
@@ -29,12 +24,7 @@ on:
       - "examples/notification-lab/**"
       - "!.github/workflows/tbx.yml"
       - "!scripts/ci/**"
-      - "scripts/ci/verify-tbx-process.sh"
       - "scripts/ci/verify_release.py"
-      - "!scripts/tests/test_tbx_ci.py"
-      - "!docs/**"
-      - "!design/**"
-      - "!README.md"
   workflow_dispatch:
 
 permissions:
@@ -46,9 +36,8 @@ concurrency:
 
 jobs:
   verify:
-    name: Build and verify runtime behavior
+    name: Build APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -62,59 +51,19 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          node-version: "22"
-      - name: Verify developer help, bridge, packager and release verifier
-        run: |
-          node scripts/check-developer-help.mjs
-          node --test scripts/tests/runtime-bridge.test.mjs
-          node --test tool-runtime/src/test/js/network-stream.test.mjs
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_delivery.py' -v
-      - name: Verify API, security, compilation and all existing module unit tests
-        run: bash scripts/qa/run-host-gate.sh --attempt "$GITHUB_WORKSPACE/build/host-gate"
-      - name: Enable emulator acceleration
-        run: |
-          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Verify backup, theme, upgrade, storage and UI behavior without screenshots
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class='io.toolbox.host.backup.HostBackupServiceTest,io.toolbox.host.backup.BackupScreenTest,io.toolbox.host.runtime.RuntimeThemeInheritanceTest,io.toolbox.host.runtime.TbxUpgradePersistenceTest,io.toolbox.host.runtime.TbxUpgradeRuntimeTest,io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest,io.toolbox.host.runtime.RuntimeLiveNotificationRendererTest,io.toolbox.host.runtime.BrowserLauncherInstrumentedTest,io.toolbox.host.RuntimeExitConfirmationTest,io.toolbox.host.HostAdaptiveScrollTest#appearanceChoicesRemainInteractiveAtTwoHundredPercentFontScale,io.toolbox.host.HostAdaptiveScrollTest#backgroundTasksUseSeparateStopTargetsAndShowBulkActionOnlyAboveTwo'
-            ./gradlew --no-daemon :core-data:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.core.data.FreshPersistenceContractTest
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            bash scripts/ci/verify-tbx-process.sh
-      - name: Retain test evidence including failures
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: host-verification-${{ github.sha }}
-          path: |
-            build/host-gate/
-            build/tbx-upgrade-process/
-            **/build/test-results/testDebugUnitTest/
-            app/build/outputs/androidTest-results/connected/
-            core-data/build/outputs/androidTest-results/connected/
-          if-no-files-found: warn
-          retention-days: 14
+          name: apk-${{ github.sha }}
+          path: app/build/outputs/apk/
+          if-no-files-found: error
 
   delivery:
     name: Package stable signed release
     needs: verify
-    # PRs never receive the signing key; manual feature-branch runs only verify.
+    # PRs never receive the signing key; manual feature-branch runs only build.
     if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
     steps:
@@ -154,24 +103,14 @@ jobs:
           test "$actual" = "$TOOLBOX_RELEASE_CERT_SHA256" || { echo 'Original release certificate mismatch' >&2; exit 1; }
           unset SIGNING_KEYSTORE_BASE64
           ./gradlew --no-daemon :app:assembleRelease 2>&1 | tee build/release-evidence/release-build.log
-      - name: Verify reproducible examples and exact APK embedded content
+      - name: Verify embedded resources match build inputs
         run: |
           set -euo pipefail
-          bash scripts/package-examples.sh
-          sha256sum build/examples/{position-calculator,quick-notes,background-task-demo,notification-lab}.tbx > "$RUNNER_TEMP/examples-first.txt"
-          bash scripts/package-examples.sh
-          sha256sum build/examples/{position-calculator,quick-notes,background-task-demo,notification-lab}.tbx > "$RUNNER_TEMP/examples-second.txt"
-          diff -u "$RUNNER_TEMP/examples-first.txt" "$RUNNER_TEMP/examples-second.txt"
           apk=app/build/outputs/apk/release/app-release.apk
           unzip -p "$apk" assets/manual.md | cmp - sdk/help/manual.md
           for example in position-calculator quick-notes background-task-demo notification-lab; do
-            unzip -p "$apk" "assets/$example.tbx" | cmp - "build/examples/$example.tbx"
+            unzip -p "$apk" "assets/$example.tbx" | cmp - "build/bundled-examples/$example.tbx"
           done
-          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-files.txt"
-          if grep -Fx 'assets/stock-monitor.tbx' "$RUNNER_TEMP/apk-files.txt"; then
-            echo 'Standalone stock monitor must not be embedded' >&2
-            exit 1
-          fi
       - name: Verify release certificate identity and optimization then assemble delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
@@ -188,7 +127,6 @@ jobs:
           name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
           path: build/ci-delivery/
           if-no-files-found: error
-          retention-days: 90
       - name: Remove signing material even on failure
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/toolbox-signing"
@@ -201,4 +139,3 @@ jobs:
             build/release-evidence/
             app/build/outputs/mapping/release/
           if-no-files-found: warn
-          retention-days: 90

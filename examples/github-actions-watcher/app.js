@@ -10,7 +10,6 @@
   const CLOCK_TIMER = "github-actions-watcher-clock";
   const CLOCK_INTERVAL_MS = 10_000;
   const TERMINAL_HOLD_MS = 120_000;
-  const MAX_PERSISTED_RECENT_RUNS = 20;
   const model = window.GitHubWatcherModel;
 
   const state = {
@@ -51,12 +50,12 @@
   let toastTimer = null;
   let foregroundClock = null;
 
-  function cleanText(value, maxLength) {
+  function cleanText(value) {
     return String(value ?? "")
       .replace(/[\u0000-\u001F\u007F-\u009F]/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, maxLength);
+      ;
   }
 
   function headerValue(headers, name) {
@@ -81,12 +80,12 @@
     if (error?.kind === "rate_limit") return "GitHub API 额度已用尽，正在等待恢复";
     if (error?.kind === "offline") return "网络暂时不可用，后台守望会继续重试";
     if (error?.code) return `${error.code}: ${error.message || "调用失败"}`;
-    return cleanText(error?.message || error || "未知错误", 180);
+    return cleanText(error?.message || error || "未知错误");
   }
 
   function showToast(message) {
     const node = $("toast");
-    node.textContent = cleanText(message, 180);
+    node.textContent = cleanText(message);
     node.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { node.hidden = true; }, 2800);
@@ -178,7 +177,7 @@
 
   function persistableRuns() {
     const unique = new Map();
-    for (const run of [...state.runs.filter(isActiveRun), ...state.runs.slice(0, MAX_PERSISTED_RECENT_RUNS)]) {
+    for (const run of [...state.runs.filter(isActiveRun), ...state.runs]) {
       unique.set(model.runKey(run), run);
     }
     return [...unique.values()];
@@ -293,6 +292,8 @@
   }
 
   async function apiRequest(url, tokenOverride) {
+    const target = new URL(url);
+    if (target.origin !== API_ROOT || target.username || target.password) throw createError("github", "GitHub API 地址无效");
     const headers = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": API_VERSION,
@@ -309,8 +310,6 @@
         url,
         method: "GET",
         headers,
-        timeoutMs: 30_000,
-        maxResponseBytes: 4_194_304
       });
     } catch (error) {
       if (error?.code) throw error;
@@ -338,17 +337,19 @@
     }
   }
 
-  async function fetchPaged(firstUrl, collectionKey, tokenOverride, maxPages = 5) {
+  async function fetchPaged(firstUrl, collectionKey, tokenOverride) {
     const items = [];
     let url = firstUrl;
-    let page = 0;
-    while (url && page < maxPages) {
+    const visited = new Set();
+    while (url) {
+      if (visited.has(url)) throw createError("github", "GitHub 分页链接发生循环");
+      visited.add(url);
       const response = await apiRequest(url, tokenOverride);
       const pageItems = collectionKey ? response.data?.[collectionKey] : response.data;
       if (!Array.isArray(pageItems)) throw createError("github", `GitHub 响应缺少 ${collectionKey || "列表"}`);
       items.push(...pageItems);
       url = model.parseNextLink(headerValue(response.headers, "link"));
-      page += 1;
+
     }
     return items;
   }
@@ -372,13 +373,12 @@
       await saveEnteredToken();
       const base = `${API_ROOT}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
       const repositoryResponse = await apiRequest(base);
-      const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", undefined, 5);
-      const runsResponse = await apiRequest(`${base}/actions/runs?per_page=100`);
-      const runs = Array.isArray(runsResponse.data?.workflow_runs) ? runsResponse.data.workflow_runs : [];
+      const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", undefined);
+      const runs = await fetchPaged(`${base}/actions/runs?per_page=100`, "workflow_runs");
       let repositoryBranches = [];
       let branchCatalogComplete = false;
       try {
-        repositoryBranches = await fetchPaged(`${base}/branches?per_page=100`, null, undefined, 5);
+        repositoryBranches = await fetchPaged(`${base}/branches?per_page=100`, null, undefined);
         branchCatalogComplete = true;
       } catch (_error) {
         repositoryBranches = [];
@@ -389,18 +389,18 @@
       state.repository = {
         owner: parsed.owner,
         repo: parsed.repo,
-        fullName: cleanText(repo.full_name || parsed.fullName, 120),
-        defaultBranch: cleanText(repo.default_branch || "main", 200),
+        fullName: cleanText(repo.full_name || parsed.fullName),
+        defaultBranch: cleanText(repo.default_branch || "main"),
         private: repo.private === true,
-        description: cleanText(repo.description || "", 220)
+        description: cleanText(repo.description || "")
       };
       state.workflows = activeWorkflows.map((workflow) => ({
         id: Number(workflow.id),
-        name: cleanText(workflow.name || workflow.path || "Workflow", 120),
-        path: cleanText(workflow.path || "", 220)
+        name: cleanText(workflow.name || workflow.path || "Workflow"),
+        path: cleanText(workflow.path || "")
       }));
       state.discoveryRuns = runs;
-      state.branches = model.branchCandidates(state.repository.defaultBranch, repositoryBranches, runs, 100);
+      state.branches = model.branchCandidates(state.repository.defaultBranch, repositoryBranches, runs);
       state.branchCatalogComplete = branchCatalogComplete;
       state.warning = null;
       state.warningMessage = "";
@@ -617,9 +617,7 @@
     const key = model.runKey(run);
     const jobs = await fetchPaged(
       repoUrl(`/actions/runs/${run.id}/attempts/${Number(run.run_attempt) || 1}/jobs?per_page=100`),
-      "jobs",
-      undefined,
-      10
+      "jobs"
     );
     state.jobsByRun[key] = jobs;
     const terminal = state.terminalStates[key];
@@ -640,16 +638,13 @@
     const key = timingKey(run);
     if (state.timingModels[key]) return state.timingModels[key];
     try {
-      const response = await apiRequest(repoUrl(`/actions/workflows/${run.workflow_id}/runs?status=success&per_page=100`));
-      const candidates = Array.isArray(response.data?.workflow_runs) ? response.data.workflow_runs : [];
+      const candidates = await fetchPaged(repoUrl(`/actions/workflows/${run.workflow_id}/runs?status=success&per_page=100`), "workflow_runs");
       const samples = model.selectHistoricalRuns(candidates, run);
       const sampleJobs = {};
       for (const sample of samples) {
         sampleJobs[model.runKey(sample)] = await fetchPaged(
           repoUrl(`/actions/runs/${sample.id}/attempts/${Number(sample.run_attempt) || 1}/jobs?per_page=100`),
-          "jobs",
-          undefined,
-          10
+          "jobs"
         );
       }
       state.timingModels[key] = model.buildTimingModel(samples, sampleJobs);
@@ -676,7 +671,7 @@
       const createdAt = Date.parse(run.created_at || "") || 0;
       if (isActiveRun(run) || createdAt >= (state.watchStartedAt || Date.now())) tracked.add(model.runKey(run));
     }
-    state.trackedRunKeys = [...tracked].slice(-100);
+    state.trackedRunKeys = [...tracked];
   }
 
   function watchedRuns() {
@@ -717,8 +712,7 @@
     state.pollStartedAt = Date.now();
     renderDashboard();
     try {
-      const response = await apiRequest(repoUrl("/actions/runs?per_page=100"));
-      const allRuns = Array.isArray(response.data?.workflow_runs) ? response.data.workflow_runs : [];
+      const allRuns = await fetchPaged(repoUrl("/actions/runs?per_page=100"), "workflow_runs");
       const filtered = model.selectedRuns(allRuns, state.config.selectedWorkflowIds, state.config.branchMode, state.config.branch)
         .sort((a, b) => (Date.parse(b.created_at || "") || 0) - (Date.parse(a.created_at || "") || 0));
       trackDiscoveredRuns(filtered);
@@ -769,9 +763,9 @@
     const summary = model.buildNotificationSummary(state.config.fullName, run, estimate, warning);
     return {
       sessionId: state.sessionId,
-      title: cleanText(summary.title, 64),
-      primaryText: cleanText(summary.primaryText, 32),
-      shortText: cleanText(summary.shortText, 12),
+      title: cleanText(summary.title),
+      primaryText: cleanText(summary.primaryText),
+      shortText: cleanText(summary.shortText),
       updatedAt: Date.now(),
       progress: summary.progress,
       accentColor: summary.color,
@@ -816,7 +810,7 @@
       const title = `${workflow} · ${resultLabel(run)}`;
       const body = `${state.config.fullName} · ${run.head_branch || "未知分支"} · ${String(run.head_sha || "").slice(0, 7)}`;
       try {
-        await toolbox().notifications.post(`github-watch-result-${run.id}-${run.run_attempt || 1}`, cleanText(title, 64), cleanText(body, 256));
+        await toolbox().notifications.post(`github-watch-result-${run.id}-${run.run_attempt || 1}`, cleanText(title), cleanText(body));
         terminal.posted = true;
         endedPrimary = true;
       } catch (error) {
@@ -940,7 +934,7 @@
       const summary = document.createElement("summary");
       summary.append(stateDot(runStatus(job)));
       const name = document.createElement("strong");
-      name.textContent = cleanText(job.name || "未命名 job", 180);
+      name.textContent = cleanText(job.name || "未命名 job");
       const status = document.createElement("span");
       status.className = "result-label";
       status.dataset.result = runStatus(job) || "idle";
@@ -953,7 +947,7 @@
         row.className = "step-row";
         row.append(stateDot(runStatus(step)));
         const stepName = document.createElement("span");
-        stepName.textContent = cleanText(step.name || `步骤 ${step.number || ""}`, 180);
+        stepName.textContent = cleanText(step.name || `步骤 ${step.number || ""}`);
         const duration = document.createElement("span");
         const actual = model.durationMs(step.started_at, step.completed_at);
         duration.textContent = actual === null ? resultLabel(step) : formatDuration(actual, true);
