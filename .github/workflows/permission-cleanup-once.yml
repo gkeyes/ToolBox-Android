@@ -1,0 +1,44 @@
+name: Apply scoped permission cleanup
+
+on:
+  push:
+    branches: ["codex/permission-resource-cleanup"]
+    paths:
+      - ".github/workflows/permission-cleanup-once.yml"
+      - "scripts/maintenance/permission_cleanup_once.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: permission-cleanup-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/codex/permission-resource-cleanup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Apply exact reviewed edits without touching default branch
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'codex/permission-resource-cleanup'
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          python3 scripts/maintenance/permission_cleanup_once.py
+          git diff --check
+          git diff --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: remove minute quotas and duplicate clipboard confirmation'
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          echo "Applied commit: $(git rev-parse HEAD)"
+          echo 'Source edits applied. Existing Android and TBX CI must verify the resulting PR.'
