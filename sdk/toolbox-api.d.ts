@@ -1,4 +1,4 @@
-export type ToolBoxContractSha256 = "dbe81127fe54d37775006add8c64747243b0b14365f2bc482cbacb7d14908998";
+export type ToolBoxContractSha256 = "252f4ab85413138fc3a6d71185969af2b7396dfb97d7ccfe360c941964ef1978";
 
 export type ToolBoxCapability =
   | "storage"
@@ -338,6 +338,7 @@ export interface ToolBoxApi {
   };
   clipboard: {
     writeText(text: string): Promise<void>;
+    /** Granted foreground read with recent input; no additional host confirmation dialog. */
     readText(): Promise<string>;
   };
   network: {
@@ -379,12 +380,13 @@ export interface ToolBoxApi {
     text(text: string): Promise<void>;
   };
   browser: {
-    /** Opens an absolute HTTP/HTTPS URL (at most 2048 characters, without credentials or control characters) in a system browser. Requires the separate, default-off browser capability, foreground context and a recent real touch; at most 10 calls per minute. No network capability or Android runtime permission is required. Resolves when the system accepts the launch, not when the page loads. */
+    /** Opens an absolute HTTP/HTTPS URL (at most 2048 characters, without credentials or control characters) in a system browser. Requires the separate, default-off browser capability, foreground context and a recent real touch. No per-minute ToolBox call allowance applies. No network capability or Android runtime permission is required. Resolves when the system accepts the launch, not when the page loads. */
     open(url: string): Promise<void>;
   };
   files: {
     open(mimeTypes?: string[]): Promise<FileToken | null>;
     read(token: string): Promise<Uint8Array>;
+    /** Uses the negotiated bridge message budget, not an extra 1 MiB file quota. Large files still need chunked APIs. */
     save(suggestedName: string, mimeType: string, content: string | Uint8Array): Promise<FileToken | null>;
   };
   shortcuts: {

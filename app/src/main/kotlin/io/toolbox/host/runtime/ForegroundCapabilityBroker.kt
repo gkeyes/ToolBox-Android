@@ -1,7 +1,6 @@
 package io.toolbox.host.runtime
 
 import android.Manifest
-import android.app.AlertDialog
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
@@ -158,20 +157,9 @@ internal class ForegroundCapabilityBroker private constructor(
         }
     }
 
-    private suspend fun readClipboardAfterConfirmation(): String = withContext(Dispatchers.Main.immediate) {
-        ensureActive()
-        val confirmed = suspendCancellableCoroutine { continuation ->
-            val dialog = AlertDialog.Builder(activity)
-                .setTitle("允许读取剪贴板？")
-                .setMessage("当前工具将读取一次剪贴板文本。")
-                .setNegativeButton("取消") { _, _ -> if (continuation.isActive) continuation.resume(false) }
-                .setPositiveButton("允许") { _, _ -> if (continuation.isActive) continuation.resume(true) }
-                .setOnCancelListener { if (continuation.isActive) continuation.resume(false) }
-                .create()
-            continuation.invokeOnCancellation { activity.runOnUiThread { dialog.dismiss() } }
-            dialog.show()
-        }
-        if (!confirmed) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "Clipboard read was cancelled")
+    private suspend fun readClipboardText(): String = withContext(Dispatchers.Main.immediate) {
+        // The dispatcher already verified declaration, grant and current session.
+        // Keep foreground enforcement; do not ask the same permission again.
         ensureActive()
         val clipboard = activity.getSystemService(ClipboardManager::class.java)
             ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Clipboard is unavailable")
@@ -496,7 +484,7 @@ internal class ForegroundCapabilityBroker private constructor(
         ): RuntimeM3Handlers {
             val files = ToolFilesHandler(context.applicationContext)
             return RuntimeM3Handlers(
-                clipboardRead = RuntimeClipboardReadHandler { withForeground { it.readClipboardAfterConfirmation() } },
+                clipboardRead = RuntimeClipboardReadHandler { withForeground { it.readClipboardText() } },
                 shareText = RuntimeShareTextHandler { text -> withForeground { it.shareText(text) } },
                 browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->
                     withForeground { broker ->

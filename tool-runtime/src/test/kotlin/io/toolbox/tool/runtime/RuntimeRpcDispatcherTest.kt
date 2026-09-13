@@ -111,23 +111,24 @@ class RuntimeRpcDispatcherTest {
     }
 
     @Test
-    fun rateLimitWaitUsesTheOldestCallAndNeverRaisesExistingLimits() = runTest {
-        var clock = 1_000L
+    fun completedCallsDoNotSpendMinuteQuotaAndResourcesStillGateAdmission() = runTest {
+        var current = true
+        var quota: RuntimePolicyDecision = RuntimePolicyDecision.Allowed
         val policy = DefaultRuntimeAuthorizationPolicy(
             object : RuntimeGrantStateSource {
-                override suspend fun currentVersionCode(toolId: String) = identity.versionCode
+                override suspend fun currentVersionCode(toolId: String) = if (current) identity.versionCode else null
                 override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId) = true
-            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> RuntimePolicyDecision.Allowed }, { clock },
+            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> quota },
         )
+        for (name in listOf("browser.open", "clipboard.writeText", "haptics.perform", "ui.toast", "storage.get")) {
+            val method = checkNotNull(ToolBoxApiV1.method(name))
+            repeat(1_201) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
+        }
         val method = checkNotNull(ToolBoxApiV1.method("browser.open"))
-        repeat(10) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
-        assertEquals(60_000L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
-        clock = 60_999L
-        assertEquals(1L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
-        clock = 0L // Defensive clock rollback remains a bounded wait.
-        assertEquals(60_000L, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).retryAfterMs)
-        clock = 61_000L
-        assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256))
+        quota = RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Message too large")
+        assertEquals(quota, policy.admit(identity, method, 256))
+        current = false
+        assertEquals(RuntimeRpcErrorCode.INVALID_SESSION, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).code)
     }
 
     @Test
@@ -228,21 +229,17 @@ class RuntimeRpcDispatcherTest {
     }
 
     @Test
-    fun streamReadsHaveABoundedIncrementalRateWithoutRaisingOtherMethodLimits() = runTest {
-        var clock = 0L
+    fun streamReadsAndCancellationHaveNoMinuteCounter() = runTest {
         val policy = DefaultRuntimeAuthorizationPolicy(
             object : RuntimeGrantStateSource {
                 override suspend fun currentVersionCode(toolId: String) = identity.versionCode
                 override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId) = true
-            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> RuntimePolicyDecision.Allowed }, { clock },
+            }, RuntimeSystemPermissionChecker { true }, RuntimeQuotaChecker { _, _, _ -> RuntimePolicyDecision.Allowed },
         )
-        for ((methodName, limit) in listOf("network.readStream" to 1_000, "network.request" to 120, "network.cancelStream" to 120)) {
-            val method = checkNotNull(ToolBoxApiV1.method(methodName))
-            repeat(limit) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
-            assertEquals(RuntimeRpcErrorCode.RATE_LIMITED, (policy.admit(identity, method, 256) as RuntimePolicyDecision.Denied).code)
+        for (name in listOf("network.readStream", "network.request", "network.cancelStream")) {
+            val method = checkNotNull(ToolBoxApiV1.method(name))
+            repeat(2_001) { assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, method, 256)) }
         }
-        clock = 60_000
-        assertEquals(RuntimePolicyDecision.Allowed, policy.admit(identity, checkNotNull(ToolBoxApiV1.method("network.readStream")), 256))
     }
 
     @Test

@@ -4,7 +4,7 @@
     {"id":"storage","phase":"M1","defaultGrant":true,"systemPermissions":[],"gesture":"NONE","context":"FOREGROUND_ONLY"},
     {"id":"storage.secure","phase":"M1","defaultGrant":true,"systemPermissions":[],"gesture":"NONE","context":"FOREGROUND_ONLY"},
     {"id":"clipboard.write","phase":"M1","defaultGrant":true,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
-    {"id":"clipboard.read","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"CONFIRMED_ONE_SHOT","context":"FOREGROUND_ONLY"},
+    {"id":"clipboard.read","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"share","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"browser","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},
     {"id":"files.open","phase":"M3","defaultGrant":false,"systemPermissions":[],"gesture":"RECENT","context":"FOREGROUND_ONLY"},

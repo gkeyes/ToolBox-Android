@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.security.keystore.KeyGenParameterSpec
@@ -123,7 +122,6 @@ internal class HostRuntimeBridgeProvider(
             state = grantState,
             systemPermissions = systemPermissions,
             quota = HostRuntimeQuotaChecker(runtime.maxBridgePayloadBytes),
-            clockMillis = SystemClock::elapsedRealtime,
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,

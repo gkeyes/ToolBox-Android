@@ -1,7 +1,7 @@
 # ToolBox Android：功能优先技术方案
 
 > 目标：Android 13+，优先 Xiaomi / HyperOS
-> 界面与组件统一见 [设计规范](../DESIGN.md)，依赖版本以 [Gradle 目录](../gradle/libs.versions.toml) 为准。
+> 界面与组件统一见 [宿主界面源码](../app/src/main/kotlin/io/toolbox/host)，依赖版本以 [Gradle 目录](../gradle/libs.versions.toml) 为准。
 
 ## 1. 产品合同
 
@@ -502,7 +502,7 @@ Sharesheet、持续 runtime、后台位置、精确闹钟和 HyperOS 展示由�
 ## OpenDesign 分支界面说明
 
 本独立仓库的宿主只呈现 OpenDesign Liquid Glass；Miuix 是底层控件依赖，不提供第二主题入口。
-唯一视觉规范见 [DESIGN.md](../DESIGN.md)。导入增加原生结果页，复用原导入器；其余包、权限、网络、
+唯一视觉规范见 [宿主界面源码](../app/src/main/kotlin/io/toolbox/host)。导入增加原生结果页，复用原导入器；其余包、权限、网络、
 WebView 和数据库合同不变。旧主题风格字段仅为读取历史设置保留，不再控制宿主外观。
 
 ## TBX 更新数据保留（0.7.6）
@@ -514,3 +514,12 @@ WebView 和数据库合同不变。旧主题风格字段仅为读取历史设置
 存储逻辑 key、命名空间、origin、profile 名和 KeyStore alias 不变，不修改 Room schema。解密仅取已有密钥；缺密钥或密文损坏报错且不创建替代密钥或覆盖记录。旧版本已删除的原密钥／密文不能通过此修复恢复。
 
 回归入口：`TbxUpgradePersistenceTest`、`TbxUpgradeRuntimeTest`、`TbxUpgradeProcessTest`、`DirectPackageLifecycleTest`。前者保留了在 48bedb53 宿主实现上运行失败的原密文保留断言；后续同一断言须通过。过程重启仅由 GitHub 隔离模拟器分两次 instrumentation 验证，中间不重装或清数据。实际运行结果以 CI 产物为准，编译不等于执行，不包含截图或真机验收。
+
+
+## 运行时授权与资源预算清理（2026-09-13）
+
+权限开关决定能否调用能力；已完成的 RPC 不再消耗每分钟次数额度。来源、主 frame、会话、声明、授权、Android 权限和在途资源预算继续检查。剪贴板读取不再叠加宿主确认弹窗；本次保留既有前台和近期输入要求，Android 自身提示不受影响。
+
+文件保存、摘要输入、剪贴板与分享文本不再有独立的 1 MiB / 64K 配额，统一受当前运行时协商的桥接消息预算约束。文件读取仍是有响应预算的整块接口；这不是无限大小文件支持。Android Binder 拒绝超大文本时返回可识别的容量错误，不绕过系统边界。
+
+旧设计稿、设计生成配置与根目录代理指令已移除，不更改实际 UI、现有安全测试或签名发布配置。第三方许可和署名声明继续保留。编译和行为测试只在 GitHub Actions 执行。

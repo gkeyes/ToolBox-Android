@@ -537,8 +537,15 @@ class RuntimeRpcDispatcher(
             failure(failure.errorCode, failure.message, failure.retryAfterMs)
         } catch (_: IllegalArgumentException) {
             failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
-        } catch (_: Exception) {
-            failure(RuntimeRpcErrorCode.INTERNAL_ERROR, "The native operation failed")
+        } catch (error: Exception) {
+            // Android's Binder capacity is a system boundary, not a ToolBox text quota.
+            val ipcTooLarge = generateSequence<Throwable>(error) { it.cause }.take(8)
+                .any { it is android.os.TransactionTooLargeException }
+            if (ipcTooLarge) {
+                failure(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Android rejected this IPC payload; use a file for large content")
+            } else {
+                failure(RuntimeRpcErrorCode.INTERNAL_ERROR, "The native operation failed")
+            }
         }
     }
 
@@ -560,7 +567,7 @@ class RuntimeRpcDispatcher(
             RpcValue.Null
         }
         "crypto.sha256" -> RpcValue.ObjectValue(
-            mapOf("hex" to RpcValue.StringValue(sha256(params.requiredBytes("value", MAX_HASH_BYTES)))),
+            mapOf("hex" to RpcValue.StringValue(sha256(params.requiredBytes("value", maxResponseBytes)))),
         )
         "storage.get" -> requireHandler(handlers.storage).get(params.requiredKey()) ?: RpcValue.Null
         "storage.getMany" -> {
@@ -605,7 +612,7 @@ class RuntimeRpcDispatcher(
             RpcValue.Null
         }
         "clipboard.writeText" -> {
-            requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", MAX_CLIPBOARD_CHARS))
+            requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", maxResponseBytes))
             RpcValue.Null
         }
         "network.authorizeDomain" -> {
@@ -783,7 +790,7 @@ class RuntimeRpcDispatcher(
         }
         "share.text" -> {
             params.requireOnly("text")
-            requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", MAX_SHARE_TEXT_CHARS))
+            requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", maxResponseBytes))
             RpcValue.Null
         }
         "browser.open" -> {
@@ -810,7 +817,7 @@ class RuntimeRpcDispatcher(
             requireHandler(m3Handlers.files).save(
                 suggestedName = params.requiredFileName(),
                 mimeType = params.requiredMimeType("mimeType"),
-                content = params.requiredBytes("content", MAX_FILE_CONTENT_BYTES),
+                content = params.requiredBytes("content", maxResponseBytes),
             )?.toRpcValue() ?: RpcValue.Null
         }
         "files.read" -> {
@@ -1365,12 +1372,18 @@ class RuntimeRpcDispatcher(
     }
 
     private fun RpcValue.ObjectValue.requiredBytes(name: String, maxBytes: Int): ByteArray = when (val raw = required(name)) {
-        is RpcValue.StringValue -> raw.value.toByteArray(StandardCharsets.UTF_8)
-        is RpcValue.ArrayValue -> raw.value.map {
-            val number = (it as? RpcValue.Number)?.value ?: throw IllegalArgumentException(name)
-            require(number % 1.0 == 0.0 && number in 0.0..255.0)
-            number.toInt().toByte()
-        }.toByteArray()
+        is RpcValue.StringValue -> {
+            require(raw.value.length <= maxBytes)
+            raw.value.toByteArray(StandardCharsets.UTF_8)
+        }
+        is RpcValue.ArrayValue -> {
+            require(raw.value.size <= maxBytes)
+            ByteArray(raw.value.size) { index ->
+                val number = (raw.value[index] as? RpcValue.Number)?.value ?: throw IllegalArgumentException(name)
+                require(number % 1.0 == 0.0 && number in 0.0..255.0)
+                number.toInt().toByte()
+            }
+        }
         else -> throw IllegalArgumentException(name)
     }.also { require(it.size <= maxBytes) }
 
@@ -1391,10 +1404,6 @@ class RuntimeRpcDispatcher(
         val LIVE_NOTIFICATION_COLOR = Regex("^#[0-9A-Fa-f]{6}$")
         const val MAX_KEY_CHARS = 128
         const val MAX_TOAST_CHARS = 200
-        const val MAX_HASH_BYTES = 1024 * 1024
-        const val MAX_CLIPBOARD_CHARS = 64 * 1024
-        const val MAX_SHARE_TEXT_CHARS = 64 * 1024
-        const val MAX_FILE_CONTENT_BYTES = 1024 * 1024
         const val DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024
         const val MIN_RESPONSE_BYTES = 4 * 1024
         const val MAX_FILE_TOKEN_SIZE = 1024L * 1024L * 1024L

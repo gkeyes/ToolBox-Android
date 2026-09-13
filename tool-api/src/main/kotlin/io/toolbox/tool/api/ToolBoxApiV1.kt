@@ -48,13 +48,13 @@ data class MethodDescriptor(
 
 object ToolBoxApiV1 {
     const val API_VERSION: String = "1.0"
-    const val CANONICAL_SHA256: String = "dbe81127fe54d37775006add8c64747243b0b14365f2bc482cbacb7d14908998"
+    const val CANONICAL_SHA256: String = "252f4ab85413138fc3a6d71185969af2b7396dfb97d7ccfe360c941964ef1978"
 
     val capabilities: List<CapabilityDescriptor> = listOf(
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE, "storage", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.STORAGE_SECURE, "storage.secure", ContractPhase.M1, true, emptySet(), GestureRequirement.NONE, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_WRITE, "clipboard.write", ContractPhase.M1, true, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
-        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_READ, "clipboard.read", ContractPhase.M3, false, emptySet(), GestureRequirement.CONFIRMED_ONE_SHOT, CapabilityContext.FOREGROUND_ONLY),
+        CapabilityDescriptor(ToolBoxCapabilityId.CLIPBOARD_READ, "clipboard.read", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.SHARE, "share", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.BROWSER, "browser", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
         CapabilityDescriptor(ToolBoxCapabilityId.FILES_OPEN, "files.open", ContractPhase.M3, false, emptySet(), GestureRequirement.RECENT, CapabilityContext.FOREGROUND_ONLY),
