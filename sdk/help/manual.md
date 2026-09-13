@@ -352,7 +352,7 @@ ToolBox 0.6.0 起提供 network.openStream、network.readStream 和 network.canc
 
 openStream 在响应头到达时返回 { streamId, status, headers }，不会先读完整正文。每次顺序调用 readStream 返回 { data: Uint8Array, done, receivedBytes }；数据按需从连接增量读取，每块最多 16 KiB，并按当前消息上限自动缩小。receivedBytes 是累计正文原始字节数，累计上限取请求和 manifest 网络上限中的较小值；每个分段及响应头仍须通过完整编码后的消息预算。HTTP 4xx/5xx 仍返回真实状态。
 
-同一会话最多同时打开两个流；同一流的 readStream 不可重叠调用，否则返回 BUSY。readStream 有单独的每分钟 1000 次上限，openStream、cancelStream 及其他接口仍使用原速率上限；页面宜合并小块更新，不要高频空读。总时限从打开开始覆盖响应头、重定向和后续读取，超过时限会释放流，不会因持续收到小块数据而无限延长。EOF、取消、读取失败、撤权和会话结束都会释放连接；取消可中断正在等待的读取。未知或已结束 ID 的读取返回 NOT_FOUND，cancelStream 对已结束 ID 是幂等的；流标识只能用于创建它的会话。
+同一会话最多同时打开两个流；同一流的 readStream 不可重叠调用，否则返回 BUSY。readStream、openStream、cancelStream 及其他接口不再使用 ToolBox 每分钟调用配额；并发流槽位、在途请求/字节预算及单消息上限仍然有效。页面宜合并小块更新，不要高频空读。总时限从打开开始覆盖响应头、重定向和后续读取，超过时限会释放流，不会因持续收到小块数据而无限延长。EOF、取消、读取失败、撤权和会话结束都会释放连接；取消可中断正在等待的读取。未知或已结束 ID 的读取返回 NOT_FOUND，cancelStream 对已结束 ID 是幂等的；流标识只能用于创建它的会话。
 
 文本编码可能在任意字节处分段，应保留同一个 TextDecoder 并使用 stream 选项。ToolBox不解析 SSE 或替工具记录响应内容；下面例子只展示增量文本解码，SSE 的事件边界和 JSON 内容仍由工具处理。
 

@@ -90,18 +90,20 @@ test("the idle Blob budget is 8 MiB, independent of active resources", async () 
   cache.clear();
 });
 
-test("idle images do not consume the existing 24 active image slots", async () => {
-  const { cache } = harness();
+test("default active image count has no 24-item quota and clearing releases every Blob", async () => {
+  const { cache, created, revoked } = harness();
   for (let index = 0; index < 12; index += 1) {
     const idle = cache.acquire(`idle-${index}`);
     await idle.promise;
     idle.release();
   }
-  const active = Array.from({ length: 24 }, (_, index) => cache.acquire(`active-${index}`));
-  assert.throws(() => cache.acquire("overflow"), /图片较多/);
+  const active = Array.from({ length: 32 }, (_, index) => cache.acquire(`active-${index}`));
   await Promise.all(active.map((image) => image.promise));
+  assert.equal(active.length, 32);
   active.forEach((image) => image.release());
   cache.clear();
+  assert.deepEqual([...revoked].sort(), [...created].sort());
+  assert.equal(new Set(revoked).size, revoked.length);
 });
 
 test("a gallery lease obtained from an owned Blob survives the inline image release", async () => {

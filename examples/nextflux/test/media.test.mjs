@@ -118,7 +118,7 @@ test("in-flight image queue stays bounded and cancels released queued work", asy
       handles.push(handle);
     }
     await settleMedia();
-    assert.equal(pending.length, 3);
+    assert.equal(pending.length, 2);
     const extra = acquireImage(`${origin}/proxy/bounded/overflow`);
     extra.promise.catch(() => {});
     handles.push(extra); // More than 24 small images queue instead of being rejected.
@@ -126,7 +126,7 @@ test("in-flight image queue stays bounded and cancels released queued work", asy
     pending.forEach((resolve) => resolve({ status: 500, headers: {}, body: "", bodyEncoding: "text" }));
     await Promise.allSettled(handles.map((handle) => handle.promise));
     await settleMedia();
-    assert.equal(pending.length, 3);
+    assert.equal(pending.length, 2);
   } finally { delete globalThis.window; }
 });
 

@@ -2,7 +2,7 @@ package io.toolbox.tool.api
 
 enum class ContractPhase { M1, M2, M3 }
 
-enum class GestureRequirement { NONE, RECENT, CONFIRMED_ONE_SHOT }
+enum class GestureRequirement { NONE, RECENT }
 
 enum class CapabilityContext { FOREGROUND_ONLY, FOREGROUND_OR_DELEGATED_BACKGROUND }
 

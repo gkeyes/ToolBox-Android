@@ -20,7 +20,7 @@ const failure = code => Object.assign(new Error(messages[code] || messages.NETWO
 export function createMediaTransport({
   network = () => globalThis.window?.ToolBox?.network,
   maxBytes = MEDIA_RESOURCE_BYTES,
-  maxConcurrent = 3,
+  maxConcurrent = 2,
   onPressure = () => {},
 } = {}) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || !Number.isInteger(maxConcurrent) || maxConcurrent < 1) throw new TypeError("Invalid media resource budget");

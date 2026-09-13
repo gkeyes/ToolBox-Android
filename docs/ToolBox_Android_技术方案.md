@@ -36,7 +36,7 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 
 ## 2. 不可协商安全边界
 
-以下规则与 `AGENTS.md` 一致，任何产品简化不得改变它们：
+以下保留的隔离与数据完整性规则仍然有效；调用配额与重复确认的调整以本文运行时授权章节及实现为准：
 
 1. 不对导入内容使用 `addJavascriptInterface`。
 2. 不以 `file://` 或 localhost/Ktor 加载工具；每个工具使用 `WebViewAssetLoader` 的唯一
@@ -253,7 +253,7 @@ ToolBox 首页“最近使用”只显示图标，按可用宽度和至少 48 dp
 - `browser.open(url)`：独立 `browser` 能力，权限中文名“浏览器打开”，默认关闭；不依赖
   `network` 或 Android 运行时权限。RPC 参数为 `{url}`，仅接受长度不超过 2048 字符的
   HTTP/HTTPS 绝对 URL；拒绝凭据、控制字符、非法 URL 和额外/非法参数。需要前台和近期
-  真实触摸，每工具每分钟最多 10 次。宿主仅构造 `ACTION_VIEW`，并固定使用
+  真实触摸，不再设置每工具每分钟调用配额。宿主仅构造 `ACTION_VIEW`，并固定使用
   `ACTION_MAIN` + `CATEGORY_APP_BROWSER` selector 将目标限定为浏览器；不接受工具传入
   action、package、component、selector 或 extras，无任意 App fallback。系统无浏览器或
   拒绝启动时返回 typed error；`Promise<void>` 成功只代表系统接受启动，不证明网页加载成功。
@@ -525,6 +525,6 @@ WebView 和数据库合同不变。旧主题风格字段仅为读取历史设置
 旧设计稿、设计生成配置与根目录代理指令已移除，不更改实际 UI、现有安全测试或签名发布配置。第三方许可和署名声明继续保留。编译和行为测试只在 GitHub Actions 执行。
 
 
-NextFlux 原文阅读媒体使用宿主既有 openStream/readStream/cancelStream 分块接口，不再将整个媒体以单个 Base64 响应复制。移除单图 2 MiB、单音视频 4 MiB、音视频最多两个及默认活动图片最多 24 张的业务门槛；可见资源按需加载，网络读取最多同时三个。
+NextFlux 原文阅读媒体使用宿主既有 openStream/readStream/cancelStream 分块接口，不再将整个媒体以单个 Base64 响应复制。移除单图 2 MiB、单音视频 4 MiB、音视频最多两个及默认活动图片最多 24 张的业务门槛；可见资源按需加载，媒体下载最多同时两条，与宿主流槽位一致；已加载媒体数量不受此并发值限制。
 
 图片和音视频共用 64 MiB 已保留压缩载荷预算（与宿主当前单流上限相同），包括正在读取的分块及已加载 Blob；闲置图片可先释放，关闭/退出时取消未完成请求并归还预算。这不是总堆内存上限、无限大文件支持或经过真机测得的最优值。DOM 中的内联 data 图片仍由输入尺寸检查保护，解码像素内存由 WebView 另行管理。常规 JSON 同步仍保留独立的响应预算，不混同媒体流。
