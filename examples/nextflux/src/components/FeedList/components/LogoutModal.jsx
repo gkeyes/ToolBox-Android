@@ -15,6 +15,9 @@ export default function LogoutModal() {
       // Logging out can unmount this dialog before cleanup finishes.
       toast.error("退出登录未能完成，请检查存储权限并重试；仍在运行的后台同步可在 ToolBox 中停止。");
       throw error;
+    } finally {
+      // Auth changes unmount this dialog; do not reopen it on the next login.
+      logoutModalOpen.set(false);
     }
   };
   return (
