@@ -2,7 +2,7 @@
 set -euo pipefail
 
 package_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-output_path="${1:-${package_dir}/../packages/game-2048-v1.0.0.tbx}"
+output_path="${1:-${package_dir}/../packages/game-2048-v1.0.1.tbx}"
 mkdir -p -- "$(dirname -- "${output_path}")"
 output_path="$(cd -- "$(dirname -- "${output_path}")" && pwd)/$(basename -- "${output_path}")"
 [[ ! -e "${output_path}" ]] || { printf '输出已存在，请指定新路径：%s\n' "${output_path}" >&2; exit 1; }

@@ -103,12 +103,13 @@ export default function SearchModal() {
     <Modal>
       <Button className="hidden" />
       <Modal.Backdrop
+        className="nextflux-modal-backdrop"
         isOpen={isOpen}
         onOpenChange={(open) => searchDialogOpen.set(open)}
         variant="transparent"
       >
         <Modal.Container scroll="inside" size="lg">
-          <Modal.Dialog className="w-[700px] max-w-[90vw] h-[500px] max-h-[85vh] bg-overlay/90 backdrop-blur-lg border shadow-2xl p-0">
+          <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0">
             <Modal.Header className="p-2 border-b">
               <InputGroup className="bg-transparent shadow-none ring-0 ring-transparent">
                 <InputGroup.Prefix>
@@ -130,7 +131,7 @@ export default function SearchModal() {
                 />
               </InputGroup>
             </Modal.Header>
-            <Modal.Body className="p-0 m-0">
+            <Modal.Body className="nextflux-modal-body p-0 m-0">
               <SearchResults
                 results={
                   searchType === "articles"
@@ -170,7 +171,7 @@ export default function SearchModal() {
                     </Tabs.List>
                   </Tabs.ListContainer>
                 </Tabs>
-                <div className="flex items-center gap-1 px-1">
+                <div className="hidden md:flex items-center gap-1 px-1">
                   <Kbd>
                     <Kbd.Abbr keyValue="up" />
                   </Kbd>

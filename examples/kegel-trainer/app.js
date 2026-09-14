@@ -289,7 +289,7 @@
       voice: typeof stored.voice === "boolean" ? stored.voice : DEFAULT_PREFERENCES.voice,
       vibration: typeof stored.vibration === "boolean" ? stored.vibration : DEFAULT_PREFERENCES.vibration,
       keepAwake: typeof stored.keepAwake === "boolean" ? stored.keepAwake : DEFAULT_PREFERENCES.keepAwake,
-      volume: clamp(Number(stored.volume) || DEFAULT_PREFERENCES.volume, 0, 100),
+      volume: clamp(Number.isFinite(stored.volume) ? stored.volume : DEFAULT_PREFERENCES.volume, 0, 100),
       custom: {
         contract: positive(stored.custom?.contract, DEFAULT_PREFERENCES.custom.contract),
         relax: positive(stored.custom?.relax, DEFAULT_PREFERENCES.custom.relax),

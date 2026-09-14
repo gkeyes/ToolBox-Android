@@ -317,7 +317,13 @@
   }
 
   async function loadPersisted() {
-    const saved = await toolbox().storage.get(STORAGE_KEY);
+    let saved;
+    try {
+      saved = await toolbox().storage.get(STORAGE_KEY);
+    } catch (error) {
+      appendEvent(`状态读取失败 · ${errorLabel(error)}`, "error");
+      return;
+    }
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
     if (["market", "countdown", "trip"].includes(saved.preset)) state.preset = saved.preset;
     if (Number.isInteger(saved.tick) && saved.tick >= 0) state.tick = saved.tick;

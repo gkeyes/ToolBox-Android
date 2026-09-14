@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { logoutModalOpen } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
 import { logout } from "@/stores/authStore.js";
+import { toast } from "sonner";
 
 export default function LogoutModal() {
   const { t } = useTranslation();
@@ -11,7 +12,9 @@ export default function LogoutModal() {
     try {
       await logout();
     } catch (error) {
-      console.error("退出登录失败:", error);
+      // Logging out can unmount this dialog before cleanup finishes.
+      toast.error("退出登录未能完成，请检查存储权限并重试；仍在运行的后台同步可在 ToolBox 中停止。");
+      throw error;
     }
   };
   return (
