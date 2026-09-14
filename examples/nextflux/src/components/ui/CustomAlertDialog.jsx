@@ -49,7 +49,7 @@ export default function CustomAlertDialog({
         onOpenChange={(open) => !open && handleClose()}
       >
         <AlertDialog.Container>
-          <AlertDialog.Dialog className="nextflux-modal-surface sm:max-w-[400px] p-0" aria-busy={loading}>
+          <AlertDialog.Dialog className="nextflux-modal-surface sm:max-w-[400px] p-0">
             <AlertDialog.CloseTrigger className="nextflux-close-button" isDisabled={loading} />
             <AlertDialog.Header className="nextflux-close-header px-4 pt-4">
               <AlertDialog.Icon status="danger" />
