@@ -31,27 +31,40 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxIconButton
+import io.toolbox.core.ui.component.ToolBoxIcon
+import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.ToolBoxSecondaryButton
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxTheme
-import io.toolbox.core.ui.theme.ToolBoxThemeMode
+import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.browserViewIntent
 import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
@@ -84,8 +97,13 @@ class BrowserActivity : ComponentActivity() {
         }
         enableEdgeToEdge()
         createPage(savedInstanceState?.getBundle("page"))
+        val appearance = BrowserAppearance.fromIntent(intent)
         setContent {
-            ToolBoxTheme(mode = ToolBoxThemeMode.System) {
+            ToolBoxTheme(
+                mode = appearance.themeMode,
+                style = ToolBoxThemeStyle.LiquidGlass,
+                reduceTransparency = appearance.reduceTransparency,
+            ) {
                 BackHandler { goBack() }
                 BrowserScreen()
             }
@@ -301,6 +319,13 @@ class BrowserActivity : ComponentActivity() {
     @Composable
     private fun BrowserScreen() {
         val colors = ToolBoxThemeTokens.colors
+        val lightSystemBars = colors.background.luminance() > 0.5f
+        LaunchedEffect(lightSystemBars) {
+            WindowInsetsControllerCompat(window, window.decorView).apply {
+                isAppearanceLightStatusBars = lightSystemBars
+                isAppearanceLightNavigationBars = lightSystemBars
+            }
+        }
         Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding().imePadding()) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -339,46 +364,117 @@ class BrowserActivity : ComponentActivity() {
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
-        if (menu) BrowserDialog({ menu = false }) {
-            ToolBoxTextButton("查看完整地址", { menu = false; fullAddress = true })
-            ToolBoxTextButton("复制链接", {
-                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("网址", address))
-                menu = false
-            })
-            ToolBoxTextButton("分享链接", {
-                menu = false
-                try {
-                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, address), "分享链接"))
-                } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
-            })
-            ToolBoxTextButton("使用系统浏览器", {
-                menu = false
-                try { startActivity(browserViewIntent(address)) }
-                catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
-                catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
-            })
-            ToolBoxTextButton("清除浏览器网站数据", { menu = false; clearConfirmation = true })
-            ToolBoxTextButton("取消", { menu = false })
+        if (menu) ToolBoxModalDialog(onDismissRequest = { menu = false }) {
+            ToolBoxText(
+                title.ifBlank { "内置浏览器" },
+                modifier = Modifier.fillMaxWidth().semantics { heading() },
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.title.copy(
+                    color = colors.textPrimary, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            Spacer(Modifier.height(6.dp))
+            val uri = Uri.parse(address)
+            ToolBoxText(
+                (if (uri.scheme == "http") "未加密 · " else "") + uri.host.orEmpty(),
+                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
+            )
+            Spacer(Modifier.height(20.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))) {
+                BrowserMenuAction("查看完整地址", ToolBoxIconKey.Note) { menu = false; fullAddress = true }
+                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
+                BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
+                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("网址", address))
+                    menu = false
+                }
+                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
+                BrowserMenuAction("分享链接", ToolBoxIconKey.Share) {
+                    menu = false
+                    try {
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, address), "分享链接"))
+                    } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
+                }
+                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
+                BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) {
+                    menu = false
+                    try { startActivity(browserViewIntent(address)) }
+                    catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
+                    catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
+                .background(colors.softDanger)) {
+                BrowserMenuAction("清除浏览器网站数据", ToolBoxIconKey.Shield, destructive = true) {
+                    menu = false
+                    clearConfirmation = true
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            ToolBoxSecondaryButton("取消", { menu = false }, modifier = Modifier.fillMaxWidth())
         }
-        if (fullAddress) BrowserDialog({ fullAddress = false }) {
-            androidx.compose.foundation.text.selection.SelectionContainer { ToolBoxText(address) }
-            ToolBoxTextButton("关闭", { fullAddress = false })
+        if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
+            ToolBoxText(
+                "查看完整地址",
+                modifier = Modifier.semantics { heading() },
+                style = ToolBoxThemeTokens.textStyles.title.copy(
+                    color = colors.textPrimary, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                ToolBoxText(address, modifier = Modifier.fillMaxWidth(),
+                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary))
+            }
+            Spacer(Modifier.height(24.dp))
+            ToolBoxSecondaryButton("关闭", { fullAddress = false }, modifier = Modifier.fillMaxWidth())
         }
-        if (clearConfirmation) BrowserDialog({ if (!clearing) clearConfirmation = false }) {
-            ToolBoxText("清除所有工具共用的浏览器网站登录、缓存和网站存储。NextFlux 的账号及工具数据会保留。")
-            ToolBoxTextButton(if (clearing) "正在清除…" else "清除", ::clearWebsiteData, enabled = !clearing)
-            ToolBoxTextButton("取消", { clearConfirmation = false }, enabled = !clearing)
+        if (clearConfirmation) ToolBoxModalDialog(onDismissRequest = { if (!clearing) clearConfirmation = false }) {
+            ToolBoxText(
+                "清除浏览器网站数据",
+                modifier = Modifier.semantics { heading() },
+                style = ToolBoxThemeTokens.textStyles.title.copy(
+                    color = colors.textPrimary, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
+            ToolBoxText(
+                "清除所有工具共用的浏览器网站登录、缓存和网站存储。NextFlux 的账号及工具数据会保留。",
+                style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
+            )
+            Spacer(Modifier.height(24.dp))
+            ToolBoxDestructiveButton(
+                if (clearing) "正在清除…" else "清除", ::clearWebsiteData,
+                modifier = Modifier.fillMaxWidth(), enabled = !clearing,
+            )
+            Spacer(Modifier.height(12.dp))
+            ToolBoxSecondaryButton(
+                "取消", { clearConfirmation = false },
+                modifier = Modifier.fillMaxWidth(), enabled = !clearing,
+            )
         }
     }
 
     @Composable
-    private fun BrowserDialog(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-        Dialog(onDismissRequest = onDismiss) {
-            Column(
-                Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surface).padding(24.dp).verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                content = content,
-            )
+    private fun BrowserMenuAction(
+        label: String,
+        icon: ToolBoxIconKey,
+        destructive: Boolean = false,
+        onClick: () -> Unit,
+    ) {
+        val colors = ToolBoxThemeTokens.colors
+        val contentColor = if (destructive) colors.onSoftDanger else colors.textPrimary
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ToolBoxIcon(icon, contentDescription = null,
+                tint = if (destructive) colors.onSoftDanger else colors.textSecondary)
+            Spacer(Modifier.width(14.dp))
+            ToolBoxText(label, modifier = Modifier.weight(1f),
+                style = ToolBoxThemeTokens.textStyles.body.copy(color = contentColor))
         }
     }
 

@@ -510,6 +510,31 @@ fun ToolBoxPrimaryButton(
     }
 }
 
+/** Neutral filled action for modal surfaces; stays readable over blurred content. */
+@Composable
+fun ToolBoxSecondaryButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        enabled = enabled,
+        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
+        colors = ButtonDefaults.buttonColorsPrimary(
+            color = colors.surfaceMuted,
+            contentColor = colors.textPrimary,
+        ),
+    ) {
+        ToolBoxText(label, style = ToolBoxThemeTokens.textStyles.body.copy(
+            color = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.46f),
+        ))
+    }
+}
+
 @Composable
 fun ToolBoxDestructiveButton(
     label: String,

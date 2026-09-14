@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import io.toolbox.host.browser.BrowserActivity
+import io.toolbox.host.browser.BrowserAppearance
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
@@ -29,6 +30,7 @@ internal suspend fun launchBrowserUrl(
     val intent = Intent(context, BrowserActivity::class.java)
         .setData(Uri.parse(validateRuntimeBrowserUrl(url)).normalizeScheme())
     beforeLaunch()
+    BrowserAppearance.current.writeTo(intent)
     // No suspension between the final Activity check and startActivity.
     ensureForeground()
     try {
