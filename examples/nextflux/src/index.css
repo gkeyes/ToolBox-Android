@@ -390,6 +390,27 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.nextflux-modal-loading {
+  margin: auto;
+  inline-size: min(320px, calc(100vw - 2rem));
+  padding: 1.5rem;
+  border: 1px solid var(--separator, var(--border));
+  border-radius: 1.5rem;
+}
+.nextflux-modal-loading::backdrop { background: #0006; }
+.nextflux-modal-loading button {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 1rem;
+  border-radius: .75rem;
+  color: inherit;
+  background: var(--default);
+}
+.nextflux-modal-loading button:focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 3px;
+}
 .nextflux-modal-footer {
   flex-shrink: 0;
   gap: .5rem;

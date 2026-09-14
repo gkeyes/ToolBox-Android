@@ -16,7 +16,7 @@ import { settingsState } from "@/stores/settingsStore";
 import { useTranslation } from "react-i18next";
 import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
-import { debounce } from "lodash";
+import debounce from "lodash/debounce.js";
 export default function SearchModal() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -30,17 +30,19 @@ export default function SearchModal() {
   const inputRef = useRef(null);
 
   useEffect(() => {
+    if (!isOpen || !keyword || isComposing) {
+      searching.set(false);
+      if (!keyword) {
+        searchResults.set([]);
+        feedSearchResults.set([]);
+      }
+      return;
+    }
     let ignore = false;
     searching.set(true);
 
     const handleSearch = debounce(
       async () => {
-        if (!keyword) {
-          searchResults.set([]);
-          feedSearchResults.set([]);
-          return;
-        }
-
         searchType === "articles"
           ? searchResults.set([])
           : feedSearchResults.set([]);
@@ -57,22 +59,21 @@ export default function SearchModal() {
           searchType === "articles"
             ? searchResults.set(res)
             : feedSearchResults.set(res);
-          searching.set(false);
         } catch {
-          console.error("搜索失败");
-          searching.set(false);
+          if (!ignore) console.error("搜索失败");
+        } finally {
+          if (!ignore) searching.set(false);
         }
       },
       500,
       { leading: false, trailing: true },
     );
-    if (!isComposing) {
-      handleSearch();
-    }
+    handleSearch();
     return () => {
       ignore = true;
+      handleSearch.cancel();
     };
-  }, [keyword, searchType, showHiddenFeeds, isComposing]);
+  }, [isOpen, keyword, searchType, showHiddenFeeds, isComposing]);
 
   // 处理选择结果
   const handleSelect = (item) => {
