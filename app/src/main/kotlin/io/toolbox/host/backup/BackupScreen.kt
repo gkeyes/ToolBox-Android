@@ -54,8 +54,10 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
                 BackupUiState.ExportConsent -> item { ToolBoxCard {
                     AppText("备份可能包含账号和令牌", textStyle = ToolBoxThemeTokens.textStyles.title)
                     AppText("ZIP 不加密，ToolBox 不会上传它。请只保存到可信的本地位置，不要公开分享。硬件密钥不导出；可解密数据将写入备份，并在恢复时重新加密。")
-                    ToolBoxTextButton("同意并生成备份", onExportConsent, Modifier.fillMaxWidth().testTag("backup_export_consent"))
-                    ToolBoxTextButton("取消", onCancel, Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+                    ToolBoxPrimaryButton("同意并生成备份", onExportConsent, Modifier.fillMaxWidth().testTag("backup_export_consent"))
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                    ToolBoxSecondaryButton("取消", onCancel, Modifier.fillMaxWidth())
                 } }
                 is BackupUiState.Progress -> item { ToolBoxCard {
                     AppText("${state.percent}% · ${state.label}", modifier = Modifier.testTag("backup_progress_label"))
@@ -82,8 +84,9 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
                     } } }
                     state.preview.warnings.forEachIndexed { i, warning -> item("warning-$i") { AppText(warning, color = ToolBoxThemeTokens.colors.textSecondary) } }
                     item { ToolBoxCard {
-                        ToolBoxTextButton("确认覆盖并恢复", onConfirmRestore, Modifier.fillMaxWidth().testTag("backup_confirm_restore"))
-                        ToolBoxTextButton("取消恢复", onCancel, Modifier.fillMaxWidth())
+                        ToolBoxDestructiveButton("确认覆盖并恢复", onConfirmRestore, Modifier.fillMaxWidth().testTag("backup_confirm_restore"))
+                        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                        ToolBoxSecondaryButton("取消恢复", onCancel, Modifier.fillMaxWidth())
                     } }
                 }
                 is BackupUiState.Result -> item { ToolBoxCard {

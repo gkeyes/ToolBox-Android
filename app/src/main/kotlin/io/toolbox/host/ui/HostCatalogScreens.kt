@@ -30,9 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.toolBoxOpenDesignSurface
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
@@ -40,6 +42,8 @@ import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxSecondaryButton
+import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
@@ -164,39 +168,44 @@ internal fun ImportReplacementDialog(
     onConfirmImport: () -> Unit,
     onCancelImport: () -> Unit,
 ) {
-    val confirmation = importState.confirmation
-    OverlayDialog(
-        show = confirmation != null,
-        title = when (confirmation?.kind) {
-            HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
-            HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
-            HostImportConfirmationKind.UPDATE -> "更新并保留工具数据？"
-            null -> null
-        },
-        summary = confirmation?.let {
-            val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
-            val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
-            val replacement = when (it.kind) {
-                HostImportConfirmationKind.SAME_VERSION -> "两者 versionCode 相同，将覆盖现有工具文件。"
-                HostImportConfirmationKind.DOWNGRADE -> "较低版本可能无法读取新版数据。"
-                HostImportConfirmationKind.UPDATE -> "无法通过原工具的签名确认此次更新的身份。"
-            }
-            "${it.toolName} 当前为 $installed，待安装为 $incoming。$replacement 继续会停止旧运行和后台任务，并允许这份更新使用已保存的登录信息、设置与仍有效的权限。原来关闭的权限不会开启。仅在信任此包来源时继续。"
-        },
-        onDismissRequest = onCancelImport,
-    ) {
+    val confirmation = importState.confirmation ?: return
+    val title = when (confirmation.kind) {
+        HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
+        HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
+        HostImportConfirmationKind.UPDATE -> "更新并保留工具数据？"
+    }
+    val summary = confirmation.let {
+        val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
+        val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
+        val replacement = when (it.kind) {
+            HostImportConfirmationKind.SAME_VERSION -> "两者 versionCode 相同，将覆盖现有工具文件。"
+            HostImportConfirmationKind.DOWNGRADE -> "较低版本可能无法读取新版数据。"
+            HostImportConfirmationKind.UPDATE -> "无法通过原工具的签名确认此次更新的身份。"
+        }
+        "${it.toolName} 当前为 $installed，待安装为 $incoming。$replacement 继续会停止旧运行和后台任务，并允许这份更新使用已保存的登录信息、设置与仍有效的权限。原来关闭的权限不会开启。仅在信任此包来源时继续。"
+    }
+    ToolBoxModalDialog(onDismissRequest = onCancelImport) {
+        AppText(
+            title,
+            modifier = Modifier.semantics { heading() },
+            textStyle = ToolBoxThemeTokens.textStyles.title.copy(
+                fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+        AppText(summary, color = ToolBoxThemeTokens.colors.textSecondary)
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
-            ToolBoxTextButton(
+            ToolBoxSecondaryButton(
                 label = "取消",
                 onClick = onCancelImport,
                 modifier = Modifier.weight(1f),
-                contentColor = ToolBoxThemeTokens.colors.textPrimary,
             )
             ToolBoxPrimaryButton(
-                label = if (confirmation?.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
+                label = if (confirmation.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
                 onClick = onConfirmImport,
                 modifier = Modifier.weight(1f),
             )

@@ -168,11 +168,12 @@ fun ToolBoxValueRow(
         Spacer(Modifier.width(spacing.one))
         ToolBoxText(
             text = value,
+            modifier = Modifier.weight(1f),
             style = ToolBoxThemeTokens.textStyles.metadata.copy(
                 color = valueColor,
                 fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.End,
             ),
-            maxLines = 2,
         )
     }
 }
