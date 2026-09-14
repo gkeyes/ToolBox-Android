@@ -373,6 +373,58 @@
   .toolbox-link-dialog::backdrop { backdrop-filter: none; }
 }
 
+/* Keep modal text on a stable surface while softening the content behind it. */
+.nextflux-modal-backdrop {
+  background: #0006;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.nextflux-modal-surface {
+  color: var(--overlay-foreground, var(--foreground));
+  background: var(--overlay, var(--background));
+  max-block-size: calc(var(--visual-viewport-height, 100dvh) - 2rem);
+  overflow: hidden;
+}
+.nextflux-modal-body {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.nextflux-modal-footer {
+  flex-shrink: 0;
+  gap: .5rem;
+  border-top: 1px solid var(--separator, var(--border));
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.nextflux-modal-footer button {
+  min-block-size: 48px;
+  min-inline-size: 0;
+  flex: 1 1 0;
+}
+.nextflux-dialog-error {
+  margin-block-start: .75rem;
+  padding: .75rem;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--danger) 8%, transparent);
+  color: var(--overlay-foreground, var(--foreground));
+  overflow-wrap: anywhere;
+}
+@supports (backdrop-filter: blur(1px)) {
+  .nextflux-modal-surface {
+    background: color-mix(in oklch, var(--overlay, var(--background)) 94%, transparent);
+    -webkit-backdrop-filter: blur(28px) saturate(1.15);
+    backdrop-filter: blur(28px) saturate(1.15);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .nextflux-modal-surface {
+    background: var(--overlay, var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Size controls by their component role, never by their accessible name. */
 .nextflux-toolbar-button,
 .nextflux-close-button {

@@ -150,9 +150,9 @@ function MobileSettings() {
   return (
     <Drawer>
       <Button className="hidden" />
-      <Drawer.Backdrop isOpen={isOpen} onOpenChange={handleClose}>
+      <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={isOpen} onOpenChange={handleClose}>
         <Drawer.Content>
-          <Drawer.Dialog className="h-[85vh] p-0">
+          <Drawer.Dialog className="nextflux-modal-surface h-[85vh] p-0">
             <Drawer.Handle className="p-1" />
             <Drawer.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
             <Drawer.Header className="nextflux-close-header px-4 py-1 flex flex-row items-center gap-2">
@@ -210,12 +210,13 @@ function DesktopSettings() {
     <Modal>
       <Button className="hidden" />
       <Modal.Backdrop
+        className="nextflux-modal-backdrop"
         isOpen={isOpen}
         onOpenChange={handleClose}
         variant="transparent"
       >
         <Modal.Container>
-          <Modal.Dialog className="w-[700px] max-w-[90vw] h-[600px] max-h-[85vh] p-0 overflow-hidden relative bg-background/90 backdrop-blur-sm border shadow-2xl">
+          <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[600px] p-0 relative">
             <Modal.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
             <div className="flex h-full">
               {/* 左侧导航栏 */}

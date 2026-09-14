@@ -9,7 +9,7 @@ import {
   Spinner,
   TextField,
 } from "@heroui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { renameModalOpen, currentCategoryId } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
@@ -28,6 +28,7 @@ export default function RenameModal() {
   const categoryId = $currentCategoryId || urlCategoryId;
   const [newTitle, setNewTitle] = useState("");
   const [loading, setLoading] = useState(false);
+  const pending = useRef(false);
   const $renameModalOpen = useStore(renameModalOpen);
 
   useEffect(() => {
@@ -50,7 +51,8 @@ export default function RenameModal() {
 
   const handleRename = async (e) => {
     e.preventDefault();
-    if (!categoryId) return;
+    if (!categoryId || pending.current) return;
+    pending.current = true;
     try {
       setLoading(true);
       await renameCachedCategory(categoryId, newTitle);
@@ -58,8 +60,8 @@ export default function RenameModal() {
     } catch (error) {
       if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "重命名失败，请刷新后重试。");
     } finally {
+      pending.current = false;
       setLoading(false);
-      setNewTitle(""); // 重置输入框
     }
   };
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 package_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-output_path="${1:-${package_dir}/../packages/kegel-trainer-v1.0.2.tbx}"
+output_path="${1:-${package_dir}/../packages/kegel-trainer-v1.0.3.tbx}"
 python3 - "${package_dir}" "${output_path}" <<'PY'
 from pathlib import Path
 import shutil

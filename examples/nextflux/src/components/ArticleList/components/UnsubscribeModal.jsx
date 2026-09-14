@@ -1,4 +1,3 @@
-import { toast } from "sonner";
 import { removeCachedFeed } from "@/stores/syncStore.js";
 import { unsubscribeModalOpen, currentFeedId } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
@@ -28,14 +27,9 @@ export default function UnsubscribeModal() {
   };
 
   const handleUnsubscribe = async () => {
-    if (!feedId) return;
-    try {
-      await removeCachedFeed(feedId);
-      onClose();
-      navigate("/"); // 取消订阅后返回首页
-    } catch (error) {
-      if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "取消订阅失败，请刷新后重试。");
-    }
+    if (!feedId) throw new Error("未找到订阅源，请重新选择后重试。");
+    await removeCachedFeed(feedId);
+    navigate("/"); // 取消订阅后返回首页；确认弹窗仅在操作成功后关闭。
   };
 
   return (

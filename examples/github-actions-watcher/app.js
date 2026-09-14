@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.7";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.8";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -912,6 +912,10 @@
 
   function renderJobs(run) {
     const list = $("job-list");
+    const jobExpansion = new Map();
+    for (const details of list.children) {
+      if (details.dataset.jobKey) jobExpansion.set(details.dataset.jobKey, details.open);
+    }
     list.replaceChildren();
     if (!run) {
       list.append(emptyNode("发现运行中的构建后，将显示 job 与 step。"));
@@ -930,7 +934,9 @@
     }
     for (const job of jobs) {
       const details = document.createElement("details");
-      if (job.status === "in_progress") details.open = true;
+      const jobKey = `${model.runKey(run)}:${job.id}`;
+      details.dataset.jobKey = jobKey;
+      details.open = jobExpansion.has(jobKey) ? jobExpansion.get(jobKey) : job.status === "in_progress";
       const summary = document.createElement("summary");
       summary.append(stateDot(runStatus(job)));
       const name = document.createElement("strong");

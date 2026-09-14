@@ -14,6 +14,7 @@
   let tokenValue = "";
   let editingId = null;
   let refreshPromise = null;
+  let monitorAction = null;
   let toastTimer = null;
   let ready = false;
   let liveAvailable = true;
@@ -266,7 +267,10 @@
     $("monitor-state").dataset.active = String(state.monitoring);
     $("monitor-state").lastChild.textContent = state.monitoring ? "监控中" : "未监控";
     $("toggle-monitor").dataset.active = String(state.monitoring);
-    $("toggle-monitor").querySelector("span").textContent = state.monitoring ? "停止监控" : "后台监控";
+    $("toggle-monitor").disabled = Boolean(monitorAction);
+    $("toggle-monitor").setAttribute("aria-busy", String(Boolean(monitorAction)));
+    $("toggle-monitor").querySelector("span").textContent = monitorAction === "start" ? "正在启动…"
+      : monitorAction === "stop" ? "正在停止…" : state.monitoring ? "停止监控" : "后台监控";
     $("last-refresh").textContent = state.lastRefreshAt ? formatTime(state.lastRefreshAt).replace("更新于 ", "数据更新：") : "尚未更新";
     const providers = [...new Set(state.items.map((item) => sourceLabel(item.provider)))];
     $("provider-summary").textContent = `数据源：${providers.length ? providers.join(" / ") : "未设置"}`;
@@ -457,7 +461,7 @@
         liveStarted ? "success" : "warning"
       );
       showToast("后台监控已启动");
-      await refreshAll();
+      return true;
     } catch (error) {
       if (session?.sessionId) {
         try { await toolbox().background.stop(session.sessionId); } catch (_) {}
@@ -466,6 +470,7 @@
       state.sessionId = null;
       render();
       setStatus(errorMessage(error, "后台监控启动失败。"), "error");
+      return false;
     }
   }
 
@@ -713,8 +718,19 @@
   $("refresh").addEventListener("click", () => refreshAll({ announce: true }));
   $("add-stock").addEventListener("click", () => openEditor());
   $("toggle-monitor").addEventListener("click", async () => {
+    if (monitorAction) return;
     if (!ready) { showToast("ToolBox 尚未连接"); return; }
-    if (state.monitoring) await stopMonitoring(); else await startMonitoring();
+    monitorAction = state.monitoring ? "stop" : "start";
+    render();
+    let started = false;
+    try {
+      if (monitorAction === "stop") await stopMonitoring();
+      else started = await startMonitoring();
+    } finally {
+      monitorAction = null;
+      render();
+    }
+    if (started) await refreshAll();
   });
   $("watchlist").addEventListener("click", (event) => {
     const trigger = event.target.closest(".quote-summary, .edit-button");

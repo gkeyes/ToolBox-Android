@@ -6,6 +6,7 @@
   const setStatus = (message) => { $("status").textContent = message; };
   const formatTime = (value) => value ? new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "暂无结果";
   const showError = (error) => error?.message || "任务操作失败，请检查后台、网络和通知权限。";
+  let loadSequence = 0;
 
   async function requireBackground() {
     if (!toolbox()?.background) throw new Error("当前宿主尚未提供后台任务 API");
@@ -35,13 +36,14 @@
     return `最近结果：${result.outcome} · ${formatTime(result.completedAt)}${result.error?.message ? ` · ${result.error.message}` : ""}`;
   }
   async function loadTasks() {
+    const sequence = ++loadSequence;
     const container = $("tasks");
-    container.replaceChildren();
+    setStatus("正在读取任务…");
     try {
       await requireBackground();
       const tasks = await toolbox().background.list();
-      if (!tasks.length) { setStatus("还没有后台任务"); return; }
-      await Promise.all(tasks.map(async (task) => {
+      if (sequence !== loadSequence) return;
+      const fragments = await Promise.all(tasks.map(async (task) => {
         const fragment = $("task-template").content.cloneNode(true);
         const root = fragment.querySelector(".task");
         root.dataset.id = task.taskId;
@@ -51,10 +53,12 @@
         fragment.querySelector(".task-result").textContent = await resultText(task.taskId);
         const cancel = fragment.querySelector(".cancel");
         cancel.disabled = task.state === "COMPLETED" || task.state === "CANCELLED";
-        container.append(fragment);
+        return fragment;
       }));
-      setStatus(`共 ${tasks.length} 个任务`);
-    } catch (error) { setStatus(showError(error)); }
+      if (sequence !== loadSequence) return;
+      container.replaceChildren(...fragments);
+      setStatus(tasks.length ? `共 ${tasks.length} 个任务` : "还没有后台任务");
+    } catch (error) { if (sequence === loadSequence) setStatus(showError(error)); }
   }
   async function cancel(event) {
     const button = event.target.closest(".cancel");
