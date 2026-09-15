@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit
 
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -16,6 +17,7 @@ internal class DefaultPackageInspector(
     private val temporaryRoot: Path,
     private val limits: PackageLimits = PackageLimits(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
 ) : ToolPackageInspector {
     override suspend fun validate(input: PackageInput): PackageValidationResult = withContext(ioDispatcher) {
         when (val result = prepare(input)) {
@@ -36,7 +38,10 @@ internal class DefaultPackageInspector(
         try {
             runInterruptible { prepareBlocking(input, temporaryDirectory) }
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable + ioDispatcher) { runCatching { deleteTree(temporaryDirectory) } }
+            val cleanup = withContext(NonCancellable + ioDispatcher) {
+                runCatching { deleteTree(temporaryDirectory) }.exceptionOrNull()
+            }
+            if (cleanup != null) reject(PackageRejectionCode.CLEANUP_FAILED, "Cancelled import files could not be removed")
             throw cancelled
         }
     }
@@ -50,21 +55,24 @@ internal class DefaultPackageInspector(
 
     private fun prepareBlocking(input: PackageInput, temporaryDirectory: Path): PreparationResult {
         val archivePath = temporaryDirectory.resolve("source.tbx")
+        val resources = PackageResourceGuard(temporaryDirectory, resourceProbe)
         return try {
             Files.createDirectories(temporaryDirectory)
-            copyBounded(input, archivePath)
-            val checked = ZipStructureReader.read(archivePath, limits)
+            copySource(input, archivePath, resources)
+            val checked = ZipStructureReader.read(archivePath, limits, resources)
             validateMetadataBounds(checked)
-            val extracted = ZipArchiveReader.extract(archivePath, checked, temporaryDirectory, limits)
-            val manifestBytes = extracted.metadata["manifest.json"]
+            val extracted = ZipArchiveReader.extract(archivePath, checked, temporaryDirectory, resources)
+            val manifestPath = extracted.metadata["manifest.json"]
                 ?: reject(PackageRejectionCode.MANIFEST_MISSING, "manifest.json is required at the archive root")
+            resources.check()
+            val manifestBytes = Files.readAllBytes(manifestPath)
             val manifest = try {
                 ManifestValidator.parse(manifestBytes, limits)
             } catch (error: JsonFormatException) {
                 reject(PackageRejectionCode.MANIFEST_INVALID, error.message ?: "manifest.json is invalid")
             }
             BundleEntryValidator.validate(manifest, extracted.bundleDirectory, extracted.hashes)
-            IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits)
+            IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits, resources)
             Files.deleteIfExists(archivePath)
             PreparationResult.Prepared(
                 PreparedPackage(
@@ -87,10 +95,11 @@ internal class DefaultPackageInspector(
             )
         } catch (error: Exception) {
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Package validation was interrupted")
+            val ioRejection = (error as? IOException)?.let(resources::ioRejection)
             val cleanup = runCatching { deleteTree(temporaryDirectory) }.exceptionOrNull()
             PreparationResult.Rejected(
                 if (cleanup == null) {
-                    PackageRejection(
+                    ioRejection ?: PackageRejection(
                         PackageRejectionCode.TEMPORARY_IO_FAILED,
                         "Package validation failed closed: ${error.javaClass.simpleName}",
                     )
@@ -101,31 +110,32 @@ internal class DefaultPackageInspector(
         }
     }
 
-    private fun copyBounded(input: PackageInput, archivePath: Path) {
+    private fun copySource(input: PackageInput, archivePath: Path, resources: PackageResourceGuard) {
         try {
             input.openStream().use { source ->
                 Files.newOutputStream(archivePath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { target ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     var total = 0L
                     while (true) {
+                        checkPackageInterrupted()
                         val count = source.read(buffer)
                         if (count < 0) break
                         if (count == 0) continue
-                        total += count
-                        if (total > limits.maxCompressedBytes) {
-                            reject(
-                                PackageRejectionCode.COMPRESSED_SIZE_LIMIT,
-                                "Compressed package exceeds ${limits.maxCompressedBytes} bytes",
-                            )
+                        total = packageByteTotal(total, count.toLong())
+                        resources.check(count.toLong())
+                        try {
+                            target.write(buffer, 0, count)
+                        } catch (error: IOException) {
+                            resources.ioFailed(error)
                         }
-                        target.write(buffer, 0, count)
                     }
                 }
             }
         } catch (error: InspectionRejected) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Selected package read was interrupted")
+            (error as? IOException)?.let(resources::ioRejection)?.let { throw InspectionRejected(it) }
             reject(PackageRejectionCode.SOURCE_READ_FAILED, "Unable to read the selected package")
         }
     }
@@ -135,11 +145,6 @@ internal class DefaultPackageInspector(
             ?: reject(PackageRejectionCode.MANIFEST_MISSING, "Exactly one root manifest.json is required")
         if (manifest.extractedBytes > limits.maxManifestBytes) {
             reject(PackageRejectionCode.MANIFEST_TOO_LARGE, "manifest.json exceeds ${limits.maxManifestBytes} bytes")
-        }
-        archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "integrity.json" }?.let {
-            if (it.extractedBytes > MAX_INTEGRITY_BYTES) {
-                reject(PackageRejectionCode.INTEGRITY_MALFORMED, "integrity.json exceeds $MAX_INTEGRITY_BYTES bytes")
-            }
         }
         archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "signature.json" }?.let {
             if (it.extractedBytes > MAX_SIGNATURE_BYTES) {
@@ -154,7 +159,6 @@ internal class DefaultPackageInspector(
     }
 
     private companion object {
-        const val MAX_INTEGRITY_BYTES = 1024L * 1024
         const val MAX_SIGNATURE_BYTES = 64L * 1024
     }
 }

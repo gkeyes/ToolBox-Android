@@ -79,13 +79,13 @@ jobs:
           bash scripts/qa/run-host-gate.sh
           --attempt "$GITHUB_WORKSPACE/.omo/evidence/ci-host-gate"
 
-      - name: Enable accelerated storage test emulator
+      - name: Enable accelerated behavior test emulator
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Verify Room storage and Android browser Intent guards
+      - name: Verify storage, browser Intent guards and Wasm in WebView
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -94,7 +94,24 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest,io.toolbox.host.runtime.BrowserLauncherInstrumentedTest
+          script: |
+            mkdir -p build/wasm-emulator
+            adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
+            adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.runtime.RuntimeStandardStorageInstrumentedTest,io.toolbox.host.runtime.BrowserLauncherInstrumentedTest,io.toolbox.host.ToolManagerImportConfirmationTest
+            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.WasmRuntimeInstrumentationTest
+
+      - name: Retain Wasm WebView results and provider identity
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wasm-webview-${{ github.sha }}
+          path: |
+            tool-runtime/build/outputs/androidTest-results/connected/
+            tool-runtime/build/reports/androidTests/connected/
+            build/wasm-emulator/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Retain storage transaction results
         if: ${{ always() }}
@@ -120,7 +137,7 @@ jobs:
   delivery:
     name: Package optimized v0.6.7 release delivery
     needs: verify
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -310,7 +327,8 @@ jobs:
             printf 'BROWSER_INTENT_AND_DISPATCH_GUARDS_EMULATOR=PASS\n'
             printf 'SYSTEM_BROWSER_PAGE_AND_RETURN=NOT_RUN_USER_OWNED\n'
             printf 'STANDALONE_TBX_VALIDATION=SEPARATE_TBX_CI\n'
-            printf 'ANDROID_INSTRUMENTATION_EXECUTION=STORAGE_AND_BROWSER_GITHUB_EMULATOR\n'
+            printf 'WASM_WEBVIEW_EMULATOR=PASS\n'
+            printf 'ANDROID_INSTRUMENTATION_EXECUTION=STORAGE_BROWSER_AND_WASM_GITHUB_EMULATOR\n'
             printf 'DEVICE_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'HYPEROS_ISLAND_TEST_RESULT=NOT_RUN_USER_OWNED\n'
             printf 'MINIFIED_RUNTIME_DEVICE_TEST=NOT_RUN_USER_OWNED\n'

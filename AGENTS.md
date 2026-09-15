@@ -20,7 +20,7 @@ Build a lightweight Android host app that imports `.tbx` ZIP packages containing
 - Disable file/content access, universal file URL access, mixed content, popup windows and arbitrary navigation.
 - Remote networking is off by default and controlled by each tool's network capability grant. ToolBox uses its native HTTPS proxy without destination allowlists, additional domain consent, or DNS/IP range blocking. Preserve TLS validation, cross-origin redirect credential stripping, cancellation and resource limits.
 - Do not request `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES`, accessibility, SMS, contacts or root privileges.
-- Installation is transactional and rollback-safe. Reject Zip Slip, zip bombs, path collisions, symlinks, nested archives and native/dynamic-code payloads.
+- Installation is transactional and rollback-safe. Reject Zip Slip, inconsistent ZIP sizes/CRC/headers, path collisions, symlinks, nested archives and Android native/dynamic payloads (including ELF, DEX and class). Allow standard WebView WebAssembly, including Wasm content named `.so`; do not add Wasm-specific permissions, quotas or instruction filters. Check actual storage availability and memory pressure, stream processing and support cancellation instead of fixed package/file/count/compression-ratio quotas.
 - Invalid signatures are blocking. Unsigned tools use strict policy and cannot silently persist high-risk grants.
 - Do not log clipboard contents, file contents, secure values or HTTP bodies.
 - A secondary process is crash/memory isolation only; never describe it as a separate UID sandbox.

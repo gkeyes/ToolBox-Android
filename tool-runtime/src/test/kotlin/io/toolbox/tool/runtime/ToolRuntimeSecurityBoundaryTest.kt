@@ -80,15 +80,20 @@ class ToolRuntimeSecurityBoundaryTest {
 
         val strict = RuntimePolicy.contentSecurityPolicy(SecurityProfile.STRICT)
         val compat = RuntimePolicy.contentSecurityPolicy(SecurityProfile.COMPAT)
-        assertTrue("connect-src 'none'" in strict)
+        assertTrue("connect-src 'self'" in strict)
         assertTrue("frame-src 'none'" in strict)
         assertTrue("worker-src 'self'" in strict)
         assertFalse("worker-src 'self' blob:" in strict)
         assertFalse("worker-src *" in strict)
-        assertTrue("script-src 'self';" in strict)
+        assertTrue("script-src 'self' 'wasm-unsafe-eval';" in strict)
         assertFalse("script-src 'self' 'unsafe-inline'" in strict)
         assertTrue("script-src 'self' 'unsafe-inline'" in compat)
-        assertFalse("unsafe-eval" in compat)
+        listOf(strict, compat).forEach { policy ->
+            val scriptTokens = policy.split(';').map(String::trim)
+                .single { it.startsWith("script-src ") }.split(Regex("\\s+"))
+            assertTrue("'wasm-unsafe-eval'" in scriptTokens)
+            assertFalse("'unsafe-eval'" in scriptTokens)
+        }
     }
 
     private fun installedTool(toolId: String, name: String, versionCode: Int) = InstalledTool(

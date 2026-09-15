@@ -3,6 +3,7 @@ package io.toolbox.tool.runtime
 import android.webkit.WebResourceResponse
 import androidx.webkit.WebViewAssetLoader
 import io.toolbox.core.data.SecurityProfile
+import java.io.BufferedInputStream
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -16,17 +17,33 @@ internal class BundlePathHandler(
 ) : WebViewAssetLoader.PathHandler {
     override fun handle(path: String): WebResourceResponse {
         val resource = resolveRegularFile(path) ?: return RuntimePolicy.blockedResponse(404, "Not Found")
-        val mime = safeMimeType(resource.fileName.toString())
-            ?: return RuntimePolicy.blockedResponse(415, "Unsupported Media Type")
         return try {
-            WebResourceResponse(
-                mime.type,
-                mime.encoding,
-                200,
-                "OK",
-                RuntimePolicy.responseHeaders(securityProfile),
+            val input = BufferedInputStream(
                 Files.newInputStream(resource, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
             )
+            try {
+                // Peek on the response stream itself, then rewind: a renamed Wasm module must
+                // receive its streaming MIME without opening another file or consuming bytes.
+                input.mark(WASM_MAGIC.size)
+                val prefix = input.readNBytes(WASM_MAGIC.size)
+                input.reset()
+                val mime = if (prefix.contentEquals(WASM_MAGIC)) {
+                    Mime("application/wasm", null)
+                } else {
+                    safeMimeType(resource.fileName.toString())
+                }
+                WebResourceResponse(
+                    mime.type,
+                    mime.encoding,
+                    200,
+                    "OK",
+                    RuntimePolicy.responseHeaders(securityProfile),
+                    input,
+                )
+            } catch (failure: Exception) {
+                input.close()
+                throw failure
+            }
         } catch (_: Exception) {
             RuntimePolicy.blockedResponse(404, "Not Found")
         }
@@ -49,7 +66,7 @@ internal class BundlePathHandler(
                 )
                 if (attributes.isSymbolicLink) return null
                 if (index < segments.lastIndex && !attributes.isDirectory) return null
-                if (index == segments.lastIndex && (!attributes.isRegularFile || attributes.size() > MAX_RESOURCE_BYTES)) {
+                if (index == segments.lastIndex && !attributes.isRegularFile) {
                     return null
                 }
             }
@@ -84,7 +101,8 @@ internal class BundlePathHandler(
         }
     }
 
-    private fun safeMimeType(fileName: String): Mime? = when (fileName.substringAfterLast('.', "").lowercase()) {
+    private fun safeMimeType(fileName: String): Mime = when (fileName.substringAfterLast('.', "").lowercase()) {
+        "wasm" -> Mime("application/wasm", null)
         "html", "htm" -> Mime("text/html", "UTF-8")
         "css" -> Mime("text/css", "UTF-8")
         "js", "mjs" -> Mime("text/javascript", "UTF-8")
@@ -104,12 +122,12 @@ internal class BundlePathHandler(
         "wav" -> Mime("audio/wav", null)
         "mp4" -> Mime("video/mp4", null)
         "webm" -> Mime("video/webm", null)
-        else -> null
+        else -> Mime("application/octet-stream", null)
     }
 
     private data class Mime(val type: String, val encoding: String?)
 
     private companion object {
-        const val MAX_RESOURCE_BYTES = 20L * 1024 * 1024
+        val WASM_MAGIC = byteArrayOf(0x00, 0x61, 0x73, 0x6d)
     }
 }

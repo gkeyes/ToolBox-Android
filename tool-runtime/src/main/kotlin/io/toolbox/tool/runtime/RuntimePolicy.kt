@@ -7,8 +7,8 @@ import java.io.ByteArrayInputStream
 object RuntimePolicy {
     fun contentSecurityPolicy(profile: SecurityProfile): String {
         val script = when (profile) {
-            SecurityProfile.STRICT -> "script-src 'self'"
-            SecurityProfile.COMPAT -> "script-src 'self' 'unsafe-inline'"
+            SecurityProfile.STRICT -> "script-src 'self' 'wasm-unsafe-eval'"
+            SecurityProfile.COMPAT -> "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
         }
         return listOf(
             "default-src 'self'",
@@ -16,7 +16,7 @@ object RuntimePolicy {
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
-            "connect-src 'none'",
+            "connect-src 'self'",
             "media-src 'self' blob:",
             "frame-src 'none'",
             "object-src 'none'",

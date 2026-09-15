@@ -29,10 +29,11 @@ internal object ZipStructureReader {
     private const val DESCRIPTOR = 0x08074b50L
     private const val MAX_EOCD_SEARCH = 65_557
 
-    fun read(archive: Path, limits: PackageLimits): CheckedArchive =
-        RandomAccessFile(archive.toFile(), "r").use { file -> read(file, archive, limits) }
+    fun read(archive: Path, limits: PackageLimits, resources: PackageResourceGuard): CheckedArchive =
+        RandomAccessFile(archive.toFile(), "r").use { file -> read(file, archive, limits, resources) }
 
-    private fun read(file: RandomAccessFile, archive: Path, limits: PackageLimits): CheckedArchive {
+    private fun read(file: RandomAccessFile, archive: Path, limits: PackageLimits, resources: PackageResourceGuard): CheckedArchive {
+        resources.check()
         val eocd = findEocd(file)
         val entriesOnDisk = u16(eocd, 8)
         val entryCount = u16(eocd, 10)
@@ -44,9 +45,6 @@ internal object ZipStructureReader {
         if (entryCount == 0xffff || centralSize == 0xffffffffL || centralOffset == 0xffffffffL) {
             reject(PackageRejectionCode.UNSUPPORTED_ZIP_FEATURE, "ZIP64 archives are not accepted")
         }
-        if (entryCount > limits.maxEntries) {
-            reject(PackageRejectionCode.ENTRY_COUNT_LIMIT, "Archive has $entryCount entries; limit is ${limits.maxEntries}")
-        }
         if (centralOffset + centralSize > file.length()) {
             reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Central directory is outside the archive")
         }
@@ -55,6 +53,7 @@ internal object ZipStructureReader {
         val collisions = mutableMapOf<String, CheckedZipEntry>()
         var totalExtracted = 0L
         repeat(entryCount) {
+            resources.check()
             val fixed = ByteArray(46).also(file::readFully)
             if (u32(fixed, 0) != CENTRAL) reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Invalid central-directory entry")
             val versionMadeBy = u16(fixed, 4)
@@ -80,11 +79,8 @@ internal object ZipStructureReader {
             validateLocalAndDescriptor(file, localOffset, centralOffset, flags, method, rawName, crc32, compressed, extracted)
             file.seek(nextCentral)
             val safePath = PackagePathPolicy.validate(rawName, limits)
-            validateTypeAndLimits(versionMadeBy, externalAttributes, safePath, compressed, extracted, limits)
+            validateType(versionMadeBy, externalAttributes, safePath, compressed, extracted)
             totalExtracted = addExact(totalExtracted, extracted)
-            if (totalExtracted > limits.maxExtractedBytes) {
-                reject(PackageRejectionCode.TOTAL_SIZE_LIMIT, "Archive exceeds the extracted-size limit")
-            }
             val checked = CheckedZipEntry(rawName, safePath, crc32, compressed, extracted)
             collisions.putIfAbsent(safePath.collisionKey, checked)?.let { prior ->
                 reject(PackageRejectionCode.PATH_COLLISION, "Paths collide after NFC/case folding: ${prior.rawName}, $rawName")
@@ -168,13 +164,12 @@ internal object ZipStructureReader {
         }
     }
 
-    private fun validateTypeAndLimits(
+    private fun validateType(
         versionMadeBy: Int,
         externalAttributes: Long,
         path: SafePackagePath,
         compressed: Long,
         extracted: Long,
-        limits: PackageLimits,
     ) {
         if (versionMadeBy ushr 8 == 3) {
             val mode = (externalAttributes ushr 16).toInt() and 0xffff
@@ -188,17 +183,18 @@ internal object ZipStructureReader {
             }
         }
         if (path.directory && (compressed != 0L || extracted != 0L)) reject(PackageRejectionCode.SPECIAL_FILE, "Directory entries must not carry payload bytes")
-        PackagePathPolicy.forbiddenCode(path.normalized)?.let { reject(it, "Forbidden payload type: ${path.normalized}") }
-        if (!path.directory && extracted > limits.maxEntryBytes) reject(PackageRejectionCode.ENTRY_SIZE_LIMIT, "${path.normalized} exceeds the per-file limit")
-        if (!path.directory && extracted > 0 && compressed == 0L) reject(PackageRejectionCode.COMPRESSION_RATIO_LIMIT, "${path.normalized} has an invalid compression ratio")
-        if (!path.directory && compressed > 0 && extracted.toDouble() / compressed > limits.maxCompressionRatio) {
-            reject(PackageRejectionCode.COMPRESSION_RATIO_LIMIT, "${path.normalized} exceeds the compression-ratio limit")
+        if (PackagePathPolicy.forbiddenCode(path.normalized) == PackageRejectionCode.NESTED_ARCHIVE) {
+            reject(PackageRejectionCode.NESTED_ARCHIVE, "Nested archive: ${path.normalized}")
+        }
+        if (!path.directory && extracted > 0 && compressed == 0L) {
+            reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Nonempty entry has no compressed payload")
         }
     }
 
     private fun rejectFileDirectoryCollisions(entries: List<CheckedZipEntry>) {
         val files = entries.filterNot { it.path.directory }.associateBy { it.path.collisionKey }
         entries.forEach { entry ->
+            checkPackageInterrupted()
             val segments = entry.path.collisionKey.split('/')
             for (end in 1 until segments.size) {
                 files[segments.take(end).joinToString("/")]?.let { file ->
@@ -233,7 +229,7 @@ internal object ZipStructureReader {
     private fun addExact(left: Long, right: Long): Long = try {
         Math.addExact(left, right)
     } catch (error: ArithmeticException) {
-        reject(PackageRejectionCode.TOTAL_SIZE_LIMIT, "Archive size overflow")
+        reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Archive size overflow")
     }
 
     private fun u16(bytes: ByteArray, offset: Int): Int =

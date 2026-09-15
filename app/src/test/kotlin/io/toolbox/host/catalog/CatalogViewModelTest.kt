@@ -308,8 +308,8 @@ private class RecordingCatalogOrganizationRepository(
 }
 
 private object UnusedHostPackageOperations : HostPackageOperations {
-    override suspend fun importPackage(input: PackageInput): HostImportResult = error("not used")
-    override suspend fun confirmImport(confirmationId: String): HostImportResult = error("not used")
+    override suspend fun importPackage(input: PackageInput, control: io.toolbox.tool.packagekit.lifecycle.PackageImportControl): HostImportResult = error("not used")
+    override suspend fun confirmImport(confirmationId: String, control: io.toolbox.tool.packagekit.lifecycle.PackageImportControl): HostImportResult = error("not used")
     override suspend fun cancelImport(confirmationId: String): io.toolbox.host.HostImportCancellationResult = error("not used")
     override suspend fun installedManifest(toolId: String): HostInstalledManifestResult = error("not used")
     override suspend fun deleteTool(toolId: String): HostDeleteResult = error("not used")

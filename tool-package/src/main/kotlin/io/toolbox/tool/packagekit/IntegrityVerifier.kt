@@ -1,5 +1,10 @@
 package io.toolbox.tool.packagekit
 
+import java.io.InputStreamReader
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.Signature
@@ -10,66 +15,62 @@ internal object IntegrityVerifier {
     private val hashPattern = Regex("^[0-9a-fA-F]{64}$")
 
     fun verify(
-        metadata: Map<String, ByteArray>,
+        metadata: Map<String, Path>,
         actualHashes: Map<String, String>,
         limits: PackageLimits,
+        resources: PackageResourceGuard,
     ) {
-        val integrityBytes = metadata["integrity.json"]
-        val signatureBytes = metadata["signature.json"]
-        if (integrityBytes == null) {
-            if (signatureBytes != null) {
-                reject(PackageRejectionCode.INTEGRITY_MALFORMED, "signature.json requires integrity.json")
-            }
+        val integrityPath = metadata["integrity.json"]
+        val signaturePath = metadata["signature.json"]
+        if (integrityPath == null) {
+            if (signaturePath != null) reject(PackageRejectionCode.INTEGRITY_MALFORMED, "signature.json requires integrity.json")
             return
         }
-        val expectedHashes = try {
-            parseIntegrity(integrityBytes, limits)
+        val seen = mutableSetOf<String>()
+        val collisions = mutableSetOf<String>()
+        try {
+            val decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            Files.newInputStream(integrityPath).use { input ->
+                InputStreamReader(input, decoder).buffered().use { reader ->
+                    IntegrityJsonReader(reader, resources).read { rawPath, hash ->
+                        val safe = try {
+                            PackagePathPolicy.validate(rawPath, limits)
+                        } catch (error: InspectionRejected) {
+                            throw JsonFormatException("Invalid integrity path: ${error.rejection.code}")
+                        }
+                        if (safe.directory || safe.normalized in setOf("integrity.json", "signature.json")) {
+                            throw JsonFormatException("Integrity contains a directory or metadata path")
+                        }
+                        if (!seen.add(safe.normalized) || !collisions.add(safe.collisionKey)) {
+                            throw JsonFormatException("Duplicate or colliding integrity path")
+                        }
+                        if (!hashPattern.matches(hash)) throw JsonFormatException("Invalid SHA-256")
+                        val actual = actualHashes[safe.normalized]
+                            ?: reject(PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH, "Integrity includes an absent file")
+                        if (!MessageDigest.isEqual(actual.lowercase().toByteArray(), hash.lowercase().toByteArray())) {
+                            reject(PackageRejectionCode.INTEGRITY_HASH_MISMATCH, "Content hash mismatch: ${safe.normalized}")
+                        }
+                    }
+                }
+            }
         } catch (error: JsonFormatException) {
             reject(PackageRejectionCode.INTEGRITY_MALFORMED, error.message ?: "Malformed integrity.json")
-        } catch (error: InspectionRejected) {
-            reject(PackageRejectionCode.INTEGRITY_MALFORMED, error.rejection.detail)
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            reject(PackageRejectionCode.INTEGRITY_MALFORMED, "Integrity JSON is not valid UTF-8")
         }
-        val contentHashes = actualHashes - setOf("integrity.json", "signature.json")
-        if (expectedHashes.keys != contentHashes.keys) {
-            reject(PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH, "Integrity file set must cover every package file")
+        val contentCount = actualHashes.keys.count { it != "integrity.json" && it != "signature.json" }
+        if (seen.size != contentCount) {
+            reject(PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH, "Integrity must cover every package file")
         }
-        val mismatch = expectedHashes.keys.firstOrNull { path ->
-            !MessageDigest.isEqual(
-                expectedHashes.getValue(path).lowercase().toByteArray(Charsets.US_ASCII),
-                contentHashes.getValue(path).lowercase().toByteArray(Charsets.US_ASCII),
-            )
+        if (signaturePath != null) {
+            resources.check()
+            verifySignature(Files.readAllBytes(signaturePath), integrityPath, resources)
         }
-        if (mismatch != null) {
-            reject(PackageRejectionCode.INTEGRITY_HASH_MISMATCH, "Content hash mismatch: $mismatch")
-        }
-        if (signatureBytes != null) verifySignature(signatureBytes, integrityBytes)
     }
 
-    private fun parseIntegrity(bytes: ByteArray, limits: PackageLimits): Map<String, String> {
-        val root = StrictJson.parse(bytes).asObject("integrity")
-        root.requireOnly("integrity", setOf("schemaVersion", "algorithm", "files"))
-        if (root.required("schemaVersion").asInt("integrity.schemaVersion") != 1) {
-            throw JsonFormatException("integrity.schemaVersion must be 1")
-        }
-        if (root.required("algorithm").asString("integrity.algorithm") != "SHA-256") {
-            throw JsonFormatException("integrity.algorithm must be SHA-256")
-        }
-        val result = linkedMapOf<String, String>()
-        val collisions = mutableSetOf<String>()
-        for ((rawPath, value) in root.required("files").asObject("integrity.files")) {
-            val safe = PackagePathPolicy.validate(rawPath, limits)
-            if (safe.directory || safe.normalized in setOf("integrity.json", "signature.json")) {
-                throw JsonFormatException("integrity.files contains forbidden metadata path: $rawPath")
-            }
-            if (!collisions.add(safe.collisionKey)) throw JsonFormatException("integrity.files contains colliding paths")
-            val hash = value.asString("integrity.files.$rawPath")
-            if (!hashPattern.matches(hash)) throw JsonFormatException("Invalid SHA-256 for $rawPath")
-            result[safe.normalized] = hash.lowercase()
-        }
-        return result
-    }
-
-    private fun verifySignature(bytes: ByteArray, integrityBytes: ByteArray) {
+    private fun verifySignature(bytes: ByteArray, integrityPath: Path, resources: PackageResourceGuard) {
         val parsed = try {
             val root = StrictJson.parse(bytes).asObject("signature")
             root.requireOnly(
@@ -103,13 +104,26 @@ internal object IntegrityVerifier {
         if (!MessageDigest.isEqual(expectedKeyId.toByteArray(), parsed.keyId.toByteArray())) {
             reject(PackageRejectionCode.SIGNATURE_KEY_ID_MISMATCH, "signature.keyId does not match publicKey")
         }
-        val valid = runCatching {
+        val valid = try {
             Signature.getInstance("Ed25519").run {
                 initVerify(publicKey)
-                update(integrityBytes)
+                Files.newInputStream(integrityPath).use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        resources.check()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count > 0) update(buffer, 0, count)
+                    }
+                }
                 verify(parsed.signature)
             }
-        }.getOrDefault(false)
+        } catch (error: InspectionRejected) {
+            throw error
+        } catch (error: Exception) {
+            checkPackageInterrupted()
+            false
+        }
         if (!valid) {
             reject(PackageRejectionCode.SIGNATURE_INVALID, "Ed25519 signature is invalid")
         }

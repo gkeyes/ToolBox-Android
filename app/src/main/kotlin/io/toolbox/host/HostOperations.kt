@@ -3,6 +3,7 @@ package io.toolbox.host
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RuntimeM2Handlers
 import io.toolbox.tool.runtime.RuntimePreparationCode
@@ -29,6 +30,7 @@ internal sealed interface HostInstalledManifestResult {
 }
 
 internal sealed interface HostImportResult {
+    data object Cancelled : HostImportResult
     data class Installed(val toolId: String, val toolName: String) : HostImportResult
     data class ConfirmationRequired(val confirmation: HostImportConfirmation) : HostImportResult
     data class Failed(val code: String, val message: String) : HostImportResult
@@ -64,8 +66,8 @@ internal sealed interface HostExampleInstallResult {
 }
 
 internal interface HostPackageOperations {
-    suspend fun importPackage(input: PackageInput): HostImportResult
-    suspend fun confirmImport(confirmationId: String): HostImportResult
+    suspend fun importPackage(input: PackageInput, control: PackageImportControl = PackageImportControl()): HostImportResult
+    suspend fun confirmImport(confirmationId: String, control: PackageImportControl = PackageImportControl()): HostImportResult
     suspend fun cancelImport(confirmationId: String): HostImportCancellationResult
     suspend fun installedManifest(toolId: String): HostInstalledManifestResult
     suspend fun deleteTool(toolId: String): HostDeleteResult

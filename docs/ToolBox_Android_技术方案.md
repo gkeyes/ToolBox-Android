@@ -5,7 +5,7 @@
 
 ## 1. 产品合同
 
-ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户面对的主流程是：
+ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript、WebAssembly 及配套资源 ZIP）的小工具宿主。用户面对的主流程是：
 
 ```text
 选择 .tbx → 内部检查 → 安装成功/失败 → 打开工具 → 管理权限/后台保障 → 删除
@@ -29,7 +29,8 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 ### 1.2 不做的事情
 
 - 在线商店、账号、云同步、代码/数据导出、回滚 UI、工具迁移脚本。
-- 任意 shell、Dex、JNI、APK、JAR、class、动态原生代码、Root 命令接口或 WebAssembly JIT。
+- 任意 shell、Dex、JNI、APK、JAR、class、动态原生代码或 Root 命令接口。WebView 沙箱内的标准 WebAssembly 可用。
+- 宿主 WASI 接口、跨源隔离、共享内存/pthreads 运行环境及原生 Wasm 引擎；工具可自行携带 JS 适配层。
 - `MANAGE_EXTERNAL_STORAGE`、`QUERY_ALL_PACKAGES`、无障碍、短信或联系人权限。
 - Service Worker、无用户启动会话的后台 WebView，或没有持续通知和停止入口的无界后台执行。
 - 宿主不增加行情、轨迹、行程、Token 专用表或业务通知判断；独立 `.tbx` 的业务状态仍由工具自己保存和解释。
@@ -49,8 +50,9 @@ ToolBox 是本地 `.tbx`（HTML/CSS/JavaScript ZIP）的小工具宿主。用户
 5. 工具网络默认关闭；开启该工具的 network 权限后，由 ToolBox 原生 HTTPS 代理联网。
    不再限制目的域名、IP 字面量和 DNS 解析地址范围，也不要求额外域名确认。
    保留 TLS 证书校验、跨来源重定向清除凭据；代理不使用 ToolBox cookie、缓存或认证状态。
-6. 安装是事务性、可补偿的；拒绝 Zip Slip、Zip Bomb、路径碰撞、符号链接、嵌套压缩包、
-   原生或动态代码负载。
+6. 安装是事务性、可补偿的；拒绝 Zip Slip、结构/大小/CRC 不一致的 ZIP、路径碰撞、符号链接、
+   嵌套压缩包及 Android 原生/动态负载（含 ELF、DEX、class）。通过结构与实际输出核验、
+   可用空间/内存压力检查和可取消处理防止资源耗尽，不以固定压缩比作为安全依据。
 7. 无效签名必须阻止安装；未签名工具可正常安装，但不会获得默认关闭的外部能力。
 8. 不记录 clipboard、文件、secure storage、HTTP 请求/响应 body 的内容。
 9. 次进程仅用于崩溃/内存隔离，绝不表述为独立 UID 沙箱。
@@ -88,11 +90,22 @@ DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTran
 `signature.json` 可选。检查器必须在 app-private 临时目录中执行：
 
 - 规范化 ZIP 路径，拒绝绝对路径、`..`、反斜杠绕过、大小写/Unicode 冲突、链接和嵌套归档；
-- 限制文件数、单文件、压缩比和总解压大小，拒绝 APK/DEX/SO/JAR/class 与动态代码；
+- 按内容拒绝 ELF、DEX、class，保留 APK/JAR 等嵌套归档规则；允许 `.wasm`，识别为 Wasm
+  的文件不因 `.so` 等原生后缀被拒绝。不新增 Wasm 指令、来源、权限或签名要求；
+- 校验 ZIP 中央目录、本地头、数据描述符、CRC 及声明/实际大小的一致性；累计字节用防溢出的
+  `Long` 运算。保留 ZIP32 格式范围，不支持 ZIP64、分卷或加密 ZIP；
 - 严格验证 manifest、入口、允许的 capability、版本、网络域名和资源集合；
-- 存在 `integrity.json` 时，验证其覆盖的原始文件 SHA-256；
+- 存在 `integrity.json` 时，流式逐项解析并对照文件索引，验证文件集合及原始文件 SHA-256；
+  重复键、路径碰撞、遗漏及额外文件仍失败，不将整个完整性文件读入内存；
 - 不带签名时正常继续；存在 `signature.json` 时，使用包内 Ed25519 public key 验证
-  `integrity.json` 原始字节。不存在、格式错误、key ID 不匹配或签名失败均为阻断。
+  `integrity.json` 原始字节，分块输入且不重新序列化。不存在、格式错误、key ID 不匹配或签名失败均为阻断。
+
+压缩包、总解压量、单文件、条目数量、压缩比与 `integrity.json` 不设产品固定配额。安装资源检查
+接口可注入，生产实现读取目标卷实际可用空间和系统内存压力；复制、目录扫描、解压、哈希及暂存
+复制均在 IO dispatcher 分块执行并响应取消。解压前按声明总量检查，写入时持续核验；空间预算
+计入当前阶段尚需写入的内容及暂存复制额外占用，保留旧版本，不提前删除旧版本腾空间。
+空间竞争、写入失败和系统资源不足返回明确错误并清理；不以捕获 OOM 代替资源检查，不增加安装时限。
+manifest、签名描述和路径的既有格式/元数据校验继续适用，容量仍受设备、文件系统及 ZIP 格式约束。
 
 不保存发布者、签名指纹、风险结论或审核会话。签名验证只回答“该包带来的签名是否有效”，
 不建立发行者信任系统。
@@ -109,6 +122,9 @@ DataStore 只包含 `theme`、`backgroundEnabled`、`themeStyle` 和 `reduceTran
    提交失败或中断时恢复旧内容。
 6. 成功时回到工具列表并显示简短成功反馈；失败显示可操作原因，删除 staged 目录、临时
    文件和未提交记录。
+
+导入反馈提供“取消”操作。原子提交前取消会清理临时内容并保留旧工具；进入提交阶段后，先完成
+提交或回滚，再报告实际最终结果，不将已成功安装报告为“已取消”。安装互斥与事务恢复机制保持不变。
 
 没有“确认审核”“选择安装权限”“继续恢复审核”页面；唯一额外确认是用户明确要求的同版本覆盖或
 降级。若应用启动时发现未完成安装事务，内部回滚或清理它；无法恢复的外部 URI 只提示用户重新选择文件。
@@ -216,9 +232,22 @@ JS 传入字段。没有持续会话时，工具切换或界面销毁会关闭�
 无界面恢复的 runtime 也可在返回前台后获得这些能力。文件令牌与相机缓存属于 runtime session，
 Activity 重建不主动销毁它们；系统 URI 授权仍是短期的，不做持久授权。会话关闭拒绝迟到的文件结果。
 
-耗时计算使用随 `.tbx` 安装的同源静态 Web Worker，不占用页面的 DOM/渲染线程；CSP 仅允许
+strict 与 compat 默认支持 WebView 的标准 WebAssembly API；`script-src` 均允许
+`'wasm-unsafe-eval'`，继续禁止 JavaScript `'unsafe-eval'`。strict 禁止内联脚本，compat 允许内联脚本。
+不增加 Wasm 语义解析器、特性白名单或能力开关；WebView 支持的 SIMD、GC、异常处理等特性自然可用。
+损坏模块、缺少 imports、不支持的指令由 WebView 返回标准错误；工具应捕获并提示，必要时更新 WebView，
+不通过开放 JS eval 降级。允许编译内存中的字节，包括通过现有授权 API 获得的字节，不承诺字节只能来自包内。
+
+`connect-src 'self'` 允许页面及 Worker 通过 `fetch`/XHR 读取当前工具的已安装资源，无需 network grant；
+exact-origin 检查与 AssetLoader 保持隔离，外部网络仍须通过现有授权 API。`.wasm` 或具有 Wasm 文件头
+的资源返回 `application/wasm`、编码 `null`，支持 `instantiateStreaming`；其他已通过安装检查且扩展名
+未知的资源（如 `.data`、`.bin`、无后缀）返回 `application/octet-stream`，可读取字节。
+保留 `nosniff` 与路径检查，单资源不设固定体积上限，资源流由 WebView 消费。
+
+耗时计算使用随 `.tbx` 安装的同源 classic 或 module Dedicated Worker，不占用页面的 DOM/渲染线程；CSP 仅允许
 `worker-src 'self'`，远程、`blob:`、`data:` Worker 和 ServiceWorker 继续阻断。Worker 不暴露
-ToolBox bridge，结果经 `postMessage` 返回顶层页面后再调用原生能力。宿主 RPC 的 UTF-8 计量、
+ToolBox bridge，脚本响应沿用相同 CSP，可读取同源资源和执行 Wasm；结果经 `postMessage` 返回顶层页面后再调用原生能力。
+宿主 RPC 的 UTF-8 计量、
 JSON 解码、摘要与 handler 调度离开 UI 回调线程，并以保留系统渲染余量的有限并发执行；文件、
 数据库 handler 继续切换到 IO dispatcher。网络正文由 OkHttp 的回调线程有界读取，取消绑定覆盖
 响应头及整个正文，且每个响应都关闭。工具计算量不由该 RPC 并发上限约束。

@@ -506,6 +506,7 @@ private fun ToolManagerRouteContent(
         onDismissImport = importViewModel::dismissMessage,
         onConfirmImport = importViewModel::confirmVersionReplacement,
         onCancelImport = importViewModel::cancelVersionReplacement,
+        onCancelActiveImport = importViewModel::cancelActiveImport,
         onOpenDetails = onOpenDetails,
         runningTools = {
             CatalogRunningTools(

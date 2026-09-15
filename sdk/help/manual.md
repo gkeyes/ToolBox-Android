@@ -247,7 +247,9 @@ ToolBox 自动在顶层网页注入 window.ToolBox，不需要下载或手动引
 
 先等待 ToolBox.ready() 再进行原生调用。剪贴板、触觉、文件、相机、分享、浏览器打开和快捷方式等交互，要在按钮的真实点击回调中及时发起；不要先等待长网络请求再尝试使用该手势。不能用 JS 自报 userGesture:true 代替触摸。
 
-strict 模式使用本地外链脚本和样式，不要写内联 script、onclick 字符串、eval、new Function、远程脚本或 CDN 依赖。构建工具产出的资源要一起打包。网络数据用 ToolBox.network.request；不要依赖页面 fetch、WebSocket、iframe 或远程子资源绕过ToolBox网络权限。
+strict 模式使用本地外链脚本和样式，不要写内联 script、onclick 字符串、eval、new Function、远程脚本或 CDN 依赖。compat 允许内联脚本，两种配置均禁止 JS eval/new Function，并默认允许标准 WebAssembly。构建工具产出的资源要一起打包。
+
+页面和同源 Worker 可通过 fetch/XHR 读取当前工具的包内资源，包括 Wasm 和二进制数据，不需要 network 权限。外部网络数据用 ToolBox.network.request 等现有网络 API；页面 fetch、WebSocket、iframe 或远程子资源不能绕过ToolBox网络权限，也不能读取另一个工具的资源。
 
 图标、字体和图片应引用包内相对路径；不要使用电脑绝对路径。普通网页的文件选择器和摄像头直通不属于本接口，请使用 files.open 和 camera.capture。
 
@@ -808,9 +810,49 @@ async function cancelReminder() {
 }
 ```
 
+### WebAssembly 与二进制资源
+
+strict、compat 均可使用 WebView 的标准 WebAssembly API，无需添加 manifest 字段、权限或签名。可以安装 .wasm、大小写后缀、无后缀及以 .so 命名的 Wasm；内容检查仍拒绝 ELF、DEX、class 和伪装的嵌套压缩包。Wasm 编译由 WebView 完成，不调用 Android 原生执行引擎。
+
+.wasm 或具有 Wasm 文件头的资源以 application/wasm 返回且不附 charset，支持流式实例化。已通过安装检查的其他未知扩展名资源以 application/octet-stream 返回，所以 .data、.bin 或无后缀数据都可用 arrayBuffer() 读取。工具包资源及单次本地资源读取不设固定体积配额，实际能力取决于设备空间、内存和 WebView。
+
+假设包内 add.wasm 导出 add(a, b)，以下代码放入独立 app.js；页面需要 id 为 result 的输出元素。模块的 imports 按实际构建要求传入第二个参数。
+
+```js
+(async function () {
+  const result = document.getElementById("result");
+  try {
+    const { instance } = await WebAssembly.instantiateStreaming(fetch("add.wasm"), {});
+    result.textContent = String(instance.exports.add(20, 22));
+  } catch (error) {
+    result.textContent = "Wasm 加载失败：" + error.message;
+  }
+})();
+```
+
+也可以先读取字节，再实例化，并读取随包提供的数据文件；此例放入异步函数中：
+
+```js
+const response = await fetch("add.wasm");
+if (!response.ok) throw new Error("模块读取失败：" + response.status);
+const bytes = await response.arrayBuffer();
+const { instance } = await WebAssembly.instantiate(bytes, {});
+const dataResponse = await fetch("assets/model.data");
+if (!dataResponse.ok) throw new Error("数据读取失败：" + dataResponse.status);
+const modelBytes = new Uint8Array(await dataResponse.arrayBuffer());
+document.getElementById("result").textContent =
+  instance.exports.add(20, 22) + "，数据字节数：" + modelBytes.byteLength;
+```
+
+也允许编译内存中的 Uint8Array 或 ArrayBuffer，包括经 ToolBox 已授权 API 获取的字节；宿主不要求字节只能来自包内。内存加载时遵守来源 API 原有的权限和消息/响应限制。
+
+WebView 已支持的 SIMD、GC、异常处理等 Wasm 特性自然可用，没有宿主指令白名单或额外 Wasm 配额。宿主不提供 WASI 接口；工具可携带 JS 适配层。此环境未提供跨源隔离、共享内存/pthreads 配套环境；依赖这些功能的库应选择适合普通 WebView 的构建。ToolBox 不因模块声明这些特性而拒绝安装，但不保证 WebView 能实例化或运行。
+
+损坏模块、缺少 imports 或引擎不支持的特性会产生标准 WebAssembly 错误，应捕获并显示具体原因。若是 WebView 版本不支持，需要更新 Android System WebView；不通过开启 JS unsafe-eval 降级。Wasm 所需 wasm-unsafe-eval 仅允许 Wasm 编译，eval/new Function 仍不可用。流式加载失败时不要一律归因于引擎过旧，还应检查路径、HTTP 状态、模块内容和 imports。
+
 ### 高性能计算与 Worker
 
-大量计算放在随包安装的同源 worker.js 中；页面主线程只负责输入、渲染和 ToolBox 调用。worker 不能直接访问 ToolBox，计算结果用 postMessage 返回顶层页面。
+大量计算放在随包安装的同源 worker.js 中；支持 classic 和 module 两种 Dedicated Worker。页面主线程只负责输入、渲染和 ToolBox 调用。worker 不能直接访问 ToolBox，计算结果用 postMessage 返回顶层页面。Worker 脚本沿用同一 CSP，可读取当前工具资源并执行 Wasm。
 
 远程、blob、data Worker 与 ServiceWorker 不可用。把 worker.js 和它引用的包内文件一起打包；通用打包器会递归包含这些资源。不要把未经信任的返回文本赋给 innerHTML。
 
@@ -830,6 +872,35 @@ self.onmessage = ({ data }) => {
 ```
 
 第一段放 app.js，第二段保存为 worker.js；不再需要时调用 worker.terminate()。同时避免重叠的网络轮询、每次计时器都重建整页 DOM，以及在每秒更新中重复读取全部存储。
+
+同一个不含 import/export 的脚本可作为 classic 或 module Worker 使用。下面同时演示两种启动方式，分别计算 42；实际工具按自己的构建方式选择一种即可。第一段放 app.js，第二段保存为 wasm-worker.js，并打包前节的 add.wasm。
+
+```js
+for (const type of ["classic", "module"]) {
+  const worker = new Worker("wasm-worker.js", { type });
+  worker.onmessage = ({ data }) => {
+    document.getElementById("result").textContent =
+      type + "：" + (data.error || data.result);
+    worker.terminate();
+  };
+  worker.onerror = () => {
+    document.getElementById("result").textContent = type + " Worker 启动失败";
+    worker.terminate();
+  };
+  worker.postMessage({ a: 20, b: 22 });
+}
+```
+
+```js
+self.onmessage = async ({ data }) => {
+  try {
+    const { instance } = await WebAssembly.instantiateStreaming(fetch("add.wasm"), {});
+    self.postMessage({ result: instance.exports.add(data.a, data.b) });
+  } catch (error) {
+    self.postMessage({ error: error.message });
+  }
+};
+```
 
 ## 打包与排错
 
@@ -966,7 +1037,11 @@ if __name__ == "__main__":
 
 ### 包结构、完整性与更新
 
-ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-tool/。资源路径大小写必须一致，不能存在符号链接、路径碰撞、上级路径、嵌套压缩包或原生/动态代码负载。
+ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-tool/。资源路径大小写必须一致，不能存在符号链接、路径碰撞、上级路径、嵌套压缩包或 Android 原生/动态代码负载（含 ELF、DEX、class）。WebView 标准 Wasm 和配套数据可随包提供，Wasm 内容不会因 .so 等原生后缀被拒绝。
+
+安装器不对压缩包大小、解压总量、单文件、条目数、压缩比或 integrity.json 设置固定产品配额。复制、解压、校验和暂存均分块处理，并检查目标卷可用空间与系统内存压力；暂存额外占用也计入，安装更新期间保留旧版本。容量仍受设备空间、内存和 ZIP32 格式约束，不支持 ZIP64、分卷或加密 ZIP；manifest、签名描述及路径的既有格式/元数据校验仍适用。
+
+导入时可点击“取消”。提交前取消、资源不足或写入失败会清理临时内容并保留旧工具；原子提交开始后，ToolBox 会先完成提交或回滚，再显示实际结果。空间不足时先释放设备空间再重试，系统资源不足时稍后重试。正常高压缩比文件本身不会被拒绝；伪造大小、CRC 或目录/本地头不一致的 ZIP 会失败。
 
 完整性文件使用 SHA-256 对原始文件字节逐项计算；不把 integrity.json 或 signature.json 本身列入 files。资源发生任何改动都应重新打包，不要在打包后直接替换 ZIP 内文件。
 
@@ -981,7 +1056,7 @@ ZIP 根部应直接出现 manifest.json 和入口文件，不要多包一层 my-
 }
 ```
 
-上面只展示格式，文字占位不是有效摘要；实际文件清单由打包器生成。存在完整性清单时必须与包内容一致。没有签名不需要额外审核或申请发行资格。
+上面只展示格式，文字占位不是有效摘要；实际文件清单由打包器生成。存在完整性清单时必须与包内容一致；安装器流式逐项校验，重复键、路径碰撞、文件遗漏或额外文件均失败。存在签名时仍校验 integrity.json 的原始字节，不重新排版或序列化；无效签名阻止安装。没有签名不需要额外审核或申请发行资格。
 
 更新同一工具：保持 id 不变，通常同时提高 version 和 versionCode，再重新导入。更高 versionCode 直接安装；相同或更低 versionCode 在完整包检查通过后显示当前与待安装版本，只有用户确认才覆盖或降级。版本确认不绕过签名、完整性、最低ToolBox版本或能力检查。替换会停止旧运行环境、任务和通知；普通 KV 和新 manifest 仍声明能力的原有开启/关闭状态保留，不需要每次重新开权限。新增能力默认关闭，移除的能力清理；以后重新加入也需要手动开启。失败或取消不改变原有工具和权限，Android 系统权限仍需满足。安全存储和临时令牌仍按现有策略清理，授权开关保留不代表 Token 内容保留。删除会同时清理代码、数据、授权、任务和通知。
 

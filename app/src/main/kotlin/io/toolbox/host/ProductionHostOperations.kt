@@ -28,6 +28,8 @@ import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.runtime.awaitRuntimeStandardStorageIdle
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
 import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.AndroidPackageResourceProbe
+import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.packagekit.PackageRejection
 import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
 import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailure
@@ -75,6 +77,7 @@ internal class ProductionHostPackageOperations(
         lifecycle = repositories.lifecycle,
         transactions = repositories.installs,
         hostVersion = BuildConfig.VERSION_NAME,
+        resourceProbe = AndroidPackageResourceProbe(application),
     )
     private val manifestReader = HostInstalledManifestReader(application.filesDir, repositories.catalog)
     private val cleanup = object : ToolStateCleanup {
@@ -110,11 +113,11 @@ internal class ProductionHostPackageOperations(
         }
     }
 
-    override suspend fun importPackage(input: PackageInput): HostImportResult =
-        packages.importAndInstall(input, cleanup).toHostImportResult()
+    override suspend fun importPackage(input: PackageInput, control: PackageImportControl): HostImportResult =
+        packages.importAndInstall(input, cleanup, control).toHostImportResult()
 
-    override suspend fun confirmImport(confirmationId: String): HostImportResult =
-        packages.confirmInstall(confirmationId, cleanup).toHostImportResult()
+    override suspend fun confirmImport(confirmationId: String, control: PackageImportControl): HostImportResult =
+        packages.confirmInstall(confirmationId, cleanup, control).toHostImportResult()
 
     override suspend fun cancelImport(confirmationId: String): HostImportCancellationResult =
         packages.cancelInstall(confirmationId)?.let { failure ->
@@ -125,6 +128,7 @@ internal class ProductionHostPackageOperations(
         } ?: HostImportCancellationResult.Cancelled
 
     private suspend fun PackageInstallResult.toHostImportResult(): HostImportResult = when (this) {
+        PackageInstallResult.Cancelled -> HostImportResult.Cancelled
         is PackageInstallResult.Installed -> {
             val name = repositories.catalog.observeTool(toolId).first()?.metadata?.name ?: "工具"
             HostImportResult.Installed(toolId, name)
@@ -172,6 +176,7 @@ internal class ProductionHostPackageOperations(
         var available = 0
         for (asset in BUNDLED_EXAMPLES) {
             when (val result = packages.importAndInstall(AssetPackageInput(application, asset), cleanup)) {
+                PackageInstallResult.Cancelled -> return HostExampleInstallResult.Failed("CANCELLED", "范例安装已取消。")
                 is PackageInstallResult.Installed -> available += 1
                 is PackageInstallResult.ConfirmationRequired -> {
                     val failure = packages.cancelInstall(result.confirmation.id)
@@ -216,6 +221,10 @@ internal class ProductionHostPackageOperations(
 
     private fun importFailureMessage(rejection: PackageRejection): String = when (rejection.code.name) {
         "SIGNATURE_INVALID" -> "工具包签名无效，无法安装。"
+        "INSUFFICIENT_SPACE" -> "存储空间不足，请释放空间后重新安装。"
+        "INSUFFICIENT_RESOURCES" -> "设备可用内存不足，请关闭部分应用后重新安装。"
+        "RESOURCE_CHECK_FAILED" -> "无法读取设备可用资源，请稍后重试。"
+        "CLEANUP_FAILED" -> "临时安装文件未能清理，请稍后重试。"
         else -> "工具包无法安装，请检查文件后重试。"
     }
 
@@ -223,6 +232,7 @@ internal class ProductionHostPackageOperations(
         "CONFIRMATION_EXPIRED" -> "安装确认已失效，请重新选择工具包。"
         "UNSUPPORTED_HOST_VERSION" -> "此工具需要更高版本的 ToolBox。"
         "BUSY" -> "正在处理另一个工具包，请稍后重试。"
+        "CLEANUP_FAILURE" -> "临时安装状态未能清理，请稍后重试。"
         else -> "安装未完成，请重试。"
     }
 

@@ -55,6 +55,51 @@ class PackageToolTest(unittest.TestCase):
         PACKAGER.package_tool(self.source, output, overwrite=True)
         self.assertTrue(zipfile.is_zipfile(output))
 
+    def test_wasm_and_companion_binary_resources_preserve_bytes_and_integrity(self):
+        # (module (func (export "add") (param i32 i32) (result i32)
+        #   local.get 0 local.get 1 i32.add))
+        wasm = bytes.fromhex(
+            "0061736d0100000001070160027f7f017f03020100070701036164640000"
+            "0a09010700200020016a0b"
+        )
+        resources = {
+            "compute.wasm": wasm,
+            "upper.WASM": wasm,
+            "modules/side.so": wasm,
+            "modules/extensionless": wasm,
+            "assets/model.data": bytes(range(256)) * 4,
+            "assets/payload.bin": b"\x00\xff\xfe\x80\r\n\x00",
+            "assets/raw": b"\x00\x80\xffnot UTF-8\n",
+        }
+        for name, payload in resources.items():
+            target = self.source / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
+        output = self.root / "wasm-tool.tbx"
+        PACKAGER.package_tool(self.source, output)
+        with zipfile.ZipFile(output) as archive:
+            integrity = json.loads(archive.read("integrity.json"))
+            self.assertEqual(set(integrity["files"]), set(archive.namelist()) - {"integrity.json"})
+            for name, payload in resources.items():
+                with self.subTest(resource=name):
+                    self.assertEqual(archive.read(name), payload)
+                    self.assertEqual(integrity["files"][name], hashlib.sha256(payload).hexdigest())
+
+    def test_many_companion_files_are_not_subject_to_former_install_count_limit(self):
+        data = self.source / "data"
+        data.mkdir()
+        for index in range(513):
+            (data / f"part-{index:04d}.bin").write_bytes(index.to_bytes(2, "little"))
+        output = self.root / "many-resources.tbx"
+        PACKAGER.package_tool(self.source, output)
+        with zipfile.ZipFile(output) as archive:
+            integrity = json.loads(archive.read("integrity.json"))
+            for index in range(513):
+                name = f"data/part-{index:04d}.bin"
+                payload = index.to_bytes(2, "little")
+                self.assertEqual(archive.read(name), payload)
+                self.assertEqual(integrity["files"][name], hashlib.sha256(payload).hexdigest())
+
     def test_invalid_source_has_no_output_or_temporary_residue(self):
         for kind in ("entry", "icon", "archive", "file-link", "directory-link"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory(dir=self.root) as directory:

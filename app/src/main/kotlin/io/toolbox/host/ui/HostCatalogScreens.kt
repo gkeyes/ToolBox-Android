@@ -53,6 +53,7 @@ import io.toolbox.host.catalog.CatalogFeedback
 import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
+import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import java.text.DateFormat
 import java.util.Date
@@ -70,6 +71,7 @@ internal fun ToolManagerScreen(
     onOpenDetails: (String) -> Unit,
     onConfirmImport: () -> Unit = {},
     onCancelImport: () -> Unit = {},
+    onCancelActiveImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
 ) {
     PrimaryScreen(
@@ -90,6 +92,7 @@ internal fun ToolManagerScreen(
             onOpenDetails = onOpenDetails,
             onConfirmImport = onConfirmImport,
             onCancelImport = onCancelImport,
+            onCancelActiveImport = onCancelActiveImport,
             runningTools = runningTools,
         )
     }
@@ -108,6 +111,7 @@ internal fun ToolManagerContent(
     onOpenDetails: (String) -> Unit,
     onConfirmImport: () -> Unit = {},
     onCancelImport: () -> Unit = {},
+    onCancelActiveImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
 ) {
     val confirmation = importState.confirmation
@@ -129,7 +133,13 @@ internal fun ToolManagerContent(
         if (importState.working || importState.message != null) {
             item("import-feedback") {
                 FeedbackSurface(
-                    message = if (importState.working) "正在检查并安装工具…" else requireNotNull(importState.message),
+                    message = if (importState.working) {
+                        when (importState.importPhase) {
+                            PackageImportPhase.CANCELLING -> "正在取消安装…"
+                            PackageImportPhase.COMMITTING, PackageImportPhase.FINISHED -> "正在完成安装…"
+                            else -> "正在检查并安装工具…"
+                        }
+                    } else requireNotNull(importState.message),
                     tone = when {
                         importState.working -> FeedbackTone.Progress
                         importState.succeeded -> FeedbackTone.Success
@@ -137,6 +147,9 @@ internal fun ToolManagerContent(
                     },
                     dismissible = !importState.working,
                     onDismiss = onDismissImport,
+                    onCancel = onCancelActiveImport.takeIf {
+                        importState.working && importState.importPhase == PackageImportPhase.IMPORTING
+                    },
                     modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
                 )
             }
@@ -490,6 +503,7 @@ internal fun FeedbackSurface(
     dismissible: Boolean,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onCancel: (() -> Unit)? = null,
 ) {
     val colors = ToolBoxThemeTokens.colors
     val container = when (tone) {
@@ -524,7 +538,9 @@ internal fun FeedbackSurface(
             color = colors.textPrimary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
-        if (dismissible) {
+        if (onCancel != null) {
+            ToolBoxTextButton(label = "取消", onClick = onCancel)
+        } else if (dismissible) {
             ToolBoxIconButton(
                 icon = ToolBoxIconKey.Close,
                 contentDescription = "关闭提示",

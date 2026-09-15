@@ -516,10 +516,10 @@ private fun fixtureManifest(
 }
 
 private object FakeHostPackageOperations : HostPackageOperations {
-    override suspend fun importPackage(input: PackageInput): io.toolbox.host.HostImportResult =
+    override suspend fun importPackage(input: PackageInput, control: io.toolbox.tool.packagekit.lifecycle.PackageImportControl): io.toolbox.host.HostImportResult =
         error("not used")
 
-    override suspend fun confirmImport(confirmationId: String): io.toolbox.host.HostImportResult = error("not used")
+    override suspend fun confirmImport(confirmationId: String, control: io.toolbox.tool.packagekit.lifecycle.PackageImportControl): io.toolbox.host.HostImportResult = error("not used")
 
     override suspend fun cancelImport(
         confirmationId: String,

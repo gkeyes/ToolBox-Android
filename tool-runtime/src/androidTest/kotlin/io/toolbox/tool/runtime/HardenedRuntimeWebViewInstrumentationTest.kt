@@ -217,7 +217,7 @@ class HardenedRuntimeWebViewInstrumentationTest {
         try {
             assertEquals(200, entryResponse.statusCode)
             assertTrue(
-                entryResponse.responseHeaders.getValue("Content-Security-Policy").contains("connect-src 'none'"),
+                entryResponse.responseHeaders.getValue("Content-Security-Policy").contains("connect-src 'self'"),
             )
         } finally {
             entryResponse.data.close()
