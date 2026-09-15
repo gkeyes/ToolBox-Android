@@ -85,6 +85,7 @@ internal object ZipArchiveReader {
         val code = when {
             prefix.startsWith(byteArrayOf(0x00, 0x61, 0x73, 0x6d)) -> null
             prefix.startsWith(byteArrayOf(0x50, 0x4b, 0x03, 0x04)) -> PackageRejectionCode.NESTED_ARCHIVE
+            prefix.startsWith(byteArrayOf(0x50, 0x4b, 0x05, 0x06)) -> PackageRejectionCode.NESTED_ARCHIVE
             prefix.startsWith(byteArrayOf(0x1f, 0x8b.toByte())) -> PackageRejectionCode.NESTED_ARCHIVE
             prefix.startsWith(byteArrayOf(0x37, 0x7a, 0xbc.toByte(), 0xaf.toByte(), 0x27, 0x1c)) -> PackageRejectionCode.NESTED_ARCHIVE
             prefix.startsWith(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07)) -> PackageRejectionCode.NESTED_ARCHIVE

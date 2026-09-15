@@ -53,13 +53,14 @@ class PackageWasmResourceTest {
             "elf" to byteArrayOf(0x7f, 0x45, 0x4c, 0x46),
             "dex" to byteArrayOf(0x64, 0x65, 0x78, 0x0a),
             "class" to byteArrayOf(0xca.toByte(), 0xfe.toByte(), 0xba.toByte(), 0xbe.toByte()),
-            "zip" to byteArrayOf(0x50, 0x4b, 0x03, 0x04),
+            "zip-local" to byteArrayOf(0x50, 0x4b, 0x03, 0x04),
+            "zip-empty" to (byteArrayOf(0x50, 0x4b, 0x05, 0x06) + ByteArray(18)),
         )
         cases.forEach { (name, bytes) ->
             withHarness {
                 val result = manager().importAndInstall(archive(name, content(resources = mapOf("payload.wasm" to bytes))))
                 assertRejected(
-                    if (name == "zip") PackageRejectionCode.NESTED_ARCHIVE else PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
+                    if (name.startsWith("zip-")) PackageRejectionCode.NESTED_ARCHIVE else PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
                     result,
                 )
                 assertTrue(repositories.catalog.observeTools().first().isEmpty())
@@ -179,6 +180,18 @@ class PackageWasmResourceTest {
     fun streamingIntegrityRejectsDuplicateKeysHashAndFileSetChanges() = runBlocking {
         val content = content(resources = mapOf("module.wasm" to WASM_ADD))
         val hashes = content.mapValues { sha256(it.value) }
+        val escaped = integrity(hashes)
+            .replace("\"files\"", "\"f\\u0069les\"")
+            .replace("\"algorithm\"", "\"alg\\u006Frithm\"")
+            .replace("\"module.wasm\"", "\"\\u006dodule.wasm\"")
+        withHarness {
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 1, false),
+                manager().importAndInstall(archive("ascii-unicode-escapes", content, escaped.toByteArray())),
+            )
+            assertArrayEquals(WASM_ADD, Files.readAllBytes(bundle(1).resolve("module.wasm")))
+            assertClean()
+        }
         val fields = hashes.entries.joinToString(",") { (name, hash) -> "\"$name\":\"$hash\"" }
         val duplicate = "\"index.html\":\"${hashes.getValue("index.html")}\""
         val cases = listOf(
@@ -189,6 +202,10 @@ class PackageWasmResourceTest {
             "missing-file" to (integrity(hashes - "module.wasm") to PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH),
             "extra-file" to (integrity(hashes + ("missing.bin" to sha256(byteArrayOf(1)))) to PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH),
             "trailing-json" to (integrity(hashes) + "{}" to PackageRejectionCode.INTEGRITY_MALFORMED),
+            "fullwidth-escape-digits" to (escaped.replace("\\u0069", "\\u００６９") to PackageRejectionCode.INTEGRITY_MALFORMED),
+            "arabic-escape-digit" to (escaped.replace("\\u0069", "\\u00٦9") to PackageRejectionCode.INTEGRITY_MALFORMED),
+            "fullwidth-escape-uppercase" to (escaped.replace("\\u006F", "\\u006Ｆ") to PackageRejectionCode.INTEGRITY_MALFORMED),
+            "fullwidth-escape-lowercase" to (escaped.replace("\\u006d", "\\u006ｄ") to PackageRejectionCode.INTEGRITY_MALFORMED),
         )
         cases.forEach { (name, case) ->
             withHarness {
