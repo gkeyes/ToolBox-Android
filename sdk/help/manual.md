@@ -151,7 +151,7 @@ python3 scripts/package-tool.py ./my-tool ./my-tool-v1.0.0.tbx
 
 React 等项目先构建静态产物，再打包静态目录。输出应在源目录外；已有同名输出只在明确需要覆盖时使用 --overwrite。资源变化后重新打包，完整性清单由打包器生成。
 
-在 ToolBox 中导入 .tbx。更新时提高 versionCode；同版本或降级需在宿主确认。无效签名、路径穿越、符号链接、内容篡改及不支持的原生代码不会安装。安装失败保留旧版本。
+在 ToolBox 中导入 .tbx。更新时提高 versionCode；未签名工具更新、同版本覆盖或降级需在宿主确认。同签名身份的更高版本可直接更新。无效签名、路径穿越、符号链接、内容篡改及不支持的原生代码不会安装。安装失败保留旧版本。
 
 ### 声明格式
 
@@ -177,7 +177,103 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误，并改为分页或分块。
 
+安装支持 ZIP32 和 ZIP64；复制、目录扫描、解压、哈希及暂存复制均分块处理，依据目标卷可用空间、当前可用堆和系统内存压力检查资源，暂存占用也计入。高压缩比本身不会导致拒绝；CRC、中央目录、本地头、数据描述符及实际输出须一致。integrity.json 流式逐项核对文件集合和原始字节哈希；重复键、路径碰撞或篡改会失败，签名仍针对完整性文件原始字节验证。
+
+导入反馈提供“取消”。原子提交前取消或失败会清理临时内容并保留旧工具；提交开始后完成提交或回滚，再显示实际最终结果，已成功安装不会误报为“已取消”。空间不足时释放设备空间再重试，系统内存压力较高时稍后重试。
+
 普通及安全存储写入保持原子性，不自动淘汰用户数据。storage.getMany 保持请求键顺序；storage.apply 的写删冲突或非法值使整批失败。文件 token 属于当前运行环境，只能读取一次，不能作为长期文件路径保存。
+
+### WebAssembly 与二进制资源
+
+strict、compat 均可使用 WebView 的标准 WebAssembly API，无需添加 manifest 字段、权限或签名。可以安装 .wasm、大小写后缀、无后缀及以 .so 命名的 Wasm；内容检查仍拒绝 ELF、DEX、class 和伪装的嵌套压缩包。Wasm 编译由 WebView 完成，不调用 Android 原生执行引擎。
+
+.wasm 或具有 Wasm 文件头的资源以 application/wasm 返回且不附 charset，支持流式实例化。已通过安装检查的其他未知扩展名资源以 application/octet-stream 返回，所以 .data、.bin 或无后缀数据都可用 arrayBuffer() 读取。工具包资源及单次本地资源读取不设固定体积配额，实际能力取决于设备空间、内存和 WebView。
+
+假设包内 add.wasm 导出 add(a, b)，以下代码放入独立 app.js；页面需要 id 为 result 的输出元素。模块的 imports 按实际构建要求传入第二个参数。
+
+```js
+(async function () {
+  const result = document.getElementById("result");
+  try {
+    const { instance } = await WebAssembly.instantiateStreaming(fetch("add.wasm"), {});
+    result.textContent = String(instance.exports.add(20, 22));
+  } catch (error) {
+    result.textContent = "Wasm 加载失败：" + error.message;
+  }
+})();
+```
+
+也可以先读取字节，再实例化，并读取随包提供的数据文件；此例放入异步函数中：
+
+```js
+const response = await fetch("add.wasm");
+if (!response.ok) throw new Error("模块读取失败：" + response.status);
+const bytes = await response.arrayBuffer();
+const { instance } = await WebAssembly.instantiate(bytes, {});
+const dataResponse = await fetch("assets/model.data");
+if (!dataResponse.ok) throw new Error("数据读取失败：" + dataResponse.status);
+const modelBytes = new Uint8Array(await dataResponse.arrayBuffer());
+document.getElementById("result").textContent =
+  instance.exports.add(20, 22) + "，数据字节数：" + modelBytes.byteLength;
+```
+
+也允许编译内存中的 Uint8Array 或 ArrayBuffer，包括经 ToolBox 已授权 API 获取的字节；宿主不要求字节只能来自包内。内存加载时遵守来源 API 的权限及调用方明确设置的请求预算。
+
+WebView 已支持的 SIMD、GC、异常处理等 Wasm 特性自然可用，没有宿主指令白名单或额外 Wasm 配额。宿主不提供 WASI 接口；工具可携带 JS 适配层。此环境未提供跨源隔离、共享内存/pthreads 配套环境；依赖这些功能的库应选择适合普通 WebView 的构建。ToolBox 不因模块声明这些特性而拒绝安装，但不保证 WebView 能实例化或运行。
+
+损坏模块、缺少 imports 或引擎不支持的特性会产生标准 WebAssembly 错误，应捕获并显示具体原因。若是 WebView 版本不支持，需要更新 Android System WebView；不通过开启 JS unsafe-eval 降级。Wasm 所需 wasm-unsafe-eval 仅允许 Wasm 编译，eval/new Function 仍不可用。流式加载失败时不要一律归因于引擎过旧，还应检查路径、HTTP 状态、模块内容和 imports。
+
+### 高性能计算与 Worker
+
+大量计算放在随包安装的同源 worker.js 中；支持 classic 和 module 两种 Dedicated Worker。页面主线程只负责输入、渲染和 ToolBox 调用。worker 不能直接访问 ToolBox，计算结果用 postMessage 返回顶层页面。Worker 脚本沿用同一 CSP，可读取当前工具资源并执行 Wasm。
+
+远程、blob、data Worker 与 ServiceWorker 不可用。把 worker.js 和它引用的包内文件一起打包；通用打包器会递归包含这些资源。不要把未经信任的返回文本赋给 innerHTML。
+
+```js
+const worker = new Worker("worker.js");
+worker.onmessage = ({ data }) => {
+  document.getElementById("result").textContent = String(data.sum);
+};
+worker.postMessage({ values: [1, 2, 3, 4] });
+```
+
+```js
+self.onmessage = ({ data }) => {
+  const sum = data.values.reduce((total, value) => total + value, 0);
+  self.postMessage({ sum });
+};
+```
+
+第一段放 app.js，第二段保存为 worker.js；不再需要时调用 worker.terminate()。同时避免重叠的网络轮询、每次计时器都重建整页 DOM，以及在每秒更新中重复读取全部存储。
+
+同一个不含 import/export 的脚本可作为 classic 或 module Worker 使用。下面同时演示两种启动方式，分别计算 42；实际工具按自己的构建方式选择一种即可。第一段放 app.js，第二段保存为 wasm-worker.js，并打包前节的 add.wasm。
+
+```js
+for (const type of ["classic", "module"]) {
+  const worker = new Worker("wasm-worker.js", { type });
+  worker.onmessage = ({ data }) => {
+    document.getElementById("result").textContent =
+      type + "：" + (data.error || data.result);
+    worker.terminate();
+  };
+  worker.onerror = () => {
+    document.getElementById("result").textContent = type + " Worker 启动失败";
+    worker.terminate();
+  };
+  worker.postMessage({ a: 20, b: 22 });
+}
+```
+
+```js
+self.onmessage = async ({ data }) => {
+  try {
+    const { instance } = await WebAssembly.instantiateStreaming(fetch("add.wasm"), {});
+    self.postMessage({ result: instance.exports.add(data.a, data.b) });
+  } catch (error) {
+    self.postMessage({ error: error.message });
+  }
+};
+```
 
 ### 后台与系统能力
 

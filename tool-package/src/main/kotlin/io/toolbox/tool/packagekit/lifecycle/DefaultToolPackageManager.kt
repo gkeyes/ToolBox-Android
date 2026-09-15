@@ -16,6 +16,9 @@ import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.DefaultPackageInspector
 import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.PackageResourceProbe
+import io.toolbox.tool.packagekit.FileSystemPackageResourceProbe
+import io.toolbox.tool.packagekit.InspectionRejected
 import io.toolbox.tool.packagekit.PreparationResult
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.SecurityProfile
@@ -40,9 +43,12 @@ internal class DefaultToolPackageManager(
     private val hostVersion: String,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
+    private val resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
 ) : ToolPackageManager {
-    private val storage = LifecycleStorage(filesRoot)
-    private val inspector = DefaultPackageInspector(filesRoot.resolve("miniapps/.imports"), ioDispatcher)
+    private val storage = LifecycleStorage(filesRoot, resourceProbe)
+    private val inspector = DefaultPackageInspector(
+        filesRoot.resolve("miniapps/.imports"), ioDispatcher = ioDispatcher, resourceProbe = resourceProbe,
+    )
     private val pendingConfirmations = mutableMapOf<String, PendingVersionConfirmation>()
 
     override suspend fun recoverPendingMutations(
@@ -60,14 +66,19 @@ internal class DefaultToolPackageManager(
     override suspend fun importAndInstall(
         input: PackageInput,
         cleanup: ToolStateCleanup,
+        control: PackageImportControl,
     ): PackageInstallResult = withContext(ioDispatcher) {
-        val lock = acquireLock() ?: return@withContext failed(PackageOperationFailureCode.BUSY, "Another package change is running")
-        lock.use {
-            discardPendingConfirmations()?.let { return@withContext PackageInstallResult.Failed(it) }
-            recoverInterrupted(cleanup)?.let { return@withContext PackageInstallResult.Failed(it) }
-            when (val preparation = inspector.prepare(input)) {
-                is PreparationResult.Rejected -> PackageInstallResult.Rejected(preparation.rejection)
-                is PreparationResult.Prepared -> installPrepared(preparation.value, cleanup)
+        control.run {
+            val lock = acquireLock() ?: return@run failed(
+                PackageOperationFailureCode.BUSY, "Another package change is running",
+            )
+            lock.use {
+                discardPendingConfirmations()?.let { return@run PackageInstallResult.Failed(it) }
+                recoverInterrupted(cleanup)?.let { return@run PackageInstallResult.Failed(it) }
+                when (val preparation = inspector.prepare(input)) {
+                    is PreparationResult.Rejected -> PackageInstallResult.Rejected(preparation.rejection)
+                    is PreparationResult.Prepared -> installPrepared(preparation.value, cleanup, control)
+                }
             }
         }
     }
@@ -75,22 +86,30 @@ internal class DefaultToolPackageManager(
     override suspend fun confirmInstall(
         confirmationId: String,
         cleanup: ToolStateCleanup,
+        control: PackageImportControl,
     ): PackageInstallResult = withContext(ioDispatcher) {
-        val lock = acquireLock() ?: return@withContext failed(
-            PackageOperationFailureCode.BUSY,
-            "Another package change is running",
-        )
-        lock.use {
-            val pending = pendingConfirmations.remove(confirmationId) ?: return@withContext failed(
-                PackageOperationFailureCode.CONFIRMATION_EXPIRED,
-                "Package confirmation is no longer available",
+        val result = control.run {
+            val lock = acquireLock() ?: return@run failed(
+                PackageOperationFailureCode.BUSY,
+                "Another package change is running",
             )
-            installPrepared(
-                prepared = pending.prepared,
-                cleanup = cleanup,
-                confirmedCurrentVersion = pending.installedVersion,
-            )
+            lock.use {
+                val pending = pendingConfirmations.remove(confirmationId) ?: return@run failed(
+                    PackageOperationFailureCode.CONFIRMATION_EXPIRED,
+                    "Package confirmation is no longer available",
+                )
+                installPrepared(
+                    prepared = pending.prepared,
+                    cleanup = cleanup,
+                    control = control,
+                    confirmedCurrentVersion = pending.installedVersion,
+                )
+            }
         }
+        if (result == PackageInstallResult.Cancelled) {
+            cancelInstall(confirmationId)?.let { return@withContext PackageInstallResult.Failed(it) }
+        }
+        result
     }
 
     override suspend fun cancelInstall(confirmationId: String): PackageOperationFailure? = withContext(ioDispatcher) {
@@ -151,7 +170,21 @@ internal class DefaultToolPackageManager(
     private suspend fun installPrepared(
         prepared: PreparedPackage,
         cleanup: ToolStateCleanup,
+        control: PackageImportControl,
         confirmedCurrentVersion: ToolVersion? = null,
+    ): PackageInstallResult = try {
+        installPreparedAttempt(prepared, cleanup, control, confirmedCurrentVersion).also { control.finish() }
+    } catch (cancelled: CancellationException) {
+        pendingConfirmations.entries.removeAll { it.value.prepared == prepared }
+        discardPrepared(prepared)?.let(control::recordCancellationFailure)
+        throw cancelled
+    }
+
+    private suspend fun installPreparedAttempt(
+        prepared: PreparedPackage,
+        cleanup: ToolStateCleanup,
+        control: PackageImportControl,
+        confirmedCurrentVersion: ToolVersion?,
     ): PackageInstallResult {
         val manifest = prepared.manifest
         if (!HostVersionPolicy.supports(hostVersion, manifest.minHostVersion)) {
@@ -176,10 +209,13 @@ internal class DefaultToolPackageManager(
             return failed(PackageOperationFailureCode.CONFIRMATION_EXPIRED, "The installed package changed; select the update again")
         }
         val previousSigningKey = if (previous == null) null else try {
-            runInterruptible { installedSigningKey(filesRoot, previous.currentVersion) }
+            runInterruptible { installedSigningKey(filesRoot, previous.currentVersion, resourceProbe) }
         } catch (cancelled: CancellationException) {
             discardPrepared(prepared)
             throw cancelled
+        } catch (rejected: InspectionRejected) {
+            discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+            return PackageInstallResult.Rejected(rejected.rejection)
         } catch (_: Exception) {
             discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
             return failed(PackageOperationFailureCode.STORAGE_FAILURE, "The installed package identity could not be verified; existing data was preserved")
@@ -225,41 +261,61 @@ internal class DefaultToolPackageManager(
             startedAt = startedAt,
             updatedAt = startedAt,
         )
-        when (val begin = transactions.begin(transaction)) {
-            is DataResult.Failure -> {
-                discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
-                return PackageInstallResult.Failed(dataFailure(begin))
-            }
-            is DataResult.Success -> Unit
-        }
         try {
-            runInterruptible { storage.stage(transactionId, prepared) }
-        } catch (cancelled: CancellationException) {
-            failAndClean(transaction, prepared, "CANCELLED")
-            throw cancelled
-        } catch (_: Exception) {
-            failAndClean(transaction, prepared, "STAGE_FAILED")
-            return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be staged safely")
-        }
-        discardPrepared(prepared)?.let {
-            failAndClean(transaction, prepared, "TEMP_CLEANUP_FAILED")
-            return PackageInstallResult.Failed(it)
-        }
-        return try {
-            if (previous == null) {
-                publishAndCommit(prepared, transaction, null, cleanup)
-            } else {
-                cleanup.withVersionReplacement(manifest.id, previous.currentVersion.versionCode, manifest.versionCode) {
-                    publishAndCommit(prepared, transaction, previous, cleanup)
+            when (val begin = transactions.begin(transaction)) {
+                is DataResult.Failure -> {
+                    discardPrepared(prepared)?.let { return PackageInstallResult.Failed(it) }
+                    return PackageInstallResult.Failed(dataFailure(begin))
                 }
+                is DataResult.Success -> Unit
+            }
+            try {
+                runInterruptible { storage.stage(transactionId, prepared) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (rejected: InspectionRejected) {
+                failAndClean(transaction, prepared, "RESOURCE_UNAVAILABLE")
+                return PackageInstallResult.Rejected(rejected.rejection)
+            } catch (_: Exception) {
+                failAndClean(transaction, prepared, "STAGE_FAILED")
+                return failed(PackageOperationFailureCode.STORAGE_FAILURE, "Package could not be staged safely")
+            }
+            discardPrepared(prepared)?.let {
+                failAndClean(transaction, prepared, "TEMP_CLEANUP_FAILED")
+                return PackageInstallResult.Failed(it)
+            }
+            // The gate and cancel request share one lock: once crossed, return the actual commit result.
+            control.beginCommit()
+            return withContext(NonCancellable) {
+                commitPrepared(transaction, prepared, cleanup, previous)
             }
         } catch (cancelled: CancellationException) {
-            failAndClean(transaction, null, "CANCELLED")
+            if (control.phase.value != PackageImportPhase.COMMITTING) {
+                failAndClean(transaction, prepared, "CANCELLED")?.let(control::recordCancellationFailure)
+            }
             throw cancelled
-        } catch (_: Exception) {
-            failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
-            failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
         }
+    }
+
+    private suspend fun commitPrepared(
+        transaction: InstallTransaction,
+        prepared: PreparedPackage,
+        cleanup: ToolStateCleanup,
+        previous: InstalledTool?,
+    ): PackageInstallResult = try {
+        if (previous == null) {
+            publishAndCommit(prepared, transaction, null, cleanup)
+        } else {
+            cleanup.withVersionReplacement(prepared.manifest.id, previous.currentVersion.versionCode, prepared.manifest.versionCode) {
+                publishAndCommit(prepared, transaction, previous, cleanup)
+            }
+        }
+    } catch (cancelled: CancellationException) {
+        failAndClean(transaction, null, "CANCELLED")
+        throw cancelled
+    } catch (_: Exception) {
+        failAndClean(transaction, null, "RUNTIME_RELEASE_FAILED")
+        failed(PackageOperationFailureCode.CLEANUP_FAILURE, "Running tool could not be stopped for update")
     }
 
     private suspend fun publishAndCommit(
@@ -492,21 +548,27 @@ internal class DefaultToolPackageManager(
         transaction: InstallTransaction,
         prepared: PreparedPackage?,
         failureCode: String,
-    ) = withContext(NonCancellable + ioDispatcher) {
-        // Cancellation may be delivered after Room committed. Never roll back a committed
-        // install (or an uncertain DB result); its owner/cleanup markers drive recovery.
+    ): PackageOperationFailure? = withContext(NonCancellable + ioDispatcher) {
+        // A committed or uncertain Room result must retain its markers for recovery.
         when (val committed = lifecycle.findCommittedInstall(transaction.id)) {
-            is DataResult.Failure -> return@withContext
-            is DataResult.Success -> if (committed.value != null) return@withContext
+            is DataResult.Failure -> return@withContext failure(
+                PackageOperationFailureCode.CLEANUP_FAILURE,
+                "Install commit status could not be determined; recovery is required",
+            )
+            is DataResult.Success -> if (committed.value != null) return@withContext null
         }
-        runCatching { transactions.fail(transaction.id, now(), failureCode) }
-        runCatching {
+        val transactionCleaned = runCatching {
+            transactions.fail(transaction.id, now(), failureCode) is DataResult.Success
+        }.getOrDefault(false)
+        val filesCleaned = runCatching {
             runInterruptible {
                 storage.removeUncommitted(transaction.toolId, transaction.versionCode, transaction.id)
                 storage.rollbackReplacement(transaction.id)
             }
-        }
-        if (prepared != null) runCatching { inspector.cleanup(prepared) }
+        }.isSuccess
+        val importsCleaned = prepared == null || runCatching { inspector.cleanup(prepared) == null }.getOrDefault(false)
+        if (transactionCleaned && filesCleaned && importsCleaned) null
+        else failure(PackageOperationFailureCode.CLEANUP_FAILURE, "Temporary installation state could not be fully cleaned")
     }
 
     private suspend fun discardPendingConfirmations(): PackageOperationFailure? {

@@ -435,7 +435,7 @@
         "strict",
         "compat"
       ],
-      "description": "strict forbids inline script/eval and direct remote subresources; compat may allow inline script after explicit warning, but never unsafe-eval."
+      "description": "Both profiles allow standard WebView WebAssembly (wasm-unsafe-eval), same-origin resource reads and same-origin Dedicated Workers without extra permissions. strict forbids inline script; compat allows inline script. Both forbid JavaScript unsafe-eval and direct remote subresources."
     },
     "ui": {
       "type": "object",

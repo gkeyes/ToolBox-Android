@@ -45,7 +45,7 @@ internal object PackagePathPolicy {
         return when (extension) {
             "zip", "tbx", "jar", "apk", "aar", "7z", "rar", "tar", "gz", "bz2", "xz" ->
                 PackageRejectionCode.NESTED_ARCHIVE
-            "dex", "so", "class", "wasm", "odex", "vdex", "oat" ->
+            "dex", "so", "class", "odex", "vdex", "oat" ->
                 PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE
             else -> null
         }

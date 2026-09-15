@@ -15,4 +15,5 @@ android {
 dependencies {
     implementation(project(":core-data"))
     implementation(libs.kotlinx.coroutines.core)
+    testImplementation("junit:junit:4.13.2")
 }

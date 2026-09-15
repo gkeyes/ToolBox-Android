@@ -2,6 +2,11 @@ package io.toolbox.tool.packagekit.lifecycle
 
 import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.tool.packagekit.PreparedPackage
+import io.toolbox.tool.packagekit.FileSystemPackageResourceProbe
+import io.toolbox.tool.packagekit.PackageResourceProbe
+import io.toolbox.tool.packagekit.PackageResourceGuard
+import io.toolbox.tool.packagekit.packageByteTotal
+import io.toolbox.tool.packagekit.checkPackageInterrupted
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
@@ -16,7 +21,10 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-internal class LifecycleStorage(private val filesRoot: Path) {
+internal class LifecycleStorage(
+    private val filesRoot: Path,
+    private val resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
+) {
     private val miniappsRoot = filesRoot.resolve("miniapps")
     private val lifecycleRoot = miniappsRoot.resolve(".lifecycle")
     private val stagingRoot = miniappsRoot.resolve(".staging")
@@ -49,6 +57,16 @@ internal class LifecycleStorage(private val filesRoot: Path) {
     }
 
     fun stage(transactionId: String, prepared: PreparedPackage) {
+        val resources = PackageResourceGuard(filesRoot, resourceProbe)
+        try {
+            stageChecked(transactionId, prepared, resources)
+        } catch (error: IOException) {
+            resources.ioFailed(error)
+        }
+    }
+
+    private fun stageChecked(transactionId: String, prepared: PreparedPackage, resources: PackageResourceGuard) {
+        resources.check(prepared.archive.extractedBytes)
         val stageRoot = stageRoot(transactionId)
         deleteTree(stageRoot)
         val stageBundle = stageRoot.resolve("bundle")
@@ -57,6 +75,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         var totalBytes = 0L
         verifyExactTree(prepared.bundleDirectory, prepared.fileHashes.keys)
         prepared.fileHashes.toSortedMap().forEach { (relative, expectedHash) ->
+            resources.check(prepared.archive.extractedBytes - totalBytes)
             val source = resolveRelative(prepared.bundleDirectory, relative)
             val target = resolveRelative(stageBundle, relative)
             Files.createDirectories(target.parent)
@@ -78,9 +97,10 @@ internal class LifecycleStorage(private val filesRoot: Path) {
                         if (count == 0) continue
                         ResourceCapacity.requireStorageBytes(stageBundle.toFile(), count.toLong())
                         digest.update(bytes, 0, count)
-                        totalBytes += count
+                        totalBytes = packageByteTotal(totalBytes, count.toLong())
                         if (totalBytes > prepared.archive.extractedBytes) throw IntegrityMismatch("Package size changed")
-                        var buffer = java.nio.ByteBuffer.wrap(bytes, 0, count)
+                        resources.check(prepared.archive.extractedBytes - totalBytes + count)
+                        val buffer = java.nio.ByteBuffer.wrap(bytes, 0, count)
                         while (buffer.hasRemaining()) output.write(buffer)
                     }
                     output.force(true)
@@ -91,6 +111,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
             }
         }
         if (totalBytes != prepared.archive.extractedBytes) throw IntegrityMismatch("Package byte count changed")
+        resources.check(transactionId.toByteArray().size.toLong())
         writeForced(stageRoot.resolve(OWNER_FILE), transactionId.toByteArray())
         forceTree(stageRoot)
     }
@@ -305,6 +326,7 @@ internal class LifecycleStorage(private val filesRoot: Path) {
         val actual = mutableSetOf<String>()
         Files.walk(root).use { paths ->
             paths.forEach { path ->
+                checkPackageInterrupted()
                 if (path == root) return@forEach
                 val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
                 if (attributes.isSymbolicLink || (!attributes.isRegularFile && !attributes.isDirectory)) {

@@ -5,6 +5,8 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.InstallTransactionRepository
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageRejection
+import io.toolbox.tool.packagekit.PackageResourceProbe
+import io.toolbox.tool.packagekit.FileSystemPackageResourceProbe
 import java.io.File
 
 interface ToolPackageManager {
@@ -15,11 +17,13 @@ interface ToolPackageManager {
     suspend fun importAndInstall(
         input: PackageInput,
         cleanup: ToolStateCleanup = ToolStateCleanup.None,
+        control: PackageImportControl = PackageImportControl(),
     ): PackageInstallResult
 
     suspend fun confirmInstall(
         confirmationId: String,
         cleanup: ToolStateCleanup = ToolStateCleanup.None,
+        control: PackageImportControl = PackageImportControl(),
     ): PackageInstallResult
 
     suspend fun cancelInstall(confirmationId: String): PackageOperationFailure?
@@ -65,6 +69,7 @@ object ToolPackageManagers {
         transactions: InstallTransactionRepository,
         supportedCapabilities: Set<String> = SupportedToolCapabilities.All,
         hostVersion: String = "0.3.3",
+        resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
     ): ToolPackageManager = DefaultToolPackageManager(
         filesRoot = privateFilesDirectory.toPath(),
         catalog = catalog,
@@ -72,10 +77,12 @@ object ToolPackageManagers {
         transactions = transactions,
         supportedCapabilities = supportedCapabilities,
         hostVersion = hostVersion,
+        resourceProbe = resourceProbe,
     )
 }
 
 sealed interface PackageInstallResult {
+    data object Cancelled : PackageInstallResult
     data class Installed(val toolId: String, val versionCode: Int, val updated: Boolean) : PackageInstallResult
     data class ConfirmationRequired(val confirmation: PackageVersionConfirmation) : PackageInstallResult
     data class Rejected(val rejection: PackageRejection) : PackageInstallResult

@@ -1,9 +1,10 @@
 package io.toolbox.tool.packagekit.lifecycle
 
-import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.tool.packagekit.IntegrityVerifier
-import java.io.ByteArrayOutputStream
+import io.toolbox.tool.packagekit.FileSystemPackageResourceProbe
+import io.toolbox.tool.packagekit.PackageResourceGuard
+import io.toolbox.tool.packagekit.PackageResourceProbe
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -14,7 +15,11 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 /** Derive continuity from the hash-pinned installed bundle, not from an unverified keyId or trust DB. */
-internal fun installedSigningKey(filesRoot: Path, version: ToolVersion): String? {
+internal fun installedSigningKey(
+    filesRoot: Path,
+    version: ToolVersion,
+    resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
+): String? {
     val locator = "miniapps/${version.toolId}/versions/${version.versionCode}/bundle"
     require(version.bundleLocator.value == locator) { "Installed locator changed" }
     val root = filesRoot.toAbsolutePath().normalize()
@@ -26,42 +31,37 @@ internal fun installedSigningKey(filesRoot: Path, version: ToolVersion): String?
         require(Files.isDirectory(cursor, LinkOption.NOFOLLOW_LINKS)) { "Installed path is not a directory" }
     }
     val hashes = linkedMapOf<String, String>()
-    val metadata = linkedMapOf<String, ByteArray>()
+    val metadata = linkedMapOf<String, Path>()
+    val resources = PackageResourceGuard(root, resourceProbe)
     var totalBytes = 0L
     Files.walk(bundle).use { paths ->
         paths.forEach { path ->
+            resources.check()
             val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             require(!attributes.isSymbolicLink && (attributes.isDirectory || attributes.isRegularFile))
             if (attributes.isRegularFile) {
                 val relative = bundle.relativize(path).joinToString("/") { it.toString() }
-                val collected = if (relative in setOf("integrity.json", "signature.json")) ByteArrayOutputStream() else null
                 val digest = MessageDigest.getInstance("SHA-256")
-                var fileBytes = 0L
                 Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
                     val bytes = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {
-                        if (Thread.currentThread().isInterrupted) throw InterruptedException("Identity check interrupted")
+                        resources.check()
                         val count = input.read(bytes)
                         if (count < 0) break
                         if (count == 0) continue
-                        fileBytes = Math.addExact(fileBytes, count.toLong())
                         totalBytes = Math.addExact(totalBytes, count.toLong())
                         digest.update(bytes, 0, count)
-                        if (collected != null) {
-                            ResourceCapacity.requireHeapBytes(Math.multiplyExact(fileBytes, 2))
-                            collected.write(bytes, 0, count)
-                        }
                     }
                 }
                 hashes[relative] = digest.digest().hex()
-                if (collected != null) metadata[relative] = collected.toByteArray()
+                if (relative in setOf("integrity.json", "signature.json")) metadata[relative] = path
             }
         }
     }
     require(totalBytes == version.bundleBytes && aggregatePackageHash(hashes) == version.integrityHash) {
         "Installed bundle differs from the committed package"
     }
-    return IntegrityVerifier.verify(metadata, hashes)
+    return IntegrityVerifier.verify(metadata, hashes, resources)
 }
 
 /** Keep the existing catalog digest format byte-for-byte unchanged. */

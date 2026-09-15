@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build APK
+    name: Build APK and verify Wasm support
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -51,7 +51,74 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+      - name: Verify Wasm binary packaging
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
+      - name: Build APKs and behavioral test APKs
+        run: >-
+          ./gradlew --no-daemon
+          :app:assembleDebug :app:assembleRelease
+          :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
+      - name: Verify Wasm installation and cancellation
+        run: >-
+          ./gradlew --no-daemon :tool-package:testDebugUnitTest
+          --tests io.toolbox.tool.packagekit.PackageWasmResourceTest
+          --tests io.toolbox.tool.packagekit.lifecycle.PackageImportCancellationTest
+      - name: Verify Wasm CSP and exact-origin boundaries
+        run: >-
+          ./gradlew --no-daemon :tool-runtime:testDebugUnitTest
+          --tests io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest
+      - name: Verify import cancellation feedback
+        run: >-
+          ./gradlew --no-daemon :app:testDebugUnitTest
+          --tests io.toolbox.host.importflow.ImportViewModelTest
+      - name: Enable accelerated behavior test emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify import UI and Wasm in WebView
+        id: runtime_emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            mkdir -p build/wasm-emulator
+            adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
+            adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.ToolManagerImportConfirmationTest
+            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.WasmRuntimeInstrumentationTest
+      - name: Retain Wasm and cancellation unit test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wasm-unit-tests-${{ github.sha }}
+          path: |
+            tool-package/build/test-results/
+            tool-package/build/reports/tests/
+            tool-runtime/build/test-results/
+            tool-runtime/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Retain Wasm WebView and import UI evidence
+        if: ${{ always() && steps.runtime_emulator.outcome != 'skipped' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wasm-webview-${{ github.sha }}
+          path: |
+            tool-runtime/build/outputs/androidTest-results/connected/
+            tool-runtime/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+            build/wasm-emulator/
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: apk-${{ github.sha }}

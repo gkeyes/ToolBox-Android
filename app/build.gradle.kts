@@ -49,6 +49,7 @@ android {
         targetSdk = 37
         versionCode = 32
         versionName = "0.7.8"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     val stableSigningConfig =
@@ -135,6 +136,13 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.focus.api)
     implementation(libs.androidsvg)
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
 
 

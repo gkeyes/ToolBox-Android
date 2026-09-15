@@ -3,15 +3,16 @@ package io.toolbox.host.backup
 import io.toolbox.core.data.DataMutationLock
 import io.toolbox.host.*
 import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 
 /** Outer package/permission lock: do not reverse runtime-storage -> repository lock ordering. */
 internal class SerializedPackageOperations(private val delegate: HostPackageOperations, private val lock: DataMutationLock) : HostPackageOperations by delegate, HostPackageMaintenance {
     // Do not queue user mutations behind an upgrade which is draining runtime work.
     // Backup owns the same lock; nested restore installs remain reentrant.
-    override suspend fun importPackage(input: PackageInput): HostImportResult =
-        lock.tryRun({ HostImportResult.Failed("BUSY", busyMessage) }) { delegate.importPackage(input) }
-    override suspend fun confirmImport(confirmationId: String): HostImportResult =
-        lock.tryRun({ HostImportResult.Failed("BUSY", busyMessage) }) { delegate.confirmImport(confirmationId) }
+    override suspend fun importPackage(input: PackageInput, control: PackageImportControl): HostImportResult =
+        lock.tryRun({ HostImportResult.Failed("BUSY", busyMessage) }) { delegate.importPackage(input, control) }
+    override suspend fun confirmImport(confirmationId: String, control: PackageImportControl): HostImportResult =
+        lock.tryRun({ HostImportResult.Failed("BUSY", busyMessage) }) { delegate.confirmImport(confirmationId, control) }
     override suspend fun cancelImport(confirmationId: String): HostImportCancellationResult =
         lock.tryRun({ HostImportCancellationResult.Failed("BUSY", busyMessage) }) { delegate.cancelImport(confirmationId) }
     override suspend fun deleteTool(toolId: String): HostDeleteResult =

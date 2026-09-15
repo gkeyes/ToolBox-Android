@@ -9,6 +9,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.*
+import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 
 @Composable
 internal fun ImportScreen(
@@ -41,9 +42,12 @@ internal fun ImportScreen(
                 item { SectionHeader("导入结果") }
                 item {
                     FeedbackSurface(
-                        message = if (state.working) "正在检查并安装工具…" else state.message.orEmpty(),
+                        message = if (state.working) state.progressMessage else state.message.orEmpty(),
                         tone = if (state.working) FeedbackTone.Progress else if (state.succeeded) FeedbackTone.Success else FeedbackTone.Error,
                         dismissible = false, onDismiss = {},
+                        onCancel = viewModel::cancelActiveImport.takeIf {
+                            state.working && state.importPhase == PackageImportPhase.IMPORTING
+                        },
                     )
                 }
                 if (!state.working) item {

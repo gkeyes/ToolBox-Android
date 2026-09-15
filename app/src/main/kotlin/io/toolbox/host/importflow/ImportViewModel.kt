@@ -8,6 +8,8 @@ import io.toolbox.host.HostImportConfirmation
 import io.toolbox.host.HostImportResult
 import io.toolbox.host.HostPackageOperations
 import io.toolbox.tool.packagekit.PackageInput
+import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
+import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +24,15 @@ internal data class ImportUiState(
     val message: String? = null,
     val succeeded: Boolean = false,
     val confirmation: HostImportConfirmation? = null,
-)
+    val importPhase: PackageImportPhase? = null,
+) {
+    val progressMessage: String
+        get() = when (importPhase) {
+            PackageImportPhase.CANCELLING -> "正在取消安装…"
+            PackageImportPhase.COMMITTING, PackageImportPhase.FINISHED -> "正在完成安装…"
+            else -> "正在检查并安装工具…"
+        }
+}
 
 internal class ImportViewModel(
     private val operations: HostPackageOperations,
@@ -30,18 +40,27 @@ internal class ImportViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = mutableState.asStateFlow()
+    private var activeControl: PackageImportControl? = null
 
     fun importPackage(input: PackageInput) {
         if (mutableState.value.working) return
-        runImport {
-            operations.importPackage(input).toUiState()
+        val control = PackageImportControl()
+        runImport(control) {
+            operations.importPackage(input, control).toUiState()
         }
     }
 
     fun confirmVersionReplacement() {
         val confirmation = mutableState.value.confirmation ?: return
         if (mutableState.value.working) return
-        runImport { operations.confirmImport(confirmation.id).toUiState() }
+        val control = PackageImportControl()
+        runImport(control) { operations.confirmImport(confirmation.id, control).toUiState() }
+    }
+
+    fun cancelActiveImport() {
+        if (activeControl?.requestCancel() == true) {
+            mutableState.value = mutableState.value.copy(importPhase = PackageImportPhase.CANCELLING)
+        }
     }
 
     fun cancelVersionReplacement() {
@@ -75,28 +94,42 @@ internal class ImportViewModel(
     }
 
     fun pickerRejected(message: String) {
+        if (mutableState.value.working) return
         mutableState.value = ImportUiState(message = message)
     }
 
     fun dismissMessage() {
+        if (mutableState.value.working) return
         mutableState.value = ImportUiState()
     }
 
-    private fun runImport(block: suspend () -> ImportUiState) {
+    private fun runImport(control: PackageImportControl? = null, block: suspend () -> ImportUiState) {
+        activeControl = control
+        mutableState.value = ImportUiState(working = true, importPhase = control?.phase?.value)
         viewModelScope.launch {
-            mutableState.value = ImportUiState(working = true)
+            val phaseObserver = control?.let {
+                launch {
+                    it.phase.collect { phase ->
+                        mutableState.value = mutableState.value.copy(importPhase = phase)
+                    }
+                }
+            }
             val nextState = try {
                 withContext(ioDispatcher) { block() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 ImportUiState(message = "安装未完成，请重新选择工具包。")
+            } finally {
+                phaseObserver?.cancel()
+                activeControl = null
             }
             mutableState.value = nextState
         }
     }
 
     private fun HostImportResult.toUiState(): ImportUiState = when (this) {
+        HostImportResult.Cancelled -> ImportUiState(message = "已取消安装")
         is HostImportResult.Installed -> ImportUiState(
             message = "$toolName 已安装",
             succeeded = true,
