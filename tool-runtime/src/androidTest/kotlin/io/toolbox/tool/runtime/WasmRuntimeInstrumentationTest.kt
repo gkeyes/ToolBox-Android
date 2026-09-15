@@ -122,7 +122,7 @@ class WasmRuntimeInstrumentationTest {
             it.write(29)
         }
         val otherOrigin = RuntimeIdentity.origin("com.example.wasm.other").removeSuffix("/")
-        Files.writeString(
+        Files.write(
             bundleRoot.resolve("index.html"),
             """
                 <!doctype html>
@@ -130,7 +130,7 @@ class WasmRuntimeInstrumentationTest {
                 <head><meta charset="utf-8"><script>globalThis.inlineRan = true;</script>
                 <script src="common.js"></script><script defer src="page.js"></script></head>
                 <body>Wasm runtime behavior test</body></html>
-            """.trimIndent(),
+            """.trimIndent().toByteArray(Charsets.UTF_8),
         )
         return PreparedToolRuntime(
             toolId = toolId,

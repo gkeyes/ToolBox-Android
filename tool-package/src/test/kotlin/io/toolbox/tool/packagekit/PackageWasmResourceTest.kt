@@ -2,10 +2,14 @@ package io.toolbox.tool.packagekit
 
 import io.toolbox.core.data.memory.InMemoryCoreData
 import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
+import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailureCode
 import io.toolbox.tool.packagekit.lifecycle.ToolPackageManagers
+import java.io.FilterInputStream
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.Signature
@@ -19,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -162,6 +167,94 @@ class PackageWasmResourceTest {
             assertPreviousVersion()
             assertClean()
         }
+    }
+
+    @Test
+    fun sourceReadFailureAfterCopyingAChunkClosesInputAndPreservesPreviousVersion() = runBlocking {
+        withHarness {
+            installPreviousVersion()
+            val payload = ByteArray(32 * 1024).also(Random(92)::nextBytes)
+            val incoming = archive("read-failure", content(version = 2, resources = mapOf("assets/probe.bin" to payload)))
+            assertTrue(Files.size(incoming.path) > 8192)
+            var failedAfterCopy = false
+            var inputClosed = false
+            val faultingInput = object : PackageInput {
+                override val displayName = "read-failure.tbx"
+                override fun openStream() = object : FilterInputStream(Files.newInputStream(incoming.path)) {
+                    private var deliveredChunk = false
+
+                    override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                        if (deliveredChunk) {
+                            failedAfterCopy = hasFileAtLeast(host.resolve("miniapps/.imports"), Path.of("source.tbx"), 8192)
+                            throw IOException("Synthetic source disconnected after a copied chunk")
+                        }
+                        return super.read(bytes, offset, minOf(length, 8192)).also { count ->
+                            if (count > 0) deliveredChunk = true
+                        }
+                    }
+
+                    override fun close() {
+                        inputClosed = true
+                        super.close()
+                    }
+                }
+            }
+
+            assertRejected(PackageRejectionCode.SOURCE_READ_FAILED, manager().importAndInstall(faultingInput))
+            assertTrue("The source must fail after bytes reached private storage", failedAfterCopy)
+            assertTrue("The failing source must be closed", inputClosed)
+            assertPreviousVersion()
+            assertClean()
+        }
+    }
+
+    @Test
+    fun realStagingCreateFailurePreservesPreviousVersionAndCleansInjectedCollision() = runBlocking {
+        withHarness {
+            installPreviousVersion()
+            val incoming = archive("stage-create-failure", content(version = 2, resources = mapOf("assets/probe.bin" to byteArrayOf(1, 2, 3))))
+            var collision: Path? = null
+            val probe = PackageResourceProbe {
+                val staging = host.resolve("miniapps/.staging")
+                if (collision == null && Files.isDirectory(staging)) {
+                    val stage = Files.list(staging).use { paths ->
+                        paths.filter { Files.isDirectory(it.resolve("bundle")) }.findFirst().orElse(null)
+                    }
+                    if (stage != null) {
+                        val target = stage.resolve("bundle/assets/probe.bin")
+                        Files.createDirectories(target.parent)
+                        Files.write(target, byteArrayOf(99), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+                        collision = target
+                    }
+                }
+                PackageResourceSnapshot(Long.MAX_VALUE, lowMemory = false)
+            }
+
+            val result = manager(probe).importAndInstall(incoming)
+            assertTrue("Staging CREATE_NEW must report a storage failure: " + result, result is PackageInstallResult.Failed)
+            assertEquals(PackageOperationFailureCode.STORAGE_FAILURE, (result as PackageInstallResult.Failed).failure.code)
+            assertFalse("The injected staged file must be cleaned", Files.exists(requireNotNull(collision)))
+            assertPreviousVersion()
+            assertClean()
+        }
+    }
+
+    @Test
+    fun ioFailureClassificationRecognizesNestedDiskFullCausesWithoutMislabelingOrdinaryIo() {
+        val guard = PackageResourceGuard(
+            Path.of("."),
+            PackageResourceProbe { PackageResourceSnapshot(Long.MAX_VALUE, lowMemory = false) },
+        )
+        val diskFullFailures = listOf(
+            IOException("Write failed", IOException("Flush failed", IOException("ENOSPC"))),
+            IOException("Close failed", IOException("No space left on device")),
+            IOException("Write failed", IOException("enospc")),
+        )
+        diskFullFailures.forEach { error ->
+            assertEquals(PackageRejectionCode.INSUFFICIENT_SPACE, guard.ioRejection(error)?.code)
+        }
+        assertNull(guard.ioRejection(IOException("Permission denied")))
+        assertNull(guard.ioRejection(IOException("Write failed", IOException("Input/output error"))))
     }
 
     @Test
