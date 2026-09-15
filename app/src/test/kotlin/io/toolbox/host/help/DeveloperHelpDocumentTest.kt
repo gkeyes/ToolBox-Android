@@ -35,7 +35,12 @@ class DeveloperHelpDocumentTest {
         val wasmCode = wasmArticle.blocks.filter { it.code }.joinToString("\n") { it.text }
         assertTrue(wasmCode.contains("WebAssembly.instantiateStreaming"))
         assertTrue(wasmCode.contains("arrayBuffer()"))
-        assertTrue(wasmCode.contains("new Worker"))
+        val workerArticle = document.search("Worker").flatMap { it.articles }
+            .single { it.title == "高性能计算与 Worker" }
+        val workerCode = workerArticle.blocks.filter { it.code }.joinToString("\n") { it.text }
+        assertTrue(workerCode.contains("new Worker"))
+        assertTrue(workerCode.contains("[\"classic\", \"module\"]"))
+        assertTrue(workerCode.contains("WebAssembly.instantiateStreaming"))
         val sdk = document.chapters.flatMap { it.articles }.flatMap { it.blocks }
             .single { it.label == "ts sdk/toolbox-api.d.ts" }
         assertTrue(sdk.code)
