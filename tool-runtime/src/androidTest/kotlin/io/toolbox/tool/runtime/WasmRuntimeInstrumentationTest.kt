@@ -199,11 +199,15 @@ class WasmRuntimeInstrumentationTest {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45)
         while (System.nanoTime() < deadline) {
             failure.get()?.let { error(it) }
-            val value = CompletableFuture<String>()
+            val value = CompletableFuture<String?>()
             // Read only. Running eval/Function/Wasm here would bypass the page CSP being tested.
             onMain { webView.evaluateJavascript("JSON.stringify(globalThis.wasmReport || null)") { value.complete(it) } }
-            val serialized = JSONTokener(value.get(5, TimeUnit.SECONDS)).nextValue() as String
-            if (serialized != "null") return JSONObject(serialized)
+            val decoded = value.get(5, TimeUnit.SECONDS)?.let { JSONTokener(it).nextValue() }
+            when {
+                decoded == null || decoded === JSONObject.NULL -> Unit
+                decoded is String -> if (decoded != "null") return JSONObject(decoded)
+                else -> error("Unexpected Wasm report callback type: ${decoded.javaClass.name}")
+            }
             Thread.sleep(100)
         }
         error("Timed out waiting for Wasm fixture report")
