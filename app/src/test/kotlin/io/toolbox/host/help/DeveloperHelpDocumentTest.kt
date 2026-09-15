@@ -13,7 +13,7 @@ class DeveloperHelpDocumentTest {
         val document = parseHelpDocument(source)
         assertEquals(source, document.source)
         assertEquals(7, document.chapters.size)
-        assertEquals(31, document.chapters.sumOf { it.articles.size })
+        assertEquals(32, document.chapters.sumOf { it.articles.size })
         assertTrue(document.chapters.all { it.summary.isNotBlank() })
         assertTrue(document.search("background.setTimer").isNotEmpty())
         assertTrue(document.search("manifest 图标").flatMap { it.articles }.any {
@@ -30,6 +30,12 @@ class DeveloperHelpDocumentTest {
         val browserCode = browserArticle.blocks.single { it.code && it.label == "js" }
         assertTrue(browserCode.text.contains("api.browser.open("))
         assertTrue(browserCode.text.contains("error.retryAfterMs"))
+        val wasmArticle = document.search("WebAssembly").flatMap { it.articles }
+            .single { it.title == "WebAssembly 与二进制资源" }
+        val wasmCode = wasmArticle.blocks.filter { it.code }.joinToString("\n") { it.text }
+        assertTrue(wasmCode.contains("WebAssembly.instantiateStreaming"))
+        assertTrue(wasmCode.contains("arrayBuffer()"))
+        assertTrue(wasmCode.contains("new Worker"))
         val sdk = document.chapters.flatMap { it.articles }.flatMap { it.blocks }
             .single { it.label == "ts sdk/toolbox-api.d.ts" }
         assertTrue(sdk.code)

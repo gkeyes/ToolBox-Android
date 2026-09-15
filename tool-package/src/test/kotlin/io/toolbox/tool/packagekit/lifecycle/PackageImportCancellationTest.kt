@@ -4,6 +4,7 @@ import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.DataResult
+import io.toolbox.core.data.InstallTransactionRepository
 import io.toolbox.core.data.memory.InMemoryCoreData
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageResourceProbe
@@ -84,6 +85,38 @@ class PackageImportCancellationTest {
             assertTrue(data.installs.observeIncomplete().first().isEmpty())
             assertTrue(Files.exists(root.resolve("miniapps/$ID/versions/1/bundle/index.html")))
             assertFalse(Files.exists(root.resolve("miniapps/$ID/versions/2")))
+            assertClean(root)
+        }
+    }
+
+    @Test
+    fun cancellationReportsCleanupFailureWhenTheTransactionCannotBeMarkedFailed() = runBlocking {
+        withRoot { root ->
+            val data = InMemoryCoreData.create()
+            val originalManager = manager(root, data)
+            originalManager.importAndInstall(input())
+            val control = PackageImportControl()
+            var stageChecks = 0
+            val probe = PackageResourceProbe { directory ->
+                if (directory == root && ++stageChecks == 3) assertTrue(control.requestCancel())
+                PackageResourceSnapshot(Long.MAX_VALUE, false)
+            }
+            val failingTransactions = object : InstallTransactionRepository by data.installs {
+                override suspend fun fail(transactionId: String, updatedAt: Long, failureCode: String): DataResult<Unit> =
+                    DataResult.Failure.StorageFailure("forced cancellation cleanup failure")
+            }
+            val manager = manager(root, data, probe = probe, transactions = failingTransactions)
+
+            val result = manager.importAndInstall(input(2), control = control)
+
+            assertTrue(result is PackageInstallResult.Failed)
+            assertEquals(PackageOperationFailureCode.CLEANUP_FAILURE, (result as PackageInstallResult.Failed).failure.code)
+            assertEquals(1, data.catalog.observeTool(ID).first()?.currentVersion?.versionCode)
+            assertEquals(1, data.installs.observeIncomplete().first().size)
+            assertClean(root)
+            assertEquals(PackageRecoveryResult.Recovered, originalManager.recoverPendingMutations())
+            assertTrue(data.installs.observeIncomplete().first().isEmpty())
+            assertEquals(1, data.catalog.observeTool(ID).first()?.currentVersion?.versionCode)
             assertClean(root)
         }
     }
@@ -180,11 +213,12 @@ class PackageImportCancellationTest {
         data: io.toolbox.core.data.CoreDataRepositories,
         lifecycle: CatalogLifecycleRepository = data.lifecycle,
         probe: PackageResourceProbe = PackageResourceProbe { PackageResourceSnapshot(Long.MAX_VALUE, false) },
+        transactions: InstallTransactionRepository = data.installs,
     ) = ToolPackageManagers.create(
         privateFilesDirectory = root.toFile(),
         catalog = data.catalog,
         lifecycle = lifecycle,
-        transactions = data.installs,
+        transactions = transactions,
         resourceProbe = probe,
     )
 
