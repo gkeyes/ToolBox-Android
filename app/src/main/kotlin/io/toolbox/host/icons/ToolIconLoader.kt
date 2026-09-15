@@ -82,6 +82,8 @@ internal object ToolIconDecoder {
         null
     } catch (_: OutOfMemoryError) {
         null
+    } catch (_: StackOverflowError) {
+        null
     }
 
     private fun decodeRaster(bytes: ByteArray): Bitmap = ImageDecoder.decodeBitmap(
@@ -90,7 +92,7 @@ internal object ToolIconDecoder {
         require(info.mimeType in setOf("image/png", "image/jpeg", "image/webp"))
         val width = info.size.width
         val height = info.size.height
-        require(width > 0 && height > 0 && width.toLong() * height <= 64_000_000)
+        require(width > 0 && height > 0)
         val scale = SIZE.toDouble() / max(width, height)
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         decoder.setTargetSize(max(1, (width * scale).roundToInt()), max(1, (height * scale).roundToInt()))

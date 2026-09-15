@@ -35,6 +35,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
+import io.toolbox.core.ui.component.toolBoxOpenDesignSurface
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGlassState
 import io.toolbox.core.ui.component.ToolBoxIcon
@@ -64,7 +66,7 @@ internal fun PrimaryScreen(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(ToolBoxThemeTokens.colors.background)
+            .toolBoxOpenDesignCanvas()
             .testTag(selected.screenTestTag),
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
@@ -218,7 +220,7 @@ internal fun DetailScreen(
     val glassState = rememberToolBoxGlassState()
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     Box(
-        modifier = modifier.fillMaxSize().background(ToolBoxThemeTokens.colors.background),
+        modifier = modifier.fillMaxSize().toolBoxOpenDesignCanvas(),
         contentAlignment = Alignment.TopCenter,
     ) {
         ToolBoxAppScaffold(
@@ -279,8 +281,7 @@ private fun TopBar(
                         contentDescription = "导入 .tbx 工具包",
                         onClick = onImport,
                         modifier = Modifier
-                            .clip(CircleShape)
-                            .background(ToolBoxThemeTokens.colors.surface)
+                            .toolBoxOpenDesignSurface(CircleShape)
                             .testTag(HostTestTags.ImportFab),
                         tint = ToolBoxThemeTokens.colors.primary,
                     )

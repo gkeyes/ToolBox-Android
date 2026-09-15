@@ -10,12 +10,27 @@
   "icon": "icon.png",
   "apiVersion": "1.0",
   "minHostVersion": "0.2.0",
-  "categories": ["效率", "文本"],
+  "categories": [
+    "效率",
+    "文本"
+  ],
   "permissions": [
-    {"name": "storage", "reason": "保存和恢复笔记。", "required": false},
-    {"name": "clipboard.write", "reason": "复制笔记内容。", "required": false}
+    {
+      "name": "storage",
+      "reason": "保存和恢复笔记。",
+      "required": false
+    },
+    {
+      "name": "clipboard.write",
+      "reason": "复制笔记内容。",
+      "required": false
+    }
   ],
   "securityProfile": "strict",
-  "ui": {"orientation": "portrait", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true},
-  "limits": {"storageBytes": 262144, "maxBridgePayloadBytes": 16384}
+  "ui": {
+    "orientation": "portrait",
+    "allowFullscreen": false,
+    "statusBarStyle": "auto",
+    "showHostToolbar": true
+  }
 }

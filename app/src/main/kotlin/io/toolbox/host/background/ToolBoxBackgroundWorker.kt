@@ -43,9 +43,11 @@ class ToolBoxBackgroundWorker(
 ) : CoroutineWorker(appContext, parameters) {
     private val json = Json { ignoreUnknownKeys = false }
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result =
+        io.toolbox.host.backup.BackupRuntimeGate.worker { admittedWork() } ?: Result.retry()
+
+    private suspend fun admittedWork(): Result {
         val dependencies = ToolBoxBackgroundRuntime.resolve(applicationContext) ?: return Result.failure()
-        pruneExpiredResults(dependencies)
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
         val repository = dependencies.repositories.backgroundTasks
         val task = when (val found = repository.getTask(taskId)) {
@@ -148,10 +150,8 @@ class ToolBoxBackgroundWorker(
                 when (
                     val network = dependencies.networkProxy.httpGet(
                         url = url,
-                        allowedHosts = policy.allowedNetworkHosts,
-                        allowRedirects = spec.allowRedirects,
                         timeoutMillis = policy.networkTimeoutMillis,
-                        maxResponseBytes = minOf(policy.maxNetworkResponseBytes, MAX_RESULT_BYTES),
+                        maxResponseBytes = policy.maxNetworkResponseBytes,
                     )
                 ) {
                     is NetworkExecution.Success -> {
@@ -163,11 +163,7 @@ class ToolBoxBackgroundWorker(
                                 body = network.body,
                             ),
                         )
-                        if (payload.toByteArray(Charsets.UTF_8).size > MAX_RESULT_BYTES) {
-                            TaskExecution.TerminalFailure("RESULT_TOO_LARGE")
-                        } else {
-                            TaskExecution.Succeeded(payload)
-                        }
+                        TaskExecution.Succeeded(payload)
                     }
                     is NetworkExecution.RetryableFailure -> TaskExecution.RetryableFailure(network.errorCode)
                     is NetworkExecution.TerminalFailure -> TaskExecution.TerminalFailure(network.errorCode)
@@ -177,7 +173,7 @@ class ToolBoxBackgroundWorker(
                 val title = spec.title ?: return TaskExecution.TerminalFailure("INVALID_TASK_SPEC")
                 val body = spec.body ?: return TaskExecution.TerminalFailure("INVALID_TASK_SPEC")
                 val notificationId = spec.notificationId ?: task.taskId
-                if (!isValidNotification(notificationId, title, body)) {
+                if (!isValidNotification(notificationId, title)) {
                     return TaskExecution.TerminalFailure("INVALID_NOTIFICATION")
                 }
                 when (val posted = dependencies.notifications.post(task.toolId, notificationId, title, body)) {
@@ -259,11 +255,6 @@ class ToolBoxBackgroundWorker(
     private fun BackgroundTask.notificationId(): String = runCatching {
         json.decodeFromString<StoredBackgroundSpec>(specJson).notificationId
     }.getOrNull() ?: taskId
-
-    private suspend fun pruneExpiredResults(dependencies: BackgroundWorkerDependencies) {
-        val cutoffMillis = (dependencies.clock.nowMillis() - TASK_RESULT_RETENTION_MILLIS).coerceAtLeast(0L)
-        dependencies.repositories.backgroundTasks.pruneResultsCompletedBefore(cutoffMillis)
-    }
 
     private fun retryDelayMillis(attempt: Int): Long = 10_000L shl (attempt - 1)
 

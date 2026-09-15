@@ -1,4 +1,4 @@
-import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize, MAX_ARCHIVE_BYTES } from "./model.mjs";
+import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize } from "./model.mjs";
 import { createStore } from "./store.mjs";
 import { h, icon, button, iconButton, field, sectionHeading, emptyState } from "./dom.mjs";
 import { createChoice } from "./choice.mjs";
@@ -9,7 +9,7 @@ import { backupName } from "./backup.mjs";
 import { AI_MODES, AI_PROVIDERS, MINIMAX_MODELS, getAiConfig, aiPayload, requestAi, validateAiReport, reviewSuggestions, validateOcr, OCR_PROMPT } from "./ai.mjs";
 import { aiStreamConsent, createAiProgress } from "./ai-progress.mjs";
 import { buildHistoryPlan, createHistoryRun, runHistory } from "./history.mjs";
-import { buildNameCatalog, alignRecordNames, applyNameSuggestions, assertNameSuggestionGraph, MAX_NAME_BATCHES } from "./names.mjs";
+import { buildNameCatalog, alignRecordNames, applyNameSuggestions, assertNameSuggestionGraph } from "./names.mjs";
 
 const main = document.getElementById("main"), nav = document.getElementById("navigation"), dialog = document.getElementById("dialog");
 const api = window.ToolBox;
@@ -26,10 +26,10 @@ function errorText(error) {
   if (["PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED", "NOT_DECLARED"].includes(code)) return "权限未开启，请在 ToolBox 的本工具权限页开启对应的存储、文件或网络权限后重试";
   if (code === "USER_GESTURE_REQUIRED") return "操作等待过久，请重新点击按钮再试";
   if (code === "RATE_LIMITED") return "操作较频繁，请稍后再试；原数据未改变";
-  if (code === "QUOTA_EXCEEDED") return "超出 ToolBox 存储或传输限额，请减少文件大小或导出部分年份";
+  if (code === "QUOTA_EXCEEDED") return "当前可用内存或存储空间不足，请释放资源后重试；原数据仍保留";
   if (["CANCELLED", "SESSION_ENDED"].includes(code)) return "操作已取消";
   if (code === "NETWORK_BLOCKED") return "网络被宿主安全策略阻止，请确认网络权限；仅支持所选 Gemini 或 MiniMax 的官方域名";
-  if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。单次请求最多等待 15 分钟；连接失败或服务主动断开可能提前结束，请检查网络后重试";
+  if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。连接失败或服务主动断开可能提前结束，请检查网络后重试";
   if (code === "NETWORK_UNAVAILABLE") return "连接或读取响应失败，尚未得到完整结果。请检查网络、代理连接或服务可用性后重试";
   if (code === "INTERNAL_ERROR") return "ToolBox 宿主内部处理失败，请返回工具列表后重新打开，再尝试整理；原始记录未修改";
   if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.6.1 或更新版本中使用";
@@ -216,7 +216,7 @@ function openHistoryPicker(type, add) {
   const candidates = [...index.metrics.values()].filter((m) => m.specimen === specimen(type));
   const list = h("div", { class: "stack" });
   function update(term = "") {
-    const found = candidates.filter((m) => m.name.toLowerCase().includes(term.toLowerCase())).slice(0, 40);
+    const found = candidates.filter((m) => m.name.toLowerCase().includes(term.toLowerCase()));
     list.replaceChildren(...found.map((m) => button(`${m.name} · ${m.unit || "无单位"}`, () => { add(m.points[0]); dialog.close(); toast("已带入历史名称、单位和范围，请按本次报告核对"); }, "button")));
     if (!found.length) list.append(h("p", { class: "muted small" }, "没有匹配的历史指标，可手动添加。"));
   }
@@ -225,7 +225,6 @@ function openHistoryPicker(type, add) {
 }
 
 function openBatch(metric, returnPage = "trends") {
-  if (metric.points.length > 80) { toast("记录较多，请在原始记录中逐份编辑；一次批量编辑最多 80 项"); return; }
   viewGeneration++;
   const revision = store.revision;
   page = "editor"; nav.hidden = true; document.body.classList.add("editing");
@@ -298,18 +297,18 @@ function minePage() {
       settingsRow("记录天数", "按年查看每月记录天数，同一天不重复计数", "calendar", () => navigate("calendar"))),
     sectionHeading("辅助整理"), h("div", { class: "surface" }, settingsRow("AI 资料助手", "识别、摘要、追溯；每次发送前由你确认", "spark", () => navigate("ai")), settingsRow("AI 设置", "MiniMax / Gemini；密钥单独安全保存", "settings", () => navigate("ai-settings"))),
     sectionHeading("外观"), themes,
-    h("p", { class: "privacy-note" }, "健康档案 1.0.11 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} / ${MAX_ARCHIVE_BYTES / 1024} KiB。卸载工具会删除本机记录，请定期备份。`),
+    h("p", { class: "privacy-note" }, "健康档案 1.0.12 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} KiB。卸载工具会删除本机记录，请定期备份。`),
     button("清空健康记录", () => ask("清空所有健康记录？", "将清空检验记录、个人档案、摘要和指标库。AI 密钥与外观设置保留。此操作不可撤销，请先备份。", "确认清空", async () => { await persist((draft) => ({ ...emptyArchive(), settings: draft.settings })); render(); toast("健康记录已清空，已有导出备份不受影响"); }, true), "button danger full"));
 }
 
 function profilePage() {
   const controls = {}, revision = store.revision;
   const gender = createChoice("性别", ["", "男", "女", "其他 / 不填写"].map((value) => ({ value, label: value || "不填写" })), { value: archive.profile.gender }); controls.gender = gender;
-  const input = (key, placeholder, max) => (controls[key] = h("input", { class: "input", type: "number", min: "0", max, step: key === "age" ? "1" : "0.1", value: archive.profile[key], placeholder }));
-  const history = h("textarea", { class: "textarea", rows: 5, maxlength: 10000, value: archive.profile.history, placeholder: "可填写既往病史、过敏史等。未使用 AI 时不会发送。" }); controls.history = history;
+  const input = (key, placeholder) => (controls[key] = h("input", { class: "input", type: "number", min: "0", step: key === "age" ? "1" : "0.1", value: archive.profile[key], placeholder }));
+  const history = h("textarea", { class: "textarea", rows: 5, value: archive.profile.history, placeholder: "可填写既往病史、过敏史等。未使用 AI 时不会发送。" }); controls.history = history;
   const error = h("p", { class: "form-error", role: "alert", hidden: true });
   const submit = h("button", { class: "button primary full", type: "submit" }, "保存档案");
-  const fields = h("fieldset", { class: "editor-controls record-layout stack" }, header("个人健康档案", "可选填写，仅保存你希望记录的信息", () => go("mine")), h("div", { class: "form-grid" }, gender.element, field("年龄（岁）", input("age", "可不填", "130")), field("身高（cm）", input("height", "可不填", "300")), field("体重（kg）", input("weight", "可不填", "600"))), field("既往病史与备注", history), error, submit);
+  const fields = h("fieldset", { class: "editor-controls record-layout stack" }, header("个人健康档案", "可选填写，仅保存你希望记录的信息", () => go("mine")), h("div", { class: "form-grid" }, gender.element, field("年龄（岁）", input("age", "可不填")), field("身高（cm）", input("height", "可不填")), field("体重（kg）", input("weight", "可不填"))), field("既往病史与备注", history), error, submit);
   const form = h("form", {}, fields);
   form.addEventListener("submit", async (event) => {
     event.preventDefault(); if (fields.disabled) return;
@@ -334,13 +333,16 @@ function calendarPage() {
 
 async function startImport() {
   if (operationBusy) return;
+  const generation = viewGeneration, openingDialog = dialogControls, wasOpen = dialog.open;
+  const isCurrent = () => viewGeneration === generation && dialogControls === openingDialog && dialog.open === wasOpen;
   operationBusy = true;
   try {
     const file = await openFile(api);
-    if (!file) return;
+    if (!file || !isCurrent()) return;
     toast("正在本机解析备份…");
     const incoming = await runFileWorker("read", { name: file.name, bytes: file.bytes.buffer });
-    const revision = store.revision, generation = viewGeneration;
+    if (!isCurrent()) return;
+    const revision = store.revision;
     let preview;
     const includeProfile = h("input", { type: "checkbox", checked: !Object.values(archive.profile).some(Boolean) });
     const currentIds = new Set(archive.records.map((r) => r.id));
@@ -372,7 +374,7 @@ async function startImport() {
       h("label", { class: "checkbox-field" }, includeProfile, h("span", {}, "同时导入个人档案（勾选将替换本机性别、年龄、身高、体重和病史）")),
       h("p", { class: "small muted" }, "旧文件中的 API 密钥不会导入。备份仅在本机解析，不会上传。"), error,
       h("div", { class: "actions" }, button("取消", () => dialog.close()), confirm)]);
-  } catch (e) { toast(errorText(e)); } finally { operationBusy = false; }
+  } catch (e) { if (isCurrent()) toast(errorText(e)); } finally { operationBusy = false; }
 }
 
 function exportDialog() {
@@ -408,7 +410,7 @@ function aiSettingsPage() {
   let provider = archive.settings.aiProvider, model, statusVersion = 0, saving = false;
   const modelDrafts = { gemini: archive.settings.model, minimax: archive.settings.minimaxModel };
   const info = h("p", { class: "notice pre-wrap" }), modelSlot = h("div", { class: "stack" });
-  const key = h("input", { class: "input", type: "password", maxlength: 512, autocomplete: "off", spellcheck: "false", placeholder: "留空保留已保存的密钥" });
+  const key = h("input", { class: "input", type: "password", autocomplete: "off", spellcheck: "false", placeholder: "留空保留已保存的密钥" });
   const status = h("p", { class: "small muted", role: "status" });
   const error = h("p", { class: "form-error", role: "alert", hidden: true });
   const submit = h("button", { class: "button primary full", type: "submit" }, "保存 AI 设置");
@@ -428,7 +430,7 @@ function aiSettingsPage() {
       model = createChoice("模型名称", MINIMAX_MODELS.map((value) => ({ value, label: value, detail: value === "MiniMax-M3" ? "报告图片识别与文字整理（推荐）" : "仅文字整理，不能识别图片" })), { value: modelDrafts.minimax });
       modelSlot.replaceChildren(model.element, h("p", { class: "field-hint" }, "使用 MiniMax 中国站密钥；订阅 Key 与按量付费 Key 的额度不同，模型是否可用取决于账号权限。"));
     } else {
-      model = h("input", { class: "input", value: modelDrafts.gemini, maxlength: 100, pattern: "[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}", placeholder: "填写你在 AI Studio 中可用的模型名", required: true });
+      model = h("input", { class: "input", value: modelDrafts.gemini, pattern: "[a-zA-Z0-9][a-zA-Z0-9._-]*", placeholder: "填写你在 AI Studio 中可用的模型名", required: true });
       modelSlot.replaceChildren(field("模型名称", model, "使用支持图片输入的 Gemini 模型。旧模型停用时可在此修改。"));
     }
     checkKeyStatus();
@@ -453,7 +455,7 @@ function aiSettingsPage() {
       const definition = AI_PROVIDERS[provider], selectedModel = model.value.trim();
       const config = getAiConfig({ ...archive.settings, aiProvider: provider, [definition.modelField]: selectedModel });
       const enteredKey = key.value.trim();
-      if (enteredKey && (key.value.length > 512 || !/^[\x21-\x7e]+$/.test(enteredKey) || /[\r\n]/.test(key.value))) throw new HealthError("密钥过长或包含空格、换行等无效字符，请只粘贴 API Key");
+      if (enteredKey && (!/^[\x21-\x7e]+$/.test(enteredKey) || /[\r\n]/.test(key.value))) throw new HealthError("密钥包含空格、换行等无效字符，请只粘贴 API Key");
       saving = true; controls.disabled = true; ++statusVersion; form.setAttribute("aria-busy", "true"); submit.textContent = "正在保存…";
       if (enteredKey) { await api.storage.secure.set(config.keyName, enteredKey); key.value = ""; }
       await persist((draft) => { draft.settings.aiProvider = config.provider; draft.settings[config.modelField] = config.model; });
@@ -467,7 +469,7 @@ function aiSettingsPage() {
 function aiPage() {
   return h("div", { class: "record-layout" }, header("AI 资料助手", "先确认发送内容，再使用辅助整理", () => go("mine")),
     h("p", { class: "notice warning" }, "AI 可能出错，只用于资料整理，不是诊断或用药建议。识别、改名和分类结果需你核对后才能保存。"),
-    h("div", { class: "surface" }, settingsRow("识别报告图片", "原图不超过 5 MiB，自动压缩后识别并核对", "scan", chooseOcr),
+    h("div", { class: "surface" }, settingsRow("识别报告图片", "发送完整报告图片，识别后逐项核对", "scan", chooseOcr),
       Object.entries(AI_MODES).map(([mode, data]) => settingsRow(data.title, data.scope, mode === "trace" ? "trend" : "spark", () => prepareAi(mode)))),
     archive.healthSummary.text && h("section", {}, sectionHeading("已保存的资料摘要"), h("div", { class: "surface padded report-text" }, h("p", {}, archive.healthSummary.text), h("p", { class: "small muted" }, archive.healthSummary.time))),
     button(`AI 设置 · 当前 ${AI_PROVIDERS[archive.settings.aiProvider].label}`, () => navigate("ai-settings"), "text-button", "settings"));
@@ -485,7 +487,7 @@ function prepareAi(mode) {
   const payload = historyState ? historyState.plan.batches : aiPayload(snapshot, mode);
   const confirm = button("同意发送并整理", () => { dialog.close(); runAi(mode, snapshot, revision, payload, historyState); }, "button primary full");
   showDialog(`确认发送到 ${config.label}`, [h("p", { class: "notice warning" }, `将发送至 ${config.label}（${config.host}）：${definition.scope}。模型：${config.model}。可能产生 API 费用或消耗套餐额度。${aiStreamConsent(api, config)}`),
-    historyState && h("p", { class: "notice" }, `全部 ${historyState.plan.records} 份报告、${historyState.plan.items} 条结果将分 ${payload.length} 组依次发送，共 ${payload.length} 次 AI 调用，每次最多等待 15 分钟，总耗时可能更长。个人档案仅随首组发送。程序合成各组回复，不额外调用 AI；失败后可选择仅重试未完成组。不会截断历史或修改原记录。`),
+    historyState && h("p", { class: "notice" }, `全部 ${historyState.plan.records} 份报告、${historyState.plan.items} 条结果将分 ${payload.length} 组依次发送，共 ${payload.length} 次 AI 调用，总耗时取决于网络和模型服务。个人档案仅随首组发送。程序合成各组回复，不额外调用 AI；失败后可选择仅重试未完成组。不会截断历史或修改原记录。`),
     h("details", {}, h("summary", {}, "查看本次发送的数据"), h("pre", {}, JSON.stringify(payload, null, 2))), h("p", { class: "small muted" }, "仅此次同意，不会在后台持续同步。发送后关闭页面不能撤回已发送的资料。"), confirm]);
 }
 
@@ -610,7 +612,7 @@ async function chooseOcr() {
         progress.dispose(); dialog.close(); openEditor(aligned.record, `${notice}${matching}${unresolved ? ` ${unresolved} 项名称未自动对齐，原因见各指标下方。` : " 名称已与本地目录核对，仍请检查识别结果。"}`, aligned);
       } catch (e) { if (isCurrent()) { status.textContent = errorText(e); status.hidden = false; status.scrollIntoView({ block: "nearest" }); } } finally { progress.dispose(); progressSlot.replaceChildren(); aiBusy = false; confirm.disabled = false; }
     }, "button primary full");
-    showDialog("确认发送报告图片", [h("p", { class: "notice warning pre-wrap" }, `将把下方完整图片及其附带信息发送到 ${config.label}（${config.host}）。模型：${config.model}。图片可能包含姓名等敏感信息，建议先遮挡无关个人信息、移除照片的位置等附带信息。${catalog.candidates.length ? `识别后自动对齐本地名称：先使用已确认的对应，其余仅发送识别名称、标本、单位及同组候选目录，不再次发图，不发送历史结果、参考范围、日期或病史。名称匹配最多额外调用 ${MAX_NAME_BATCHES} 次，可能产生额外 API 费用或消耗套餐额度。` : "当前没有本地标准目录，本次仅识别图片，可能产生 API 费用或消耗套餐额度。"}`),
+    showDialog("确认发送报告图片", [h("p", { class: "notice warning pre-wrap" }, `将把下方完整图片及其附带信息发送到 ${config.label}（${config.host}）。模型：${config.model}。图片可能包含姓名等敏感信息，建议先遮挡无关个人信息、移除照片的位置等附带信息。${catalog.candidates.length ? `识别后自动对齐本地名称：先使用已确认的对应，其余仅发送识别名称、标本、单位及同组候选目录，不再次发图，不发送历史结果、参考范围、日期或病史。名称匹配按实际名称分组追加调用，可能产生额外 API 费用或消耗套餐额度。` : "当前没有本地标准目录，本次仅识别图片，可能产生 API 费用或消耗套餐额度。"}`),
       catalog.candidates.length > 0 && h("details", {}, h("summary", {}, `查看本地标准目录（${catalog.candidates.length} 项）`), h("p", { class: "small muted" }, "发送同标本的完整候选目录。单位差异不直接排除候选；方法与数量/比例差异只作核对提示，由 AI 建议、你确认。未注明标本的指标库条目仅供手工选择。"), h("pre", {}, catalog.candidates.map((entry) => `${entry.name} · ${entry.specimen || "标本未标注"} · ${entry.unit || "单位未注明"}`).join("\n"))),
       imageInfo, preview, h("p", { class: "small muted" }, `${aiStreamConsent(api, config)}关闭弹窗后不再填入本次结果；尚未发出的匹配请求也会停止，但无法撤回已经发送的资料。`), confirm, progressSlot, status]);
   } catch (e) { toast(errorText(e)); } finally { operationBusy = false; }

@@ -4,12 +4,12 @@
   "name": "NextFlux",
   "shortName": "NextFlux",
   "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要及后台同步。",
-  "version": "1.0.5",
-  "versionCode": 6,
+  "version": "1.0.11",
+  "versionCode": 12,
   "entry": "index.html",
   "icon": "web-app-manifest-512x512.png",
   "apiVersion": "1.0",
-  "minHostVersion": "0.6.7",
+  "minHostVersion": "0.7.8",
   "categories": [
     "阅读",
     "效率"
@@ -42,7 +42,7 @@
     },
     {
       "name": "browser",
-      "reason": "点击链接后使用系统浏览器打开网页。",
+      "reason": "点击链接后使用 ToolBox 应用内浏览器打开网页。",
       "required": false
     },
     {
@@ -56,18 +56,11 @@
       "required": false
     }
   ],
-  "network": {
-    "timeoutMs": 60000,
-    "maxResponseBytes": 4194304
-  },
   "securityProfile": "strict",
   "ui": {
     "orientation": "unspecified",
     "allowFullscreen": false,
     "statusBarStyle": "auto",
     "showHostToolbar": true
-  },
-  "limits": {
-    "maxBridgePayloadBytes": 8388608
   }
 }

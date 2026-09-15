@@ -9,6 +9,8 @@ import io.toolbox.host.HostImportConfirmationKind
 import io.toolbox.host.HostImportResult
 import io.toolbox.host.HostInstalledManifestResult
 import io.toolbox.host.HostPackageOperations
+import io.toolbox.host.backup.SerializedPackageOperations
+import io.toolbox.core.data.DataMutationLock
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
@@ -109,7 +111,7 @@ class ImportViewModelTest {
                 HostImportResult.Cancelled
             },
         )
-        val viewModel = createViewModel(operations)
+        val viewModel = createViewModel(SerializedPackageOperations(operations, DataMutationLock()))
         viewModel.importPackage(ByteInput())
         runCurrent()
         viewModel.cancelActiveImport()

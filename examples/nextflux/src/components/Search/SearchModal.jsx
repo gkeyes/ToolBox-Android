@@ -16,7 +16,7 @@ import { settingsState } from "@/stores/settingsStore";
 import { useTranslation } from "react-i18next";
 import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
-import { debounce } from "lodash";
+import debounce from "lodash/debounce.js";
 export default function SearchModal() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -30,17 +30,19 @@ export default function SearchModal() {
   const inputRef = useRef(null);
 
   useEffect(() => {
+    if (!isOpen || !keyword || isComposing) {
+      searching.set(false);
+      if (!keyword) {
+        searchResults.set([]);
+        feedSearchResults.set([]);
+      }
+      return;
+    }
     let ignore = false;
     searching.set(true);
 
     const handleSearch = debounce(
       async () => {
-        if (!keyword) {
-          searchResults.set([]);
-          feedSearchResults.set([]);
-          return;
-        }
-
         searchType === "articles"
           ? searchResults.set([])
           : feedSearchResults.set([]);
@@ -57,22 +59,21 @@ export default function SearchModal() {
           searchType === "articles"
             ? searchResults.set(res)
             : feedSearchResults.set(res);
-          searching.set(false);
         } catch {
-          console.error("搜索失败");
-          searching.set(false);
+          if (!ignore) console.error("搜索失败");
+        } finally {
+          if (!ignore) searching.set(false);
         }
       },
       500,
       { leading: false, trailing: true },
     );
-    if (!isComposing) {
-      handleSearch();
-    }
+    handleSearch();
     return () => {
       ignore = true;
+      handleSearch.cancel();
     };
-  }, [keyword, searchType, showHiddenFeeds, isComposing]);
+  }, [isOpen, keyword, searchType, showHiddenFeeds, isComposing]);
 
   // 处理选择结果
   const handleSelect = (item) => {
@@ -103,12 +104,13 @@ export default function SearchModal() {
     <Modal>
       <Button className="hidden" />
       <Modal.Backdrop
+        className="nextflux-modal-backdrop"
         isOpen={isOpen}
         onOpenChange={(open) => searchDialogOpen.set(open)}
         variant="transparent"
       >
         <Modal.Container scroll="inside" size="lg">
-          <Modal.Dialog className="w-[700px] max-w-[90vw] h-[500px] max-h-[85vh] bg-overlay/90 backdrop-blur-lg border shadow-2xl p-0">
+          <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0">
             <Modal.Header className="p-2 border-b">
               <InputGroup className="bg-transparent shadow-none ring-0 ring-transparent">
                 <InputGroup.Prefix>
@@ -130,7 +132,7 @@ export default function SearchModal() {
                 />
               </InputGroup>
             </Modal.Header>
-            <Modal.Body className="p-0 m-0">
+            <Modal.Body className="nextflux-modal-body p-0 m-0">
               <SearchResults
                 results={
                   searchType === "articles"
@@ -170,7 +172,7 @@ export default function SearchModal() {
                     </Tabs.List>
                   </Tabs.ListContainer>
                 </Tabs>
-                <div className="flex items-center gap-1 px-1">
+                <div className="hidden md:flex items-center gap-1 px-1">
                   <Kbd>
                     <Kbd.Abbr keyValue="up" />
                   </Kbd>

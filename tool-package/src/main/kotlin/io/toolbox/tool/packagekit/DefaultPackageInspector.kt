@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit
 
+import io.toolbox.core.data.ResourceCapacity
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -15,7 +16,6 @@ import kotlinx.coroutines.withContext
 
 internal class DefaultPackageInspector(
     private val temporaryRoot: Path,
-    private val limits: PackageLimits = PackageLimits(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
 ) : ToolPackageInspector {
@@ -59,20 +59,23 @@ internal class DefaultPackageInspector(
         return try {
             Files.createDirectories(temporaryDirectory)
             copySource(input, archivePath, resources)
-            val checked = ZipStructureReader.read(archivePath, limits, resources)
+            val checked = ZipStructureReader.read(archivePath, resources = resources)
             validateMetadataBounds(checked)
             val extracted = ZipArchiveReader.extract(archivePath, checked, temporaryDirectory, resources)
             val manifestPath = extracted.metadata["manifest.json"]
                 ?: reject(PackageRejectionCode.MANIFEST_MISSING, "manifest.json is required at the archive root")
             resources.check()
+            if (Files.size(manifestPath) > ResourceCapacity.availableHeapBytes()) {
+                reject(PackageRejectionCode.INSUFFICIENT_RESOURCES, "manifest.json exceeds available memory")
+            }
             val manifestBytes = Files.readAllBytes(manifestPath)
             val manifest = try {
-                ManifestValidator.parse(manifestBytes, limits)
+                ManifestValidator.parse(manifestBytes)
             } catch (error: JsonFormatException) {
                 reject(PackageRejectionCode.MANIFEST_INVALID, error.message ?: "manifest.json is invalid")
             }
             BundleEntryValidator.validate(manifest, extracted.bundleDirectory, extracted.hashes)
-            IntegrityVerifier.verify(extracted.metadata, extracted.hashes, limits, resources)
+            val signingKeyId = IntegrityVerifier.verify(extracted.metadata, extracted.hashes, resources)
             Files.deleteIfExists(archivePath)
             PreparationResult.Prepared(
                 PreparedPackage(
@@ -86,6 +89,7 @@ internal class DefaultPackageInspector(
                     bundleDirectory = extracted.bundleDirectory,
                     fileHashes = extracted.hashes,
                     temporaryDirectory = temporaryDirectory,
+                    signingKeyId = signingKeyId,
                 ),
             )
         } catch (error: InspectionRejected) {
@@ -143,12 +147,12 @@ internal class DefaultPackageInspector(
     private fun validateMetadataBounds(archive: CheckedArchive) {
         val manifest = archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "manifest.json" }
             ?: reject(PackageRejectionCode.MANIFEST_MISSING, "Exactly one root manifest.json is required")
-        if (manifest.extractedBytes > limits.maxManifestBytes) {
-            reject(PackageRejectionCode.MANIFEST_TOO_LARGE, "manifest.json exceeds ${limits.maxManifestBytes} bytes")
+        if (manifest.extractedBytes > ResourceCapacity.availableHeapBytes()) {
+            reject(PackageRejectionCode.MANIFEST_TOO_LARGE, "manifest.json exceeds available memory")
         }
         archive.entries.singleOrNull { !it.path.directory && it.path.normalized == "signature.json" }?.let {
-            if (it.extractedBytes > MAX_SIGNATURE_BYTES) {
-                reject(PackageRejectionCode.SIGNATURE_MALFORMED, "signature.json exceeds $MAX_SIGNATURE_BYTES bytes")
+            if (it.extractedBytes > ResourceCapacity.availableHeapBytes()) {
+                reject(PackageRejectionCode.SIGNATURE_MALFORMED, "signature.json exceeds available memory")
             }
         }
     }
@@ -158,7 +162,4 @@ internal class DefaultPackageInspector(
         Files.walk(path).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
     }
 
-    private companion object {
-        const val MAX_SIGNATURE_BYTES = 64L * 1024
-    }
 }

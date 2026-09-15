@@ -12,22 +12,22 @@ internal object ManifestValidator {
         "location.background", "alarms",
     )
 
-    fun parse(bytes: ByteArray, limits: PackageLimits): ToolManifest {
+    fun parse(bytes: ByteArray): ToolManifest {
         val root = StrictJson.parse(bytes).asObject("manifest")
         root.requireOnly("manifest", TOP_LEVEL_FIELDS)
         val schemaVersion = requireInt(root, "schemaVersion", 1, 1)
-        val id = requireString(root, "id", 5, 120, idPattern)
-        val name = requireString(root, "name", 1, 40)
-        val shortName = optionalString(root, "shortName", 1, 12)
-        val description = optionalString(root, "description", 0, 240)
-        val version = requireString(root, "version", 1, 32, versionPattern)
+        val id = requireString(root, "id", 5, 255, idPattern)
+        val name = requireString(root, "name", 1, Int.MAX_VALUE)
+        val shortName = optionalString(root, "shortName", 1, Int.MAX_VALUE)
+        val description = optionalString(root, "description", 0, Int.MAX_VALUE)
+        val version = requireString(root, "version", 1, Int.MAX_VALUE, versionPattern)
         val versionCode = requireInt(root, "versionCode", 1, Int.MAX_VALUE)
-        val entry = validateRelativePath(root.required("entry").asString("entry"), limits, htmlOnly = true)
+        val entry = validateRelativePath(root.required("entry").asString("entry"), htmlOnly = true)
         val icon = root["icon"]?.asString("icon")?.let {
-            validateRelativePath(it, limits, htmlOnly = false)
+            validateRelativePath(it, htmlOnly = false)
         }
         val apiVersion = requireString(root, "apiVersion", 1, 16, apiPattern)
-        val minHostVersion = requireString(root, "minHostVersion", 1, 32, versionPattern)
+        val minHostVersion = requireString(root, "minHostVersion", 1, Int.MAX_VALUE, versionPattern)
         val permissions = parsePermissions(root.required("permissions"))
         val v03Capabilities = setOf("background.runtime", "location.background", "alarms")
         if (permissions.any { it.name in v03Capabilities } && !versionAtLeast(minHostVersion, 0, 3, 0)) {
@@ -38,7 +38,7 @@ internal object ManifestValidator {
             "compat" -> SecurityProfile.COMPAT
             else -> throw JsonFormatException("securityProfile must be strict or compat")
         }
-        val network = root["network"]?.let { parseNetwork(it, minHostVersion) }
+        val network = root["network"]?.let { parseNetwork(it) }
         val categories = root["categories"]?.let(::parseCategories).orEmpty()
         val ui = root["ui"]?.let(::parseUi) ?: ManifestUi(
             orientation = null,
@@ -46,9 +46,7 @@ internal object ManifestValidator {
             statusBarStyle = ManifestStatusBarStyle.AUTO,
             showHostToolbar = true,
         )
-        val manifestLimits = root["limits"]?.let(::parseLimits) ?: ManifestLimits(
-            maxBridgePayloadBytes = 262_144,
-        )
+        root["limits"]?.let(::validateLegacyLimits)
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -66,13 +64,11 @@ internal object ManifestValidator {
             securityProfile = securityProfile,
             network = network,
             ui = ui,
-            limits = manifestLimits,
         )
     }
 
     private fun parsePermissions(value: JsonValue): List<ManifestPermission> {
         val values = value.asArray("permissions")
-        if (values.size > 19) throw JsonFormatException("permissions exceeds 19 items")
         val seen = mutableSetOf<String>()
         return values.mapIndexed { index, item ->
             val permission = item.asObject("permissions[$index]")
@@ -82,13 +78,13 @@ internal object ManifestValidator {
             if (!seen.add(name)) throw JsonFormatException("Duplicate permission: $name")
             ManifestPermission(
                 name = name,
-                reason = requireString(permission, "reason", 2, 120),
+                reason = requireString(permission, "reason", 1, Int.MAX_VALUE),
                 required = permission["required"]?.asBoolean("permissions[$index].required") ?: false,
             )
         }
     }
 
-    private fun parseNetwork(value: JsonValue, minHostVersion: String): ManifestNetwork {
+    private fun parseNetwork(value: JsonValue): ManifestNetwork {
         val network = value.asObject("network")
         network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs", "allowUserDomains"))
         val domains = network["allowDomains"]?.asArray("network.allowDomains")?.mapIndexed { index, item ->
@@ -98,35 +94,30 @@ internal object ManifestValidator {
             }
             domain
         }.orEmpty()
-        if (domains.size > 32 || domains.toSet().size != domains.size) {
-            throw JsonFormatException("network.allowDomains must contain at most 32 unique domains")
+        if (domains.toSet().size != domains.size) {
+            throw JsonFormatException("network.allowDomains must contain unique domains")
         }
         val timeoutMs = network["timeoutMs"]?.let {
-            requireIntValue(it, "network.timeoutMs", 1000, 3_600_000)
-        } ?: 30_000
-        if (timeoutMs > 600_000 && !versionAtLeast(minHostVersion, 0, 6, 1)) {
-            throw JsonFormatException("network.timeoutMs above 600000 requires minHostVersion 0.6.1")
-        }
-        val allowUserDomains = network["allowUserDomains"]?.asBoolean("network.allowUserDomains") ?: false
+            requireIntValue(it, "network.timeoutMs", 0, Int.MAX_VALUE)
+        } ?: 0
+        network["allowUserDomains"]?.asBoolean("network.allowUserDomains")
+        network["allowRedirects"]?.asBoolean("network.allowRedirects")
         return ManifestNetwork(
-            allowDomains = domains,
-            allowRedirects = network["allowRedirects"]?.asBoolean("network.allowRedirects") ?: true,
             maxResponseBytes = network["maxResponseBytes"]?.let {
-                requireIntValue(it, "network.maxResponseBytes", 1024, 67_108_864)
-            } ?: 4_194_304,
+                requireIntValue(it, "network.maxResponseBytes", 1, Int.MAX_VALUE)
+            } ?: Int.MAX_VALUE,
             timeoutMs = timeoutMs,
-            allowUserDomains = allowUserDomains,
         )
     }
 
     private fun parseCategories(value: JsonValue): List<String> {
         val categories = value.asArray("categories").mapIndexed { index, item ->
             val category = item.asString("categories[$index]")
-            if (category.length !in 1..24) throw JsonFormatException("categories[$index] length is invalid")
+            if (category.isEmpty()) throw JsonFormatException("categories[$index] length is invalid")
             category
         }
-        if (categories.size > 8 || categories.toSet().size != categories.size) {
-            throw JsonFormatException("categories must contain at most 8 unique values")
+        if (categories.toSet().size != categories.size) {
+            throw JsonFormatException("categories must contain unique values")
         }
         return categories
     }
@@ -158,28 +149,22 @@ internal object ManifestValidator {
         )
     }
 
-    private fun parseLimits(value: JsonValue): ManifestLimits {
+    private fun validateLegacyLimits(value: JsonValue) {
         val limits = value.asObject("limits")
         limits.requireOnly("limits", setOf("storageBytes", "maxBridgePayloadBytes"))
-        // Legacy manifests may still declare a storage budget. Validate its JSON
-        // shape for compatibility, but it no longer limits persisted tool data.
-        limits["storageBytes"]?.let {
-            val number = (it as? JsonValue.NumberValue)?.value
-                ?: throw JsonFormatException("limits.storageBytes must be an integer")
+        // Retain legacy JSON shape compatibility without retaining inactive quotas.
+        limits.forEach { (name, value) ->
+            val number = (value as? JsonValue.NumberValue)?.value
+                ?: throw JsonFormatException("limits.$name must be an integer")
             if (number.signum() < 0 || number.stripTrailingZeros().scale() > 0) {
-                throw JsonFormatException("limits.storageBytes must be a non-negative integer")
+                throw JsonFormatException("limits.$name must be a non-negative integer")
             }
         }
-        return ManifestLimits(
-            maxBridgePayloadBytes = limits["maxBridgePayloadBytes"]?.let {
-                requireIntValue(it, "limits.maxBridgePayloadBytes", 4096, 8_388_608)
-            } ?: 262_144,
-        )
     }
 
-    private fun validateRelativePath(path: String, limits: PackageLimits, htmlOnly: Boolean): String {
+    private fun validateRelativePath(path: String, htmlOnly: Boolean): String {
         val safe = try {
-            PackagePathPolicy.validate(path, limits)
+            PackagePathPolicy.validate(path)
         } catch (error: InspectionRejected) {
             throw JsonFormatException(error.rejection.detail)
         }

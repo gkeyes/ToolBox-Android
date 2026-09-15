@@ -5,7 +5,11 @@
   let lastResult = "";
   const toolbox = () => window.ToolBox;
   const setError = (message) => { const error = $("form-error"); error.textContent = message; error.hidden = !message; };
-  const inputs = () => Object.fromEntries(fieldIds.map((id) => [id, Number($(id).value)]));
+  const inputs = () => Object.fromEntries(fieldIds.map((id) => {
+    const value = $(id).value.trim();
+    return [id, value ? Number(value) : NaN];
+  }));
+  const clearResult = () => { lastResult = ""; $("result").hidden = true; };
 
   async function notify(message) { try { await toolbox()?.ui?.toast?.(message); } catch (_) {} }
   async function save(values) {
@@ -18,6 +22,7 @@
   }
   async function calculate(event) {
     event.preventDefault();
+    clearResult();
     const { capital, risk, entry, stop } = inputs();
     const perShareRisk = entry - stop;
     if (![capital, risk, entry, stop].every(Number.isFinite) || capital <= 0 || risk <= 0 || entry <= 0 || stop < 0 || perShareRisk <= 0) {
@@ -45,5 +50,6 @@
   }
   $("calculator").addEventListener("submit", calculate);
   $("copy").addEventListener("click", copyResult);
+  fieldIds.forEach((id) => $(id).addEventListener("input", () => { clearResult(); setError(""); }));
   restore();
 })();

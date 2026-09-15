@@ -5,7 +5,7 @@ import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.InstallTransactionRepository
-import io.toolbox.core.data.memory.InMemoryCoreData
+import io.toolbox.tool.packagekit.fixtures.InMemoryCoreData
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.PackageResourceProbe
 import io.toolbox.tool.packagekit.PackageResourceSnapshot
@@ -72,14 +72,16 @@ class PackageImportCancellationTest {
             var cancelledInStage = false
             var stageChecks = 0
             val probe = PackageResourceProbe { directory ->
-                if (directory == root && ++stageChecks == 3) {
+                if (directory == root && hasStagedBundle(root) && ++stageChecks == 2) {
                     cancelledInStage = control.requestCancel() || cancelledInStage
                 }
                 PackageResourceSnapshot(Long.MAX_VALUE, false)
             }
             val manager = manager(root, data, probe = probe)
 
-            assertEquals(PackageInstallResult.Cancelled, manager.importAndInstall(input(2), control = control))
+            val pending = manager.importAndInstall(input(2)) as PackageInstallResult.ConfirmationRequired
+            assertEquals(PackageVersionConfirmationKind.UPDATE, pending.confirmation.kind)
+            assertEquals(PackageInstallResult.Cancelled, manager.confirmInstall(pending.confirmation.id, control = control))
             assertTrue(cancelledInStage)
             assertEquals(1, data.catalog.observeTool(ID).first()?.currentVersion?.versionCode)
             assertTrue(data.installs.observeIncomplete().first().isEmpty())
@@ -98,7 +100,7 @@ class PackageImportCancellationTest {
             val control = PackageImportControl()
             var stageChecks = 0
             val probe = PackageResourceProbe { directory ->
-                if (directory == root && ++stageChecks == 3) assertTrue(control.requestCancel())
+                if (directory == root && hasStagedBundle(root) && ++stageChecks == 2) assertTrue(control.requestCancel())
                 PackageResourceSnapshot(Long.MAX_VALUE, false)
             }
             val failingTransactions = object : InstallTransactionRepository by data.installs {
@@ -107,7 +109,8 @@ class PackageImportCancellationTest {
             }
             val manager = manager(root, data, probe = probe, transactions = failingTransactions)
 
-            val result = manager.importAndInstall(input(2), control = control)
+            val pending = manager.importAndInstall(input(2)) as PackageInstallResult.ConfirmationRequired
+            val result = manager.confirmInstall(pending.confirmation.id, control = control)
 
             assertTrue(result is PackageInstallResult.Failed)
             assertEquals(PackageOperationFailureCode.CLEANUP_FAILURE, (result as PackageInstallResult.Failed).failure.code)
@@ -185,9 +188,33 @@ class PackageImportCancellationTest {
                 manager(root, data).importAndInstall(input())
                 val control = PackageImportControl()
                 var commitReached = false
+                var replacementBarrierHeld = false
+                val cleanup = object : ToolStateCleanup {
+                    override suspend fun <T> withVersionReplacement(
+                        toolId: String,
+                        previousVersionCode: Int,
+                        nextVersionCode: Int,
+                        action: suspend () -> T,
+                    ): T {
+                        replacementBarrierHeld = true
+                        return try {
+                            action()
+                        } finally {
+                            assertClean(root)
+                            replacementBarrierHeld = false
+                        }
+                    }
+
+                    override suspend fun afterVersionReplacement(toolId: String, previousVersionCode: Int, nextVersionCode: Int) {
+                        assertTrue(replacementBarrierHeld)
+                    }
+
+                    override suspend fun afterUninstall(toolId: String) = Unit
+                }
                 val lifecycle = object : CatalogLifecycleRepository by data.lifecycle {
                     override suspend fun commitInstall(attempt: CatalogInstallAttempt): DataResult<CommitInstallOutcome> {
                         commitReached = true
+                        assertTrue("The runtime/storage barrier must cover commit", replacementBarrierHeld)
                         assertEquals(PackageImportPhase.COMMITTING, control.phase.value)
                         assertFalse("The commit boundary must close cancellation", control.requestCancel())
                         return if (rejectCommit) DataResult.Failure.StorageFailure("forced") else data.lifecycle.commitInstall(attempt)
@@ -195,9 +222,10 @@ class PackageImportCancellationTest {
                 }
                 val manager = manager(root, data, lifecycle)
                 val confirmation = manager.importAndInstall(input()) as PackageInstallResult.ConfirmationRequired
-                val result = manager.confirmInstall(confirmation.confirmation.id, control = control)
+                val result = manager.confirmInstall(confirmation.confirmation.id, cleanup = cleanup, control = control)
 
                 assertTrue(commitReached)
+                assertFalse(replacementBarrierHeld)
                 if (rejectCommit) assertTrue(result is PackageInstallResult.Failed)
                 else assertEquals(PackageInstallResult.Installed(ID, 1, true), result)
                 assertEquals(1, data.catalog.observeTool(ID).first()?.currentVersion?.versionCode)
@@ -263,6 +291,13 @@ class PackageImportCancellationTest {
         for (relative in listOf(".imports", ".staging", ".lifecycle/replacement-cleanup", ".lifecycle/replacement-backups")) {
             val path = root.resolve("miniapps/$relative")
             assertTrue("Residue in $relative", !Files.exists(path) || Files.list(path).use { it.findAny().isEmpty })
+        }
+    }
+
+    private fun hasStagedBundle(root: Path): Boolean {
+        val staging = root.resolve("miniapps/.staging")
+        return Files.isDirectory(staging) && Files.list(staging).use { paths ->
+            paths.anyMatch { Files.isDirectory(it.resolve("bundle")) }
         }
     }
 

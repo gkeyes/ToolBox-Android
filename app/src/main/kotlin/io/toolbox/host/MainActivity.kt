@@ -12,16 +12,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
-import io.toolbox.core.data.ThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.host.catalog.CatalogViewModel
+import io.toolbox.host.browser.BrowserAppearance
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.navigation.ToolBoxNavigation
@@ -98,9 +99,15 @@ class MainActivity : ComponentActivity() {
                         return@setContent
                     }
                     val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
+                    SideEffect {
+                        BrowserAppearance.current = BrowserAppearance(
+                            themeMode = themeMode,
+                            reduceTransparency = settingsState.settings.reduceTransparency,
+                        )
+                    }
                     ToolBoxTheme(
                         mode = themeMode,
-                        style = settingsState.settings.themeStyle.toToolBoxThemeStyle(),
+                        style = ToolBoxThemeStyle.LiquidGlass,
                         reduceTransparency = settingsState.settings.reduceTransparency,
                     ) {
                         ApplySystemBarAppearance(themeMode)
@@ -184,9 +191,4 @@ private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
     ThemeMode.MONET_SYSTEM -> ToolBoxThemeMode.MonetSystem
     ThemeMode.MONET_LIGHT -> ToolBoxThemeMode.MonetLight
     ThemeMode.MONET_DARK -> ToolBoxThemeMode.MonetDark
-}
-
-private fun ThemeStyle.toToolBoxThemeStyle(): ToolBoxThemeStyle = when (this) {
-    ThemeStyle.MIUIX -> ToolBoxThemeStyle.Miuix
-    ThemeStyle.LIQUID_GLASS -> ToolBoxThemeStyle.LiquidGlass
 }

@@ -25,8 +25,8 @@
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
 
-  function cleanText(value, maxLength) {
-    return String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+  function cleanText(value) {
+    return String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
   }
 
   function clock(value = Date.now()) {
@@ -113,7 +113,6 @@
 
   function appendEvent(message, kind = "neutral") {
     state.events.unshift({ time: clock(), message: cleanText(message, 280), kind });
-    state.events = state.events.slice(0, 12);
     renderLog();
   }
 
@@ -318,7 +317,13 @@
   }
 
   async function loadPersisted() {
-    const saved = await toolbox().storage.get(STORAGE_KEY);
+    let saved;
+    try {
+      saved = await toolbox().storage.get(STORAGE_KEY);
+    } catch (error) {
+      appendEvent(`状态读取失败 · ${errorLabel(error)}`, "error");
+      return;
+    }
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) return;
     if (["market", "countdown", "trip"].includes(saved.preset)) state.preset = saved.preset;
     if (Number.isInteger(saved.tick) && saved.tick >= 0) state.tick = saved.tick;

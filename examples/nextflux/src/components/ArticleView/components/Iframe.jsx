@@ -49,7 +49,7 @@ export default function Iframe({ domNode }) {
   };
   return (
     <div className="my-4 rounded-xl bg-default p-4 text-sm not-prose">
-      {mediaUrl ? <>{kind === "audio" ? <audio controls preload="metadata" className="w-full" src={mediaUrl} onError={() => setStatus("设备无法播放此音频格式，请使用链接播放。")} /> : <video controls playsInline preload="metadata" className="w-full" src={mediaUrl} onError={() => setStatus("设备无法播放此视频格式，请使用链接播放。")} />}<button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : <p>{canLoad ? `${label}可按需加载，单个文件上限 4 MiB。` : `${label}需要在浏览器中播放。`}{url ? "也可复制或分享链接。" : "没有可用的媒体链接。"}</p>}
+      {mediaUrl ? <>{kind === "audio" ? <audio controls preload="metadata" className="w-full" src={mediaUrl} onError={() => setStatus("设备无法播放此音频格式，请使用链接播放。")} /> : <video controls playsInline preload="metadata" className="w-full" src={mediaUrl} onError={() => setStatus("设备无法播放此视频格式，请使用链接播放。")} />}<button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : <p>{canLoad ? `${label}可按需加载，关闭后释放媒体缓存。` : `${label}需要在浏览器中播放。`}{url ? "也可复制或分享链接。" : "没有可用的媒体链接。"}</p>}
       {url && <div className="flex flex-wrap gap-4 mt-3">{canLoad && !mediaUrl && <button type="button" disabled={loading} className="text-accent min-h-12" onClick={load}>{loading ? "正在加载…" : `加载${label}`}</button>}<button type="button" className="text-accent min-h-12" onClick={() => act("copy")}>复制链接</button><button type="button" className="text-accent min-h-12" onClick={() => act("share")}>分享链接</button></div>}
       {status && <p role="status" className="mt-2 text-muted">{status}</p>}
     </div>

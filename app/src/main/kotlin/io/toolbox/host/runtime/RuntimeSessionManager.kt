@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -14,6 +15,8 @@ import android.location.LocationManager
 import android.webkit.WebView
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
+import io.toolbox.core.data.ThemeMode
+import io.toolbox.tool.runtime.RuntimeWebViewTheme
 import io.toolbox.host.HostTrace
 import io.toolbox.host.MainActivity
 import io.toolbox.host.R
@@ -45,6 +48,8 @@ import io.toolbox.tool.runtime.ToolRuntimePreparer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,6 +59,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -123,7 +130,7 @@ internal class RuntimeSessionManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val stateByTool = ConcurrentHashMap<String, MutableStateFlow<RuntimeUiState>>()
     private val hosts = mutableMapOf<String, RuntimeHost>()
-    private val openingTools = mutableSetOf<String>()
+    private val openingTools = mutableMapOf<String, Job>()
     private val visibleTools = mutableSetOf<String>()
     private val sessionsByTool = mutableMapOf<String, MutableMap<String, StoredRuntimeSession>>()
     private val notificationIds = RuntimeNotificationIds()
@@ -143,6 +150,30 @@ internal class RuntimeSessionManager(
         refreshForegroundService()
     }
     private var recovered = false
+    private var currentTheme = ThemeMode.SYSTEM
+    private var configuration = Configuration(appContext.resources.configuration)
+
+    init {
+        scope.launch {
+            repositories.settings.settings.map { it.theme }.distinctUntilChanged().collect { mode ->
+                currentTheme = mode
+                applyRuntimeTheme()
+            }
+        }
+    }
+
+    fun onSystemConfigurationChanged(updated: Configuration) {
+        val snapshot = Configuration(updated)
+        scope.launch {
+            configuration = snapshot
+            applyRuntimeTheme()
+        }
+    }
+
+    private fun applyRuntimeTheme() {
+        val dark = currentTheme.runtimeDarkTheme(RuntimeWebViewTheme.isSystemDark(configuration))
+        hosts.values.forEach { RuntimeWebViewTheme.apply(it.webView, dark, configuration) }
+    }
 
     val sessions: StateFlow<List<RuntimeBackgroundSessionUi>> = mutableSessions.asStateFlow()
     val notificationSnapshots: StateFlow<RuntimeForegroundNotificationSnapshot> = mutableNotificationSnapshots.asStateFlow()
@@ -152,6 +183,10 @@ internal class RuntimeSessionManager(
 
     fun openForeground(toolId: String) {
         scope.launch {
+            if (io.toolbox.host.backup.BackupRuntimeGate.paused) {
+                stateFlow(toolId).value = RuntimeUiState.Error("RESTORE_IN_PROGRESS", "正在恢复数据，请完成后重新打开工具。")
+                return@launch
+            }
             HostTrace.bestEffortAsyncSection("runtime.attach") {
                 visibleTools += toolId
                 hosts[toolId]?.let { host ->
@@ -200,17 +235,20 @@ internal class RuntimeSessionManager(
             if (host.runtime !== runtime) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The tool runtime instance changed")
             }
-            if (visibleTools.singleOrNull() != runtime.toolId || host.state != RuntimeHostState.ATTACHED) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before opening a browser")
+            if (visibleTools.singleOrNull() != runtime.toolId || host.state != RuntimeHostState.ATTACHED ||
+                !host.webView.isAttachedToWindow || !host.webView.isShown || !host.webView.hasWindowFocus()
+            ) {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "Open this tool in the foreground before using this capability")
             }
         },
     )
 
     suspend fun recover(reason: String) {
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
         if (withContext(Dispatchers.Main.immediate) { recovered }) return
         val recovery = withContext(Dispatchers.IO) { readPersistedState() }
         withContext(Dispatchers.Main.immediate) {
-            if (recovered) return@withContext
+            if (recovered || io.toolbox.host.backup.BackupRuntimeGate.paused) return@withContext
             recovered = true
             val restoreReason = if (reason == RESTORE_REASON_REBOOT) RESTORE_REASON_REBOOT else RESTORE_REASON_PROCESS
             recovery.flatMap(PersistedToolState::sessions).filter { it.notificationId > 0 }.forEach {
@@ -270,10 +308,17 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        // An IO preparation may not own a WebView yet. Drain it before a same-version
+        // replacement can publish new files or an old opener can acquire the new profile.
+        openingTools[toolId]?.cancelAndJoin()
         stopTool(toolId)
         visibleTools -= toolId
         destroyHost(toolId)
         stateFlow(toolId).value = RuntimeUiState.Loading
+    }
+
+    suspend fun backupRuntimeIds(): Set<String> = withContext(Dispatchers.Main.immediate) {
+        (hosts.keys + openingTools.keys + sessionsByTool.keys + alarmsByTool.keys).toSet()
     }
 
     suspend fun stopAll() = withContext(Dispatchers.Main.immediate) {
@@ -298,6 +343,7 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun handleAlarm(toolId: String, versionCode: Int, alarmId: String) {
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
         val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
         val persisted = if (needsLoad) loadAlarms(toolId, versionCode) else emptyList()
         withContext(Dispatchers.Main.immediate) {
@@ -315,6 +361,7 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun rescheduleAlarms() {
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
         val persisted = withContext(Dispatchers.IO) { readPersistedState() }
         withContext(Dispatchers.Main.immediate) {
             persisted.forEach { state ->
@@ -382,16 +429,22 @@ internal class RuntimeSessionManager(
     }
 
     private suspend fun ensureRuntime(toolId: String, restoreReason: String?) {
-        if (hosts[toolId] != null || !openingTools.add(toolId)) {
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
+        if (hosts[toolId] != null || toolId in openingTools) {
             restoreReason?.let { reason -> hosts[toolId]?.emitRestore(reason) }
             return
         }
+        val openingJob = checkNotNull(currentCoroutineContext()[Job])
+        openingTools[toolId] = openingJob
         stateFlow(toolId).value = RuntimeUiState.Loading
         try {
+            // Await persisted appearance before constructing WebView, avoiding a light first document.
+            currentTheme = withContext(Dispatchers.IO) { repositories.settings.settings.first().theme }
             val prepared = HostTrace.bestEffortAsyncSection("tool.prepare") {
                 val installed = withContext(Dispatchers.IO) { repositories.catalog.observeTool(toolId).first() }
                 withContext(Dispatchers.IO) { preparer.prepare(toolId, installed) }
             }
+            if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
             val runtime = (prepared as? RuntimePreparationResult.Prepared)?.runtime
             if (runtime == null) {
                 val failure = prepared as RuntimePreparationResult.Failed
@@ -408,6 +461,7 @@ internal class RuntimeSessionManager(
                 is RuntimeCreationPermitResult.Ready -> {
                     val result = HardenedRuntimeWebView.create(
                         context = appContext,
+                        darkTheme = currentTheme.runtimeDarkTheme(RuntimeWebViewTheme.isSystemDark(configuration)),
                         runtime = runtime,
                         creationPermit = permit.permit,
                         callbacks = RuntimeWebViewCallbacks(
@@ -453,7 +507,7 @@ internal class RuntimeSessionManager(
                 "工具运行环境准备失败，请重试。",
             )
         } finally {
-            openingTools -= toolId
+            if (openingTools[toolId] === openingJob) openingTools.remove(toolId)
         }
     }
 
@@ -1042,7 +1096,7 @@ internal class RuntimeSessionManager(
         fun toUiState() = RuntimeUiState.Ready(runtime, webView, mainEntryLoaded)
     }
 
-    private enum class RuntimeHostState { CREATING, ATTACHED, BACKGROUND_DETACHED, RESTORING, STOPPED, FAILED }
+    private enum class RuntimeHostState { ATTACHED, BACKGROUND_DETACHED, RESTORING, STOPPED }
 
     private data class ActiveLocationWatch(
         val listener: LocationListener,

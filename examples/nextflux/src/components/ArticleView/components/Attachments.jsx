@@ -14,17 +14,7 @@ export default function Attachments({ article }) {
     enclosure.mime_type?.startsWith("video/"),
   );
 
-  // 定义黑名单域名列表
-  const blacklist = ["youtube.com", "youtu.be", "glass.photo"];
-
-  // 检查文章的URL是否在黑名单中
-  const isBlacklisted = blacklist.some((domain) =>
-    article?.feed?.url?.includes(domain),
-  );
-
-  if (isBlacklisted || !article?.enclosures) {
-    return null;
-  }
+  if (!article?.enclosures) return null;
 
   if (imgEnclosures?.length === 0 && videoEnclosures?.length === 0) {
     return null;

@@ -35,3 +35,12 @@ data object BackgroundSafeguardsRoute : ToolBoxRoute
 
 @Serializable
 data object DeveloperHelpRoute : ToolBoxRoute
+
+@Serializable
+data object ImportRoute : ToolBoxRoute
+
+@Serializable
+data object AboutRoute : ToolBoxRoute
+
+@Serializable
+data object BackupRestoreRoute : ToolBoxRoute

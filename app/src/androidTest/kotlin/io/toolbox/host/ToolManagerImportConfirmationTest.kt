@@ -2,6 +2,8 @@ package io.toolbox.host
 
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -10,7 +12,7 @@ import androidx.compose.ui.test.performClick
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
-import io.toolbox.host.ui.ToolManagerScreen
+import io.toolbox.host.ui.ToolManagerContent
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -26,12 +28,12 @@ class ToolManagerImportConfirmationTest {
         var cancellations = 0
         composeRule.activity.setContent {
             ToolBoxTheme {
-                ToolManagerScreen(
+                ToolManagerContent(
                     state = CatalogUiState(isLoaded = true),
                     importState = ImportUiState(working = true, importPhase = phase.value),
                     listState = rememberLazyListState(),
                     onAction = {},
-                    onDestination = {},
+                    contentPadding = PaddingValues(16.dp),
                     onImport = {},
                     onInstallExamples = {},
                     onDismissImport = {},
@@ -69,12 +71,12 @@ class ToolManagerImportConfirmationTest {
         )
         composeRule.activity.setContent {
             ToolBoxTheme {
-                ToolManagerScreen(
+                ToolManagerContent(
                     state = CatalogUiState(isLoaded = true),
                     importState = ImportUiState(confirmation = confirmation),
                     listState = rememberLazyListState(),
                     onAction = {},
-                    onDestination = {},
+                    contentPadding = PaddingValues(16.dp),
                     onImport = {},
                     onInstallExamples = {},
                     onDismissImport = {},

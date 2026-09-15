@@ -35,59 +35,93 @@ internal object StrictJson {
 
         fun parse(): JsonValue {
             skipWhitespace()
-            val value = readValue(depth = 0)
+            val value = readValue()
             skipWhitespace()
             if (index != text.length) fail("Trailing JSON data")
             return value
         }
 
-        private fun readValue(depth: Int): JsonValue {
-            if (depth > 64) fail("JSON nesting exceeds 64 levels")
-            if (index >= text.length) fail("Unexpected end of JSON")
-            return when (text[index]) {
-                '{' -> readObject(depth + 1)
-                '[' -> readArray(depth + 1)
-                '"' -> JsonValue.StringValue(readString())
-                't' -> readLiteral("true", JsonValue.BooleanValue(true))
-                'f' -> readLiteral("false", JsonValue.BooleanValue(false))
-                'n' -> readLiteral("null", JsonValue.NullValue)
-                '-', in '0'..'9' -> readNumber()
-                else -> fail("Unexpected character '${text[index]}'")
+        private sealed interface Container {
+            class ObjectContainer(val values: LinkedHashMap<String, JsonValue> = linkedMapOf(), var key: String = "") : Container
+            class ArrayContainer(val values: MutableList<JsonValue> = mutableListOf()) : Container
+        }
+
+        // Container nesting uses heap-backed frames rather than recursive JVM calls.
+        // Valid input therefore has no fixed nesting-depth quota or stack-overflow edge.
+        private fun readValue(): JsonValue {
+            val containers = ArrayDeque<Container>()
+            var value: JsonValue? = null
+            while (true) {
+                if (value == null) {
+                    skipWhitespace()
+                    if (index >= text.length) fail("Unexpected end of JSON")
+                    when (text[index]) {
+                        '{' -> {
+                            index++
+                            skipWhitespace()
+                            val container = Container.ObjectContainer()
+                            if (consume('}')) value = JsonValue.ObjectValue(container.values)
+                            else {
+                                readKey(container)
+                                containers.addLast(container)
+                                continue
+                            }
+                        }
+                        '[' -> {
+                            index++
+                            skipWhitespace()
+                            val container = Container.ArrayContainer()
+                            if (consume(']')) value = JsonValue.ArrayValue(container.values)
+                            else {
+                                containers.addLast(container)
+                                continue
+                            }
+                        }
+                        '"' -> value = JsonValue.StringValue(readString())
+                        't' -> value = readLiteral("true", JsonValue.BooleanValue(true))
+                        'f' -> value = readLiteral("false", JsonValue.BooleanValue(false))
+                        'n' -> value = readLiteral("null", JsonValue.NullValue)
+                        '-', in '0'..'9' -> value = readNumber()
+                        else -> fail("Unexpected character '${text[index]}'")
+                    }
+                }
+                val completed = checkNotNull(value)
+                if (containers.isEmpty()) return completed
+                when (val container = containers.last()) {
+                    is Container.ObjectContainer -> {
+                        container.values[container.key] = completed
+                        skipWhitespace()
+                        if (consume('}')) {
+                            containers.removeLast()
+                            value = JsonValue.ObjectValue(container.values)
+                            continue
+                        }
+                        expect(',')
+                        skipWhitespace()
+                        readKey(container)
+                    }
+                    is Container.ArrayContainer -> {
+                        container.values += completed
+                        skipWhitespace()
+                        if (consume(']')) {
+                            containers.removeLast()
+                            value = JsonValue.ArrayValue(container.values)
+                            continue
+                        }
+                        expect(',')
+                    }
+                }
+                value = null
             }
         }
 
-        private fun readObject(depth: Int): JsonValue.ObjectValue {
-            index++
+        private fun readKey(container: Container.ObjectContainer) {
+            if (index >= text.length || text[index] != '"') fail("Object key must be a string")
+            val key = readString()
+            if (container.values.containsKey(key)) fail("Duplicate object key: $key")
+            container.key = key
             skipWhitespace()
-            val values = linkedMapOf<String, JsonValue>()
-            if (consume('}')) return JsonValue.ObjectValue(values)
-            while (true) {
-                if (index >= text.length || text[index] != '"') fail("Object key must be a string")
-                val key = readString()
-                if (values.containsKey(key)) fail("Duplicate object key: $key")
-                skipWhitespace()
-                expect(':')
-                skipWhitespace()
-                values[key] = readValue(depth)
-                skipWhitespace()
-                if (consume('}')) return JsonValue.ObjectValue(values)
-                expect(',')
-                skipWhitespace()
-            }
-        }
-
-        private fun readArray(depth: Int): JsonValue.ArrayValue {
-            index++
-            skipWhitespace()
-            val values = mutableListOf<JsonValue>()
-            if (consume(']')) return JsonValue.ArrayValue(values)
-            while (true) {
-                values += readValue(depth)
-                skipWhitespace()
-                if (consume(']')) return JsonValue.ArrayValue(values)
-                expect(',')
-                skipWhitespace()
-            }
+            expect(':')
         }
 
         private fun readString(): String {

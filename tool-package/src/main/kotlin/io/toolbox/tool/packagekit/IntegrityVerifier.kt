@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit
 
+import io.toolbox.core.data.ResourceCapacity
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -17,14 +18,13 @@ internal object IntegrityVerifier {
     fun verify(
         metadata: Map<String, Path>,
         actualHashes: Map<String, String>,
-        limits: PackageLimits,
         resources: PackageResourceGuard,
-    ) {
+    ): String? {
         val integrityPath = metadata["integrity.json"]
         val signaturePath = metadata["signature.json"]
         if (integrityPath == null) {
             if (signaturePath != null) reject(PackageRejectionCode.INTEGRITY_MALFORMED, "signature.json requires integrity.json")
-            return
+            return null
         }
         val seen = mutableSetOf<String>()
         val collisions = mutableSetOf<String>()
@@ -36,7 +36,7 @@ internal object IntegrityVerifier {
                 InputStreamReader(input, decoder).buffered().use { reader ->
                     IntegrityJsonReader(reader, resources).read { rawPath, hash ->
                         val safe = try {
-                            PackagePathPolicy.validate(rawPath, limits)
+                            PackagePathPolicy.validate(rawPath)
                         } catch (error: InspectionRejected) {
                             throw JsonFormatException("Invalid integrity path: ${error.rejection.code}")
                         }
@@ -64,13 +64,16 @@ internal object IntegrityVerifier {
         if (seen.size != contentCount) {
             reject(PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH, "Integrity must cover every package file")
         }
-        if (signaturePath != null) {
+        return signaturePath?.let {
             resources.check()
-            verifySignature(Files.readAllBytes(signaturePath), integrityPath, resources)
+            if (Files.size(it) > ResourceCapacity.availableHeapBytes()) {
+                reject(PackageRejectionCode.INSUFFICIENT_RESOURCES, "signature.json exceeds available memory")
+            }
+            verifySignature(Files.readAllBytes(it), integrityPath, resources)
         }
     }
 
-    private fun verifySignature(bytes: ByteArray, integrityPath: Path, resources: PackageResourceGuard) {
+    private fun verifySignature(bytes: ByteArray, integrityPath: Path, resources: PackageResourceGuard): String {
         val parsed = try {
             val root = StrictJson.parse(bytes).asObject("signature")
             root.requireOnly(
@@ -87,7 +90,6 @@ internal object IntegrityVerifier {
                 throw JsonFormatException("signature.signedFile must be integrity.json")
             }
             val keyId = root.required("keyId").asString("signature.keyId")
-            if (keyId.length !in 8..128) throw JsonFormatException("signature.keyId length is invalid")
             val publicKey = decodeCanonicalBase64(root.required("publicKey").asString("signature.publicKey"))
             val signature = decodeCanonicalBase64(root.required("signature").asString("signature.signature"))
             if (signature.size != 64) throw JsonFormatException("Ed25519 signature must be 64 bytes")
@@ -127,6 +129,7 @@ internal object IntegrityVerifier {
         if (!valid) {
             reject(PackageRejectionCode.SIGNATURE_INVALID, "Ed25519 signature is invalid")
         }
+        return expectedKeyId
     }
 
     private fun decodeCanonicalBase64(value: String): ByteArray {

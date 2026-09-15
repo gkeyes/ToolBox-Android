@@ -1,7 +1,6 @@
 package io.toolbox.host.runtime
 
 import android.Manifest
-import android.app.AlertDialog
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
@@ -107,8 +106,6 @@ internal class RuntimeFileSessionResources(
         deleteFiles(files)
     }
 
-    internal fun handleCount(): Int = synchronized(lock) { handles.size }
-    internal fun temporaryFileCount(): Int = synchronized(lock) { temporaryFiles.size }
 }
 
 internal fun locationResult(value: android.location.Location?): Result<android.location.Location> =
@@ -158,20 +155,9 @@ internal class ForegroundCapabilityBroker private constructor(
         }
     }
 
-    private suspend fun readClipboardAfterConfirmation(): String = withContext(Dispatchers.Main.immediate) {
-        ensureActive()
-        val confirmed = suspendCancellableCoroutine { continuation ->
-            val dialog = AlertDialog.Builder(activity)
-                .setTitle("允许读取剪贴板？")
-                .setMessage("当前工具将读取一次剪贴板文本。")
-                .setNegativeButton("取消") { _, _ -> if (continuation.isActive) continuation.resume(false) }
-                .setPositiveButton("允许") { _, _ -> if (continuation.isActive) continuation.resume(true) }
-                .setOnCancelListener { if (continuation.isActive) continuation.resume(false) }
-                .create()
-            continuation.invokeOnCancellation { activity.runOnUiThread { dialog.dismiss() } }
-            dialog.show()
-        }
-        if (!confirmed) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "Clipboard read was cancelled")
+    private suspend fun readClipboardText(): String = withContext(Dispatchers.Main.immediate) {
+        // The dispatcher already verified declaration, grant and current session.
+        // Keep foreground enforcement; do not ask the same permission again.
         ensureActive()
         val clipboard = activity.getSystemService(ClipboardManager::class.java)
             ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Clipboard is unavailable")
@@ -189,7 +175,7 @@ internal class ForegroundCapabilityBroker private constructor(
         activity.startActivity(Intent.createChooser(send, "分享"))
     }
 
-    private suspend fun pinShortcut(toolId: String, label: String): Boolean {
+    private suspend fun pinShortcut(toolId: String, label: String, requireForegroundRuntime: () -> Unit): Boolean {
         ensureActive()
         val route = withContext(Dispatchers.IO) {
             val token = randomToken()
@@ -199,30 +185,35 @@ internal class ForegroundCapabilityBroker private constructor(
             update.putString(token, toolId).apply()
             ShortcutRoute(token, shortcutId(toolId))
         }
-        val accepted = withContext(Dispatchers.Main.immediate) {
-            ensureActive()
-            val manager = activity.getSystemService(ShortcutManager::class.java) ?: return@withContext false
-            if (!manager.isRequestPinShortcutSupported) return@withContext false
-            val launchIntent = Intent(activity, MainActivity::class.java)
-                .setAction(SHORTCUT_ACTION)
-                .putExtra(EXTRA_SHORTCUT_TOKEN, route.token)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            val shortcut = ShortcutInfo.Builder(activity, route.shortcutId)
-                .setShortLabel(label.take(MAX_SHORTCUT_LABEL_CHARS))
-                .setIcon(Icon.createWithResource(activity, R.mipmap.ic_launcher))
-                .setIntent(launchIntent)
-                .build()
-            manager.requestPinShortcut(shortcut, null)
-        }
-        if (!accepted) {
-            withContext(Dispatchers.IO) {
-                shortcutPreferences(activity).edit().remove(route.token).apply()
+        var accepted = false
+        try {
+            accepted = withContext(Dispatchers.Main.immediate) {
+                ensureActive()
+                val manager = activity.getSystemService(ShortcutManager::class.java) ?: return@withContext false
+                if (!manager.isRequestPinShortcutSupported) return@withContext false
+                val launchIntent = Intent(activity, MainActivity::class.java)
+                    .setAction(SHORTCUT_ACTION)
+                    .putExtra(EXTRA_SHORTCUT_TOKEN, route.token)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                val shortcut = ShortcutInfo.Builder(activity, route.shortcutId)
+                    .setShortLabel(label)
+                    .setIcon(Icon.createWithResource(activity, R.mipmap.ic_launcher))
+                    .setIntent(launchIntent)
+                    .build()
+                requireForegroundRuntime()
+                manager.requestPinShortcut(shortcut, null)
+            }
+            return accepted
+        } finally {
+            if (!accepted) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    shortcutPreferences(activity).edit().remove(route.token).apply()
+                }
             }
         }
-        return accepted
     }
 
-    private suspend fun capturePhoto(owner: ToolFilesHandler): RuntimeFileToken? = pickerMutex.withLock {
+    private suspend fun capturePhoto(owner: ToolFilesHandler, requireForegroundRuntime: () -> Unit): RuntimeFileToken? = pickerMutex.withLock {
         ensureActive()
         val file = withContext(Dispatchers.IO) {
             val captureDirectory = File(activity.cacheDir, "toolbox-captures").apply { mkdirs() }
@@ -235,6 +226,8 @@ internal class ForegroundCapabilityBroker private constructor(
             val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
             val deferred = CompletableDeferred<Boolean>()
             cameraResult = deferred
+            ensureActive()
+            requireForegroundRuntime()
             cameraLauncher.launch(uri)
             if (!deferred.await()) return@withLock null
             owner.fileToken(
@@ -272,7 +265,7 @@ internal class ForegroundCapabilityBroker private constructor(
             ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "No location provider is enabled")
         val cancellation = CancellationSignal()
         val location = try {
-            withTimeout(timeoutMillis) {
+            val awaitLocation: suspend () -> android.location.Location = {
                 suspendCancellableCoroutine<android.location.Location> { continuation ->
                     continuation.invokeOnCancellation { cancellation.cancel() }
                     manager.getCurrentLocation(provider, cancellation, activity.mainExecutor) { value ->
@@ -281,6 +274,7 @@ internal class ForegroundCapabilityBroker private constructor(
                     }
                 }
             }
+            if (timeoutMillis == 0L) awaitLocation() else withTimeout(timeoutMillis) { awaitLocation() }
         } catch (_: TimeoutCancellationException) {
             cancellation.cancel()
             throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "Location request timed out")
@@ -293,11 +287,12 @@ internal class ForegroundCapabilityBroker private constructor(
         )
     }
 
-    private suspend fun openDocument(mimeTypes: List<String>): Uri? = pickerMutex.withLock {
+    private suspend fun openDocument(mimeTypes: List<String>, requireForegroundRuntime: () -> Unit): Uri? = pickerMutex.withLock {
         ensureActive()
         val deferred = CompletableDeferred<Uri?>()
         openResult = deferred
         try {
+            requireForegroundRuntime()
             openLauncher.launch(mimeTypes)
             deferred.await()
         } finally {
@@ -305,11 +300,12 @@ internal class ForegroundCapabilityBroker private constructor(
         }
     }
 
-    private suspend fun saveDocument(name: String, mimeType: String): Uri? = pickerMutex.withLock {
+    private suspend fun saveDocument(name: String, mimeType: String, requireForegroundRuntime: () -> Unit): Uri? = pickerMutex.withLock {
         ensureActive()
         val deferred = CompletableDeferred<Uri?>()
         saveResult = deferred
         try {
+            requireForegroundRuntime()
             saveLauncher.launch(CreateDocumentRequest(name, mimeType))
             deferred.await()
         } finally {
@@ -318,19 +314,19 @@ internal class ForegroundCapabilityBroker private constructor(
     }
 
     // Tokens and camera files belong to the runtime session, never to an Activity.
-    private class ToolFilesHandler(private val context: Context) : RuntimeFilesHandler, RuntimeCameraHandler, RuntimeSessionCleanupHandler {
+    private class ToolFilesHandler(private val context: Context, private val requireForegroundRuntime: () -> Unit) : RuntimeFilesHandler, RuntimeCameraHandler, RuntimeSessionCleanupHandler {
         private val resources = RuntimeFileSessionResources { files ->
             fileCleanupScope.launch { files.forEach(File::delete) }
         }
 
         override suspend fun capture(): RuntimeFileToken? {
             resources.ensureOpen()
-            return withForeground { it.capturePhoto(this) }
+            return withForeground(requireForegroundRuntime) { it.capturePhoto(this, requireForegroundRuntime) }
         }
 
         override suspend fun open(mimeTypes: List<String>): RuntimeFileToken? {
             resources.ensureOpen()
-            val uri = withForeground { it.openDocument(mimeTypes) } ?: return null
+            val uri = withForeground(requireForegroundRuntime) { it.openDocument(mimeTypes, requireForegroundRuntime) } ?: return null
             withContext(Dispatchers.IO) {
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     val probe = ByteArray(1)
@@ -346,7 +342,7 @@ internal class ForegroundCapabilityBroker private constructor(
             content: ByteArray,
         ): RuntimeFileToken? {
             resources.ensureOpen()
-            val uri = withForeground { it.saveDocument(suggestedName, mimeType) } ?: return null
+            val uri = withForeground(requireForegroundRuntime) { it.saveDocument(suggestedName, mimeType, requireForegroundRuntime) } ?: return null
             withContext(Dispatchers.IO) {
                 context.contentResolver.openOutputStream(uri, "w")?.use { it.write(content) }
                     ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "The selected file cannot be written")
@@ -421,14 +417,15 @@ internal class ForegroundCapabilityBroker private constructor(
         private fun readBounded(input: java.io.InputStream, maxBytes: Int): ByteArray {
             val output = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)
-            var total = 0
+            var total = 0L
             while (true) {
-                val read = input.read(buffer, 0, minOf(buffer.size, maxBytes - total + 1))
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes.toLong() - total + 1).toInt())
                 if (read < 0) break
                 total += read
                 if (total > maxBytes) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "File exceeds this runtime session limit")
                 }
+                io.toolbox.core.data.ResourceCapacity.requireHeapBytes(total * 2)
                 output.write(buffer, 0, read)
             }
             return output.toByteArray()
@@ -474,7 +471,6 @@ internal class ForegroundCapabilityBroker private constructor(
         const val SHORTCUT_ACTION = "io.toolbox.host.action.OPEN_TOOL_SHORTCUT"
         const val EXTRA_SHORTCUT_TOKEN = "io.toolbox.host.extra.SHORTCUT_TOKEN"
         private const val SHORTCUT_PREFERENCES = "toolbox_shortcut_routes"
-        private const val MAX_SHORTCUT_LABEL_CHARS = 40
         private val companionLock = Any()
         private var activeBroker = WeakReference<ForegroundCapabilityBroker>(null)
         private val random = SecureRandom()
@@ -490,17 +486,21 @@ internal class ForegroundCapabilityBroker private constructor(
             context: Context,
             toolId: String,
             toolName: String,
+            requireForegroundRuntime: () -> Unit = {
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
+            },
             authorizeBrowserLaunch: suspend () -> Unit = {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Browser launch is not authorized")
             },
         ): RuntimeM3Handlers {
-            val files = ToolFilesHandler(context.applicationContext)
+            val files = ToolFilesHandler(context.applicationContext, requireForegroundRuntime)
             return RuntimeM3Handlers(
-                clipboardRead = RuntimeClipboardReadHandler { withForeground { it.readClipboardAfterConfirmation() } },
-                shareText = RuntimeShareTextHandler { text -> withForeground { it.shareText(text) } },
+                clipboardRead = RuntimeClipboardReadHandler { withForeground(requireForegroundRuntime) { it.readClipboardText() } },
+                shareText = RuntimeShareTextHandler { text -> withForeground(requireForegroundRuntime) { it.shareText(text) } },
                 browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->
-                    withForeground { broker ->
+                    withForeground(requireForegroundRuntime) { broker ->
                         launchBrowserUrl(
+                            context = broker.activity,
                             url = url,
                             beforeLaunch = { authorizeBrowserLaunch(); beforeLaunch() },
                             ensureForeground = broker::ensureActive,
@@ -509,18 +509,19 @@ internal class ForegroundCapabilityBroker private constructor(
                     }
                 },
                 files = files,
-                shortcuts = RuntimeShortcutHandler { name -> withForeground { it.pinShortcut(toolId, name ?: toolName) } },
+                shortcuts = RuntimeShortcutHandler { name -> withForeground(requireForegroundRuntime) { it.pinShortcut(toolId, name ?: toolName, requireForegroundRuntime) } },
                 camera = files,
-                location = RuntimeLocationHandler { precise, timeout -> withForeground { it.getCurrentLocation(precise, timeout) } },
+                location = RuntimeLocationHandler { precise, timeout -> withForeground(requireForegroundRuntime) { it.getCurrentLocation(precise, timeout) } },
                 sessionCleanup = files,
             )
         }
 
-        private suspend fun <T> withForeground(action: suspend (ForegroundCapabilityBroker) -> T): T =
+        private suspend fun <T> withForeground(requireForegroundRuntime: () -> Unit, action: suspend (ForegroundCapabilityBroker) -> T): T =
             withContext(Dispatchers.Main.immediate) {
                 val broker = synchronized(companionLock) { activeBroker.get() }
                     ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground host activity is available")
                 broker.ensureActive()
+                requireForegroundRuntime()
                 action(broker)
             }
 

@@ -28,7 +28,8 @@ internal object StaticSvgPolicy {
         factory.newSAXParser().parse(InputSource(StringReader(xml)), object : DefaultHandler() {
             override fun startElement(uri: String, localName: String, qName: String, attributes: Attributes) {
                 require(uri == "http://www.w3.org/2000/svg" && localName in elements)
-                require(++depth <= 32 && ++nodes <= 2_048)
+                depth += 1
+                nodes += 1
                 if (nodes == 1) require(localName == "svg")
                 for (index in 0 until attributes.length) {
                     val name = attributes.getLocalName(index).lowercase()

@@ -1,6 +1,6 @@
 import { persistentAtom } from "@nanostores/persistent";
 import "../toolbox/preferences.js";
-import { computed } from "nanostores";
+import { atom, computed } from "nanostores";
 
 const defaultValue = {
   themeMode: "system",
@@ -29,78 +29,47 @@ export const themeState = persistentAtom("theme", defaultValue, {
   },
 });
 
-// 更新主题的函数
-export function setTheme(mode, themeId = null) {
+// Keep the live media value reactive as well as the persisted user preference.
+// ToolBox supplies the native WebView color scheme; no host-specific JS API is required.
+const systemDark = atom(window.matchMedia("(prefers-color-scheme: dark)").matches);
+export const currentThemeMode = computed([themeState, systemDark], (state, dark) =>
+  state.themeMode === "system" ? (dark ? "dark" : "light") : state.themeMode,
+);
+
+function applyTheme() {
+  const state = themeState.get();
+  const mode = currentThemeMode.get();
   const root = window.document.documentElement;
-  const allThemes = [...themes.light, ...themes.dark].map((t) => t.id);
-
-  // 移除所有主题相关的 class 和 data-theme
-  root.classList.remove(...allThemes);
-  root.removeAttribute("data-theme");
-
-  if (mode === "system") {
-    const systemMode = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-    const themeToUse =
-      systemMode === "dark"
-        ? themeState.get().darkTheme
-        : themeState.get().lightTheme;
-    // 设置 color-scheme class
-    root.classList.add(systemMode);
-    // 设置 data-theme
-    root.setAttribute("data-theme", themeToUse);
-  } else {
-    const newTheme =
-      themeId ||
-      (mode === "dark"
-        ? themeState.get().darkTheme
-        : themeState.get().lightTheme);
-    // 设置 color-scheme class (light 或 dark)
-    root.classList.add(mode);
-    // 设置 data-theme
-    root.setAttribute("data-theme", newTheme);
-    if (mode === "dark") {
-      themeState.set({ ...themeState.get(), darkTheme: newTheme });
-    } else {
-      themeState.set({ ...themeState.get(), lightTheme: newTheme });
-    }
-  }
-
-  themeState.set({ ...themeState.get(), themeMode: mode });
+  const selected = mode === "dark" ? state.darkTheme : state.lightTheme;
+  root.classList.remove(...[...themes.light, ...themes.dark].map((theme) => theme.id));
+  root.classList.add(mode);
+  root.setAttribute("data-theme", selected);
 }
 
-// 初始化主题
+export function setTheme(mode, themeId = null) {
+  if (!["system", "light", "dark"].includes(mode)) return;
+  const state = { ...themeState.get(), themeMode: mode };
+  if (themeId && mode !== "system" && themes[mode].some((theme) => theme.id === themeId)) {
+    state[mode === "dark" ? "darkTheme" : "lightTheme"] = themeId;
+  }
+  themeState.set(state);
+  applyTheme();
+}
+
+let disposeTheme;
 export function initTheme() {
-  const mode = themeState.get().themeMode;
-  setTheme(mode);
-
-  // 监听系统主题变化
-  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  mediaQuery.addEventListener("change", (e) => {
-    if (themeState.get().themeMode === "system") {
-      const systemMode = e.matches ? "dark" : "light";
-      const themeToUse =
-        systemMode === "dark"
-          ? themeState.get().darkTheme
-          : themeState.get().lightTheme;
-      const root = window.document.documentElement;
-      const allThemes = [...themes.light, ...themes.dark].map((t) => t.id);
-      root.classList.remove(...allThemes);
-      root.removeAttribute("data-theme");
-      root.classList.add(systemMode);
-      root.setAttribute("data-theme", themeToUse);
-    }
-  });
+  disposeTheme?.();
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  systemDark.set(media.matches);
+  const onChange = (event) => { systemDark.set(event.matches); applyTheme(); };
+  media.addEventListener("change", onChange);
+  // Includes hydrated preferences and changes made from another component.
+  const unlisten = themeState.subscribe(applyTheme);
+  const dispose = () => {
+    media.removeEventListener("change", onChange);
+    unlisten();
+    if (disposeTheme === dispose) disposeTheme = undefined;
+  };
+  disposeTheme = dispose;
+  return dispose;
 }
-
-// 当前实际运用的主题模式 light ｜ dark
-export const currentThemeMode = computed([themeState], ($themeState) => {
-  const { themeMode } = $themeState;
-  if (themeMode === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-  }
-  return themeMode;
-});

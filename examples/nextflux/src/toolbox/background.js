@@ -8,9 +8,12 @@ const TIMER_KEY = "nextflux.sync";
 let sessionId = null;
 let initialized = false;
 function api() { return globalThis.window?.ToolBox?.background; }
-function intervalMs() { return Math.max(5, Number(settingsState.get().syncInterval) || 15) * 60000; }
+function intervalMs() { const value = Number(settingsState.get().syncInterval); return Number.isFinite(value) && value >= 0 ? value * 60000 : 15 * 60000; }
 async function refreshTimer() {
-  if (sessionId) await api().setTimer(TIMER_KEY, intervalMs());
+  if (!sessionId) return;
+  const interval = intervalMs();
+  if (interval === 0) await api().cancelTimer(TIMER_KEY);
+  else await api().setTimer(TIMER_KEY, interval);
 }
 export async function initializeBackground() {
   if (!api()) return;

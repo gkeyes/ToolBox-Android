@@ -1,5 +1,6 @@
 package io.toolbox.tool.packagekit.lifecycle
 
+import io.toolbox.core.data.ResourceCapacity
 import io.toolbox.tool.packagekit.PreparedPackage
 import io.toolbox.tool.packagekit.FileSystemPackageResourceProbe
 import io.toolbox.tool.packagekit.PackageResourceProbe
@@ -70,6 +71,7 @@ internal class LifecycleStorage(
         deleteTree(stageRoot)
         val stageBundle = stageRoot.resolve("bundle")
         Files.createDirectories(stageBundle)
+        ResourceCapacity.requireStorageBytes(stageBundle.toFile(), prepared.archive.extractedBytes)
         var totalBytes = 0L
         verifyExactTree(prepared.bundleDirectory, prepared.fileHashes.keys)
         prepared.fileHashes.toSortedMap().forEach { (relative, expectedHash) ->
@@ -93,6 +95,7 @@ internal class LifecycleStorage(
                         val count = input.read(bytes)
                         if (count < 0) break
                         if (count == 0) continue
+                        ResourceCapacity.requireStorageBytes(stageBundle.toFile(), count.toLong())
                         digest.update(bytes, 0, count)
                         totalBytes = packageByteTotal(totalBytes, count.toLong())
                         if (totalBytes > prepared.archive.extractedBytes) throw IntegrityMismatch("Package size changed")
@@ -410,7 +413,8 @@ internal class LifecycleStorage(
 
     private companion object {
         const val OWNER_FILE = ".install-owner"
-        const val MAX_MARKER_BYTES = 512L
+        // ASCII tool ID (filesystem component), two Int versions, and newline separators.
+        const val MAX_MARKER_BYTES = 255L + 2 * 10 + 3
         val TOOL_ID = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
         val TRANSACTION_ID = Regex("^[0-9a-f-]{36}$")
     }

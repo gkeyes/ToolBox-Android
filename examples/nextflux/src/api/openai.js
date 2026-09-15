@@ -76,9 +76,8 @@ export const summarizeArticleStream = async (article, { onChunk, onDone, onError
         model: aiModel,
         messages: [
           { role: "system", content: aiPrompt },
-          { role: "user", content: `Please summarize this article:\n\nTitle: ${title}\n\n${plainText.slice(0, 8000)}` },
+          { role: "user", content: `Please summarize this article:\n\nTitle: ${title}\n\n${plainText}` },
         ],
-        max_tokens: 2000,
         temperature: 0.3,
       },
     });

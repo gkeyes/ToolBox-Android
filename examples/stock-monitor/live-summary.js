@@ -41,7 +41,7 @@
         : options.quoteTimeLabel(target);
     const shortText = options.loading || !Number.isFinite(target.price)
       ? "获取中"
-      : Number(target.price).toLocaleString("zh-CN", { maximumFractionDigits: 4 }).slice(0, 12);
+      : Number(target.price).toLocaleString("zh-CN", { maximumFractionDigits: 4 });
     const quoteLines = enabled.map((item) => liveLine(item, options));
     const body = options.loading
       ? secondaryText
@@ -49,10 +49,10 @@
     const tone = toneFor(target);
     return {
       sessionId: options.sessionId,
-      title: title.slice(0, 64),
-      primaryText: primaryText.slice(0, 32),
-      secondaryText: secondaryText.slice(0, 96),
-      body: body.slice(0, 256),
+      title: title,
+      primaryText: primaryText,
+      secondaryText: secondaryText,
+      body: body,
       shortText,
       updatedAt,
       accentColor: tone.accentColor,

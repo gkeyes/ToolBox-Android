@@ -9,16 +9,9 @@ import { authState } from "@/stores/authStore.js";
 import { startAutoSync, stopAutoSync } from "@/stores/syncStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { useStore } from "@nanostores/react";
-import SettingsModal from "@/components/Settings/Settings.jsx";
-import AddFeedModal from "@/components/FeedList/components/AddFeedModal.jsx";
-import AddCategoryModal from "@/components/FeedList/components/AddCategoryModal.jsx";
+import AppModals from "@/components/AppModals.jsx";
 import { useHotkeys } from "@/hooks/useHotkeys.js";
-import LogoutModal from "@/components/FeedList/components/LogoutModal.jsx";
-import RenameModal from "@/components/ArticleList/components/RenameModal.jsx";
-import UnsubscribeModal from "@/components/ArticleList/components/UnsubscribeModal.jsx";
-import EditFeedModal from "@/components/ArticleList/components/EditFeedModal.jsx";
 import { checkIntegrations } from "@/stores/basicInfoStore.js";
-import SearchModal from "@/components/Search/SearchModal.jsx";
 import { useZoom } from "@/hooks/useZoom.js";
 import { useBorderRadius } from "@/hooks/useBorderRadius.js";
 import FontLoader from "@/components/FontLoader.jsx";
@@ -49,14 +42,7 @@ function App() {
       <SidebarInset className="min-w-0">
         <Outlet />
       </SidebarInset>
-      <SettingsModal />
-      <AddFeedModal />
-      <AddCategoryModal />
-      <LogoutModal />
-      <RenameModal />
-      <UnsubscribeModal />
-      <EditFeedModal />
-      <SearchModal />
+      <AppModals />
     </SidebarProvider>
   );
 }

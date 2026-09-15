@@ -20,7 +20,19 @@ class PackageToolTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.source = self.root / "my-tool"
-        shutil.copytree(ROOT / "sdk/templates/minimal", self.source)
+        self.source.mkdir()
+        manifest = {
+            "schemaVersion": 1, "id": "io.toolbox.packagerfixture", "name": "Packager fixture",
+            "version": "1.0.0", "versionCode": 1, "entry": "index.html",
+            "apiVersion": "1.0", "minHostVersion": "0.3.2", "permissions": [],
+            "securityProfile": "strict",
+        }
+        (self.source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (self.source / "index.html").write_text(
+            '<!doctype html><html><head><script src="app.js" defer></script></head><body>Fixture</body></html>',
+            encoding="utf-8",
+        )
+        (self.source / "app.js").write_text('"use strict";', encoding="utf-8")
 
     def test_reproducible_nested_resources_and_integrity(self):
         (self.source / "assets").mkdir()

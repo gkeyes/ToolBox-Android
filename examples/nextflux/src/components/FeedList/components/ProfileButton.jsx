@@ -1,4 +1,4 @@
-import { showLinkActions } from "@/toolbox/actions.js";
+import { openInBrowser, showLinkActions } from "@/toolbox/actions.js";
 import { Button, Dropdown, Label, Link } from "@heroui/react";
 import {
   ChevronsUpDown,
@@ -41,7 +41,7 @@ export default function ProfileButton() {
                 isMobile && setOpenMobile(false);
               }
               if (key === "open_miniflux") {
-                showLinkActions(serverUrl);
+                void openInBrowser(serverUrl);
               }
               if (key === "logout") {
                 logoutModalOpen.set(true);
@@ -53,7 +53,7 @@ export default function ProfileButton() {
               <Cog className="size-4 text-muted" />
               <Label>{t("sidebar.profile.settings")}</Label>
             </Dropdown.Item>
-            <Dropdown.Item id="open_miniflux" textValue="open_miniflux">
+            <Dropdown.Item id="open_miniflux" textValue="open_miniflux" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); showLinkActions(serverUrl); }}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 xmlSpace="preserve"
@@ -67,7 +67,7 @@ export default function ProfileButton() {
               </svg>
               <Label>
                 <Link className="no-underline">
-                  查看 Miniflux 链接
+                  打开 Miniflux
                   <Link.Icon className="text-muted opacity-60" />
                 </Link>
               </Label>

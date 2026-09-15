@@ -1,21 +1,25 @@
 package io.toolbox.tool.packagekit
 
-import io.toolbox.core.data.memory.InMemoryCoreData
+import io.toolbox.tool.packagekit.fixtures.InMemoryCoreData
 import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
 import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailureCode
+import io.toolbox.tool.packagekit.lifecycle.PackageVersionConfirmationKind
 import io.toolbox.tool.packagekit.lifecycle.ToolPackageManagers
 import java.io.FilterInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.KeyPairGenerator
+import java.security.KeyPair
 import java.security.MessageDigest
 import java.security.Signature
 import java.util.Base64
 import java.util.Random
 import java.util.zip.ZipEntry
+import java.util.zip.CRC32
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.flow.first
@@ -28,6 +32,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PackageWasmResourceTest {
+    @Test
+    fun smallZip64WasmPackageInstallsThroughProductionLifecycle() = runBlocking {
+        withHarness {
+            val entries = content(resources = mapOf("module.wasm" to WASM_ADD)).toMutableMap()
+            entries["integrity.json"] = integrity(entries.mapValues { sha256(it.value) }).toByteArray()
+            val source = packages.resolve("zip64.tbx")
+            Files.write(source, zip64(entries))
+            ZipFile(source.toFile()).use { zip ->
+                assertEquals(entries.size, zip.size())
+                assertArrayEquals(WASM_ADD, zip.getInputStream(zip.getEntry("module.wasm")).use { it.readBytes() })
+            }
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), manager().importAndInstall(FileInput(source)))
+            entries.forEach { (name, bytes) -> assertArrayEquals(name, bytes, Files.readAllBytes(bundle(1).resolve(name))) }
+            assertClean()
+        }
+    }
+
     @Test
     fun wasmAndCompanionResourcesInstallWithTheirOriginalBytesWithoutCapabilities() = runBlocking {
         withHarness {
@@ -138,7 +159,7 @@ class PackageWasmResourceTest {
                     PackageResourceSnapshot(if (failedAfterWrite) 0 else Long.MAX_VALUE, lowMemory = false)
                 }
 
-                assertRejected(PackageRejectionCode.INSUFFICIENT_SPACE, manager(probe).importAndInstall(incoming))
+                assertRejected(PackageRejectionCode.INSUFFICIENT_SPACE, install(incoming, probe))
                 assertTrue("$phase must fail after at least one chunk was written", failedAfterWrite)
                 assertPreviousVersion()
                 assertClean()
@@ -162,7 +183,7 @@ class PackageWasmResourceTest {
                 }
                 PackageResourceSnapshot(available, lowMemory = false)
             }
-            assertRejected(PackageRejectionCode.INSUFFICIENT_SPACE, manager(probe).importAndInstall(incoming))
+            assertRejected(PackageRejectionCode.INSUFFICIENT_SPACE, install(incoming, probe))
             assertFalse(bundleContentsWritten)
             assertPreviousVersion()
             assertClean()
@@ -230,7 +251,7 @@ class PackageWasmResourceTest {
                 PackageResourceSnapshot(Long.MAX_VALUE, lowMemory = false)
             }
 
-            val result = manager(probe).importAndInstall(incoming)
+            val result = install(incoming, probe)
             assertTrue("Staging CREATE_NEW must report a storage failure: " + result, result is PackageInstallResult.Failed)
             assertEquals(PackageOperationFailureCode.STORAGE_FAILURE, (result as PackageInstallResult.Failed).failure.code)
             assertFalse("The injected staged file must be cleaned", Files.exists(requireNotNull(collision)))
@@ -335,6 +356,32 @@ class PackageWasmResourceTest {
     }
 
     @Test
+    fun signedWasmUpdatesKeepTheSigningIdentityAndRejectAReplacementKey() = runBlocking {
+        withHarness {
+            val manager = manager()
+            val originalKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+            val otherKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+            fun signed(version: Int, key: KeyPair): FileInput {
+                val files = content(version, mapOf("module.wasm" to WASM_ADD))
+                val raw = integrity(files.mapValues { sha256(it.value) }).toByteArray()
+                return archive("signed-v$version", files, raw, signature(raw, key))
+            }
+
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), manager.importAndInstall(signed(1, originalKey)))
+            // Verified same-key updates proceed directly; unsigned UPDATE confirmation must not appear.
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 2, true), manager.importAndInstall(signed(2, originalKey)))
+            val replacement = manager.importAndInstall(signed(3, otherKey))
+            assertTrue("A different signing key must be rejected: " + replacement, replacement is PackageInstallResult.Failed)
+            assertEquals(PackageOperationFailureCode.SIGNING_IDENTITY_CHANGED, (replacement as PackageInstallResult.Failed).failure.code)
+            assertEquals(2, repositories.catalog.observeTool(TOOL_ID).first()?.currentVersion?.versionCode)
+            assertArrayEquals(WASM_ADD, Files.readAllBytes(bundle(2).resolve("module.wasm")))
+            assertArrayEquals(content(version = 2).getValue("manifest.json"), Files.readAllBytes(bundle(2).resolve("manifest.json")))
+            assertFalse(Files.exists(host.resolve("miniapps/$TOOL_ID/versions/3")))
+            assertClean()
+        }
+    }
+
+    @Test
     fun accumulatedSizeOverflowFailsClosed() {
         val rejection = try {
             packageByteTotal(Long.MAX_VALUE, 1)
@@ -373,6 +420,14 @@ class PackageWasmResourceTest {
             )
 
         fun bundle(version: Int): Path = host.resolve("miniapps/$TOOL_ID/versions/$version/bundle")
+
+        suspend fun install(input: PackageInput, probe: PackageResourceProbe): PackageInstallResult {
+            val manager = manager(probe)
+            val result = manager.importAndInstall(input)
+            if (result !is PackageInstallResult.ConfirmationRequired) return result
+            assertEquals(PackageVersionConfirmationKind.UPDATE, result.confirmation.kind)
+            return manager.confirmInstall(result.confirmation.id)
+        }
 
         fun archive(
             name: String,
@@ -447,8 +502,7 @@ class PackageWasmResourceTest {
         fun integrity(hashes: Map<String, String>): String =
             "{\"files\":{${hashes.entries.joinToString(",") { (name, hash) -> "\"$name\":\"$hash\"" }}},\"algorithm\":\"SHA-256\",\"schemaVersion\":1}"
 
-        fun signature(raw: ByteArray): ByteArray {
-            val pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
+        fun signature(raw: ByteArray, pair: KeyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()): ByteArray {
             val signature = Signature.getInstance("Ed25519").run {
                 initSign(pair.private)
                 update(raw)
@@ -463,6 +517,59 @@ class PackageWasmResourceTest {
             zip.putNextEntry(ZipEntry(name))
             zip.write(bytes)
             zip.closeEntry()
+        }
+
+        // Tiny stored entries with ZIP64 size/offset extras, end record and locator exercise the
+        // actual ZIP64 path without producing 65535 files or multi-gigabyte test resources.
+        fun zip64(entries: Map<String, ByteArray>): ByteArray {
+            val output = ByteArrayOutputStream()
+            val offsets = linkedMapOf<String, Long>()
+            val checksums = entries.mapValues { (_, bytes) -> CRC32().apply { update(bytes) }.value }
+            entries.forEach { (name, bytes) ->
+                val encodedName = name.toByteArray()
+                offsets[name] = output.size().toLong()
+                writeFields(output,
+                    0x04034b50L to 4, 45L to 2, 0x800L to 2, 0L to 2,
+                    0L to 2, 0L to 2, checksums.getValue(name) to 4,
+                    0xffffffffL to 4, 0xffffffffL to 4,
+                    encodedName.size.toLong() to 2, 20L to 2,
+                )
+                output.write(encodedName)
+                writeFields(output, 1L to 2, 16L to 2, bytes.size.toLong() to 8, bytes.size.toLong() to 8)
+                output.write(bytes)
+            }
+            val centralOffset = output.size().toLong()
+            entries.forEach { (name, bytes) ->
+                val encodedName = name.toByteArray()
+                writeFields(output,
+                    0x02014b50L to 4, 45L to 2, 45L to 2, 0x800L to 2, 0L to 2,
+                    0L to 2, 0L to 2, checksums.getValue(name) to 4,
+                    0xffffffffL to 4, 0xffffffffL to 4,
+                    encodedName.size.toLong() to 2, 28L to 2, 0L to 2, 0L to 2,
+                    0L to 2, 0L to 4, 0xffffffffL to 4,
+                )
+                output.write(encodedName)
+                writeFields(output,
+                    1L to 2, 24L to 2, bytes.size.toLong() to 8,
+                    bytes.size.toLong() to 8, offsets.getValue(name) to 8,
+                )
+            }
+            val zip64Offset = output.size().toLong()
+            writeFields(output,
+                0x06064b50L to 4, 44L to 8, 45L to 2, 45L to 2, 0L to 4, 0L to 4,
+                entries.size.toLong() to 8, entries.size.toLong() to 8,
+                (zip64Offset - centralOffset) to 8, centralOffset to 8,
+                0x07064b50L to 4, 0L to 4, zip64Offset to 8, 1L to 4,
+                0x06054b50L to 4, 0L to 2, 0L to 2, 0xffffL to 2, 0xffffL to 2,
+                0xffffffffL to 4, 0xffffffffL to 4, 0L to 2,
+            )
+            return output.toByteArray()
+        }
+
+        fun writeFields(output: ByteArrayOutputStream, vararg fields: Pair<Long, Int>) {
+            fields.forEach { (value, width) ->
+                repeat(width) { shift -> output.write(((value ushr (shift * 8)) and 255).toInt()) }
+            }
         }
 
         fun putGenerated(zip: ZipOutputStream, name: String, size: Long, random: Boolean): String {

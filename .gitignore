@@ -4,9 +4,10 @@
 .idea/
 **/build/
 local.properties
-captures/
-artifacts/perf/
 externalNativeBuild/
 .cxx/
-.codegraph
-.omo/
+**/node_modules/
+**/dist/
+**/test-results/
+**/__pycache__/
+.DS_Store

@@ -126,8 +126,8 @@ export default function AddFeedModal() {
       let feeds;
       if (searchType === "podcast") {
         const response = await window.ToolBox.network.request({
-          url: `https://itunes.apple.com/search?media=podcast&entity=podcast&limit=25&term=${encodeURIComponent(searchQuery)}`,
-          method: "GET", timeoutMs: 30000, maxResponseBytes: 1024 * 1024,
+          url: `https://itunes.apple.com/search?media=podcast&entity=podcast&term=${encodeURIComponent(searchQuery)}`,
+          method: "GET",
         });
         if (response.status !== 200 || response.bodyEncoding !== "text") throw new Error("播客搜索暂时不可用，请稍后重试。");
         const data = JSON.parse(response.body);

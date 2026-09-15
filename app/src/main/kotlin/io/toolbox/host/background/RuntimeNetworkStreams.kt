@@ -28,10 +28,9 @@ internal class RuntimeNetworkStreams(
         }
         if (streamId in retired) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络流已结束，请创建新流。")
         if (entries.containsKey(streamId)) throw RuntimeHandlerException(RuntimeRpcErrorCode.BUSY, "网络流标识已使用。")
-        if (entries.size >= 2) throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "最多同时打开两个网络流。")
         val entry = Entry(ToolNetworkStreamControl())
         entries[streamId] = entry
-        entry.expiry = scope.launch {
+        if (timeoutMillis > 0) entry.expiry = scope.launch {
             delay(timeoutMillis)
             release(streamId, entry.control, "NETWORK_TIMEOUT")
         }
@@ -81,15 +80,8 @@ internal class RuntimeNetworkStreams(
                 return@synchronized listOf(entry.control)
             }
             if (!active || streamId in retired || streamId in cancelledBeforeOpen) return@synchronized emptyList()
-            if (cancelledBeforeOpen.size < 128) {
-                cancelledBeforeOpen.add(streamId)
-                emptyList()
-            } else {
-                active = false
-                scope.cancel()
-                cancelledBeforeOpen.clear()
-                entries.values.map(Entry::control).also { entries.clear() }
-            }
+            cancelledBeforeOpen.add(streamId)
+            emptyList()
         }
         controls.forEach { it.cancel() }
     }
@@ -116,6 +108,5 @@ internal class RuntimeNetworkStreams(
 
     private fun retire(streamId: String) {
         retired.add(streamId)
-        if (retired.size > 128) retired.remove(retired.first())
     }
 }

@@ -3,21 +3,6 @@ package io.toolbox.tool.packagekit
 import java.io.InputStream
 import java.nio.file.Path
 
-data class PackageLimits(
-    val maxPathCharacters: Int = 180,
-    val maxManifestBytes: Long = 128L * 1024,
-) {
-    init {
-        require(maxPathCharacters in 1..HARD_MAX_PATH_CHARACTERS)
-        require(maxManifestBytes in 1..HARD_MAX_MANIFEST_BYTES)
-    }
-
-    companion object {
-        const val HARD_MAX_PATH_CHARACTERS = 180
-        const val HARD_MAX_MANIFEST_BYTES = 128L * 1024
-    }
-}
-
 interface PackageInput {
     val displayName: String
     fun openStream(): InputStream
@@ -56,17 +41,13 @@ data class ToolManifest(
     val securityProfile: SecurityProfile,
     val network: ManifestNetwork?,
     val ui: ManifestUi,
-    val limits: ManifestLimits,
 )
 
 data class ManifestPermission(val name: String, val reason: String, val required: Boolean)
 enum class SecurityProfile { STRICT, COMPAT }
 data class ManifestNetwork(
-    val allowDomains: List<String>,
-    val allowRedirects: Boolean,
     val maxResponseBytes: Int,
     val timeoutMs: Int,
-    val allowUserDomains: Boolean = false,
 )
 data class ManifestUi(
     val orientation: ManifestOrientation?,
@@ -76,16 +57,15 @@ data class ManifestUi(
 )
 enum class ManifestOrientation { UNSPECIFIED, PORTRAIT, LANDSCAPE }
 enum class ManifestStatusBarStyle { AUTO, LIGHT, DARK }
-data class ManifestLimits(val maxBridgePayloadBytes: Int)
 
 data class PackageRejection(val code: PackageRejectionCode, val detail: String)
 
 enum class PackageRejectionCode {
+    SOURCE_READ_FAILED,
+    TEMPORARY_IO_FAILED,
     INSUFFICIENT_SPACE,
     INSUFFICIENT_RESOURCES,
     RESOURCE_CHECK_FAILED,
-    SOURCE_READ_FAILED,
-    TEMPORARY_IO_FAILED,
     CLEANUP_FAILED,
     MALFORMED_ARCHIVE,
     UNSUPPORTED_ZIP_FEATURE,
@@ -116,9 +96,16 @@ internal data class PreparedPackage(
     val bundleDirectory: Path,
     val fileHashes: Map<String, String>,
     val temporaryDirectory: Path,
+    val signingKeyId: String?,
 )
 
 internal sealed interface PreparationResult {
     data class Prepared(val value: PreparedPackage) : PreparationResult
     data class Rejected(val rejection: PackageRejection) : PreparationResult
+}
+
+/** Preflight uses the exact same inspector as installation, without publishing a bundle. */
+object ToolPackageInspectors {
+    fun create(temporaryDirectory: java.io.File): ToolPackageInspector =
+        DefaultPackageInspector(temporaryDirectory.toPath())
 }

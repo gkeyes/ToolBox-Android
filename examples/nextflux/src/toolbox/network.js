@@ -1,7 +1,5 @@
-// All remote traffic stays behind the host's permission and domain checks.
+// Account API traffic is bound to this server so credentials cannot leak to media origins.
 export const SERVER_URL = "https://miniflux.xiaochen.win";
-export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-const DEFAULT_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export function assertServerUrl(value) {
   let url;
@@ -49,8 +47,6 @@ export async function request(value, options = {}) {
     url: url.href,
     method: (options.method || "GET").toUpperCase(),
     headers: options.headers || {},
-    timeoutMs: options.timeoutMs || 60000,
-    maxResponseBytes: Math.min(options.maxResponseBytes || DEFAULT_RESPONSE_BYTES, MAX_RESPONSE_BYTES),
   };
   if (options.body !== undefined && options.body !== null) payload.body = options.body;
   let response;
@@ -97,8 +93,6 @@ export async function toolboxAxiosAdapter(config) {
     headers,
     body: config.data,
     signal: config.signal,
-    timeoutMs: config.timeout || 60000,
-    maxResponseBytes: config.toolboxMaxResponseBytes,
   });
   const validateStatus = config.validateStatus || ((status) => status >= 200 && status < 300);
   if (!validateStatus(response.status)) throw httpError(response.status);

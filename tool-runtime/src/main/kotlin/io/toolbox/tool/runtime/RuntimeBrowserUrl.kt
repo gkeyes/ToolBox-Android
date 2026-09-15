@@ -4,7 +4,7 @@ import java.net.URI
 
 /** Validates a URL only. Never parses Intent URI syntax, extras, headers or a caller-selected target. */
 fun validateRuntimeBrowserUrl(url: String): String {
-    require(url.length in 1..2_048 && url.none { it.isISOControl() || it.isWhitespace() || it == '\\' })
+    require(url.isNotEmpty() && url.none { it.isISOControl() || it.isWhitespace() || it == '\\' })
     val uri = try { URI(url) } catch (_: Exception) { throw IllegalArgumentException("Invalid browser URL") }
     require(uri.isAbsolute && !uri.isOpaque && uri.scheme.lowercase() in setOf("http", "https"))
     require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null && '@' !in uri.rawAuthority)

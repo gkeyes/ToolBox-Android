@@ -17,7 +17,7 @@ internal class IntegrityJsonReader(private val input: Reader, private val resour
                 "schemaVersion" -> versionOne()
                 "algorithm" -> if (string(7) != "SHA-256") fail("Expected SHA-256")
                 "files" -> objectEntries {
-                    // ZIP32 names cannot exceed 65535 bytes. Normalized paths are checked separately.
+                    // ZIP entry names use a 16-bit length, including in ZIP64 archives.
                     val path = string(0xffff)
                     expect(':')
                     onFile(path, string(64))

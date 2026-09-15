@@ -39,7 +39,7 @@ class AndroidNotificationGateway(
         if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return@withContext NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED")
         }
-        if (!isValidNotification(notificationId, title, body)) {
+        if (!isValidNotification(notificationId, title)) {
             return@withContext NotificationResult.Rejected("INVALID_NOTIFICATION")
         }
         val channelId = channelId(toolId)
@@ -117,5 +117,5 @@ data class LiveNotificationSupportState(
     val androidLiveAllowed: Boolean,
 )
 
-internal fun isValidNotification(notificationId: String, title: String, body: String): Boolean =
-    notificationId.isNotBlank() && title.isNotBlank() && title.length <= 64 && body.length <= 256
+internal fun isValidNotification(notificationId: String, title: String): Boolean =
+    notificationId.isNotBlank() && title.isNotBlank()

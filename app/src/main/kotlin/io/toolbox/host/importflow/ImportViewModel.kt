@@ -25,7 +25,14 @@ internal data class ImportUiState(
     val succeeded: Boolean = false,
     val confirmation: HostImportConfirmation? = null,
     val importPhase: PackageImportPhase? = null,
-)
+) {
+    val progressMessage: String
+        get() = when (importPhase) {
+            PackageImportPhase.CANCELLING -> "正在取消安装…"
+            PackageImportPhase.COMMITTING, PackageImportPhase.FINISHED -> "正在完成安装…"
+            else -> "正在检查并安装工具…"
+        }
+}
 
 internal class ImportViewModel(
     private val operations: HostPackageOperations,

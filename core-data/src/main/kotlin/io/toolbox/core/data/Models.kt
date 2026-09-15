@@ -124,22 +124,14 @@ data class HostSettings(
     val reduceTransparency: Boolean = false,
 )
 
-object CoreDataLimits {
-    const val MAX_TRANSACTION_ID_LENGTH = 128
-    const val MAX_TASK_ID_LENGTH = 128
-    const val MAX_TASK_KEY_LENGTH = 64
-    const val MAX_TASK_SPEC_BYTES = 64 * 1024
-    const val MAX_TASK_RESULT_BYTES = 256 * 1024
-}
-
 internal fun String.isValidTransactionId(): Boolean =
-    isNotBlank() && length <= CoreDataLimits.MAX_TRANSACTION_ID_LENGTH
+    isNotBlank()
 
 internal fun String.isValidTaskId(): Boolean =
-    isNotBlank() && length <= CoreDataLimits.MAX_TASK_ID_LENGTH
+    isNotBlank()
 
 internal fun String.isValidTaskKey(): Boolean =
-    isNotBlank() && length <= CoreDataLimits.MAX_TASK_KEY_LENGTH
+    isNotBlank()
 
 sealed interface DataResult<out T> {
     data class Success<T>(val value: T) : DataResult<T>

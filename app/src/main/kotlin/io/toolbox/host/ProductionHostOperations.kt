@@ -27,6 +27,7 @@ import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.runtime.awaitRuntimeStandardStorageIdle
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
+import io.toolbox.host.runtime.withRuntimeStorageQuiescent
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.AndroidPackageResourceProbe
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
@@ -81,6 +82,18 @@ internal class ProductionHostPackageOperations(
     )
     private val manifestReader = HostInstalledManifestReader(application.filesDir, repositories.catalog)
     private val cleanup = object : ToolStateCleanup {
+        override suspend fun <T> withVersionReplacement(
+            toolId: String,
+            previousVersionCode: Int,
+            nextVersionCode: Int,
+            action: suspend () -> T,
+        ): T {
+            beforeVersionReplacement(toolId, previousVersionCode, nextVersionCode)
+            return runtimeDataCleaner.withPreservedData(toolId) {
+                withRuntimeStorageQuiescent(toolId, action)
+            }
+        }
+
         override suspend fun beforeVersionReplacement(
             toolId: String,
             previousVersionCode: Int,
@@ -94,7 +107,9 @@ internal class ProductionHostPackageOperations(
             previousVersionCode: Int,
             nextVersionCode: Int,
         ) {
-            clearRuntimeState(toolId, removeShortcut = false)
+            // Old replacement markers also arrive here during recovery. This must remain
+            // non-destructive and must not stop a new runtime started since the commit.
+            invalidateToolIcon(toolId)
         }
 
         override suspend fun beforeUninstall(toolId: String) {
@@ -146,6 +161,7 @@ internal class ProductionHostPackageOperations(
                 kind = when (confirmation.kind) {
                     PackageVersionConfirmationKind.SAME_VERSION -> HostImportConfirmationKind.SAME_VERSION
                     PackageVersionConfirmationKind.DOWNGRADE -> HostImportConfirmationKind.DOWNGRADE
+                    PackageVersionConfirmationKind.UPDATE -> HostImportConfirmationKind.UPDATE
                 },
             ),
         )
@@ -230,6 +246,7 @@ internal class ProductionHostPackageOperations(
 
     private fun importFailureMessage(failure: PackageOperationFailure): String = when (failure.code.name) {
         "CONFIRMATION_EXPIRED" -> "安装确认已失效，请重新选择工具包。"
+        "SIGNING_IDENTITY_CHANGED" -> "更新包的签名身份与原工具不同，已保留原工具和数据。请使用原作者签名的更新包。"
         "UNSUPPORTED_HOST_VERSION" -> "此工具需要更高版本的 ToolBox。"
         "BUSY" -> "正在处理另一个工具包，请稍后重试。"
         "CLEANUP_FAILURE" -> "临时安装状态未能清理，请稍后重试。"
@@ -314,7 +331,7 @@ internal class ProductionHostBackgroundOperations(
 
     override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
         network = RuntimeNetworkGateway(
-            network, runtime.installedManifest.network, runtime.maxBridgePayloadBytes,
+            network, runtime.installedManifest.network,
             validateNetworkAccess = {
                 val current = networkCatalog.observeTool(runtime.toolId).first()
                 val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
@@ -416,10 +433,8 @@ private class ActiveBundleBackgroundManifestResolver(
             toolId = manifest.id,
             versionCode = manifest.versionCode,
             declaredCapabilities = manifest.permissions,
-            networkHosts = network?.allowDomains.orEmpty(),
-            allowNetworkRedirects = network?.allowRedirects == true,
-            networkTimeoutMillis = network?.timeoutMs?.toLong() ?: 15_000L,
-            maxNetworkResponseBytes = network?.maxResponseBytes ?: 256 * 1024,
+            networkTimeoutMillis = network?.timeoutMs?.toLong() ?: 0L,
+            maxNetworkResponseBytes = network?.maxResponseBytes ?: Int.MAX_VALUE,
         )
     }
 }

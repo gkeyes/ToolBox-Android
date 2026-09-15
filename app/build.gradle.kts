@@ -47,8 +47,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 23
-        versionName = "0.6.7"
+        versionCode = 32
+        versionName = "0.7.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -77,11 +77,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
             )
         }
-        create("candidate") {
-            initWith(getByName("release"))
-            signingConfig = stableSigningConfig ?: signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
+
     }
 
     compileOptions {
@@ -94,18 +90,11 @@ android {
         buildConfig = true
     }
 
-    testOptions {
-        animationsDisabled = true
-    }
-
     sourceSets.getByName("main").assets.directories.add(
         bundledExamplesDir.get().asFile.absolutePath,
     )
     sourceSets.getByName("main").assets.directories.add(
         rootProject.layout.projectDirectory.dir("sdk/help").asFile.absolutePath,
-    )
-    sourceSets.getByName("test").resources.srcDir(
-        rootProject.layout.projectDirectory.dir("sdk/help"),
     )
 }
 
@@ -134,6 +123,7 @@ dependencies {
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.webkit)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -147,16 +137,13 @@ dependencies {
     implementation(libs.focus.api)
     implementation(libs.androidsvg)
 
-    debugImplementation(libs.androidx.compose.ui.tooling.preview)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    testImplementation(libs.junit4)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.androidx.work.testing)
-
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.test.espresso.core)
-    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+
+
+
 }

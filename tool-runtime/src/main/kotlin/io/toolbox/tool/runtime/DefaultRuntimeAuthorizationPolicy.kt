@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
-import java.util.ArrayDeque
 
 interface RuntimeGrantStateSource {
     suspend fun currentVersionCode(toolId: String): Int?
@@ -35,15 +34,7 @@ class DefaultRuntimeAuthorizationPolicy(
     private val state: RuntimeGrantStateSource,
     private val systemPermissions: RuntimeSystemPermissionChecker,
     private val quota: RuntimeQuotaChecker,
-    private val clockMillis: () -> Long,
-    private val maxCallsPerMinute: Int = 120,
 ) : RuntimeAuthorizationPolicy {
-    private val rateWindows = hashMapOf<Pair<String, String>, ArrayDeque<Long>>()
-
-    init {
-        require(maxCallsPerMinute in 1..1_000)
-    }
-
     override suspend fun isCurrent(identity: RuntimeSessionIdentity): Boolean =
         state.currentVersionCode(identity.toolId) == identity.versionCode
 
@@ -65,38 +56,8 @@ class DefaultRuntimeAuthorizationPolicy(
         if (!isCurrent(identity)) {
             return RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
         }
-        val quotaDecision = quota.admit(identity, method, encodedBytes)
-        if (quotaDecision is RuntimePolicyDecision.Denied) return quotaDecision
-        val now = clockMillis()
-        val retryAfterMs = synchronized(rateWindows) {
-            val window = rateWindows.getOrPut(identity.toolId to method.name, ::ArrayDeque)
-            while (window.isNotEmpty() && now - window.first() >= RATE_WINDOW_MILLIS) window.removeFirst()
-            if (window.size >= methodLimit(method.name)) {
-                // The first admitted call is the next slot to expire. Clamp clock rollback
-                // without changing the existing rolling-window limits.
-                RATE_WINDOW_MILLIS - (now - window.first()).coerceIn(0L, RATE_WINDOW_MILLIS)
-            } else {
-                window.addLast(now)
-                null
-            }
-        }
-        return if (retryAfterMs == null) {
-            RuntimePolicyDecision.Allowed
-        } else {
-            RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.RATE_LIMITED, "ToolBox method rate limit exceeded", retryAfterMs)
-        }
-    }
-
-    private fun methodLimit(method: String): Int = when (method) {
-        "network.readStream" -> 1_000
-        "haptics.perform" -> minOf(maxCallsPerMinute, 30)
-        "clipboard.writeText" -> minOf(maxCallsPerMinute, 20)
-        "browser.open" -> minOf(maxCallsPerMinute, 10)
-        "ui.toast" -> minOf(maxCallsPerMinute, 30)
-        else -> maxCallsPerMinute
-    }
-
-    private companion object {
-        const val RATE_WINDOW_MILLIS = 60_000L
+        // Grants authorize use; admission protects retained message resources only.
+        // Completed calls never consume a rolling per-minute allowance.
+        return quota.admit(identity, method, encodedBytes)
     }
 }

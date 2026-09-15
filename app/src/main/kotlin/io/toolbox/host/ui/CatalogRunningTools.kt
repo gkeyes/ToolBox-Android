@@ -107,10 +107,15 @@ internal fun CatalogRunningToolsContent(
             )
         }
     }
+    RunningToolsStopDialog(state, onCancelStop, onConfirmStop)
+}
+
+@Composable
+internal fun RunningToolsStopDialog(state: RunningToolsUiState, onCancelStop: () -> Unit, onConfirmStop: () -> Unit) {
     OverlayDialog(
-        show = state.confirmation != null,
-        title = "停止后台运行？",
-        summary = state.confirmation?.let {
+        show = state.confirmation != null || state.batchConfirmation.isNotEmpty(),
+        title = if (state.batchConfirmation.isNotEmpty()) "停止全部后台运行？" else "停止后台运行？",
+        summary = if (state.batchConfirmation.isNotEmpty()) "将停止当前选择的 ${state.batchConfirmation.size} 个后台任务，并移除对应通知。" else state.confirmation?.let {
             "将停止 ${it.toolName} 的后台运行，并移除它的实时通知。其他工具不受影响。"
         },
         onDismissRequest = onCancelStop,
@@ -136,12 +141,12 @@ internal fun CatalogRunningToolsContent(
 }
 
 @Composable
-private fun RunningToolRow(
+internal fun RunningToolRow(
     session: RuntimeBackgroundSessionUi,
     tool: CatalogTool?,
     stopping: Boolean,
     canStop: Boolean,
-    onOpen: () -> Unit,
+    onOpen: (() -> Unit)?,
     onStop: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -154,8 +159,8 @@ private fun RunningToolRow(
             modifier = Modifier
                 .weight(1f)
                 .heightIn(min = ToolBoxThemeTokens.sizes.denseRow + ToolBoxThemeTokens.spacing.one)
-                .clickable(role = Role.Button, onClick = onOpen)
-                .semantics { contentDescription = "打开${session.toolName}" }
+                .then(if (onOpen != null) Modifier.clickable(role = Role.Button, onClick = onOpen)
+                    .semantics { contentDescription = "打开${session.toolName}" } else Modifier)
                 .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -166,11 +171,11 @@ private fun RunningToolRow(
                 size = ToolBoxThemeTokens.sizes.compactToolGlyph,
             )
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-            AppText(
-                text = session.toolName,
-                modifier = Modifier.weight(1f),
-                textStyle = ToolBoxThemeTokens.textStyles.body,
-            )
+            Column(Modifier.weight(1f)) {
+                AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
+                AppText(text = if (stopping) "正在停止后台会话" else "● 运行中",
+                    color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+            }
         }
         ToolBoxRunningStatusButton(
             stopping = stopping,

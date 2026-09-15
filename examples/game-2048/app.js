@@ -293,8 +293,9 @@
       if (event.currentTarget.dataset.action === "continue") {
         state.wonAcknowledged = true;
         hideResult();
-        announce("继续挑战，看看还能合出多大的数字");
         queueSave();
+        if (evaluateTerminal()) return;
+        announce("继续挑战，看看还能合出多大的数字");
         $("board").focus({ preventScroll: true });
       } else {
         startNewGame();

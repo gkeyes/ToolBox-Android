@@ -6,7 +6,6 @@ self.addEventListener("message", async ({ data }) => {
     let result;
     if (data.operation === "read") {
       const bytes = new Uint8Array(data.bytes);
-      if (bytes.byteLength > model.MAX_FILE_BYTES) throw new model.HealthError("文件超过 700 KiB，请选择较小的备份");
       if (data.name.toLowerCase().endsWith(".json")) {
         const raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^\uFEFF/, ""));
         result = model.normalizeArchive(raw, makeId);

@@ -15,6 +15,8 @@ export default function MarkAllReadButton() {
   return (
     <Dropdown>
       <Button
+        className="nextflux-toolbar-button"
+        aria-label={t("articleList.markAllRead")}
         size="sm"
         radius="full"
         variant="ghost"

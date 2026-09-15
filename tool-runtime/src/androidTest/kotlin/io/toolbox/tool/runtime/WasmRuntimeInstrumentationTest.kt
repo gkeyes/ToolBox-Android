@@ -38,7 +38,7 @@ class WasmRuntimeInstrumentationTest {
     fun compatWasmAndWorkersExecuteWithNoNetworkGrant() = exerciseProfile(SecurityProfile.COMPAT)
 
     private fun exerciseProfile(profile: SecurityProfile) {
-        val scenario = ActivityScenario.launch(RuntimeWebViewTestActivity::class.java)
+        val scenario = ActivityScenario.launch(WasmRuntimeTestActivity::class.java)
         val filesRoot = withActivity(scenario) { it.filesDir.toPath().toAbsolutePath().normalize() }
         val toolId = "com.example.wasm.${profile.name.lowercase()}"
         val toolRoot = filesRoot.resolve("miniapps/$toolId")
@@ -152,7 +152,6 @@ class WasmRuntimeInstrumentationTest {
                 permissions = emptySet(),
                 permissionDeclarations = emptyList(),
                 network = null,
-                maxBridgePayloadBytes = RuntimeBridgeConfiguration.DEFAULT_MAX_BRIDGE_PAYLOAD_BYTES,
             ),
         )
     }
@@ -213,7 +212,7 @@ class WasmRuntimeInstrumentationTest {
         error("Timed out waiting for Wasm fixture report")
     }
 
-    private fun <T> withActivity(scenario: ActivityScenario<RuntimeWebViewTestActivity>, action: (RuntimeWebViewTestActivity) -> T): T {
+    private fun <T> withActivity(scenario: ActivityScenario<WasmRuntimeTestActivity>, action: (WasmRuntimeTestActivity) -> T): T {
         val result = CompletableFuture<T>()
         scenario.onActivity { activity -> runCatching { action(activity) }.onSuccess(result::complete).onFailure(result::completeExceptionally) }
         return result.get(10, TimeUnit.SECONDS)
@@ -245,7 +244,7 @@ class WasmRuntimeInstrumentationTest {
                     RuntimePolicyDecision.Allowed
             },
             handlers = RuntimeM1Handlers(),
-            hostVersion = "0.6.7",
+            hostVersion = "0.7.8",
         )
     }
 }

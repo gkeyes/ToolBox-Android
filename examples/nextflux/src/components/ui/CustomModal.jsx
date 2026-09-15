@@ -14,17 +14,17 @@ export default function CustomModal({
     return (
       <Drawer>
         <Button className="hidden" />
-        <Drawer.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+        <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
           <Drawer.Content>
-            <Drawer.Dialog className={cn("p-0", fixedHeight && "h-4/5")}>
+            <Drawer.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-4/5")}>
               <Drawer.Handle className="p-1" />
               <Drawer.CloseTrigger className="nextflux-close-button" />
               <Drawer.Header className="nextflux-close-header px-4 pt-1 pb-4">
                 <Drawer.Heading>{title}</Drawer.Heading>
               </Drawer.Header>
-              <Drawer.Body className="m-0 p-0">{children}</Drawer.Body>
+              <Drawer.Body className="nextflux-modal-body m-0 p-0">{children}</Drawer.Body>
               {footer && (
-                <Drawer.Footer className="bg-background dark:bg-transparent border-t p-4 m-0">
+                <Drawer.Footer className="nextflux-modal-footer p-4 m-0">
                   {footer}
                 </Drawer.Footer>
               )}
@@ -37,15 +37,15 @@ export default function CustomModal({
   return (
     <Modal>
       <Button className="hidden" />
-      <Modal.Backdrop isOpen={open} onOpenChange={onOpenChange}>
+      <Modal.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
         <Modal.Container>
-          <Modal.Dialog className={cn("p-0", fixedHeight && "h-2/3")}>
+          <Modal.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-2/3")}>
             <Modal.Header className="nextflux-close-header">
               <Modal.Heading className="p-4">{title}</Modal.Heading>
             </Modal.Header>
-            <Modal.Body className="m-0 p-0">{children}</Modal.Body>
+            <Modal.Body className="nextflux-modal-body m-0 p-0">{children}</Modal.Body>
             {footer && (
-              <Modal.Footer className="bg-background dark:bg-transparent border-t p-4 m-0">
+              <Modal.Footer className="nextflux-modal-footer p-4 m-0">
                 {footer}
               </Modal.Footer>
             )}

@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         TaskResultEntity::class,
     ],
     version = 1,
-    exportSchema = true,
+    exportSchema = false,
 )
 internal abstract class ToolBoxDatabase : RoomDatabase() {
     abstract fun tools(): ToolDao

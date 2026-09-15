@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,15 +30,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.toolbox.core.ui.component.toolBoxOpenDesignSurface
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxSecondaryButton
+import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
@@ -59,46 +63,7 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-internal fun ToolManagerScreen(
-    state: CatalogUiState,
-    importState: ImportUiState,
-    listState: LazyListState,
-    onAction: (CatalogAction) -> Unit,
-    onDestination: (MainDestination) -> Unit,
-    onImport: () -> Unit,
-    onInstallExamples: () -> Unit,
-    onDismissImport: () -> Unit,
-    onOpenDetails: (String) -> Unit,
-    onConfirmImport: () -> Unit = {},
-    onCancelImport: () -> Unit = {},
-    onCancelActiveImport: () -> Unit = {},
-    runningTools: @Composable () -> Unit = {},
-) {
-    PrimaryScreen(
-        selected = MainDestination.Tools,
-        onDestination = onDestination,
-        title = "工具",
-        onImport = onImport,
-    ) { padding, _ ->
-        ToolManagerContent(
-            state = state,
-            importState = importState,
-            listState = listState,
-            contentPadding = padding,
-            onAction = onAction,
-            onImport = onImport,
-            onInstallExamples = onInstallExamples,
-            onDismissImport = onDismissImport,
-            onOpenDetails = onOpenDetails,
-            onConfirmImport = onConfirmImport,
-            onCancelImport = onCancelImport,
-            onCancelActiveImport = onCancelActiveImport,
-            runningTools = runningTools,
-        )
-    }
-}
 
-@Composable
 internal fun ToolManagerContent(
     state: CatalogUiState,
     importState: ImportUiState,
@@ -114,7 +79,6 @@ internal fun ToolManagerContent(
     onCancelActiveImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
 ) {
-    val confirmation = importState.confirmation
     val recentTools = state.recentTools
     LazyColumn(
         state = listState,
@@ -133,13 +97,7 @@ internal fun ToolManagerContent(
         if (importState.working || importState.message != null) {
             item("import-feedback") {
                 FeedbackSurface(
-                    message = if (importState.working) {
-                        when (importState.importPhase) {
-                            PackageImportPhase.CANCELLING -> "正在取消安装…"
-                            PackageImportPhase.COMMITTING, PackageImportPhase.FINISHED -> "正在完成安装…"
-                            else -> "正在检查并安装工具…"
-                        }
-                    } else requireNotNull(importState.message),
+                    message = if (importState.working) importState.progressMessage else requireNotNull(importState.message),
                     tone = when {
                         importState.working -> FeedbackTone.Progress
                         importState.succeeded -> FeedbackTone.Success
@@ -187,7 +145,8 @@ internal fun ToolManagerContent(
                 item("installed-title") {
                     SectionHeader(
                         if (state.isSearching) "搜索结果 · ${state.visibleTools.size}"
-                        else "全部工具 · ${state.tools.size}",
+                        else "全部工具",
+                        action = if (state.isSearching) "" else state.tools.size.toString(),
                     )
                 }
                 item("before-tools") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
@@ -195,11 +154,9 @@ internal fun ToolManagerContent(
                     items = state.visibleTools,
                     key = { _, tool -> tool.toolId },
                     contentType = { _, _ -> "tool" },
-                ) { index, tool ->
+                ) { _, tool ->
                     CatalogToolRow(
                         tool = tool,
-                        isFirst = index == 0,
-                        isLast = index == state.visibleTools.lastIndex,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onDetails = { onOpenDetails(tool.toolId) },
                     )
@@ -208,36 +165,53 @@ internal fun ToolManagerContent(
         }
     }
 
-    OverlayDialog(
-        show = confirmation != null,
-        title = when (confirmation?.kind) {
-            HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
-            HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
-            null -> null
-        },
-        summary = confirmation?.let {
-            val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
-            val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
-            if (it.kind == HostImportConfirmationKind.SAME_VERSION) {
-                "${it.toolName} 当前为 $installed，待安装为 $incoming，两者 versionCode 相同。继续会覆盖现有工具文件，并停止其运行和后台任务；普通存储与仍有效的权限选择会保留。"
-            } else {
-                "${it.toolName} 当前为 $installed，待安装为 $incoming。较低版本可能无法读取新版数据；继续会停止其运行和后台任务，普通存储与仍有效的权限选择会保留。"
-            }
-        },
-        onDismissRequest = onCancelImport,
-    ) {
+    ImportReplacementDialog(importState, onConfirmImport, onCancelImport)
+}
+
+@Composable
+internal fun ImportReplacementDialog(
+    importState: ImportUiState,
+    onConfirmImport: () -> Unit,
+    onCancelImport: () -> Unit,
+) {
+    val confirmation = importState.confirmation ?: return
+    val title = when (confirmation.kind) {
+        HostImportConfirmationKind.SAME_VERSION -> "覆盖安装同一版本？"
+        HostImportConfirmationKind.DOWNGRADE -> "安装较低版本？"
+        HostImportConfirmationKind.UPDATE -> "更新并保留工具数据？"
+    }
+    val summary = confirmation.let {
+        val installed = "${it.installedVersionName}（${it.installedVersionCode}）"
+        val incoming = "${it.incomingVersionName}（${it.incomingVersionCode}）"
+        val replacement = when (it.kind) {
+            HostImportConfirmationKind.SAME_VERSION -> "两者 versionCode 相同，将覆盖现有工具文件。"
+            HostImportConfirmationKind.DOWNGRADE -> "较低版本可能无法读取新版数据。"
+            HostImportConfirmationKind.UPDATE -> "无法通过原工具的签名确认此次更新的身份。"
+        }
+        "${it.toolName} 当前为 $installed，待安装为 $incoming。$replacement 继续会停止旧运行和后台任务，并允许这份更新使用已保存的登录信息、设置与仍有效的权限。原来关闭的权限不会开启。仅在信任此包来源时继续。"
+    }
+    ToolBoxModalDialog(onDismissRequest = onCancelImport) {
+        AppText(
+            title,
+            modifier = Modifier.semantics { heading() },
+            textStyle = ToolBoxThemeTokens.textStyles.title.copy(
+                fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+        AppText(summary, color = ToolBoxThemeTokens.colors.textSecondary)
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
-            ToolBoxTextButton(
+            ToolBoxSecondaryButton(
                 label = "取消",
                 onClick = onCancelImport,
                 modifier = Modifier.weight(1f),
-                contentColor = ToolBoxThemeTokens.colors.textPrimary,
             )
             ToolBoxPrimaryButton(
-                label = if (confirmation?.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
+                label = if (confirmation.kind == HostImportConfirmationKind.SAME_VERSION) "仍要覆盖" else "仍要安装",
                 onClick = onConfirmImport,
                 modifier = Modifier.weight(1f),
             )
@@ -362,8 +336,6 @@ internal fun ToolDetailScreen(
 @Composable
 private fun CatalogToolRow(
     tool: CatalogTool,
-    isFirst: Boolean,
-    isLast: Boolean,
     onOpen: () -> Unit,
     onDetails: () -> Unit,
 ) {
@@ -372,15 +344,8 @@ private fun CatalogToolRow(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(
-                RoundedCornerShape(
-                    topStart = if (isFirst) corner else 0.dp,
-                    topEnd = if (isFirst) corner else 0.dp,
-                    bottomStart = if (isLast) corner else 0.dp,
-                    bottomEnd = if (isLast) corner else 0.dp,
-                ),
-            )
-            .background(ToolBoxThemeTokens.colors.surface),
+            .padding(bottom = 8.dp)
+            .toolBoxOpenDesignSurface(RoundedCornerShape(corner)),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -406,23 +371,31 @@ private fun CatalogToolRow(
                     size = ToolBoxThemeTokens.sizes.compactToolGlyph,
                 )
                 Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
-                AppText(
-                    text = tool.name,
-                    modifier = Modifier.weight(1f),
-                    textStyle = ToolBoxThemeTokens.textStyles.title,
-                    weight = FontWeight.SemiBold,
-                )
+                Column(Modifier.weight(1f)) {
+                    AppText(text = tool.name, textStyle = ToolBoxThemeTokens.textStyles.title, weight = FontWeight.SemiBold)
+                    AppText(
+                        text = when (tool.toolId) {
+                            "io.toolbox.positioncalculator" -> "计算 · 本地运行"
+                            "io.toolbox.quicknotes" -> "记录 · 本地存储"
+                            "io.toolbox.backgroundtaskdemo" -> "后台 · 通知"
+                            "io.toolbox.notificationlab" -> "测试 · 系统通知"
+                            else -> "已安装"
+                        },
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    )
+                }
             }
             // Sibling targets: managing a tool must never bubble into the open action.
             ToolBoxTextButton(
                 label = "管理",
                 onClick = onDetails,
+                outlined = false,
                 modifier = Modifier
                     .widthIn(min = ToolBoxThemeTokens.sizes.touchTarget)
                     .semantics { contentDescription = "管理${tool.name}" },
             )
         }
-        if (!isLast) ToolBoxGroupDivider(startPadding = 68.dp)
     }
 }
 
@@ -431,19 +404,9 @@ private fun CatalogRecentTools(
     tools: List<CatalogTool>,
     onAction: (CatalogAction) -> Unit,
 ) {
-    val spacing = ToolBoxThemeTokens.spacing.one
-    val touchTarget = ToolBoxThemeTokens.sizes.touchTarget
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val visibleCount = ((maxWidth + spacing) / (touchTarget + spacing)).toInt().coerceAtLeast(1)
-        val itemWidth = ((maxWidth - spacing * (visibleCount - 1)) / visibleCount).coerceAtLeast(touchTarget)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-            items(tools, key = CatalogTool::toolId) { tool ->
-                CatalogRecentIcon(
-                    tool = tool,
-                    onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                    modifier = Modifier.width(itemWidth),
-                )
-            }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(tools, key = CatalogTool::toolId) { tool ->
+            CatalogRecentIcon(tool, { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) }, Modifier.width(64.dp))
         }
     }
 }
@@ -455,20 +418,19 @@ private fun CatalogRecentIcon(
     modifier: Modifier = Modifier,
 ) {
     val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
-    Box(
+    Column(
         modifier = modifier
-            .height(ToolBoxThemeTokens.sizes.touchTarget)
+            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
             .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
             .semantics { contentDescription = "打开最近使用的${tool.name}" }
-            .clickable(role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen),
-        contentAlignment = Alignment.Center,
+            .clickable(role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        CatalogToolGlyph(
-            toolId = tool.toolId,
-            versionCode = tool.versionCode,
-            visual = visual,
-            size = ToolBoxThemeTokens.sizes.compactToolGlyph,
-        )
+        CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode, visual = visual, size = 48.dp)
+        Spacer(Modifier.height(6.dp))
+        AppText(tool.name, textStyle = ToolBoxThemeTokens.textStyles.label,
+            align = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
     }
 }
 

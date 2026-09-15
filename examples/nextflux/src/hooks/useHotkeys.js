@@ -1,4 +1,4 @@
-import { showLinkActions } from "@/toolbox/actions.js";
+import { openInBrowser } from "@/toolbox/actions.js";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStore } from "@nanostores/react";
@@ -16,6 +16,7 @@ import { forceSync } from "@/stores/syncStore";
 import {
   searchDialogOpen,
   addFeedModalOpen,
+  isModalOpen,
 } from "@/stores/modalStore.js";
 import { useSidebarNavigation } from "@/hooks/useSidebarNavigation";
 
@@ -36,6 +37,7 @@ export function useHotkeys() {
 
   useEffect(() => {
     const handleKeyDown = async (e) => {
+      if (isModalOpen.get()) return;
       // 如果焦点在输入框中,不触发快捷键
       if (
         e.target.tagName === "INPUT" ||
@@ -112,9 +114,10 @@ export function useHotkeys() {
           }
           break;
 
-        case "v": // 在新标签页打开原文
+        case "v": // 在应用内浏览器打开原文
           if (articleId) {
-            showLinkActions($activeArticle.url);
+            e.preventDefault();
+            void openInBrowser($activeArticle.url);
           }
           break;
 

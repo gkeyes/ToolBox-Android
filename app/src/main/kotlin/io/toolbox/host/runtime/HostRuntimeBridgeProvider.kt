@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.security.keystore.KeyGenParameterSpec
@@ -89,6 +88,7 @@ internal class HostRuntimeBridgeProvider(
             context = applicationContext,
             toolId = runtime.toolId,
             toolName = runtime.installedManifest.name,
+            requireForegroundRuntime = continuity.requireForegroundRuntime,
             authorizeBrowserLaunch = {
                 val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
                 if (current?.versionCode != runtime.versionCode) {
@@ -122,22 +122,20 @@ internal class HostRuntimeBridgeProvider(
         val authorization = DefaultRuntimeAuthorizationPolicy(
             state = grantState,
             systemPermissions = systemPermissions,
-            quota = HostRuntimeQuotaChecker(runtime.maxBridgePayloadBytes),
-            clockMillis = SystemClock::elapsedRealtime,
+            quota = HostRuntimeQuotaChecker(),
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
-            handlers = createM1Handlers(runtime),
+            handlers = createM1Handlers(runtime, continuity.requireForegroundRuntime),
             m2Handlers = m2Handlers,
             m3Handlers = m3Handlers,
             hostVersion = hostVersion,
             generation = "${runtime.toolId}:${runtime.versionCode}:${UUID.randomUUID()}",
-            maxPayloadBytes = runtime.maxBridgePayloadBytes,
             browserLaunchGuard = continuity.requireForegroundRuntime,
         )
     }
 
-    private fun createM1Handlers(runtime: PreparedToolRuntime): RuntimeM1Handlers = RuntimeM1Handlers(
+    private fun createM1Handlers(runtime: PreparedToolRuntime, requireForegroundRuntime: () -> Unit): RuntimeM1Handlers = RuntimeM1Handlers(
         toast = AndroidToastHandler(applicationContext),
         storage = StandardToolKvStorageHandler(
             toolId = runtime.toolId,
@@ -147,19 +145,21 @@ internal class HostRuntimeBridgeProvider(
                 grantState.currentVersionCode(runtime.toolId) == runtime.versionCode &&
                     grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE)
             },
-            maxBatchResponseBytes = runtime.maxBridgePayloadBytes,
         ),
         secureStorage = AndroidKeyStoreCipher.isAvailable().takeIf { it }?.let {
             createRuntimeSecureStorageHandler(
                 toolId = runtime.toolId,
                 repository = keyValues,
                 nowMillis = nowMillis,
-                canAccess = { grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE_SECURE) },
+                canAccess = {
+                    grantState.currentVersionCode(runtime.toolId) == runtime.versionCode &&
+                        grantState.isGranted(runtime.toolId, ToolBoxCapabilityId.STORAGE_SECURE)
+                },
             )
         },
         deviceBasic = AndroidBasicDeviceHandler(applicationContext),
-        haptics = AndroidHapticsHandler(applicationContext),
-        clipboardWrite = AndroidClipboardWriteHandler(applicationContext),
+        haptics = AndroidHapticsHandler(applicationContext, requireForegroundRuntime),
+        clipboardWrite = AndroidClipboardWriteHandler(applicationContext, requireForegroundRuntime),
     )
 }
 
@@ -168,7 +168,7 @@ internal class RepositoryRuntimeGrantStateSource(
     private val grants: PermissionGrantRepository,
 ) : RuntimeGrantStateSource {
     override suspend fun currentVersionCode(toolId: String): Int? =
-        catalog.observeTool(toolId).first()?.currentVersion?.versionCode
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused) null else catalog.observeTool(toolId).first()?.currentVersion?.versionCode
 
     override suspend fun isGranted(toolId: String, capability: ToolBoxCapabilityId): Boolean =
         grants.observeGrants(toolId)
@@ -176,6 +176,12 @@ internal class RepositoryRuntimeGrantStateSource(
             .firstOrNull { it.capability == ToolBoxApiV1.capability(capability).wireName }
             ?.granted == true
 }
+
+/** No runtime is admitted while the host holds these locks for a version replacement. */
+internal suspend fun <T> withRuntimeStorageQuiescent(toolId: String, action: suspend () -> T): T =
+    ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Standard).withLock {
+        ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Secure).withLock { action() }
+    }
 
 /** Revocation denies queued callers and drains the already admitted ordinary operation. */
 internal suspend fun awaitRuntimeStandardStorageIdle(toolId: String) {
@@ -206,17 +212,15 @@ internal suspend fun clearRuntimeSecureStorage(
     }
 }
 
-private class HostRuntimeQuotaChecker(
-    private val maxRpcBytes: Int,
-) : RuntimeQuotaChecker {
+private class HostRuntimeQuotaChecker : RuntimeQuotaChecker {
     override suspend fun admit(
         identity: RuntimeSessionIdentity,
         method: MethodDescriptor,
         encodedBytes: Int,
-    ): RuntimePolicyDecision = if (encodedBytes <= maxRpcBytes) {
+    ): RuntimePolicyDecision = if (encodedBytes.toLong() * Char.SIZE_BYTES <= io.toolbox.core.data.ResourceCapacity.availableHeapBytes()) {
         RuntimePolicyDecision.Allowed
     } else {
-        RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "ToolBox request is too large")
+        RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Insufficient memory for this request")
     }
 }
 
@@ -252,6 +256,7 @@ private class AndroidBasicDeviceHandler(
 
 private class AndroidHapticsHandler(
     private val context: Context,
+    private val requireForegroundRuntime: () -> Unit,
 ) : RuntimeHapticsHandler {
     override suspend fun perform(effect: String) {
         val effectId = when (effect) {
@@ -260,7 +265,7 @@ private class AndroidHapticsHandler(
             "reject" -> VibrationEffect.EFFECT_HEAVY_CLICK
             else -> throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Unsupported haptic effect")
         }
-        withContext(Dispatchers.Main.immediate) {
+        performForegroundEffect(requireForegroundRuntime) {
             context.getSystemService(VibratorManager::class.java)
                 ?.defaultVibrator
                 ?.vibrate(VibrationEffect.createPredefined(effectId))
@@ -271,9 +276,10 @@ private class AndroidHapticsHandler(
 
 private class AndroidClipboardWriteHandler(
     private val context: Context,
+    private val requireForegroundRuntime: () -> Unit,
 ) : RuntimeClipboardWriteHandler {
     override suspend fun writeText(text: String) {
-        withContext(Dispatchers.Main.immediate) {
+        performForegroundEffect(requireForegroundRuntime) {
             val clipboard = context.getSystemService(ClipboardManager::class.java)
                 ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Clipboard is unavailable")
             clipboard.setPrimaryClip(ClipData.newPlainText("ToolBox", text))
@@ -292,15 +298,16 @@ internal class StandardToolKvStorageHandler(
     private val repository: ToolKvRepository,
     private val nowMillis: () -> Long,
     private val canAccess: suspend () -> Boolean = { true },
-    private val maxBatchResponseBytes: Int = 8 * 1024 * 1024,
 ) : RuntimeBatchStorageHandler {
+    private val maxBatchResponseBytes: Int
+        get() = (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     override suspend fun get(key: String): RpcValue? = withAccess {
         val physicalKey = physicalKey(key)
         readValue(physicalKey) ?: loadLegacyDocument()?.get(key)
     }
 
     override suspend fun getMany(keys: List<String>): List<RpcValue?> = withAccess {
-        if (keys.size > MAX_BATCH_KEYS) invalidBatch()
         val requested = keys.map { it to physicalKey(it) }
         repository.readSnapshot(toolId) { snapshot ->
             val decoded = mutableMapOf<String, Pair<RpcValue?, Int>>()
@@ -363,7 +370,7 @@ internal class StandardToolKvStorageHandler(
 
     override suspend fun apply(mutation: RuntimeStorageMutation) = withAccess {
         val changedKeys = mutation.set.map { it.key } + mutation.remove
-        if (changedKeys.size > MAX_BATCH_KEYS || changedKeys.distinct().size != changedKeys.size) invalidBatch()
+        if (changedKeys.distinct().size != changedKeys.size) invalidBatch()
         val changedPhysicalKeys = changedKeys.map(::physicalKey).toSet()
         // Encode every requested value before reading or mutating persisted rows.
         val rows = linkedMapOf<String, String>()
@@ -467,7 +474,7 @@ internal class StandardToolKvStorageHandler(
     }
 
     private fun physicalKey(key: String): String {
-        if (key.isBlank() || key.length > 128 || key.any(Char::isISOControl)) {
+        if (key.isBlank() || key.any(Char::isISOControl)) {
             throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid storage key")
         }
         // UTF-16 code units preserve every accepted JS key, including lone surrogates.
@@ -475,7 +482,7 @@ internal class StandardToolKvStorageHandler(
     }
 
     private fun decodeKey(encoded: String): String {
-        if (encoded.isEmpty() || encoded.length % 4 != 0 || encoded.length > 512) unreadable()
+        if (encoded.isEmpty() || encoded.length % 4 != 0) unreadable()
         val key = encoded.chunked(4).map { (it.toIntOrNull(16) ?: unreadable()).toChar() }.joinToString("")
         if (physicalKey(key) != ROW_PREFIX + encoded) unreadable()
         return key
@@ -491,13 +498,12 @@ internal class StandardToolKvStorageHandler(
 
     private fun batchResponseTooLarge(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Storage batch response is too large; request fewer keys")
 
-    private fun invalidBatch(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Storage batches allow at most 256 keys, without duplicate mutations")
+    private fun invalidBatch(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Storage mutations must not contain duplicate keys")
 
     private fun unreadable(): Nothing = throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values cannot be read")
 
     private companion object {
         const val READ_WINDOW_KEYS = 16
-        const val MAX_BATCH_KEYS = 256
         const val ROW_PREFIX = "toolbox.runtime.v2.standard.key."
         // Even worst-case JSON escaping stays below a 2 MiB Android CursorWindow.
         const val CHUNK_CHARS = 128 * 1024
@@ -655,11 +661,8 @@ private class JsonToolKvStorageHandler(
     }
 
     private fun isValidLogicalKey(key: String): Boolean =
-        key.isNotBlank() && key.length <= MAX_LOGICAL_KEY_CHARS && key.none(Char::isISOControl)
+        key.isNotBlank() && key.none(Char::isISOControl)
 
-    private companion object {
-        const val MAX_LOGICAL_KEY_CHARS = 128
-    }
 }
 
 internal suspend fun <T> withRuntimeStorageAccess(
@@ -680,14 +683,16 @@ internal object ToolRuntimeStorageLocks {
         locks.getOrPut("${namespace.name}:$toolId") { Mutex() }
 }
 
-private class AndroidKeyStoreCipher(
+internal class AndroidKeyStoreCipher(
     private val toolId: String,
 ) {
     private val alias = aliasFor(toolId)
 
+    fun hasKey(): Boolean = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }.containsAlias(alias)
+
     fun encrypt(plaintext: String): String = try {
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.init(Cipher.ENCRYPT_MODE, key(createIfMissing = true))
         val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
         JSONObject()
             .put("v", FORMAT_VERSION)
@@ -708,7 +713,7 @@ private class AndroidKeyStoreCipher(
         val ciphertext = decoder.decode(value.getString("ciphertext"))
         require(iv.size == GCM_IV_BYTES && ciphertext.isNotEmpty())
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(GCM_TAG_BITS, iv))
+        cipher.init(Cipher.DECRYPT_MODE, key(createIfMissing = false), GCMParameterSpec(GCM_TAG_BITS, iv))
         String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     } catch (failure: RuntimeHandlerException) {
         throw failure
@@ -716,9 +721,13 @@ private class AndroidKeyStoreCipher(
         throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Secure storage data cannot be read")
     }
 
-    private fun key(): SecretKey {
+    private fun key(createIfMissing: Boolean): SecretKey {
         val store = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         (store.getKey(alias, null) as? SecretKey)?.let { return it }
+        if (!createIfMissing) throw RuntimeHandlerException(
+            RuntimeRpcErrorCode.INTERNAL_ERROR,
+            "Secure storage key is missing; existing ciphertext was not changed",
+        )
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE)
         generator.init(
             KeyGenParameterSpec.Builder(
@@ -759,37 +768,13 @@ private class AndroidKeyStoreCipher(
 }
 
 private object RuntimeValueJson {
-    fun encode(value: RpcValue): String = toJson(value).toString()
-
+    fun encode(value: RpcValue): String = io.toolbox.tool.runtime.RuntimeRpcJson.encodeValue(value)
     fun decode(encoded: String): RpcValue? = runCatching {
-        fromJson(kotlinx.serialization.json.Json.parseToJsonElement(encoded))
+        io.toolbox.tool.runtime.RuntimeRpcJson.parseValue(encoded)
     }.getOrNull()
-
     fun encodeObject(values: Map<String, RpcValue>): String = encode(RpcValue.ObjectValue(values))
-
     fun decodeObject(encoded: String): Map<String, RpcValue>? =
         (decode(encoded) as? RpcValue.ObjectValue)?.value
-
-    private fun toJson(value: RpcValue): kotlinx.serialization.json.JsonElement = when (value) {
-        RpcValue.Null -> kotlinx.serialization.json.JsonNull
-        is RpcValue.Bool -> kotlinx.serialization.json.JsonPrimitive(value.value)
-        is RpcValue.Number -> kotlinx.serialization.json.JsonPrimitive(value.value.also { require(it.isFinite()) })
-        is RpcValue.StringValue -> kotlinx.serialization.json.JsonPrimitive(value.value)
-        is RpcValue.ArrayValue -> kotlinx.serialization.json.JsonArray(value.value.map(::toJson))
-        is RpcValue.ObjectValue -> kotlinx.serialization.json.JsonObject(value.value.mapValues { toJson(it.value) })
-    }
-
-    private fun fromJson(value: kotlinx.serialization.json.JsonElement): RpcValue = when (value) {
-        kotlinx.serialization.json.JsonNull -> RpcValue.Null
-        is kotlinx.serialization.json.JsonObject -> RpcValue.ObjectValue(value.mapValues { fromJson(it.value) })
-        is kotlinx.serialization.json.JsonArray -> RpcValue.ArrayValue(value.map(::fromJson))
-        is kotlinx.serialization.json.JsonPrimitive -> when {
-            value.isString -> RpcValue.StringValue(value.content)
-            value.content == "true" -> RpcValue.Bool(true)
-            value.content == "false" -> RpcValue.Bool(false)
-            else -> RpcValue.Number(value.content.toDouble().also { require(it.isFinite()) })
-        }
-    }
 }
 
 private fun String.sha256Hex(): String = MessageDigest.getInstance("SHA-256")

@@ -101,4 +101,5 @@ data class CoreDataRepositories(
     val installs: InstallTransactionRepository,
     val backgroundTasks: BackgroundTaskRepository,
     val settings: HostSettingsRepository,
+    val mutations: DataMutationLock = DataMutationLock(),
 )

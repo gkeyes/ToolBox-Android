@@ -100,8 +100,8 @@ data class ToolBoxSizes(
     val compactChrome: Dp = 56.dp,
     val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
-    val catalogRow: Dp = 72.dp,
-    val compactToolGlyph: Dp = 44.dp,
+    val catalogRow: Dp = 76.dp,
+    val compactToolGlyph: Dp = 42.dp,
     val toolGlyph: Dp = 48.dp,
     val factLabelWidth: Dp = 72.dp,
     val mediumNavigationItemWidth: Dp = 80.dp,
@@ -179,8 +179,8 @@ private val DefaultTextStyles = ToolBoxTextStyles(
 
 private val LiquidGlassTextStyles = ToolBoxTextStyles(
     screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
-    sectionTitle = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
     body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp),
     metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
     label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
@@ -188,7 +188,7 @@ private val LiquidGlassTextStyles = ToolBoxTextStyles(
 
 private val MiuixRadii = ToolBoxRadii()
 private val LiquidGlassRadii = ToolBoxRadii(
-    control = 16.dp,
+    control = 17.dp,
     badge = 14.dp,
     denseSurface = 20.dp,
     card = 22.dp,
@@ -216,9 +216,10 @@ private val LocalToolBoxMaterials = staticCompositionLocalOf {
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER") // Legacy callers cannot re-enable the retired host style.
 fun ToolBoxTheme(
     mode: ToolBoxThemeMode = ToolBoxThemeMode.Light,
-    style: ToolBoxThemeStyle = ToolBoxThemeStyle.Miuix,
+    style: ToolBoxThemeStyle = ToolBoxThemeStyle.LiquidGlass,
     reduceTransparency: Boolean = false,
     content: @Composable () -> Unit,
 ) {
@@ -281,7 +282,7 @@ fun ToolBoxTheme(
     }
 
     val accentColors = controller.currentColors()
-    val renderedController = if (style == ToolBoxThemeStyle.LiquidGlass) {
+    val renderedController = run {
         val liquidLight = liquidGlassColors(
             dark = false,
             accent = accentColors.primary,
@@ -339,8 +340,6 @@ fun ToolBoxTheme(
                 keyColor = accentColors.primary,
             )
         }
-    } else {
-        controller
     }
 
     MiuixTheme(controller = renderedController) {
@@ -363,34 +362,24 @@ fun ToolBoxTheme(
             softDanger = miuixColors.errorContainer,
             onSoftDanger = miuixColors.onErrorContainer,
         )
-        val colors = if (style == ToolBoxThemeStyle.LiquidGlass) {
+        val colors = run {
             liquidGlassColors(
                 dark = usesDarkColors,
                 accent = miuixSemanticColors.primary,
                 accentForeground = miuixSemanticColors.onPrimary,
             )
-        } else {
-            miuixSemanticColors
         }
         val materials = liquidGlassMaterials(
             colors = colors,
             dark = usesDarkColors,
-            enabled = style == ToolBoxThemeStyle.LiquidGlass,
+            enabled = true,
             reduceTransparency = reduceTransparency,
         )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,
-            LocalToolBoxTextStyles provides if (style == ToolBoxThemeStyle.LiquidGlass) {
-                LiquidGlassTextStyles
-            } else {
-                DefaultTextStyles
-            },
-            LocalToolBoxThemeStyle provides style,
-            LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.LiquidGlass) {
-                LiquidGlassRadii
-            } else {
-                MiuixRadii
-            },
+            LocalToolBoxTextStyles provides LiquidGlassTextStyles,
+            LocalToolBoxThemeStyle provides ToolBoxThemeStyle.LiquidGlass,
+            LocalToolBoxRadii provides LiquidGlassRadii,
             LocalToolBoxMaterials provides materials,
             content = content,
         )
@@ -475,14 +464,14 @@ internal fun liquidGlassMaterials(
     topEdgeFadeEnabled = enabled && !reduceTransparency,
     navigationLensEnabled = enabled,
     pressFeedbackEnabled = enabled,
-    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.72f),
+    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.48f),
     glassFallback = colors.surface,
     glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
-    navigationSelectionTint = colors.primary.copy(alpha = if (dark) 0.20f else 0.11f),
-    navigationSelectionHighlight = Color.White.copy(alpha = if (dark) 0.16f else 0.74f),
-    navigationSelectionBorder = Color.White.copy(alpha = if (dark) 0.20f else 0.88f),
-    blurRadius = 24.dp,
-    noiseFactor = 0.035f,
+    navigationSelectionTint = colors.softPrimary,
+    navigationSelectionHighlight = colors.softPrimary,
+    navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
+    blurRadius = 32.dp,
+    noiseFactor = 0.015f,
 )
 
 private fun ToolBoxThemeMode.toMiuixMode(): ColorSchemeMode = when (this) {
