@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +59,7 @@ import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import java.text.DateFormat
 import java.util.Date
@@ -80,6 +82,12 @@ internal fun ToolManagerContent(
     runningTools: @Composable () -> Unit = {},
 ) {
     val recentTools = state.recentTools
+    LaunchedEffect(importState.message, importState.succeeded) {
+        if (importState.succeeded && importState.message != null) {
+            delay(INSTALL_SUCCESS_FEEDBACK_DURATION_MS)
+            onDismissImport()
+        }
+    }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -103,7 +111,7 @@ internal fun ToolManagerContent(
                         importState.succeeded -> FeedbackTone.Success
                         else -> FeedbackTone.Error
                     },
-                    dismissible = !importState.working,
+                    dismissible = !importState.working && !importState.succeeded,
                     onDismiss = onDismissImport,
                     onCancel = onCancelActiveImport.takeIf {
                         importState.working && importState.importPhase == PackageImportPhase.IMPORTING
@@ -455,6 +463,8 @@ private fun ToolIdentity(tool: CatalogTool) {
         )
     }
 }
+
+private const val INSTALL_SUCCESS_FEEDBACK_DURATION_MS = 3_000L
 
 internal enum class FeedbackTone { Progress, Success, Error }
 
