@@ -2,6 +2,8 @@ package io.toolbox.tool.packagekit
 
 import android.app.ActivityManager
 import android.content.Context
+import android.os.StatFs
+import android.util.Log
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,8 +26,20 @@ class AndroidPackageResourceProbe(context: Context) : PackageResourceProbe {
 
     override fun snapshot(directory: Path): PackageResourceSnapshot {
         val memory = ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memory)
-        return PackageResourceSnapshot(Files.getFileStore(directory).usableSpace, memory.lowMemory)
+        try {
+            activityManager.getMemoryInfo(memory)
+        } catch (error: Exception) {
+            Log.e("ToolBoxImport", "Memory resource probe failed", error)
+            throw error
+        }
+        val availableBytes = try {
+            // Use Android's filesystem API for the actual installation directory.
+            StatFs(directory.toString()).availableBytes
+        } catch (error: Exception) {
+            Log.e("ToolBoxImport", "Storage resource probe failed", error)
+            throw error
+        }
+        return PackageResourceSnapshot(availableBytes, memory.lowMemory)
     }
 }
 
