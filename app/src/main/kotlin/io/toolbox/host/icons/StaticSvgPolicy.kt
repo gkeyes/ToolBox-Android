@@ -10,6 +10,7 @@ import org.xml.sax.helpers.DefaultHandler
 /** Validate resource access before giving the document to the pinned static renderer. */
 internal object StaticSvgPolicy {
     private val localReference = Regex("""#[^\s"'()<>]+""")
+    private val embeddedRaster = Regex("""data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+""")
     private val cssComments = Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL)
     private val cssEscape = Regex("\\\\([0-9a-fA-F]{1,6}[ \\t\\r\\n\\u000C]?|[^\\r\\n\\u000C])")
     private val cssUrl = Regex("url\\s*\\(([^)]*)\\)", RegexOption.IGNORE_CASE)
@@ -35,7 +36,12 @@ internal object StaticSvgPolicy {
                     val name = attributes.getLocalName(index).lowercase()
                     val value = attributes.getValue(index)
                     require(!name.startsWith("on") && name != "base")
-                    if (name == "href" || name == "src") require(localReference.matches(value.trim()))
+                    if (name == "href" || name == "src") {
+                        val reference = value.trim()
+                        // AndroidSVG decodes image data URLs as raster bytes without opening a URI.
+                        // Its external resolver stays disabled; fragment refs never load another file.
+                        require(localReference.matches(reference) || (localName == "image" && embeddedRaster.matches(reference)))
+                    }
                     validateCss(value)
                 }
             }

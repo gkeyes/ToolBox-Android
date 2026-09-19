@@ -19,42 +19,66 @@ import java.util.WeakHashMap
 /** Only the visible local page can present a dialog; results always settle once. */
 internal object RuntimeJavaScriptDialogs {
     enum class Kind { ALERT, CONFIRM, PROMPT }
-    private val active = WeakHashMap<WebView, AlertDialog>()
+    private data class Session(val dialog: AlertDialog, val cancel: () -> Unit)
+    private val active = WeakHashMap<WebView, Session>()
 
-    fun current(view: WebView): AlertDialog? = active[view]
-    fun dismiss(view: WebView) { active.remove(view)?.dismiss() }
+    fun current(view: WebView): AlertDialog? = active[view]?.dialog
+    fun dismiss(view: WebView) { active.remove(view)?.let { it.cancel(); it.dialog.dismiss() } }
 
     fun show(view: WebView, runtime: PreparedToolRuntime, url: String, message: String,
              kind: Kind, result: JsResult, defaultValue: String = ""): Boolean {
-        val activity = activity(view.context)
+        // Runtime WebViews deliberately retain only an application-based themed context so a
+        // background session cannot leak its previous Activity. The attached window owns dialogs.
+        val activity = activity(view.rootView.context) ?: generateSequence(view.parent) { it.parent }
+            .filterIsInstance<View>().mapNotNull { activity(it.context) }.firstOrNull()
         if (activity == null || activity.isFinishing || activity.isDestroyed ||
             !view.isShown || !view.isAttachedToWindow || !view.hasWindowFocus() ||
-            !RuntimeIdentity.isExactLocalUrl(url, runtime.origin)
+            !RuntimeIdentity.isExactLocalUrl(url.substringBefore('#'), runtime.origin)
         ) {
             result.cancel()
             return true
         }
         dismiss(view)
+        val dark = view.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val dialogContext = android.view.ContextThemeWrapper(activity,
+            if (dark) android.R.style.Theme_Material_Dialog_Alert else android.R.style.Theme_Material_Light_Dialog_Alert)
         val padding = (20 * view.resources.displayMetrics.density).toInt()
-        val content = LinearLayout(view.context).apply {
+        val content = LinearLayout(dialogContext).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding, padding, padding)
         }
-        content.addView(TextView(view.context).apply { text = message; setTextIsSelectable(true) })
-        val input = if (kind == Kind.PROMPT) EditText(view.context).apply {
+        content.addView(TextView(dialogContext).apply { text = message; setTextIsSelectable(true) })
+        val input = if (kind == Kind.PROMPT) EditText(dialogContext).apply {
             setText(defaultValue)
             contentDescription = "输入内容"
             content.addView(this)
         } else null
         var confirmed = false
         var settled = false
-        val dialog = AlertDialog.Builder(view.context)
+        val dialog = AlertDialog.Builder(dialogContext)
             .setTitle("${runtime.toolName} · ${runtime.toolId}")
-            .setView(ScrollView(view.context).apply { addView(content) })
+            .setView(ScrollView(dialogContext).apply { addView(content) })
             .setPositiveButton("确定") { _, _ -> confirmed = true }
             .apply { if (kind != Kind.ALERT) setNegativeButton("取消", null) }
             .create()
-        val observer = object : Application.ActivityLifecycleCallbacks {
+        var dismissalPending = false
+        lateinit var observer: Application.ActivityLifecycleCallbacks
+        lateinit var attachment: View.OnAttachStateChangeListener
+        lateinit var focus: android.view.ViewTreeObserver.OnWindowFocusChangeListener
+        val treeObserver = view.viewTreeObserver
+        fun finish(accept: Boolean) {
+            if (settled) return
+            settled = true
+            if (active[view]?.dialog === dialog) active.remove(view)
+            activity.application.unregisterActivityLifecycleCallbacks(observer)
+            view.removeOnAttachStateChangeListener(attachment)
+            if (treeObserver.isAlive) treeObserver.removeOnWindowFocusChangeListener(focus)
+            if (!accept) result.cancel()
+            else if (result is JsPromptResult) result.confirm(input?.text?.toString().orEmpty())
+            else result.confirm()
+        }
+        observer = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityPaused(target: Activity) { if (target === activity) dismiss(view) }
             override fun onActivityDestroyed(target: Activity) { if (target === activity) dismiss(view) }
             override fun onActivityCreated(target: Activity, state: Bundle?) = Unit
@@ -63,30 +87,24 @@ internal object RuntimeJavaScriptDialogs {
             override fun onActivityStopped(target: Activity) = Unit
             override fun onActivitySaveInstanceState(target: Activity, state: Bundle) = Unit
         }
-        val attachment = object : View.OnAttachStateChangeListener {
+        attachment = object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) = Unit
             override fun onViewDetachedFromWindow(v: View) { dismiss(view) }
         }
-        dialog.setOnDismissListener {
-            if (active[view] === dialog) active.remove(view)
-            activity.application.unregisterActivityLifecycleCallbacks(observer)
-            view.removeOnAttachStateChangeListener(attachment)
-            if (!settled) {
-                settled = true
-                if (!confirmed) result.cancel()
-                else if (result is JsPromptResult) result.confirm(input?.text?.toString().orEmpty())
-                else result.confirm()
-            }
+        focus = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (hasFocus && dismissalPending) finish(confirmed)
         }
-        active[view] = dialog
+        dialog.setOnDismissListener {
+            dismissalPending = true
+            // Resume the JS continuation only once the host window owns focus again. This permits
+            // alert(); confirm(); prompt() in one script without a timeout or a touch-age gate.
+            if (view.hasWindowFocus()) finish(confirmed)
+        }
+        active[view] = Session(dialog) { finish(false) }
         activity.application.registerActivityLifecycleCallbacks(observer)
         view.addOnAttachStateChangeListener(attachment)
-        try { dialog.show() } catch (_: RuntimeException) {
-            active.remove(view)
-            activity.application.unregisterActivityLifecycleCallbacks(observer)
-            view.removeOnAttachStateChangeListener(attachment)
-            if (!settled) { settled = true; result.cancel() }
-        }
+        treeObserver.addOnWindowFocusChangeListener(focus)
+        try { dialog.show() } catch (_: RuntimeException) { finish(false) }
         return true
     }
 

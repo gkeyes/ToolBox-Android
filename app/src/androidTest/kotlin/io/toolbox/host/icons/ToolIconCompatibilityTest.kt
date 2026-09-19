@@ -27,6 +27,11 @@ class ToolIconCompatibilityTest {
                 assertTrue(Color.red(result.getPixel(128, 128)) > 240)
                 result.recycle()
             }
+            val png = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            val embedded = java.util.Base64.getEncoder().encodeToString(png)
+            val localImage = requireNotNull(ToolIconDecoder.decode(svg("<image xlink:href='data:image/png;base64,$embedded' width='100' height='100'/>")))
+            assertEquals(Color.RED, localImage.getPixel(128, 128))
+            localImage.recycle()
             // Two 1x1 frames: red then blue. decodeBitmap must return a static first frame.
             val gif = hex("47494638396101000100800000ff00000000ff" +
                 "21f90400010000002c0000000001000100000202440100" +

@@ -34,6 +34,13 @@ class JavaScriptDialogInstrumentationTest {
         Files.writeString(bundle.resolve("index.html"), "<html><head><script src=app.js></script></head><body>Dialog test</body></html>")
         Files.writeString(bundle.resolve("app.js"), """
             window.dialogReady = true;
+            window.runChain = function() {
+              history.replaceState(null, '', '#section');
+              alert('chain-one');
+              window.chainConfirmed = confirm('chain-two');
+              window.chainPrompt = prompt('chain-three', '');
+              window.chainDone = true;
+            };
             window.runDialog = function(kind) {
               window.dialogResult = 'pending';
               if (kind === 'alert') { alert('first\nsecond'); window.dialogResult = 'alert-ok'; }
@@ -72,6 +79,17 @@ class JavaScriptDialogInstrumentationTest {
             open(webView, "prompt")
             main { RuntimeJavaScriptDialogs.current(webView)!!.cancel() }
             await { evaluate(webView, "window.dialogResult") == "null" }
+            val prior = main { RuntimeJavaScriptDialogs.current(webView) }
+            main { webView.evaluateJavascript("runChain()", null) }
+            var previous = prior
+            repeat(3) {
+                await { main { RuntimeJavaScriptDialogs.current(webView)?.let { it !== previous && it.isShowing } == true } }
+                previous = main { RuntimeJavaScriptDialogs.current(webView)!! }
+                main { previous!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+            }
+            await { evaluate(webView, "window.chainDone") == "true" }
+            assertEquals("true", evaluate(webView, "window.chainConfirmed"))
+            assertEquals("\"\"", evaluate(webView, "window.chainPrompt"))
             open(webView, "confirm")
             main { webView.loadUrl(runtime.entryUrl) }
             await { main { RuntimeJavaScriptDialogs.current(webView) == null } }

@@ -193,6 +193,15 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 原生网络使用系统 HTTP 代理选择器，系统代理变更对后续请求生效；不提供代理凭据管理，认证代理返回 407 时由工具给出明确提示。此行为不改变 Android VPN/TUN 路由。跨来源重定向保留明确非凭据的标准协商、Range 和缓存条件头，删除 Authorization、Cookie 及未分类自定义头，并删除失效的消息体和连接专用头；回跳不恢复已删除凭据。原生 API 暂无按工具保存的 CookieJar，不保存响应 Set-Cookie，也不把浏览器 Cookie 自动带入工具请求。
 
+重定向请求头处置如下（大小写不敏感）：
+
+| 时机 | 字段 | 行为 |
+| --- | --- | --- |
+| 所有请求 | Connection、Keep-Alive、Proxy-Authenticate、Proxy-Authorization、TE、Trailer、Transfer-Encoding、Upgrade、Host、Content-Length，以及 Connection 点名的字段 | 由宿主/HTTP 客户端管理，不转发调用方值 |
+| 跨来源 | Accept、Accept-Encoding、Accept-Language、Range、If-Range、If-Match、If-None-Match、If-Modified-Since、If-Unmodified-Since、Cache-Control、Pragma、User-Agent、Content-Type、Content-Language、Content-Encoding | 保留 |
+| 跨来源 | Authorization、Cookie、X-API-Key、其他自定义或未分类字段、Origin、Referer | 删除；后续回跳也不恢复 |
+| 301/302/303 将带正文的方法改为 GET | Content-Type、Content-Length、Content-Encoding、Content-Language、Content-Location、Digest | 随正文一起删除 |
+
 可见工具的 alert、confirm、prompt 使用原生对话框，显示工具身份。页面退出、导航、宿主暂停或运行环境结束会结束未完成的对话框；prompt 可返回空串，取消返回 null。JS 对话框不新增次数限制。剪贴板、分享及通知正文允许空串和换行，路径、标识及请求头仍遵守各自格式。
 
 HTML 入口不要求以 doctype 或 html 标签起始，可以包含 BOM、注释及前导空白；文件路径与原生载荷、归档内容检查仍保留。图标支持设备能解码的位图，动图显示静态首帧；SVG 使用 AndroidSVG 1.4 的静态能力，允许纯本地引用、裁剪、蒙版及样式，不执行脚本或读取外部资源，不承诺渲染器未实现的滤镜。

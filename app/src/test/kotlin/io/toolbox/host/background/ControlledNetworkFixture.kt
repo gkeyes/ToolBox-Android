@@ -35,9 +35,11 @@ internal class ControlledNetworkFixture : AutoCloseable {
     fun proxy(resources: NetworkResources = NetworkResources(availableHeap = { 256L * 1024 * 1024 })) =
         ToolNetworkProxy(resources) { it.sslSocketFactory(ssl.socketFactory, trust) }
 
-    fun https(handler: (Request, Socket) -> Unit): String {
+    fun https(persistent: Boolean = false, handler: (Request, Socket) -> Unit): String {
         val server = ssl.serverSocketFactory.createServerSocket(0, 200, InetAddress.getLoopbackAddress())
-        listen(server) { socket -> handler(readRequest(socket), socket) }
+        listen(server) { socket ->
+            do { handler(readRequest(socket), socket) } while (persistent && !socket.isClosed)
+        }
         return "https://localhost:${server.localPort}"
     }
 
@@ -102,10 +104,10 @@ internal class ControlledNetworkFixture : AutoCloseable {
         return Request(first[1], headers)
     }
 
-    fun respond(socket: Socket, status: Int = 200, headers: Map<String, String> = emptyMap(), body: String = "ok") {
+    fun respond(socket: Socket, status: Int = 200, headers: Map<String, String> = emptyMap(), body: String = "ok", close: Boolean = true) {
         val bytes = body.toByteArray()
         val head = buildString {
-            append("HTTP/1.1 $status Fixture\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n")
+            append("HTTP/1.1 $status Fixture\r\nContent-Length: ${bytes.size}\r\nConnection: ${if (close) "close" else "keep-alive"}\r\n")
             headers.forEach { (name, value) -> append("$name: $value\r\n") }
             append("\r\n")
         }

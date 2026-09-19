@@ -30,7 +30,7 @@ internal class ToolNetworkStreamControl {
     private var cancellationCode: String? = null
 
     fun requireActive() = synchronized(lock) {
-        cancellationCode?.let { throw ToolNetworkFailure(it) }
+        cancellationCode?.let { throw ToolNetworkFailure(it, retryable = it == "NETWORK_TIMEOUT") }
     }
 
     fun attach(call: Call) {

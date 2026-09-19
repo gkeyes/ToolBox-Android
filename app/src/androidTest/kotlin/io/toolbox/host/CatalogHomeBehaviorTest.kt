@@ -108,8 +108,16 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         render()
         compose.onNodeWithText("新建分组").performClick()
         compose.onNodeWithTag("catalog_group_name").performTextInput("工作")
+        compose.onNodeWithTag("group-tool:b").performClick()
         compose.onNodeWithText("保存").performClick()
-        compose.runOnIdle { assertEquals(3, layout.value.groups.size) }
+        compose.runOnIdle {
+            assertEquals(3, layout.value.groups.size)
+            assertEquals(listOf("b"), layout.value.groups.single { it.id == "new" }.members)
+        }
+        compose.onNodeWithContentDescription("编辑分组常用").performScrollTo().performClick()
+        compose.onNodeWithTag("group-tool:b").performClick()
+        compose.onNodeWithText("取消").performClick()
+        compose.runOnIdle { assertTrue(layout.value.groups.single { it.id == "g2" }.members.isEmpty()) }
         compose.onNodeWithContentDescription("编辑分组常用").performScrollTo().performClick()
         compose.onNodeWithTag("catalog_group_name").performTextReplacement("新的名称")
         compose.onNodeWithText("保存").performClick()

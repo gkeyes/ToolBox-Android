@@ -74,6 +74,7 @@ internal class CatalogViewModel(
                     }
                 }
                 .collect { projection ->
+                    if (projection.query != queries.value) return@collect
                     update { current -> current.copy(
                         tools = projection.tools, visibleTools = projection.visibleTools,
                         recentTools = projection.recentTools, layout = projection.layout,
@@ -102,7 +103,11 @@ internal class CatalogViewModel(
 
     fun dispatch(action: CatalogAction) {
         when (action) {
-            is CatalogAction.SetQuery -> queries.value = action.query
+            is CatalogAction.SetQuery -> {
+                queries.value = action.query
+                // Text edits are synchronous; filtering and collation stay on Default.
+                update { it.copy(query = action.query, isSearching = action.query.isNotBlank()) }
+            }
             is CatalogAction.SetSort -> changeLayout { layout, _ -> layout.copy(sort = action.sort) }
             is CatalogAction.SetFavorite -> changeLayout { layout, installed ->
                 if (action.toolId in installed || !action.selected) layout.favorite(action.toolId, action.selected) else layout
@@ -238,6 +243,8 @@ private fun CatalogEntry.toCatalogTool() = CatalogTool(
 
 /** Android's ICU transliterator handles Han names without a bundled dictionary or network access. */
 internal fun catalogNameSortKey(name: String): String =
-    catalogTransliterator.get().transliterate(name).trim()
+    catalogTransliterator.get().transliterate(name).replace(catalogNameWhitespace, "")
 
 private val catalogTransliterator = ThreadLocal.withInitial { android.icu.text.Transliterator.getInstance("Han-Latin; Latin-ASCII; Lower") }
+
+private val catalogNameWhitespace = Regex("\\s+")

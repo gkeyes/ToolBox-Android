@@ -24,7 +24,7 @@ class ToolNetworkTransportTest {
             ControlledNetworkFixture().use { fixture ->
                 val connects = CopyOnWriteArrayList<String>()
                 val port = fixture.connectProxy(connects)
-                val endpoint = fixture.https { _, socket -> fixture.respond(socket) }
+                val endpoint = fixture.https(persistent = true) { _, socket -> fixture.respond(socket, close = false) }
                 val proxy = fixture.proxy()
                 ProxySelector.setDefault(selector(Proxy.NO_PROXY))
                 assertTrue(proxy.httpGet(endpoint) is NetworkExecution.Success)

@@ -10,6 +10,9 @@ import java.net.URI
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import okhttp3.Authenticator
 import okhttp3.Call
 import okhttp3.CookieJar
@@ -66,7 +69,8 @@ class ToolNetworkProxy private constructor(
             .build()
     }
 
-    internal fun clientForRequest(timeoutMillis: Long): OkHttpClient = client.newBuilder()
+    internal fun clientForRequest(timeoutMillis: Long, endpoint: HttpUrl? = null): OkHttpClient = client.newBuilder()
+        .apply { endpoint?.let { proxySelector(SelectedSystemProxies(LiveSystemProxySelector.select(it.toUri()).toList())) } }
         .callTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
         .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
@@ -98,6 +102,24 @@ class ToolNetworkProxy private constructor(
     )
 
     internal suspend fun requestWithControl(options: ToolNetworkRequest, control: ToolNetworkStreamControl): NetworkExecution {
+        var completed: NetworkExecution? = null
+        var transferred = false
+        try {
+            val result = coroutineScope {
+                val deadline = options.timeoutMillis.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.let { millis ->
+                    launch { delay(millis); control.cancel("NETWORK_TIMEOUT") }
+                }
+                try { readCompleteResponse(options, control).also { completed = it } } finally { deadline?.cancel() }
+            }
+            transferred = true
+            return result
+        } finally {
+            // coroutineScope has prompt cancellation on exit, even if a body completed concurrently.
+            if (!transferred) (completed as? NetworkExecution.Success)?.release?.invoke()
+        }
+    }
+
+    private suspend fun readCompleteResponse(options: ToolNetworkRequest, control: ToolNetworkStreamControl): NetworkExecution {
         val retained = mutableListOf<AutoCloseable>()
         val released = java.util.concurrent.atomic.AtomicBoolean()
         val release = { if (released.compareAndSet(false, true)) retained.forEach(AutoCloseable::close); Unit }
@@ -153,7 +175,6 @@ class ToolNetworkProxy private constructor(
     }
 
     private suspend fun openResponse(options: ToolNetworkRequest, control: ToolNetworkStreamControl): ToolNetworkStream {
-        val requestClient = if (transport == null) clientForRequest(options.timeoutMillis) else null
         var current = options.url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
         var currentMethod = options.method
         var currentBody = options.body
@@ -180,7 +201,7 @@ class ToolNetworkProxy private constructor(
             }.build()
             val response = try {
                 transport?.execute(request, options.timeoutMillis)
-                    ?: requireNotNull(requestClient).newCall(request).also(control::attach).awaitHeaders()
+                    ?: clientForRequest(options.timeoutMillis, current).newCall(request).also(control::attach).awaitHeaders()
             } catch (error: IOException) { control.requireActive(); throw error.toStreamFailure() }
             control.attach(response)
             if (response.code == 407) throw ToolNetworkFailure("PROXY_AUTHENTICATION_REQUIRED")
@@ -218,6 +239,14 @@ internal object LiveSystemProxySelector : ProxySelector() {
     override fun connectFailed(uri: URI, sa: SocketAddress, ioe: IOException) {
         ProxySelector.getDefault()?.takeUnless { it === this }?.connectFailed(uri, sa, ioe)
     }
+}
+
+/** Value equality keeps pooling for unchanged routes while preventing reuse after a system proxy change. */
+private class SelectedSystemProxies(private val proxies: List<Proxy>) : ProxySelector() {
+    override fun select(uri: URI): List<Proxy> = proxies
+    override fun connectFailed(uri: URI, sa: SocketAddress, ioe: IOException) = LiveSystemProxySelector.connectFailed(uri, sa, ioe)
+    override fun equals(other: Any?): Boolean = other is SelectedSystemProxies && proxies == other.proxies
+    override fun hashCode(): Int = proxies.hashCode()
 }
 
 // Deterministic redirect table: retain only these non-credential standard request headers across origins.

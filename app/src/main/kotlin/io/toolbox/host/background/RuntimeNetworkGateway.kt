@@ -111,10 +111,10 @@ internal class RuntimeNetworkGateway(
                 else "网络连接或响应读取失败，请检查网络后重试。",
             )
             is NetworkExecution.TerminalFailure -> throw when (result.errorCode) {
-                "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络请求超时，请稍后重试。"),
-                "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。"),
-                "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络请求已取消。"),
-                "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。"),
+                "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络请求超时，请稍后重试。")
+                "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。")
+                "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络请求已取消。")
+                "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。")
                 "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.QUOTA_EXCEEDED,
                     "当前可用内存不足，请使用分块流读取或释放内存后重试。",

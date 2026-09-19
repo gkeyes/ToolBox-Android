@@ -110,6 +110,16 @@ class NetworkResourceAdmissionTest {
     }
 
     @Test
+    fun explicitTimeoutIncludesResourceQueueAndReleasesWaitingEntry() = runBlocking {
+        val resources = NetworkResources(availableHeap = { 0 })
+        val proxy = ToolNetworkProxy(ToolNetworkTransport { _, _ -> error("Request must remain queued") }, resources = resources)
+        val result = withTimeout(2_000) { proxy.httpGet("https://example.test", timeoutMillis = 20) }
+        assertEquals(NetworkExecution.RetryableFailure("NETWORK_TIMEOUT"), result)
+        assertEquals(0, resources.waitingCount)
+        assertEquals(0L, resources.reservedBytes)
+    }
+
+    @Test
     fun fullResponseUsesSharedCapacityEvenWithAnUnboundedCumulativeBudget() = runBlocking {
         val resources = NetworkResources(availableHeap = { 512L * 1024 })
         val proxy = ToolNetworkProxy(ToolNetworkTransport { request, _ ->
