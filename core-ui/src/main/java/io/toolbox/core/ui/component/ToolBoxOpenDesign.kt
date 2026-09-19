@@ -43,6 +43,9 @@ fun Modifier.toolBoxOpenDesignCanvas(): Modifier {
 @Composable
 fun Modifier.toolBoxOpenDesignSurface(shape: Shape): Modifier {
     val colors = ToolBoxThemeTokens.colors
+    if (ToolBoxThemeTokens.style == io.toolbox.core.ui.theme.ToolBoxThemeStyle.Miuix) {
+        return clip(shape).background(colors.surface)
+    }
     val reduced = !ToolBoxThemeTokens.materials.realBlurEnabled
     return shadow(5.dp, shape, clip = false, ambientColor = colors.textPrimary.copy(alpha = 0.10f),
         spotColor = colors.textPrimary.copy(alpha = 0.08f))

@@ -2,10 +2,8 @@ package io.toolbox.core.data.settings
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataMigration
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import io.toolbox.core.data.CoreDataInitializationException
 import io.toolbox.core.data.ThemeStyle
 import kotlinx.coroutines.CoroutineScope
@@ -19,7 +17,8 @@ internal fun createHostSettingsDataStore(
     scope: CoroutineScope,
     defaultThemeStyle: ThemeStyle = ThemeStyle.LIQUID_GLASS,
 ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
-    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+    // A corrupt settings file may contain the only copy of favorites/groups.
+    // Surface the read error and preserve it; never replace it with empty preferences.
     migrations = listOf(HostAppearanceMigration(defaultThemeStyle)),
     scope = scope,
     produceFile = { file },

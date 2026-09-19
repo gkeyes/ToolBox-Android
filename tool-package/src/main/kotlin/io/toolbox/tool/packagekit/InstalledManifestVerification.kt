@@ -22,7 +22,7 @@ data class InstalledManifestPermission(
 )
 
 data class InstalledManifestNetwork(
-    val maxResponseBytes: Int,
+    val maxResponseBytes: Long?,
     val timeoutMs: Int,
 )
 

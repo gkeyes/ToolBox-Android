@@ -46,7 +46,7 @@ data class ToolManifest(
 data class ManifestPermission(val name: String, val reason: String, val required: Boolean)
 enum class SecurityProfile { STRICT, COMPAT }
 data class ManifestNetwork(
-    val maxResponseBytes: Int,
+    val maxResponseBytes: Long?,
     val timeoutMs: Int,
 )
 data class ManifestUi(
@@ -106,6 +106,8 @@ internal sealed interface PreparationResult {
 
 /** Preflight uses the exact same inspector as installation, without publishing a bundle. */
 object ToolPackageInspectors {
-    fun create(temporaryDirectory: java.io.File): ToolPackageInspector =
-        DefaultPackageInspector(temporaryDirectory.toPath())
+    fun create(
+        temporaryDirectory: java.io.File,
+        resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
+    ): ToolPackageInspector = DefaultPackageInspector(temporaryDirectory.toPath(), resourceProbe = resourceProbe)
 }

@@ -33,6 +33,42 @@ import org.junit.Test
 
 class PackageWasmResourceTest {
     @Test
+    fun legalHtmlPrefixesAndOmittedDocumentTagsInstallWithoutChangingBytes() = runBlocking {
+        listOf(
+            "\uFEFF<!doctype html><p>BOM</p>",
+            "<!-- generated document --><!doctype html><p>comment</p>",
+            " ".repeat(8192) + "<p>long whitespace</p>",
+            "<!--" + "x".repeat(8192) + "--><p>long comment</p>",
+            "<meta charset=\"utf-8\"><title>optional tags</title><p>工具</p>",
+        ).forEachIndexed { index, html ->
+            withHarness {
+                val files = content().toMutableMap().apply { put("index.html", html.toByteArray()) }
+                assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), manager().importAndInstall(archive("html-$index", files)))
+                assertArrayEquals(html.toByteArray(), Files.readAllBytes(bundle(1).resolve("index.html")))
+                assertClean()
+            }
+        }
+    }
+
+    @Test
+    fun htmlExtensionDoesNotBypassNativeAndArchiveContentChecks() = runBlocking {
+        listOf(
+            byteArrayOf(0x7f, 0x45, 0x4c, 0x46) to PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
+            byteArrayOf(0x64, 0x65, 0x78, 0x0a) to PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
+            byteArrayOf(0xca.toByte(), 0xfe.toByte(), 0xba.toByte(), 0xbe.toByte()) to PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
+            byteArrayOf(0x50, 0x4b, 0x03, 0x04) to PackageRejectionCode.NESTED_ARCHIVE,
+            byteArrayOf(0x1f, 0x8b.toByte()) to PackageRejectionCode.NESTED_ARCHIVE,
+        ).forEachIndexed { index, (bytes, code) ->
+            withHarness {
+                val files = content().toMutableMap().apply { put("index.html", bytes) }
+                assertRejected(code, manager().importAndInstall(archive("binary-html-$index", files)))
+                assertTrue(repositories.catalog.observeTools().first().isEmpty())
+                assertClean()
+            }
+        }
+    }
+
+    @Test
     fun smallZip64WasmPackageInstallsThroughProductionLifecycle() = runBlocking {
         withHarness {
             val entries = content(resources = mapOf("module.wasm" to WASM_ADD)).toMutableMap()

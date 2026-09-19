@@ -417,9 +417,8 @@
         "maxResponseBytes": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2147483647,
-          "default": 2147483647,
-          "description": "Optional caller-selected response budget. Otherwise current heap capacity and JVM byte-array representation apply."
+          "maximum": 9007199254740991,
+          "description": "Optional cumulative response budget as a positive JavaScript safe integer. Omitted means no additional cumulative limit. Whole-body APIs remain subject to current shared memory and array/string representation capacity."
         },
         "timeoutMs": {
           "type": "integer",

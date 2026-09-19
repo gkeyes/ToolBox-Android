@@ -12,8 +12,6 @@ import io.toolbox.tool.runtime.RuntimeNetworkStreamChunk
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 internal class RuntimeNetworkGateway(
     private val proxy: ToolNetworkProxy,
@@ -25,8 +23,7 @@ internal class RuntimeNetworkGateway(
     init { toolId?.let { NetworkDomainInvalidation.register(it, this, streams::clear) } }
 
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
-        val limit = request.maxResponseBytes?.toLong()
-            ?: policy?.maxResponseBytes?.takeUnless { it == Int.MAX_VALUE }?.toLong()
+        val limit = request.maxResponseBytes ?: policy?.maxResponseBytes
         val timeout = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS
         val control = streams.reserve(streamId, timeout)
         try {
@@ -34,7 +31,7 @@ internal class RuntimeNetworkGateway(
             val stream = proxy.openStream(
                 ToolNetworkRequest(request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
                     request.body, request.bodyIsJson,
-                    timeout, limit),
+                    timeout, limit, resourceOwner = toolId ?: "foreground"),
                 control,
             )
             streams.attach(streamId, control, stream)
@@ -52,13 +49,16 @@ internal class RuntimeNetworkGateway(
         }
     }
 
-    override suspend fun readStream(streamId: String, maxChunkBytes: Int): RuntimeNetworkStreamChunk = withContext(Dispatchers.IO) {
+    override suspend fun readStream(streamId: String, maxChunkBytes: Int): RuntimeNetworkStreamChunk {
         validateNetworkAccess()
         val stream = streams.get(streamId)
         try {
             val chunk = stream.read(maxChunkBytes)
             if (chunk.done) streams.finish(streamId, stream)
-            RuntimeNetworkStreamChunk(chunk.data, chunk.done, chunk.receivedBytes)
+            return RuntimeNetworkStreamChunk(chunk.data, chunk.done, chunk.receivedBytes, chunk.release)
+        } catch (error: CancellationException) {
+            streams.finish(streamId, stream)
+            throw error
         } catch (error: IOException) {
             if (error !is ToolNetworkFailure || error.code != "STREAM_BUSY") streams.finish(streamId, stream)
             throw error.toStreamFailure().toRuntimeStreamFailure()
@@ -76,20 +76,18 @@ internal class RuntimeNetworkGateway(
 
     override suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse {
         validateNetworkAccess()
-        val responseLimit = minOf(
-            request.maxResponseBytes ?: policy?.maxResponseBytes ?: DEFAULT_RESPONSE_BYTES,
-            (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES)
-                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-        )
-        return when (val result = proxy.request(
-            url = request.url,
-            method = NetworkRequestMethod.valueOf(request.method.name),
-            headers = request.headers,
-            body = request.body,
-            bodyIsJson = request.bodyIsJson,
-            timeoutMillis = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS,
-            maxResponseBytes = responseLimit,
-        )) {
+        val responseLimit = request.maxResponseBytes ?: policy?.maxResponseBytes
+        val timeout = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS
+        val requestId = "request-${java.util.UUID.randomUUID()}"
+        val control = streams.reserve(requestId, timeout)
+        val result = try {
+            proxy.requestWithControl(ToolNetworkRequest(
+                request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
+                request.body, request.bodyIsJson, timeout, responseLimit,
+                resourceOwner = toolId ?: "foreground",
+            ), control)
+        } finally { streams.release(requestId, control) }
+        return when (result) {
             is NetworkExecution.Success -> RuntimeNetworkResponse(
                 status = result.statusCode,
                 headers = buildMap {
@@ -100,6 +98,7 @@ internal class RuntimeNetworkGateway(
                     put("x-toolbox-final-url", result.finalUrl)
                 },
                 body = result.body,
+                release = result.release,
                 bodyEncoding = when (result.bodyEncoding) {
                     NetworkBodyEncoding.TEXT -> RuntimeNetworkBodyEncoding.TEXT
                     NetworkBodyEncoding.BASE64 -> RuntimeNetworkBodyEncoding.BASE64
@@ -112,13 +111,17 @@ internal class RuntimeNetworkGateway(
                 else "网络连接或响应读取失败，请检查网络后重试。",
             )
             is NetworkExecution.TerminalFailure -> throw when (result.errorCode) {
+                "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络请求超时，请稍后重试。")
+                "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。")
+                "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络请求已取消。")
+                "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。")
                 "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.QUOTA_EXCEEDED,
                     "当前可用内存不足，请使用分块流读取或释放内存后重试。",
                 )
                 "RESULT_TOO_LARGE" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                    "网络响应超过本次请求或可用内存预算（$responseLimit 字节）；请使用分块流读取。",
+                    "网络响应超过本次请求或可用内存预算；请使用分块流读取。",
                 )
                 "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(
                     RuntimeRpcErrorCode.INVALID_REQUEST,
@@ -136,16 +139,18 @@ internal class RuntimeNetworkGateway(
     }
 
     private companion object {
-        const val DEFAULT_RESPONSE_BYTES = Int.MAX_VALUE
         const val DEFAULT_TIMEOUT_MILLIS = 0L
     }
 }
 
 private fun ToolNetworkFailure.toRuntimeStreamFailure(): RuntimeHandlerException = when (code) {
+    "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "当前可用网络缓冲内存不足，请稍后重试。")
+    "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。")
     "RESULT_TOO_LARGE" -> RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "网络流累计响应超过请求或 manifest 上限。")
     "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络流已取消。")
     "STREAM_BUSY" -> RuntimeHandlerException(RuntimeRpcErrorCode.BUSY, "同一网络流请按顺序读取。")
     "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络流读取超时，请重试。")
+    "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。")
     "NETWORK_IO" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络流连接或读取失败，请重试。")
     "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "网络流请求参数无效。")
     else -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "网络流地址或重定向无效；请检查 HTTPS 地址与服务器配置。")

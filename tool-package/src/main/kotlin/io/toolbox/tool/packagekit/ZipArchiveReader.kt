@@ -64,6 +64,7 @@ internal object ZipArchiveReader {
                 } catch (error: IOException) {
                     resources.ioFailed(error)
                 } catch (error: Exception) {
+                    if (error is InterruptedException || error is kotlinx.coroutines.CancellationException) throw error
                     checkPackageInterrupted()
                     reject(PackageRejectionCode.EXTRACTION_FAILED, "Failed to extract ${entry.path.normalized}: ${error.message}")
                 }

@@ -434,7 +434,7 @@ private class ActiveBundleBackgroundManifestResolver(
             versionCode = manifest.versionCode,
             declaredCapabilities = manifest.permissions,
             networkTimeoutMillis = network?.timeoutMs?.toLong() ?: 0L,
-            maxNetworkResponseBytes = network?.maxResponseBytes ?: Int.MAX_VALUE,
+            maxNetworkResponseBytes = network?.maxResponseBytes,
         )
     }
 }

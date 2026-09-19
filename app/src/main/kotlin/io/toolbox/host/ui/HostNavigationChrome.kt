@@ -311,18 +311,21 @@ private val mainNavigationItems = MainDestination.entries.map { destination ->
 
 private val MainDestination.icon: ToolBoxIconKey
     get() = when (this) {
+        MainDestination.Home -> ToolBoxIconKey.Folder
         MainDestination.Tools -> ToolBoxIconKey.Tools
         MainDestination.Settings -> ToolBoxIconKey.Settings
     }
 
 private val MainDestination.testTag: String
     get() = when (this) {
+        MainDestination.Home -> HostTestTags.BottomHome
         MainDestination.Tools -> HostTestTags.BottomTools
         MainDestination.Settings -> HostTestTags.BottomSettings
     }
 
 private val MainDestination.screenTestTag: String
     get() = when (this) {
+        MainDestination.Home -> HostTestTags.PrimaryHome
         MainDestination.Tools -> HostTestTags.PrimaryTools
         MainDestination.Settings -> HostTestTags.PrimarySettings
     }

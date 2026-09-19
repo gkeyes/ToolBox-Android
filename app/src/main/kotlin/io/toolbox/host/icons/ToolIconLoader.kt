@@ -23,9 +23,11 @@ import kotlinx.coroutines.withContext
 
 internal class ToolIconLoader(
     private val catalog: CatalogRepository,
+    private val decode: (ToolIconSource) -> Bitmap? = ToolIconDecoder::decode,
+    availableHeapBytes: () -> Long = io.toolbox.core.data.ResourceCapacity::availableHeapBytes,
     privateFilesRoot: () -> Path,
 ) {
-    private val reader = InstalledToolIconReader(privateFilesRoot)
+    private val reader = InstalledToolIconReader(privateFilesRoot, availableHeapBytes)
     private val loads = ToolIconLoadCoordinator()
     private data class Cached(val bitmap: Bitmap?)
     private val cache = object : LruCache<ToolVersion, Cached>(4 * 1024 * 1024) {
@@ -50,7 +52,7 @@ internal class ToolIconLoader(
                 }
                 HostTrace.bestEffortSection("icon.cache.miss") { }
                 val bitmap = loads.decode {
-                    HostTrace.bestEffortSection("icon.decode") { reader.read(tool)?.let(ToolIconDecoder::decode) }
+                    HostTrace.bestEffortSection("icon.decode") { reader.read(tool)?.let(decode) }
                 }
                 ensureActive()
                 val currentVersion = HostTrace.bestEffortAsyncSection("icon.catalog.recheck") {
@@ -62,6 +64,9 @@ internal class ToolIconLoader(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
+                // IO, probe/resource and catalog failures remain retryable on the next load.
+                null
+            } catch (_: OutOfMemoryError) {
                 null
             }
         }
@@ -78,9 +83,9 @@ internal object ToolIconDecoder {
     fun decode(source: ToolIconSource): Bitmap? = try {
         val decoded = if (source.isSvg) decodeSvg(source.bytes) else decodeRaster(source.bytes)
         normalize(decoded)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (_: Exception) {
-        null
-    } catch (_: OutOfMemoryError) {
         null
     } catch (_: StackOverflowError) {
         null
@@ -89,7 +94,8 @@ internal object ToolIconDecoder {
     private fun decodeRaster(bytes: ByteArray): Bitmap = ImageDecoder.decodeBitmap(
         ImageDecoder.createSource(ByteBuffer.wrap(bytes)),
     ) { decoder, info, _ ->
-        require(info.mimeType in setOf("image/png", "image/jpeg", "image/webp"))
+        // Let this Android version decide supported formats. decodeBitmap returns the
+        // first frame for animated inputs; the host displays only a static thumbnail.
         val width = info.size.width
         val height = info.size.height
         require(width > 0 && height > 0)
@@ -103,6 +109,7 @@ internal object ToolIconDecoder {
         SVG.setInternalEntitiesEnabled(false)
         SVG.deregisterExternalFileResolver()
         val svg = SVG.getFromString(xml)
+        com.caverock.androidsvg.ToolBoxSvgReferenceGuard.requireAcyclic(svg)
         if (svg.documentViewBox == null) {
             val width = svg.documentWidth.takeIf { it.isFinite() && it > 0 } ?: SIZE.toFloat()
             val height = svg.documentHeight.takeIf { it.isFinite() && it > 0 } ?: SIZE.toFloat()

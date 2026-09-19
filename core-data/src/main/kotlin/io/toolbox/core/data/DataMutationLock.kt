@@ -69,10 +69,11 @@ fun CoreDataRepositories.withMutationLock(): CoreDataRepositories {
         backgroundTasks = object : BackgroundTaskRepository by raw.backgroundTasks {
             override suspend fun create(task: BackgroundTask) = lock.write { raw.backgroundTasks.create(task) }
             override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int) = lock.write { raw.backgroundTasks.markRunning(taskId, updatedAt, runAttempt) }
-            override suspend fun deferRetry(taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int) = lock.write { raw.backgroundTasks.deferRetry(taskId, updatedAt, nextRunAt, runAttempt) }
+            override suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int) = lock.write { raw.backgroundTasks.claimExecution(taskId, versionCode, previousToken, executionToken, updatedAt, runAttempt) }
+            override suspend fun deferRetry(taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?) = lock.write { raw.backgroundTasks.deferRetry(taskId, updatedAt, nextRunAt, runAttempt, executionToken) }
             override suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long) = lock.write { raw.backgroundTasks.requeueInterruptedRun(taskId, updatedAt) }
-            override suspend fun finishRun(taskId: String, result: TaskRunResult, nextState: TaskState, nextRunAt: Long?) = lock.write { raw.backgroundTasks.finishRun(taskId, result, nextState, nextRunAt) }
-            override suspend fun finishCancelled(taskId: String, result: TaskRunResult) = lock.write { raw.backgroundTasks.finishCancelled(taskId, result) }
+            override suspend fun finishRun(taskId: String, result: TaskRunResult, nextState: TaskState, nextRunAt: Long?, executionToken: String?) = lock.write { raw.backgroundTasks.finishRun(taskId, result, nextState, nextRunAt, executionToken) }
+            override suspend fun finishCancelled(taskId: String, result: TaskRunResult, executionToken: String?) = lock.write { raw.backgroundTasks.finishCancelled(taskId, result, executionToken) }
             override suspend fun cancel(taskId: String, updatedAt: Long) = lock.write { raw.backgroundTasks.cancel(taskId, updatedAt) }
             override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long) = lock.write { raw.backgroundTasks.pruneResultsCompletedBefore(cutoffMillis) }
             override suspend fun deleteForTool(toolId: String) = lock.write { raw.backgroundTasks.deleteForTool(toolId) }

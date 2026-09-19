@@ -93,13 +93,14 @@ internal fun InstallTransactionEntity.toDomain() = InstallTransaction(
 )
 
 internal fun BackgroundTask.toEntity() = BackgroundTaskEntity(
-    taskId, toolId, versionCode, key, operation.name, specJson, periodic, intervalMinutes, state.name,
+    taskId, toolId, versionCode, key, operation.name, TaskExecutionMetadata.spec(specJson), periodic, intervalMinutes, state.name,
     createdAt, updatedAt, nextRunAt, runAttempt,
 )
 
 internal fun BackgroundTaskEntity.toDomain() = BackgroundTask(
-    taskId, toolId, versionCode, key, BackgroundOperation.valueOf(operation), specJson, periodic,
+    taskId, toolId, versionCode, key, BackgroundOperation.valueOf(operation), TaskExecutionMetadata.spec(specJson), periodic,
     intervalMinutes, TaskState.valueOf(state), createdAt, updatedAt, nextRunAt, runAttempt,
+    executionToken = TaskExecutionMetadata.token(specJson),
 )
 
 internal fun TaskRunResult.toEntity() = TaskResultEntity(

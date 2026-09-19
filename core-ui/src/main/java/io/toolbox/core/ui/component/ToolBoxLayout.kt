@@ -408,15 +408,17 @@ private fun RowScope.LiquidGlassNavigationItem(
             tint = color,
             modifier = Modifier.size(18.dp),
         )
-        Spacer(Modifier.width(7.dp))
-        ToolBoxText(
-            text = item.label,
-            style = ToolBoxThemeTokens.textStyles.label.copy(
-                color = color,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            ),
-            maxLines = 1,
-        )
+        if (LocalDensity.current.fontScale < 1.5f) {
+            Spacer(Modifier.width(7.dp))
+            ToolBoxText(
+                text = item.label,
+                style = ToolBoxThemeTokens.textStyles.label.copy(
+                    color = color,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                ),
+                maxLines = 1,
+            )
+        }
     }
 }
 

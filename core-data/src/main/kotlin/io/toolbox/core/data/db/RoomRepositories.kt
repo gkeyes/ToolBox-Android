@@ -388,6 +388,28 @@ internal class RoomBackgroundTaskRepository(
         }
     }
 
+    override suspend fun claimExecution(
+        taskId: String, versionCode: Int, previousToken: String?, executionToken: String,
+        updatedAt: Long, runAttempt: Int,
+    ): DataResult<Unit> {
+        if (executionToken.isBlank() || runAttempt < 1 || updatedAt < 0) return DataResult.Failure.InvalidInput("execution")
+        return try {
+            database.withTransaction {
+                val task = database.backgroundTasks().get(taskId)
+                    ?: return@withTransaction DataResult.Failure.NotFound("backgroundTask")
+                val installed = database.versions().get(task.toolId)
+                if (installed?.versionCode != versionCode || task.versionCode != versionCode ||
+                    task.state !in listOf(TaskState.QUEUED.name, TaskState.RUNNING.name) ||
+                    TaskExecutionMetadata.token(task.specJson) != previousToken
+                ) return@withTransaction DataResult.Failure.InvalidState("backgroundTask")
+                database.backgroundTasks().transition(taskId, listOf(task.state), TaskState.RUNNING.name, updatedAt, null, runAttempt)
+                database.backgroundTasks().updateExecutionSpec(taskId, TaskExecutionMetadata.spec(task.specJson, executionToken))
+                DataResult.Success(Unit)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { DataResult.Failure.StorageFailure("claimBackgroundExecution") }
+    }
+
     override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
         if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
         return transitionTask(
@@ -401,42 +423,38 @@ internal class RoomBackgroundTaskRepository(
     }
 
     override suspend fun deferRetry(
-        taskId: String,
-        updatedAt: Long,
-        nextRunAt: Long,
-        runAttempt: Int,
+        taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?,
     ): DataResult<Unit> {
-        if (nextRunAt < updatedAt) return DataResult.Failure.InvalidInput("nextRunAt")
-        if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
-        return transitionTask(
-            taskId,
-            listOf(TaskState.RUNNING),
-            TaskState.QUEUED,
-            updatedAt,
-            nextRunAt,
-            runAttempt,
-        )
+        if (nextRunAt < updatedAt || runAttempt < 1) return DataResult.Failure.InvalidInput("retry")
+        return try {
+            database.withTransaction {
+                val task = database.backgroundTasks().get(taskId)
+                    ?: return@withTransaction DataResult.Failure.NotFound("backgroundTask")
+                if (task.state != TaskState.RUNNING.name || TaskExecutionMetadata.token(task.specJson) != executionToken ||
+                    database.versions().get(task.toolId)?.versionCode != task.versionCode
+                ) return@withTransaction DataResult.Failure.InvalidState("backgroundTask")
+                database.backgroundTasks().transition(taskId, listOf(task.state), TaskState.QUEUED.name, updatedAt, nextRunAt, runAttempt)
+                database.backgroundTasks().updateExecutionSpec(taskId, TaskExecutionMetadata.spec(task.specJson))
+                DataResult.Success(Unit)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { DataResult.Failure.StorageFailure("deferBackgroundExecution") }
     }
 
     override suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): DataResult<Unit> {
-        if (!taskId.isValidTaskId()) return DataResult.Failure.InvalidInput("taskId")
-        if (updatedAt < 0) return DataResult.Failure.InvalidInput("updatedAt")
+        if (!taskId.isValidTaskId() || updatedAt < 0) return DataResult.Failure.InvalidInput("task")
         return try {
-            if (database.backgroundTasks().requeueInterruptedRun(taskId, updatedAt) == 1) {
-                DataResult.Success(Unit)
-            } else {
-                val current = database.backgroundTasks().get(taskId)
-                when {
-                    current == null -> DataResult.Failure.NotFound("backgroundTask")
-                    current.state != TaskState.RUNNING.name -> DataResult.Failure.InvalidState("backgroundTask")
-                    else -> DataResult.Failure.InvalidInput("updatedAt")
+            database.withTransaction {
+                val task = database.backgroundTasks().get(taskId)
+                    ?: return@withTransaction DataResult.Failure.NotFound("backgroundTask")
+                if (database.backgroundTasks().requeueInterruptedRun(taskId, updatedAt) != 1) {
+                    return@withTransaction DataResult.Failure.InvalidState("backgroundTask")
                 }
+                database.backgroundTasks().updateExecutionSpec(taskId, TaskExecutionMetadata.spec(task.specJson))
+                DataResult.Success(Unit)
             }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            DataResult.Failure.StorageFailure("requeueInterruptedBackgroundTask")
-        }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { DataResult.Failure.StorageFailure("requeueInterruptedBackgroundTask") }
     }
 
     override suspend fun finishRun(
@@ -444,6 +462,7 @@ internal class RoomBackgroundTaskRepository(
         result: TaskRunResult,
         nextState: TaskState,
         nextRunAt: Long?,
+        executionToken: String?,
     ): DataResult<Unit> {
         if (result.taskId != taskId) return DataResult.Failure.InvalidInput("result.taskId")
         if (result.outcome == io.toolbox.core.data.RunOutcome.CANCELLED) {
@@ -456,9 +475,13 @@ internal class RoomBackgroundTaskRepository(
                 val task = database.backgroundTasks().get(taskId)
                     ?: return@withTransaction DataResult.Failure.NotFound("backgroundTask")
                 val validNextState = if (task.periodic) nextState == TaskState.QUEUED else nextState == TaskState.COMPLETED
-                if (!validNextState || task.state != TaskState.RUNNING.name) {
+                if (!validNextState || task.state != TaskState.RUNNING.name ||
+                    TaskExecutionMetadata.token(task.specJson) != executionToken ||
+                    database.versions().get(task.toolId)?.versionCode != task.versionCode
+                ) {
                     return@withTransaction DataResult.Failure.InvalidState("backgroundTask")
                 }
+                database.backgroundTasks().updateExecutionSpec(taskId, TaskExecutionMetadata.spec(task.specJson))
                 database.taskResults().put(result.toEntity())
                 val nextRunAttempt = if (task.periodic) 0 else result.attemptCount
                 val changed = database.backgroundTasks().transition(
@@ -478,7 +501,7 @@ internal class RoomBackgroundTaskRepository(
         }
     }
 
-    override suspend fun finishCancelled(taskId: String, result: TaskRunResult): DataResult<Unit> {
+    override suspend fun finishCancelled(taskId: String, result: TaskRunResult, executionToken: String?): DataResult<Unit> {
         if (result.taskId != taskId) return DataResult.Failure.InvalidInput("result.taskId")
         if (result.outcome != io.toolbox.core.data.RunOutcome.CANCELLED) {
             return DataResult.Failure.InvalidInput("result.outcome")
@@ -488,9 +511,13 @@ internal class RoomBackgroundTaskRepository(
             database.withTransaction {
                 val task = database.backgroundTasks().get(taskId)
                     ?: return@withTransaction DataResult.Failure.NotFound("backgroundTask")
-                if (task.state == TaskState.COMPLETED.name || task.state == TaskState.CANCELLED.name) {
+                if (task.state == TaskState.COMPLETED.name || task.state == TaskState.CANCELLED.name ||
+                    (executionToken != null && (TaskExecutionMetadata.token(task.specJson) != executionToken ||
+                        task.state != TaskState.RUNNING.name || database.versions().get(task.toolId)?.versionCode != task.versionCode))
+                ) {
                     return@withTransaction DataResult.Failure.InvalidState("backgroundTask")
                 }
+                database.backgroundTasks().updateExecutionSpec(taskId, TaskExecutionMetadata.spec(task.specJson))
                 database.taskResults().put(result.toEntity())
                 val changed = database.backgroundTasks().transition(
                     taskId,

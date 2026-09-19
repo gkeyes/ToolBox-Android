@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
                     }
                     ToolBoxTheme(
                         mode = themeMode,
-                        style = ToolBoxThemeStyle.LiquidGlass,
+                        style = if (settingsState.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) ToolBoxThemeStyle.Miuix else ToolBoxThemeStyle.LiquidGlass,
                         reduceTransparency = settingsState.settings.reduceTransparency,
                     ) {
                         ApplySystemBarAppearance(themeMode)

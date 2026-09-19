@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -28,7 +29,9 @@ internal class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            repository.settings.collect { settings ->
+            repository.settings.catch {
+                mutableState.value = mutableState.value.copy(loaded = true, error = "设置或首页布局无法读取。数据已保留，请更新 ToolBox 或从完整备份恢复。")
+            }.collect { settings ->
                 mutableState.value = mutableState.value.copy(settings = settings, loaded = true)
             }
         }
@@ -36,6 +39,8 @@ internal class SettingsViewModel(
             for (transform in appearanceUpdates) save(transform, rememberForRetry = true)
         }
     }
+
+    fun selectThemeStyle(style: io.toolbox.core.data.ThemeStyle) = updateAppearance { it.copy(themeStyle = style) }
 
     fun selectTheme(theme: ThemeMode) = updateAppearance { it.copy(theme = theme) }
 

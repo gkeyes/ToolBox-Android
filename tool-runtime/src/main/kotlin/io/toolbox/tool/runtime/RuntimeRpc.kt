@@ -93,7 +93,7 @@ internal fun RuntimeRpcError.toRpcValue(): RpcValue.ObjectValue = RpcValue.Objec
 sealed interface RuntimeRpcResponse {
     val id: String
 
-    data class Success(override val id: String, val result: RpcValue) : RuntimeRpcResponse
+    data class Success(override val id: String, val result: RpcValue, val release: () -> Unit = {}) : RuntimeRpcResponse
     data class Failure(override val id: String, val error: RuntimeRpcError) : RuntimeRpcResponse
 }
 
@@ -197,7 +197,7 @@ data class RuntimeNetworkRequest(
     val body: ByteArray? = null,
     val bodyIsJson: Boolean = false,
     val timeoutMillis: Long? = null,
-    val maxResponseBytes: Int? = null,
+    val maxResponseBytes: Long? = null,
 )
 
 data class RuntimeNetworkResponse(
@@ -205,6 +205,7 @@ data class RuntimeNetworkResponse(
     val headers: Map<String, String>,
     val body: String,
     val bodyEncoding: RuntimeNetworkBodyEncoding = RuntimeNetworkBodyEncoding.TEXT,
+    val release: () -> Unit = {},
 )
 
 enum class RuntimeNetworkBodyEncoding { TEXT, BASE64 }
@@ -524,13 +525,18 @@ class RuntimeRpcDispatcher(
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Android permission changed before execution")
             }
         }
+        val retained = mutableListOf<() -> Unit>()
+        val released = java.util.concurrent.atomic.AtomicBoolean()
+        val release = { if (released.compareAndSet(false, true)) retained.forEach { it() }; Unit }
+        var transferred = false
         return try {
             // Existing grants authorize these effects. Require the current visible tool,
             // without a second permission or an arbitrary touch-screen countdown.
             if (capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
                 foregroundInteractionGuard()
             }
-            RuntimeRpcResponse.Success(request.id, invoke(method.name, request.params, request.id))
+            val result = invoke(method.name, request.params, request.id, retained)
+            RuntimeRpcResponse.Success(request.id, result, release).also { transferred = true }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: RuntimeHandlerException) {
@@ -547,13 +553,14 @@ class RuntimeRpcDispatcher(
             } else {
                 failure(RuntimeRpcErrorCode.INTERNAL_ERROR, "The native operation failed")
             }
-        }
+        } finally { if (!transferred) release() }
     }
 
     private suspend fun invoke(
         method: String,
         params: RpcValue.ObjectValue,
         requestId: String,
+        retained: MutableList<() -> Unit>,
     ): RpcValue = when (method) {
         "ready" -> RpcValue.ObjectValue(
             mapOf(
@@ -613,7 +620,7 @@ class RuntimeRpcDispatcher(
             RpcValue.Null
         }
         "clipboard.writeText" -> {
-            requireHandler(handlers.clipboardWrite).writeText(params.requiredString("text", maxResponseBytes))
+            requireHandler(handlers.clipboardWrite).writeText(params.requiredText("text", maxResponseBytes))
             RpcValue.Null
         }
         "network.authorizeDomain" -> {
@@ -625,9 +632,12 @@ class RuntimeRpcDispatcher(
             params.requireOnly()
             RpcValue.ArrayValue(requireHandler(m3Handlers.networkDomains).listDomains().map(RpcValue::StringValue))
         }
-        "network.request" -> requireHandler(m2Handlers.network)
-            .request(params.toNetworkRequest())
-            .toRpcValue()
+        "network.request" -> {
+            val response = requireHandler(m2Handlers.network).request(params.toNetworkRequest())
+            retained += response.release
+            requireNetworkStreamAuthorization()
+            response.toRpcValue()
+        }
         "network.openStream" -> {
             params.requireOnly("streamId", "request")
             val streamId = params.requiredNetworkStreamId()
@@ -650,18 +660,23 @@ class RuntimeRpcDispatcher(
             }
         }
         "network.readStream" -> {
-            params.requireOnly("streamId")
+            params.requireOnly("streamId", "expectedChunkBytes")
             val streamId = params.requiredNetworkStreamId()
+            val expected = params.optionalLong("expectedChunkBytes", 1, MAX_SAFE_INTEGER)
+            val rawBudget = runtimeNetworkStreamRawBudget(requestId, maxResponseBytes, expected)
             val network = requireHandler(m2Handlers.network)
-            val chunk = network.readStream(streamId, runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
-            requireNetworkStreamAuthorization()
-            require(chunk.receivedBytes in 0..MAX_SAFE_INTEGER)
-            require(chunk.data.size <= runtimeNetworkStreamRawBudget(requestId, maxResponseBytes))
-            streamResponseWithinBudget(requestId, RpcValue.ObjectValue(mapOf(
-                "data" to RpcValue.StringValue(Base64.getEncoder().encodeToString(chunk.data)),
-                "done" to RpcValue.Bool(chunk.done),
-                "receivedBytes" to RpcValue.Number(chunk.receivedBytes.toDouble()),
-            )))
+            val chunk = network.readStream(streamId, rawBudget)
+            retained += chunk.release
+            run {
+                requireNetworkStreamAuthorization()
+                require(chunk.receivedBytes in 0..MAX_SAFE_INTEGER)
+                require(chunk.data.size <= rawBudget)
+                streamResponseWithinBudget(requestId, RpcValue.ObjectValue(mapOf(
+                    "data" to RpcValue.StringValue(Base64.getEncoder().encodeToString(chunk.data)),
+                    "done" to RpcValue.Bool(chunk.done),
+                    "receivedBytes" to RpcValue.Number(chunk.receivedBytes.toDouble()),
+                )))
+            }
         }
         "network.cancelStream" -> {
             params.requireOnly("streamId")
@@ -673,7 +688,7 @@ class RuntimeRpcDispatcher(
             requireHandler(m2Handlers.notifications).post(
                 notificationId = params.requiredIdentifier("id"),
                 title = params.requiredString("title", maxResponseBytes),
-                body = params.requiredString("body", maxResponseBytes),
+                body = params.requiredText("body", maxResponseBytes),
             )
             RpcValue.Null
         }
@@ -682,7 +697,7 @@ class RuntimeRpcDispatcher(
             requireHandler(m2Handlers.notifications).update(
                 notificationId = params.requiredIdentifier("id"),
                 title = params.requiredString("title", maxResponseBytes),
-                body = params.requiredString("body", maxResponseBytes),
+                body = params.requiredText("body", maxResponseBytes),
             )
             RpcValue.Null
         }
@@ -791,7 +806,7 @@ class RuntimeRpcDispatcher(
         }
         "share.text" -> {
             params.requireOnly("text")
-            requireHandler(m3Handlers.shareText).shareText(params.requiredString("text", maxResponseBytes))
+            requireHandler(m3Handlers.shareText).shareText(params.requiredText("text", maxResponseBytes))
             RpcValue.Null
         }
         "browser.open" -> {
@@ -1097,6 +1112,12 @@ class RuntimeRpcDispatcher(
         return result
     }
 
+    private fun RpcValue.ObjectValue.requiredText(name: String, maxChars: Int = Int.MAX_VALUE): String {
+        val text = (required(name) as? RpcValue.StringValue)?.value ?: throw IllegalArgumentException(name)
+        require(text.length <= maxChars)
+        return text
+    }
+
     private fun RpcValue.ObjectValue.storageKeys(name: String): List<String> {
         val entries = (required(name) as? RpcValue.ArrayValue)?.value ?: throw IllegalArgumentException(name)
 
@@ -1276,8 +1297,8 @@ class RuntimeRpcDispatcher(
             maxResponseBytes = optionalLong(
                 "maxResponseBytes",
                 MIN_NETWORK_RESPONSE_BYTES.toLong(),
-                Int.MAX_VALUE.toLong(),
-            )?.toInt(),
+                MAX_SAFE_INTEGER,
+            ),
         )
     }
 
@@ -1321,7 +1342,7 @@ class RuntimeRpcDispatcher(
         requiredString(name).also { require(it.isNotBlank() && it.none(Char::isISOControl)) }
 
     private fun RpcValue.ObjectValue.optionalDisplayText(name: String): String? =
-        optionalString(name)?.also { require(it.none(Char::isISOControl)) }
+        value[name]?.let { requiredText(name).also { text -> require(text.none { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' }) } }
 
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
         val allowed = if (periodic) {
@@ -1351,7 +1372,7 @@ class RuntimeRpcDispatcher(
                 requireOnly("type", "title", "body")
                 RuntimeBackgroundTaskOperation.Notify(
                     title = requiredString("title", maxResponseBytes),
-                    body = requiredString("body", maxResponseBytes),
+                    body = requiredText("body", maxResponseBytes),
                 )
             }
             else -> throw IllegalArgumentException("operation.type")

@@ -368,6 +368,15 @@ private class InMemoryBackgroundTaskRepository(
         DataResult.Success(Unit)
     }
 
+    override suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> = state.mutex.withLock {
+        val current = state.tasks.value[taskId] ?: return@withLock DataResult.Failure.NotFound("backgroundTask")
+        if (current.versionCode != versionCode || current.executionToken != previousToken ||
+            current.state !in setOf(TaskState.QUEUED, TaskState.RUNNING)) return@withLock DataResult.Failure.InvalidState("backgroundTask")
+        state.tasks.value = state.tasks.value + (taskId to current.copy(state = TaskState.RUNNING,
+            updatedAt = updatedAt, runAttempt = runAttempt, executionToken = executionToken))
+        DataResult.Success(Unit)
+    }
+
     override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
         if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
         return transition(taskId, setOf(TaskState.QUEUED), TaskState.RUNNING, updatedAt, null, runAttempt)
@@ -378,7 +387,9 @@ private class InMemoryBackgroundTaskRepository(
         updatedAt: Long,
         nextRunAt: Long,
         runAttempt: Int,
+        executionToken: String?,
     ): DataResult<Unit> {
+        if (state.tasks.value[taskId]?.executionToken != executionToken) return DataResult.Failure.InvalidState("backgroundTask")
         if (nextRunAt < updatedAt) return DataResult.Failure.InvalidInput("nextRunAt")
         if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
         return transition(
@@ -408,6 +419,7 @@ private class InMemoryBackgroundTaskRepository(
                     state = TaskState.QUEUED,
                     updatedAt = updatedAt,
                     nextRunAt = updatedAt,
+                    executionToken = null,
                 )
             )
             DataResult.Success(Unit)
@@ -418,6 +430,7 @@ private class InMemoryBackgroundTaskRepository(
         result: TaskRunResult,
         nextState: TaskState,
         nextRunAt: Long?,
+        executionToken: String?,
     ): DataResult<Unit> = state.mutex.withLock {
         if (result.taskId != taskId) return@withLock DataResult.Failure.InvalidInput("result.taskId")
         if (result.outcome == io.toolbox.core.data.RunOutcome.CANCELLED) {
@@ -427,7 +440,7 @@ private class InMemoryBackgroundTaskRepository(
         if (result.attemptCount < 1) return@withLock DataResult.Failure.InvalidInput("attemptCount")
         val current = state.tasks.value[taskId] ?: return@withLock DataResult.Failure.NotFound("backgroundTask")
         val validNext = if (current.periodic) nextState == TaskState.QUEUED else nextState == TaskState.COMPLETED
-        if (current.state != TaskState.RUNNING || !validNext) {
+        if (current.state != TaskState.RUNNING || !validNext || current.executionToken != executionToken) {
             return@withLock DataResult.Failure.InvalidState("backgroundTask")
         }
         state.results.value = state.results.value + (taskId to result)
@@ -438,12 +451,13 @@ private class InMemoryBackgroundTaskRepository(
                 updatedAt = result.completedAt,
                 nextRunAt = nextRunAt,
                 runAttempt = nextRunAttempt,
+                executionToken = null,
             )
         )
         DataResult.Success(Unit)
     }
 
-    override suspend fun finishCancelled(taskId: String, result: TaskRunResult): DataResult<Unit> =
+    override suspend fun finishCancelled(taskId: String, result: TaskRunResult, executionToken: String?): DataResult<Unit> =
         state.mutex.withLock {
             if (result.taskId != taskId) return@withLock DataResult.Failure.InvalidInput("result.taskId")
             if (result.outcome != io.toolbox.core.data.RunOutcome.CANCELLED) {
@@ -452,7 +466,7 @@ private class InMemoryBackgroundTaskRepository(
             validateResult(result)?.let { return@withLock it }
             val current = state.tasks.value[taskId]
                 ?: return@withLock DataResult.Failure.NotFound("backgroundTask")
-            if (current.state !in setOf(TaskState.QUEUED, TaskState.RUNNING)) {
+            if (current.state !in setOf(TaskState.QUEUED, TaskState.RUNNING) || (executionToken != null && current.executionToken != executionToken)) {
                 return@withLock DataResult.Failure.InvalidState("backgroundTask")
             }
             state.results.value = state.results.value + (taskId to result)
@@ -462,6 +476,7 @@ private class InMemoryBackgroundTaskRepository(
                     updatedAt = result.completedAt,
                     nextRunAt = null,
                     runAttempt = result.attemptCount,
+                    executionToken = null,
                 )
             )
             DataResult.Success(Unit)
@@ -517,6 +532,7 @@ private class InMemoryBackgroundTaskRepository(
                 updatedAt = updatedAt,
                 nextRunAt = nextRunAt,
                 runAttempt = runAttempt,
+                executionToken = if (next == TaskState.RUNNING) current.executionToken else null,
             )
         )
         DataResult.Success(Unit)

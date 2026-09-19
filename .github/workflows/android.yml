@@ -13,6 +13,8 @@ on:
       - "!.github/workflows/tbx.yml"
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
+      - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/run-android-behavior.sh"
   pull_request:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
@@ -25,6 +27,8 @@ on:
       - "!.github/workflows/tbx.yml"
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
+      - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/run-android-behavior.sh"
   workflow_dispatch:
 
 permissions:
@@ -36,7 +40,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build APK and verify Wasm support
+    name: Build APK and verify host behavior
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -51,6 +55,8 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Verify API contract, embedded SDK, and security entry points
+        run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
       - name: Build APKs and behavioral test APKs
@@ -58,25 +64,17 @@ jobs:
           ./gradlew --no-daemon
           :app:assembleDebug :app:assembleRelease
           :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
-      - name: Verify Wasm installation and cancellation
+      - name: Verify installation, catalog, network, runtime and cancellation regressions
         run: >-
-          ./gradlew --no-daemon :tool-package:testDebugUnitTest
-          --tests io.toolbox.tool.packagekit.PackageWasmResourceTest
-          --tests io.toolbox.tool.packagekit.lifecycle.PackageImportCancellationTest
-      - name: Verify Wasm CSP and exact-origin boundaries
-        run: >-
-          ./gradlew --no-daemon :tool-runtime:testDebugUnitTest
-          --tests io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest
-      - name: Verify import cancellation feedback
-        run: >-
-          ./gradlew --no-daemon :app:testDebugUnitTest
-          --tests io.toolbox.host.importflow.ImportViewModelTest
+          ./gradlew --no-daemon
+          :core-data:testDebugUnitTest :tool-package:testDebugUnitTest
+          :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
       - name: Enable accelerated behavior test emulator
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify import UI, Android resource probe, and Wasm in WebView
+      - name: Verify catalog, backup, execution identity, dialogs and Wasm on Android
         id: runtime_emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
@@ -90,14 +88,15 @@ jobs:
             mkdir -p build/wasm-emulator
             adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
             adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.ToolManagerImportConfirmationTest,io.toolbox.host.AndroidPackageResourceProbeTest
-            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.tool.runtime.WasmRuntimeInstrumentationTest
-      - name: Retain Wasm and cancellation unit test reports
+            bash scripts/ci/run-android-behavior.sh
+      - name: Retain host unit test reports
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-unit-tests-${{ github.sha }}
           path: |
+            core-data/build/test-results/
+            core-data/build/reports/tests/
             tool-package/build/test-results/
             tool-package/build/reports/tests/
             tool-runtime/build/test-results/
@@ -106,7 +105,7 @@ jobs:
             app/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Retain Wasm WebView and import UI evidence
+      - name: Retain Android behavior and WebView evidence
         if: ${{ always() && steps.runtime_emulator.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
