@@ -207,7 +207,7 @@ internal class RuntimeSessionManager(
     }
 
     fun reload(toolId: String) {
-        scope.launch { hosts[toolId]?.webView?.reload() ?: retry(toolId) }
+        scope.launch { hosts[toolId]?.webView?.let(HardenedRuntimeWebView::reload) ?: retry(toolId) }
     }
 
     fun detachForeground(toolId: String) {

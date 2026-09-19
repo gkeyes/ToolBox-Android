@@ -48,6 +48,17 @@ object HardenedRuntimeWebView {
         RuntimeWebViewLifecycle.destroyAndUnregister(webView)
     }
 
+    /** A modal JS dialog can prevent onPageStarted itself; settle before host navigation. */
+    fun loadEntry(webView: WebView, runtime: PreparedToolRuntime) {
+        RuntimeJavaScriptDialogs.dismiss(webView)
+        webView.loadUrl(runtime.entryUrl)
+    }
+
+    fun reload(webView: WebView) {
+        RuntimeJavaScriptDialogs.dismiss(webView)
+        webView.reload()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     fun create(
         context: Context,
@@ -76,7 +87,7 @@ object HardenedRuntimeWebView {
         var runtimeClient: RuntimeWebViewClient? = null
         try {
             WebView.setWebContentsDebuggingEnabled(false)
-            val createdWebView = RuntimeToolWebView(context)
+            val createdWebView = WebView(context)
             webView = createdWebView
             val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
             val serviceWorkerIntercept = WebViewFeature.isFeatureSupported(
@@ -131,7 +142,7 @@ object HardenedRuntimeWebView {
             createRuntimeBridgeSession(runtime, bridgeProvider.create(runtime)).attach(createdWebView)
             creationPermit.attach(createdWebView)
             runtimeClient.beginFirstMainFrameTrace()
-            createdWebView.loadUrl(runtime.entryUrl)
+            loadEntry(createdWebView, runtime)
             return RuntimeWebViewCreationResult.Created(createdWebView)
         } catch (_: RuntimeException) {
             runtimeClient?.endFirstMainFrameTrace()
@@ -276,19 +287,6 @@ object HardenedRuntimeWebView {
           }
         })();
     """
-}
-
-/** A modal JS dialog can prevent onPageStarted itself; settle it before host navigation. */
-private class RuntimeToolWebView(context: Context) : WebView(context) {
-    override fun loadUrl(url: String) {
-        RuntimeJavaScriptDialogs.dismiss(this)
-        super.loadUrl(url)
-    }
-
-    override fun reload() {
-        RuntimeJavaScriptDialogs.dismiss(this)
-        super.reload()
-    }
 }
 
 private class RuntimeWebViewClient(
