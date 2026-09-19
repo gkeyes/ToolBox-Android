@@ -61,7 +61,9 @@ class JavaScriptDialogInstrumentationTest {
                 RuntimeWebViewCallbacks({ loadedDocuments.incrementAndGet() }, { error(it) }, { error("renderer gone") }), provider) }
             val webView = requireNotNull(view)
             await("Initial WebView never became visible") { main { webView.isShown } }
-            await("Initial WebView window never received focus") { main { webView.hasWindowFocus() } }
+            await("Initial WebView window never received focus", diagnostics = { windowDiagnostics(webView) }) {
+                main { webView.hasWindowFocus() }
+            }
             await("Bundled app.js did not initialize") { evaluate(webView, "window.dialogReady") == "true" }
             await("Initial main document callback did not complete") { loadedDocuments.get() > 0 }
             open(webView, "alert")
@@ -152,10 +154,25 @@ class JavaScriptDialogInstrumentationTest {
         }
         return null
     }
-    private fun await(description: String = "Dialog behavior did not complete", check: () -> Boolean) {
+    private fun windowDiagnostics(view: WebView): String {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val state = main {
+            val context = instrumentation.targetContext
+            val power = context.getSystemService(android.os.PowerManager::class.java)
+            val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+            "interactive=${power.isInteractive}, keyguard=${keyguard.isKeyguardLocked}, " +
+                "attached=${view.isAttachedToWindow}, shown=${view.isShown}, " +
+                "rootFocus=${view.rootView.hasWindowFocus()}, viewFocus=${view.hasWindowFocus()}"
+        }
+        val windows = instrumentation.uiAutomation.executeShellCommand("dumpsys window windows")
+        val dump = android.os.ParcelFileDescriptor.AutoCloseInputStream(windows).bufferedReader().use { it.readText() }
+        android.util.Log.e("DialogWindowDiagnostics", "$state\n$dump")
+        return state
+    }
+    private fun await(description: String = "Dialog behavior did not complete", diagnostics: () -> String = { "" }, check: () -> Boolean) {
         val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
         while (System.nanoTime() < until) { if (check()) return; Thread.sleep(30) }
-        error(description)
+        error("$description ${diagnostics()}".trim())
     }
     private fun <T> main(action: () -> T): T {
         val result = CompletableFuture<T>()
