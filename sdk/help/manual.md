@@ -175,13 +175,31 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 大网络响应使用 openStream/readStream 逐块消费，处理完一块再读取下一块；每块长度只是传输单位，不是总数据上限。openStream 支持 AbortSignal。EOF、取消、撤权和运行环境结束释放连接。
 
-网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误，并改为分页或分块。
+网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误。网络可改用 openStream 分块；files.read 暂无文件分块接口，应选择可放入内存的文件，或由工具自行提供分页数据。
 
 安装支持 ZIP32 和 ZIP64；复制、目录扫描、解压、哈希及暂存复制均分块处理，依据目标卷可用空间、当前可用堆和系统内存压力检查资源，暂存占用也计入。高压缩比本身不会导致拒绝；CRC、中央目录、本地头、数据描述符及实际输出须一致。integrity.json 流式逐项核对文件集合和原始字节哈希；重复键、路径碰撞或篡改会失败，签名仍针对完整性文件原始字节验证。
 
 导入反馈提供“取消”。原子提交前取消或失败会清理临时内容并保留旧工具；提交开始后完成提交或回滚，再显示实际最终结果，已成功安装不会误报为“已取消”。空间不足时释放设备空间再重试，系统内存压力较高时稍后重试。
 
 普通及安全存储写入保持原子性，不自动淘汰用户数据。storage.getMany 保持请求键顺序；storage.apply 的写删冲突或非法值使整批失败。文件 token 属于当前运行环境，只能读取一次，不能作为长期文件路径保存。
+
+### 首页、收藏与分组（0.8.0 起）
+
+宿主分为首页、全部工具和设置。首页顶部显示最近使用，下方是收藏与可展开分组；同一工具可同时属于多个分组。编辑模式可拖动收藏、组和组内工具，也可用前移/后移按钮调整顺序。删除组不会卸载工具。全部工具可搜索，并按名称（中文拼音）、首次安装时间或最后打开时间排序；更新不会重置首次安装时间。最后打开记录宿主接受打开请求的时间，不代表网页已加载完成。
+
+收藏、分组和排序保存在宿主，重启及工具更新后保留，不新增工具权限。备份包含布局；旧备份没有布局时保留本机关系并按最终工具列表清理失效引用。不设收藏、组或成员数量配额。
+
+### 兼容性与仍保留的边界
+
+原生网络使用系统 HTTP 代理选择器，系统代理变更对后续请求生效；不提供代理凭据管理，认证代理返回 407 时由工具给出明确提示。此行为不改变 Android VPN/TUN 路由。跨来源重定向保留明确非凭据的标准协商、Range 和缓存条件头，删除 Authorization、Cookie 及未分类自定义头，并删除失效的消息体和连接专用头；回跳不恢复已删除凭据。原生 API 暂无按工具保存的 CookieJar，不保存响应 Set-Cookie，也不把浏览器 Cookie 自动带入工具请求。
+
+可见工具的 alert、confirm、prompt 使用原生对话框，显示工具身份。页面退出、导航、宿主暂停或运行环境结束会结束未完成的对话框；prompt 可返回空串，取消返回 null。JS 对话框不新增次数限制。剪贴板、分享及通知正文允许空串和换行，路径、标识及请求头仍遵守各自格式。
+
+HTML 入口不要求以 doctype 或 html 标签起始，可以包含 BOM、注释及前导空白；文件路径与原生载荷、归档内容检查仍保留。图标支持设备能解码的位图，动图显示静态首帧；SVG 使用 AndroidSVG 1.4 的静态能力，允许纯本地引用、裁剪、蒙版及样式，不执行脚本或读取外部资源，不承诺渲染器未实现的滤镜。
+
+媒体自动播放仍要求用户手势，这是防打扰策略。宿主备份目前只接受本地文档位置；尚未提供云文档备份语义。缺少独立 WebView profile 能力时使用无状态隔离，标准网页存储不可用，可使用已授权的 ToolBox 存储接口。HTTPS、精确来源、能力授权、签名与原生载荷检查继续生效。
+
+独立后台任务可并行；每次执行有独立宿主身份，取消或更新后到达的旧结果不会覆盖新结果。瞬时错误最多自动重试 3 次（总计最多 4 次尝试），并遵守 WorkManager 调度；一个工具的持续 runtime 会话会复用，不代表整个宿主只能运行一个工具。
 
 ### WebAssembly 与二进制资源
 
@@ -437,6 +455,7 @@ export interface NetworkRequest {
   readonly body?: string | JsonValue | Uint8Array;
   /** Optional non-negative caller-selected deadline in milliseconds; 0 disables the deadline. Omitted requests use the manifest setting, otherwise no host deadline. The HTTP client uses a signed 32-bit millisecond representation. */
   readonly timeoutMs?: number;
+  /** Positive safe integer cumulative budget (up to Number.MAX_SAFE_INTEGER; values above 2147483647 require host 0.8.0+). Omitted uses manifest; no manifest budget means no extra cumulative limit. Full responses remain constrained by shared memory and array/string capacity. */
   readonly maxResponseBytes?: number;
 }
 
@@ -450,6 +469,11 @@ export interface NetworkResponse {
 export interface NetworkStreamOptions {
   /** Cancels while waiting for headers and while reading. */
   readonly signal?: AbortSignal;
+}
+
+export interface NetworkStreamReadOptions {
+  /** Host 0.8.0+: desired positive safe-integer chunk size. Host may return fewer bytes based on shared memory and bridge envelope capacity. Omit for automatic chunks. */
+  readonly expectedChunkBytes?: number;
 }
 
 export interface NetworkStreamResponse {
@@ -645,7 +669,7 @@ export interface ToolBoxApi {
     listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
-    readStream(streamId: string): Promise<NetworkStreamChunk>;
+    readStream(streamId: string, options?: NetworkStreamReadOptions): Promise<NetworkStreamChunk>;
     cancelStream(streamId: string): Promise<void>;
   };
   notifications: {

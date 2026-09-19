@@ -4,25 +4,24 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.Proxy
-import java.util.concurrent.TimeUnit
-import java.util.Locale
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import java.util.Base64
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.withContext
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import okhttp3.Authenticator
 import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.Authenticator
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okhttp3.ResponseBody
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 internal fun interface ToolNetworkTransport {
     suspend fun execute(request: Request, timeoutMillis: Long): Response
@@ -31,15 +30,21 @@ internal fun interface ToolNetworkTransport {
 class ToolNetworkProxy private constructor(
     private val dns: Dns,
     private val transport: ToolNetworkTransport?,
+    private val resources: NetworkResources,
+    private val configureClient: (OkHttpClient.Builder) -> Unit,
 ) {
-    constructor(
-        dns: Dns = Dns.SYSTEM,
-    ) : this(dns, null)
+    constructor(dns: Dns = Dns.SYSTEM) : this(dns, null, NetworkResources.shared, {})
 
     internal constructor(
         transport: ToolNetworkTransport,
         dns: Dns = Dns.SYSTEM,
-    ) : this(dns, transport)
+        resources: NetworkResources = NetworkResources.shared,
+    ) : this(dns, transport, resources, {})
+
+    internal constructor(
+        resources: NetworkResources,
+        configureClient: (OkHttpClient.Builder) -> Unit,
+    ) : this(Dns.SYSTEM, null, resources, configureClient)
 
     private val client by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         OkHttpClient.Builder()
@@ -47,11 +52,17 @@ class ToolNetworkProxy private constructor(
             .cookieJar(CookieJar.NO_COOKIES)
             .authenticator(Authenticator.NONE)
             .proxyAuthenticator(Authenticator.NONE)
-            .proxy(Proxy.NO_PROXY)
+            .proxySelector(LiveSystemProxySelector)
+            .dispatcher(okhttp3.Dispatcher().apply {
+                // Shared, cancellable resource admission runs before enqueue; these are not product quotas.
+                maxRequests = Int.MAX_VALUE
+                maxRequestsPerHost = Int.MAX_VALUE
+            })
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(false)
             .dns(dns)
+            .apply(configureClient)
             .build()
     }
 
@@ -65,258 +76,170 @@ class ToolNetworkProxy private constructor(
     /** The caller enforces the network capability grant. */
     suspend fun httpGet(
         url: String,
-        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
-        maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
-    ): NetworkExecution = request(
-        url = url,
-        method = NetworkRequestMethod.GET,
-        timeoutMillis = timeoutMillis,
-        maxResponseBytes = maxResponseBytes,
-        acceptHttpErrors = false,
-    )
+        timeoutMillis: Long = 0,
+        maxResponseBytes: Long? = null,
+        resourceOwner: String = "background",
+    ): NetworkExecution = request(url, NetworkRequestMethod.GET, timeoutMillis = timeoutMillis,
+        maxResponseBytes = maxResponseBytes, acceptHttpErrors = false, resourceOwner = resourceOwner)
 
-    /** HTTPS, cross-origin credentials, cancellation and real resource capacity apply. */
     suspend fun request(
         url: String,
         method: NetworkRequestMethod,
         headers: Map<String, String> = emptyMap(),
         body: ByteArray? = null,
         bodyIsJson: Boolean = false,
-        timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
-        maxResponseBytes: Int = DEFAULT_RESPONSE_BYTES,
+        timeoutMillis: Long = 0,
+        maxResponseBytes: Long? = null,
         acceptHttpErrors: Boolean = true,
-    ): NetworkExecution {
-        if (timeoutMillis < 0 || timeoutMillis > Int.MAX_VALUE) {
-            return NetworkExecution.TerminalFailure("INVALID_TIMEOUT")
-        }
-        if (maxResponseBytes < 1) {
-            return NetworkExecution.TerminalFailure("INVALID_RESPONSE_LIMIT")
-        }
-        val requestClient = if (transport == null) {
-            clientForRequest(timeoutMillis)
-        } else {
-            null
-        }
-        var current = url.toHttpUrlOrNull()
-            ?: return NetworkExecution.TerminalFailure("INVALID_URL")
-        var currentMethod = method
-        var currentBody = body
-        var includeCallerHeaders = true
-        val visited = mutableSetOf<String>()
-        while (true) {
-            if (!visited.add("$currentMethod $current")) return NetworkExecution.TerminalFailure("REDIRECT_LOOP")
-            val validation = NetworkPolicy.validateEndpoint(current)
-            if (validation != null) return NetworkExecution.TerminalFailure(validation)
-            val response = try {
-                val request = Request.Builder()
-                    .url(current)
-                    .apply {
-                        if (includeCallerHeaders) {
-                            headers.forEach { (name, value) -> header(name, value) }
-                        }
-                        when (currentMethod) {
-                            NetworkRequestMethod.GET -> get()
-                            NetworkRequestMethod.HEAD -> head()
-                            NetworkRequestMethod.POST -> post(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.PUT -> put(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.PATCH -> patch(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.DELETE -> if (currentBody == null) delete() else delete(
-                                currentBody.toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                        }
+        resourceOwner: String = "background",
+    ): NetworkExecution = requestWithControl(
+        ToolNetworkRequest(url, method, headers, body, bodyIsJson, timeoutMillis, maxResponseBytes,
+            acceptHttpErrors, resourceOwner), ToolNetworkStreamControl(),
+    )
+
+    internal suspend fun requestWithControl(options: ToolNetworkRequest, control: ToolNetworkStreamControl): NetworkExecution {
+        val retained = mutableListOf<AutoCloseable>()
+        val released = java.util.concurrent.atomic.AtomicBoolean()
+        val release = { if (released.compareAndSet(false, true)) retained.forEach(AutoCloseable::close); Unit }
+        var transferred = false
+        try {
+            val stream = openStream(options, control)
+            val output = ByteArrayOutputStream()
+            while (true) {
+                val chunk = stream.read(NetworkResources.AUTO_CHUNK_BYTES)
+                try {
+                    if (chunk.done) break
+                    if (output.size().toLong() + chunk.data.size > Int.MAX_VALUE - 8L) {
+                        throw ToolNetworkFailure("RESULT_TOO_LARGE")
                     }
-                    .apply {
-                        if (!includeCallerHeaders || headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
-                            header("User-Agent", USER_AGENT)
-                        }
-                        if (!includeCallerHeaders || headers.keys.none { it.equals("Accept", ignoreCase = true) }) {
-                            header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8, */*;q=0.5")
-                        }
-                    }
-                    .build()
-                if (transport != null) {
-                    val received = transport.execute(request, timeoutMillis)
-                    try {
-                        runInterruptible(Dispatchers.IO) { received.readResponse(maxResponseBytes, acceptHttpErrors) }
-                    } finally {
-                        received.close()
-                    }
-                } else {
-                    requireNotNull(requestClient).newCall(request).awaitResponse(maxResponseBytes, acceptHttpErrors)
-                }
-            } catch (error: IOException) {
-                return error.toNetworkFailure()
+                    // Covers growing output, final byte-array copy and UTF-16/Base64/JSON materialization.
+                    retained += resources.reserveExact(chunk.data.size.toLong() * 8)
+                    output.write(chunk.data)
+                } finally { chunk.release() }
             }
-            response.let {
-                if (it.code in REDIRECT_CODES) {
-                    val location = it.location
-                        ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
-                    val redirected = current.resolve(location)
-                        ?: return NetworkExecution.TerminalFailure("INVALID_REDIRECT")
-                    includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
-                    if (it.code in setOf(301, 302, 303) && currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)) {
-                        currentMethod = NetworkRequestMethod.GET
-                        currentBody = null
-                    }
-                    current = redirected
-                    continue
-                }
-                if (!acceptHttpErrors) {
-                    if (it.code in 500..599) return NetworkExecution.RetryableFailure("HTTP_${it.code}")
-                    if (it.code !in 200..299) return NetworkExecution.TerminalFailure("HTTP_${it.code}")
-                }
-                val body = it.body ?: return NetworkExecution.TerminalFailure("RESULT_TOO_LARGE")
-                val text = it.isText
-                return NetworkExecution.Success(
-                    statusCode = it.code,
-                    finalUrl = current.toString(),
-                    contentType = it.contentType,
-                    body = if (text) body.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(body),
-                    bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
-                    headers = it.headers,
-                )
-            }
+            val bytes = output.toByteArray()
+            val media = stream.response.body.contentType()
+            val subtype = media?.subtype?.lowercase(Locale.ROOT)
+            val text = media == null || media.type.equals("text", true) || subtype == "json" || subtype?.endsWith("+json") == true
+            return NetworkExecution.Success(
+                statusCode = stream.response.code,
+                finalUrl = stream.finalUrl,
+                contentType = stream.response.header("Content-Type")?.substringBefore(';'),
+                body = if (text) bytes.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(bytes),
+                bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
+                headers = stream.response.exposedHeaders(),
+                release = release,
+            ).also { transferred = true }
+        } catch (error: IOException) {
+            val failure = error.toStreamFailure()
+            return if (failure.retryable) NetworkExecution.RetryableFailure(failure.code)
+            else NetworkExecution.TerminalFailure(failure.code)
+        } finally {
+            control.cancel()
+            if (!transferred) release()
         }
     }
 
-    internal suspend fun openStream(
-        options: ToolNetworkRequest,
-        control: ToolNetworkStreamControl,
-    ): ToolNetworkStream = withContext(Dispatchers.IO) { openResponse(options, control) }
+    internal suspend fun openStream(options: ToolNetworkRequest, control: ToolNetworkStreamControl): ToolNetworkStream {
+        try {
+            if (options.timeoutMillis < 0 || options.timeoutMillis > Int.MAX_VALUE) throw ToolNetworkFailure("INVALID_TIMEOUT")
+            if (options.maxResponseBytes != null && options.maxResponseBytes !in 1..MAX_SAFE_NETWORK_BYTES) {
+                throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
+            }
+            control.attach(resources.admit(options.resourceOwner,
+                NetworkResources.OPERATION_BYTES + (options.body?.size?.toLong() ?: 0) * 2, control))
+            return openResponse(options, control)
+        } catch (error: Exception) { control.cancel(); throw error }
+    }
 
-    private suspend fun openResponse(
-        options: ToolNetworkRequest,
-        control: ToolNetworkStreamControl,
-    ): ToolNetworkStream {
-        val (
-            url,
-            method,
-            headers,
-            body,
-            bodyIsJson,
-            timeoutMillis,
-            maxResponseBytes,
-            acceptHttpErrors,
-        ) = options
-        if (timeoutMillis < 0 || timeoutMillis > Int.MAX_VALUE) {
-            throw ToolNetworkFailure("INVALID_TIMEOUT")
-        }
-        if (maxResponseBytes != null && maxResponseBytes < 1) {
-            throw ToolNetworkFailure("INVALID_RESPONSE_LIMIT")
-        }
-        val requestClient = if (transport == null) clientForRequest(timeoutMillis) else null
-        var current = url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
-        var currentMethod = method
-        var currentBody = body
-        var includeCallerHeaders = true
+    private suspend fun openResponse(options: ToolNetworkRequest, control: ToolNetworkStreamControl): ToolNetworkStream {
+        val requestClient = if (transport == null) clientForRequest(options.timeoutMillis) else null
+        var current = options.url.toHttpUrlOrNull() ?: throw ToolNetworkFailure("INVALID_URL")
+        var currentMethod = options.method
+        var currentBody = options.body
+        var currentHeaders = sanitizedRequestHeaders(options.headers)
         val visited = mutableSetOf<String>()
         while (true) {
             if (!visited.add("$currentMethod $current")) throw ToolNetworkFailure("REDIRECT_LOOP")
             control.requireActive()
             NetworkPolicy.validateEndpoint(current)?.let { throw ToolNetworkFailure(it) }
+            val request = Request.Builder().url(current).apply {
+                currentHeaders.forEach { (name, value) -> header(name, value) }
+                val media = currentHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value?.toMediaTypeOrNull()
+                    ?: if (options.bodyIsJson) JSON_MEDIA_TYPE else TEXT_MEDIA_TYPE
+                when (currentMethod) {
+                    NetworkRequestMethod.GET -> get()
+                    NetworkRequestMethod.HEAD -> head()
+                    NetworkRequestMethod.POST -> post((currentBody ?: ByteArray(0)).toRequestBody(media))
+                    NetworkRequestMethod.PUT -> put((currentBody ?: ByteArray(0)).toRequestBody(media))
+                    NetworkRequestMethod.PATCH -> patch((currentBody ?: ByteArray(0)).toRequestBody(media))
+                    NetworkRequestMethod.DELETE -> if (currentBody == null) delete() else delete(currentBody.toRequestBody(media))
+                }
+                if (currentHeaders.keys.none { it.equals("User-Agent", true) }) header("User-Agent", "ToolBox (Android)")
+                if (currentHeaders.keys.none { it.equals("Accept", true) }) header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8, */*;q=0.5")
+            }.build()
             val response = try {
-                val request = Request.Builder()
-                    .url(current)
-                    .apply {
-                        if (includeCallerHeaders) {
-                            headers.forEach { (name, value) -> header(name, value) }
-                        }
-                        when (currentMethod) {
-                            NetworkRequestMethod.GET -> get()
-                            NetworkRequestMethod.HEAD -> head()
-                            NetworkRequestMethod.POST -> post(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.PUT -> put(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.PATCH -> patch(
-                                (currentBody ?: ByteArray(0)).toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                            NetworkRequestMethod.DELETE -> if (currentBody == null) delete() else delete(
-                                currentBody.toRequestBody(requestMediaType(headers, bodyIsJson)),
-                            )
-                        }
-                    }
-                    .apply {
-                        if (!includeCallerHeaders || headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
-                            header("User-Agent", USER_AGENT)
-                        }
-                        if (!includeCallerHeaders || headers.keys.none { it.equals("Accept", ignoreCase = true) }) {
-                            header("Accept", "application/json, text/plain;q=0.9, text/*;q=0.8, */*;q=0.5")
-                        }
-                    }
-                    .build()
-                transport?.execute(request, timeoutMillis)
-                    ?: requireNotNull(requestClient).newCall(request).also(control::attach).await()
-            } catch (error: IOException) {
-                control.requireActive()
-                throw error.toStreamFailure()
-            }
+                transport?.execute(request, options.timeoutMillis)
+                    ?: requireNotNull(requestClient).newCall(request).also(control::attach).awaitHeaders()
+            } catch (error: IOException) { control.requireActive(); throw error.toStreamFailure() }
             control.attach(response)
+            if (response.code == 407) throw ToolNetworkFailure("PROXY_AUTHENTICATION_REQUIRED")
             if (response.code in REDIRECT_CODES) {
                 response.use {
                     val location = it.header("Location") ?: throw ToolNetworkFailure("INVALID_REDIRECT")
                     val redirected = current.resolve(location) ?: throw ToolNetworkFailure("INVALID_REDIRECT")
-                    includeCallerHeaders = includeCallerHeaders && sameOrigin(current, redirected)
-                    if (
-                        it.code in setOf(301, 302, 303) &&
-                        currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)
-                    ) {
+                    if (!sameOrigin(current, redirected)) currentHeaders = currentHeaders.filterKeys {
+                        it.lowercase(Locale.ROOT) in CROSS_ORIGIN_HEADERS
+                    }
+                    if (it.code in setOf(301, 302, 303) && currentMethod !in setOf(NetworkRequestMethod.GET, NetworkRequestMethod.HEAD)) {
                         currentMethod = NetworkRequestMethod.GET
                         currentBody = null
+                        currentHeaders = currentHeaders.filterKeys { it.lowercase(Locale.ROOT) !in BODY_HEADERS }
                     }
                     current = redirected
                 }
                 continue
             }
-            if (!acceptHttpErrors) {
-                if (response.code in 500..599) {
-                    throw ToolNetworkFailure("HTTP_${response.code}", retryable = true)
-                }
-                if (response.code !in 200..299) throw ToolNetworkFailure("HTTP_${response.code}")
+            if (!options.acceptHttpErrors && response.code !in 200..299) {
+                throw ToolNetworkFailure("HTTP_${response.code}", retryable = response.code in 500..599)
             }
-            return ToolNetworkStream(response, current.toString(), control, maxResponseBytes)
+            if (options.maxResponseBytes != null && response.body.contentLength() > options.maxResponseBytes) {
+                throw ToolNetworkFailure("RESULT_TOO_LARGE")
+            }
+            return ToolNetworkStream(response, current.toString(), control, options.maxResponseBytes, resources)
         }
-    }
-
-    private companion object {
-        const val USER_AGENT = "ToolBox/0.6.6 (Android)"
-        const val DEFAULT_TIMEOUT_MILLIS = 0L
-        const val DEFAULT_RESPONSE_BYTES = Int.MAX_VALUE
-        val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
     }
 }
 
-enum class NetworkRequestMethod { GET, POST, PUT, PATCH, DELETE, HEAD }
+/** Re-read the platform selector for every route, including changes after this client was created. */
+internal object LiveSystemProxySelector : ProxySelector() {
+    override fun select(uri: URI): List<Proxy> = ProxySelector.getDefault()?.takeUnless { it === this }?.select(uri)
+        ?.takeIf { it.isNotEmpty() } ?: listOf(Proxy.NO_PROXY)
+    override fun connectFailed(uri: URI, sa: SocketAddress, ioe: IOException) {
+        ProxySelector.getDefault()?.takeUnless { it === this }?.connectFailed(uri, sa, ioe)
+    }
+}
 
-enum class NetworkBodyEncoding { TEXT, BASE64 }
-
-private fun requestMediaType(headers: Map<String, String>, bodyIsJson: Boolean) =
-    headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
-        ?.value
-        ?.toMediaTypeOrNull()
-        ?: if (bodyIsJson) JSON_MEDIA_TYPE else TEXT_MEDIA_TYPE
-
+// Deterministic redirect table: retain only these non-credential standard request headers across origins.
+// Authorization, Cookie, Proxy-Authorization, Origin, Referer and ALL unclassified/custom fields (including
+// X-API-Key) are removed. Removed fields are never restored on a return redirect. The destination is not allowlisted.
+internal val CROSS_ORIGIN_HEADERS = setOf(
+    "accept", "accept-encoding", "accept-language", "range", "if-range", "if-match", "if-none-match",
+    "if-modified-since", "if-unmodified-since", "cache-control", "pragma", "user-agent",
+    "content-type", "content-language", "content-encoding",
+)
+private val BODY_HEADERS = setOf("content-type", "content-length", "content-encoding", "content-language", "content-location", "digest")
+private val HOP_HEADERS = setOf("connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length")
+private fun sanitizedRequestHeaders(headers: Map<String, String>): Map<String, String> {
+    val nominated = headers.entries.filter { it.key.equals("Connection", true) }
+        .flatMap { it.value.split(',') }.map { it.trim().lowercase(Locale.ROOT) }.toSet()
+    return headers.filterKeys { it.lowercase(Locale.ROOT) !in HOP_HEADERS + nominated }
+}
+private val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
 private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 private val TEXT_MEDIA_TYPE = "text/plain; charset=utf-8".toMediaType()
-private val HIDDEN_RESPONSE_HEADERS = setOf(
-    "connection",
-    "proxy-authenticate",
-    "set-cookie",
-    "set-cookie2",
-    "transfer-encoding",
-    "upgrade",
-)
-
-private fun sameOrigin(first: HttpUrl, second: HttpUrl): Boolean =
-    first.scheme == second.scheme && first.host == second.host && first.port == second.port
+private val HIDDEN_RESPONSE_HEADERS = HOP_HEADERS + setOf("set-cookie", "set-cookie2")
+private fun sameOrigin(first: HttpUrl, second: HttpUrl): Boolean = first.scheme == second.scheme && first.host == second.host && first.port == second.port
 
 internal object NetworkPolicy {
     fun validateEndpoint(url: HttpUrl): String? {
@@ -326,126 +249,35 @@ internal object NetworkPolicy {
     }
 }
 
+enum class NetworkRequestMethod { GET, POST, PUT, PATCH, DELETE, HEAD }
+enum class NetworkBodyEncoding { TEXT, BASE64 }
 sealed interface NetworkExecution {
-    data class Success(
-        val statusCode: Int,
-        val finalUrl: String,
-        val contentType: String?,
-        val body: String,
-        val bodyEncoding: NetworkBodyEncoding = NetworkBodyEncoding.TEXT,
-        val headers: Map<String, String> = emptyMap(),
-    ) : NetworkExecution
-
+    data class Success(val statusCode: Int, val finalUrl: String, val contentType: String?, val body: String,
+        val bodyEncoding: NetworkBodyEncoding = NetworkBodyEncoding.TEXT, val headers: Map<String, String> = emptyMap(),
+        val release: () -> Unit = {}) : NetworkExecution
     data class RetryableFailure(val errorCode: String) : NetworkExecution
     data class TerminalFailure(val errorCode: String) : NetworkExecution
 }
-
-private fun IOException.toNetworkFailure(): NetworkExecution = when {
-    this is ToolNetworkFailure && code == "INSUFFICIENT_MEMORY" -> NetworkExecution.TerminalFailure(code)
-    this is InterruptedIOException -> NetworkExecution.RetryableFailure("NETWORK_TIMEOUT")
-    else -> NetworkExecution.RetryableFailure("NETWORK_IO")
-}
-
 internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
     this is ToolNetworkFailure -> this
+    // OkHttp CONNECT authentication failures do not expose a Response.
+    (message?.contains("407") == true || message == "Failed to authenticate with proxy") -> ToolNetworkFailure("PROXY_AUTHENTICATION_REQUIRED")
     this is InterruptedIOException -> ToolNetworkFailure("NETWORK_TIMEOUT", retryable = true)
     else -> ToolNetworkFailure("NETWORK_IO", retryable = true)
 }
-
-internal fun Response.exposedHeaders(): Map<String, String> = headers.names()
-    .asSequence()
+internal fun Response.exposedHeaders(): Map<String, String> = headers.names().asSequence()
     .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
-    .mapNotNull { name -> headers[name]?.let { name to it } }
-    .toMap(linkedMapOf())
+    .mapNotNull { name -> headers[name]?.let { name to it } }.toMap(linkedMapOf())
 
-private fun ResponseBody.readBounded(maxBytes: Int): ByteArray? {
-    val knownLength = contentLength()
-    if (knownLength > maxBytes) return null
-    if (knownLength > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) {
-        throw ToolNetworkFailure("INSUFFICIENT_MEMORY")
-    }
-    byteStream().use { input ->
-        val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
-        val buffer = ByteArray(8 * 1024)
-        var total = 0L
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            total += read
-            if (total > maxBytes) return null
-            if (total > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) {
-                throw ToolNetworkFailure("INSUFFICIENT_MEMORY")
-            }
-            output.write(buffer, 0, read)
-        }
-        return output.toByteArray()
-    }
-}
-
-internal data class BufferedNetworkResponse(
-    val code: Int,
-    val location: String?,
-    val contentType: String?,
-    val isText: Boolean,
-    val headers: Map<String, String>,
-    val body: ByteArray?,
-)
-
-private fun Response.readResponse(maxBytes: Int, acceptHttpErrors: Boolean): BufferedNetworkResponse {
-    val mediaType = body.contentType()
-    val subtype = mediaType?.subtype?.lowercase(Locale.ROOT)
-    val isText = mediaType == null || mediaType.type.equals("text", ignoreCase = true) ||
-        subtype == "json" || subtype?.endsWith("+json") == true
-    return BufferedNetworkResponse(
-        code = code,
-        location = header("Location"),
-        contentType = header("Content-Type")?.substringBefore(';'),
-        isText = isText,
-        headers = exposedHeaders(),
-        // Redirect/error bodies are not consumed; the next endpoint must still use HTTPS.
-        body = if (code in setOf(301, 302, 303, 307, 308) || (!acceptHttpErrors && code !in 200..299)) {
-            ByteArray(0)
-        } else {
-            body.readBounded(maxBytes)
-        },
-    )
-}
-
-private suspend fun Call.await(): Response = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+private suspend fun Call.awaitHeaders(): Response = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
-    enqueue(
-        object : okhttp3.Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resumeWith(Result.failure(e))
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                continuation.resume(response, onCancellation = { _, value, _ -> value.closeOnIo() })
-            }
-        },
-    )
+    enqueue(object : okhttp3.Callback {
+        override fun onFailure(call: Call, e: IOException) {
+            if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+        }
+        override fun onResponse(call: Call, response: Response) {
+            // The callback only transfers ownership. A slow body never occupies OkHttp's dispatcher slot.
+            continuation.resume(response, onCancellation = { _, value, _ -> value.closeOnIo() })
+        }
+    })
 }
-
-// Keep the continuation (and its Call.cancel hook) alive until the body has been consumed.
-// OkHttp's worker reads the stream; no blocking network read occupies the RPC dispatcher.
-internal suspend fun Call.awaitResponse(maxBytes: Int, acceptHttpErrors: Boolean): BufferedNetworkResponse =
-    kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-        continuation.invokeOnCancellation { cancel() }
-        enqueue(
-            object : okhttp3.Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (continuation.isActive) continuation.resumeWith(Result.failure(e))
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    val result = runCatching {
-                        response.use {
-                            if (!continuation.isActive) throw IOException("Request cancelled")
-                            it.readResponse(maxBytes, acceptHttpErrors)
-                        }
-                    }
-                    if (continuation.isActive) continuation.resumeWith(result)
-                }
-            },
-        )
-    }

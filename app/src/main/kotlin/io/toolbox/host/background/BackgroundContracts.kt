@@ -57,7 +57,7 @@ data class BackgroundExecutionPolicy(
     val notificationsGranted: Boolean,
     val notificationSystemPermissionGranted: Boolean,
     val networkTimeoutMillis: Long,
-    val maxNetworkResponseBytes: Int,
+    val maxNetworkResponseBytes: Long?,
 ) {
     val canRunBackground: Boolean
         get() = backgroundEnabled && backgroundDeclared && backgroundGranted
@@ -75,7 +75,7 @@ data class BackgroundManifestPolicy(
     val versionCode: Int,
     val declaredCapabilities: Set<String>,
     val networkTimeoutMillis: Long,
-    val maxNetworkResponseBytes: Int,
+    val maxNetworkResponseBytes: Long?,
 )
 
 fun interface BackgroundManifestPolicyResolver {
