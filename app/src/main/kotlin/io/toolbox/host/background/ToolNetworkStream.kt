@@ -102,8 +102,20 @@ internal class ToolNetworkStream(
                 val reservation = resources.reserveBuffer(minOf(maxChunkBytes.toLong(), remaining).toInt())
                 try {
                     val buffer = ByteArray(reservation.rawBytes)
-                    val count = response.body.byteStream().read(buffer)
+                    val input = response.body.byteStream()
+                    var count = input.read(buffer)
                     control.requireActive()
+                    // Only the first read waits for the source. Drain bytes already buffered by
+                    // Okio across its segments, without waiting for a slow server to fill the chunk.
+                    while (count > 0 && count < buffer.size) {
+                        control.requireActive()
+                        val available = input.available()
+                        if (available <= 0) break
+                        val next = input.read(buffer, count, minOf(available, buffer.size - count))
+                        control.requireActive()
+                        if (next <= 0) break
+                        count += next
+                    }
                     if (count < 0) ToolNetworkChunk(ByteArray(0), true, receivedBytes, reservation::close)
                     else {
                         receivedBytes = Math.addExact(receivedBytes, count.toLong())

@@ -1,6 +1,7 @@
 package io.toolbox.tool.runtime
 
 import android.app.AlertDialog
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.EditText
@@ -77,7 +78,7 @@ class JavaScriptDialogInstrumentationTest {
             }
             await { evaluate(webView, "window.dialogResult") == "\"value\\nnext\"" }
             open(webView, "prompt")
-            main { RuntimeJavaScriptDialogs.current(webView)!!.cancel() }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             await { evaluate(webView, "window.dialogResult") == "null" }
             val prior = main { RuntimeJavaScriptDialogs.current(webView) }
             main { webView.evaluateJavascript("runChain()", null) }
@@ -91,12 +92,19 @@ class JavaScriptDialogInstrumentationTest {
             assertEquals("true", evaluate(webView, "window.chainConfirmed"))
             assertEquals("\"\"", evaluate(webView, "window.chainPrompt"))
             open(webView, "confirm")
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+            assertNull(main { RuntimeJavaScriptDialogs.current(webView) })
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            await { evaluate(webView, "window.dialogResult") == "false" }
+            open(webView, "confirm")
             main { webView.loadUrl(runtime.entryUrl) }
             await { main { RuntimeJavaScriptDialogs.current(webView) == null } }
             await { main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true" }
             open(webView, "alert")
-            scenario.onActivity { it.disposeActiveWebView() }
+            val interrupted = main { RuntimeJavaScriptDialogs.current(webView)!! }
+            scenario.recreate()
             assertNull(main { RuntimeJavaScriptDialogs.current(webView) })
+            assertFalse(main { interrupted.isShowing })
         } finally {
             scenario.close()
             bundle.parent.parent.parent.toFile().deleteRecursively()

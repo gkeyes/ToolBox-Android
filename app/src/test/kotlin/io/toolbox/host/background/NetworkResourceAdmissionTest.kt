@@ -1,6 +1,9 @@
 package io.toolbox.host.background
 
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.io.IOException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -9,6 +12,11 @@ import kotlinx.coroutines.withTimeout
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.Source
+import okio.Timeout
+import okio.buffer
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -68,15 +76,16 @@ class NetworkResourceAdmissionTest {
         val second = proxy.openStream(options.copy(resourceOwner = "other"), controlB)
         try {
             val chunkA = first.read(256 * 1024)
-            assertTrue(chunkA.data.size > 16 * 1024)
-            assertTrue(chunkA.data.size < 256 * 1024)
-            assertEquals(2 * NetworkResources.OPERATION_BYTES + chunkA.data.size * 8L, resources.reservedBytes)
-            val failure = runCatching { second.read(256 * 1024) }.exceptionOrNull()
-            assertEquals("INSUFFICIENT_MEMORY", (failure as ToolNetworkFailure).code)
-            chunkA.release()
+            try {
+                assertTrue(chunkA.data.size > 16 * 1024)
+                assertTrue(chunkA.data.size < 256 * 1024)
+                assertEquals(2 * NetworkResources.OPERATION_BYTES + chunkA.data.size * 8L, resources.reservedBytes)
+                val attempted = runCatching { second.read(256 * 1024) }
+                attempted.getOrNull()?.release?.invoke()
+                assertEquals("INSUFFICIENT_MEMORY", (attempted.exceptionOrNull() as ToolNetworkFailure).code)
+            } finally { chunkA.release() }
             val chunkB = second.read(256 * 1024)
-            assertTrue(chunkB.data.size > 16 * 1024)
-            chunkB.release()
+            try { assertTrue(chunkB.data.size > 16 * 1024) } finally { chunkB.release() }
         } finally { controlA.cancel(); controlB.cancel() }
         assertEquals(0L, resources.reservedBytes)
     }
@@ -107,6 +116,54 @@ class NetworkResourceAdmissionTest {
         assertEquals(NetworkExecution.TerminalFailure("RESULT_TOO_LARGE"), proxy.request(
             options.url, NetworkRequestMethod.GET, maxResponseBytes = 100))
         assertEquals(0L, resources.reservedBytes)
+    }
+
+    @Test
+    fun shortReadsReturnWithoutWaitingToFillAndCancellationReleasesBlockedRead() = runBlocking {
+        val calls = AtomicInteger()
+        val blocked = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        val source = object : Source {
+            override fun read(sink: Buffer, byteCount: Long): Long {
+                if (calls.incrementAndGet() == 1) {
+                    sink.writeByte(42)
+                    return 1
+                }
+                blocked.countDown()
+                closed.await()
+                throw IOException("Source closed")
+            }
+            override fun timeout() = Timeout.NONE
+            override fun close() { closed.countDown() }
+        }.buffer()
+        val resources = NetworkResources(availableHeap = { 64L * 1024 * 1024 })
+        val proxy = ToolNetworkProxy(ToolNetworkTransport { request, _ ->
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .body(object : ResponseBody() {
+                    override fun contentType() = null
+                    override fun contentLength() = -1L
+                    override fun source() = source
+                }).build()
+        }, resources = resources)
+        val control = ToolNetworkStreamControl()
+        try {
+            val stream = proxy.openStream(ToolNetworkRequest("https://example.test/slow", NetworkRequestMethod.GET,
+                emptyMap(), null, false, 0, null), control)
+            val first = withTimeout(2_000) { stream.read(128 * 1024) }
+            try {
+                assertArrayEquals(byteArrayOf(42), first.data)
+                assertFalse(first.done)
+                assertEquals(1, calls.get())
+            } finally { first.release() }
+            val read = async { runCatching { stream.read(128 * 1024) } }
+            withTimeout(2_000) { while (blocked.count > 0) delay(1) }
+            control.cancel()
+            val result = withTimeout(2_000) { read.await() }
+            result.getOrNull()?.release?.invoke()
+            assertEquals("CANCELLED", (result.exceptionOrNull() as ToolNetworkFailure).code)
+            withTimeout(2_000) { while (resources.reservedBytes != 0L) delay(1) }
+            assertEquals(0L, resources.reservedBytes)
+        } finally { control.cancel(); closed.countDown() }
     }
 
     @Test

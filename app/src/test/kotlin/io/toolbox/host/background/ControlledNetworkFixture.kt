@@ -7,6 +7,8 @@ import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.RejectedExecutionException
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
@@ -18,6 +20,7 @@ internal class ControlledNetworkFixture : AutoCloseable {
     private val executor = Executors.newCachedThreadPool()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val servers = mutableListOf<ServerSocket>()
+    private val clients = CopyOnWriteArrayList<okhttp3.OkHttpClient>()
     val failures = CopyOnWriteArrayList<Throwable>()
     val ssl: SSLContext
     val trust: X509TrustManager
@@ -32,8 +35,20 @@ internal class ControlledNetworkFixture : AutoCloseable {
         ssl = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, trusts.trustManagers, null) }
     }
 
-    fun proxy(resources: NetworkResources = NetworkResources(availableHeap = { 256L * 1024 * 1024 })) =
-        ToolNetworkProxy(resources) { it.sslSocketFactory(ssl.socketFactory, trust) }
+    fun proxy(
+        resources: NetworkResources = NetworkResources(availableHeap = { 256L * 1024 * 1024 }),
+        eventListener: okhttp3.EventListener? = null,
+    ) = track(ToolNetworkProxy(resources) { builder ->
+        builder.sslSocketFactory(ssl.socketFactory, trust)
+        eventListener?.let(builder::eventListener)
+    })
+
+    fun untrustedProxy() = track(ToolNetworkProxy())
+
+    private fun track(proxy: ToolNetworkProxy): ToolNetworkProxy = proxy.also {
+        // Request clients share this dispatcher's executor and connection pool.
+        clients += it.clientForRequest(0)
+    }
 
     fun https(persistent: Boolean = false, handler: (Request, Socket) -> Unit): String {
         val server = ssl.serverSocketFactory.createServerSocket(0, 200, InetAddress.getLoopbackAddress())
@@ -68,14 +83,17 @@ internal class ControlledNetworkFixture : AutoCloseable {
         executor.execute {
             while (!server.isClosed) {
                 val socket = try { server.accept().also(sockets::add) } catch (_: Exception) { break }
-                executor.execute {
-                    socket.use {
-                        try { handler(it) } catch (error: Exception) {
-                            // Cancellation and rejection deliberately close sockets during TLS/body IO.
-                            if (error !is java.io.IOException) failures.add(error)
-                        }
+                try {
+                    executor.execute {
+                        try { socket.use(handler) } catch (error: Exception) {
+                            // Cancellation and fixture shutdown deliberately interrupt socket/latch waits.
+                            if (error !is java.io.IOException && !(error is InterruptedException && executor.isShutdown)) failures.add(error)
+                        } finally { sockets.remove(socket) }
                     }
+                } catch (error: RejectedExecutionException) {
                     sockets.remove(socket)
+                    socket.close()
+                    if (!executor.isShutdown) failures.add(error)
                 }
             }
         }
@@ -117,8 +135,15 @@ internal class ControlledNetworkFixture : AutoCloseable {
     }
 
     override fun close() {
+        clients.forEach { it.dispatcher.cancelAll() }
         servers.forEach { runCatching { it.close() } }
         sockets.forEach { runCatching { it.close() } }
+        clients.forEach {
+            it.connectionPool.evictAll()
+            it.dispatcher.executorService.shutdownNow()
+        }
         executor.shutdownNow()
+        clients.forEach { check(it.dispatcher.executorService.awaitTermination(5, TimeUnit.SECONDS)) { "Client dispatcher did not close" } }
+        check(executor.awaitTermination(5, TimeUnit.SECONDS)) { "Fixture workers did not close" }
     }
 }
