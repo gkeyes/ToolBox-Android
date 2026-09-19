@@ -157,8 +157,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
 
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "{0} wideLargeText={1}") fun variants() = listOf(
-            arrayOf(ToolBoxThemeStyle.Miuix, false), arrayOf(ToolBoxThemeStyle.LiquidGlass, false),
-            arrayOf(ToolBoxThemeStyle.Miuix, true), arrayOf(ToolBoxThemeStyle.LiquidGlass, true),
+            arrayOf<Any>(ToolBoxThemeStyle.Miuix, false), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, false),
+            arrayOf<Any>(ToolBoxThemeStyle.Miuix, true), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, true),
         )
     }
 }

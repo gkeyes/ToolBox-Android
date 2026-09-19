@@ -243,7 +243,7 @@ private fun CatalogEntry.toCatalogTool() = CatalogTool(
 
 /** Android's ICU transliterator handles Han names without a bundled dictionary or network access. */
 internal fun catalogNameSortKey(name: String): String =
-    catalogTransliterator.get().transliterate(name).replace(catalogNameWhitespace, "")
+    checkNotNull(catalogTransliterator.get()).transliterate(name).replace(catalogNameWhitespace, "")
 
 private val catalogTransliterator = ThreadLocal.withInitial { android.icu.text.Transliterator.getInstance("Han-Latin; Latin-ASCII; Lower") }
 

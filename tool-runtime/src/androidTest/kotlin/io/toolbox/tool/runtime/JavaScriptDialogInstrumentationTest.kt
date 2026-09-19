@@ -85,7 +85,7 @@ class JavaScriptDialogInstrumentationTest {
             repeat(3) {
                 await { main { RuntimeJavaScriptDialogs.current(webView)?.let { it !== previous && it.isShowing } == true } }
                 previous = main { RuntimeJavaScriptDialogs.current(webView)!! }
-                main { previous!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                main { previous.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
             }
             await { evaluate(webView, "window.chainDone") == "true" }
             assertEquals("true", evaluate(webView, "window.chainConfirmed"))
