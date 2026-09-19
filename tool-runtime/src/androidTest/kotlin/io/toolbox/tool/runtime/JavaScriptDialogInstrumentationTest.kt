@@ -80,11 +80,16 @@ class JavaScriptDialogInstrumentationTest {
             open(webView, "prompt")
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             await { evaluate(webView, "window.dialogResult") == "null" }
+            await { main { webView.hasWindowFocus() } }
             val prior = main { RuntimeJavaScriptDialogs.current(webView) }
             main { webView.evaluateJavascript("runChain()", null) }
             var previous = prior
-            repeat(3) {
-                await { main { RuntimeJavaScriptDialogs.current(webView)?.let { it !== previous && it.isShowing } == true } }
+            repeat(3) { index ->
+                await("chain dialog ${index + 1}: native window never became interactive") {
+                    main { RuntimeJavaScriptDialogs.current(webView)?.let {
+                        it !== previous && it.isShowing && it.window?.decorView?.hasWindowFocus() == true
+                    } == true }
+                }
                 previous = main { RuntimeJavaScriptDialogs.current(webView)!! }
                 main { previous.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
             }
@@ -113,7 +118,11 @@ class JavaScriptDialogInstrumentationTest {
     private fun open(view: WebView, kind: String) {
         await { main { view.hasWindowFocus() } }
         main { view.evaluateJavascript("runDialog('$kind')", null) }
-        await { main { RuntimeJavaScriptDialogs.current(view)?.isShowing == true } }
+        await("$kind dialog window never became interactive") {
+            main { RuntimeJavaScriptDialogs.current(view)?.let {
+                it.isShowing && it.window?.decorView?.hasWindowFocus() == true
+            } == true }
+        }
     }
     private fun evaluate(view: WebView, js: String): String {
         val result = CompletableFuture<String>()
@@ -128,10 +137,10 @@ class JavaScriptDialogInstrumentationTest {
         }
         return null
     }
-    private fun await(check: () -> Boolean) {
+    private fun await(description: String = "Dialog behavior did not complete", check: () -> Boolean) {
         val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
         while (System.nanoTime() < until) { if (check()) return; Thread.sleep(30) }
-        error("Dialog behavior did not complete")
+        error(description)
     }
     private fun <T> main(action: () -> T): T {
         val result = CompletableFuture<T>()

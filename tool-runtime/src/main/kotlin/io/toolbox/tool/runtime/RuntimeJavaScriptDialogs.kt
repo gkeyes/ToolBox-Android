@@ -63,6 +63,7 @@ internal object RuntimeJavaScriptDialogs {
             .apply { if (kind != Kind.ALERT) setNegativeButton("取消", null) }
             .create()
         var dismissalPending = false
+        var settlementPosted = false
         lateinit var observer: Application.ActivityLifecycleCallbacks
         lateinit var attachment: View.OnAttachStateChangeListener
         lateinit var focus: android.view.ViewTreeObserver.OnWindowFocusChangeListener
@@ -78,6 +79,19 @@ internal object RuntimeJavaScriptDialogs {
             else if (result is JsPromptResult) result.confirm(input?.text?.toString().orEmpty())
             else result.confirm()
         }
+        fun finishAfterFocusDispatch() {
+            if (settled || !dismissalPending || !view.hasWindowFocus() || settlementPosted) return
+            settlementPosted = true
+            // Leave the current window-focus/dismiss callback before resuming renderer JavaScript.
+            // A later focus loss must not turn a pending completion into a background dialog.
+            view.post {
+                settlementPosted = false
+                if (!settled) {
+                    if (!view.isAttachedToWindow || !view.isShown || activity.isFinishing || activity.isDestroyed) finish(false)
+                    else if (view.hasWindowFocus()) finish(confirmed)
+                }
+            }
+        }
         observer = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityPaused(target: Activity) { if (target === activity) dismiss(view) }
             override fun onActivityDestroyed(target: Activity) { if (target === activity) dismiss(view) }
@@ -92,13 +106,13 @@ internal object RuntimeJavaScriptDialogs {
             override fun onViewDetachedFromWindow(v: View) { dismiss(view) }
         }
         focus = android.view.ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
-            if (hasFocus && dismissalPending) finish(confirmed)
+            if (hasFocus) finishAfterFocusDispatch()
         }
         dialog.setOnDismissListener {
             dismissalPending = true
             // Resume the JS continuation only once the host window owns focus again. This permits
             // alert(); confirm(); prompt() in one script without a timeout or a touch-age gate.
-            if (view.hasWindowFocus()) finish(confirmed)
+            finishAfterFocusDispatch()
         }
         active[view] = Session(dialog) { finish(false) }
         activity.application.registerActivityLifecycleCallbacks(observer)
