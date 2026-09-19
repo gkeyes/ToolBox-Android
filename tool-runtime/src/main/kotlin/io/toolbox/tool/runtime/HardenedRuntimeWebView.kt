@@ -76,7 +76,7 @@ object HardenedRuntimeWebView {
         var runtimeClient: RuntimeWebViewClient? = null
         try {
             WebView.setWebContentsDebuggingEnabled(false)
-            val createdWebView = WebView(context)
+            val createdWebView = RuntimeToolWebView(context)
             webView = createdWebView
             val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
             val serviceWorkerIntercept = WebViewFeature.isFeatureSupported(
@@ -276,6 +276,19 @@ object HardenedRuntimeWebView {
           }
         })();
     """
+}
+
+/** A modal JS dialog can prevent onPageStarted itself; settle it before host navigation. */
+private class RuntimeToolWebView(context: Context) : WebView(context) {
+    override fun loadUrl(url: String) {
+        RuntimeJavaScriptDialogs.dismiss(this)
+        super.loadUrl(url)
+    }
+
+    override fun reload() {
+        RuntimeJavaScriptDialogs.dismiss(this)
+        super.reload()
+    }
 }
 
 private class RuntimeWebViewClient(

@@ -16,6 +16,7 @@ import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -54,9 +55,10 @@ class JavaScriptDialogInstrumentationTest {
         val manager = RuntimeProfileManager(root.toFile())
         val permit = runBlocking { (manager.acquireRuntimePermit(id, false) as RuntimeCreationPermitResult.Ready).permit }
         var view: WebView? = null
+        val loadedDocuments = AtomicInteger()
         try {
             scenario.onActivity { activity -> view = activity.attach(runtime, permit,
-                RuntimeWebViewCallbacks({}, { error(it) }, { error("renderer gone") }), provider) }
+                RuntimeWebViewCallbacks({ loadedDocuments.incrementAndGet() }, { error(it) }, { error("renderer gone") }), provider) }
             val webView = requireNotNull(view)
             await { main { webView.isShown && webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true" }
             open(webView, "alert")
@@ -102,9 +104,19 @@ class JavaScriptDialogInstrumentationTest {
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
             await { evaluate(webView, "window.dialogResult") == "false" }
             open(webView, "confirm")
+            val beforeNavigation = loadedDocuments.get()
             main { webView.loadUrl(runtime.entryUrl) }
-            await { main { RuntimeJavaScriptDialogs.current(webView) == null } }
-            await { main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true" }
+            await("Host navigation did not settle the pending dialog") { main { RuntimeJavaScriptDialogs.current(webView) == null } }
+            await("Navigated document did not load") {
+                loadedDocuments.get() > beforeNavigation && main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true"
+            }
+            open(webView, "confirm")
+            val beforeReload = loadedDocuments.get()
+            main { webView.reload() }
+            await("Host reload did not settle the pending dialog") { main { RuntimeJavaScriptDialogs.current(webView) == null } }
+            await("Reloaded document did not load") {
+                loadedDocuments.get() > beforeReload && main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true"
+            }
             open(webView, "alert")
             val interrupted = main { RuntimeJavaScriptDialogs.current(webView)!! }
             scenario.recreate()
