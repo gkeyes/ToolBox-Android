@@ -98,6 +98,7 @@ internal class DefaultPackageInspector(
                 PackageRejection(PackageRejectionCode.CLEANUP_FAILED, "Rejected package residue could not be removed"),
             )
         } catch (error: Exception) {
+            if (error is InterruptedException || error is CancellationException) throw error
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Package validation was interrupted")
             val ioRejection = (error as? IOException)?.let(resources::ioRejection)
             val cleanup = runCatching { deleteTree(temporaryDirectory) }.exceptionOrNull()
@@ -138,6 +139,7 @@ internal class DefaultPackageInspector(
         } catch (error: InspectionRejected) {
             throw error
         } catch (error: Exception) {
+            if (error is InterruptedException || error is CancellationException) throw error
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Selected package read was interrupted")
             (error as? IOException)?.let(resources::ioRejection)?.let { throw InspectionRejected(it) }
             reject(PackageRejectionCode.SOURCE_READ_FAILED, "Unable to read the selected package")

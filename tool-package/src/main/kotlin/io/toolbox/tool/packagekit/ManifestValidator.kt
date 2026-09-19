@@ -104,8 +104,14 @@ internal object ManifestValidator {
         network["allowRedirects"]?.asBoolean("network.allowRedirects")
         return ManifestNetwork(
             maxResponseBytes = network["maxResponseBytes"]?.let {
-                requireIntValue(it, "network.maxResponseBytes", 1, Int.MAX_VALUE)
-            } ?: Int.MAX_VALUE,
+                val number = (it as? JsonValue.NumberValue)?.value
+                    ?: throw JsonFormatException("network.maxResponseBytes must be an integer")
+                val bytes = try { number.longValueExact() } catch (_: ArithmeticException) {
+                    throw JsonFormatException("network.maxResponseBytes must be a safe integer")
+                }
+                if (bytes !in 1..9_007_199_254_740_991L) throw JsonFormatException("network.maxResponseBytes must be a positive safe integer")
+                bytes
+            },
             timeoutMs = timeoutMs,
         )
     }

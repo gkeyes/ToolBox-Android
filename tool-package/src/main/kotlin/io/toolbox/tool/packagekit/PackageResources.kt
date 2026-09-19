@@ -50,6 +50,7 @@ internal class PackageResourceGuard(private val directory: Path, private val pro
         val snapshot = try {
             probe.snapshot(directory)
         } catch (error: Exception) {
+            if (error is InterruptedException || error is kotlinx.coroutines.CancellationException) throw error
             checkPackageInterrupted()
             reject(PackageRejectionCode.RESOURCE_CHECK_FAILED, "Unable to check available installation resources")
         }

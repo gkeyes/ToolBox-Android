@@ -127,7 +127,7 @@ object HardenedRuntimeWebView {
                 requireStatelessSentinel = creationPermit.isolationMode == RuntimeIsolationMode.ORIGIN_ONLY_STATELESS,
             )
             createdWebView.webViewClient = runtimeClient
-            createdWebView.webChromeClient = RuntimeWebChromeClient()
+            createdWebView.webChromeClient = RuntimeWebChromeClient(runtime)
             createRuntimeBridgeSession(runtime, bridgeProvider.create(runtime)).attach(createdWebView)
             creationPermit.attach(createdWebView)
             runtimeClient.beginFirstMainFrameTrace()
@@ -317,6 +317,7 @@ private class RuntimeWebViewClient(
         !RuntimeIdentity.isExactLocalUrl(url, runtime.origin)
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        RuntimeJavaScriptDialogs.dismiss(view)
         if (url == runtime.entryUrl) {
             mainFrameTerminal = false
             sentinelCheckPending = false
@@ -382,7 +383,7 @@ private class RuntimeWebViewClient(
     }
 }
 
-private class RuntimeWebChromeClient : WebChromeClient() {
+private class RuntimeWebChromeClient(private val runtime: PreparedToolRuntime) : WebChromeClient() {
     override fun onShowFileChooser(
         webView: WebView,
         filePathCallback: ValueCallback<Array<Uri>>,
@@ -400,24 +401,12 @@ private class RuntimeWebChromeClient : WebChromeClient() {
         callback.invoke(origin, false, false)
     }
 
-    override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
-        result.cancel()
-        return true
-    }
+    override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean =
+        RuntimeJavaScriptDialogs.show(view, runtime, url, message, RuntimeJavaScriptDialogs.Kind.ALERT, result)
 
-    override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean {
-        result.cancel()
-        return true
-    }
+    override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean =
+        RuntimeJavaScriptDialogs.show(view, runtime, url, message, RuntimeJavaScriptDialogs.Kind.CONFIRM, result)
 
-    override fun onJsPrompt(
-        view: WebView,
-        url: String,
-        message: String,
-        defaultValue: String,
-        result: JsPromptResult,
-    ): Boolean {
-        result.cancel()
-        return true
-    }
+    override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String, result: JsPromptResult): Boolean =
+        RuntimeJavaScriptDialogs.show(view, runtime, url, message, RuntimeJavaScriptDialogs.Kind.PROMPT, result, defaultValue)
 }

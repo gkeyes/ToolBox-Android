@@ -225,7 +225,16 @@ class RuntimeBridgeSession internal constructor(
 
     private suspend fun replyAndAwaitDelivery(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
         val delivered = CompletableDeferred<Unit>()
-        reply(webView, proxy, response) { delivered.complete(Unit) }
+        try {
+            reply(webView, proxy, response) {
+                (response as? RuntimeRpcResponse.Success)?.release?.invoke()
+                delivered.complete(Unit)
+            }
+        } catch (error: Throwable) {
+            (response as? RuntimeRpcResponse.Success)?.release?.invoke()
+            throw error
+        }
+        // Cancellation may stop waiting, but the posted Runnable retains its reservation until delivery.
         delivered.await()
     }
 
@@ -320,8 +329,14 @@ class RuntimeBridgeSession internal constructor(
                 }
               });
               const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
-              const networkRequest = request => request && request.body instanceof Uint8Array
-                ? { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' } : request;
+              const networkRequest = request => {
+                if (request?.maxResponseBytes !== undefined &&
+                    (!Number.isSafeInteger(request.maxResponseBytes) || request.maxResponseBytes < 1)) {
+                  throw Object.assign(new TypeError('maxResponseBytes must be a positive safe integer'), { code: 'INVALID_REQUEST' });
+                }
+                return request && request.body instanceof Uint8Array
+                  ? { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' } : request;
+              };
               const streams = new Map();
               const streamCancelled = () => Object.assign(new Error('Network stream cancelled'), { code: 'CANCELLED' });
               const forgetStream = streamId => {
@@ -357,10 +372,14 @@ class RuntimeBridgeSession internal constructor(
                   throw error;
                 }
               };
-              const readStream = async streamId => {
+              const readStream = async (streamId, options = {}) => {
+                const expectedChunkBytes = options.expectedChunkBytes;
+                if (expectedChunkBytes !== undefined && (!Number.isSafeInteger(expectedChunkBytes) || expectedChunkBytes < 1)) {
+                  throw Object.assign(new TypeError('expectedChunkBytes must be a positive safe integer'), { code: 'INVALID_REQUEST' });
+                }
                 const state = streams.get(streamId);
                 try {
-                  const chunk = await call('network.readStream', { streamId });
+                  const chunk = await call('network.readStream', { streamId, ...(expectedChunkBytes === undefined ? {} : { expectedChunkBytes }) });
                   if (state?.cancelled) throw streamCancelled();
                   if (chunk.done) forgetStream(streamId);
                   return { ...chunk, data: Uint8Array.from(atob(chunk.data), character => character.charCodeAt(0)) };

@@ -37,7 +37,11 @@ class WasmRuntimeInstrumentationTest {
     @Test
     fun compatWasmAndWorkersExecuteWithNoNetworkGrant() = exerciseProfile(SecurityProfile.COMPAT)
 
-    private fun exerciseProfile(profile: SecurityProfile) {
+    @Test
+    fun legalHtmlPreambleLoadsThroughProductionAssetLoaderAndWebView() =
+        exerciseProfile(SecurityProfile.STRICT, "\uFEFF<!-- generated -->" + " ".repeat(8192))
+
+    private fun exerciseProfile(profile: SecurityProfile, htmlPrefix: String = "") {
         val scenario = ActivityScenario.launch(WasmRuntimeTestActivity::class.java)
         val filesRoot = withActivity(scenario) { it.filesDir.toPath().toAbsolutePath().normalize() }
         val toolId = "com.example.wasm.${profile.name.lowercase()}"
@@ -45,7 +49,7 @@ class WasmRuntimeInstrumentationTest {
         val bundleRoot = filesRoot.resolve(RuntimeIdentity.expectedBundleLocator(toolId, 1))
         val manager = RuntimeProfileManager(filesRoot.toFile())
         deleteTree(toolRoot)
-        val runtime = prepareBundle(filesRoot, bundleRoot, toolId, profile)
+        val runtime = prepareBundle(filesRoot, bundleRoot, toolId, profile, htmlPrefix)
         var primaryFailure: Throwable? = null
         try {
             verifyResourceResponses(runtime)
@@ -101,7 +105,7 @@ class WasmRuntimeInstrumentationTest {
         }
     }
 
-    private fun prepareBundle(filesRoot: Path, bundleRoot: Path, toolId: String, profile: SecurityProfile): PreparedToolRuntime {
+    private fun prepareBundle(filesRoot: Path, bundleRoot: Path, toolId: String, profile: SecurityProfile, htmlPrefix: String): PreparedToolRuntime {
         Files.createDirectories(bundleRoot)
         val assets = InstrumentationRegistry.getInstrumentation().context.assets
         listOf("common.js", "page.js", "classic-worker.js", "module-worker.mjs", "add.wasm", "imports.wasm").forEach { name ->
@@ -124,13 +128,13 @@ class WasmRuntimeInstrumentationTest {
         val otherOrigin = RuntimeIdentity.origin("com.example.wasm.other").removeSuffix("/")
         Files.write(
             bundleRoot.resolve("index.html"),
-            """
+            (htmlPrefix + """
                 <!doctype html>
                 <html data-profile="${profile.name.lowercase()}" data-other-origin="$otherOrigin">
                 <head><meta charset="utf-8"><script>globalThis.inlineRan = true;</script>
                 <script src="common.js"></script><script defer src="page.js"></script></head>
                 <body>Wasm runtime behavior test</body></html>
-            """.trimIndent().toByteArray(Charsets.UTF_8),
+            """.trimIndent()).toByteArray(Charsets.UTF_8),
         )
         return PreparedToolRuntime(
             toolId = toolId,

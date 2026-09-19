@@ -4,7 +4,6 @@ import io.toolbox.core.data.InstalledTool
 import io.toolbox.tool.packagekit.InstalledManifestVerification
 import io.toolbox.tool.packagekit.InstalledManifestVerifier
 import io.toolbox.tool.runtime.RuntimeIdentity
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -12,14 +11,13 @@ import java.nio.file.attribute.BasicFileAttributes
 
 internal data class ToolIconSource(val bytes: ByteArray, val isSvg: Boolean)
 
-internal class InstalledToolIconReader(private val privateFilesRoot: () -> Path) {
-    fun read(tool: InstalledTool): ToolIconSource? = try {
-        readInstalled(tool)
-    } catch (_: IOException) {
-        null
-    } catch (_: SecurityException) {
-        null
-    }
+internal class IconResourcesUnavailable : Exception("Icon exceeds currently available memory")
+
+internal class InstalledToolIconReader(
+    private val privateFilesRoot: () -> Path,
+    private val availableHeapBytes: () -> Long = io.toolbox.core.data.ResourceCapacity::availableHeapBytes,
+) {
+    fun read(tool: InstalledTool): ToolIconSource? = readInstalled(tool)
 
     private fun readInstalled(tool: InstalledTool): ToolIconSource? {
         val version = tool.currentVersion
@@ -29,14 +27,14 @@ internal class InstalledToolIconReader(private val privateFilesRoot: () -> Path)
         val root = privateFilesRoot().toAbsolutePath().normalize()
         val bundle = safePath(root, locator, directory = true) ?: return null
         val manifestFile = safePath(bundle, "manifest.json") ?: return null
-        val manifestBytes = readBounded(manifestFile, MAX_MANIFEST_BYTES) ?: return null
+        val manifestBytes = readBounded(manifestFile) ?: return null
         val verified = InstalledManifestVerifier.verify(
             manifestBytes, tool.metadata.id, version.versionCode, tool.metadata.securityProfile,
         ) as? InstalledManifestVerification.Verified ?: return null
         val icon = verified.manifest.icon ?: return null
         val file = safePath(bundle, icon) ?: return null
         val isSvg = icon.substringAfterLast('.', "").equals("svg", ignoreCase = true)
-        val bytes = readBounded(file, if (isSvg) MAX_SVG_BYTES else MAX_ICON_BYTES) ?: return null
+        val bytes = readBounded(file) ?: return null
         return ToolIconSource(bytes, isSvg)
     }
 
@@ -56,16 +54,19 @@ internal class InstalledToolIconReader(private val privateFilesRoot: () -> Path)
         return current.takeIf { it.normalize().startsWith(root) }
     }
 
-    private fun readBounded(path: Path, limit: Int): ByteArray? {
-        if (Files.size(path) !in 1L..limit.toLong()) return null
+    private fun readBounded(path: Path): ByteArray? {
+        val size = Files.size(path)
+        if (size == 0L) return null
+        // Capacity changes between loads. Never turn a resource-dependent refusal into a
+        // permanent "missing icon" result cached for this installed version.
+        val limit = (availableHeapBytes() / 2).coerceIn(0, Int.MAX_VALUE.toLong())
+        if (size > limit) throw IconResourcesUnavailable()
         return Files.newInputStream(path, NOFOLLOW_LINKS).use { stream ->
-            stream.readNBytes(limit).takeIf { it.isNotEmpty() && it.size <= limit }
+            val bytes = stream.readNBytes(size.toInt())
+            if (bytes.size.toLong() != size || stream.read() != -1) {
+                throw java.io.IOException("Icon file changed while reading")
+            }
+            bytes
         }
-    }
-
-    companion object {
-        val MAX_ICON_BYTES: Int get() = (io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        val MAX_SVG_BYTES: Int get() = MAX_ICON_BYTES
-        private val MAX_MANIFEST_BYTES: Int get() = MAX_ICON_BYTES
     }
 }
