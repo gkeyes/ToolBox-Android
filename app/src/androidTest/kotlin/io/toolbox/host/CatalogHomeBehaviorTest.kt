@@ -3,6 +3,7 @@ package io.toolbox.host
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -29,6 +30,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     private val layout = mutableStateOf(CatalogLayout(favorites = listOf("a", "b"),
         groups = listOf(CatalogGroup("g1", "工作", listOf("a"), false), CatalogGroup("g2", "常用"))))
     private val opened = mutableListOf<String>()
+    private lateinit var homeListState: LazyListState
     private val destination = mutableStateOf(MainDestination.Home)
 
     private fun render() {
@@ -37,6 +39,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             CompositionLocalProvider(LocalDensity provides if (wideLargeText) Density(density.density * 0.5f, 1.6f) else density) {
                 ToolBoxTheme(style = style, reduceTransparency = true) {
                     val homeScroll = rememberLazyListState()
+                    SideEffect { homeListState = homeScroll }
                     val toolsScroll = rememberLazyListState()
                     PrimaryScreen(destination.value, { destination.value = it }, destination.value.label, onImport = {}) { padding, _ ->
                         if (destination.value != MainDestination.Settings) ToolManagerContent(
@@ -84,9 +87,28 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertEquals(listOf("b", "a"), layout.value.favorites) }
         compose.onNodeWithTag("catalog_group:g1").performScrollTo().performClick()
         compose.onNodeWithTag("member:g1:a").assertExists()
-        compose.onNode(hasAnyAncestor(hasTestTag("member:g1:a")) and hasClickAction() and hasText("Alpha"))
-            .performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(listOf("a"), opened) }
+        val member = scrollHomeItemIntoContent(
+            "member:g1:a",
+            hasAnyAncestor(hasTestTag("member:g1:a")) and hasClickAction() and hasText("Alpha"),
+        )
+        member.performTouchInput { click() }
+        compose.waitUntil(timeoutMillis = 5_000) { compose.runOnIdle { opened.isNotEmpty() } }
+        compose.runOnIdle {
+            assertEquals(listOf("a"), opened)
+            assertEquals(MainDestination.Home, destination.value)
+        }
+        // At the natural scroll limit the final member must clear the floating navigation too.
+        // This checks production end padding rather than relying only on an interior test target.
+        val list = compose.onNode(hasScrollToIndexAction() and hasAnyDescendant(hasTestTag("member:g1:a")))
+        val lastIndex = compose.runOnIdle { homeListState.layoutInfo.totalItemsCount - 1 }
+        list.performScrollToIndex(lastIndex)
+        compose.runOnIdle { assertFalse(homeListState.canScrollForward) }
+        compose.onNodeWithTag("member:g2:a").assertIsDisplayed()
+        if (style == ToolBoxThemeStyle.LiquidGlass && !wideLargeText) {
+            val lastMember = compose.onNodeWithTag("member:g2:a").fetchSemanticsNode().boundsInRoot
+            val navigation = compose.onNodeWithTag(HostTestTags.BottomNavigationContainer).fetchSemanticsNode().boundsInRoot
+            assertTrue("Final member must scroll above floating navigation: $lastMember / $navigation", lastMember.bottom <= navigation.top)
+        }
     }
 
     @Test fun longPressDragReordersMeasuredFavoriteRows() {
@@ -130,6 +152,27 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             assertEquals(listOf("a"), layout.value.groups.single { it.id == "g1" }.members)
             assertFalse(layout.value.groups.any { it.id == "g2" })
         }
+    }
+
+    private fun scrollHomeItemIntoContent(itemKey: String, matcher: SemanticsMatcher): SemanticsNodeInteraction {
+        val target = compose.onNode(matcher)
+        target.performScrollTo()
+        val itemIndex = compose.runOnIdle {
+            homeListState.layoutInfo.visibleItemsInfo.single { it.key == itemKey }.index
+        }
+        val list = compose.onNode(hasScrollToIndexAction() and hasAnyDescendant(hasTestTag(itemKey)))
+        // Glass chrome overlays the list viewport. Minimal performScrollTo may leave a row
+        // behind it; aligning the item uses the list's real top/bottom content padding.
+        list.performScrollToIndex(itemIndex)
+        target.assertIsDisplayed()
+        val bounds = list.fetchSemanticsNode().boundsInRoot
+        val point = target.fetchSemanticsNode().boundsInRoot.center
+        val padding = compose.runOnIdle {
+            homeListState.layoutInfo.beforeContentPadding to homeListState.layoutInfo.afterContentPadding
+        }
+        assertTrue("Touch point must clear top chrome: $point / $bounds / $padding", point.y >= bounds.top + padding.first)
+        assertTrue("Touch point must clear bottom chrome: $point / $bounds / $padding", point.y <= bounds.bottom - padding.second)
+        return target
     }
 
     private fun action(action: CatalogAction) {

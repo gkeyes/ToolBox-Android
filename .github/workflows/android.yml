@@ -14,6 +14,7 @@ on:
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
       - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/run-android-behavior.sh"
   pull_request:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
@@ -27,6 +28,7 @@ on:
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
       - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/run-android-behavior.sh"
   workflow_dispatch:
 
 permissions:
@@ -86,8 +88,7 @@ jobs:
             mkdir -p build/wasm-emulator
             adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
             adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest
-            ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest
+            bash scripts/ci/run-android-behavior.sh
       - name: Retain host unit test reports
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

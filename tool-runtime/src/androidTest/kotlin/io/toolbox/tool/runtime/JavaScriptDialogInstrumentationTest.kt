@@ -32,8 +32,8 @@ class JavaScriptDialogInstrumentationTest {
         val id = "io.example.dialog.${UUID.randomUUID().toString().replace("-", "") }"
         val bundle = root.resolve(RuntimeIdentity.expectedBundleLocator(id, 1))
         Files.createDirectories(bundle)
-        Files.writeString(bundle.resolve("index.html"), "<html><head><script src=app.js></script></head><body>Dialog test</body></html>")
-        Files.writeString(bundle.resolve("app.js"), """
+        Files.write(bundle.resolve("index.html"), "<html><head><script src=app.js></script></head><body>Dialog test</body></html>".toByteArray())
+        Files.write(bundle.resolve("app.js"), """
             window.dialogReady = true;
             window.runChain = function() {
               history.replaceState(null, '', '#section');
@@ -48,7 +48,7 @@ class JavaScriptDialogInstrumentationTest {
               if (kind === 'confirm') window.dialogResult = confirm('confirm?');
               if (kind === 'prompt') window.dialogResult = prompt('prompt?', '');
             };
-        """.trimIndent())
+        """.trimIndent().toByteArray())
         val runtime = PreparedToolRuntime(id, "对话框测试", 1, root, bundle, "index.html", RuntimeIdentity.origin(id),
             RuntimeIdentity.profileName(id), profile, InstalledManifest(id, "Test", 1, "0.3.0", "index.html", profile, emptySet(), emptyList(), null))
         val manager = RuntimeProfileManager(root.toFile())

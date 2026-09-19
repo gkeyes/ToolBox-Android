@@ -154,7 +154,7 @@ class ToolIconCompatibilityTest {
         val id = "io.toolbox.iconfixture"
         val locator = BundleLocator("miniapps/$id/versions/1/bundle")
         val bundle = Files.createDirectories(root.resolve(locator.value))
-        Files.writeString(bundle.resolve("manifest.json"), """{"schemaVersion":1,"id":"$id","name":"Icon fixture","version":"1.0.0","versionCode":1,"entry":"index.html","icon":"icon.svg","apiVersion":"1.0","minHostVersion":"0.3.0","permissions":[],"securityProfile":"strict"}""")
+        Files.write(bundle.resolve("manifest.json"), """{"schemaVersion":1,"id":"$id","name":"Icon fixture","version":"1.0.0","versionCode":1,"entry":"index.html","icon":"icon.svg","apiVersion":"1.0","minHostVersion":"0.3.0","permissions":[],"securityProfile":"strict"}""".toByteArray())
         Files.write(bundle.resolve("icon.svg"), svg("<rect width='100' height='100' fill='red'/>").bytes)
         val tool = InstalledTool(ToolMetadata(id, "Icon fixture", SecurityProfile.STRICT, 1),
             ToolVersion(id, 1, "1.0.0", locator, 1, "fixture", 1), null)
