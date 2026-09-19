@@ -42,6 +42,7 @@ internal class HostBackupService(
         Unit
     },
     private val checkpointPoint: (String) -> Unit = {},
+    private val resourceProbe: PackageResourceProbe = AndroidPackageResourceProbe(context),
 ) : BackupOperations {
     private val operation = Mutex()
     private val archive = BackupArchive()
@@ -102,8 +103,8 @@ internal class HostBackupService(
                 zip.closeEntry()
             }
         }
-        val inspector = ToolPackageInspectors.create(File(root.parentFile, "inspection"))
-        if (inspector.validate(FilePackageInput(pack)) !is PackageValidationResult.Valid) throw BackupException("PACKAGE")
+        val inspector = ToolPackageInspectors.create(File(root.parentFile, "inspection"), resourceProbe)
+        validatePackage(inspector, pack)
         BackupDataCodec.write(File(target, "metadata.json"), mapOf(
             "dataVersion" to 1, "id" to id, "versionCode" to tool.currentVersion.versionCode,
             "installedAt" to tool.metadata.installedAt, "versionInstalledAt" to tool.currentVersion.installedAt,
@@ -159,11 +160,11 @@ internal class HostBackupService(
         val warnings = prepared.contents.warnings.toMutableList()
         val current = repositories.catalog.observeTools().first()
         BackupDataCodec.settings(repositories.settings.settings.first(), J.read(File(prepared.directory, "host/settings.json")), warnings)
-        val inspector = ToolPackageInspectors.create(File(prepared.directory.parentFile, "inspection"))
+        val inspector = ToolPackageInspectors.create(File(prepared.directory.parentFile, "inspection"), resourceProbe)
         val taskIds = mutableSetOf<String>()
         val plans = prepared.contents.tools.mapIndexed { index, tool ->
             val folder = File(prepared.directory, "tools/${tool.id}")
-            val result = inspector.validate(FilePackageInput(File(folder, "package.tbx"))) as? PackageValidationResult.Valid ?: throw BackupException("PACKAGE")
+            val result = validatePackage(inspector, File(folder, "package.tbx"))
             if (result.manifest.id != tool.id || result.manifest.versionCode != tool.versionCode || result.manifest.version != tool.version) throw BackupException("INDEX")
             val metadata = J.read(File(folder, "metadata.json"))
             if (metadata["id"] != tool.id || J.int(metadata["versionCode"]) != tool.versionCode) throw BackupException("INDEX")
@@ -237,6 +238,9 @@ internal class HostBackupService(
                                 val settings = J.read(File(preview.prepared.directory, "host/settings.json"))
                                 BackupDataCodec.requireSuccess(repositories.settings.update { BackupDataCodec.settings(it, settings, warnings) })
                             }
+                            // Room has committed its final installed set. Never prune layout from a
+                            // transient projection emitted while individual tools are being restored.
+                            BackupDataCodec.requireSuccess(CatalogLayoutRepository(repositories).reconcile())
                             currentCoroutineContext().ensureActive()
                             withContext(NonCancellable) {
                                 journal.commit()
@@ -271,6 +275,7 @@ internal class HostBackupService(
             try { packages.confirmImport(imported.confirmation.id) }
             finally { withContext(NonCancellable) { packages.cancelImport(imported.confirmation.id) } }
         } else imported
+        if (installed is HostImportResult.Failed) throw BackupException("PACKAGE_${installed.code}")
         if (installed !is HostImportResult.Installed || installed.toolId != plan.id) throw BackupException("PACKAGE")
         BackupDataCodec.requireSuccess(repositories.keyValues.replace(plan.id, repositories.keyValues.keys(plan.id).filterNot(BackupDataCodec::secureKey).toSet(), emptyMap(), 0))
         var opaqueSecure = false
@@ -323,6 +328,12 @@ internal class HostBackupService(
         require(result == null || (result.completedAt >= 0 && result.attemptCount >= 0))
         return task to result
     }
+    private suspend fun validatePackage(inspector: ToolPackageInspector, file: File): PackageValidationResult.Valid =
+        when (val result = inspector.validate(FilePackageInput(file))) {
+            is PackageValidationResult.Valid -> result
+            is PackageValidationResult.Rejected -> throw BackupException("PACKAGE_${result.rejection.code.name}")
+        }
+
     private fun validatePresentation(data: Map<String, Any?>) {
         require(J.long(data["installedAt"]) >= 0 && J.long(data["versionInstalledAt"]) >= 0)
         require(data["lastOpenedAt"] == null || J.long(data["lastOpenedAt"]) >= 0)

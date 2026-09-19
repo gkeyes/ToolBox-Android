@@ -86,9 +86,11 @@ internal fun ToolBoxNavigation(
     settingsViewModel: SettingsViewModel,
     contentResolver: ContentResolver,
 ) {
-    val primaryBackStack = rememberNavBackStack<ToolBoxRoute>(ToolManagerRoute)
+    val primaryBackStack = rememberNavBackStack<ToolBoxRoute>(HomeRoute)
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
     val toolsListState = rememberLazyListState()
+    val homeListState = rememberLazyListState()
+    val settingsListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
@@ -109,6 +111,7 @@ internal fun ToolBoxNavigation(
         secondaryBackStack.clear()
         while (primaryBackStack.size > 1) primaryBackStack.removeLastOrNull()
         val route = when (destination) {
+            MainDestination.Home -> HomeRoute
             MainDestination.Tools -> ToolManagerRoute
             MainDestination.Settings -> SettingsRoute
         }
@@ -224,29 +227,30 @@ internal fun ToolBoxNavigation(
                             },
                         ),
                 ) {
-                    val selectedDestination = if (currentPrimaryRoute == SettingsRoute) {
-                        MainDestination.Settings
-                    } else {
-                        MainDestination.Tools
+                    val selectedDestination = when (currentPrimaryRoute) {
+                        SettingsRoute -> MainDestination.Settings
+                        ToolManagerRoute -> MainDestination.Tools
+                        else -> MainDestination.Home
                     }
                     PrimaryScreen(
                         selected = selectedDestination,
                         onDestination = ::navigateMain,
-                        title = if (selectedDestination == MainDestination.Tools) "工具" else "设置",
-                        onImport = if (selectedDestination == MainDestination.Tools) {
+                        title = selectedDestination.label,
+                        onImport = if (selectedDestination != MainDestination.Settings) {
                             { navigate(ImportRoute) }
                         } else {
                             null
                         },
                     ) { padding, layout ->
                         when (currentPrimaryRoute) {
-                            ToolManagerRoute, null -> ToolManagerRouteContent(
+                            HomeRoute, ToolManagerRoute, null -> ToolManagerRouteContent(
+                                home = selectedDestination == MainDestination.Home,
                                 dependencies = dependencies,
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
                                 importViewModel = importViewModel,
                                 importPageVisible = allSecondaryRoutes.contains(ImportRoute),
-                                listState = toolsListState,
+                                listState = if (selectedDestination == MainDestination.Home) homeListState else toolsListState,
                                 contentPadding = padding,
                                 layout = layout,
                                 // Freeze only while the settled runtime fully covers the base page.
@@ -258,6 +262,7 @@ internal fun ToolBoxNavigation(
 
                             SettingsRoute -> SettingsScreen(
                                 viewModel = settingsViewModel,
+                                listState = settingsListState,
                                 contentPadding = padding,
                                 onAppearance = { navigate(AppearanceRoute) },
                                 onBackgroundSafeguards = { navigate(BackgroundSafeguardsRoute) },
@@ -486,6 +491,7 @@ private fun SecondaryRouteContent(
             onReady = onReady,
         )
 
+        HomeRoute,
         ToolManagerRoute,
         SettingsRoute,
         is RuntimeRoute,
@@ -495,6 +501,7 @@ private fun SecondaryRouteContent(
 
 @Composable
 private fun ToolManagerRouteContent(
+    home: Boolean,
     importPageVisible: Boolean = false,
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
@@ -518,6 +525,7 @@ private fun ToolManagerRouteContent(
     }
     val importState by importViewModel.state.collectAsStateWhileVisible(uiVisible)
     ToolManagerContent(
+        home = home,
         state = catalogState,
         importState = if (importPageVisible) importState.copy(confirmation = null) else importState,
         listState = listState,

@@ -7,6 +7,9 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
 sealed interface ToolBoxRoute : NavKey
 
 @Serializable
+data object HomeRoute : ToolBoxRoute
+
+@Serializable
 data object ToolManagerRoute : ToolBoxRoute
 
 @Serializable

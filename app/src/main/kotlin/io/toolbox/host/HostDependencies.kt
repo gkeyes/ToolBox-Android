@@ -91,6 +91,7 @@ internal class HostDependencies(
     }
 
     val packageMutations = io.toolbox.core.data.DataMutationLock()
+    val catalogLayout = io.toolbox.core.data.CatalogLayoutRepository(repositories)
     val backupService by lazy {
         io.toolbox.host.backup.HostBackupService(application, repositories, checkNotNull(backupDatabase),
             packageOperations, packageMutations, backgroundOperations, runtimeSessions::backupRuntimeIds)
@@ -100,7 +101,7 @@ internal class HostDependencies(
     )
 
     val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        io.toolbox.host.backup.SerializedPackageOperations(packageOperationsFactory(runtimeDataCleaner, backgroundOperations), packageMutations)
+        io.toolbox.host.backup.SerializedPackageOperations(packageOperationsFactory(runtimeDataCleaner, backgroundOperations), packageMutations, catalogLayout::reconcile)
     }
 
     val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -111,7 +112,10 @@ internal class HostDependencies(
         deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
 
     suspend fun recoverPendingPackageMutations() {
-        (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+        packageMutations.run {
+            (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+            check(catalogLayout.reconcile() is io.toolbox.core.data.DataResult.Success) { "CATALOG_LAYOUT_WRITE" }
+        }
     }
 
     suspend fun reconcileBackgroundTasks() {
@@ -125,6 +129,15 @@ internal fun interface HostDependenciesFactory {
 
 internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
     override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+        val memory = application.getSystemService(android.app.ActivityManager::class.java)
+        io.toolbox.host.background.NetworkResources.configureSystemAvailability {
+            runCatching {
+                val info = android.app.ActivityManager.MemoryInfo()
+                checkNotNull(memory).getMemoryInfo(info)
+                !info.lowMemory && info.availMem > info.threshold
+            }.getOrDefault(false)
+        }
+
         kotlinx.coroutines.runBlocking(Dispatchers.IO) { io.toolbox.host.backup.HostBackupService.recover(application, stores) }
         val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
         lateinit var dependencies: HostDependencies
@@ -327,6 +340,8 @@ internal class HostFeatureViewModelFactory(
         CatalogViewModel::class.java.isAssignableFrom(modelClass) -> CatalogViewModel(
             catalog = dependencies.repositories.catalog,
             organization = dependencies.repositories.organization,
+            settings = dependencies.repositories.settings,
+            layoutRepository = dependencies.catalogLayout,
             packageOperations = dependencies.packageOperations,
         ) as T
         ImportViewModel::class.java.isAssignableFrom(modelClass) -> ImportViewModel(

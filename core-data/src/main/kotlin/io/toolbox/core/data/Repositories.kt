@@ -68,11 +68,13 @@ interface BackgroundTaskRepository {
     suspend fun getTask(taskId: String): DataResult<BackgroundTask?>
     suspend fun create(task: BackgroundTask): DataResult<Unit>
     suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>
+    suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>
     suspend fun deferRetry(
         taskId: String,
         updatedAt: Long,
         nextRunAt: Long,
         runAttempt: Int,
+        executionToken: String? = null,
     ): DataResult<Unit>
     suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): DataResult<Unit>
     suspend fun finishRun(
@@ -80,8 +82,9 @@ interface BackgroundTaskRepository {
         result: TaskRunResult,
         nextState: TaskState,
         nextRunAt: Long?,
+        executionToken: String? = null,
     ): DataResult<Unit>
-    suspend fun finishCancelled(taskId: String, result: TaskRunResult): DataResult<Unit>
+    suspend fun finishCancelled(taskId: String, result: TaskRunResult, executionToken: String? = null): DataResult<Unit>
     suspend fun cancel(taskId: String, updatedAt: Long): DataResult<Unit>
     suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int>
     suspend fun deleteForTool(toolId: String): DataResult<Unit>

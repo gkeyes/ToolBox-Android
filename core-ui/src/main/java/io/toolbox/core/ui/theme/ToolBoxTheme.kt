@@ -216,7 +216,6 @@ private val LocalToolBoxMaterials = staticCompositionLocalOf {
 }
 
 @Composable
-@Suppress("UNUSED_PARAMETER") // Legacy callers cannot re-enable the retired host style.
 fun ToolBoxTheme(
     mode: ToolBoxThemeMode = ToolBoxThemeMode.Light,
     style: ToolBoxThemeStyle = ToolBoxThemeStyle.LiquidGlass,
@@ -342,7 +341,7 @@ fun ToolBoxTheme(
         }
     }
 
-    MiuixTheme(controller = renderedController) {
+    MiuixTheme(controller = if (style == ToolBoxThemeStyle.Miuix) controller else renderedController) {
         val miuixColors = MiuixTheme.colorScheme
         val miuixSemanticColors = baseColors.copy(
             primary = miuixColors.primary,
@@ -362,7 +361,7 @@ fun ToolBoxTheme(
             softDanger = miuixColors.errorContainer,
             onSoftDanger = miuixColors.onErrorContainer,
         )
-        val colors = run {
+        val colors = if (style == ToolBoxThemeStyle.Miuix) miuixSemanticColors else run {
             liquidGlassColors(
                 dark = usesDarkColors,
                 accent = miuixSemanticColors.primary,
@@ -372,14 +371,14 @@ fun ToolBoxTheme(
         val materials = liquidGlassMaterials(
             colors = colors,
             dark = usesDarkColors,
-            enabled = true,
+            enabled = style == ToolBoxThemeStyle.LiquidGlass,
             reduceTransparency = reduceTransparency,
         )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,
-            LocalToolBoxTextStyles provides LiquidGlassTextStyles,
-            LocalToolBoxThemeStyle provides ToolBoxThemeStyle.LiquidGlass,
-            LocalToolBoxRadii provides LiquidGlassRadii,
+            LocalToolBoxTextStyles provides if (style == ToolBoxThemeStyle.Miuix) DefaultTextStyles else LiquidGlassTextStyles,
+            LocalToolBoxThemeStyle provides style,
+            LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.Miuix) MiuixRadii else LiquidGlassRadii,
             LocalToolBoxMaterials provides materials,
             content = content,
         )

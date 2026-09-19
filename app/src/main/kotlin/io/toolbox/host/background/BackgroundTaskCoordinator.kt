@@ -253,7 +253,6 @@ class BackgroundTaskCoordinator(
 
     private suspend fun cancelScheduledWork(task: BackgroundTask) {
         withContext(Dispatchers.IO) { workManager.cancelUniqueWork(workName(task.taskId)) }
-        notifications.cancel(task.toolId, taskNotificationId(task))
     }
 
     private suspend fun cancelOperations(toolId: String, operation: BackgroundOperation) {
@@ -267,6 +266,7 @@ class BackgroundTaskCoordinator(
 
     private suspend fun cancelStoredTask(task: BackgroundTask): Boolean =
         BackgroundExecutionLimiter.lockTool(task.toolId) {
+            BackgroundExecutionLimiter.cancelExecution(task.taskId)
             val current = (repositories.backgroundTasks.getTask(task.taskId) as? DataResult.Success)?.value
                 ?: return@lockTool true
             when (current.state) {
@@ -284,6 +284,7 @@ class BackgroundTaskCoordinator(
                         attemptCount = current.runAttempt,
                     )
                     val cancelled = repositories.backgroundTasks.finishCancelled(current.taskId, result) is DataResult.Success
+                    if (cancelled) notifications.cancel(current.toolId, taskNotificationId(current))
                     cancelled
                 }
             }

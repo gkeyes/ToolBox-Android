@@ -1,6 +1,9 @@
 package io.toolbox.host.catalog
 
 import androidx.compose.runtime.Immutable
+import io.toolbox.core.data.CatalogLayout
+import io.toolbox.core.data.CatalogSort
+import java.util.Locale
 
 @Immutable
 data class CatalogTool(
@@ -10,6 +13,8 @@ data class CatalogTool(
     val versionName: String,
     val bundleBytes: Long,
     val lastOpenedAt: Long?,
+    val installedAt: Long = 0L,
+    val nameSortKey: String = name.lowercase(Locale.ROOT),
 )
 
 @Immutable
@@ -26,6 +31,17 @@ sealed interface CatalogNavigationIntent {
 }
 
 sealed interface CatalogAction {
+    data class SetSort(val sort: CatalogSort) : CatalogAction
+    data class SetFavorite(val toolId: String, val selected: Boolean) : CatalogAction
+    data class CreateGroup(val name: String) : CatalogAction
+    data class SaveGroup(val groupId: String?, val name: String, val members: List<String>) : CatalogAction
+    data class RenameGroup(val groupId: String, val name: String) : CatalogAction
+    data class DeleteGroup(val groupId: String) : CatalogAction
+    data class SetGroupMembership(val groupId: String, val toolId: String, val selected: Boolean) : CatalogAction
+    data class SetGroupExpanded(val groupId: String, val expanded: Boolean) : CatalogAction
+    data class MoveFavorite(val toolId: String, val offset: Int) : CatalogAction
+    data class MoveGroup(val groupId: String, val offset: Int) : CatalogAction
+    data class MoveMember(val groupId: String, val toolId: String, val offset: Int) : CatalogAction
     data class SetQuery(val query: String) : CatalogAction
     data class RequestRuntimeLaunch(val toolId: String) : CatalogAction
     data class RequestUninstall(val toolId: String) : CatalogAction
@@ -36,6 +52,7 @@ sealed interface CatalogAction {
 
 data class CatalogUiState(
     val isLoaded: Boolean = false,
+    val layout: CatalogLayout = CatalogLayout(),
     val tools: List<CatalogTool> = emptyList(),
     val visibleTools: List<CatalogTool> = emptyList(),
     val recentTools: List<CatalogTool> = emptyList(),
@@ -48,11 +65,11 @@ data class CatalogUiState(
 internal fun CatalogUiState.withCatalogTools(values: List<CatalogTool>): CatalogUiState =
     copy(
         tools = values,
-        visibleTools = values.filteredBy(query),
+        visibleTools = values.catalogSorted(layout.sort).filteredBy(query),
         recentTools = values
             .asSequence()
             .filter { it.lastOpenedAt != null }
-            .sortedByDescending { it.lastOpenedAt }
+            .sortedWith(compareByDescending<CatalogTool> { it.lastOpenedAt }.thenBy { it.toolId })
             .toList(),
         uninstallConfirmation = uninstallConfirmation?.takeIf { confirmation ->
             values.any { it.toolId == confirmation.toolId }
@@ -64,7 +81,7 @@ internal fun CatalogUiState.withCatalogQuery(value: String): CatalogUiState {
     return copy(
         query = value,
         isSearching = normalized.isNotEmpty(),
-        visibleTools = tools.filteredBy(normalized),
+        visibleTools = tools.catalogSorted(layout.sort).filteredBy(normalized),
     )
 }
 
@@ -75,3 +92,11 @@ private fun List<CatalogTool>.filteredBy(query: String): List<CatalogTool> {
         tool.name.contains(value, ignoreCase = true) || tool.toolId.contains(value, ignoreCase = true)
     }
 }
+
+internal fun List<CatalogTool>.catalogSorted(sort: CatalogSort): List<CatalogTool> = sortedWith(
+    when (sort) {
+        CatalogSort.INSTALLED -> compareByDescending<CatalogTool> { it.installedAt }.thenBy { it.toolId }
+        CatalogSort.LAST_OPENED -> compareByDescending<CatalogTool> { it.lastOpenedAt }.thenBy { it.toolId }
+        CatalogSort.NAME -> compareBy<CatalogTool> { it.nameSortKey }.thenBy { it.name }.thenBy { it.toolId }
+    },
+)

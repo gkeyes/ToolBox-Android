@@ -4,6 +4,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 object HostTestTags {
+    const val PrimaryHome = "primary_home"
+    const val BottomHome = "bottom_home"
     const val PrimaryTools = "primary_tools"
     const val PrimarySettings = "primary_settings"
     const val BottomTools = "bottom_tools"
@@ -21,7 +23,8 @@ object HostTestTags {
 }
 
 enum class MainDestination(val label: String) {
-    Tools("工具"),
+    Home("首页"),
+    Tools("全部工具"),
     Settings("设置"),
 }
 

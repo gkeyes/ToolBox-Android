@@ -111,7 +111,7 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
             check(task.versionCode > 0 && database.versions().get(task.toolId) != null)
             check(database.backgroundTasks().get(task.taskId) == null)
             database.backgroundTasks().insert(BackgroundTaskEntity(
-                task.taskId, task.toolId, task.versionCode, task.key, task.operation.name, task.specJson,
+                task.taskId, task.toolId, task.versionCode, task.key, task.operation.name, io.toolbox.core.data.db.TaskExecutionMetadata.spec(task.specJson),
                 task.periodic, task.intervalMinutes, if (task.state == TaskState.COMPLETED) "COMPLETED" else "CANCELLED",
                 task.createdAt, task.updatedAt, null, task.runAttempt,
             ))

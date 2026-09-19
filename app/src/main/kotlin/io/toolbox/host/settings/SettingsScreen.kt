@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -33,10 +35,12 @@ internal fun SettingsScreen(
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
     onBackupRestore: () -> Unit = {},
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsContent(
         state = state,
+        listState = listState,
         contentPadding = contentPadding,
         onAppearance = onAppearance,
         onBackgroundSafeguards = onBackgroundSafeguards,
@@ -59,8 +63,10 @@ internal fun SettingsContent(
     onAbout: () -> Unit = {},
     onBackupRestore: () -> Unit = {},
     onBackgroundEnabledChange: (Boolean) -> Unit = {},
+    listState: LazyListState = rememberLazyListState(),
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
@@ -72,12 +78,12 @@ internal fun SettingsContent(
         item("before-appearance") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("appearance") {
             ToolBoxGroupedSurface {
-                ToolBoxValueRow("界面样式", "Liquid Glass", summary = "组件比例与玻璃材质", icon = ToolBoxIconKey.Palette)
+                ToolBoxValueRow("界面样式", if (state.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) "Miuix" else "Liquid Glass", icon = ToolBoxIconKey.Palette)
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow(
                     title = "外观模式",
                     modifier = Modifier.testTag(HostTestTags.SettingsAppearance),
-                    summary = "Liquid Glass · ${state.settings.theme.baseLabel}",
+                    summary = state.settings.theme.baseLabel,
                     icon = ToolBoxIconKey.Palette,
                     onClick = onAppearance,
                     enabled = state.loaded,

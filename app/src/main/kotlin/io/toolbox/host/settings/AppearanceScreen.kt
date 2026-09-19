@@ -38,6 +38,7 @@ internal fun AppearanceScreen(
         AppearanceContent(
             state = state,
             onThemeModeSelected = viewModel::selectTheme,
+            onThemeStyleSelected = viewModel::selectThemeStyle,
             onReduceTransparencyChanged = viewModel::setReduceTransparency,
             onRetry = viewModel::retryAppearanceUpdate,
             contentPadding = mergePadding(
@@ -57,6 +58,7 @@ internal fun AppearanceContent(
     onThemeModeSelected: (ThemeMode) -> Unit,
     onReduceTransparencyChanged: (Boolean) -> Unit,
     onRetry: () -> Unit,
+    onThemeStyleSelected: (io.toolbox.core.data.ThemeStyle) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(
         horizontal = ToolBoxThemeTokens.spacing.two,
         vertical = ToolBoxThemeTokens.spacing.oneHalf,
@@ -83,10 +85,14 @@ internal fun AppearanceContent(
         item("style-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("current-style") {
             ToolBoxGroupedSurface {
-                io.toolbox.core.ui.component.ToolBoxValueRow(
-                    title = "Liquid Glass",
-                    summary = "OpenDesign · 层次、光线与轻盈的内容卡片",
-                    value = "已启用",
+                io.toolbox.core.ui.component.ToolBoxChoiceSettingRow(
+                    title = "界面样式", selectedValue = settings.themeStyle.name,
+                    choices = listOf(
+                        io.toolbox.core.ui.component.ToolBoxSettingChoice("MIUIX", "Miuix"),
+                        io.toolbox.core.ui.component.ToolBoxSettingChoice("LIQUID_GLASS", "Liquid Glass"),
+                    ),
+                    onSelected = { onThemeStyleSelected(io.toolbox.core.data.ThemeStyle.valueOf(it)) },
+                    enabled = state.loaded,
                     modifier = Modifier.testTag(HostTestTags.AppearanceLiquidGlass),
                 )
             }
@@ -127,7 +133,7 @@ internal fun AppearanceContent(
             }
         }
 
-        run {
+        if (settings.themeStyle == io.toolbox.core.data.ThemeStyle.LIQUID_GLASS) {
             item("material-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
             item("material-title") { SectionHeader("玻璃材质") }
             item("material-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }

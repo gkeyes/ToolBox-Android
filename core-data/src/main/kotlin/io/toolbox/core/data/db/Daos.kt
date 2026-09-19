@@ -135,6 +135,9 @@ internal interface InstallTransactionDao {
 
 @Dao
 internal interface BackgroundTaskDao {
+    @Query("UPDATE background_tasks SET specJson = :specJson WHERE taskId = :taskId")
+    suspend fun updateExecutionSpec(taskId: String, specJson: String): Int
+
     @Query("SELECT * FROM background_tasks WHERE toolId = :toolId ORDER BY createdAt DESC, taskId")
     fun observeForTool(toolId: String): Flow<List<BackgroundTaskEntity>>
 

@@ -11,6 +11,8 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -50,26 +52,24 @@ class ToolBoxBackgroundWorker(
         val dependencies = ToolBoxBackgroundRuntime.resolve(applicationContext) ?: return Result.failure()
         val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
         val repository = dependencies.repositories.backgroundTasks
-        val task = when (val found = repository.getTask(taskId)) {
+        val storedTask = when (val found = repository.getTask(taskId)) {
             is DataResult.Success -> found.value ?: return Result.success()
             is DataResult.Failure -> return Result.failure()
         }
-        if (task.state == TaskState.COMPLETED || task.state == TaskState.CANCELLED) return Result.success()
-
-        val policy = dependencies.authorization.policyFor(task.toolId, task.versionCode)
-        if (policy == null || !policy.matches(task) || !policy.permits(task.operation)) {
-            return cancel(task, dependencies, "BACKGROUND_NOT_ALLOWED", task.runAttempt)
-        }
-
-        val attempt = maxOf(runAttemptCount + 1, task.runAttempt + 1)
-        if (!claim(task, dependencies, attempt)) {
-            return Result.success()
-        }
-        return try {
-            when (val execution = BackgroundExecutionLimiter.run(task.toolId) {
-                execute(task, dependencies)
-            }) {
-                is TaskExecution.Succeeded -> finish(task, dependencies, RunOutcome.SUCCEEDED, execution.payloadJson, null, attempt)
+        if (storedTask.state == TaskState.COMPLETED || storedTask.state == TaskState.CANCELLED) return Result.success()
+        val attempt = maxOf(runAttemptCount + 1, storedTask.runAttempt + 1)
+        val task = storedTask.copy(executionToken = BackgroundExecutionLimiter.newToken())
+        return BackgroundExecutionLimiter.run(task.taskId, requireNotNull(task.executionToken)) {
+        try {
+            if (!claim(storedTask, dependencies, attempt, requireNotNull(task.executionToken))) return@run Result.success()
+            val policy = dependencies.authorization.policyFor(task.toolId, task.versionCode)
+            if (policy == null || !policy.matches(task) || !policy.permits(task.operation)) {
+                return@run cancel(task, dependencies, "BACKGROUND_NOT_ALLOWED", attempt)
+            }
+            when (val execution = execute(task, dependencies)) {
+                is TaskExecution.Succeeded -> try {
+                    finish(task, dependencies, RunOutcome.SUCCEEDED, execution.payloadJson, null, attempt)
+                } finally { execution.release() }
                 is TaskExecution.TerminalFailure -> finish(
                     task,
                     dependencies,
@@ -88,6 +88,7 @@ class ToolBoxBackgroundWorker(
                                 dependencies.clock.nowMillis(),
                                 nextRunAt,
                                 attempt,
+                                task.executionToken,
                             )
                         ) {
                             is DataResult.Success -> Result.retry()
@@ -99,41 +100,39 @@ class ToolBoxBackgroundWorker(
                 }
             }
         } catch (cancelled: CancellationException) {
-            cancel(task, dependencies, "CANCELLED", attempt)
+            // A WorkManager constraint/system interruption is not a user cancellation.
+            // Administrative cancellation already invalidates this token; compare-and-requeue cannot revive it.
+            withContext(NonCancellable) {
+                val now = dependencies.clock.nowMillis()
+                repository.deferRetry(task.taskId, now, now, attempt, task.executionToken)
+            }
             throw cancelled
         } catch (_: SerializationException) {
             finish(task, dependencies, RunOutcome.FAILED, null, "INVALID_TASK_SPEC", attempt)
         } catch (_: Exception) {
             finish(task, dependencies, RunOutcome.FAILED, null, "BACKGROUND_EXECUTION_FAILED", attempt)
         }
+        } ?: Result.success()
     }
 
     private suspend fun claim(
-        task: BackgroundTask,
-        dependencies: BackgroundWorkerDependencies,
-        attempt: Int,
-    ): Boolean {
-        val repository = dependencies.repositories.backgroundTasks
-        val now = maxOf(dependencies.clock.nowMillis(), task.updatedAt)
-        val claimed = when (task.state) {
-            TaskState.QUEUED -> repository.markRunning(task.taskId, now, attempt)
-            TaskState.RUNNING -> {
-                when (repository.deferRetry(task.taskId, now, now, task.runAttempt)) {
-                    is DataResult.Success -> repository.markRunning(task.taskId, now, attempt)
-                    is DataResult.Failure -> return false
-                }
-            }
-            TaskState.COMPLETED,
-            TaskState.CANCELLED,
-            -> return false
+        task: BackgroundTask, dependencies: BackgroundWorkerDependencies, attempt: Int, token: String,
+    ): Boolean = BackgroundExecutionLimiter.lockTool(task.toolId) {
+        // WorkManager may resume a RUNNING row after process death, but must never steal a live run.
+        if (task.state == TaskState.RUNNING && BackgroundExecutionLimiter.isActive(task.taskId, task.executionToken)) {
+            return@lockTool false
         }
-        return claimed is DataResult.Success
+        dependencies.repositories.backgroundTasks.claimExecution(
+            task.taskId, task.versionCode, task.executionToken, token,
+            maxOf(dependencies.clock.nowMillis(), task.updatedAt), attempt,
+        ) is DataResult.Success
     }
 
     private suspend fun execute(
         task: BackgroundTask,
         dependencies: BackgroundWorkerDependencies,
     ): TaskExecution {
+        if (!isCurrentExecution(task, dependencies)) return TaskExecution.Cancelled("CANCELLED")
         val spec = try {
             json.decodeFromString<StoredBackgroundSpec>(task.specJson)
         } catch (_: SerializationException) {
@@ -152,18 +151,19 @@ class ToolBoxBackgroundWorker(
                         url = url,
                         timeoutMillis = policy.networkTimeoutMillis,
                         maxResponseBytes = policy.maxNetworkResponseBytes,
+                        resourceOwner = task.toolId,
                     )
                 ) {
                     is NetworkExecution.Success -> {
-                        val payload = json.encodeToString(
+                        val payload = try { json.encodeToString(
                             HttpGetResult(
                                 statusCode = network.statusCode,
                                 finalUrl = network.finalUrl,
                                 contentType = network.contentType,
                                 body = network.body,
                             ),
-                        )
-                        TaskExecution.Succeeded(payload)
+                        ) } catch (error: Throwable) { network.release(); throw error }
+                        TaskExecution.Succeeded(payload, network.release)
                     }
                     is NetworkExecution.RetryableFailure -> TaskExecution.RetryableFailure(network.errorCode)
                     is NetworkExecution.TerminalFailure -> TaskExecution.TerminalFailure(network.errorCode)
@@ -176,7 +176,10 @@ class ToolBoxBackgroundWorker(
                 if (!isValidNotification(notificationId, title)) {
                     return TaskExecution.TerminalFailure("INVALID_NOTIFICATION")
                 }
-                when (val posted = dependencies.notifications.post(task.toolId, notificationId, title, body)) {
+                when (val posted = BackgroundExecutionLimiter.lockTool(task.toolId) {
+                    if (!isCurrentExecution(task, dependencies)) return@lockTool NotificationResult.Rejected("CANCELLED")
+                    dependencies.notifications.post(task.toolId, notificationId, title, body)
+                }) {
                     NotificationResult.Posted -> TaskExecution.Succeeded("{\"posted\":true}")
                     is NotificationResult.Rejected -> TaskExecution.TerminalFailure(posted.errorCode)
                 }
@@ -189,7 +192,8 @@ class ToolBoxBackgroundWorker(
         dependencies: BackgroundWorkerDependencies,
         errorCode: String,
         attempt: Int,
-    ): Result {
+    ): Result = BackgroundExecutionLimiter.lockTool(task.toolId) {
+        if (!isCurrentExecution(task, dependencies)) return@lockTool Result.success()
         try {
             dependencies.notifications.cancel(task.toolId, task.notificationId())
         } catch (_: Exception) {
@@ -202,7 +206,7 @@ class ToolBoxBackgroundWorker(
             errorCode = errorCode,
             attemptCount = attempt,
         )
-        return when (dependencies.repositories.backgroundTasks.finishCancelled(task.taskId, result)) {
+        when (dependencies.repositories.backgroundTasks.finishCancelled(task.taskId, result, task.executionToken)) {
             is DataResult.Success,
             is DataResult.Failure.InvalidState,
             is DataResult.Failure.NotFound,
@@ -234,6 +238,7 @@ class ToolBoxBackgroundWorker(
             result = result,
             nextState = completion.nextState,
             nextRunAt = completion.nextRunAt,
+            executionToken = task.executionToken,
         )
         return when (stored) {
             is DataResult.Success,
@@ -242,6 +247,12 @@ class ToolBoxBackgroundWorker(
             -> Result.success()
             is DataResult.Failure -> Result.failure()
         }
+    }
+
+    private suspend fun isCurrentExecution(task: BackgroundTask, dependencies: BackgroundWorkerDependencies): Boolean {
+        val current = (dependencies.repositories.backgroundTasks.getTask(task.taskId) as? DataResult.Success)?.value
+        return current?.state == TaskState.RUNNING && current.versionCode == task.versionCode &&
+            current.executionToken == task.executionToken
     }
 
     private fun BackgroundExecutionPolicy.matches(task: BackgroundTask): Boolean =
@@ -273,7 +284,7 @@ private data class HttpGetResult(
 )
 
 private sealed interface TaskExecution {
-    data class Succeeded(val payloadJson: String) : TaskExecution
+    data class Succeeded(val payloadJson: String, val release: () -> Unit = {}) : TaskExecution
     data class RetryableFailure(val errorCode: String) : TaskExecution
     data class TerminalFailure(val errorCode: String) : TaskExecution
     data class Cancelled(val errorCode: String) : TaskExecution

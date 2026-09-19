@@ -106,6 +106,8 @@ data class BackgroundTask(
     val updatedAt: Long,
     val nextRunAt: Long?,
     val runAttempt: Int,
+    /** Host execution identity, never exposed in the tool spec or restored from backups. */
+    val executionToken: String? = null,
 )
 
 data class TaskRunResult(
@@ -122,6 +124,7 @@ data class HostSettings(
     val backgroundEnabled: Boolean = true,
     val themeStyle: ThemeStyle = ThemeStyle.LIQUID_GLASS,
     val reduceTransparency: Boolean = false,
+    val catalogLayout: CatalogLayout = CatalogLayout(),
 )
 
 internal fun String.isValidTransactionId(): Boolean =
