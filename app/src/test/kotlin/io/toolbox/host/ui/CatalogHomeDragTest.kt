@@ -11,7 +11,7 @@ class CatalogHomeDragTest {
         val drag = CatalogHomeDragState().apply { listBounds = Rect(0f, 0f, 400f, 700f); touchSlop = 8f }
         drag.targets["first"] = HomeDragTarget("first", "groups", 0, "First", null, Rect(0f, 0f, 300f, 56f), moves::add)
         drag.targets["source"] = HomeDragTarget("source", "groups", 1, "Source", null, Rect(0f, 500f, 300f, 556f), moves::add)
-        drag.start(Offset(100f, 525f))
+        drag.start("source", Offset(100f, 525f))
         drag.targets["source"] = drag.targets.getValue("source").copy(bounds = Rect(0f, 56f, 300f, 112f))
         drag.targets["last"] = HomeDragTarget("last", "groups", 2, "Last", null, Rect(0f, 112f, 300f, 168f), moves::add)
         drag.updateTarget()
@@ -27,7 +27,7 @@ class CatalogHomeDragTest {
         drag.targets["a"] = HomeDragTarget("a", "favorites", 0, "A", null, Rect(0f, 0f, 80f, 100f), moves::add)
         drag.targets["b"] = HomeDragTarget("b", "favorites", 1, "B", null, Rect(92f, 0f, 172f, 100f), moves::add)
         drag.targets["other"] = HomeDragTarget("other", "members", 9, "Other", null, Rect(94f, 0f, 174f, 100f), moves::add)
-        drag.start(Offset(40f, 50f))
+        drag.start("a", Offset(40f, 50f))
         drag.move(Offset(132f, 50f))
         drag.finish()
         assertEquals(listOf(1), moves)
@@ -44,7 +44,7 @@ class CatalogHomeDragTest {
         val drag = CatalogHomeDragState().apply { listBounds = Rect(0f, 0f, 400f, 700f) }
         drag.targets["a"] = HomeDragTarget("a", "favorites", 0, "A", null, Rect(0f, 0f, 80f, 100f), {}, 2)
         drag.targets["b"] = HomeDragTarget("b", "favorites", 1, "B", null, Rect(92f, 0f, 172f, 100f), {}, 2)
-        drag.start(Offset(40f, 50f))
+        drag.start("a", Offset(40f, 50f))
         drag.move(Offset(130f, 650f))
         assertFalse(drag.canScroll(1f, 0f, 600f))
         assertFalse(drag.canScroll(-1f, 0f, 600f))
