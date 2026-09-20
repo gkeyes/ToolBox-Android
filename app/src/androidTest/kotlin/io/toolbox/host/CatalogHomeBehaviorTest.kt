@@ -464,7 +464,12 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_home_menu").fetchSemanticsNodes().size == 1 }
         val menuRoot = requireNotNull(compose.onNodeWithTag("catalog_home_menu").fetchSemanticsNode().root as? ViewRootForTest)
         // Native Back must target the popup window, rather than the Activity behind it.
-        compose.waitUntil(5_000) { compose.runOnUiThread { menuRoot.view.hasWindowFocus() } }
+        try {
+            compose.waitUntil(5_000) { compose.runOnUiThread { menuRoot.view.hasWindowFocus() } }
+        } catch (failure: ComposeTimeoutException) {
+            recordCatalogWindowDiagnostics()
+            throw failure
+        }
     }
 
     private fun awaitHomeMenuClosed() {

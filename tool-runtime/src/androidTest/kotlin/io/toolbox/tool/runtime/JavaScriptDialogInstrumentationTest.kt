@@ -164,9 +164,14 @@ class JavaScriptDialogInstrumentationTest {
                 "attached=${view.isAttachedToWindow}, shown=${view.isShown}, " +
                 "rootFocus=${view.rootView.hasWindowFocus()}, viewFocus=${view.hasWindowFocus()}"
         }
-        val windows = instrumentation.uiAutomation.executeShellCommand("dumpsys window windows")
-        val dump = android.os.ParcelFileDescriptor.AutoCloseInputStream(windows).bufferedReader().use { it.readText() }
-        android.util.Log.e("DialogWindowDiagnostics", "$state\n$dump")
+        android.util.Log.e("DialogWindowDiagnostics", state)
+        for (command in listOf("dumpsys window windows", "dumpsys window displays", "dumpsys input", "dumpsys activity activities")) {
+            val descriptor = instrumentation.uiAutomation.executeShellCommand(command)
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().useLines { lines ->
+                android.util.Log.e("DialogWindowDiagnostics", command)
+                lines.forEach { android.util.Log.e("DialogWindowDiagnostics", it) }
+            }
+        }
         return state
     }
     private fun await(description: String = "Dialog behavior did not complete", diagnostics: () -> String = { "" }, check: () -> Boolean) {
