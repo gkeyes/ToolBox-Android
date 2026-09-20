@@ -60,6 +60,8 @@ internal fun PrimaryScreen(
     title: String,
     subtitle: String = "",
     onImport: (() -> Unit)?,
+    organizeEditing: Boolean = false,
+    onOrganize: (() -> Unit)? = null,
     content: @Composable (PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
@@ -74,7 +76,7 @@ internal fun PrimaryScreen(
         if (layout.isCompact) {
             ToolBoxAppScaffold(
                 modifier = Modifier.fillMaxSize(),
-                topBar = { TopBar(title, subtitle, onImport, glassState = glassState) },
+                topBar = { TopBar(title, subtitle, onImport, glassState = glassState, organizeEditing = organizeEditing, onOrganize = onOrganize) },
                 bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
             ) { scaffoldPadding ->
                 Box(
@@ -107,6 +109,8 @@ internal fun PrimaryScreen(
                         onImport,
                         defaultWindowInsetsPadding = false,
                         glassState = glassState,
+                        organizeEditing = organizeEditing,
+                        onOrganize = onOrganize,
                     )
                     Box(
                         Modifier
@@ -267,6 +271,8 @@ private fun TopBar(
     onImport: (() -> Unit)?,
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState,
+    organizeEditing: Boolean = false,
+    onOrganize: (() -> Unit)? = null,
 ) {
     ToolBoxLargeTopBar(
         title = title,
@@ -274,7 +280,15 @@ private fun TopBar(
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         glassState = glassState,
         actions = {
-            if (onImport != null) {
+            if (onOrganize != null) {
+                ToolBoxTextButton(
+                    label = if (organizeEditing) "完成" else "整理",
+                    onClick = onOrganize,
+                    outlined = false,
+                    modifier = Modifier.testTag("catalog_organize"),
+                )
+            }
+            if (onImport != null && !organizeEditing) {
                 if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
                     ToolBoxIconButton(
                         icon = ToolBoxIconKey.Add,

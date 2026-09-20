@@ -1,6 +1,11 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.DragIndicator
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -46,6 +51,11 @@ enum class ToolBoxIconKey {
     Search,
     Back,
     ChevronRight,
+    ChevronDown,
+    Star,
+    StarFilled,
+    More,
+    Drag,
     Shield,
     Refresh,
     Folder,
@@ -112,6 +122,11 @@ internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
     ToolBoxIconKey.Search -> Icons.Outlined.Search
     ToolBoxIconKey.Back -> OpenDesignIcons.Back
     ToolBoxIconKey.ChevronRight -> Icons.AutoMirrored.Outlined.KeyboardArrowRight
+    ToolBoxIconKey.ChevronDown -> Icons.Outlined.KeyboardArrowDown
+    ToolBoxIconKey.Star -> Icons.Outlined.StarBorder
+    ToolBoxIconKey.StarFilled -> Icons.Filled.Star
+    ToolBoxIconKey.More -> Icons.Outlined.MoreHoriz
+    ToolBoxIconKey.Drag -> Icons.Outlined.DragIndicator
     ToolBoxIconKey.Shield -> Icons.Outlined.Shield
     ToolBoxIconKey.Refresh -> Icons.Outlined.Refresh
     ToolBoxIconKey.Folder -> Icons.Outlined.Folder
