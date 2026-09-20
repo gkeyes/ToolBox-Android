@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import androidx.compose.foundation.rememberScrollState
@@ -160,9 +162,11 @@ private fun RuntimeCenteredState(title: String, detail: String) {
         Modifier.fillMaxSize().padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally) {
             AppText(
                 title,
+                modifier = Modifier.fillMaxWidth(),
                 textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
                 weight = FontWeight.Bold,
                 align = TextAlign.Center,
@@ -170,6 +174,7 @@ private fun RuntimeCenteredState(title: String, detail: String) {
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
             AppText(
                 detail,
+                modifier = Modifier.fillMaxWidth(),
                 textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary,
                 align = TextAlign.Center,
@@ -184,23 +189,7 @@ private fun RuntimeErrorState(message: String, onRetry: () -> Unit) {
         Modifier.fillMaxSize().padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
-        SurfaceCard {
-            AppText(
-                "工具暂时无法打开",
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-                weight = FontWeight.Bold,
-                align = TextAlign.Center,
-            )
-            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
-            AppText(
-                message,
-                textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                color = ToolBoxThemeTokens.colors.textSecondary,
-                align = TextAlign.Center,
-            )
-            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-            ToolBoxPrimaryButton("重试", onClick = onRetry, modifier = Modifier.fillMaxWidth())
-        }
+        HostStatusCard("工具暂时无法打开", message, onRetry)
     }
 }
 
@@ -214,9 +203,22 @@ fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) 
             .padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
-        SurfaceCard {
+        HostStatusCard(
+            if (loading) "正在打开本机工具目录" else "ToolBox 暂时无法启动",
+            message, onRetry.takeUnless { loading },
+        )
+    }
+}
+
+@Composable
+private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)?) {
+    // Short states stay centered; long errors remain reachable in landscape and at large font sizes.
+    Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+        .testTag("host_status_scroll")) {
+        SurfaceCard(Modifier.testTag("host_status_card")) {
             AppText(
-                if (loading) "正在打开本机工具目录" else "ToolBox 暂时无法启动",
+                title,
+                modifier = Modifier.fillMaxWidth(),
                 textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
                 weight = FontWeight.Bold,
                 align = TextAlign.Center,
@@ -224,11 +226,12 @@ fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) 
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
             AppText(
                 message,
+                modifier = Modifier.fillMaxWidth(),
                 textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary,
                 align = TextAlign.Center,
             )
-            if (!loading) {
+            if (onRetry != null) {
                 Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
                 ToolBoxPrimaryButton(
                     label = "重试",

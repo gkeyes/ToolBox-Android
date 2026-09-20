@@ -116,7 +116,9 @@ internal fun AppearanceContent(
         }
 
         item("system-color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-        item("system-color-title") { SectionHeader("系统颜色") }
+        item("system-color-title") {
+            SectionHeader(if (settings.themeStyle == io.toolbox.core.data.ThemeStyle.LIQUID_GLASS) "颜色与材质" else "颜色")
+        }
         item("system-color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("system-color-settings") {
             ToolBoxGroupedSurface {
@@ -130,15 +132,8 @@ internal fun AppearanceContent(
                     },
                     enabled = state.loaded,
                 )
-            }
-        }
-
-        if (settings.themeStyle == io.toolbox.core.data.ThemeStyle.LIQUID_GLASS) {
-            item("material-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-            item("material-title") { SectionHeader("玻璃材质") }
-            item("material-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-            item("material-setting") {
-                ToolBoxGroupedSurface {
+                if (settings.themeStyle == io.toolbox.core.data.ThemeStyle.LIQUID_GLASS) {
+                    ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                     ToolBoxSwitchSettingRow(
                         title = "降低透明度",
                         modifier = Modifier.testTag(HostTestTags.AppearanceReduceTransparency),

@@ -235,7 +235,7 @@ internal fun DetailScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         ToolBoxAppScaffold(
-            modifier = Modifier.fillMaxSize().widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth),
+            modifier = Modifier.widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth).fillMaxSize(),
             topBar = {
                 ToolBoxTopBar(
                     title = title,
@@ -254,7 +254,12 @@ internal fun DetailScreen(
                     .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
                     .consumeWindowInsets(scaffoldPadding),
             ) {
-                content(if (isGlass) scaffoldPadding else PaddingValues(0.dp))
+                Box(
+                    Modifier.widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                        .fillMaxSize().align(Alignment.TopCenter).testTag("host_detail_content"),
+                ) {
+                    content(if (isGlass) scaffoldPadding else PaddingValues(0.dp))
+                }
             }
         }
     }

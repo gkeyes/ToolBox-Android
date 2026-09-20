@@ -6,6 +6,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -82,7 +86,7 @@ fun ToolBoxSettingRow(
     enabled: Boolean = true,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 64.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -137,44 +141,53 @@ fun ToolBoxValueRow(
     valueColor: androidx.compose.ui.graphics.Color = ToolBoxThemeTokens.colors.textSecondary,
 ) {
     val spacing = ToolBoxThemeTokens.spacing
-    Row(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+            .heightIn(min = if (summary.isNullOrBlank()) ToolBoxThemeTokens.sizes.denseRow else 64.dp)
             .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
-        verticalAlignment = Alignment.CenterVertically,
+        contentAlignment = Alignment.CenterStart,
     ) {
-        icon?.let {
-            ToolBoxPreferenceIcon(it)
-            Spacer(Modifier.width(spacing.oneHalf))
-        }
-        Column(Modifier.weight(1f)) {
-            ToolBoxText(
-                text = title,
-                style = ToolBoxThemeTokens.textStyles.title.copy(
-                    color = ToolBoxThemeTokens.colors.textPrimary,
-                    fontWeight = FontWeight.Medium,
-                ),
-            )
-            summary?.let {
+        val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.3f
+        val labelWidth = (maxWidth - if (icon != null) 36.dp + spacing.oneHalf else 0.dp) * 0.4f
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            icon?.let {
+                ToolBoxPreferenceIcon(it)
+                Spacer(Modifier.width(spacing.oneHalf))
+            }
+            if (stacked) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.half)) {
+                    ToolBoxValueLabel(title, summary)
+                    ToolBoxText(value, style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = valueColor, fontWeight = FontWeight.Medium,
+                    ))
+                }
+            } else {
+                ToolBoxValueLabel(title, summary, Modifier.widthIn(max = labelWidth))
+                Spacer(Modifier.width(spacing.oneHalf))
                 ToolBoxText(
-                    text = it,
+                    text = value,
+                    modifier = Modifier.weight(1f),
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = ToolBoxThemeTokens.colors.textSecondary,
+                        color = valueColor,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.End,
                     ),
                 )
             }
         }
-        Spacer(Modifier.width(spacing.one))
-        ToolBoxText(
-            text = value,
-            modifier = Modifier.weight(1f),
-            style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                color = valueColor,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.End,
-            ),
-        )
+    }
+}
+
+@Composable
+private fun ToolBoxValueLabel(title: String, summary: String?, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
+            color = ToolBoxThemeTokens.colors.textPrimary, fontWeight = FontWeight.Medium,
+        ))
+        summary?.let {
+            ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
+        }
     }
 }
 

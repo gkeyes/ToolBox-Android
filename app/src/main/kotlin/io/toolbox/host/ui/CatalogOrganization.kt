@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -35,7 +34,7 @@ internal val CatalogSort.label: String get() = when (this) {
 
 @Composable
 internal fun HomeSectionHeader(title: String, action: String? = null, onAction: () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         AppText(title, Modifier.weight(1f).semantics { heading() },
             textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold))
         if (action != null) ToolBoxTextButton(action, onAction, outlined = false)
@@ -64,7 +63,7 @@ internal fun LazyListScope.catalogHomeSections(
     homeToolGrid(favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
         onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) })
     item("groups-heading") {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
         HomeSectionHeader("分组")
     }
     if (state.layout.groups.isEmpty()) item("groups-empty") {
@@ -82,7 +81,7 @@ internal fun LazyListScope.catalogHomeSections(
         }
         if (expanded) {
             if (members.isEmpty()) item("empty-group:" + group.id) {
-                Box(Modifier.groupSurface(bottom = true).padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                Box(Modifier.groupSurface(bottom = true).padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
                     ToolBoxTextButton("添加工具", { onEditGroup(group.id) }, outlined = false)
                 }
             }
@@ -112,8 +111,8 @@ private fun LazyListScope.homeToolGrid(
         Row(
             Modifier.fillMaxWidth()
                 .then(if (grouped) Modifier.groupSurface(bottom = row == rows - 1) else Modifier)
-                .padding(start = if (grouped) 16.dp else 0.dp, end = if (grouped) 16.dp else 0.dp,
-                    bottom = if (grouped || row < rows - 1) 16.dp else 0.dp),
+                .padding(start = 16.dp, end = 16.dp,
+                    bottom = if (row < rows - 1) 12.dp else if (grouped) 8.dp else 0.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             repeat(columns) { column ->
@@ -163,7 +162,7 @@ private fun GroupHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            Modifier.weight(1f).heightIn(min = 56.dp).testTag("catalog_group:" + group.id)
+            Modifier.weight(1f).heightIn(min = 52.dp).testTag("catalog_group:" + group.id)
                 .semantics {
                     stateDescription = if (expanded) "已展开" else "已收起"
                     customActions = buildList {
@@ -177,7 +176,7 @@ private fun GroupHeader(
                     else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
                         role = Role.Button, onClick = onExpand, onLongClick = onEdit,
                         onLongClickLabel = "编辑分组" + group.name))
-                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -204,7 +203,6 @@ internal fun CatalogHomeTile(
     onMoveBefore: (() -> Unit)? = null,
     onMoveAfter: (() -> Unit)? = null,
 ) {
-    val labelHeight = with(LocalDensity.current) { 36.sp.toDp() }
     Column(
         modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(16.dp))
             .semantics(mergeDescendants = true) {
@@ -221,7 +219,7 @@ internal fun CatalogHomeTile(
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box {
+        Box(Modifier.testTag("catalog_home_icon:" + tool.toolId)) {
             CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode,
                 visual = tool.visual(ToolBoxThemeTokens.colors.primary), size = 52.dp)
             if (editing) Box(Modifier.align(Alignment.TopEnd).size(20.dp)
@@ -229,8 +227,8 @@ internal fun CatalogHomeTile(
                 ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(16.dp))
             }
         }
-        Spacer(Modifier.height(8.dp))
-        AppText(tool.name, Modifier.heightIn(min = labelHeight), maxLines = 2, align = TextAlign.Center,
+        Spacer(Modifier.height(6.dp))
+        AppText(tool.name, maxLines = 2, align = TextAlign.Center,
             textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
     }
 }

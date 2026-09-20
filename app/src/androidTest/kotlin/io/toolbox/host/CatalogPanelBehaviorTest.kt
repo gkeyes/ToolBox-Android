@@ -2,11 +2,16 @@ package io.toolbox.host
 
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.toolbox.core.ui.theme.ToolBoxTheme
@@ -23,34 +28,41 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+import kotlin.math.ceil
 
 @RunWith(Parameterized::class)
-class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
+class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle, private val wideLargeText: Boolean) {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val fixture = CatalogBehaviorFixture()
     private val groupId = mutableStateOf<String?>(null)
     private val selectedToolId = mutableStateOf<String?>(null)
     private val managedToolId = mutableStateOf<String?>(null)
     private val pickingFavorites = mutableStateOf(false)
+    private var targetDensity = 1f
 
     private fun render(restoration: StateRestorationTester? = null) {
         val content: @Composable () -> Unit = {
-            ToolBoxTheme(style = style, reduceTransparency = true) {
-                val state = fixture.state()
-                val detail = managedToolId.value
-                if (detail == null) AppText("工具列表")
-                else ToolDetailScreen(detail, state, fixture::action, { managedToolId.value = null }, {}, {})
-                groupId.value?.let { id ->
-                    CatalogGroupEditor(state.layout.groups.firstOrNull { it.id == id }, state, creating = id.isEmpty(),
-                        onAction = fixture::action, onDismiss = { groupId.value = null })
-                }
-                selectedToolId.value?.let { id ->
-                    state.tools.firstOrNull { it.toolId == id }?.let { tool ->
-                        CatalogToolOptions(tool, state, fixture::action, onDismiss = { selectedToolId.value = null },
-                            onManage = { fixture.managed += id; managedToolId.value = id })
+            val density = LocalDensity.current
+            val panelDensity = if (wideLargeText) Density(density.density * 0.5f, 1.6f) else density
+            SideEffect { targetDensity = panelDensity.density }
+            CompositionLocalProvider(LocalDensity provides panelDensity) {
+                ToolBoxTheme(style = style, reduceTransparency = true) {
+                    val state = fixture.state()
+                    val detail = managedToolId.value
+                    if (detail == null) AppText("工具列表")
+                    else ToolDetailScreen(detail, state, fixture::action, { managedToolId.value = null }, {}, {})
+                    groupId.value?.let { id ->
+                        CatalogGroupEditor(state.layout.groups.firstOrNull { it.id == id }, state, creating = id.isEmpty(),
+                            onAction = fixture::action, onDismiss = { groupId.value = null })
                     }
+                    selectedToolId.value?.let { id ->
+                        state.tools.firstOrNull { it.toolId == id }?.let { tool ->
+                            CatalogToolOptions(tool, state, fixture::action, onDismiss = { selectedToolId.value = null },
+                                onManage = { fixture.managed += id; managedToolId.value = id })
+                        }
+                    }
+                    if (pickingFavorites.value) CatalogFavoritesPicker(state, fixture::action, { pickingFavorites.value = false })
                 }
-                if (pickingFavorites.value) CatalogFavoritesPicker(state, fixture::action, { pickingFavorites.value = false })
             }
         }
         if (restoration == null) compose.activity.setContent(content = content)
@@ -217,7 +229,203 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.runOnIdle { assertEquals(listOf("a", "b"), fixture.layout.value.favorites) }
     }
 
-    private fun finishGroupNameInput() {
+    @Test fun compactShortcutsKeepSeparateTouchTargetsAndEveryActionWorks() {
+        selectedToolId.value = "a"
+        render()
+        val favorite = compose.onNodeWithTag("catalog_tool_favorite").assertIsDisplayed().assertHasClickAction()
+        val groups = compose.onNodeWithTag("catalog_tool_groups").assertIsDisplayed().assertHasClickAction()
+        val first = favorite.fetchSemanticsNode()
+        val second = groups.fetchSemanticsNode()
+        val minimumTarget = compose.runOnIdle { 48f * targetDensity }
+        listOf(first, second).forEach { node ->
+            assertTrue("Shortcut must retain a 48 dp width", node.size.width + 1f >= minimumTarget)
+            assertTrue("Shortcut must retain a 48 dp height", node.size.height + 1f >= minimumTarget)
+        }
+        assertTrue("Shortcut touch targets must not overlap", first.boundsInRoot.right <= second.boundsInRoot.left)
+        assertEquals("Shortcut actions must share a horizontal row", first.boundsInRoot.center.y, second.boundsInRoot.center.y, 1f)
+        listOf("catalog_tool_favorite", "catalog_tool_groups").forEach(::assertPanelLabelFits)
+        favorite.performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf("b"), fixture.layout.value.favorites) }
+        groups.performTouchInput { click() }
+        compose.onNodeWithTag("catalog_group_picker").assertIsDisplayed()
+        compose.onNodeWithTag("membership:g2").performScrollTo().performTouchInput { click() }
+        compose.runOnIdle { assertTrue("a" in fixture.layout.value.groups.single { it.id == "g2" }.members) }
+        compose.onNodeWithTag("catalog_panel_back").performTouchInput { click() }
+        compose.onNodeWithTag("catalog_tool_manage").performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf("a"), fixture.managed) }
+    }
+
+    @Test fun editorActionsStayAboveTheKeyboardAndDraftSurvivesFinishingInput() {
+        groupId.value = "g1"
+        render()
+        val name = compose.onNodeWithTag("catalog_group_name")
+        name.performTextReplacement("键盘中的草稿")
+        val sheetRoot = awaitGroupKeyboard()
+        val usableBottom = compose.runOnUiThread {
+            val insets = requireNotNull(ViewCompat.getRootWindowInsets(sheetRoot.view))
+            sheetRoot.view.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        }
+        listOf("catalog_group_cancel", "catalog_group_save").forEach { tag ->
+            val action = compose.onNodeWithTag(tag).assertIsDisplayed().assertHasClickAction().fetchSemanticsNode()
+            assertTrue("$tag must fit above the visible keyboard: ${action.boundsInRoot} / $usableBottom",
+                action.positionInRoot.y + action.size.height <= usableBottom + 1f)
+            assertTrue("$tag must retain its full touch height", action.size.height + 1f >= 48f * targetDensity)
+            assertEquals("$tag must remain fully visible", action.size.height.toFloat(), action.boundsInRoot.height, 1f)
+        }
+        finishGroupNameInput()
+        groupEditorRow("name", "catalog_group_name").assertTextEquals("键盘中的草稿").assertIsNotFocused()
+        groupMember("b").performTouchInput { click() }
+        compose.onNodeWithTag("catalog_group_save").assertIsDisplayed().performTouchInput { click() }
+        compose.onNodeWithTag("catalog_group_editor").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals("键盘中的草稿", fixture.layout.value.groups.first().name)
+            assertEquals(listOf("a", "b"), fixture.layout.value.groups.first().members)
+        }
+    }
+
+    @Test fun draggingTheCompactTitleDismissesWithoutRunningAToolAction() {
+        selectedToolId.value = "a"
+        val original = fixture.layout.value
+        render()
+        val header = compose.onNodeWithTag("catalog_panel_header").assertIsDisplayed()
+        val bounds = header.fetchSemanticsNode().boundsInRoot
+        val title = compose.onNode(hasText("Alpha") and hasAnyAncestor(hasTestTag("catalog_panel_header")),
+            useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val close = compose.onNodeWithTag("catalog_panel_close").fetchSemanticsNode().boundsInRoot
+        assertFalse("The drag must start on the title, outside the close button", close.contains(title.center))
+        val start = title.center - bounds.topLeft
+        header.performTouchInput {
+            swipe(start, start + Offset(0f, bounds.height * 2f), durationMillis = 500)
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_tool_options").fetchSemanticsNodes().isEmpty() }
+        compose.runOnIdle {
+            assertNull(selectedToolId.value)
+            assertEquals(original, fixture.layout.value)
+            assertTrue(fixture.pending.isEmpty())
+            assertTrue(fixture.opened.isEmpty())
+            assertTrue(fixture.managed.isEmpty())
+            assertTrue(fixture.uninstallRequested.isEmpty())
+        }
+    }
+
+    @Test fun swipingUpOnAnOversizedTitleScrollsToTheShortcutActions() {
+        fixture.tools.value = fixture.tools.value.map { if (it.toolId == "a") it.copy(name = "测") else it }
+        selectedToolId.value = "a"
+        render()
+        val title = panelTitle()
+        val shortTitle = title.fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        title.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action -> assertTrue(action(layouts)) }
+        val layout = layouts.single()
+        val glyphWidth = layout.getLineRight(0) - layout.getLineLeft(0)
+        val lineHeight = layout.getLineBottom(0) - layout.getLineTop(0)
+        val sheetRoot = requireNotNull(shortTitle.root as? ViewRootForTest)
+        val windowHeight = compose.runOnUiThread { sheetRoot.view.height }
+        assertTrue(glyphWidth > 0f && lineHeight > 0f)
+        val charactersPerLine = (shortTitle.size.width / glyphWidth).toInt().coerceAtLeast(1)
+        val lineCount = ceil(windowHeight / lineHeight).toInt() + 3
+        val oversizedName = "测".repeat(charactersPerLine * lineCount)
+        compose.runOnIdle {
+            fixture.tools.value = fixture.tools.value.map { if (it.toolId == "a") it.copy(name = oversizedName) else it }
+        }
+
+        val list = compose.onNodeWithTag("catalog_tool_options").assertIsDisplayed()
+        val viewport = list.fetchSemanticsNode().boundsInRoot
+        val header = compose.onNodeWithTag("catalog_panel_header").fetchSemanticsNode()
+        val originalHeaderTop = header.positionInRoot.y
+        assertTrue("The fixture title must exceed the actual sheet viewport", header.size.height > viewport.height)
+        compose.onNodeWithTag("catalog_tool_favorite").assertIsNotDisplayed()
+        compose.onNodeWithTag("catalog_tool_groups").assertIsNotDisplayed()
+        val titleArea = panelTitle().fetchSemanticsNode().boundsInRoot.intersect(viewport)
+        assertTrue("A visible title area must accept the real swipe", titleArea.height > 0f && titleArea.width > 0f)
+        val start = Offset(titleArea.center.x, titleArea.top + titleArea.height * 0.8f)
+        val end = Offset(titleArea.center.x, titleArea.top + titleArea.height * 0.2f)
+        val close = compose.onNodeWithTag("catalog_panel_close").fetchSemanticsNode().boundsInRoot
+        assertFalse("The swipe must start on title text, not its close control", close.contains(start))
+        list.performTouchInput { swipe(start - viewport.topLeft, end - viewport.topLeft, durationMillis = 800) }
+
+        val movedHeader = compose.onNodeWithTag("catalog_panel_header").fetchSemanticsNode()
+        assertTrue("A real upward title swipe must move the list instead of being swallowed by sheet drag",
+            movedHeader.positionInRoot.y < originalHeaderTop - 1f)
+        compose.runOnIdle { assertEquals("a", selectedToolId.value) }
+        // Only after proving physical scrolling, finish locating the action semantically.
+        list.performScrollToKey("shortcuts")
+        compose.onNodeWithTag("catalog_tool_favorite").assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf("b"), fixture.layout.value.favorites); assertTrue(fixture.opened.isEmpty()) }
+    }
+
+    @Test fun cancellingATitleDragRestoresTheSheetWithoutRunningAnAction() {
+        selectedToolId.value = "a"
+        val original = fixture.layout.value
+        render()
+        val header = compose.onNodeWithTag("catalog_panel_header").assertIsDisplayed()
+        val bounds = header.fetchSemanticsNode().boundsInRoot
+        val start = panelTitle().fetchSemanticsNode().boundsInRoot.center - bounds.topLeft
+        var pointerDown = false
+        try {
+            header.performTouchInput {
+                down(start)
+                pointerDown = true
+                moveTo(start + Offset(0f, bounds.height * 2f), delayMillis = 250)
+            }
+            assertTrue("The cancellation fixture must first move the sheet",
+                header.fetchSemanticsNode().positionInRoot.y > bounds.top + 1f)
+        } finally {
+            if (pointerDown) header.performTouchInput { cancel() }
+        }
+        compose.waitForIdle()
+        val restored = header.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertEquals("Cancellation must settle back to the original sheet position", bounds.top, restored.top, 1f)
+        compose.runOnIdle {
+            assertEquals("a", selectedToolId.value)
+            assertEquals(original, fixture.layout.value)
+            assertTrue(fixture.pending.isEmpty())
+            assertTrue(fixture.opened.isEmpty())
+            assertTrue(fixture.managed.isEmpty())
+            assertTrue(fixture.uninstallRequested.isEmpty())
+        }
+        compose.onNodeWithTag("catalog_tool_favorite").performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf("b"), fixture.layout.value.favorites) }
+    }
+
+    private fun panelTitle(): SemanticsNodeInteraction = compose.onNode(
+        SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and hasAnyAncestor(hasTestTag("catalog_panel_header")),
+        useUnmergedTree = true,
+    )
+
+    private fun assertPanelLabelFits(tag: String) {
+        val results = mutableListOf<TextLayoutResult>()
+        val label = compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and hasAnyAncestor(hasTestTag(tag)),
+            useUnmergedTree = true,
+        )
+        label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+            assertTrue(action(results))
+        }
+        val layout = results.single()
+        val labelNode = label.assertIsDisplayed().fetchSemanticsNode()
+        val diagnostic = "$tag measured=${labelNode.size}, layout=${layout.size}, " +
+            "paragraph=${layout.multiParagraph.width}x${layout.multiParagraph.height}, constraints=${layout.layoutInput.constraints}"
+        // BasicText(String)'s semantics reconstructs a MultiParagraph with the original
+        // maxWidth, while a wrap-content label has a smaller measured width. Compare the
+        // laid-out lines with the actual label bounds, not that empty paragraph width.
+        assertFalse("Text exceeds its measured height: $diagnostic", layout.didOverflowHeight)
+        repeat(layout.lineCount) { line ->
+            assertFalse("Shortcut text must not be ellipsized: $diagnostic", layout.isLineEllipsized(line))
+            assertTrue("Text extends past the left edge: $diagnostic", layout.getLineLeft(line) >= -1f)
+            assertTrue("Text extends past the right edge: $diagnostic", layout.getLineRight(line) <= labelNode.size.width + 1f)
+            assertTrue("Text extends past the bottom edge: $diagnostic", layout.getLineBottom(line) <= labelNode.size.height + 1f)
+        }
+        assertEquals("The entire label must be laid out", layout.layoutInput.text.length,
+            layout.getLineEnd(layout.lineCount - 1, visibleEnd = true))
+        assertEquals("Shortcut label must not be clipped by its parent", labelNode.size.height.toFloat(), labelNode.boundsInRoot.height, 1f)
+        assertEquals("Shortcut label must not be clipped horizontally", labelNode.size.width.toFloat(), labelNode.boundsInRoot.width, 1f)
+        val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        assertEquals("$tag label must share the compact horizontal action's center line", bounds.center.y,
+            labelNode.boundsInRoot.center.y, 1f)
+    }
+
+    private fun awaitGroupKeyboard(): ViewRootForTest {
         val name = compose.onNodeWithTag("catalog_group_name")
         val sheetRoot = requireNotNull(name.fetchSemanticsNode().root as? ViewRootForTest)
         // Android delivers IME insets after Compose is idle. Finish real input in the sheet's
@@ -227,6 +435,13 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
                 ViewCompat.getRootWindowInsets(sheetRoot.view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
             }
         }
+        compose.waitUntil(5_000) { compose.runOnUiThread { !sheetRoot.hasPendingMeasureOrLayout } }
+        return sheetRoot
+    }
+
+    private fun finishGroupNameInput() {
+        val name = compose.onNodeWithTag("catalog_group_name")
+        val sheetRoot = awaitGroupKeyboard()
         name.performImeAction()
         compose.waitUntil(5_000) {
             compose.runOnUiThread {
@@ -248,7 +463,9 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
     }
 
     companion object {
-        @JvmStatic @Parameterized.Parameters(name = "{0}") fun variants() =
-            listOf(arrayOf(ToolBoxThemeStyle.Miuix), arrayOf(ToolBoxThemeStyle.LiquidGlass))
+        @JvmStatic @Parameterized.Parameters(name = "{0} wideLargeText={1}") fun variants() = listOf(
+            arrayOf<Any>(ToolBoxThemeStyle.Miuix, false), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, false),
+            arrayOf<Any>(ToolBoxThemeStyle.Miuix, true), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, true),
+        )
     }
 }

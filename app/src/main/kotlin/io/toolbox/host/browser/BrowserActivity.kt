@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -64,7 +65,6 @@ import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxTheme
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.browserViewIntent
 import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
@@ -101,7 +101,7 @@ class BrowserActivity : ComponentActivity() {
         setContent {
             ToolBoxTheme(
                 mode = appearance.themeMode,
-                style = ToolBoxThemeStyle.LiquidGlass,
+                style = appearance.themeStyle,
                 reduceTransparency = appearance.reduceTransparency,
             ) {
                 BackHandler { goBack() }
@@ -365,22 +365,9 @@ class BrowserActivity : ComponentActivity() {
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
         if (menu) ToolBoxModalDialog(onDismissRequest = { menu = false }) {
-            ToolBoxText(
-                title.ifBlank { "内置浏览器" },
-                modifier = Modifier.fillMaxWidth().semantics { heading() },
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = ToolBoxThemeTokens.textStyles.title.copy(
-                    color = colors.textPrimary, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
-                ),
-            )
-            Spacer(Modifier.height(6.dp))
-            val uri = Uri.parse(address)
-            ToolBoxText(
-                (if (uri.scheme == "http") "未加密 · " else "") + uri.host.orEmpty(),
-                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
-            )
-            Spacer(Modifier.height(20.dp))
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))) {
+            Column(Modifier.fillMaxWidth()
+                .semantics { paneTitle = "浏览器菜单" }
+                .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))) {
                 BrowserMenuAction("查看完整地址", ToolBoxIconKey.Note) { menu = false; fullAddress = true }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
                 BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
@@ -410,7 +397,7 @@ class BrowserActivity : ComponentActivity() {
                     clearConfirmation = true
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
             ToolBoxSecondaryButton("取消", { menu = false }, modifier = Modifier.fillMaxWidth())
         }
         if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
@@ -465,9 +452,9 @@ class BrowserActivity : ComponentActivity() {
         val colors = ToolBoxThemeTokens.colors
         val contentColor = if (destructive) colors.onSoftDanger else colors.textPrimary
         Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
                 .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ToolBoxIcon(icon, contentDescription = null,

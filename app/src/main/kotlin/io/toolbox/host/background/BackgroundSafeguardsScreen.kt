@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -237,8 +235,9 @@ internal fun BackgroundSafeguardsContent(
                 }
             }
 
-            item("sessions-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-            item("sessions-title") { SectionHeader("正在运行", "${sessions.size} 个") }
+            item("sessions-title") {
+                Column(Modifier.padding(top = ToolBoxThemeTokens.spacing.one)) { SectionHeader("正在运行", "${sessions.size} 个") }
+            }
             runningState.feedback?.let { feedback ->
                 item("stop-error") { FeedbackSurface(feedback.message, FeedbackTone.Error, true, onDismissFeedback) }
             }
@@ -260,18 +259,20 @@ internal fun BackgroundSafeguardsContent(
                         }
                         if (sessions.isNotEmpty()) {
                             ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
-                            ToolBoxDestructiveButton(
-                                label = "全部停止", onClick = onStopAll,
-                                enabled = runningState.stoppingSessionId == null,
-                                modifier = Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.oneHalf),
-                            )
+                            Box(Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.oneHalf), contentAlignment = Alignment.CenterEnd) {
+                                ToolBoxDestructiveButton(
+                                    label = "全部停止", onClick = onStopAll,
+                                    enabled = runningState.stoppingSessionId == null,
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            item("permissions-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-            item("permissions-title") { SectionHeader("系统保障") }
+            item("permissions-title") {
+                Column(Modifier.padding(top = ToolBoxThemeTokens.spacing.one)) { SectionHeader("系统保障") }
+            }
             item("permissions") {
                 ToolBoxGroupedSurface {
                     ToolBoxSettingRow(
@@ -304,8 +305,9 @@ internal fun BackgroundSafeguardsContent(
                 }
             }
 
-            item("hyperos-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-            item("hyperos-title") { SectionHeader("HyperOS") }
+            item("hyperos-title") {
+                Column(Modifier.padding(top = ToolBoxThemeTokens.spacing.one)) { SectionHeader("HyperOS") }
+            }
             item("hyperos") {
                 ToolBoxGroupedSurface {
                     ToolBoxSettingRow(
