@@ -34,9 +34,15 @@ on:
       - "scripts/ci/release-startup-smoke.py"
       - "scripts/tests/test_release_startup.py"
   workflow_dispatch:
+    inputs:
+      reuse_verified_run:
+        description: "Optional default-branch run with passed full host checks, for CI-evidence-only repairs"
+        type: string
+        required: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-${{ github.event_name }}-${{ github.ref }}
@@ -46,41 +52,64 @@ jobs:
   verify:
     name: Build APK and verify host behavior
     runs-on: ubuntu-24.04
+    outputs:
+      verification_scope: ${{ steps.baseline.outputs.scope }}
+      verification_run: ${{ steps.baseline.outputs.source_run }}
+      verification_commit: ${{ steps.baseline.outputs.base_commit }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select current or unchanged host verification evidence
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/ci/reuse-host-verification.py
+      - name: Verify release evidence and baseline reuse guards
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
       - name: Verify API contract, embedded SDK, and security entry points
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: Verify release startup evidence rejects incomplete launches
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
       - name: Build APKs and behavioral test APKs
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: >-
           ./gradlew --no-daemon
           :app:assembleDebug :app:assembleRelease
           :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
       - name: Verify installation, catalog, network, runtime and cancellation regressions
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: >-
           ./gradlew --no-daemon
           :core-data:testDebugUnitTest :tool-package:testDebugUnitTest
           :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
       - name: Enable accelerated behavior test emulator
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Verify catalog, backup, execution identity, dialogs and Wasm on Android
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         id: runtime_emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
@@ -96,7 +125,7 @@ jobs:
             adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
             bash scripts/ci/run-android-behavior.sh
       - name: Retain host unit test reports
-        if: ${{ always() }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-unit-tests-${{ github.sha }}
@@ -112,7 +141,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Retain Android behavior and WebView evidence
-        if: ${{ always() && steps.runtime_emulator.outcome != 'skipped' }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.runtime_emulator.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-webview-${{ github.sha }}
@@ -125,6 +154,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           name: apk-${{ github.sha }}
           path: app/build/outputs/apk/
@@ -201,6 +231,9 @@ jobs:
       - name: Verify release certificate identity and optimization then assemble delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          HOST_VERIFICATION_SCOPE: ${{ needs.verify.outputs.verification_scope }}
+          HOST_VERIFICATION_RUN: ${{ needs.verify.outputs.verification_run }}
+          HOST_VERIFICATION_COMMIT: ${{ needs.verify.outputs.verification_commit }}
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"

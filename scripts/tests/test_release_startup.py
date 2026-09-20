@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("startup", Path(__file__).resolve().parents[1] / "ci/release-startup-smoke.py")
 startup = importlib.util.module_from_spec(spec)
@@ -55,3 +58,41 @@ class ReleaseStartupEvidenceTest(unittest.TestCase):
         ):
             with self.subTest(ui=replacement), self.assertRaises(ValueError):
                 startup.validate_startup(**(self.fixture() | {"ui": replacement}))
+
+    def test_missing_or_invalid_hierarchy_is_never_home_evidence(self):
+        for ui in ('cat: /sdcard/toolbox-startup.xml: No such file or directory\n', '', '<other/>'):
+            with self.subTest(ui=ui), self.assertRaisesRegex(ValueError, 'UI hierarchy'):
+                startup.validate_startup(**(self.fixture() | {"ui": ui}))
+        # An XML declaration is optional; the actual rendered content remains required.
+        startup.validate_startup(**(self.fixture() | {"ui": self.fixture()["ui"].replace('<?xml version="1.0"?>', '')}))
+
+    @patch.object(startup.time, 'sleep')
+    def test_zero_exit_dump_without_file_retries_collection_without_reusing_stale_ui(self, _sleep):
+        with tempfile.TemporaryDirectory() as directory:
+            evidence = Path(directory)
+            (evidence / 'home.xml').write_text(self.fixture()['ui'])
+            pulls = []
+
+            def adb(*args, record=None):
+                if args[0] == 'pull':
+                    pulls.append(args)
+                    self.assertFalse((evidence / 'home.xml').exists())
+                    if len(pulls) == 1:
+                        raise subprocess.CalledProcessError(1, 'adb pull', output='remote file missing')
+                    Path(args[2]).write_text(self.fixture()['ui'])
+                return 'ERROR: null root node' if args[:3] == ('shell', 'uiautomator', 'dump') and not pulls else ''
+
+            ui = startup.capture_ui_hierarchy(adb, evidence)
+            self.assertEqual(2, len(pulls))
+            startup.validate_startup(**(self.fixture() | {"ui": ui}))
+            self.assertTrue((evidence / 'ui-collection-error-1.txt').exists())
+
+    @patch.object(startup.time, 'sleep')
+    def test_collection_failure_remains_blocking(self, _sleep):
+        with tempfile.TemporaryDirectory() as directory:
+            def adb(*args, record=None):
+                if args[0] == 'pull':
+                    raise subprocess.CalledProcessError(1, 'adb pull')
+                return ''
+            with self.assertRaisesRegex(RuntimeError, 'Could not collect'):
+                startup.capture_ui_hierarchy(adb, Path(directory))
