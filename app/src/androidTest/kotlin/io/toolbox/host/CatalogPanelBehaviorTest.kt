@@ -64,7 +64,7 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         })
         render(restoration)
         compose.onNodeWithTag("catalog_group_name").performTextReplacement("保留的草稿")
-        compose.onNodeWithTag("group-tool:b").performScrollTo().performClick()
+        groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_save").performClick()
         val operation = compose.runOnIdle {
             assertEquals(1, fixture.pending.size)
@@ -81,12 +81,12 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.runOnIdle { fixture.complete(operation, "存储失败，请重试。") }
         compose.onNodeWithTag("catalog_group_error").assertTextContains("存储失败，请重试。")
         compose.onNodeWithTag("catalog_group_save").assertIsEnabled()
-        compose.onNodeWithTag("catalog_group_name").performScrollTo().assertTextEquals("保留的草稿")
-        compose.onNodeWithTag("group-tool:b").performScrollTo().assertIsOn()
+        groupEditorRow("name", "catalog_group_name").assertTextEquals("保留的草稿")
+        groupMember("b").assertIsOn()
 
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithTag("catalog_group_name").performScrollTo().assertTextEquals("保留的草稿")
-        compose.onNodeWithTag("group-tool:b").performScrollTo().assertIsOn()
+        groupEditorRow("name", "catalog_group_name").assertTextEquals("保留的草稿")
+        groupMember("b").assertIsOn()
         compose.onNodeWithTag("catalog_group_save").performClick()
         compose.runOnIdle {
             assertEquals(1, fixture.pending.size)
@@ -104,26 +104,29 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         groupId.value = ""
         render()
         compose.onNodeWithTag("catalog_group_name").performTextInput("工作")
-        compose.onNodeWithTag("group-tool:b").performScrollTo().performClick()
+        groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_save").performClick()
         compose.onNodeWithTag("catalog_group_editor").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(listOf("b"), fixture.layout.value.groups.single { it.id == "new" }.members)
             groupId.value = "g2"
         }
-        compose.onNodeWithTag("group-tool:b").performScrollTo().performClick()
+        groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_cancel").performClick()
         compose.runOnIdle {
             assertTrue(fixture.layout.value.groups.single { it.id == "g2" }.members.isEmpty())
             groupId.value = "g2"
         }
-        compose.onNodeWithTag("catalog_group_delete").performScrollTo().performClick()
+        groupEditorRow("delete", "catalog_group_delete").performClick()
         compose.onNodeWithTag("catalog_group_delete_confirmation").assertExists()
         // Back leaves the confirmation page and keeps the editor, rather than stacking a dialog.
         pressCatalogBack()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("catalog_group_editor").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("catalog_group_editor").assertExists()
         compose.onNodeWithTag("catalog_group_delete_confirmation").assertDoesNotExist()
-        compose.onNodeWithTag("catalog_group_delete").performScrollTo().performClick()
+        groupEditorRow("delete", "catalog_group_delete").performClick()
         compose.onNodeWithTag("catalog_group_delete_confirm").performClick()
         compose.onNodeWithTag("catalog_group_editor").assertDoesNotExist()
         compose.onNodeWithTag("catalog_group_delete_confirmation").assertDoesNotExist()
@@ -207,6 +210,15 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.onNodeWithTag("catalog_panel_close").performClick()
         compose.onNodeWithTag("catalog_favorites_picker").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf("a", "b"), fixture.layout.value.favorites) }
+    }
+
+    private fun groupMember(toolId: String): SemanticsNodeInteraction =
+        groupEditorRow("tool:$toolId", "group-tool:$toolId")
+
+    private fun groupEditorRow(key: String, tag: String): SemanticsNodeInteraction {
+        // The IME can reduce the sheet viewport until a member row is not composed yet.
+        compose.onNodeWithTag("catalog_group_members").performScrollToKey(key)
+        return compose.onNodeWithTag(tag).assertIsDisplayed()
     }
 
     companion object {

@@ -172,16 +172,24 @@ internal fun Modifier.catalogDragTarget(
     enabled: Boolean,
     onMove: (Int) -> Unit,
 ): Modifier {
-    var bounds by remember(key) { mutableStateOf(Rect.Zero) }
-    SideEffect {
+    // Geometry must update in the placement callback. Reading a State only inside
+    // SideEffect does not subscribe composition to later layout/scroll changes.
+    val measured = remember(key) { arrayOf(Rect.Zero) }
+    fun publish(bounds: Rect) {
         if (enabled && bounds != Rect.Zero) {
             state.targets[key] = HomeDragTarget(key, collection, index, label, tool, bounds, onMove, itemCount)
         } else state.targets.remove(key)
     }
+    SideEffect {
+        publish(measured[0])
+    }
     DisposableEffect(state, key) { onDispose { state.targets.remove(key) } }
     val target = state.targetKey == key && state.active?.key != key
     return this
-        .onGloballyPositioned { bounds = it.boundsInRoot() }
+        .onGloballyPositioned {
+            measured[0] = it.boundsInRoot()
+            publish(measured[0])
+        }
         .graphicsLayer { alpha = if (state.active?.key == key) 0.25f else 1f }
         .then(if (target) Modifier.border(2.dp, ToolBoxThemeTokens.colors.primary, RoundedCornerShape(16.dp)) else Modifier)
 }

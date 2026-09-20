@@ -12,6 +12,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,8 +36,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     private val destination = mutableStateOf(MainDestination.Home)
     private var isEditing = false
 
-    private fun render() {
-        compose.activity.setContent {
+    private fun render(restoration: StateRestorationTester? = null) {
+        val content: @Composable () -> Unit = {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides if (wideLargeText) Density(density.density * 0.5f, 1.6f) else density) {
                 ToolBoxTheme(style = style, reduceTransparency = true) {
@@ -61,6 +63,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                 }
             }
         }
+        if (restoration == null) compose.activity.setContent(content = content)
+        else restoration.setContent(content)
     }
 
     @Test fun destinationsKeepHomeSectionsSeparateAndExitOrganizing() {
@@ -82,7 +86,10 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertFalse(isEditing) }
         compose.onNodeWithTag(HostTestTags.BottomHome).performClick()
         compose.onNodeWithTag("catalog_organize").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { isEditing } }
+        compose.onNodeWithTag("catalog_organize").assertTextContains("完成")
         pressCatalogBack()
+        compose.waitUntil(5_000) { compose.runOnIdle { !isEditing } }
         compose.runOnIdle { assertFalse(isEditing); assertEquals(MainDestination.Home, destination.value) }
     }
 
@@ -106,6 +113,27 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertEquals(listOf("a", "b"), fixture.opened) }
     }
 
+    @Test fun organizingStateRestoresAndFinishingRestoresImport() {
+        val restoration = StateRestorationTester(object : ComposeContentTestRule by compose {
+            override fun setContent(composable: @Composable () -> Unit) { compose.activity.setContent(content = composable) }
+        })
+        render(restoration)
+        compose.onNodeWithTag(HostTestTags.ImportFab).assertIsDisplayed()
+        compose.onNodeWithTag("catalog_organize").performClick()
+        compose.onNodeWithTag("catalog_organize").assertTextContains("完成")
+        compose.onNodeWithTag(HostTestTags.ImportFab).assertDoesNotExist()
+
+        restoration.emulateSavedInstanceStateRestore()
+
+        compose.runOnIdle { assertTrue(isEditing) }
+        compose.onNodeWithTag("catalog_organize").assertTextContains("完成")
+        compose.onNodeWithTag(HostTestTags.ImportFab).assertDoesNotExist()
+        compose.onNodeWithTag("catalog_organize").performClick()
+        compose.runOnIdle { assertFalse(isEditing) }
+        compose.onNodeWithTag("catalog_organize").assertTextContains("整理")
+        compose.onNodeWithTag(HostTestTags.ImportFab).assertIsDisplayed()
+    }
+
     @Test fun multipleGroupsFavoritesAndAccessibleOrderingStayIndependent() {
         fixture.layout.value = fixture.layout.value.copy(groups = fixture.layout.value.groups.map {
             if (it.id == "g1") it.copy(members = listOf("a", "b")) else it
@@ -122,10 +150,12 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.onNodeWithTag("catalog_organize").performClick()
         moveAccessibly("favorite:a", "后移")
         compose.runOnIdle { assertEquals(listOf("b", "a"), fixture.layout.value.favorites) }
-        compose.onNodeWithTag("catalog_group:g1").performScrollTo().performClick()
+        homeTile("catalog_group:g1").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { fixture.layout.value.groups.single { it.id == "g1" }.expanded } }
         compose.onNodeWithTag("member:g1:a").assertExists()
         moveAccessibly("member:g1:a", "后移")
-        compose.onNodeWithTag("catalog_group:g2").performScrollTo().performClick()
+        homeTile("catalog_group:g2").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { !fixture.layout.value.groups.single { it.id == "g2" }.expanded } }
         compose.runOnIdle {
             assertTrue(fixture.layout.value.groups.single { it.id == "g1" }.expanded)
             assertFalse(fixture.layout.value.groups.single { it.id == "g2" }.expanded)
@@ -133,7 +163,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             assertEquals(listOf("a"), fixture.layout.value.groups.single { it.id == "g2" }.members)
         }
         compose.onNodeWithTag("member:g2:a").assertDoesNotExist()
-        compose.onNodeWithTag("catalog_group:g2").performClick()
+        homeTile("catalog_group:g2").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { fixture.layout.value.groups.single { it.id == "g2" }.expanded } }
         moveAccessibly("catalog_group:g1", "后移")
         compose.runOnIdle {
             assertEquals(listOf("g2", "g1"), fixture.layout.value.groups.map { it.id })
@@ -206,6 +237,39 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         }
     }
 
+    @Test fun groupHeaderDragTemporarilyFoldsBodiesAndOnlyMovingChangesOrder() {
+        fixture.tools.value = fixture.tools.value.map { it.copy(lastOpenedAt = null) }
+        fixture.layout.value = CatalogLayout(favorites = listOf("a"), groups = listOf(
+            CatalogGroup("g1", "工作", listOf("a"), expanded = true),
+            CatalogGroup("g2", "常用", listOf("b"), expanded = true),
+        ))
+        render()
+        compose.onNodeWithTag("catalog_organize").performClick()
+
+        holdGroupHeader(moveToOtherGroup = false)
+        compose.runOnIdle {
+            assertEquals(listOf("g1", "g2"), fixture.layout.value.groups.map { it.id })
+            assertTrue(fixture.layout.value.groups.all { it.expanded })
+        }
+        val list = compose.onNodeWithTag("catalog_home_list")
+        list.performScrollToNode(hasTestTag("member:g1:a"))
+        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
+
+        holdGroupHeader(moveToOtherGroup = true)
+        compose.runOnIdle {
+            assertEquals(listOf("g2", "g1"), fixture.layout.value.groups.map { it.id })
+            assertTrue(fixture.layout.value.groups.all { it.expanded })
+            assertEquals(listOf("a"), fixture.layout.value.groups.single { it.id == "g1" }.members)
+            assertEquals(listOf("b"), fixture.layout.value.groups.single { it.id == "g2" }.members)
+            assertEquals(listOf("a"), fixture.layout.value.favorites)
+            assertTrue(fixture.opened.isEmpty())
+        }
+        list.performScrollToNode(hasTestTag("member:g1:a"))
+        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
+        list.performScrollToNode(hasTestTag("member:g2:b"))
+        compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
+    }
+
     @Test fun longTitlesRemainAccessibleAndLastTileClearsNavigation() {
         fixture.tools.value = listOf(CatalogTool("long", "这是一个需要跨行显示并保持完整可访问名称的非常长工具标题", 1, "1.0", 1, null))
         fixture.layout.value = CatalogLayout(favorites = listOf("long"), groups = listOf(CatalogGroup("last", "末尾分组", listOf("long"))))
@@ -262,6 +326,46 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             advanceEventTime(700)
             moveTo(target - origin, delayMillis = 250)
             up()
+        }
+    }
+
+    private fun holdGroupHeader(moveToOtherGroup: Boolean) {
+        val header = homeTile("catalog_group:g1").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("member:g1:a").assertExists()
+        val list = compose.onNodeWithTag("catalog_home_list")
+        val origin = list.fetchSemanticsNode().boundsInRoot.topLeft
+        // Stay inside the header's main target and away from its separate edit button.
+        val source = Offset(header.left + header.width / 3f, header.center.y)
+        compose.mainClock.autoAdvance = false
+        var pointerDown = false
+        try {
+            list.performTouchInput { down(source - origin) }
+            pointerDown = true
+            compose.mainClock.advanceTimeBy(700)
+            compose.onNodeWithTag("member:g1:a").assertDoesNotExist()
+            compose.onNodeWithTag("member:g2:b").assertDoesNotExist()
+            compose.runOnIdle {
+                assertEquals(listOf("g1", "g2"), fixture.layout.value.groups.map { it.id })
+                assertTrue("Temporary drag folding must not persist collapsed groups", fixture.layout.value.groups.all { it.expanded })
+            }
+            if (moveToOtherGroup) {
+                // Folding changes the target's location; measure it after the fold has rendered.
+                val target = compose.onNodeWithTag("catalog_group:g2").assertIsDisplayed().fetchSemanticsNode().boundsInRoot.center
+                val currentOrigin = list.fetchSemanticsNode().boundsInRoot.topLeft
+                list.performTouchInput {
+                    advanceEventTime(700)
+                    moveTo(target - currentOrigin, delayMillis = 250)
+                }
+                compose.mainClock.advanceTimeByFrame()
+            }
+        } finally {
+            try {
+                if (pointerDown) list.performTouchInput {
+                    if (!moveToOtherGroup) advanceEventTime(700)
+                    up()
+                }
+            }
+            finally { compose.mainClock.autoAdvance = true }
         }
     }
 

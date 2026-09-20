@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -15,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.state.ToggleableState
@@ -40,11 +44,25 @@ internal fun CatalogToolOptions(
     onAction: (CatalogAction) -> Unit,
     onDismiss: () -> Unit,
     onManage: () -> Unit,
+) = key(tool.toolId) {
+    CatalogToolOptionsSession(tool, state, onAction, onDismiss, onManage)
+}
+
+@Composable
+private fun CatalogToolOptionsSession(
+    tool: CatalogTool,
+    state: CatalogUiState,
+    onAction: (CatalogAction) -> Unit,
+    onDismiss: () -> Unit,
+    onManage: () -> Unit,
 ) {
     var page by rememberSaveable(tool.toolId) { mutableStateOf("options") }
     var query by rememberSaveable(tool.toolId) { mutableStateOf("") }
+    val newGroupDraft = rememberGroupDraft(null, listOf(tool.toolId))
+    val editorListState = rememberLazyListState()
     val writes = rememberPanelWrites(state, onAction)
-    val dismiss = { writes.forgetAll(onAction); onDismiss() }
+    val session = rememberPanelSession()
+    val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
     val currentTool = state.tools.firstOrNull { it.toolId == tool.toolId }
     if (state.isLoaded && currentTool == null) {
         LaunchedEffect(tool.toolId) { dismiss() }
@@ -56,13 +74,27 @@ internal fun CatalogToolOptions(
         title = if (page == "options") displayTool.name else if (page == "groups") "加入分组" else "新建分组",
         onDismissRequest = dismiss,
     ) {
-        PanelBackHandler(page == "groups") { page = "options" }
+        // Keep one handler registered for the whole window; changing pages must
+        // not change its ordering relative to Miuix's dismiss handler.
+        PanelBackHandler {
+            when (page) {
+                "create" -> {
+                    writes.forget(EDITOR_WRITE, onAction)
+                    newGroupDraft.reset(listOf(tool.toolId))
+                    page = "groups"
+                }
+                "groups" -> page = "options"
+                else -> dismiss()
+            }
+        }
         when (page) {
             "create" -> GroupEditorContent(
-                group = null, state = state, creating = true, initialMembers = listOf(tool.toolId),
+                group = null, state = state, creating = true,
+                draft = newGroupDraft, listState = editorListState,
                 writes = writes,
-                onAction = onAction, onCancel = { page = "groups" }, onClose = dismiss,
-                onSaved = { page = "groups" },
+                onAction = onAction,
+                onCancel = { newGroupDraft.reset(listOf(tool.toolId)); page = "groups" }, onClose = dismiss,
+                onSaved = { newGroupDraft.reset(listOf(tool.toolId)); page = "groups" },
             )
             "groups" -> Column(Modifier.testTag("catalog_group_picker")) {
                 val groups = state.layout.groups.filter { it.name.contains(query.trim(), ignoreCase = true) }
@@ -120,7 +152,7 @@ internal fun CatalogToolOptions(
                     ToolBoxSettingRow(
                         title = "管理工具", summary = "权限、信息与卸载", icon = ToolBoxIconKey.Settings,
                         modifier = Modifier.testTag("catalog_tool_manage"),
-                        onClick = { dismiss(); onManage() },
+                        onClick = { session.dismiss { writes.forgetAll(onAction); onDismiss(); onManage() } },
                     )
                 }
             }
@@ -136,14 +168,40 @@ internal fun CatalogGroupEditor(
     onAction: (CatalogAction) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Deletion removes the projection before its write receipt can be rendered.
+    // Retain the editing identity so the same session detaches its own receipt.
+    var lastGroupId by rememberSaveable { mutableStateOf(group?.id) }
+    if (group != null) SideEffect { lastGroupId = group.id }
+    key(creating, group?.id ?: lastGroupId) {
+        CatalogGroupEditorSession(group, state, creating, onAction, onDismiss)
+    }
+}
+
+@Composable
+private fun CatalogGroupEditorSession(
+    group: CatalogGroup?,
+    state: CatalogUiState,
+    creating: Boolean,
+    onAction: (CatalogAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // Dialog content has a separate saveable-state owner. Keep the complete
+    // editing session in the caller's composition, including after restoration.
+    val draft = rememberGroupDraft(group)
+    val listState = rememberLazyListState()
     val writes = rememberPanelWrites(state, onAction)
-    val dismiss = { writes.forgetAll(onAction); onDismiss() }
+    val session = rememberPanelSession()
+    val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
     if (!creating && group == null) {
         if (state.isLoaded) LaunchedEffect(Unit) { dismiss() }
         return
     }
     ToolBoxActionSheet(if (creating) "新建分组" else "编辑分组", dismiss) {
-        GroupEditorContent(group, state, creating, writes = writes, onAction = onAction, onCancel = dismiss, onClose = dismiss, onSaved = dismiss)
+        PanelBackHandler {
+            if (draft.confirmingDelete.value) draft.confirmingDelete.value = false else dismiss()
+        }
+        GroupEditorContent(group, state, creating, draft, listState, writes,
+            onAction = onAction, onCancel = dismiss, onClose = dismiss, onSaved = dismiss)
     }
 }
 
@@ -155,7 +213,8 @@ internal fun CatalogFavoritesPicker(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val writes = rememberPanelWrites(state, onAction)
-    val dismiss = { writes.forgetAll(onAction); onDismiss() }
+    val session = rememberPanelSession()
+    val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
     val tools = matchingTools(state.tools, query)
     ToolBoxActionSheet("添加收藏", dismiss) {
         LazyColumn(Modifier.fillMaxWidth().testTag("catalog_favorites_picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -182,17 +241,21 @@ private fun GroupEditorContent(
     group: CatalogGroup?,
     state: CatalogUiState,
     creating: Boolean,
-    initialMembers: List<String> = emptyList(),
+    draft: GroupDraft,
+    listState: LazyListState,
     writes: PanelWrites,
     onAction: (CatalogAction) -> Unit,
     onCancel: () -> Unit,
     onClose: () -> Unit,
     onSaved: () -> Unit,
 ) {
-    var name by rememberSaveable(group?.id, creating) { mutableStateOf(group?.name.orEmpty()) }
-    var members by rememberSaveable(group?.id, creating) { mutableStateOf(group?.members ?: initialMembers) }
-    var query by rememberSaveable(group?.id, creating) { mutableStateOf("") }
-    var confirmingDelete by rememberSaveable(group?.id, creating) { mutableStateOf(false) }
+    var name by draft.name
+    var members by draft.members
+    var query by draft.query
+    var confirmingDelete by draft.confirmingDelete
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val finishInput = { focusManager.clearFocus(force = true); keyboard?.hide(); Unit }
     val operationId = writes.ids[EDITOR_WRITE]
     val status = operationId?.let(state.layoutWrites::get)
     val writing = status == CatalogLayoutWriteStatus.Writing
@@ -203,10 +266,9 @@ private fun GroupEditorContent(
         operationId?.let { onAction(CatalogAction.ForgetLayoutWrite(it)) }
         writes.ids = writes.ids - EDITOR_WRITE
     }
-    val cancel = { forget(); onCancel() }
-    val close = { forget(); onClose() }
+    val cancel = { finishInput(); forget(); onCancel() }
+    val close = { finishInput(); forget(); onClose() }
     val back = { if (confirmingDelete) confirmingDelete = false else cancel() }
-    PanelBackHandler { back() }
     LaunchedEffect(operationId, status) {
         if (operationId != null && status == CatalogLayoutWriteStatus.Succeeded) {
             forget()
@@ -247,7 +309,8 @@ private fun GroupEditorContent(
     }
     val tools = matchingTools(state.tools, query)
     Column(Modifier.fillMaxWidth().testTag("catalog_group_editor")) {
-        LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.weight(1f, fill = false).testTag("catalog_group_members"), state = listState,
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item("heading") { PanelHeader(if (creating) "新建分组" else "编辑分组", close, onBack = back) }
             item("name") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -284,7 +347,7 @@ private fun GroupEditorContent(
             if (!creating && group != null) item("delete") {
                 PanelDivider()
                 ToolBoxTextButton(
-                    "删除分组", { confirmingDelete = true },
+                    "删除分组", { finishInput(); confirmingDelete = true },
                     Modifier.fillMaxWidth().testTag("catalog_group_delete"),
                     enabled = !writing, contentColor = ToolBoxThemeTokens.colors.danger, outlined = false,
                 )
@@ -296,6 +359,7 @@ private fun GroupEditorContent(
             ToolBoxPrimaryButton(
                 if (writing) "正在保存…" else "保存",
                 onClick = {
+                    finishInput()
                     forget()
                     val id = UUID.randomUUID().toString()
                     writes.ids = writes.ids + (EDITOR_WRITE to id)
@@ -414,6 +478,53 @@ private fun matchingTools(tools: List<CatalogTool>, query: String): List<Catalog
     return if (term.isEmpty()) tools else tools.filter { it.name.contains(term, true) || it.toolId.contains(term, true) }
 }
 
+private class GroupDraft(
+    initialName: String,
+    initialMembers: List<String>,
+    initialQuery: String = "",
+    initialConfirmingDelete: Boolean = false,
+) {
+    val name = mutableStateOf(initialName)
+    val members = mutableStateOf(initialMembers)
+    val query = mutableStateOf(initialQuery)
+    val confirmingDelete = mutableStateOf(initialConfirmingDelete)
+
+    fun reset(initialMembers: List<String>) {
+        name.value = ""
+        members.value = initialMembers
+        query.value = ""
+        confirmingDelete.value = false
+    }
+
+    companion object {
+        val Saver = listSaver<GroupDraft, String>(
+            save = { listOf(it.name.value, it.query.value, it.confirmingDelete.value.toString()) + it.members.value },
+            restore = { GroupDraft(it[0], it.drop(3), it[1], it[2].toBoolean()) },
+        )
+    }
+}
+
+@Composable
+private fun rememberGroupDraft(group: CatalogGroup?, initialMembers: List<String> = emptyList()): GroupDraft =
+    rememberSaveable(saver = GroupDraft.Saver) { GroupDraft(group?.name.orEmpty(), group?.members ?: initialMembers) }
+
+private class PanelSession {
+    var active = true
+
+    fun dismiss(action: () -> Unit) {
+        if (!active) return
+        active = false
+        action()
+    }
+}
+
+@Composable
+private fun rememberPanelSession(): PanelSession {
+    val session = remember { PanelSession() }
+    DisposableEffect(session) { onDispose { session.active = false } }
+    return session
+}
+
 /** One receipt per control; independent selections remain usable during writes. */
 private class PanelWrites(initialIds: Map<String, String> = emptyMap()) {
     var ids by mutableStateOf(initialIds)
@@ -426,6 +537,11 @@ private class PanelWrites(initialIds: Map<String, String> = emptyMap()) {
         val id = UUID.randomUUID().toString()
         ids = ids + (target to id)
         onAction(action(id))
+    }
+
+    fun forget(target: String, onAction: (CatalogAction) -> Unit) {
+        ids[target]?.let { onAction(CatalogAction.ForgetLayoutWrite(it)) }
+        ids = ids - target
     }
 
     fun forgetAll(onAction: (CatalogAction) -> Unit) {
