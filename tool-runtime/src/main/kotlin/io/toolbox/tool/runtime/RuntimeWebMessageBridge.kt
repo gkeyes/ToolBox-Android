@@ -248,7 +248,7 @@ class RuntimeBridgeSession internal constructor(
             onDelivered()
             return
         }
-        val candidate = RuntimeRpcJson.encodeResponse(response)
+        val candidate = RuntimeRpcJson.prepareResponse(response)
         val encoded = enforceRuntimeResponseLimit(candidate, maxPayloadBytes) {
             RuntimeRpcJson.encodeResponse(
                 RuntimeRpcResponse.Failure(
@@ -496,9 +496,24 @@ internal inline fun enforceRuntimeResponseLimit(
     candidate: String,
     maxBytes: Int,
     quotaFailure: () -> String,
+): String = enforceRuntimeResponseLimit(EncodedRuntimeResponse(candidate), maxBytes, quotaFailure)
+
+internal inline fun enforceRuntimeResponseLimit(
+    candidate: EncodedRuntimeResponse,
+    maxBytes: Int,
+    quotaFailure: () -> String,
 ): String {
     require(maxBytes > 0)
-    return if (candidate.toByteArray(Charsets.UTF_8).size <= maxBytes) candidate else quotaFailure()
+    return if (candidate.utf8Bytes <= maxBytes) candidate.text else quotaFailure()
+}
+
+internal class EncodedRuntimeResponse(val text: String) {
+    val utf8Bytes: Int = text.toByteArray(Charsets.UTF_8).size
+    // Preserve the stream gate's existing conservative </ escaping budget without another string.
+    val streamUpperBoundBytes: Long
+        get() = utf8Bytes.toLong() + text.indices.count { index ->
+            text[index] == '/' && index > 0 && text[index - 1] == '<'
+        }
 }
 
 internal object RuntimeBridgeLifecycle {
@@ -579,6 +594,9 @@ object RuntimeRpcJson {
             "id" to RpcValue.StringValue(response.id), "ok" to RpcValue.Bool(false), "error" to response.error.toRpcValue(),
         )
     }))
+
+    internal fun prepareResponse(response: RuntimeRpcResponse): EncodedRuntimeResponse =
+        (response as? RuntimeRpcResponse.Success)?.preparedEncoding ?: EncodedRuntimeResponse(encodeResponse(response))
 
     private fun StringBuilder.appendJson(value: RpcValue) {
         val pending = ArrayDeque<Any>()

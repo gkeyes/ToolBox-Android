@@ -19,6 +19,12 @@ prepare_visible_emulator() {
 }
 
 prepare_visible_emulator app || exit 1
+if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = performance ]; then
+  ./gradlew --no-daemon :app:connectedDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.CatalogNameSortTest,io.toolbox.host.icons.ToolIconCompatibilityTest,io.toolbox.host.icons.CatalogToolIconBehaviorTest || result=1
+  exit "$result"
+fi
+test "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = full || exit 2
 ./gradlew --no-daemon :app:connectedDebugAndroidTest || result=1
 prepare_visible_emulator runtime || exit 1
 ./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest || result=1

@@ -22,7 +22,18 @@ class ReuseHostVerificationTest(unittest.TestCase):
 
     def test_failed_delivery_can_reuse_independently_passed_full_host_job(self):
         run, jobs = self.fixture()
-        self.assertEqual("a" * 40, reuse.validate_prior_run(run, jobs, "owner/host", "main"))
+        self.assertEqual(("a" * 40, "full"), reuse.validate_prior_run(run, jobs, "owner/host", "main"))
+
+    def test_manual_branch_checks_keep_their_targeted_scope_instead_of_becoming_full_pass(self):
+        run, jobs = self.fixture()
+        run.update(event="workflow_dispatch", head_branch="performance")
+        jobs[0]["steps"] = [{"name": name, "conclusion": "success"} for name in reuse.PERFORMANCE_CHECKS]
+        self.assertEqual(("a" * 40, "performance"), reuse.validate_prior_run(run, jobs, "owner/host", "main"))
+        for step in jobs[0]["steps"]:
+            incomplete = copy.deepcopy(jobs)
+            next(item for item in incomplete[0]["steps"] if item["name"] == step["name"])["conclusion"] = "skipped"
+            with self.subTest(step=step["name"]), self.assertRaises(ValueError):
+                reuse.validate_prior_run(run, incomplete, "owner/host", "main")
 
     def test_other_repository_branch_workflow_or_incomplete_run_is_rejected(self):
         run, jobs = self.fixture()

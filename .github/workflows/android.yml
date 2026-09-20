@@ -35,8 +35,13 @@ on:
       - "scripts/tests/test_release_startup.py"
   workflow_dispatch:
     inputs:
+      validation_scope:
+        description: "Checks to run: full suite or catalog/icon/root-state/network performance regressions"
+        type: choice
+        options: [full, performance]
+        default: full
       reuse_verified_run:
-        description: "Optional default-branch run with passed full host checks, for CI-evidence-only repairs"
+        description: "Optional completed host-check run whose source is merged and unchanged; preserves its verification scope"
         type: string
         required: false
 
@@ -56,6 +61,7 @@ jobs:
       verification_scope: ${{ steps.baseline.outputs.scope }}
       verification_run: ${{ steps.baseline.outputs.source_run }}
       verification_commit: ${{ steps.baseline.outputs.base_commit }}
+      verification_checks: ${{ steps.baseline.outputs.checks }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -66,6 +72,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run }}
+          VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: python3 scripts/ci/reuse-host-verification.py
       - name: Verify release evidence and baseline reuse guards
@@ -88,30 +95,43 @@ jobs:
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: Build APKs and behavioral test APKs
+      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs' }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        run: >-
-          ./gradlew --no-daemon
-          :app:assembleDebug :app:assembleRelease
-          :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
-      - name: Verify installation, catalog, network, runtime and cancellation regressions
+        env:
+          VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
+        run: |
+          if [ "$VALIDATION_SCOPE" = performance ]; then
+            ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
+          else
+            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
+          fi
+      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance unit regressions' || 'Verify installation, catalog, network, runtime and cancellation regressions' }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        run: >-
-          ./gradlew --no-daemon
-          :core-data:testDebugUnitTest :tool-package:testDebugUnitTest
-          :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+        env:
+          VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
+        run: |
+          if [ "$VALIDATION_SCOPE" = performance ]; then
+            ./gradlew --no-daemon :app:testDebugUnitTest \
+              --tests 'io.toolbox.host.catalog.*' --tests 'io.toolbox.host.icons.*' \
+              --tests 'io.toolbox.host.HostRootStateTest' --tests 'io.toolbox.host.background.*Network*Test' \
+              :tool-runtime:testDebugUnitTest
+          else
+            ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+          fi
       - name: Enable accelerated behavior test emulator
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify catalog, backup, execution identity, dialogs and Wasm on Android
+      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance behavior on Android' || 'Verify catalog, backup, execution identity, dialogs and Wasm on Android' }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         id: runtime_emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        env:
+          TOOLBOX_BEHAVIOR_SCOPE: ${{ steps.baseline.outputs.checks }}
         with:
           api-level: 35
           target: google_apis
@@ -234,6 +254,7 @@ jobs:
           HOST_VERIFICATION_SCOPE: ${{ needs.verify.outputs.verification_scope }}
           HOST_VERIFICATION_RUN: ${{ needs.verify.outputs.verification_run }}
           HOST_VERIFICATION_COMMIT: ${{ needs.verify.outputs.verification_commit }}
+          HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.verification_checks }}
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"

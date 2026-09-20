@@ -77,26 +77,80 @@ internal fun CatalogUiState.withCatalogTools(values: List<CatalogTool>): Catalog
     copy(
         tools = values,
         visibleTools = values.catalogSorted(layout.sort).filteredBy(query),
-        recentTools = values
-            .asSequence()
-            .filter { it.lastOpenedAt != null }
-            .sortedWith(compareByDescending<CatalogTool> { it.lastOpenedAt }.thenBy { it.toolId })
-            .toList(),
+        recentTools = values.catalogRecent(),
         uninstallConfirmation = uninstallConfirmation?.takeIf { confirmation ->
             values.any { it.toolId == confirmation.toolId }
         },
     )
 
-internal fun CatalogUiState.withCatalogQuery(value: String): CatalogUiState {
-    val normalized = value.trim()
-    return copy(
-        query = value,
-        isSearching = normalized.isNotEmpty(),
-        visibleTools = tools.catalogSorted(layout.sort).filteredBy(normalized),
-    )
+/** Mutable caches are confined to the single Default-dispatcher projection collector. */
+internal class CatalogListProjection(
+    private val sortTools: (List<CatalogTool>, CatalogSort) -> List<CatalogTool> = { tools, sort -> tools.catalogSorted(sort) },
+    private val recentTools: (List<CatalogTool>) -> List<CatalogTool> = { it.catalogRecent() },
+    private val filterTools: (List<CatalogTool>, String) -> List<CatalogTool> = { tools, query -> tools.filteredBy(query) },
+) {
+    private var previousTools: List<CatalogTool>? = null
+    private var previousById = emptyMap<String, CatalogTool>()
+    private var previousSort: CatalogSort? = null
+    private var sorted = emptyList<CatalogTool>()
+    private var recent = emptyList<CatalogTool>()
+    private var filtered = emptyList<CatalogTool>()
+    private var filteredSource: List<CatalogTool>? = null
+    private var filteredQuery: String? = null
+
+    fun project(tools: List<CatalogTool>, layout: CatalogLayout, query: String): CatalogUiState {
+        val toolsChanged = previousTools != tools
+        val sortChanged = previousSort != layout.sort
+        if (toolsChanged) {
+            val currentById = tools.associateBy { it.toolId }
+            // Metadata and usage updates must refresh list elements without sorting by
+            // unchanged keys. Each comparator's tie-breakers are included in this check.
+            val sameOrder = !sortChanged && currentById.size == previousById.size && tools.all { tool ->
+                previousById[tool.toolId]?.hasSameOrderKey(tool, layout.sort) == true
+            }
+            sorted = if (sameOrder) sorted.refreshedFrom(currentById) else sortTools(tools, layout.sort)
+            val sameRecentOrder = previousTools != null &&
+                tools.count { it.lastOpenedAt != null } == recent.size && tools.all { tool ->
+                    tool.lastOpenedAt == null || previousById[tool.toolId]?.lastOpenedAt == tool.lastOpenedAt
+                }
+            recent = if (sameRecentOrder) recent.refreshedFrom(currentById) else recentTools(tools)
+            previousTools = tools
+            previousById = currentById
+        } else if (sortChanged) {
+            sorted = sortTools(tools, layout.sort)
+        }
+        previousSort = layout.sort
+
+        val normalized = query.trim()
+        if (filteredSource !== sorted || filteredQuery != normalized) {
+            filtered = filterTools(sorted, normalized)
+            filteredSource = sorted
+            filteredQuery = normalized
+        }
+        return CatalogUiState(
+            tools = previousTools ?: tools,
+            visibleTools = filtered,
+            recentTools = recent,
+            layout = layout,
+            query = query,
+            isSearching = normalized.isNotEmpty(),
+        )
+    }
 }
 
-private fun List<CatalogTool>.filteredBy(query: String): List<CatalogTool> {
+private fun CatalogTool.hasSameOrderKey(other: CatalogTool, sort: CatalogSort): Boolean = when (sort) {
+    CatalogSort.INSTALLED -> installedAt == other.installedAt
+    CatalogSort.LAST_OPENED -> lastOpenedAt == other.lastOpenedAt
+    CatalogSort.NAME -> nameSortKey == other.nameSortKey && name == other.name
+}
+
+private fun List<CatalogTool>.refreshedFrom(currentById: Map<String, CatalogTool>): List<CatalogTool> =
+    if (all { currentById[it.toolId] === it }) this else map { currentById.getValue(it.toolId) }
+
+internal fun List<CatalogTool>.catalogRecent(): List<CatalogTool> =
+    filter { it.lastOpenedAt != null }.catalogSorted(CatalogSort.LAST_OPENED)
+
+internal fun List<CatalogTool>.filteredBy(query: String): List<CatalogTool> {
     val value = query.trim()
     if (value.isEmpty()) return this
     return filter { tool ->

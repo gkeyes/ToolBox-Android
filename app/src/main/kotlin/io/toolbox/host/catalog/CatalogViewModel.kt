@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -66,9 +67,13 @@ internal class CatalogViewModel(
 
     init {
         viewModelScope.launch {
-            combine(catalog.observeCatalogProjection().map { entries -> entries.map(CatalogEntry::toCatalogTool) }, settings?.settings ?: flowOf(HostSettings()), queries) { tools, host, query ->
-                CatalogUiState(layout = host.catalogLayout, query = query, isSearching = query.trim().isNotEmpty())
-                    .withCatalogTools(tools)
+            val toolsProjection = CatalogToolProjection()
+            val listsProjection = CatalogListProjection()
+            val tools = catalog.observeCatalogProjection().map(toolsProjection::project).distinctUntilChanged()
+            val layout = (settings?.settings ?: flowOf(HostSettings()))
+                .map { it.catalogLayout }.distinctUntilChanged()
+            combine(tools, layout, queries) { values, currentLayout, query ->
+                listsProjection.project(values, currentLayout, query)
             }.flowOn(Dispatchers.Default)
                 .catch {
                     update { state ->
@@ -280,7 +285,23 @@ internal class CatalogViewModel(
     }
 }
 
-private fun CatalogEntry.toCatalogTool() = CatalogTool(
+/** Owned by one catalog collector; removed tools and their name keys are not retained. */
+internal class CatalogToolProjection(private val nameSortKey: (String) -> String = ::catalogNameSortKey) {
+    private var previousTools = emptyMap<String, CatalogTool>()
+
+    fun project(entries: List<CatalogEntry>): List<CatalogTool> {
+        val tools = entries.map { entry ->
+            val previous = previousTools[entry.toolId]
+            val key = previous?.takeIf { it.name == entry.name }?.nameSortKey ?: nameSortKey(entry.name)
+            val tool = entry.toCatalogTool(key)
+            previous?.takeIf { it == tool } ?: tool
+        }
+        previousTools = tools.associateBy { it.toolId }
+        return tools
+    }
+}
+
+private fun CatalogEntry.toCatalogTool(nameSortKey: String) = CatalogTool(
     toolId = toolId,
     name = name,
     versionCode = versionCode,
@@ -288,7 +309,7 @@ private fun CatalogEntry.toCatalogTool() = CatalogTool(
     bundleBytes = bundleBytes,
     lastOpenedAt = lastOpenedAt,
     installedAt = installedAt,
-    nameSortKey = catalogNameSortKey(name),
+    nameSortKey = nameSortKey,
 )
 
 /** Android's ICU transliterator handles Han names without a bundled dictionary or network access. */

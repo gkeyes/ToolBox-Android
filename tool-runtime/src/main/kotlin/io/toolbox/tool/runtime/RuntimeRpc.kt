@@ -93,7 +93,10 @@ internal fun RuntimeRpcError.toRpcValue(): RpcValue.ObjectValue = RpcValue.Objec
 sealed interface RuntimeRpcResponse {
     val id: String
 
-    data class Success(override val id: String, val result: RpcValue, val release: () -> Unit = {}) : RuntimeRpcResponse
+    data class Success(override val id: String, val result: RpcValue, val release: () -> Unit = {}) : RuntimeRpcResponse {
+        // Prepared only for this response; data-class copies deliberately re-encode.
+        internal var preparedEncoding: EncodedRuntimeResponse? = null
+    }
     data class Failure(override val id: String, val error: RuntimeRpcError) : RuntimeRpcResponse
 }
 
@@ -535,8 +538,12 @@ class RuntimeRpcDispatcher(
             if (capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
                 foregroundInteractionGuard()
             }
-            val result = invoke(method.name, request.params, request.id, retained)
-            RuntimeRpcResponse.Success(request.id, result, release).also { transferred = true }
+            var preparedEncoding: EncodedRuntimeResponse? = null
+            val result = invoke(method.name, request.params, request.id, retained) { preparedEncoding = it }
+            RuntimeRpcResponse.Success(request.id, result, release).also {
+                it.preparedEncoding = preparedEncoding
+                transferred = true
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: RuntimeHandlerException) {
@@ -561,6 +568,7 @@ class RuntimeRpcDispatcher(
         params: RpcValue.ObjectValue,
         requestId: String,
         retained: MutableList<() -> Unit>,
+        onEncodedResponse: (EncodedRuntimeResponse) -> Unit,
     ): RpcValue = when (method) {
         "ready" -> RpcValue.ObjectValue(
             mapOf(
@@ -653,7 +661,7 @@ class RuntimeRpcDispatcher(
                     "streamId" to RpcValue.StringValue(streamId),
                     "status" to RpcValue.Number(response.status.toDouble()),
                     "headers" to headers,
-                )))
+                )), onEncodedResponse)
             } catch (error: Exception) {
                 runCatching { network.cancelStream(streamId) }
                 throw error
@@ -675,7 +683,7 @@ class RuntimeRpcDispatcher(
                     "data" to RpcValue.StringValue(Base64.getEncoder().encodeToString(chunk.data)),
                     "done" to RpcValue.Bool(chunk.done),
                     "receivedBytes" to RpcValue.Number(chunk.receivedBytes.toDouble()),
-                )))
+                )), onEncodedResponse)
             }
         }
         "network.cancelStream" -> {
@@ -936,13 +944,16 @@ class RuntimeRpcDispatcher(
         throw RuntimeHandlerException(code, "Network stream authorization changed before delivery")
     }
 
-    private fun streamResponseWithinBudget(requestId: String, value: RpcValue): RpcValue {
-        val encodedUpperBound = RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
-            "id" to RpcValue.StringValue(requestId), "ok" to RpcValue.Bool(true), "result" to value,
-        ))).replace("</", "<\\/")
-        if (encodedUpperBound.toByteArray(StandardCharsets.UTF_8).size > maxResponseBytes) {
+    private fun streamResponseWithinBudget(
+        requestId: String,
+        value: RpcValue,
+        onEncodedResponse: (EncodedRuntimeResponse) -> Unit,
+    ): RpcValue {
+        val encoded = RuntimeRpcJson.prepareResponse(RuntimeRpcResponse.Success(requestId, value))
+        if (encoded.streamUpperBoundBytes > maxResponseBytes) {
             throw RuntimeHandlerException(RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Network stream response exceeds the bridge message limit")
         }
+        onEncodedResponse(encoded)
         return value
     }
 
