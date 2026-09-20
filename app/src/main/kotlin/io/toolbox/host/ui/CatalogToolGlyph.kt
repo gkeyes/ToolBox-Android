@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.icons.ToolIconLoader
+import kotlinx.coroutines.flow.collectLatest
 
 internal val LocalToolIconLoader = staticCompositionLocalOf<ToolIconLoader?> { null }
 
@@ -21,16 +22,27 @@ internal fun CatalogToolGlyph(
     visual: ToolVisual,
     size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
 ) {
+    val bitmap = rememberCatalogToolBitmap(toolId, versionCode)
+    val image = remember(bitmap) { bitmap?.asImageBitmap() }
+    ToolGlyph(
+        icon = visual.icon,
+        accent = visual.accent,
+        size = size,
+        imageResource = visual.imageResource,
+        imageBitmap = image,
+    )
+}
+
+@Composable
+internal fun rememberCatalogToolBitmap(toolId: String, versionCode: Int?): Bitmap? {
     val loader = LocalToolIconLoader.current
-    key(toolId, versionCode, loader) {
-        val bitmap by produceState<Bitmap?>(null) { value = loader?.load(toolId, versionCode) }
-        val image = remember(bitmap) { bitmap?.asImageBitmap() }
-        ToolGlyph(
-            icon = visual.icon,
-            accent = visual.accent,
-            size = size,
-            imageResource = visual.imageResource,
-            imageBitmap = image,
-        )
+    return key(toolId, versionCode, loader) {
+        val bitmap by produceState(loader?.cached(toolId, versionCode)) {
+            loader?.invalidations(toolId)?.collectLatest {
+                value = loader.cached(toolId, versionCode)
+                value = loader.load(toolId, versionCode)
+            }
+        }
+        bitmap
     }
 }

@@ -1,16 +1,26 @@
 package io.toolbox.host.settings
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
@@ -18,6 +28,8 @@ import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.BuildConfig
 import io.toolbox.host.ui.AppText
@@ -49,6 +61,7 @@ internal fun SettingsScreen(
         onAbout = onAbout,
         onBackupRestore = onBackupRestore,
         onBackgroundEnabledChange = viewModel::setBackgroundEnabled,
+        onRetryBackground = viewModel::retryBackgroundUpdate,
     )
 }
 
@@ -64,6 +77,7 @@ internal fun SettingsContent(
     onBackupRestore: () -> Unit = {},
     onBackgroundEnabledChange: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
+    onRetryBackground: () -> Unit = {},
 ) {
     LazyColumn(
         state = listState,
@@ -73,6 +87,10 @@ internal fun SettingsContent(
         state.error?.let {
             item("error") { SurfaceCard { AppText(it, color = ToolBoxThemeTokens.colors.danger) } }
             item("after-error") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+        }
+        if (state.backgroundError != null) {
+            item("background-error") { BackgroundSettingsFeedback(state, onRetryBackground) }
+            item("after-background-error") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
         item("appearance-title") { SectionHeader("外观") }
         item("before-appearance") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
@@ -96,9 +114,10 @@ internal fun SettingsContent(
         item("operation") {
             ToolBoxGroupedSurface {
                 ToolBoxSwitchSettingRow(
-                    title = "后台保障", summary = "允许已启动的任务持续运行",
+                    title = "后台保障", summary = state.backgroundProgressSummary ?: "允许已启动的任务持续运行",
                     checked = state.settings.backgroundEnabled, onCheckedChange = onBackgroundEnabledChange,
-                    icon = ToolBoxIconKey.Lock, enabled = state.loaded,
+                    icon = ToolBoxIconKey.Lock, enabled = state.canChangeBackground,
+                    modifier = Modifier.testTag("settings_background_enabled"),
                 )
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow("后台运行设置", summary = "通知、电池与系统权限", icon = ToolBoxIconKey.Clock,
@@ -139,6 +158,34 @@ internal fun SettingsContent(
         }
     }
 }
+
+@Composable
+internal fun BackgroundSettingsFeedback(state: SettingsUiState, onRetry: () -> Unit) {
+    val error = state.backgroundError ?: return
+    SurfaceCard {
+        AppText(error, color = ToolBoxThemeTokens.colors.danger,
+            modifier = Modifier.semantics { if (!state.backgroundWorking) liveRegion = LiveRegionMode.Polite },
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+            ToolBoxTextButton(
+                label = if (state.backgroundOperation == BackgroundSettingsOperation.STOP) "重试停止" else "重试保存",
+                onClick = onRetry,
+                enabled = !state.backgroundWorking,
+                modifier = Modifier.testTag("background_settings_retry").semantics {
+                    if (state.backgroundWorking) stateDescription = state.backgroundProgressSummary.orEmpty()
+                },
+            )
+            Box(Modifier.size(24.dp)) { if (state.backgroundWorking) ToolBoxBusyIndicator() }
+        }
+    }
+}
+
+internal val SettingsUiState.backgroundProgressSummary: String?
+    get() = if (!backgroundWorking) null else when (backgroundOperation) {
+        BackgroundSettingsOperation.SAVE -> "正在保存…"
+        BackgroundSettingsOperation.STOP -> "正在停止后台运行…"
+        null -> null
+    }
 
 private val io.toolbox.core.data.ThemeMode.baseLabel: String
     get() = when (this) {

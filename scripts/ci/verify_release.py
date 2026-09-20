@@ -6,6 +6,7 @@ Version and application ID come from the checked-out Gradle configuration.
 """
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -58,6 +59,15 @@ def main() -> None:
         (ROOT / "app/build.gradle.kts").read_text(),
         (ROOT / "app/build/outputs/mapping/release/mapping.txt").read_text(), expected,
     )
+    startup = json.loads((evidence / "startup/result.json").read_text())
+    apk = ROOT / "app/build/outputs/apk/release/app-release.apk"
+    if startup.get("status") != "PASS" or startup.get("scope") != "cold_start_initial_home":
+        raise ValueError("Signed release startup verification did not pass")
+    if startup.get("apk_sha256") != hashlib.sha256(apk.read_bytes()).hexdigest():
+        raise ValueError("Startup verification used a different APK")
+    for field, config_key in (("application_id", "applicationId"), ("version_name", "versionName"), ("version_code", "versionCode")):
+        if startup.get(field) != config[config_key]:
+            raise ValueError("Startup verification used a different installed version")
     delivery = ROOT / "build/ci-delivery"
     delivery.mkdir(parents=True, exist_ok=False)
     filename = f"toolbox-v{config['versionName']}-release.apk"
@@ -73,6 +83,8 @@ def main() -> None:
         "EMBEDDED_EXAMPLE_BYTES": "PASS",
         "STANDALONE_TBX_VALIDATION": "SEPARATE_TBX_CI",
         "HOST_SCREENSHOT_VALIDATION": "REMOVED_BY_USER_REQUEST",
+        "MINIFIED_STARTUP_SMOKE": "PASS_API_35_EMULATOR_INITIAL_HOME_ONLY",
+        "STARTUP_ANDROID_VERSION": startup["android_version"],
         "REAL_DEVICE": "NOT_RUN", "REAL_SERVER_LOGIN": "NOT_RUN", "MINIFIED_RUNTIME_DEVICE_TEST": "NOT_RUN",
     }
     (delivery / "BUILD_RECEIPT.txt").write_text("".join(f"{key}={value}\n" for key, value in receipt.items()))

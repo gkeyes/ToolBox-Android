@@ -16,16 +16,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+internal enum class ImportOutcome { Success, Cancelled, Failure }
 
 internal data class ImportUiState(
     val working: Boolean = false,
     val message: String? = null,
-    val succeeded: Boolean = false,
+    val outcome: ImportOutcome? = if (message == null) null else ImportOutcome.Failure,
     val confirmation: HostImportConfirmation? = null,
     val importPhase: PackageImportPhase? = null,
+    val feedbackId: Long = 0,
 ) {
+    val succeeded: Boolean get() = outcome == ImportOutcome.Success
     val progressMessage: String
         get() = when (importPhase) {
             PackageImportPhase.CANCELLING -> "正在取消安装…"
@@ -41,6 +46,7 @@ internal class ImportViewModel(
     private val mutableState = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = mutableState.asStateFlow()
     private var activeControl: PackageImportControl? = null
+    private var nextFeedbackId = 0L
 
     fun importPackage(input: PackageInput) {
         if (mutableState.value.working) return
@@ -86,7 +92,7 @@ internal class ImportViewModel(
             when (val result = operations.installBundledExamples()) {
                 is HostExampleInstallResult.Installed -> ImportUiState(
                     message = "已安装 ${result.count} 个范例",
-                    succeeded = true,
+                    outcome = ImportOutcome.Success,
                 )
                 is HostExampleInstallResult.Failed -> ImportUiState(message = result.message)
             }
@@ -101,6 +107,16 @@ internal class ImportViewModel(
     fun dismissMessage() {
         if (mutableState.value.working) return
         mutableState.value = ImportUiState()
+    }
+
+    fun expireSuccess(expectedFeedbackId: Long) {
+        // A retained/covered page may still deliver an older timer. Check the latest
+        // result atomically instead of relying on Compose to cancel it in time.
+        mutableState.update { current ->
+            if (!current.working && current.outcome == ImportOutcome.Success &&
+                current.message != null && current.feedbackId == expectedFeedbackId
+            ) ImportUiState() else current
+        }
     }
 
     private fun runImport(control: PackageImportControl? = null, block: suspend () -> ImportUiState) {
@@ -124,15 +140,15 @@ internal class ImportViewModel(
                 phaseObserver?.cancel()
                 activeControl = null
             }
-            mutableState.value = nextState
+            mutableState.value = nextState.copy(feedbackId = ++nextFeedbackId)
         }
     }
 
     private fun HostImportResult.toUiState(): ImportUiState = when (this) {
-        HostImportResult.Cancelled -> ImportUiState(message = "已取消安装")
+        HostImportResult.Cancelled -> ImportUiState(message = "已取消安装", outcome = ImportOutcome.Cancelled)
         is HostImportResult.Installed -> ImportUiState(
             message = "$toolName 已安装",
-            succeeded = true,
+            outcome = ImportOutcome.Success,
         )
         is HostImportResult.ConfirmationRequired -> ImportUiState(confirmation = confirmation)
         is HostImportResult.Failed -> ImportUiState(message = message)

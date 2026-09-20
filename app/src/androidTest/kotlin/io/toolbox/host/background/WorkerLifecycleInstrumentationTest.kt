@@ -74,7 +74,9 @@ class WorkerLifecycleInstrumentationTest {
             try {
                 val coordinator = BackgroundTaskCoordinator(WorkManager.getInstance(context), stores.repositories,
                     authorization, notifications)
-                assertTrue(coordinator.cancel(TOOL, task.taskId))
+                val cancelled = coordinator.cancel(TOOL, task.taskId)
+                assertTrue(cancelled == BackgroundCancellationResult.Cancelled ||
+                    cancelled == BackgroundCancellationResult.AlreadyFinished(wasCancelled = true))
                 withTimeout(10_000) { owner.join() }
                 assertEquals(TaskState.CANCELLED, current(stores, task.taskId).state)
                 assertNull(current(stores, task.taskId).executionToken)

@@ -25,6 +25,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.job
 import kotlinx.coroutines.joinAll
@@ -55,9 +56,22 @@ class CatalogLayoutWriteTest {
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
+    @Test fun dismissingInitialLoadErrorDoesNotMakeTheCatalogReady() = layoutTest {
+        val viewModel = loadedViewModel(ControlledLayoutSettings(original), flow {
+            throw java.io.IOException("catalog read failed")
+        })
+        assertTrue(viewModel.state.value.loadFailed)
+        assertEquals("CATALOG_UNAVAILABLE", (viewModel.state.value.feedback as CatalogFeedback.Failure).code)
+
+        viewModel.dispatch(CatalogAction.DismissFeedback)
+        assertNull(viewModel.state.value.feedback)
+        assertTrue(viewModel.state.value.loadFailed)
+    }
+
     @Test fun delayedSaveStaysWritingAndKeepsOldLayoutUntilCommit() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
+        assertFalse(viewModel.state.value.loadFailed)
 
         viewModel.dispatch(CatalogAction.SaveGroup("first", "新分组", emptyList(), "editor"))
         assertEquals(CatalogLayoutWriteStatus.Writing, viewModel.state.value.layoutWrites["editor"])
@@ -237,9 +251,12 @@ class CatalogLayoutWriteTest {
         }
     }
 
-    private suspend fun loadedViewModel(settings: ControlledLayoutSettings): CatalogViewModel {
+    private suspend fun loadedViewModel(
+        settings: ControlledLayoutSettings,
+        projection: Flow<List<CatalogEntry>> = flowOf(emptyList()),
+    ): CatalogViewModel {
         val catalog = object : CatalogRepository {
-            override fun observeCatalogProjection(): Flow<List<CatalogEntry>> = flowOf(emptyList())
+            override fun observeCatalogProjection(): Flow<List<CatalogEntry>> = projection
             override fun observeTools(): Flow<List<InstalledTool>> = error("unused")
             override fun observeTool(toolId: String): Flow<InstalledTool?> = error("unused")
         }

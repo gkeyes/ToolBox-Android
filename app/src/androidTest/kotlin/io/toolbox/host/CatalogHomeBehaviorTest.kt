@@ -7,7 +7,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -43,10 +46,14 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     private var installExampleRequests = 0
     private var createGroupRequests = 0
 
-    private fun render(restoration: StateRestorationTester? = null) {
+    private fun render(restoration: StateRestorationTester? = null, hapticFeedback: HapticFeedback? = null) {
         val content: @Composable () -> Unit = {
             val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides if (wideLargeText) Density(density.density * 0.5f, 1.6f) else density) {
+            val haptics = hapticFeedback ?: LocalHapticFeedback.current
+            CompositionLocalProvider(
+                LocalDensity provides if (wideLargeText) Density(density.density * 0.5f, 1.6f) else density,
+                LocalHapticFeedback provides haptics,
+            ) {
                 ToolBoxTheme(style = style, reduceTransparency = true) {
                     var editing by rememberSaveable { mutableStateOf(false) }
                     var creatingGroup by rememberSaveable { mutableStateOf(false) }
@@ -540,6 +547,40 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         homeTile("member:g1:a").performTouchInput { click() }
         compose.waitUntil(5_000) { compose.runOnIdle { fixture.opened.isNotEmpty() } }
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
+    }
+
+    @Test fun onlyAnAcceptedCustomDragHapticsOnceAndCancellationDoesNotCommitOrder() {
+        fixture.tools.value = fixture.tools.value.map { it.copy(lastOpenedAt = null) }
+        val original = CatalogLayout(favorites = listOf("a"), groups = listOf(
+            CatalogGroup("g1", "工作", listOf("a"), expanded = true),
+            CatalogGroup("g2", "常用", listOf("b"), expanded = true),
+        ))
+        fixture.layout.value = original
+        val haptics = mutableListOf<HapticFeedbackType>()
+        render(hapticFeedback = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { haptics += hapticFeedbackType }
+        })
+        enterOrganizing()
+        compose.runOnIdle { haptics.clear() }
+
+        homeTile("catalog_group:g1").performTouchInput {
+            down(center)
+            advanceEventTime(100)
+            cancel()
+        }
+        compose.runOnIdle {
+            assertTrue("A canceled short press must not vibrate", haptics.isEmpty())
+            assertEquals(original, fixture.layout.value)
+        }
+
+        holdGroupHeader(moveToOtherGroup = true, cancelGesture = true)
+        compose.runOnIdle {
+            assertEquals("The accepted drag emits one LongPress, including across movement and cancellation",
+                listOf(HapticFeedbackType.LongPress), haptics)
+            assertEquals("Cancellation must not persist the previewed group order", original, fixture.layout.value)
+            assertTrue(fixture.pending.isEmpty())
+            assertTrue(fixture.opened.isEmpty())
+        }
     }
 
     private fun openHomeMenu() {

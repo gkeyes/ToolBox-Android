@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Cold-start the actual signed APK on the CI emulator; never targets hardware.
+
+This verifies startup/initial home only, not full minified runtime behavior or visuals.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def validate_startup(package, version, code, start, installed, logs, ui, pid):
+    component = rf"{re.escape(package)}/(?:{re.escape(package)})?\.MainActivity"
+    if not re.search(r"^Status: ok\s*$", start, re.M) or not re.search(component, start):
+        raise ValueError("MainActivity launch did not succeed")
+    if not re.search(rf"\bversionName={re.escape(version)}\s", installed):
+        raise ValueError("Installed version name differs from the APK")
+    if not re.search(rf"\bversionCode={re.escape(code)}\b", installed):
+        raise ValueError("Installed version code differs from the APK")
+    if not re.search(rf"Fully drawn {component}:", logs):
+        raise ValueError("Host did not report a fully drawn home")
+    if re.search(rf"(?:Process: |Cmdline: |ANR in ){re.escape(package)}(?:[,:\s]|$)", logs):
+        raise ValueError("Host crash or ANR during startup")
+    if not re.fullmatch(r"\d+", pid.strip()):
+        raise ValueError("Host process did not remain alive")
+    document = ET.fromstring(ui[ui.index("<?xml"):])
+    host_nodes = [node for node in document.iter("node") if node.get("package") == package]
+    labels = {node.get(key, "") for node in host_nodes for key in ("text", "content-desc")}
+    if not {"首页", "全部工具", "设置"}.issubset(labels):
+        raise ValueError("Initial home navigation is missing from the rendered UI")
+    if not any(node.get("selected") == "true" and any(
+            child.get(key) == "首页" for child in node.iter("node")
+            if child.get("package") == package for key in ("text", "content-desc")
+    ) for node in host_nodes):
+        raise ValueError("The initial home tab is not selected")
+    # This job installs on a fresh emulator: content must be ready, not just its navigation shell.
+    if not {"还没有工具", "安装四个范例", "导入 .tbx"}.issubset(labels):
+        raise ValueError("The fresh-install home content did not load")
+    if any("无法读取" in label for label in labels):
+        raise ValueError("The initial home reports a loading failure")
+
+
+def main():
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        raise RuntimeError("This smoke test runs only in GitHub Actions")
+    evidence = ROOT / "build/release-evidence/startup"
+    evidence.mkdir(parents=True, exist_ok=True)
+
+    def adb(*args, record=None, timeout=60):
+        result = subprocess.run(["adb", "-e", *args], check=True, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout).stdout
+        if record:
+            (evidence / record).write_text(result)
+        return result
+
+    if adb("shell", "getprop", "ro.kernel.qemu").strip() != "1":
+        raise RuntimeError("An emulator is required; physical devices are excluded")
+    gradle = (ROOT / "app/build.gradle.kts").read_text()
+    package = re.search(r'applicationId\s*=\s*"([^"]+)"', gradle)[1]
+    version = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)[1]
+    code = re.search(r'versionCode\s*=\s*(\d+)', gradle)[1]
+    apk = ROOT / "app/build/outputs/apk/release/app-release.apk"
+    result = {"status": "FAILED", "scope": "cold_start_initial_home",
+              "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+              "application_id": package, "version_name": version, "version_code": code}
+    try:
+        result["android_version"] = adb("shell", "getprop", "ro.build.version.release").strip()
+        adb("shell", "dumpsys", "webviewupdate", record="webview-provider.txt")
+        adb("install", "-r", str(apk), record="install.txt")
+        installed = adb("shell", "dumpsys", "package", package, record="installed-package.txt")
+        adb("shell", "svc", "power", "stayon", "true")
+        adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        adb("shell", "wm", "dismiss-keyguard")
+        adb("shell", "am", "force-stop", package)
+        adb("logcat", "-b", "all", "-c")
+        start = adb("shell", "am", "start", "-W", "-n", f"{package}/.MainActivity",
+                    "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", record="launch.txt")
+        # A CI observation deadline, not a product startup or workload limit.
+        deadline = time.monotonic() + 60
+        logs = ""
+        while time.monotonic() < deadline:
+            logs = adb("logcat", "-b", "main", "-b", "system", "-b", "crash", "-d")
+            if f"Fully drawn {package}/" in logs:
+                break
+            time.sleep(.5)
+        adb("shell", "uiautomator", "dump", "/sdcard/toolbox-startup.xml")
+        ui = adb("exec-out", "cat", "/sdcard/toolbox-startup.xml", record="home.xml")
+        logs = adb("logcat", "-b", "main", "-b", "system", "-b", "crash", "-d", record="startup-logcat.txt")
+        pid = adb("shell", "pidof", package, record="host-pid.txt")
+        validate_startup(package, version, code, start, installed, logs, ui, pid)
+        result["status"] = "PASS"
+    finally:
+        (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        adb("logcat", "-b", "main", "-b", "system", "-b", "crash", "-d", record="startup-logcat.txt")
+        adb("logcat", "-b", "crash", "-d", record="crash-buffer.txt")
+        adb("shell", "rm", "-f", "/sdcard/toolbox-startup.xml")
+    print(f"Signed APK cold-start/initial-home smoke: {result['status']} ({version}/{code})")
+
+
+if __name__ == "__main__":
+    main()

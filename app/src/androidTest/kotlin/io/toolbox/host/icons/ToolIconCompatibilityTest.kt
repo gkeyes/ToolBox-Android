@@ -3,13 +3,14 @@ package io.toolbox.host.icons
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.*
 import java.io.ByteArrayOutputStream
-import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -148,22 +149,116 @@ class ToolIconCompatibilityTest {
         }
     }
 
-    private suspend fun withInstalledIcon(action: suspend (Path, InstalledTool, CatalogRepository) -> Unit) {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = Files.createTempDirectory(context.cacheDir.toPath(), "icon-compat-")
-        val id = "io.toolbox.iconfixture"
-        val locator = BundleLocator("miniapps/$id/versions/1/bundle")
-        val bundle = Files.createDirectories(root.resolve(locator.value))
-        Files.write(bundle.resolve("manifest.json"), """{"schemaVersion":1,"id":"$id","name":"Icon fixture","version":"1.0.0","versionCode":1,"entry":"index.html","icon":"icon.svg","apiVersion":"1.0","minHostVersion":"0.3.0","permissions":[],"securityProfile":"strict"}""".toByteArray())
-        Files.write(bundle.resolve("icon.svg"), svg("<rect width='100' height='100' fill='red'/>").bytes)
-        val tool = InstalledTool(ToolMetadata(id, "Icon fixture", SecurityProfile.STRICT, 1),
-            ToolVersion(id, 1, "1.0.0", locator, 1, "fixture", 1), null)
-        val catalog = object : CatalogRepository {
-            override fun observeCatalogProjection() = flowOf(emptyList<CatalogEntry>())
-            override fun observeTools() = flowOf(listOf(tool))
-            override fun observeTool(toolId: String) = flowOf(tool.takeIf { it.metadata.id == toolId })
+    @Test
+    fun hotCacheReadDoesNotReadTheCatalogOrInstalledFiles() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            var fileRootReads = 0
+            var decodes = 0
+            val loader = ToolIconLoader(fixture.catalog, decode = {
+                decodes++
+                ToolIconDecoder.decode(it)
+            }, privateFilesRoot = { fileRootReads++; fixture.root })
+            val bitmap = requireNotNull(loader.load(fixture.id, 1))
+            val catalogReads = fixture.catalogReads.get()
+            val rootReads = fileRootReads
+            repeat(3) { assertSame(bitmap, loader.cached(fixture.id, 1)) }
+            assertNull(loader.cached(fixture.id, 2))
+            assertNull(loader.cached("io.toolbox.other", 1))
+            assertEquals(catalogReads, fixture.catalogReads.get())
+            assertEquals(rootReads, fileRootReads)
+            assertEquals(1, decodes)
         }
-        try { action(root, tool, catalog) } finally { assertTrue(root.toFile().deleteRecursively()) }
+    }
+
+    @Test
+    fun invalidationClearsNegativeCacheAndRefreshesACollectorThatSubscribesLater() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            var decodes = 0
+            val loader = ToolIconLoader(fixture.catalog, decode = {
+                decodes++
+                if (decodes == 1) null else ToolIconDecoder.decode(it)
+            }, privateFilesRoot = { fixture.root })
+            assertNull(loader.load(fixture.id, 1))
+            assertNull(loader.load(fixture.id, 1))
+            assertEquals(1, decodes)
+            val refreshes = loader.invalidations(fixture.id)
+            loader.invalidate(fixture.id)
+            withTimeout(10_000) { refreshes.first() }
+            assertNotNull(loader.load(fixture.id, 1))
+            assertEquals(2, decodes)
+        }
+    }
+
+    @Test
+    fun sameVersionNumberStillUsesEveryInstalledIdentityField() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            val original = fixture.initialTool.currentVersion
+            val replacements = listOf(
+                original.copy(version = "1.0.0+replacement"),
+                original.copy(bundleLocator = BundleLocator("miniapps/${fixture.id}/unexpected/bundle")),
+                original.copy(bundleBytes = original.bundleBytes + 1),
+                original.copy(integrityHash = "replacement"),
+                original.copy(installedAt = original.installedAt + 1),
+            )
+            replacements.forEach { replacement ->
+                fixture.current.value = fixture.initialTool
+                fixture.writeIcon("red")
+                val loader = ToolIconLoader(fixture.catalog, privateFilesRoot = { fixture.root })
+                val oldBitmap = requireNotNull(loader.load(fixture.id, 1))
+                fixture.writeIcon("blue")
+                fixture.current.value = fixture.initialTool.copy(currentVersion = replacement)
+                val updated = loader.load(fixture.id, 1)
+                assertNotSame("A changed full identity cannot reuse the old bitmap", oldBitmap, updated)
+                if (replacement.bundleLocator != original.bundleLocator) {
+                    assertNull("Unexpected bundle locations remain blocked", updated)
+                    assertNull(loader.cached(fixture.id, 1))
+                } else {
+                    assertEquals(Color.BLUE, requireNotNull(updated).getPixel(128, 128))
+                    assertSame(updated, loader.cached(fixture.id, 1))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun replacementDuringDecodeCannotRepopulateTheInvalidatedCache() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            val started = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val attempts = AtomicInteger()
+            val loader = ToolIconLoader(fixture.catalog, decode = { source ->
+                if (attempts.incrementAndGet() == 1) {
+                    started.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+                ToolIconDecoder.decode(source)
+            }, privateFilesRoot = { fixture.root })
+            val oldLoad = async { loader.load(fixture.id, 1) }
+            try {
+                // The test coroutine must yield so the load can enter its IO dispatcher.
+                withContext(Dispatchers.IO) { assertTrue(started.await(10, TimeUnit.SECONDS)) }
+                fixture.writeIcon("blue")
+                fixture.current.value = fixture.initialTool.copy(currentVersion = fixture.initialTool.currentVersion.copy(
+                    integrityHash = "replacement", installedAt = 2,
+                ))
+                val invalidation = async(start = CoroutineStart.UNDISPATCHED) { loader.invalidate(fixture.id) }
+                release.countDown()
+                assertNull("The post-decode check rejects the old full identity", withTimeout(10_000) { oldLoad.await() })
+                withTimeout(10_000) { invalidation.await() }
+                assertNull(loader.cached(fixture.id, 1))
+                val bitmap = requireNotNull(loader.load(fixture.id, 1))
+                assertEquals(Color.BLUE, bitmap.getPixel(128, 128))
+                assertSame(bitmap, loader.cached(fixture.id, 1))
+                assertEquals(2, attempts.get())
+            } finally {
+                release.countDown()
+                oldLoad.cancelAndJoin()
+            }
+        }
+    }
+
+    private suspend fun withInstalledIcon(action: suspend (Path, InstalledTool, CatalogRepository) -> Unit) {
+        InstalledIconFixture().use { fixture -> action(fixture.root, fixture.initialTool, fixture.catalog) }
     }
 
     private fun svg(content: String) = ToolIconSource(("""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">""" + content + "</svg>").toByteArray(), true)

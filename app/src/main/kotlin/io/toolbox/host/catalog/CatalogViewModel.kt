@@ -74,6 +74,7 @@ internal class CatalogViewModel(
                     update { state ->
                         state.copy(
                             isLoaded = true,
+                            loadFailed = true,
                             feedback = CatalogFeedback.Failure("CATALOG_UNAVAILABLE", "工具列表暂时无法读取。"),
                         )
                     }
@@ -83,7 +84,7 @@ internal class CatalogViewModel(
                     update { current -> current.copy(
                         tools = projection.tools, visibleTools = projection.visibleTools,
                         recentTools = projection.recentTools, layout = projection.layout,
-                        query = projection.query, isSearching = projection.isSearching, isLoaded = true,
+                        query = projection.query, isSearching = projection.isSearching, isLoaded = true, loadFailed = false,
                         uninstallConfirmation = current.uninstallConfirmation?.takeIf { confirmation ->
                             projection.tools.any { it.toolId == confirmation.toolId }
                         },

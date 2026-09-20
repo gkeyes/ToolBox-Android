@@ -48,7 +48,7 @@ internal fun ImportScreen(
                         SectionHeader("导入结果")
                         FeedbackSurface(
                             message = if (state.working) state.progressMessage else state.message.orEmpty(),
-                            tone = if (state.working) FeedbackTone.Progress else if (state.succeeded) FeedbackTone.Success else FeedbackTone.Error,
+                            tone = state.feedbackTone,
                             dismissible = false, onDismiss = {},
                             onCancel = viewModel::cancelActiveImport.takeIf {
                                 state.working && state.importPhase == PackageImportPhase.IMPORTING

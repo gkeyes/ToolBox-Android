@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import io.toolbox.host.importflow.ImportOutcome
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -93,6 +97,7 @@ internal fun ToolManagerContent(
     onInstallExamples: () -> Unit,
     onDismissImport: () -> Unit,
     onOpenDetails: (String) -> Unit,
+    onExpireImportSuccess: (Long) -> Unit = {},
     onConfirmImport: () -> Unit = {},
     onCancelImport: () -> Unit = {},
     onCancelActiveImport: () -> Unit = {},
@@ -126,10 +131,14 @@ internal fun ToolManagerContent(
     LaunchedEffect(state.isLoaded, selectedToolId, selectedTool) {
         if (state.isLoaded && selectedToolId != null && selectedTool == null) selectedToolId = null
     }
-    LaunchedEffect(importState.message, importState.succeeded) {
+    val accessibilityManager = LocalAccessibilityManager.current
+    LaunchedEffect(importState, accessibilityManager) {
         if (importState.succeeded && importState.message != null) {
-            delay(INSTALL_SUCCESS_FEEDBACK_DURATION_MS)
-            onDismissImport()
+            delay(accessibilityManager?.calculateRecommendedTimeoutMillis(
+                originalTimeoutMillis = INSTALL_SUCCESS_FEEDBACK_DURATION_MS,
+                containsIcons = true, containsText = true, containsControls = false,
+            ) ?: INSTALL_SUCCESS_FEEDBACK_DURATION_MS)
+            onExpireImportSuccess(importState.feedbackId)
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -177,11 +186,7 @@ internal fun ToolManagerContent(
             item("import-feedback") {
                 FeedbackSurface(
                     message = if (importState.working) importState.progressMessage else requireNotNull(importState.message),
-                    tone = when {
-                        importState.working -> FeedbackTone.Progress
-                        importState.succeeded -> FeedbackTone.Success
-                        else -> FeedbackTone.Error
-                    },
+                    tone = importState.feedbackTone,
                     dismissible = !importState.working && !importState.succeeded,
                     onDismiss = onDismissImport,
                     onCancel = onCancelActiveImport.takeIf {
@@ -542,7 +547,14 @@ private fun ToolIdentity(tool: CatalogTool) {
 
 private const val INSTALL_SUCCESS_FEEDBACK_DURATION_MS = 3_000L
 
-internal enum class FeedbackTone { Progress, Success, Error }
+internal enum class FeedbackTone { Progress, Success, Neutral, Error }
+
+internal val ImportUiState.feedbackTone: FeedbackTone get() = when {
+    working -> FeedbackTone.Progress
+    outcome == ImportOutcome.Success -> FeedbackTone.Success
+    outcome == ImportOutcome.Cancelled -> FeedbackTone.Neutral
+    else -> FeedbackTone.Error
+}
 
 @Composable
 internal fun FeedbackSurface(
@@ -557,21 +569,27 @@ internal fun FeedbackSurface(
     val container = when (tone) {
         FeedbackTone.Progress -> colors.softPrimary
         FeedbackTone.Success -> colors.softSuccess
+        FeedbackTone.Neutral -> colors.surfaceMuted
         FeedbackTone.Error -> colors.softDanger
     }
     val content = when (tone) {
         FeedbackTone.Progress -> colors.primary
-        FeedbackTone.Success -> colors.success
+        FeedbackTone.Success -> colors.onSoftSuccess
+        FeedbackTone.Neutral -> colors.textSecondary
         FeedbackTone.Error -> colors.danger
     }
     val icon = when (tone) {
         FeedbackTone.Progress -> ToolBoxIconKey.Clock
         FeedbackTone.Success -> ToolBoxIconKey.Check
+        FeedbackTone.Neutral -> ToolBoxIconKey.Close
         FeedbackTone.Error -> ToolBoxIconKey.Close
     }
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                if (tone != FeedbackTone.Progress) liveRegion = LiveRegionMode.Polite
+            }
             .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
             .background(container)
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)

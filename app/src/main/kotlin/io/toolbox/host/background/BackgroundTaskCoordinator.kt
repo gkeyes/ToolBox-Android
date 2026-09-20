@@ -36,6 +36,9 @@ class BackgroundTaskCoordinator(
     private val json: Json = Json { encodeDefaults = false },
 ) : BackgroundTaskReader {
     private val enqueueMutex = Mutex()
+    private val cancellation = BackgroundTaskCancellation(
+        repositories.backgroundTasks, notifications, clock, json, ::cancelScheduledWork,
+    )
 
     override fun tasks(toolId: String): Flow<List<BackgroundTask>> =
         repositories.backgroundTasks.observeTasks(toolId)
@@ -61,30 +64,27 @@ class BackgroundTaskCoordinator(
         return create(toolId, versionCode, request, intervalMinutes)
     }
 
-    suspend fun cancel(toolId: String, taskId: String): Boolean {
-        val task = (repositories.backgroundTasks.getTask(taskId) as? DataResult.Success)?.value
-            ?: return false
-        if (task.toolId != toolId) return false
-        cancelScheduledWork(task)
-        return cancelStoredTask(task)
-    }
+    internal suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult =
+        cancellation.cancel(toolId, taskId)
 
     suspend fun cancelTool(toolId: String) {
-        withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)) }
-        notifications.cancelTool(toolId)
-        repositories.backgroundTasks.observeTasks(toolId).first().forEach { task ->
-            cancelStoredTask(task)
-        }
+        completeBackgroundCancellation(
+            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get() } },
+            { notifications.cancelTool(toolId) },
+            { cancellation.cancelStoredTasks(toolId) },
+        )
     }
 
     suspend fun cancelAll(toolIds: Collection<String>) {
-        withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(GLOBAL_TAG) }
-        toolIds.forEach { toolId ->
-            notifications.cancelTool(toolId)
-            repositories.backgroundTasks.observeTasks(toolId).first().forEach { task ->
-                cancelStoredTask(task)
-            }
-        }
+        completeBackgroundCancellation(
+            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(GLOBAL_TAG).result.get() } },
+            *toolIds.distinct().map { toolId -> suspend {
+                completeBackgroundCancellation(
+                    { notifications.cancelTool(toolId) },
+                    { cancellation.cancelStoredTasks(toolId) },
+                )
+            } }.toTypedArray(),
+        )
     }
 
     suspend fun revokeCapability(toolId: String, capability: String) {
@@ -204,7 +204,7 @@ class BackgroundTaskCoordinator(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: RuntimeException) {
-            cancelStoredTask(task)
+            cancellation.cancelStoredTask(task)
             return@withLock EnqueueResult.Rejected("SCHEDULING_FAILED")
         }
         EnqueueResult.Enqueued(taskId)
@@ -252,43 +252,18 @@ class BackgroundTaskCoordinator(
     }
 
     private suspend fun cancelScheduledWork(task: BackgroundTask) {
-        withContext(Dispatchers.IO) { workManager.cancelUniqueWork(workName(task.taskId)) }
+        withContext(Dispatchers.IO) { workManager.cancelUniqueWork(workName(task.taskId)).result.get() }
     }
 
     private suspend fun cancelOperations(toolId: String, operation: BackgroundOperation) {
-        repositories.backgroundTasks.observeTasks(toolId).first()
-            .filter { it.operation == operation }
-            .forEach { task ->
-                cancelScheduledWork(task)
-                cancelStoredTask(task)
+        val tasks = repositories.backgroundTasks.observeTasks(toolId).first()
+            .filter { it.operation == operation && !it.isFinished }
+        completeBackgroundCancellation(*tasks.map { task -> suspend {
+            if (cancellation.cancel(toolId, task.taskId) is BackgroundCancellationResult.Failed) {
+                throw BackgroundCancellationException()
             }
+        } }.toTypedArray())
     }
-
-    private suspend fun cancelStoredTask(task: BackgroundTask): Boolean =
-        BackgroundExecutionLimiter.lockTool(task.toolId) {
-            BackgroundExecutionLimiter.cancelExecution(task.taskId)
-            val current = (repositories.backgroundTasks.getTask(task.taskId) as? DataResult.Success)?.value
-                ?: return@lockTool true
-            when (current.state) {
-                TaskState.CANCELLED -> true
-                TaskState.COMPLETED -> false
-                TaskState.QUEUED,
-                TaskState.RUNNING,
-                -> {
-                    val result = TaskRunResult(
-                        taskId = current.taskId,
-                        outcome = io.toolbox.core.data.RunOutcome.CANCELLED,
-                        completedAt = clock.nowMillis(),
-                        payloadJson = null,
-                        errorCode = "CANCELLED",
-                        attemptCount = current.runAttempt,
-                    )
-                    val cancelled = repositories.backgroundTasks.finishCancelled(current.taskId, result) is DataResult.Success
-                    if (cancelled) notifications.cancel(current.toolId, taskNotificationId(current))
-                    cancelled
-                }
-            }
-        }
 
     private fun BackgroundTaskRequest.isValid(): Boolean = when (this) {
         is BackgroundTaskRequest.HttpGet -> url.isNotBlank()
@@ -304,10 +279,6 @@ class BackgroundTaskCoordinator(
             notificationId = notificationId,
         )
     }
-
-    private fun taskNotificationId(task: BackgroundTask): String = runCatching {
-        json.decodeFromString<StoredBackgroundSpec>(task.specJson).notificationId
-    }.getOrNull() ?: task.taskId
 
     private fun DataResult.Failure.toErrorCode(): String = when (this) {
         is DataResult.Failure.DuplicateTaskKey -> "DUPLICATE_TASK_KEY"

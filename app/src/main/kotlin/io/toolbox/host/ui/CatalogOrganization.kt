@@ -1,6 +1,9 @@
 package io.toolbox.host.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.LocalIndication
@@ -13,11 +16,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.toolbox.core.data.CatalogGroup
@@ -153,6 +159,11 @@ private fun GroupHeader(
     onExpand: () -> Unit, onEdit: () -> Unit, onMove: (Int) -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val collapsedRotation = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 0f else collapsedRotation,
+        animationSpec = tween(160, easing = LinearOutSlowInEasing), label = "group-expansion",
+    )
     Row(
         Modifier.groupSurface(top = true, bottom = !expanded)
             .indication(interactionSource, LocalIndication.current)
@@ -185,7 +196,7 @@ private fun GroupHeader(
             AppText(count.toString(), color = ToolBoxThemeTokens.colors.textSecondary,
                 modifier = Modifier.semantics { contentDescription = count.toString() + " 个工具" },
                 textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 13.sp))
-            ToolBoxIcon(if (expanded) ToolBoxIconKey.ChevronDown else ToolBoxIconKey.ChevronRight, null,
+            ToolBoxIcon(ToolBoxIconKey.ChevronDown, null, Modifier.rotate(arrowRotation),
                 tint = ToolBoxThemeTokens.colors.textSecondary)
         }
         if (editing) ToolBoxIconButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit)

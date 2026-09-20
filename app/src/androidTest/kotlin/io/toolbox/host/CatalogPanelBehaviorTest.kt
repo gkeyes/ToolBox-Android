@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -183,12 +184,16 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle, private val
         fixture.holdWrites = true
         selectedToolId.value = "a"
         render()
+        val shortcutHeight = compose.onNodeWithTag("catalog_tool_favorite").fetchSemanticsNode().boundsInRoot.height
         compose.onNodeWithTag("catalog_tool_favorite").performClick()
         compose.onNodeWithTag("catalog_tool_favorite").assertIsNotEnabled()
+        compose.onNodeWithTag("catalog_tool_favorite").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "正在保存"))
+        assertEquals(shortcutHeight, compose.onNodeWithTag("catalog_tool_favorite").fetchSemanticsNode().boundsInRoot.height, 1f)
         val favoriteWrite = compose.runOnIdle { fixture.pending.keys.single() }
         // An unrelated group selection remains usable while the favorite write is pending.
         compose.onNodeWithTag("catalog_tool_groups").performClick()
         compose.onNodeWithTag("membership:g2").performScrollTo().performClick()
+        compose.onNodeWithTag("membership:g2").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "正在保存"))
         val membershipWrite = compose.runOnIdle {
             assertEquals(2, fixture.pending.size)
             fixture.pending.keys.single { it != favoriteWrite }

@@ -213,7 +213,7 @@ class HostBackupResourceTest {
     private val unusedBackground = object : HostBackgroundOperations {
         override fun observeTasks(toolId: String) = flowOf(emptyList<BackgroundTask>())
         override fun observeResult(taskId: String) = flowOf<TaskRunResult?>(null)
-        override suspend fun cancel(toolId: String, taskId: String) = false
+        override suspend fun cancel(toolId: String, taskId: String) = io.toolbox.host.background.BackgroundCancellationResult.AlreadyFinished()
         override suspend fun cancelTool(toolId: String) = Unit
         override suspend fun cancelAll(toolIds: Collection<String>) = Unit
     }

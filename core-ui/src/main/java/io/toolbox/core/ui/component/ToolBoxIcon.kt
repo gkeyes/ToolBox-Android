@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -108,10 +109,12 @@ fun ToolBoxIconButton(
             .semantics {
                 this.contentDescription = contentDescription
                 role = Role.Button
+                if (!enabled) disabled()
             },
         enabled = enabled,
     ) {
-        ToolBoxIcon(icon = icon, contentDescription = null, tint = tint)
+        ToolBoxIcon(icon = icon, contentDescription = null,
+            tint = if (enabled) tint else ToolBoxThemeTokens.disabledContent)
     }
 }
 

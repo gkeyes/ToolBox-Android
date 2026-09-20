@@ -23,6 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
@@ -33,6 +37,7 @@ import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
@@ -43,7 +48,6 @@ import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
@@ -63,9 +67,10 @@ internal fun BackgroundTasksScreen(
     val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
     val page = backgroundTasksPageModel(toolId, tasks, sessions)
     val scope = rememberCoroutineScope()
-    var cancellingTaskId by remember { mutableStateOf<String?>(null) }
-    var stoppingSessionId by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val actions = remember(toolId, operations, runtimeSessions, scope) {
+        BackgroundTaskActions(scope, { operations.cancel(toolId, it) }, runtimeSessions::stopSession)
+    }
+    val actionState by actions.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(tasksLoaded) {
         if (tasksLoaded) onReady()
@@ -73,32 +78,17 @@ internal fun BackgroundTasksScreen(
 
     BackgroundTasksContent(
         page = page,
-        message = message,
-        cancellingTaskId = cancellingTaskId,
-        stoppingSessionId = stoppingSessionId,
+        message = actionState.message,
+        cancellingTaskId = actionState.cancellingTaskId,
+        stoppingSessionId = actionState.stoppingSessionId,
         onBack = onBack,
         resultFor = { task ->
             val result by operations.observeResult(task.taskId).collectAsStateWithLifecycle(null)
             result
         },
-        onStopSession = { session ->
-            stoppingSessionId = session.sessionId
-            message = null
-            scope.launch {
-                val stopped = runtimeSessions.stopSession(session.sessionId)
-                stoppingSessionId = null
-                message = if (stopped) "后台环境已停止。" else "后台环境已结束或不存在。"
-            }
-        },
-        onCancelTask = { task ->
-            cancellingTaskId = task.taskId
-            message = null
-            scope.launch {
-                val cancelled = operations.cancel(toolId, task.taskId)
-                cancellingTaskId = null
-                if (!cancelled) message = "任务已结束或不存在。"
-            }
-        },
+        onStopSession = { actions.stop(it.sessionId) },
+        onCancelTask = { actions.cancel(it.taskId) },
+        onRetry = if (actionState.retry != null) actions::retry else null,
     )
 }
 
@@ -112,6 +102,7 @@ internal fun BackgroundTasksContent(
     resultFor: @Composable (BackgroundTask) -> TaskRunResult?,
     onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
     onCancelTask: (BackgroundTask) -> Unit,
+    onRetry: (() -> Unit)? = null,
 ) {
     DetailScreen(title = "后台任务", onBack = onBack) { chromePadding ->
         LazyColumn(
@@ -129,7 +120,14 @@ internal fun BackgroundTasksContent(
             message?.let { text ->
                 item("message") {
                     SurfaceCard {
-                        AppText(text, color = ToolBoxThemeTokens.colors.textSecondary)
+                        AppText(text, color = ToolBoxThemeTokens.colors.textSecondary,
+                            modifier = Modifier.semantics {
+                                if (cancellingTaskId == null && stoppingSessionId == null) liveRegion = LiveRegionMode.Polite
+                            },
+                        )
+                        if (onRetry != null) {
+                            ToolBoxTextButton("重试", onRetry, enabled = cancellingTaskId == null && stoppingSessionId == null)
+                        }
                     }
                 }
             }
@@ -154,6 +152,7 @@ internal fun BackgroundTasksContent(
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
+                                canStop = stoppingSessionId == null,
                                 onStop = { onStopSession(session) },
                             )
                             if (index != page.runtimeSessions.lastIndex) {
@@ -176,6 +175,7 @@ internal fun BackgroundTasksContent(
                                 task = task,
                                 result = resultFor(task),
                                 cancelling = cancellingTaskId == task.taskId,
+                                canCancel = cancellingTaskId == null,
                                 onCancel = { onCancelTask(task) },
                             )
                             if (index != page.tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
@@ -207,6 +207,7 @@ internal fun backgroundTasksPageModel(
 private fun RuntimeSessionCard(
     session: RuntimeBackgroundSessionUi,
     stopping: Boolean,
+    canStop: Boolean,
     onStop: () -> Unit,
 ) {
     BackgroundEntryLayout(
@@ -215,8 +216,10 @@ private fun RuntimeSessionCard(
             ToolBoxDestructiveButton(
                 label = if (stopping) "正在停止…" else "停止后台运行",
                 onClick = onStop,
-                modifier = Modifier.testTag("background_stop:${session.sessionId}"),
-                enabled = !stopping,
+                modifier = Modifier.testTag("background_stop:${session.sessionId}").semantics {
+                    if (stopping) stateDescription = "正在停止"
+                },
+                enabled = canStop,
             )
         },
     ) {
@@ -234,6 +237,7 @@ private fun BackgroundTaskCard(
     task: BackgroundTask,
     result: TaskRunResult?,
     cancelling: Boolean,
+    canCancel: Boolean,
     onCancel: () -> Unit,
 ) {
     val cancellable = task.state == TaskState.QUEUED || task.state == TaskState.RUNNING
@@ -244,8 +248,10 @@ private fun BackgroundTaskCard(
             ToolBoxDestructiveButton(
                 label = if (cancelling) "正在取消…" else "取消任务",
                 onClick = onCancel,
-                modifier = Modifier.testTag("background_cancel:${task.taskId}"),
-                enabled = !cancelling,
+                modifier = Modifier.testTag("background_cancel:${task.taskId}").semantics {
+                    if (cancelling) stateDescription = "正在取消"
+                },
+                enabled = canCancel,
             )
         }) else null,
     ) {

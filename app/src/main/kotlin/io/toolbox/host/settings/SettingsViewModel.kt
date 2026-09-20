@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -26,6 +27,7 @@ internal class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
     private val appearanceUpdates = Channel<(HostSettings) -> HostSettings>(Channel.UNLIMITED)
     private var failedAppearanceUpdate: ((HostSettings) -> HostSettings)? = null
+    private var pendingBackgroundEnabled: Boolean? = null
 
     init {
         viewModelScope.launch {
@@ -52,19 +54,59 @@ internal class SettingsViewModel(
     }
 
     fun setBackgroundEnabled(enabled: Boolean) {
+        if (!state.value.canChangeBackground || state.value.settings.backgroundEnabled == enabled) return
+        pendingBackgroundEnabled = enabled
+        mutableState.update { it.copy(backgroundOperation = BackgroundSettingsOperation.SAVE) }
+        runBackgroundUpdate()
+    }
+
+    fun retryBackgroundUpdate() {
+        if (state.value.backgroundWorking || state.value.backgroundOperation == null) return
+        runBackgroundUpdate()
+    }
+
+    private fun runBackgroundUpdate() {
+        // Set the guard before dispatching so two callbacks in the same frame cannot overlap.
+        mutableState.update { it.copy(backgroundWorking = true) }
         viewModelScope.launch {
             try {
-                if (!save({ it.copy(backgroundEnabled = enabled) }, rememberForRetry = false)) return@launch
-                if (!enabled) {
+                if (state.value.backgroundOperation == BackgroundSettingsOperation.SAVE) {
+                    val enabled = requireNotNull(pendingBackgroundEnabled)
+                    when (repository.update { it.copy(backgroundEnabled = enabled) }) {
+                        is DataResult.Failure -> {
+                            showBackgroundError()
+                            return@launch
+                        }
+                        is DataResult.Success -> {
+                            pendingBackgroundEnabled = null
+                            mutableState.update { it.copy(
+                                settings = it.settings.copy(backgroundEnabled = enabled),
+                                backgroundOperation = if (enabled) null else BackgroundSettingsOperation.STOP,
+                                backgroundError = if (enabled) null else it.backgroundError,
+                            ) }
+                        }
+                    }
+                }
+                if (state.value.backgroundOperation == BackgroundSettingsOperation.STOP) {
                     val ids = catalog.observeCatalogProjection().first().map { it.toolId }
                     background.cancelAll(ids)
+                    mutableState.update { it.copy(backgroundOperation = null, backgroundError = null) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                showError("后台任务未全部取消，请重试。")
+                showBackgroundError()
+            } finally {
+                mutableState.update { it.copy(backgroundWorking = false) }
             }
         }
+    }
+
+    private fun showBackgroundError() {
+        mutableState.update { it.copy(backgroundError = when (it.backgroundOperation) {
+            BackgroundSettingsOperation.STOP -> "后台运行已关闭，但部分任务或运行环境未能停止。请重试停止。"
+            else -> "后台设置未保存，请重试保存。"
+        }) }
     }
 
     private fun updateAppearance(transform: (HostSettings) -> HostSettings) {
