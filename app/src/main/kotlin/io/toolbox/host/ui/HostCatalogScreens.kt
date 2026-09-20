@@ -9,6 +9,9 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,6 +99,8 @@ internal fun ToolManagerContent(
     home: Boolean = false,
     editing: Boolean = false,
     onEditingChange: (Boolean) -> Unit = {},
+    creatingGroup: Boolean = false,
+    onDismissCreateGroup: () -> Unit = {},
 ) {
     var selectedToolId by rememberSaveable { mutableStateOf<String?>(null) }
     var addingFavorites by rememberSaveable { mutableStateOf(false) }
@@ -105,7 +110,7 @@ internal fun ToolManagerContent(
     val selectedTool = selectedToolId?.let(toolsById::get)
     val recentTools = state.recentTools
     val drag = rememberCatalogHomeDragState(home && editing, listState, contentPadding)
-    BackHandler(home && editing && selectedToolId == null && editingGroupId == null && !addingFavorites) {
+    BackHandler(home && editing && selectedToolId == null && editingGroupId == null && !addingFavorites && !creatingGroup) {
         onEditingChange(false)
     }
     LaunchedEffect(home) {
@@ -250,6 +255,10 @@ internal fun ToolManagerContent(
         group = state.layout.groups.firstOrNull { it.id == editingGroupId },
         state = state, creating = editingGroupId == "", onAction = onAction,
         onDismiss = { editingGroupId = null },
+    )
+    if (home && creatingGroup) CatalogGroupEditor(
+        group = null, state = state, creating = true, onAction = onAction,
+        onDismiss = onDismissCreateGroup,
     )
 }
 
@@ -426,11 +435,14 @@ internal fun CatalogToolRow(
 ) {
     val corner = ToolBoxThemeTokens.radii.denseSurface
     val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
+    val interactionSource = remember { MutableInteractionSource() }
     Column(
         Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
-            .toolBoxOpenDesignSurface(RoundedCornerShape(corner)),
+            .toolBoxOpenDesignSurface(RoundedCornerShape(corner))
+            .indication(interactionSource, LocalIndication.current)
+            .testTag("tool_card:" + tool.toolId),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -440,7 +452,10 @@ internal fun CatalogToolRow(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
-                    .combinedClickable(role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen, onLongClickLabel = "收藏、分组与管理", onLongClick = onDetails)
+                    .testTag("tool_main:" + tool.toolId)
+                    .combinedClickable(interactionSource = interactionSource, indication = null,
+                        role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen,
+                        onLongClickLabel = "收藏、分组与管理", onLongClick = onDetails)
                     .padding(
                         start = ToolBoxThemeTokens.spacing.oneHalf,
                         end = ToolBoxThemeTokens.spacing.half,
@@ -476,6 +491,7 @@ internal fun CatalogToolRow(
                 icon = ToolBoxIconKey.More,
                 contentDescription = "${tool.name}的收藏、分组与管理",
                 onClick = onDetails,
+                modifier = Modifier.testTag("tool_more:" + tool.toolId),
             )
         }
     }

@@ -3,6 +3,9 @@ package io.toolbox.host.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,7 +65,7 @@ internal fun LazyListScope.catalogHomeSections(
         onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) })
     item("groups-heading") {
         Spacer(Modifier.height(24.dp))
-        HomeSectionHeader("分组", "新建分组") { onEditGroup("") }
+        HomeSectionHeader("分组")
     }
     if (state.layout.groups.isEmpty()) item("groups-empty") {
         AppText("按用途整理工具，同一个工具可以加入多个分组。", color = ToolBoxThemeTokens.colors.textSecondary,
@@ -137,10 +140,11 @@ private fun LazyListScope.homeToolGrid(
 @Composable
 private fun Modifier.groupSurface(top: Boolean = false, bottom: Boolean = false): Modifier {
     val radius = ToolBoxThemeTokens.radii.card
-    return fillMaxWidth().background(ToolBoxThemeTokens.colors.surface, RoundedCornerShape(
+    val shape = RoundedCornerShape(
         topStart = if (top) radius else 0.dp, topEnd = if (top) radius else 0.dp,
         bottomStart = if (bottom) radius else 0.dp, bottomEnd = if (bottom) radius else 0.dp,
-    ))
+    )
+    return fillMaxWidth().clip(shape).background(ToolBoxThemeTokens.colors.surface, shape)
 }
 
 @Composable
@@ -149,8 +153,10 @@ private fun GroupHeader(
     index: Int, total: Int, drag: CatalogHomeDragState,
     onExpand: () -> Unit, onEdit: () -> Unit, onMove: (Int) -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         Modifier.groupSurface(top = true, bottom = !expanded)
+            .indication(interactionSource, LocalIndication.current)
             .catalogDragTarget(drag, "group:" + group.id, "groups", index, total, group.name,
                 enabled = editing, onMove = onMove)
             .testTag("group:" + group.id),
@@ -166,8 +172,10 @@ private fun GroupHeader(
                         if (editing && index < total - 1) add(CustomAccessibilityAction("后移") { onMove(1); true })
                     }
                 }
-                .then(if (editing) Modifier.clickable(role = Role.Button, onClick = onExpand)
-                    else Modifier.combinedClickable(role = Role.Button, onClick = onExpand, onLongClick = onEdit,
+                .then(if (editing) Modifier.clickable(interactionSource = interactionSource, indication = null,
+                        role = Role.Button, onClick = onExpand)
+                    else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
+                        role = Role.Button, onClick = onExpand, onLongClick = onEdit,
                         onLongClickLabel = "编辑分组" + group.name))
                 .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
