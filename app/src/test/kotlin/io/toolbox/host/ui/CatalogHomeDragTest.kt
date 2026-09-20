@@ -39,4 +39,16 @@ class CatalogHomeDragTest {
         assertEquals(1, homeGridColumnCount(90f, 2f))
         assertTrue(homeGridColumnCount(680f, 1f) > 4)
     }
+
+    @Test fun edgeScrollStopsAtTheEndOfItsOwnCollection() {
+        val drag = CatalogHomeDragState().apply { listBounds = Rect(0f, 0f, 400f, 700f) }
+        drag.targets["a"] = HomeDragTarget("a", "favorites", 0, "A", null, Rect(0f, 0f, 80f, 100f), {}, 2)
+        drag.targets["b"] = HomeDragTarget("b", "favorites", 1, "B", null, Rect(92f, 0f, 172f, 100f), {}, 2)
+        drag.start(Offset(40f, 50f))
+        drag.move(Offset(130f, 650f))
+        assertFalse(drag.canScroll(1f, 0f, 600f))
+        assertFalse(drag.canScroll(-1f, 0f, 600f))
+        drag.targets["b"] = drag.targets.getValue("b").copy(bounds = Rect(92f, 580f, 172f, 680f))
+        assertTrue(drag.canScroll(1f, 0f, 600f))
+    }
 }

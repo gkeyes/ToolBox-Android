@@ -60,7 +60,7 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         // MainActivity already owns content; keep the production Activity while delegating only
         // installation of this test composition to the normal Activity.setContent entry point.
         val restoration = StateRestorationTester(object : ComposeContentTestRule by compose {
-            override fun setContent(content: @Composable () -> Unit) { compose.activity.setContent(content = content) }
+            override fun setContent(composable: @Composable () -> Unit) { compose.activity.setContent(content = composable) }
         })
         render(restoration)
         compose.onNodeWithTag("catalog_group_name").performTextReplacement("保留的草稿")

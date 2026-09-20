@@ -38,6 +38,7 @@ internal class CatalogHomeDragState {
     var listBounds = Rect.Zero
     private var grabOffset = Offset.Zero
     private var startPointer = Offset.Zero
+    private var lastTarget: HomeDragTarget? = null
     var touchSlop = 0f
     var hasMoved by mutableStateOf(false)
         private set
@@ -52,6 +53,7 @@ internal class CatalogHomeDragState {
         hasMoved = false
         grabOffset = position - hit.bounds.topLeft
         targetKey = hit.key
+        lastTarget = hit
     }
 
     fun move(position: Offset) {
@@ -64,14 +66,25 @@ internal class CatalogHomeDragState {
         val source = active ?: return
         // Folding group bodies may move targets without any user drag.
         if (!hasMoved) return
-        targetKey = targets.values.asSequence()
+        targets.values.asSequence()
             .filter { it.collection == source.collection && it.bounds.overlaps(listBounds) }
-            .minByOrNull { (it.bounds.center - pointer).getDistanceSquared() }?.key
+            .minByOrNull { (it.bounds.center - pointer).getDistanceSquared() }?.let {
+                targetKey = it.key
+                lastTarget = it
+            }
+    }
+
+    fun canScroll(direction: Float, top: Float, bottom: Float): Boolean {
+        val source = active ?: return false
+        val visible = targets.values.filter { it.collection == source.collection }
+        if (visible.isEmpty()) return false
+        return if (direction < 0f) visible.none { it.index == 0 && it.bounds.top >= top }
+        else visible.none { it.index == source.itemCount - 1 && it.bounds.bottom <= bottom }
     }
 
     fun finish() {
         val source = active
-        val target = targets[targetKey]
+        val target = targets[targetKey] ?: lastTarget
         if (hasMoved && source != null && target != null && source.collection == target.collection) {
             val current = targets[source.key] ?: source
             val offset = target.index - current.index
@@ -80,7 +93,7 @@ internal class CatalogHomeDragState {
         cancel()
     }
 
-    fun cancel() { active = null; targetKey = null; hasMoved = false }
+    fun cancel() { active = null; targetKey = null; lastTarget = null; hasMoved = false }
 }
 
 internal data class HomeDragTarget(
@@ -91,6 +104,7 @@ internal data class HomeDragTarget(
     val tool: CatalogTool?,
     val bounds: Rect,
     val onMove: (Int) -> Unit,
+    val itemCount: Int = index + 1,
 )
 
 @Composable
@@ -121,7 +135,9 @@ internal fun rememberCatalogHomeDragState(
                 state.pointer.y > lower - edge -> ((state.pointer.y - lower + edge) / edge).coerceIn(0f, 1f)
                 else -> 0f
             }
-            if (state.hasMoved && factor != 0f) listState.scrollBy(speed * factor * seconds)
+            if (state.hasMoved && factor != 0f && state.canScroll(factor, upper, lower)) {
+                listState.scrollBy(speed * factor * seconds)
+            }
             state.updateTarget()
         }
     }
@@ -150,6 +166,7 @@ internal fun Modifier.catalogDragTarget(
     key: String,
     collection: String,
     index: Int,
+    itemCount: Int,
     label: String,
     tool: CatalogTool? = null,
     enabled: Boolean,
@@ -158,7 +175,7 @@ internal fun Modifier.catalogDragTarget(
     var bounds by remember(key) { mutableStateOf(Rect.Zero) }
     SideEffect {
         if (enabled && bounds != Rect.Zero) {
-            state.targets[key] = HomeDragTarget(key, collection, index, label, tool, bounds, onMove)
+            state.targets[key] = HomeDragTarget(key, collection, index, label, tool, bounds, onMove, itemCount)
         } else state.targets.remove(key)
     }
     DisposableEffect(state, key) { onDispose { state.targets.remove(key) } }

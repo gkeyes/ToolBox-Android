@@ -123,7 +123,7 @@ private fun LazyListScope.homeToolGrid(
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onOptions = { onOptions(tool.toolId) },
                         modifier = Modifier.weight(1f).testTag(prefix + ":" + tool.toolId)
-                            .catalogDragTarget(drag, prefix + ":" + tool.toolId, collection, index, tool.name, tool,
+                            .catalogDragTarget(drag, prefix + ":" + tool.toolId, collection, index, tools.size, tool.name, tool,
                                 enabled = editing, onMove = { onMove(tool, it) }),
                         onMoveBefore = if (editing && index > 0) ({ onMove(tool, -1) }) else null,
                         onMoveAfter = if (editing && index < tools.lastIndex) ({ onMove(tool, 1) }) else null,
@@ -151,7 +151,7 @@ private fun GroupHeader(
 ) {
     Row(
         Modifier.groupSurface(top = true, bottom = !expanded)
-            .catalogDragTarget(drag, "group:" + group.id, "groups", index, group.name,
+            .catalogDragTarget(drag, "group:" + group.id, "groups", index, total, group.name,
                 enabled = editing, onMove = onMove)
             .testTag("group:" + group.id),
         verticalAlignment = Alignment.CenterVertically,

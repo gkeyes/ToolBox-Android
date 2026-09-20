@@ -19,16 +19,21 @@ import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,13 +53,9 @@ class CatalogLayoutWriteTest {
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
 
-    @After fun tearDown() {
-        viewModels.forEach { it.viewModelScope.cancel() }
-        dispatcher.scheduler.runCurrent()
-        Dispatchers.resetMain()
-    }
+    @After fun tearDown() { Dispatchers.resetMain() }
 
-    @Test fun delayedSaveStaysWritingAndKeepsOldLayoutUntilCommit() = runTest(dispatcher) {
+    @Test fun delayedSaveStaysWritingAndKeepsOldLayoutUntilCommit() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
 
@@ -72,7 +73,7 @@ class CatalogLayoutWriteTest {
         assertNull(viewModel.state.value.feedback)
     }
 
-    @Test fun failedSavePreservesDataAndCanRetryUsingTheSameEditorId() = runTest(dispatcher) {
+    @Test fun failedSavePreservesDataAndCanRetryUsingTheSameEditorId() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         val action = CatalogAction.SaveGroup("first", "新名称", emptyList(), "editor")
@@ -94,7 +95,7 @@ class CatalogLayoutWriteTest {
         assertEquals("新名称", settings.saved.value.catalogLayout.groups.first().name)
     }
 
-    @Test fun differentEditorsKeepIndependentQueuedAndCompletedResults() = runTest(dispatcher) {
+    @Test fun differentEditorsKeepIndependentQueuedAndCompletedResults() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.SaveGroup("first", "失败保存", emptyList(), "first-editor"))
@@ -114,7 +115,7 @@ class CatalogLayoutWriteTest {
         assertEquals(listOf("原分组", "成功保存"), settings.saved.value.catalogLayout.groups.map { it.name })
     }
 
-    @Test fun duplicateSubmissionIsIgnoredOnlyWhileItsOperationIsWriting() = runTest(dispatcher) {
+    @Test fun duplicateSubmissionIsIgnoredOnlyWhileItsOperationIsWriting() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.CreateGroup("一次创建", "editor"))
@@ -131,7 +132,7 @@ class CatalogLayoutWriteTest {
         assertEquals(CatalogLayoutWriteStatus.Succeeded, viewModel.state.value.layoutWrites["editor"])
     }
 
-    @Test fun forgottenSuccessAndFailureNeverReinsertStateOrShowGlobalFeedback() = runTest(dispatcher) {
+    @Test fun forgottenSuccessAndFailureNeverReinsertStateOrShowGlobalFeedback() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.RenameGroup("first", "不应保存", "failure"))
@@ -155,7 +156,7 @@ class CatalogLayoutWriteTest {
         assertTrue(viewModel.state.value.layoutWrites.isEmpty())
     }
 
-    @Test fun reusedOperationIdCannotReceiveTheForgottenSubmissionResult() = runTest(dispatcher) {
+    @Test fun reusedOperationIdCannotReceiveTheForgottenSubmissionResult() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.RenameGroup("first", "已提交的旧名称", "editor"))
@@ -170,7 +171,7 @@ class CatalogLayoutWriteTest {
         assertEquals("已提交的旧名称", settings.saved.value.catalogLayout.groups.first().name)
     }
 
-    @Test fun cancelledSaveDoesNotPublishSuccessOrChangeStoredData() = runTest(dispatcher) {
+    @Test fun cancelledSaveDoesNotPublishSuccessOrChangeStoredData() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.SaveGroup("first", "取消的修改", emptyList(), "editor"))
@@ -182,7 +183,7 @@ class CatalogLayoutWriteTest {
         assertNull(state.feedback)
     }
 
-    @Test fun untrackedSortingKeepsExistingSaveAndFailureBehavior() = runTest(dispatcher) {
+    @Test fun untrackedSortingKeepsExistingSaveAndFailureBehavior() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.SetSort(CatalogSort.NAME))
@@ -197,7 +198,7 @@ class CatalogLayoutWriteTest {
         assertTrue(failed.layoutWrites.isEmpty())
     }
 
-    @Test fun thrownWriteFailureLeavesTheQueueUsableForAnotherOperation() = runTest(dispatcher) {
+    @Test fun thrownWriteFailureLeavesTheQueueUsableForAnotherOperation() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.DeleteGroup("first", "delete"))
@@ -210,7 +211,7 @@ class CatalogLayoutWriteTest {
         assertTrue(settings.saved.value.catalogLayout.groups.first().expanded)
     }
 
-    @Test fun invalidGroupNameAndDeletedGroupNeverReportSuccessfulSave() = runTest(dispatcher) {
+    @Test fun invalidGroupNameAndDeletedGroupNeverReportSuccessfulSave() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
         viewModel.dispatch(CatalogAction.SaveGroup("first", "  ", emptyList(), "blank"))
@@ -219,6 +220,21 @@ class CatalogLayoutWriteTest {
         viewModel.state.first { it.layoutWrites["missing"] is CatalogLayoutWriteStatus.Failed }
         assertTrue(settings.attempts.tryReceive().isFailure)
         assertEquals(original, settings.saved.value.catalogLayout)
+    }
+
+    private fun layoutTest(block: suspend TestScope.() -> Unit) = runTest(dispatcher) {
+        try {
+            block()
+        } finally {
+            // The real repository and catalog projection use IO/Default. Running only the
+            // current test queue cannot finish their cancellation; join every child before
+            // runTest exits and @After removes the Main dispatcher, even when an assertion fails.
+            withContext(NonCancellable) {
+                val jobs = viewModels.map { it.viewModelScope.coroutineContext.job }
+                jobs.forEach { it.cancel() }
+                jobs.joinAll()
+            }
+        }
     }
 
     private suspend fun loadedViewModel(settings: ControlledLayoutSettings): CatalogViewModel {
