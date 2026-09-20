@@ -297,7 +297,6 @@ internal class ProductionHostBackgroundOperations(
     private var runtimeSessions: RuntimeSessionManager? = null
     private val runtimeCancellation = BackgroundRuntimeCancellation { toolId ->
         runtimeSessions?.stopTool(toolId, removeAlarms = false)
-        Unit
     }
 
     fun attachRuntimeSessions(sessions: RuntimeSessionManager) {
@@ -314,7 +313,7 @@ internal class ProductionHostBackgroundOperations(
     override suspend fun cancelTool(toolId: String) {
         completeBackgroundCancellation(
             { delegate.cancelTool(toolId) },
-            { runtimeSessions?.stopTool(toolId); Unit },
+            { runtimeSessions?.stopTool(toolId) },
         )
     }
 

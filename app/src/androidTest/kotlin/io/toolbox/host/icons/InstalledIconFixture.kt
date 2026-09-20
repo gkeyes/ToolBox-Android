@@ -38,12 +38,12 @@ internal class InstalledIconFixture : AutoCloseable {
     }
 
     init {
-        Files.writeString(bundle.resolve("manifest.json"), """{"schemaVersion":1,"id":"$id","name":"Icon fixture","version":"1.0.0","versionCode":1,"entry":"index.html","icon":"icon.svg","apiVersion":"1.0","minHostVersion":"0.3.0","permissions":[],"securityProfile":"strict"}""")
+        Files.write(bundle.resolve("manifest.json"), """{"schemaVersion":1,"id":"$id","name":"Icon fixture","version":"1.0.0","versionCode":1,"entry":"index.html","icon":"icon.svg","apiVersion":"1.0","minHostVersion":"0.3.0","permissions":[],"securityProfile":"strict"}""".toByteArray(Charsets.UTF_8))
         writeIcon("red")
     }
 
     fun writeIcon(color: String) {
-        Files.writeString(bundle.resolve("icon.svg"), """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="$color"/></svg>""")
+        Files.write(bundle.resolve("icon.svg"), """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="$color"/></svg>""".toByteArray(Charsets.UTF_8))
     }
 
     override fun close() {

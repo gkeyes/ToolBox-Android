@@ -69,7 +69,7 @@ class BackgroundTaskCoordinator(
 
     suspend fun cancelTool(toolId: String) {
         completeBackgroundCancellation(
-            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get(); Unit } },
+            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get() } },
             { notifications.cancelTool(toolId) },
             { cancellation.cancelStoredTasks(toolId) },
         )
@@ -77,7 +77,7 @@ class BackgroundTaskCoordinator(
 
     suspend fun cancelAll(toolIds: Collection<String>) {
         completeBackgroundCancellation(
-            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(GLOBAL_TAG).result.get(); Unit } },
+            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(GLOBAL_TAG).result.get() } },
             *toolIds.distinct().map { toolId -> suspend {
                 completeBackgroundCancellation(
                     { notifications.cancelTool(toolId) },

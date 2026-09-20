@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
@@ -146,6 +147,7 @@ fun ToolBoxSwitchSettingRow(
             .semantics {
                 role = Role.Switch
                 toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                if (!enabled) disabled()
             },
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         enabled = enabled,
@@ -251,7 +253,7 @@ fun ToolBoxChoiceSettingRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
-            .semantics { role = Role.Button },
+            .semantics { role = Role.Button; if (!enabled) disabled() },
         insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
         onClick = { if (enabled) choiceDialogVisible = true },
         enabled = enabled,

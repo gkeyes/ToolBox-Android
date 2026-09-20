@@ -99,7 +99,6 @@ class BackgroundTaskCancellationTest {
             sessionsByTool.remove(toolId)
             if (toolId == "fails" && fail) throw IllegalStateException("persistence failed")
             persisted.remove(toolId)
-            Unit
         }
         var failed = false
         try { cancellation.cancel(sessionsByTool.keys.toList()) } catch (_: BackgroundCancellationException) { failed = true }
