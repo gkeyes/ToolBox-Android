@@ -30,18 +30,27 @@ sealed interface CatalogNavigationIntent {
     data class RequestRuntimeLaunch(val toolId: String) : CatalogNavigationIntent
 }
 
+@Immutable
+sealed interface CatalogLayoutWriteStatus {
+    data object Writing : CatalogLayoutWriteStatus
+    data object Succeeded : CatalogLayoutWriteStatus
+    data class Failed(val code: String, val message: String) : CatalogLayoutWriteStatus
+}
+
 sealed interface CatalogAction {
-    data class SetSort(val sort: CatalogSort) : CatalogAction
-    data class SetFavorite(val toolId: String, val selected: Boolean) : CatalogAction
-    data class CreateGroup(val name: String) : CatalogAction
-    data class SaveGroup(val groupId: String?, val name: String, val members: List<String>) : CatalogAction
-    data class RenameGroup(val groupId: String, val name: String) : CatalogAction
-    data class DeleteGroup(val groupId: String) : CatalogAction
-    data class SetGroupMembership(val groupId: String, val toolId: String, val selected: Boolean) : CatalogAction
-    data class SetGroupExpanded(val groupId: String, val expanded: Boolean) : CatalogAction
-    data class MoveFavorite(val toolId: String, val offset: Int) : CatalogAction
-    data class MoveGroup(val groupId: String, val offset: Int) : CatalogAction
-    data class MoveMember(val groupId: String, val toolId: String, val offset: Int) : CatalogAction
+    data class SetSort(val sort: CatalogSort, val operationId: String? = null) : CatalogAction
+    data class SetFavorite(val toolId: String, val selected: Boolean, val operationId: String? = null) : CatalogAction
+    data class CreateGroup(val name: String, val operationId: String? = null) : CatalogAction
+    data class SaveGroup(val groupId: String?, val name: String, val members: List<String>, val operationId: String? = null) : CatalogAction
+    data class RenameGroup(val groupId: String, val name: String, val operationId: String? = null) : CatalogAction
+    data class DeleteGroup(val groupId: String, val operationId: String? = null) : CatalogAction
+    data class SetGroupMembership(val groupId: String, val toolId: String, val selected: Boolean, val operationId: String? = null) : CatalogAction
+    data class SetGroupExpanded(val groupId: String, val expanded: Boolean, val operationId: String? = null) : CatalogAction
+    data class MoveFavorite(val toolId: String, val offset: Int, val operationId: String? = null) : CatalogAction
+    data class MoveGroup(val groupId: String, val offset: Int, val operationId: String? = null) : CatalogAction
+    data class MoveMember(val groupId: String, val toolId: String, val offset: Int, val operationId: String? = null) : CatalogAction
+    /** Detaches operation feedback without cancelling an already submitted layout write. */
+    data class ForgetLayoutWrite(val operationId: String) : CatalogAction
     data class SetQuery(val query: String) : CatalogAction
     data class RequestRuntimeLaunch(val toolId: String) : CatalogAction
     data class RequestUninstall(val toolId: String) : CatalogAction
@@ -60,6 +69,7 @@ data class CatalogUiState(
     val isSearching: Boolean = false,
     val uninstallConfirmation: UninstallConfirmation? = null,
     val feedback: CatalogFeedback? = null,
+    val layoutWrites: Map<String, CatalogLayoutWriteStatus> = emptyMap(),
 )
 
 internal fun CatalogUiState.withCatalogTools(values: List<CatalogTool>): CatalogUiState =

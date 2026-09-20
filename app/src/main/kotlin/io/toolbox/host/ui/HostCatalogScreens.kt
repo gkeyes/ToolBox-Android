@@ -1,5 +1,11 @@
 package io.toolbox.host.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -88,28 +94,57 @@ internal fun ToolManagerContent(
     onCancelActiveImport: () -> Unit = {},
     runningTools: @Composable () -> Unit = {},
     home: Boolean = false,
+    editing: Boolean = false,
+    onEditingChange: (Boolean) -> Unit = {},
 ) {
     var selectedToolId by rememberSaveable { mutableStateOf<String?>(null) }
-    var editing by rememberSaveable { mutableStateOf(false) }
+    var addingFavorites by rememberSaveable { mutableStateOf(false) }
     var editingGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var previousHome by rememberSaveable { mutableStateOf(home) }
     val toolsById = remember(state.tools) { state.tools.associateBy { it.toolId } }
     val selectedTool = selectedToolId?.let(toolsById::get)
     val recentTools = state.recentTools
+    val drag = rememberCatalogHomeDragState(home && editing, listState, contentPadding)
+    BackHandler(home && editing && selectedToolId == null && editingGroupId == null && !addingFavorites) {
+        onEditingChange(false)
+    }
+    LaunchedEffect(home) {
+        if (previousHome != home) {
+            if (!home) onEditingChange(false)
+            editingGroupId = null
+            addingFavorites = false
+            selectedToolId = null
+            previousHome = home
+        }
+    }
+    LaunchedEffect(state.isLoaded, selectedToolId, selectedTool) {
+        if (state.isLoaded && selectedToolId != null && selectedTool == null) selectedToolId = null
+    }
     LaunchedEffect(importState.message, importState.succeeded) {
         if (importState.succeeded && importState.message != null) {
             delay(INSTALL_SUCCESS_FEEDBACK_DURATION_MS)
             onDismissImport()
         }
     }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val direction = LocalLayoutDirection.current
+    val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
+    val columns = homeGridColumnCount((contentWidth - 32.dp).value, LocalDensity.current.fontScale)
     LazyColumn(
+        userScrollEnabled = drag.active == null,
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag(if (home) "catalog_home_list" else "catalog_tools_list")
+            .catalogDragSurface(drag, home && editing),
         contentPadding = contentPadding,
     ) {
+        if (home && editing) item("organize-help") {
+            AppText("长按拖动排序，点击工具或分组旁的 ··· 编辑", color = ToolBoxThemeTokens.colors.textSecondary,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata, modifier = Modifier.padding(bottom = 16.dp))
+        }
         if (home && recentTools.isNotEmpty()) {
-            item("recent-title") { SectionHeader("最近使用") }
-            item("recent-tools") { CatalogRecentTools(recentTools, onAction) { selectedToolId = it } }
-            item("after-recent") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+            item("recent-title") { HomeSectionHeader("最近使用") }
+            item("recent-tools") { CatalogRecentTools(recentTools, onAction, editing) { selectedToolId = it } }
+            item("after-recent") { Spacer(Modifier.height(24.dp)) }
         }
         if (!home) {
         item("search") {
@@ -163,8 +198,8 @@ internal fun ToolManagerContent(
 
         if (home && state.isLoaded) {
             catalogHomeSections(
-                state, toolsById, editing, listState, onAction,
-                onEdit = { editing = !editing }, onEditGroup = { editingGroupId = it },
+                state, toolsById, editing, columns, drag, onAction,
+                onEditGroup = { editingGroupId = it }, onAddFavorites = { addingFavorites = true },
                 onOptions = { selectedToolId = it },
             )
             item("running-tools", contentType = "running-tools") { runningTools() }
@@ -202,7 +237,11 @@ internal fun ToolManagerContent(
         }
     }
 
+    CatalogDragPreview(drag)
+    }
+
     ImportReplacementDialog(importState, onConfirmImport, onCancelImport)
+    if (addingFavorites) CatalogFavoritesPicker(state, onAction) { addingFavorites = false }
     if (selectedTool != null) CatalogToolOptions(selectedTool, state, onAction,
         onDismiss = { selectedToolId = null },
         onManage = { selectedToolId = null; onOpenDetails(selectedTool.toolId) },
@@ -433,13 +472,10 @@ internal fun CatalogToolRow(
                 }
             }
             // Sibling targets: managing a tool must never bubble into the open action.
-            ToolBoxTextButton(
-                label = "更多",
+            ToolBoxIconButton(
+                icon = ToolBoxIconKey.More,
+                contentDescription = "${tool.name}的收藏、分组与管理",
                 onClick = onDetails,
-                outlined = false,
-                modifier = Modifier
-                    .widthIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-                    .semantics { contentDescription = "${tool.name}的收藏、分组与管理" },
             )
         }
     }
@@ -449,39 +485,17 @@ internal fun CatalogToolRow(
 internal fun CatalogRecentTools(
     tools: List<CatalogTool>,
     onAction: (CatalogAction) -> Unit,
+    editing: Boolean = false,
     onOptions: (String) -> Unit,
 ) {
+    val width = (72f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(tools, key = CatalogTool::toolId) { tool ->
-            CatalogRecentIcon(tool, { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) }, { onOptions(tool.toolId) }, Modifier.width(80.dp))
+            CatalogHomeTile(tool, editing,
+                onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                onOptions = { onOptions(tool.toolId) },
+                modifier = Modifier.width(width).testTag("recent:" + tool.toolId))
         }
-    }
-}
-
-@Composable
-private fun CatalogRecentIcon(
-    tool: CatalogTool,
-    onOpen: () -> Unit,
-    onOptions: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
-    Column(
-        modifier = modifier
-            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
-            .semantics {
-                contentDescription = "打开最近使用的${tool.name}"
-                customActions = listOf(androidx.compose.ui.semantics.CustomAccessibilityAction("收藏、分组与管理") { onOptions(); true })
-            }
-            .combinedClickable(role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen, onLongClickLabel = "收藏、分组与管理", onLongClick = onOptions)
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode, visual = visual, size = 48.dp)
-        Spacer(Modifier.height(6.dp))
-        AppText(tool.name, textStyle = ToolBoxThemeTokens.textStyles.label,
-            align = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
     }
 }
 

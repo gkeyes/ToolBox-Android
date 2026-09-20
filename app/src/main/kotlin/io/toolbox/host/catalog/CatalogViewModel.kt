@@ -44,7 +44,12 @@ internal class CatalogViewModel(
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
 
     private val queries = MutableStateFlow("")
-    private val layoutChanges = Channel<(CatalogLayout, Set<String>) -> CatalogLayout>(Channel.UNLIMITED)
+    private class LayoutWrite(
+        val operationId: String?,
+        val change: (CatalogLayout, Set<String>) -> CatalogLayout,
+    )
+    private val layoutChanges = Channel<LayoutWrite>(Channel.UNLIMITED)
+    private val trackedLayoutWrites = mutableMapOf<String, LayoutWrite>()
     private val queuedRuntimeLaunches = mutableSetOf<String>()
     private val recordOpenedMutex = Mutex()
     private val mutableNavigation = Channel<CatalogNavigationIntent>(Channel.BUFFERED)
@@ -90,13 +95,20 @@ internal class CatalogViewModel(
                 }
         }
         viewModelScope.launch {
-            for (change in layoutChanges) {
+            for (write in layoutChanges) {
                 try {
-                    if (layoutRepository?.update(change) !is DataResult.Success) {
-                        showFailure("CATALOG_LAYOUT_WRITE", "收藏或分组未保存，请重试。")
+                    val status = if (layoutRepository?.update(write.change) is DataResult.Success) {
+                        CatalogLayoutWriteStatus.Succeeded
+                    } else {
+                        CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。")
                     }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { showFailure("CATALOG_LAYOUT_WRITE", "收藏或分组未保存，请重试。") }
+                    completeLayoutWrite(write, status)
+                } catch (cancelled: CancellationException) {
+                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_CANCELLED", "保存已取消。"))
+                    throw cancelled
+                } catch (_: Exception) {
+                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。"))
+                }
             }
         }
     }
@@ -108,39 +120,44 @@ internal class CatalogViewModel(
                 // Text edits are synchronous; filtering and collation stay on Default.
                 update { it.copy(query = action.query, isSearching = action.query.isNotBlank()) }
             }
-            is CatalogAction.SetSort -> changeLayout { layout, _ -> layout.copy(sort = action.sort) }
-            is CatalogAction.SetFavorite -> changeLayout { layout, installed ->
+            is CatalogAction.SetSort -> changeLayout(action.operationId) { layout, _ -> layout.copy(sort = action.sort) }
+            is CatalogAction.SetFavorite -> changeLayout(action.operationId) { layout, installed ->
                 if (action.toolId in installed || !action.selected) layout.favorite(action.toolId, action.selected) else layout
             }
             is CatalogAction.SaveGroup -> if (action.name.isNotBlank()) {
                 val id = action.groupId ?: UUID.randomUUID().toString()
-                changeLayout { layout, installed ->
+                changeLayout(action.operationId) { layout, installed ->
                     val existing = layout.groups.firstOrNull { it.id == id }
                     val next = CatalogGroup(id, action.name.trim(), action.members.filter(installed::contains).distinct(), existing?.expanded ?: true)
                     when {
                         existing != null -> layout.copy(groups = layout.groups.map { if (it.id == id) next else it })
                         action.groupId == null -> layout.copy(groups = layout.groups + next)
-                        else -> layout // A deleted group is not resurrected by a stale editor.
+                        // Legacy callers ignore a stale edit; tracked editors need a failed save.
+                        else -> if (action.operationId == null) layout else error("CATALOG_GROUP_MISSING")
                     }
                 }
-            }
+            } else rejectGroupName(action.operationId)
             is CatalogAction.CreateGroup -> if (action.name.isNotBlank()) {
                 val id = UUID.randomUUID().toString()
-                changeLayout { layout, _ -> layout.copy(groups = layout.groups + CatalogGroup(id, action.name.trim())) }
-            }
-            is CatalogAction.RenameGroup -> if (action.name.isNotBlank()) changeLayout { layout, _ ->
+                changeLayout(action.operationId) { layout, _ -> layout.copy(groups = layout.groups + CatalogGroup(id, action.name.trim())) }
+            } else rejectGroupName(action.operationId)
+            is CatalogAction.RenameGroup -> if (action.name.isNotBlank()) changeLayout(action.operationId) { layout, _ ->
                 layout.copy(groups = layout.groups.map { if (it.id == action.groupId) it.copy(name = action.name.trim()) else it })
-            }
-            is CatalogAction.DeleteGroup -> changeLayout { layout, _ -> layout.copy(groups = layout.groups.filterNot { it.id == action.groupId }) }
-            is CatalogAction.SetGroupMembership -> changeLayout { layout, installed ->
+            } else rejectGroupName(action.operationId)
+            is CatalogAction.DeleteGroup -> changeLayout(action.operationId) { layout, _ -> layout.copy(groups = layout.groups.filterNot { it.id == action.groupId }) }
+            is CatalogAction.SetGroupMembership -> changeLayout(action.operationId) { layout, installed ->
                 if (action.toolId in installed || !action.selected) layout.groupMembership(action.groupId, action.toolId, action.selected) else layout
             }
-            is CatalogAction.SetGroupExpanded -> changeLayout { layout, _ ->
+            is CatalogAction.SetGroupExpanded -> changeLayout(action.operationId) { layout, _ ->
                 layout.copy(groups = layout.groups.map { if (it.id == action.groupId) it.copy(expanded = action.expanded) else it })
             }
-            is CatalogAction.MoveFavorite -> changeLayout { layout, _ -> layout.moveFavorite(action.toolId, action.offset) }
-            is CatalogAction.MoveGroup -> changeLayout { layout, _ -> layout.moveGroup(action.groupId, action.offset) }
-            is CatalogAction.MoveMember -> changeLayout { layout, _ -> layout.moveMember(action.groupId, action.toolId, action.offset) }
+            is CatalogAction.MoveFavorite -> changeLayout(action.operationId) { layout, _ -> layout.moveFavorite(action.toolId, action.offset) }
+            is CatalogAction.MoveGroup -> changeLayout(action.operationId) { layout, _ -> layout.moveGroup(action.groupId, action.offset) }
+            is CatalogAction.MoveMember -> changeLayout(action.operationId) { layout, _ -> layout.moveMember(action.groupId, action.toolId, action.offset) }
+            is CatalogAction.ForgetLayoutWrite -> {
+                trackedLayoutWrites.remove(action.operationId)
+                update { it.copy(layoutWrites = it.layoutWrites - action.operationId) }
+            }
             is CatalogAction.RequestRuntimeLaunch -> open(action.toolId)
             is CatalogAction.RequestUninstall -> requestUninstall(action.toolId)
             CatalogAction.CancelUninstall -> update { it.copy(uninstallConfirmation = null) }
@@ -149,8 +166,40 @@ internal class CatalogViewModel(
         }
     }
 
-    private fun changeLayout(change: (CatalogLayout, Set<String>) -> CatalogLayout) {
-        if (state.value.isLoaded) layoutChanges.trySend(change)
+    private fun changeLayout(operationId: String?, change: (CatalogLayout, Set<String>) -> CatalogLayout) {
+        if (operationId != null && state.value.layoutWrites[operationId] == CatalogLayoutWriteStatus.Writing) return
+        val write = LayoutWrite(operationId, change)
+        if (operationId != null) {
+            trackedLayoutWrites[operationId] = write
+            update { it.copy(layoutWrites = it.layoutWrites + (operationId to CatalogLayoutWriteStatus.Writing)) }
+        }
+        if (!state.value.isLoaded) {
+            if (operationId != null) completeLayoutWrite(write,
+                CatalogLayoutWriteStatus.Failed("CATALOG_UNAVAILABLE", "工具列表尚未读取完成，请稍后重试。"))
+        } else if (layoutChanges.trySend(write).isFailure) {
+            completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。"))
+        }
+    }
+
+    private fun rejectGroupName(operationId: String?) {
+        if (operationId == null || state.value.layoutWrites[operationId] == CatalogLayoutWriteStatus.Writing) return
+        trackedLayoutWrites.remove(operationId)
+        update { it.copy(layoutWrites = it.layoutWrites +
+            (operationId to CatalogLayoutWriteStatus.Failed("CATALOG_GROUP_NAME", "请输入分组名称。"))) }
+    }
+
+    private fun completeLayoutWrite(write: LayoutWrite, status: CatalogLayoutWriteStatus) {
+        val operationId = write.operationId
+        if (operationId == null) {
+            if (status is CatalogLayoutWriteStatus.Failed && status.code != "CATALOG_LAYOUT_CANCELLED") {
+                showFailure(status.code, "收藏或分组未保存，请重试。")
+            }
+            return
+        }
+        // Forget detaches the editor; a retry with the same ID owns a different submission.
+        if (trackedLayoutWrites[operationId] !== write) return
+        trackedLayoutWrites.remove(operationId)
+        update { it.copy(layoutWrites = it.layoutWrites + (operationId to status)) }
     }
 
     private fun open(toolId: String) {

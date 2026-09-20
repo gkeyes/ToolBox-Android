@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -91,6 +92,7 @@ internal fun ToolBoxNavigation(
     val toolsListState = rememberLazyListState()
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
+    var homeEditing by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
@@ -108,6 +110,7 @@ internal fun ToolBoxNavigation(
     }
 
     fun navigateMain(destination: MainDestination) {
+        homeEditing = false
         secondaryBackStack.clear()
         while (primaryBackStack.size > 1) primaryBackStack.removeLastOrNull()
         val route = when (destination) {
@@ -241,10 +244,14 @@ internal fun ToolBoxNavigation(
                         } else {
                             null
                         },
+                        organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
+                        onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
                     ) { padding, layout ->
                         when (currentPrimaryRoute) {
                             HomeRoute, ToolManagerRoute, null -> ToolManagerRouteContent(
                                 home = selectedDestination == MainDestination.Home,
+                                editing = homeEditing,
+                                onEditingChange = { homeEditing = it },
                                 dependencies = dependencies,
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
@@ -502,6 +509,8 @@ private fun SecondaryRouteContent(
 @Composable
 private fun ToolManagerRouteContent(
     home: Boolean,
+    editing: Boolean,
+    onEditingChange: (Boolean) -> Unit,
     importPageVisible: Boolean = false,
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
@@ -526,6 +535,8 @@ private fun ToolManagerRouteContent(
     val importState by importViewModel.state.collectAsStateWhileVisible(uiVisible)
     ToolManagerContent(
         home = home,
+        editing = editing,
+        onEditingChange = onEditingChange,
         state = catalogState,
         importState = if (importPageVisible) importState.copy(confirmation = null) else importState,
         listState = listState,
