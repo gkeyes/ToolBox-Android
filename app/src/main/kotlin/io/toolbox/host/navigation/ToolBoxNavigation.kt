@@ -93,6 +93,7 @@ internal fun ToolBoxNavigation(
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
     var homeEditing by rememberSaveable { mutableStateOf(false) }
+    var homeCreatingGroup by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
@@ -111,6 +112,7 @@ internal fun ToolBoxNavigation(
 
     fun navigateMain(destination: MainDestination) {
         homeEditing = false
+        homeCreatingGroup = false
         secondaryBackStack.clear()
         while (primaryBackStack.size > 1) primaryBackStack.removeLastOrNull()
         val route = when (destination) {
@@ -246,12 +248,15 @@ internal fun ToolBoxNavigation(
                         },
                         organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
                         onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
+                        onCreateGroup = if (selectedDestination == MainDestination.Home) ({ homeCreatingGroup = true }) else null,
                     ) { padding, layout ->
                         when (currentPrimaryRoute) {
                             HomeRoute, ToolManagerRoute, null -> ToolManagerRouteContent(
                                 home = selectedDestination == MainDestination.Home,
                                 editing = homeEditing,
                                 onEditingChange = { homeEditing = it },
+                                creatingGroup = homeCreatingGroup,
+                                onDismissCreateGroup = { homeCreatingGroup = false },
                                 dependencies = dependencies,
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
@@ -511,6 +516,8 @@ private fun ToolManagerRouteContent(
     home: Boolean,
     editing: Boolean,
     onEditingChange: (Boolean) -> Unit,
+    creatingGroup: Boolean,
+    onDismissCreateGroup: () -> Unit,
     importPageVisible: Boolean = false,
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
@@ -537,6 +544,8 @@ private fun ToolManagerRouteContent(
         home = home,
         editing = editing,
         onEditingChange = onEditingChange,
+        creatingGroup = creatingGroup,
+        onDismissCreateGroup = onDismissCreateGroup,
         state = catalogState,
         importState = if (importPageVisible) importState.copy(confirmation = null) else importState,
         listState = listState,

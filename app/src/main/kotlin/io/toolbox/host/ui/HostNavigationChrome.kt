@@ -43,6 +43,8 @@ import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxLargeTopBar
+import io.toolbox.core.ui.component.ToolBoxMenuAction
+import io.toolbox.core.ui.component.ToolBoxOverflowMenu
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
 import io.toolbox.core.ui.component.ToolBoxNavigationItem
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -62,6 +64,7 @@ internal fun PrimaryScreen(
     onImport: (() -> Unit)?,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
+    onCreateGroup: (() -> Unit)? = null,
     content: @Composable (PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
@@ -76,7 +79,10 @@ internal fun PrimaryScreen(
         if (layout.isCompact) {
             ToolBoxAppScaffold(
                 modifier = Modifier.fillMaxSize(),
-                topBar = { TopBar(title, subtitle, onImport, glassState = glassState, organizeEditing = organizeEditing, onOrganize = onOrganize) },
+                topBar = {
+                    TopBar(title, subtitle, onImport, glassState = glassState,
+                        organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
+                },
                 bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
             ) { scaffoldPadding ->
                 Box(
@@ -111,6 +117,7 @@ internal fun PrimaryScreen(
                         glassState = glassState,
                         organizeEditing = organizeEditing,
                         onOrganize = onOrganize,
+                        onCreateGroup = onCreateGroup,
                     )
                     Box(
                         Modifier
@@ -273,6 +280,7 @@ private fun TopBar(
     glassState: ToolBoxGlassState,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
+    onCreateGroup: (() -> Unit)? = null,
 ) {
     ToolBoxLargeTopBar(
         title = title,
@@ -281,14 +289,28 @@ private fun TopBar(
         glassState = glassState,
         actions = {
             if (onOrganize != null) {
-                ToolBoxTextButton(
-                    label = if (organizeEditing) "完成" else "整理",
-                    onClick = onOrganize,
-                    outlined = false,
-                    modifier = Modifier.testTag("catalog_organize"),
-                )
-            }
-            if (onImport != null && !organizeEditing) {
+                if (organizeEditing) {
+                    ToolBoxTextButton(
+                        label = "完成",
+                        onClick = onOrganize,
+                        outlined = false,
+                        modifier = Modifier.testTag("catalog_organize"),
+                    )
+                } else {
+                    ToolBoxOverflowMenu(
+                        contentDescription = "首页菜单",
+                        actions = buildList {
+                            onImport?.let { add(ToolBoxMenuAction("导入工具", ToolBoxIconKey.Add, HostTestTags.ImportFab, it)) }
+                            add(ToolBoxMenuAction("整理首页", ToolBoxIconKey.Drag, "catalog_organize", onOrganize))
+                            onCreateGroup?.let { add(ToolBoxMenuAction("新建分组", ToolBoxIconKey.Folder, "catalog_home_create_group", it)) }
+                        },
+                        menuTestTag = "catalog_home_menu",
+                        modifier = Modifier
+                            .toolBoxOpenDesignSurface(CircleShape)
+                            .testTag("catalog_home_overflow"),
+                    )
+                }
+            } else if (onImport != null) {
                 if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
                     ToolBoxIconButton(
                         icon = ToolBoxIconKey.Add,
