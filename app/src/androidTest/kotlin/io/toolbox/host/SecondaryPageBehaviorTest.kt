@@ -134,7 +134,7 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
         )
         compose.runOnIdle { state.value = BackupUiState.ConfirmRestore(preview) }
         compose.onNodeWithText("备份内容").assertDoesNotExist()
-        compose.onNodeWithTag("backup_conflicts").assertTextContains("恢复 101 个工具，其中 1 个与本机冲突", substring = true)
+        compose.onNodeWithTag("backup_conflicts", useUnmergedTree = true).assertTextContains("恢复 101 个工具，其中 1 个与本机冲突", substring = true)
         compose.onNodeWithText("当前有 1 个运行环境和 1 个待执行或运行任务。恢复将停止全部本机工具会话与任务，完成或取消后均需手动重新打开。").assertExists()
         compose.onNodeWithText("下方版本覆盖只确认一次；安装时仍执行原有校验。备份中的授权不会绕过当前权限模型。").assertExists()
         compose.onNodeWithText("不兼容工具").assertDoesNotExist()
@@ -162,7 +162,8 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
     }
 
     private fun assertBackupStateDisplayed(tag: String): SemanticsNodeInteraction {
-        val node = compose.onNodeWithTag(tag)
+        // ToolBoxCard merges its text for accessibility; inspect the tagged label itself.
+        val node = compose.onNodeWithTag(tag, useUnmergedTree = true)
         try {
             node.assertExists().assertIsDisplayed()
         } catch (failure: AssertionError) {
