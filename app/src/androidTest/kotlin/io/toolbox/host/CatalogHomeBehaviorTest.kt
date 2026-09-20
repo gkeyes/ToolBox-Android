@@ -27,6 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+import kotlin.math.ceil
 
 @RunWith(Parameterized::class)
 class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val wideLargeText: Boolean) {
@@ -205,13 +206,39 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     }
 
     @Test fun draggingAtBottomEdgeScrollsPastTheInitiallyVisibleGrid() {
-        fixture.fillFavorites(48)
+        fixture.fillFavorites(18)
         render()
         compose.onNodeWithTag("catalog_organize").performClick()
         homeTile("favorite:t0")
-        val source = compose.onNodeWithTag("favorite:t0").fetchSemanticsNode().boundsInRoot.center
         val list = compose.onNodeWithTag("catalog_home_list")
+        val first = compose.onNodeWithTag("favorite:t0").fetchSemanticsNode().boundsInRoot
+        val measuredTiles = favoriteTileNodes().filter { it.boundsInRoot.height > 0f }
+        val columns = measuredTiles.count { kotlin.math.abs(it.boundsInRoot.center.y - first.center.y) < 1f }
+        val nextRowCenter = measuredTiles.map { it.boundsInRoot.center.y }
+            .filter { it > first.center.y + 1f }.minOrNull() ?: error("Expected two measured favorite rows")
+        val rowPitch = nextRowCenter - first.center.y
+        val safeHeight = compose.runOnIdle {
+            val info = homeListState.layoutInfo
+            info.viewportSize.height - info.beforeContentPadding - info.afterContentPadding
+        }
+        // The wide fixture reduces density in both dimensions. Size the collection from the
+        // rendered row pitch and safe viewport, so it always extends beyond two visible screens.
+        val favoriteCount = columns * (2 * ceil(safeHeight / rowPitch).toInt() + 1)
+        compose.runOnIdle { fixture.fillFavorites(favoriteCount) }
+        homeTile("favorite:t0")
+        val sourceBounds = compose.onNodeWithTag("favorite:t0").fetchSemanticsNode().boundsInRoot
+        val source = sourceBounds.center
         val viewport = list.fetchSemanticsNode().boundsInRoot
+        val padding = compose.runOnIdle { homeListState.layoutInfo.beforeContentPadding to homeListState.layoutInfo.afterContentPadding }
+        val lastInitiallyFullyVisible = favoriteTileNodes().filter {
+            val bounds = it.boundsInRoot
+            bounds.top >= viewport.top + padding.first && bounds.bottom <= viewport.bottom - padding.second &&
+                bounds.height >= sourceBounds.height - 1f
+        }.maxOf { it.config[SemanticsProperties.TestTag].removePrefix("favorite:t").toInt() }
+        compose.runOnIdle {
+            assertTrue("Measured fixture must have favorites beyond its initial viewport: count=$favoriteCount, columns=$columns, pitch=$rowPitch, safeHeight=$safeHeight, lastVisible=$lastInitiallyFullyVisible",
+                lastInitiallyFullyVisible < favoriteCount - 1 && homeListState.canScrollForward)
+        }
         val originalOffset = compose.runOnIdle { homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset }
         val edge = Offset(viewport.center.x, viewport.bottom - 8f)
         compose.mainClock.autoAdvance = false
@@ -226,13 +253,15 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             }
             compose.mainClock.advanceTimeBy(1_200)
             val afterScroll = compose.runOnIdle { homeListState.firstVisibleItemIndex to homeListState.firstVisibleItemScrollOffset }
-            assertTrue("Holding a dragged tile at the edge must scroll: $originalOffset -> $afterScroll", afterScroll != originalOffset)
+            assertTrue("Holding a dragged tile at the edge must scroll: $originalOffset -> $afterScroll; count=$favoriteCount, columns=$columns, pitch=$rowPitch, safeHeight=$safeHeight, viewport=$viewport",
+                afterScroll != originalOffset)
         } finally {
             try { if (pointerDown) list.performTouchInput { up() } }
             finally { compose.mainClock.autoAdvance = true }
         }
         compose.runOnIdle {
-            assertTrue(fixture.layout.value.favorites.indexOf("t0") > 1)
+            assertTrue("Drop must move past the initially visible favorites (last=$lastInitiallyFullyVisible)",
+                fixture.layout.value.favorites.indexOf("t0") > lastInitiallyFullyVisible)
             assertTrue(fixture.opened.isEmpty())
         }
     }
@@ -346,6 +375,10 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         val node = compose.onNodeWithTag(tag).performScrollTo().fetchSemanticsNode()
         compose.runOnIdle { assertTrue(node.config[SemanticsActions.CustomActions].single { it.label == label }.action()) }
     }
+
+    private fun favoriteTileNodes() = compose.onAllNodes(SemanticsMatcher("favorite tile") {
+        it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("favorite:") == true
+    }).fetchSemanticsNodes()
 
     private fun dragTile(sourceTag: String, target: Offset) {
         val source = compose.onNodeWithTag(sourceTag).fetchSemanticsNode().boundsInRoot.center
