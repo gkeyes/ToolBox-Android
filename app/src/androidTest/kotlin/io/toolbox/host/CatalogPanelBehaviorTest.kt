@@ -2,10 +2,13 @@ package io.toolbox.host
 
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.host.catalog.CatalogAction
@@ -64,6 +67,7 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         })
         render(restoration)
         compose.onNodeWithTag("catalog_group_name").performTextReplacement("保留的草稿")
+        finishGroupNameInput()
         groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_save").performClick()
         val operation = compose.runOnIdle {
@@ -104,6 +108,7 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         groupId.value = ""
         render()
         compose.onNodeWithTag("catalog_group_name").performTextInput("工作")
+        finishGroupNameInput()
         groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_save").performClick()
         compose.onNodeWithTag("catalog_group_editor").assertDoesNotExist()
@@ -210,6 +215,27 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.onNodeWithTag("catalog_panel_close").performClick()
         compose.onNodeWithTag("catalog_favorites_picker").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf("a", "b"), fixture.layout.value.favorites) }
+    }
+
+    private fun finishGroupNameInput() {
+        val name = compose.onNodeWithTag("catalog_group_name")
+        val sheetRoot = requireNotNull(name.fetchSemanticsNode().root as? ViewRootForTest)
+        // Android delivers IME insets after Compose is idle. Finish real input in the sheet's
+        // window before scrolling, so the focused field cannot bring itself back into view.
+        compose.waitUntil(5_000) {
+            compose.runOnUiThread {
+                ViewCompat.getRootWindowInsets(sheetRoot.view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            }
+        }
+        name.performImeAction()
+        compose.waitUntil(5_000) {
+            compose.runOnUiThread {
+                val insets = ViewCompat.getRootWindowInsets(sheetRoot.view)
+                insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime()) &&
+                    insets.getInsets(WindowInsetsCompat.Type.ime()).bottom == 0 && !sheetRoot.hasPendingMeasureOrLayout
+            }
+        }
+        name.assertIsNotFocused()
     }
 
     private fun groupMember(toolId: String): SemanticsNodeInteraction =

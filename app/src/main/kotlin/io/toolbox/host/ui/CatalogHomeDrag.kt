@@ -2,7 +2,9 @@ package io.toolbox.host.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
@@ -12,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -45,8 +48,8 @@ internal class CatalogHomeDragState {
     val collapsingGroups: Boolean get() = active?.collection == "groups"
     val floatingTopLeft: Offset get() = pointer - grabOffset
 
-    fun start(position: Offset) {
-        val hit = targets.values.firstOrNull { it.bounds.contains(position) } ?: return
+    fun start(key: String, position: Offset) {
+        val hit = targets[key] ?: return
         active = hit
         pointer = position
         startPointer = position
@@ -147,17 +150,44 @@ internal fun rememberCatalogHomeDragState(
 internal fun Modifier.catalogDragSurface(state: CatalogHomeDragState, editing: Boolean): Modifier =
     onGloballyPositioned { state.listBounds = it.boundsInRoot() }
         .pointerInput(state, editing) {
-            if (editing) detectDragGesturesAfterLongPress(
-                onDragStart = { state.start(it + state.listBounds.topLeft) },
-                onDrag = { change, _ ->
-                    if (state.active != null) {
-                        change.consume()
+            if (!editing) return@pointerInput
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val key = state.targets.values.firstOrNull {
+                    it.bounds.contains(down.position + state.listBounds.topLeft)
+                }?.key ?: return@awaitEachGesture
+                val longPress = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                state.start(key, longPress.position + state.listBounds.topLeft)
+                if (state.active == null) return@awaitEachGesture
+                try {
+                    while (true) {
+                        // After the long press, own both movement and release before
+                        // descendant scroll/click handlers see them in the Main pass.
+                        var event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull { it.id == longPress.id }
+                        // System cancellation arrives as an already-consumed Up.
+                        // Cancel a multi-pointer gesture instead of changing its source.
+                        val cancelled = change == null || event.changes.any { it.isConsumed } ||
+                            event.changes.count { it.pressed } > 1
+                        event.changes.forEach { it.consume() }
+                        if (cancelled) {
+                            state.cancel()
+                            while (event.changes.any { it.pressed }) {
+                                event = awaitPointerEvent(PointerEventPass.Initial)
+                                event.changes.forEach { it.consume() }
+                            }
+                            break
+                        }
+                        if (!requireNotNull(change).pressed) {
+                            state.finish()
+                            break
+                        }
                         state.move(change.position + state.listBounds.topLeft)
                     }
-                },
-                onDragEnd = state::finish,
-                onDragCancel = state::cancel,
-            )
+                } finally {
+                    state.cancel()
+                }
+            }
         }
 
 @Composable

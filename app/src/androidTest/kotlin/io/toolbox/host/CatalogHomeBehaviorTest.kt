@@ -279,6 +279,36 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         assertLastTileClearsNavigation("member:last:long")
     }
 
+    @Test fun cancellingAGroupDragKeepsLayoutAndAllowsOpeningAToolAfterwards() {
+        fixture.tools.value = fixture.tools.value.map { it.copy(lastOpenedAt = null) }
+        val original = CatalogLayout(favorites = listOf("a"), groups = listOf(
+            CatalogGroup("g1", "工作", listOf("a"), expanded = true),
+            CatalogGroup("g2", "常用", listOf("b"), expanded = true),
+        ))
+        fixture.layout.value = original
+        render()
+        compose.onNodeWithTag("catalog_organize").performClick()
+
+        holdGroupHeader(moveToOtherGroup = true, cancelGesture = true)
+
+        compose.runOnIdle {
+            assertEquals(original, fixture.layout.value)
+            assertTrue(isEditing)
+            assertTrue(fixture.opened.isEmpty())
+        }
+        compose.onNodeWithTag("catalog_organize").assertTextContains("完成")
+        val list = compose.onNodeWithTag("catalog_home_list")
+        list.performScrollToNode(hasTestTag("member:g1:a"))
+        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
+        list.performScrollToNode(hasTestTag("member:g2:b"))
+        compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
+        compose.onNodeWithTag("catalog_organize").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { !isEditing } }
+        homeTile("member:g1:a").performTouchInput { click() }
+        compose.waitUntil(5_000) { compose.runOnIdle { fixture.opened.isNotEmpty() } }
+        compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
+    }
+
     private fun assertLastTileClearsNavigation(tag: String) {
         val lastIndex = compose.runOnIdle { homeListState.layoutInfo.totalItemsCount - 1 }
         compose.onNodeWithTag("catalog_home_list").performScrollToIndex(lastIndex)
@@ -329,7 +359,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         }
     }
 
-    private fun holdGroupHeader(moveToOtherGroup: Boolean) {
+    private fun holdGroupHeader(moveToOtherGroup: Boolean, cancelGesture: Boolean = false) {
         val header = homeTile("catalog_group:g1").fetchSemanticsNode().boundsInRoot
         compose.onNodeWithTag("member:g1:a").assertExists()
         val list = compose.onNodeWithTag("catalog_home_list")
@@ -362,7 +392,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             try {
                 if (pointerDown) list.performTouchInput {
                     if (!moveToOtherGroup) advanceEventTime(700)
-                    up()
+                    if (cancelGesture) cancel() else up()
                 }
             }
             finally { compose.mainClock.autoAdvance = true }

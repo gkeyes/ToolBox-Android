@@ -131,6 +131,7 @@ internal fun ToolManagerContent(
     val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
     val columns = homeGridColumnCount((contentWidth - 32.dp).value, LocalDensity.current.fontScale)
     LazyColumn(
+        userScrollEnabled = drag.active == null,
         state = listState,
         modifier = Modifier.fillMaxSize().testTag(if (home) "catalog_home_list" else "catalog_tools_list")
             .catalogDragSurface(drag, home && editing),

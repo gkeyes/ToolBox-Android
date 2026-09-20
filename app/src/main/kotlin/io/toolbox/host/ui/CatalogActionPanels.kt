@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,10 +24,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.navigationevent.NavigationEventInfo
-import androidx.navigationevent.compose.NavigationBackHandler
-import androidx.navigationevent.compose.rememberNavigationEventState
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -73,10 +73,7 @@ private fun CatalogToolOptionsSession(
     ToolBoxActionSheet(
         title = if (page == "options") displayTool.name else if (page == "groups") "加入分组" else "新建分组",
         onDismissRequest = dismiss,
-    ) {
-        // Keep one handler registered for the whole window; changing pages must
-        // not change its ordering relative to Miuix's dismiss handler.
-        PanelBackHandler {
+        onBackRequest = {
             when (page) {
                 "create" -> {
                     writes.forget(EDITOR_WRITE, onAction)
@@ -86,7 +83,8 @@ private fun CatalogToolOptionsSession(
                 "groups" -> page = "options"
                 else -> dismiss()
             }
-        }
+        },
+    ) {
         when (page) {
             "create" -> GroupEditorContent(
                 group = null, state = state, creating = true,
@@ -196,10 +194,13 @@ private fun CatalogGroupEditorSession(
         if (state.isLoaded) LaunchedEffect(Unit) { dismiss() }
         return
     }
-    ToolBoxActionSheet(if (creating) "新建分组" else "编辑分组", dismiss) {
-        PanelBackHandler {
+    ToolBoxActionSheet(
+        title = if (creating) "新建分组" else "编辑分组",
+        onDismissRequest = dismiss,
+        onBackRequest = {
             if (draft.confirmingDelete.value) draft.confirmingDelete.value = false else dismiss()
-        }
+        },
+    ) {
         GroupEditorContent(group, state, creating, draft, listState, writes,
             onAction = onAction, onCancel = dismiss, onClose = dismiss, onSaved = dismiss)
     }
@@ -318,6 +319,8 @@ private fun GroupEditorContent(
                     BasicTextField(
                         value = name, onValueChange = { name = it }, singleLine = true,
                         readOnly = writing,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { finishInput() }),
                         textStyle = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
                         cursorBrush = SolidColor(ToolBoxThemeTokens.colors.primary),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
@@ -461,16 +464,6 @@ private fun PanelEmpty(message: String) {
 private fun PanelError(message: String, modifier: Modifier = Modifier) {
     ToolBoxText(message, modifier.fillMaxWidth().padding(vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
         style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.danger))
-}
-
-@Composable
-private fun PanelBackHandler(enabled: Boolean = true, onBack: () -> Unit) {
-    // Register with the sheet window's dispatcher, after Miuix's dismiss handler.
-    NavigationBackHandler(
-        state = rememberNavigationEventState(currentInfo = NavigationEventInfo.None),
-        isBackEnabled = enabled,
-        onBackCompleted = onBack,
-    )
 }
 
 private fun matchingTools(tools: List<CatalogTool>, query: String): List<CatalogTool> {
