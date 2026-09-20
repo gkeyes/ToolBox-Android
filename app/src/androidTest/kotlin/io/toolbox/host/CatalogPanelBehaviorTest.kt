@@ -402,10 +402,27 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle, private val
         label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
             assertTrue(action(results))
         }
-        assertFalse("$tag text must fit at the current font scale", results.single().hasVisualOverflow)
+        val layout = results.single()
+        val labelNode = label.assertIsDisplayed().fetchSemanticsNode()
+        val diagnostic = "$tag measured=${labelNode.size}, layout=${layout.size}, " +
+            "paragraph=${layout.multiParagraph.width}x${layout.multiParagraph.height}, constraints=${layout.layoutInput.constraints}"
+        // BasicText(String)'s semantics reconstructs a MultiParagraph with the original
+        // maxWidth, while a wrap-content label has a smaller measured width. Compare the
+        // laid-out lines with the actual label bounds, not that empty paragraph width.
+        assertFalse("Text exceeds its measured height: $diagnostic", layout.didOverflowHeight)
+        repeat(layout.lineCount) { line ->
+            assertFalse("Shortcut text must not be ellipsized: $diagnostic", layout.isLineEllipsized(line))
+            assertTrue("Text extends past the left edge: $diagnostic", layout.getLineLeft(line) >= -1f)
+            assertTrue("Text extends past the right edge: $diagnostic", layout.getLineRight(line) <= labelNode.size.width + 1f)
+            assertTrue("Text extends past the bottom edge: $diagnostic", layout.getLineBottom(line) <= labelNode.size.height + 1f)
+        }
+        assertEquals("The entire label must be laid out", layout.layoutInput.text.length,
+            layout.getLineEnd(layout.lineCount - 1, visibleEnd = true))
+        assertEquals("Shortcut label must not be clipped by its parent", labelNode.size.height.toFloat(), labelNode.boundsInRoot.height, 1f)
+        assertEquals("Shortcut label must not be clipped horizontally", labelNode.size.width.toFloat(), labelNode.boundsInRoot.width, 1f)
         val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
         assertEquals("$tag label must share the compact horizontal action's center line", bounds.center.y,
-            label.fetchSemanticsNode().boundsInRoot.center.y, 1f)
+            labelNode.boundsInRoot.center.y, 1f)
     }
 
     private fun awaitGroupKeyboard(): ViewRootForTest {

@@ -7,6 +7,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -101,7 +103,10 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
         var consents = 0
         var confirmations = 0
         var cancellations = 0
-        compose.activity.setContent {
+        val restoration = StateRestorationTester(object : ComposeContentTestRule by compose {
+            override fun setContent(composable: @Composable () -> Unit) { compose.activity.setContent(content = composable) }
+        })
+        restoration.setContent {
             ToolBoxTheme(style = style, reduceTransparency = true) {
                 BackupContent(state.value, {}, { exports++ }, { restores++ }, { consents++ }, { confirmations++ }, { cancellations++ })
             }
@@ -116,7 +121,7 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.onNodeWithTag("backup_export_consent").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, consents); state.value = BackupUiState.Progress("正在恢复", 42) }
         compose.onNodeWithText("备份内容").assertDoesNotExist()
-        compose.onNodeWithTag("backup_progress_label").assertIsDisplayed().assertTextEquals("42% · 正在恢复")
+        assertBackupStateDisplayed("backup_progress_label").assertTextEquals("42% · 正在恢复")
         compose.onNodeWithText("取消操作").performClick()
         compose.runOnIdle { assertEquals(1, cancellations); state.value = BackupUiState.Progress("正在安全取消", 42, true) }
         compose.onNodeWithText("正在安全取消").assertIsNotEnabled()
@@ -137,6 +142,8 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
         compose.onNodeWithText("1.0 → 2.0").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("tool-two")
         compose.onNodeWithText("跳过：不支持的数据版本").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("跳过：不支持的数据版本").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("warning-0")
         compose.onNodeWithText("请重新获取外部文件授权。").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("confirm-actions")
@@ -148,10 +155,24 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
             state.value = BackupUiState.Result("恢复已完成", "已恢复数据", listOf("请重新打开工具。"))
         }
         compose.onNodeWithText("备份内容").assertDoesNotExist()
-        compose.onNodeWithTag("backup_result").assertIsDisplayed().assertTextEquals("恢复已完成")
+        assertBackupStateDisplayed("backup_result").assertTextEquals("恢复已完成")
         compose.onNodeWithText("请重新打开工具。").assertExists()
         compose.onNodeWithTag("backup_page").performScrollToKey("actions")
         compose.onNodeWithTag("backup_export").performScrollTo().assertIsEnabled()
+    }
+
+    private fun assertBackupStateDisplayed(tag: String): SemanticsNodeInteraction {
+        val node = compose.onNodeWithTag(tag)
+        try {
+            node.assertExists().assertIsDisplayed()
+        } catch (failure: AssertionError) {
+            val bounds = compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes()
+                .joinToString { "root=${it.boundsInRoot}, window=${it.boundsInWindow}, placed=${it.layoutInfo.isPlaced}" }
+            val page = compose.onNodeWithTag("backup_page").printToString()
+            val root = compose.onRoot(useUnmergedTree = true).printToString()
+            throw AssertionError("Backup stage $tag was not visible; matched bounds=[$bounds]\n$page\n$root", failure)
+        }
+        return node
     }
 
     @Test fun shortAndMultilineHelpCodeRemainReadableAndCopyExactly() {

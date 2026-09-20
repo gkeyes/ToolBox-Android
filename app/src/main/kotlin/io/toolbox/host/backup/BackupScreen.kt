@@ -46,15 +46,18 @@ internal fun BackupScreen(viewModel: BackupViewModel, onBack: () -> Unit, onRead
 
 @Composable
 internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: () -> Unit, onRestore: () -> Unit, onExportConsent: () -> Unit, onConfirmRestore: () -> Unit, onCancel: () -> Unit) {
-    val listState = rememberLazyListState()
-    val stage = state::class
-    var previousStage by remember { mutableStateOf(stage) }
-    LaunchedEffect(stage) {
-        if (stage != previousStage) {
-            listState.scrollToItem(0)
-            previousStage = stage
-        }
+    val stage = when (state) {
+        BackupUiState.Idle -> "idle"
+        BackupUiState.ExportConsent -> "export-consent"
+        BackupUiState.ExportReady -> "export-ready"
+        is BackupUiState.Picking -> "picking"
+        is BackupUiState.Progress -> "progress"
+        is BackupUiState.ConfirmRestore -> "confirm-restore"
+        is BackupUiState.Result -> "result"
     }
+    // A new stage starts at its own first item instead of reusing the old list's key/offset.
+    // The saveable state still survives recreation and updates within the same stage.
+    val listState = key(stage) { rememberLazyListState() }
     DetailScreen("备份与恢复", onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize().testTag("backup_page"), state = listState, contentPadding = mergePadding(padding, PaddingValues(16.dp))) {
             if (state == BackupUiState.Idle) backupSection("overview") { ToolBoxCard {
