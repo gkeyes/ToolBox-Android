@@ -3,6 +3,8 @@ package io.toolbox.core.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,7 +29,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -34,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -50,17 +57,22 @@ fun ToolBoxSearchField(
     modifier: Modifier = Modifier,
     contentDescription: String = placeholder,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = toolBoxSearchFieldMinHeight())
-            .toolBoxOpenDesignSurface(RoundedCornerShape(17.dp))
-            .padding(horizontal = 13.dp, vertical = 10.dp),
+            .toolBoxOpenDesignSurface(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
+            .padding(start = 13.dp, end = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolBoxIcon(ToolBoxIconKey.Search, null, Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         BasicTextField(
             value = value, onValueChange = onValueChange, singleLine = true,
-            modifier = Modifier.weight(1f).semantics { this.contentDescription = contentDescription },
+            modifier = Modifier.weight(1f).padding(vertical = 10.dp).focusRequester(focusRequester)
+                .semantics { this.contentDescription = contentDescription },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
             textStyle = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
             cursorBrush = SolidColor(ToolBoxThemeTokens.colors.primary),
             decorationBox = { field ->
@@ -71,6 +83,12 @@ fun ToolBoxSearchField(
                 }
             },
         )
+        if (value.isNotEmpty()) {
+            ToolBoxIconButton(ToolBoxIconKey.Close, "清空${contentDescription}", onClick = {
+                onValueChange("")
+                focusRequester.requestFocus()
+            })
+        } else Spacer(Modifier.width(8.dp))
     }
 }
 
@@ -91,13 +109,16 @@ fun ToolBoxSettingRow(
             .padding(horizontal = 13.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        icon?.let { ToolBoxPreferenceIcon(it); Spacer(Modifier.width(12.dp)) }
+        icon?.let { ToolBoxPreferenceIcon(it, enabled); Spacer(Modifier.width(12.dp)) }
         Column(Modifier.weight(1f)) {
-            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary))
-            summary?.let { ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary)) }
+            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
+                color = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+            summary?.let { ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                color = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent)) }
         }
         Spacer(Modifier.width(8.dp))
-        ToolBoxIcon(ToolBoxIconKey.ChevronRight, null, Modifier.size(18.dp))
+        ToolBoxIcon(ToolBoxIconKey.ChevronRight, null, Modifier.size(18.dp),
+            tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent)
     }
 }
 
@@ -118,7 +139,7 @@ fun ToolBoxSwitchSettingRow(
         onCheckedChange = onCheckedChange,
         title = title,
         summary = summary,
-        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
+        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
@@ -215,13 +236,13 @@ fun ToolBoxChoiceSettingRow(
 
     ArrowPreference(
         title = title,
-        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key) }) },
+        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
         endActions = {
             if (selectedLabel.isNotBlank()) {
                 ToolBoxText(
                     text = selectedLabel,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = ToolBoxThemeTokens.colors.textSecondary,
+                        color = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent,
                         textAlign = TextAlign.End,
                     ),
                 )
@@ -271,19 +292,19 @@ fun ToolBoxChoiceSettingRow(
 }
 
 @Composable
-private fun ToolBoxPreferenceIcon(icon: ToolBoxIconKey) {
+private fun ToolBoxPreferenceIcon(icon: ToolBoxIconKey, enabled: Boolean = true) {
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-            .background(ToolBoxThemeTokens.colors.softPrimary),
+            .background(if (enabled) ToolBoxThemeTokens.colors.softPrimary else ToolBoxThemeTokens.colors.surfaceMuted),
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(
             icon = icon,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
-            tint = ToolBoxThemeTokens.colors.primary,
+            tint = if (enabled) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.disabledContent,
         )
     }
 }

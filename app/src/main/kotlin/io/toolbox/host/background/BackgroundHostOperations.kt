@@ -13,7 +13,7 @@ internal class BackgroundHostOperations(
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = coordinator.result(taskId)
 
-    override suspend fun cancel(toolId: String, taskId: String): Boolean = coordinator.cancel(toolId, taskId)
+    override suspend fun cancel(toolId: String, taskId: String) = coordinator.cancel(toolId, taskId)
 
     override suspend fun cancelTool(toolId: String) = coordinator.cancelTool(toolId)
 

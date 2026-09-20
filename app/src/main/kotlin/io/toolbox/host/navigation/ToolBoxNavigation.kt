@@ -554,6 +554,7 @@ private fun ToolManagerRouteContent(
         onImport = onImport,
         onInstallExamples = importViewModel::installBundledExamples,
         onDismissImport = importViewModel::dismissMessage,
+        onExpireImportSuccess = importViewModel::expireSuccess,
         onConfirmImport = importViewModel::confirmVersionReplacement,
         onCancelImport = importViewModel::cancelVersionReplacement,
         onCancelActiveImport = importViewModel::cancelActiveImport,

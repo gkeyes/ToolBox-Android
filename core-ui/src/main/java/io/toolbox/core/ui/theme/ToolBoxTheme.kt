@@ -406,6 +406,11 @@ object ToolBoxThemeTokens {
     val spacing = ToolBoxSpacing()
     val sizes = ToolBoxSizes()
 
+    val disabledContent: Color
+        @Composable
+        @ReadOnlyComposable
+        get() = MiuixTheme.colorScheme.disabledOnSurface
+
     val style: ToolBoxThemeStyle
         @Composable
         @ReadOnlyComposable

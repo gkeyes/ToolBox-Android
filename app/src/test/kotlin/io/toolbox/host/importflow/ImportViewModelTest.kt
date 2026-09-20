@@ -74,6 +74,7 @@ class ImportViewModelTest {
         assertNull(viewModel.state.value.confirmation)
         assertEquals("示例工具 已安装", viewModel.state.value.message)
         assertTrue(viewModel.state.value.succeeded)
+        assertEquals(ImportOutcome.Success, viewModel.state.value.outcome)
     }
 
     @Test
@@ -122,6 +123,7 @@ class ImportViewModelTest {
         assertNull(viewModel.state.value.message)
         viewModel.importPackage(ByteInput())
         viewModel.dismissMessage()
+        viewModel.expireSuccess(viewModel.state.value.feedbackId)
         viewModel.pickerRejected("should not replace progress")
         assertTrue(viewModel.state.value.working)
         assertEquals(1, attempts)
@@ -131,6 +133,77 @@ class ImportViewModelTest {
         assertFalse(viewModel.state.value.working)
         assertFalse(viewModel.state.value.succeeded)
         assertEquals("已取消安装", viewModel.state.value.message)
+        assertEquals(ImportOutcome.Cancelled, viewModel.state.value.outcome)
+    }
+
+    @Test
+    fun failedInstallKeepsFailureOutcomeAndANewSuccessHasANewFeedbackIdentity() = runTest(dispatcher) {
+        var result: HostImportResult = HostImportResult.Failed("IO", "安装失败，请重试。")
+        val operations = RecordingPackageOperations(result, result, importBlock = { result })
+        val viewModel = createViewModel(operations)
+        viewModel.importPackage(ByteInput())
+        advanceUntilIdle()
+        assertEquals(ImportOutcome.Failure, viewModel.state.value.outcome)
+        result = HostImportResult.Installed("io.toolbox.fixture", "示例工具")
+        viewModel.importPackage(ByteInput())
+        advanceUntilIdle()
+        val first = viewModel.state.value
+        viewModel.importPackage(ByteInput())
+        advanceUntilIdle()
+        assertEquals(first.message, viewModel.state.value.message)
+        assertTrue(first.feedbackId != viewModel.state.value.feedbackId)
+        assertEquals(ImportOutcome.Success, viewModel.state.value.outcome)
+    }
+
+    @Test
+    fun oldSuccessExpiryCannotClearANewerFailureCancellationOrSuccess() = runTest(dispatcher) {
+        val installed = HostImportResult.Installed("io.toolbox.fixture", "示例工具")
+        var result: HostImportResult = installed
+        val operations = RecordingPackageOperations(installed, installed, importBlock = { result })
+        val viewModel = createViewModel(operations)
+
+        listOf(HostImportResult.Failed("IO", "安装失败，请重试。"), HostImportResult.Cancelled, installed).forEach { replacement ->
+            result = installed
+            viewModel.importPackage(ByteInput())
+            advanceUntilIdle()
+            val oldFeedbackId = viewModel.state.value.feedbackId
+
+            result = replacement
+            viewModel.importPackage(ByteInput())
+            advanceUntilIdle()
+            val current = viewModel.state.value
+            assertTrue(oldFeedbackId != current.feedbackId)
+
+            // Models an old Compose deadline arriving before recomposition or from a
+            // covered page whose displayed import state is intentionally frozen.
+            viewModel.expireSuccess(oldFeedbackId)
+            assertEquals(current, viewModel.state.value)
+            viewModel.expireSuccess(current.feedbackId)
+            if (replacement is HostImportResult.Installed) {
+                assertEquals(ImportUiState(), viewModel.state.value)
+            } else {
+                assertEquals("Non-success feedback must never expire automatically", current, viewModel.state.value)
+                viewModel.dismissMessage()
+                assertEquals("Manual dismissal still closes the current result", ImportUiState(), viewModel.state.value)
+            }
+        }
+    }
+
+    @Test
+    fun pickerFailuresCannotExpireEvenWithTheirCurrentIdentity() = runTest(dispatcher) {
+        val installed = HostImportResult.Installed("io.toolbox.fixture", "示例工具")
+        val viewModel = createViewModel(RecordingPackageOperations(installed, installed))
+        viewModel.importPackage(ByteInput())
+        advanceUntilIdle()
+        val oldFeedbackId = viewModel.state.value.feedbackId
+
+        viewModel.pickerRejected("无法读取文件，请重新选择。")
+        val failure = viewModel.state.value
+        viewModel.expireSuccess(oldFeedbackId)
+        viewModel.expireSuccess(failure.feedbackId)
+        assertEquals(failure, viewModel.state.value)
+        viewModel.dismissMessage()
+        assertEquals(ImportUiState(), viewModel.state.value)
     }
 
     private fun createViewModel(operations: HostPackageOperations) =

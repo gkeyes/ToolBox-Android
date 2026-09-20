@@ -61,6 +61,7 @@ sealed interface CatalogAction {
 
 data class CatalogUiState(
     val isLoaded: Boolean = false,
+    val loadFailed: Boolean = false,
     val layout: CatalogLayout = CatalogLayout(),
     val tools: List<CatalogTool> = emptyList(),
     val visibleTools: List<CatalogTool> = emptyList(),

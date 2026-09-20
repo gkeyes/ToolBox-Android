@@ -111,6 +111,7 @@ private fun CatalogToolOptionsSession(
                                 title = group.name,
                                 selected = tool.toolId in group.members,
                                 enabled = !writes.isWriting(target, state),
+                                busy = writes.isWriting(target, state),
                                 modifier = Modifier.testTag("membership:${group.id}"),
                                 icon = { ToolBoxIcon(ToolBoxIconKey.Folder, null) },
                                 onChecked = { selected ->
@@ -138,6 +139,7 @@ private fun CatalogToolOptionsSession(
                             modifier = Modifier.weight(1f).fillMaxHeight().testTag("catalog_tool_favorite"),
                             selected = favorite,
                             enabled = !writes.isWriting("favorite", state),
+                            busy = writes.isWriting("favorite", state),
                         ) { writes.submit("favorite", onAction) { id -> CatalogAction.SetFavorite(tool.toolId, !favorite, id) } }
                         PanelShortcut("加入分组", ToolBoxIconKey.Folder, Modifier.weight(1f).fillMaxHeight().testTag("catalog_tool_groups")) {
                             page = "groups"
@@ -398,6 +400,7 @@ private fun PanelShortcut(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
+    busy: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -405,12 +408,15 @@ private fun PanelShortcut(
         modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .background(if (selected) colors.softPrimary else colors.surfaceMuted)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { if (busy) stateDescription = "正在保存" }
             .heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolBoxIcon(icon, null, tint = if (selected) colors.primary else colors.textSecondary)
-        ToolBoxText(label, Modifier.weight(1f, fill = false), style = ToolBoxThemeTokens.textStyles.body.copy(color = if (enabled) colors.textPrimary else colors.textSecondary))
+        if (busy) ToolBoxBusyIndicator() else ToolBoxIcon(icon, null,
+            tint = if (!enabled) ToolBoxThemeTokens.disabledContent else if (selected) colors.primary else colors.textSecondary)
+        ToolBoxText(label, Modifier.weight(1f, fill = false), style = ToolBoxThemeTokens.textStyles.body.copy(
+            color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
     }
 }
 
@@ -428,19 +434,23 @@ private fun PanelCheckRow(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
+    busy: Boolean = false,
     onChecked: (Boolean) -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
     Row(
         modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
             .toggleable(selected, enabled = enabled, role = Role.Checkbox, onValueChange = onChecked)
+            .semantics { if (busy) stateDescription = "正在保存" }
             .heightIn(min = 60.dp).padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         icon()
-        ToolBoxText(title, Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textPrimary))
-        Checkbox(
+        ToolBoxText(title, Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.body.copy(
+            color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        if (busy) ToolBoxBusyIndicator() else Checkbox(
             state = if (selected) ToggleableState.On else ToggleableState.Off,
             onClick = null, enabled = enabled, modifier = Modifier.clearAndSetSemantics { },
             colors = CheckboxDefaults.checkboxColors(
@@ -451,6 +461,7 @@ private fun PanelCheckRow(
                 disabledUncheckedBackgroundColor = colors.divider,
             ),
         )
+        }
     }
 }
 

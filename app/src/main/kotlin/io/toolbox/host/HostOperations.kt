@@ -2,6 +2,7 @@ package io.toolbox.host
 
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.TaskRunResult
+import io.toolbox.host.background.BackgroundCancellationResult
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.runtime.PreparedToolRuntime
@@ -77,7 +78,7 @@ internal interface HostPackageOperations {
 internal interface HostBackgroundOperations {
     fun observeTasks(toolId: String): Flow<List<BackgroundTask>>
     fun observeResult(taskId: String): Flow<TaskRunResult?>
-    suspend fun cancel(toolId: String, taskId: String): Boolean
+    suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult
     suspend fun cancelTool(toolId: String)
     suspend fun releaseRuntime(toolId: String) = cancelTool(toolId)
     suspend fun cancelAll(toolIds: Collection<String>)

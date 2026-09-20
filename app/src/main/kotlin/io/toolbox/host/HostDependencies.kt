@@ -105,7 +105,8 @@ internal class HostDependencies(
     }
 
     val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects, mutationLock = packageMutations)
+        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects,
+            catalog = repositories.catalog, mutationLock = packageMutations)
     }
 
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =

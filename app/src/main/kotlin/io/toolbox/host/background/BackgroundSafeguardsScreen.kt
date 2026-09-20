@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -57,6 +58,8 @@ import io.toolbox.host.ui.FeedbackSurface
 import io.toolbox.host.ui.FeedbackTone
 import androidx.compose.runtime.key
 import io.toolbox.host.settings.SettingsViewModel
+import io.toolbox.host.settings.BackgroundSettingsFeedback
+import io.toolbox.host.settings.backgroundProgressSummary
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.SectionHeader
 
@@ -124,6 +127,7 @@ internal fun BackgroundSafeguardsScreen(
         focusState = focusState,
         onBack = onBack,
         onSetBackgroundEnabled = viewModel::setBackgroundEnabled,
+        onRetryBackground = viewModel::retryBackgroundUpdate,
         onStopSession = { runningTools.requestStop(it.sessionId) },
         onStopAll = runningTools::requestStopAll,
         onCancelStop = runningTools::cancelStop,
@@ -192,6 +196,7 @@ internal fun BackgroundSafeguardsContent(
     onOpenBatteryOptimization: () -> Unit,
     onOpenHyperOsAutoStart: () -> Unit,
     onOpenHyperOsBatteryPolicy: () -> Unit,
+    onRetryBackground: () -> Unit = {},
 ) {
     val sessions = runningState.sessions
     val glassState = rememberToolBoxGlassState()
@@ -221,16 +226,20 @@ internal fun BackgroundSafeguardsContent(
                 ),
                 verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
             ) {
+            if (settings.backgroundError != null) {
+                item("background-error") { BackgroundSettingsFeedback(settings, onRetryBackground) }
+            }
             item("master-title") { SectionHeader("运行") }
             item("master") {
                 ToolBoxGroupedSurface {
                     ToolBoxSwitchSettingRow(
                         title = "允许后台运行",
-                        summary = "关闭会停止持续环境、计时器、后台任务和对应通知",
+                        summary = settings.backgroundProgressSummary ?: "关闭会停止持续环境、计时器、后台任务和对应通知",
                         checked = settings.settings.backgroundEnabled,
                         onCheckedChange = onSetBackgroundEnabled,
                         icon = ToolBoxIconKey.Clock,
-                        enabled = settings.loaded,
+                        enabled = settings.canChangeBackground,
+                        modifier = Modifier.testTag("safeguards_background_enabled"),
                     )
                 }
             }

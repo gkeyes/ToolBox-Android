@@ -14,6 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.*
@@ -102,7 +105,9 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
                         ToolBoxSecondaryButton("取消恢复", onCancel, Modifier.fillMaxWidth())
                     } }
                 }
-                is BackupUiState.Result -> backupSection("result") { ToolBoxCard {
+                is BackupUiState.Result -> backupSection("result") { ToolBoxCard(
+                    modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                ) {
                     AppText(state.title, textStyle = ToolBoxThemeTokens.textStyles.title, modifier = Modifier.testTag("backup_result"))
                     AppText(state.message, color = if (state.failed) ToolBoxThemeTokens.colors.danger else ToolBoxThemeTokens.colors.textPrimary)
                     state.warnings.forEach { AppText(it, color = ToolBoxThemeTokens.colors.textSecondary) }

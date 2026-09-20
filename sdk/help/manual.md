@@ -314,6 +314,8 @@ background.enqueue/schedulePeriodic 是委托原生系统的 httpGet/notify 任�
 
 ### 错误处理
 
+宿主 0.8.4 起，关闭后台运行或清理权限失败时，相关页面提供对应重试；已关闭的权限不会因重试而重新开启。主动取消安装会在清理完成后显示中性结果。成功提示会遵循系统无障碍建议延长停留时间，失败提示保留供处理。
+
 等待 ready 后调用接口，并捕获包含 code、message 的错误。NOT_DECLARED 表示缺少清单声明；PERMISSION_DENIED 表示工具开关关闭；SYSTEM_PERMISSION_DENIED 表示系统权限未满足。SESSION_ENDED/INVALID_SESSION 需要重新取得运行环境，不能复用旧 token 或 sessionId。
 
 QUOTA_EXCEEDED 表示实际资源不足或调用方预算无法满足；BUSY 表示同一个资源已有冲突操作。NETWORK_TIMEOUT/NETWORK_UNAVAILABLE 应显示网络错误；不能把失败当成功，也不应无限立即重试。旧宿主可能返回 USER_GESTURE_REQUIRED/RATE_LIMITED；可选 retryAfterMs 仅是重试提示。不要把 Token、文件正文或私人数据写入日志。

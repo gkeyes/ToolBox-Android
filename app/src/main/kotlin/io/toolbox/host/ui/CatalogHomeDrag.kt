@@ -19,6 +19,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
@@ -147,9 +149,11 @@ internal fun rememberCatalogHomeDragState(
     return state
 }
 
-internal fun Modifier.catalogDragSurface(state: CatalogHomeDragState, editing: Boolean): Modifier =
-    onGloballyPositioned { state.listBounds = it.boundsInRoot() }
-        .pointerInput(state, editing) {
+@Composable
+internal fun Modifier.catalogDragSurface(state: CatalogHomeDragState, editing: Boolean): Modifier {
+    val haptics = LocalHapticFeedback.current
+    return onGloballyPositioned { state.listBounds = it.boundsInRoot() }
+        .pointerInput(state, editing, haptics) {
             if (!editing) return@pointerInput
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -159,6 +163,7 @@ internal fun Modifier.catalogDragSurface(state: CatalogHomeDragState, editing: B
                 val longPress = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
                 state.start(key, longPress.position + state.listBounds.topLeft)
                 if (state.active == null) return@awaitEachGesture
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 try {
                     while (true) {
                         // After the long press, own both movement and release before
@@ -189,6 +194,7 @@ internal fun Modifier.catalogDragSurface(state: CatalogHomeDragState, editing: B
                 }
             }
         }
+}
 
 @Composable
 internal fun Modifier.catalogDragTarget(

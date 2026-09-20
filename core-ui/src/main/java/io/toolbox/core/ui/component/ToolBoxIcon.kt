@@ -111,7 +111,8 @@ fun ToolBoxIconButton(
             },
         enabled = enabled,
     ) {
-        ToolBoxIcon(icon = icon, contentDescription = null, tint = tint)
+        ToolBoxIcon(icon = icon, contentDescription = null,
+            tint = if (enabled) tint else ToolBoxThemeTokens.disabledContent)
     }
 }
 

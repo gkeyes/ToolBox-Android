@@ -9,12 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
@@ -29,6 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -133,6 +138,7 @@ internal fun PermissionCenterScreen(
         state = state,
         onBack = onBack,
         onSetEnabled = viewModel::setEnabled,
+        onRetryCleanup = viewModel::retryCleanup,
         exactAlarmsAllowed = exactAlarmsAllowed,
         onOpenExactAlarmSettings = openExactAlarmSettings,
         onOpenSystemSettings = {
@@ -153,6 +159,7 @@ internal fun PermissionCenterContent(
     onOpenSystemSettings: () -> Unit,
     exactAlarmsAllowed: Boolean = true,
     onOpenExactAlarmSettings: () -> Unit = {},
+    onRetryCleanup: (String) -> Unit = {},
 ) {
     val glassState = rememberToolBoxGlassState()
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
@@ -213,7 +220,7 @@ internal fun PermissionCenterContent(
                 state.message?.let { message ->
                     item("message") {
                         SurfaceCard {
-                            AppText(message)
+                            AppText(message, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                             if (state.showSystemSettings) {
                                 ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
                             }
@@ -229,7 +236,9 @@ internal fun PermissionCenterContent(
                     is PermissionLoadState.Failed -> item("load-failed") {
                         SurfaceCard {
                             AppText("无法读取工具权限")
-                            AppText(loadState.message, color = ToolBoxThemeTokens.colors.textSecondary)
+                            AppText(loadState.message,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                color = ToolBoxThemeTokens.colors.textSecondary)
                         }
                     }
                     PermissionLoadState.Ready -> if (state.items.isEmpty()) {
@@ -242,12 +251,14 @@ internal fun PermissionCenterContent(
                         item("permission-group:$title") {
                             ToolBoxGroupedSurface {
                                 items.forEachIndexed { index, item ->
+                                    val busy = item.capability in state.busyCapabilities
                                     ToolBoxSwitchSettingRow(
                                         title = item.title,
                                         summary = if (item.capability == "alarms" && !exactAlarmsAllowed) {
                                             "${item.reason}\n系统尚未允许闹钟和提醒。"
                                         } else item.reason,
                                         checked = item.enabled,
+                                        enabled = !busy,
                                         onCheckedChange = { enabled ->
                                             if (item.capability == "storage.secure" && !enabled) {
                                                 confirmSecureWipe = true
@@ -258,6 +269,28 @@ internal fun PermissionCenterContent(
                                         icon = item.capability.capabilityIcon(),
                                         modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
                                     )
+                                    if (item.capability in state.cleanupRetries) {
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(
+                                                horizontal = ToolBoxThemeTokens.spacing.oneHalf,
+                                                vertical = ToolBoxThemeTokens.spacing.one,
+                                            ),
+                                            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+                                        ) {
+                                            AppText(
+                                                "权限已关闭，清除尚未完成。",
+                                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                                color = ToolBoxThemeTokens.colors.textSecondary,
+                                                textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                                            )
+                                            ToolBoxTextButton(
+                                                if (busy) "正在清除…" else "重试清除",
+                                                { onRetryCleanup(item.capability) },
+                                                modifier = Modifier.testTag("permission_cleanup_retry:${item.capability}"),
+                                                enabled = !busy,
+                                            )
+                                        }
+                                    }
                                     if (item.capability == "alarms" && item.enabled && !exactAlarmsAllowed) {
                                         ToolBoxTextButton("允许闹钟和提醒", onOpenExactAlarmSettings)
                                     }

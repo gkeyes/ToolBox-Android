@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.compose.ReportDrawnWhen
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
@@ -98,6 +99,9 @@ class MainActivity : ComponentActivity() {
                         }
                         return@setContent
                     }
+                    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+                    // Report usable host content, not the earlier bootstrap placeholder.
+                    ReportDrawnWhen { catalogState.isLoaded && !catalogState.loadFailed && settingsState.error == null }
                     val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
                     val themeStyle = if (settingsState.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) {
                         ToolBoxThemeStyle.Miuix

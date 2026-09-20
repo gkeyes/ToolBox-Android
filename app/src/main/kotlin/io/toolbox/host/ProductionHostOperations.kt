@@ -12,6 +12,9 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.host.background.AndroidNotificationGateway
 import io.toolbox.host.background.BackgroundAuthorization
+import io.toolbox.host.background.BackgroundCancellationResult
+import io.toolbox.host.background.BackgroundRuntimeCancellation
+import io.toolbox.host.background.completeBackgroundCancellation
 import io.toolbox.host.background.BackgroundHostOperations
 import io.toolbox.host.background.BackgroundManifestPolicy
 import io.toolbox.host.background.BackgroundManifestPolicyResolver
@@ -24,6 +27,7 @@ import io.toolbox.host.background.RuntimeNetworkGateway
 import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
+import io.toolbox.host.runtime.RuntimeForegroundService
 import io.toolbox.host.runtime.UserNetworkDomainStore
 import io.toolbox.host.runtime.awaitRuntimeStandardStorageIdle
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
@@ -291,6 +295,10 @@ internal class ProductionHostBackgroundOperations(
     )
     private val delegate = BackgroundHostOperations(coordinator)
     private var runtimeSessions: RuntimeSessionManager? = null
+    private val runtimeCancellation = BackgroundRuntimeCancellation { toolId ->
+        runtimeSessions?.stopTool(toolId, removeAlarms = false)
+        Unit
+    }
 
     fun attachRuntimeSessions(sessions: RuntimeSessionManager) {
         check(runtimeSessions == null)
@@ -301,11 +309,13 @@ internal class ProductionHostBackgroundOperations(
 
     override fun observeResult(taskId: String) = delegate.observeResult(taskId)
 
-    override suspend fun cancel(toolId: String, taskId: String): Boolean = delegate.cancel(toolId, taskId)
+    override suspend fun cancel(toolId: String, taskId: String) = delegate.cancel(toolId, taskId)
 
     override suspend fun cancelTool(toolId: String) {
-        delegate.cancelTool(toolId)
-        runtimeSessions?.stopTool(toolId)
+        completeBackgroundCancellation(
+            { delegate.cancelTool(toolId) },
+            { runtimeSessions?.stopTool(toolId); Unit },
+        )
     }
 
     override suspend fun releaseRuntime(toolId: String) {
@@ -313,8 +323,11 @@ internal class ProductionHostBackgroundOperations(
     }
 
     override suspend fun cancelAll(toolIds: Collection<String>) {
-        delegate.cancelAll(toolIds)
-        runtimeSessions?.stopAll()
+        completeBackgroundCancellation(
+            { delegate.cancelAll(toolIds) },
+            { runtimeCancellation.cancel(runtimeSessions?.backgroundCancellationToolIds().orEmpty()) },
+            { RuntimeForegroundService.stop(applicationContext) },
+        )
     }
 
     override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
@@ -466,7 +479,13 @@ private class RuntimeBackgroundTaskAdapter(
         return result.toRuntimeResult(task)
     }
 
-    override suspend fun cancel(taskId: String): Boolean = coordinator.cancel(runtime.toolId, taskId)
+    override suspend fun cancel(taskId: String): Boolean = when (val result = coordinator.cancel(runtime.toolId, taskId)) {
+        BackgroundCancellationResult.Cancelled -> true
+        is BackgroundCancellationResult.AlreadyFinished -> result.wasCancelled
+        is BackgroundCancellationResult.Failed -> throw RuntimeHandlerException(
+            RuntimeRpcErrorCode.INTERNAL_ERROR, "后台任务未能取消，请重试。",
+        )
+    }
 
     private suspend fun create(spec: RuntimeBackgroundTaskSpec, intervalMinutes: Long?): String {
         validateSupportedSchedule(spec)
