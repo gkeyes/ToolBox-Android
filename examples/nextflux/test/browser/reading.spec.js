@@ -245,9 +245,44 @@ test("opening the real photo gallery blocks the article return gesture", async (
   await decodedImage(page, 640, 320);
   await page.getByTestId("image-fixture").locator("img").click();
   await expect(page.locator(".PhotoView-Portal")).toBeVisible();
-  // Dispatch behind the portal as well, proving the live gallery-state guard.
-  expect(await swipe(page)).toEqual([false, false]);
-  await expect(page.getByTestId("returns")).toHaveText("0");
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  expect(await page.evaluate(async () => (await import("/stores.js")).imageGalleryActive.get())).toBe(true);
+  await page.evaluate(async () => {
+    const { imageGalleryActive } = await import("/stores.js");
+    window.galleryMovePhases = [];
+    const observe = (event) => {
+      if (event.target.id !== "reading-surface") return;
+      window.galleryMovePhases.push({
+        at: event.currentTarget === document ? "document" : "window",
+        cancelled: event.defaultPrevented,
+        target: event.target.id,
+        x: event.touches[0].clientX,
+        galleryActive: imageGalleryActive.get(),
+      });
+    };
+    // Registered after the Hook and gallery effects, both in the bubble phase.
+    document.addEventListener("touchmove", observe);
+    window.addEventListener("touchmove", observe);
+    window.removeGalleryMoveObservers = () => {
+      document.removeEventListener("touchmove", observe);
+      window.removeEventListener("touchmove", observe);
+    };
+  });
+  try {
+    // PhotoBox 1.2.7 prevents touchmove on window. The document Hook must leave
+    // these behind-portal events alone before the gallery receives them.
+    expect(await swipe(page)).toEqual([true, true]);
+    const phases = await page.evaluate(() => window.galleryMovePhases);
+    expect(phases.map(({ at, cancelled, x }) => [at, cancelled, x])).toEqual([
+      ["document", false, 80], ["window", true, 80],
+      ["document", false, 140], ["window", true, 140],
+    ]);
+    expect(phases.every(({ target, galleryActive }) => target === "reading-surface" && galleryActive)).toBe(true);
+    await expect(page.getByTestId("returns")).toHaveText("0");
+    await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  } finally {
+    await page.evaluate(() => window.removeGalleryMoveObservers());
+  }
 });
 
 test("a modal appearing during a swipe cancels its pending navigation", async ({ page }) => {
