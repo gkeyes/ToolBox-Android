@@ -50,7 +50,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                     var creatingGroup by rememberSaveable { mutableStateOf(false) }
                     val homeScroll = rememberLazyListState()
                     val toolsScroll = rememberLazyListState()
-                    SideEffect { homeListState = homeScroll; isEditing = editing; isCreatingGroup = creatingGroup }
+                    val creatingGroupNow = creatingGroup
+                    SideEffect { homeListState = homeScroll; isEditing = editing; isCreatingGroup = creatingGroupNow }
                     PrimaryScreen(destination.value, {
                         editing = false
                         creatingGroup = false
@@ -200,8 +201,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         openHomeMenu()
         compose.onNodeWithTag("catalog_home_create_group").performClick()
         awaitHomeMenuClosed()
-        compose.waitUntil(5_000) { compose.runOnIdle { isCreatingGroup } }
         compose.onNodeWithTag("catalog_group_editor").assertExists()
+        compose.waitUntil(5_000) { compose.runOnIdle { isCreatingGroup } }
         compose.onNodeWithText("新建分组").assertExists()
         compose.onNodeWithTag("catalog_group_name").assert(SemanticsMatcher("new group name is empty") {
             it.config.getOrNull(SemanticsProperties.EditableText)?.text == ""
