@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -33,7 +34,7 @@ internal class ToolIconLoader(
     privateFilesRoot: () -> Path,
 ) {
     private val reader = InstalledToolIconReader(privateFilesRoot, availableHeapBytes)
-    private val loads = ToolIconLoadCoordinator()
+    private val loads = ToolIconLoadCoordinator<Bitmap?>()
     private val cacheLock = Any()
     // This is an index into the LRU, not another bitmap cache or a reduced identity key.
     private val cachedVersions = mutableMapOf<String, ToolVersion>()
@@ -73,7 +74,7 @@ internal class ToolIconLoader(
         }
     }.conflate()
 
-    suspend fun load(toolId: String, expectedVersionCode: Int? = null): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun load(toolId: String, expectedVersionCode: Int? = null): Bitmap? = loads.share(toolId, expectedVersionCode) {
         loads.withTool(toolId) {
             try {
                 val tool = HostTrace.bestEffortAsyncSection("icon.catalog.lookup") {
@@ -96,7 +97,7 @@ internal class ToolIconLoader(
                 val bitmap = loads.decode {
                     HostTrace.bestEffortSection("icon.decode") { reader.read(tool)?.let(decode) }
                 }
-                ensureActive()
+                currentCoroutineContext().ensureActive()
                 val currentVersion = HostTrace.bestEffortAsyncSection("icon.catalog.recheck") {
                     catalog.observeTool(toolId).first()?.currentVersion
                 }
@@ -120,6 +121,7 @@ internal class ToolIconLoader(
     suspend fun invalidate(toolId: String) {
         withContext(Dispatchers.IO) {
             loads.withTool(toolId) {
+                loads.forgetShared(toolId)
                 val notify = synchronized(cacheLock) {
                     cache.snapshot().keys.filter { it.toolId == toolId }.forEach(cache::remove)
                     observers[toolId]?.toList().orEmpty()

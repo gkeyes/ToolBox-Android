@@ -86,7 +86,9 @@ class MainActivity : ComponentActivity() {
                         ViewModelProvider(this, featureFactory)
                             .get("host.settings", SettingsViewModel::class.java)
                     }
-                    val settingsState by settingsViewModel.state.collectAsStateWithLifecycle()
+                    val settingsState by remember(settingsViewModel) {
+                        settingsViewModel.state.rootSettings()
+                    }.collectAsStateWithLifecycle(initialValue = settingsViewModel.state.value.rootSettings())
                     val pendingShortcutIntent by shortcutIntent.collectAsStateWithLifecycle()
                     if (!settingsState.loaded) {
                         ToolBoxTheme(mode = ToolBoxThemeMode.System) {
@@ -99,11 +101,13 @@ class MainActivity : ComponentActivity() {
                         }
                         return@setContent
                     }
-                    val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+                    val catalogReady by remember(catalogViewModel) {
+                        catalogViewModel.state.catalogReadiness()
+                    }.collectAsStateWithLifecycle(initialValue = false)
                     // Report usable host content, not the earlier bootstrap placeholder.
-                    ReportDrawnWhen { catalogState.isLoaded && !catalogState.loadFailed && settingsState.error == null }
-                    val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
-                    val themeStyle = if (settingsState.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) {
+                    ReportDrawnWhen { catalogReady && !settingsState.hasError }
+                    val themeMode = settingsState.theme.toToolBoxThemeMode()
+                    val themeStyle = if (settingsState.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) {
                         ToolBoxThemeStyle.Miuix
                     } else {
                         ToolBoxThemeStyle.LiquidGlass
@@ -111,14 +115,14 @@ class MainActivity : ComponentActivity() {
                     SideEffect {
                         BrowserAppearance.current = BrowserAppearance(
                             themeMode = themeMode,
-                            reduceTransparency = settingsState.settings.reduceTransparency,
+                            reduceTransparency = settingsState.reduceTransparency,
                             themeStyle = themeStyle,
                         )
                     }
                     ToolBoxTheme(
                         mode = themeMode,
                         style = themeStyle,
-                        reduceTransparency = settingsState.settings.reduceTransparency,
+                        reduceTransparency = settingsState.reduceTransparency,
                     ) {
                         ApplySystemBarAppearance(themeMode)
                         CompositionLocalProvider(LocalToolIconLoader provides state.dependencies.toolIcons) {

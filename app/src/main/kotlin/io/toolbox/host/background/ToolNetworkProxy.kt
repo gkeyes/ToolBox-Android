@@ -7,6 +7,7 @@ import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
+import java.nio.ByteBuffer
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -126,7 +127,7 @@ class ToolNetworkProxy private constructor(
         var transferred = false
         try {
             val stream = openStream(options, control)
-            val output = ByteArrayOutputStream()
+            val output = NetworkResponseBuffer()
             while (true) {
                 val chunk = stream.read(NetworkResources.AUTO_CHUNK_BYTES)
                 try {
@@ -134,12 +135,11 @@ class ToolNetworkProxy private constructor(
                     if (output.size().toLong() + chunk.data.size > Int.MAX_VALUE - 8L) {
                         throw ToolNetworkFailure("RESULT_TOO_LARGE")
                     }
-                    // Covers growing output, final byte-array copy and UTF-16/Base64/JSON materialization.
+                    // Retain the existing conservative budget for output growth and bridge materialization.
                     retained += resources.reserveExact(chunk.data.size.toLong() * 8)
                     output.write(chunk.data)
                 } finally { chunk.release() }
             }
-            val bytes = output.toByteArray()
             val media = stream.response.body.contentType()
             val subtype = media?.subtype?.lowercase(Locale.ROOT)
             val text = media == null || media.type.equals("text", true) || subtype == "json" || subtype?.endsWith("+json") == true
@@ -147,7 +147,7 @@ class ToolNetworkProxy private constructor(
                 statusCode = stream.response.code,
                 finalUrl = stream.finalUrl,
                 contentType = stream.response.header("Content-Type")?.substringBefore(';'),
-                body = if (text) bytes.toString(Charsets.UTF_8) else Base64.getEncoder().encodeToString(bytes),
+                body = output.encodeBody(text),
                 bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
                 headers = stream.response.exposedHeaders(),
                 release = release,
@@ -229,6 +229,15 @@ class ToolNetworkProxy private constructor(
             }
             return ToolNetworkStream(response, current.toString(), control, options.maxResponseBytes, resources)
         }
+    }
+}
+
+/** Encodes only the populated buffer; neither path clones the complete raw response. */
+private class NetworkResponseBuffer : ByteArrayOutputStream() {
+    fun encodeBody(text: Boolean): String {
+        if (text) return String(buf, 0, count, Charsets.UTF_8)
+        val encoded = Base64.getEncoder().encode(ByteBuffer.wrap(buf, 0, count))
+        return String(encoded.array(), encoded.arrayOffset() + encoded.position(), encoded.remaining(), Charsets.ISO_8859_1)
     }
 }
 

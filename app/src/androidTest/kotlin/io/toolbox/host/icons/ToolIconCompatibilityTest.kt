@@ -171,6 +171,54 @@ class ToolIconCompatibilityTest {
     }
 
     @Test
+    fun duplicateLoadsShareCatalogReadsWhenTheInitiatingConsumerIsCancelled() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            val started = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val decodes = AtomicInteger()
+            val loader = ToolIconLoader(fixture.catalog, decode = { source ->
+                decodes.incrementAndGet()
+                started.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+                ToolIconDecoder.decode(source)
+            }, privateFilesRoot = { fixture.root })
+            val first = async(start = CoroutineStart.UNDISPATCHED) { loader.load(fixture.id, 1) }
+            try {
+                withContext(Dispatchers.IO) { assertTrue(started.await(10, TimeUnit.SECONDS)) }
+                val favorite = async(start = CoroutineStart.UNDISPATCHED) { loader.load(fixture.id, 1) }
+                val grouped = async(start = CoroutineStart.UNDISPATCHED) { loader.load(fixture.id, 1) }
+                first.cancelAndJoin()
+                release.countDown()
+                val bitmap = requireNotNull(withTimeout(10_000) { favorite.await() })
+                assertSame(bitmap, withTimeout(10_000) { grouped.await() })
+                assertEquals(1, decodes.get())
+                assertEquals("One catalog lookup and one full-version recheck for the shared batch", 2, fixture.catalogReads.get())
+                assertSame(bitmap, loader.load(fixture.id, 1))
+                assertEquals("The next batch must revalidate even a hot cache entry", 3, fixture.catalogReads.get())
+            } finally {
+                release.countDown()
+                first.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun sameIdentityInvalidationDoesNotReuseACompletedSharedResult() = runBlocking {
+        InstalledIconFixture().use { fixture ->
+            val loader = ToolIconLoader(fixture.catalog, privateFilesRoot = { fixture.root })
+            val original = requireNotNull(loader.load(fixture.id, 1))
+            fixture.writeIcon("blue")
+            // Restore/overwrite may preserve every ToolVersion field. Explicit invalidation
+            // must still retire both the bitmap and any completed shared request.
+            loader.invalidate(fixture.id)
+            assertNull(loader.cached(fixture.id, 1))
+            val replacement = requireNotNull(loader.load(fixture.id, 1))
+            assertNotSame(original, replacement)
+            assertEquals(Color.BLUE, replacement.getPixel(128, 128))
+        }
+    }
+
+    @Test
     fun invalidationClearsNegativeCacheAndRefreshesACollectorThatSubscribesLater() = runBlocking {
         InstalledIconFixture().use { fixture ->
             var decodes = 0

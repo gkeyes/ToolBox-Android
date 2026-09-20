@@ -16,7 +16,7 @@ class CatalogSortTest {
         assertEquals(listOf("n", "a", "z", "b"), tools.catalogSorted(CatalogSort.NAME).map { it.toolId })
         assertEquals(listOf("a", "z", "n", "b"), tools.catalogSorted(CatalogSort.LAST_OPENED).map { it.toolId })
         CatalogSort.entries.forEach { sort ->
-            val state = CatalogUiState(layout = CatalogLayout(sort = sort)).withCatalogTools(tools).withCatalogQuery("AlPhA")
+            val state = CatalogListProjection().project(tools, CatalogLayout(sort = sort), "AlPhA")
             assertEquals(listOf("a", "z"), state.visibleTools.map { it.toolId })
         }
     }
