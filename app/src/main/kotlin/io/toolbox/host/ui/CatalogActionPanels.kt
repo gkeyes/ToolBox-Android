@@ -127,19 +127,19 @@ private fun CatalogToolOptionsSession(
             }
             else -> LazyColumn(
                 Modifier.fillMaxWidth().testTag("catalog_tool_options"),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item("heading") { PanelHeader(displayTool.name, dismiss, tool = displayTool) }
                 item("shortcuts") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         PanelShortcut(
                             label = if (favorite) "已收藏" else "收藏",
                             icon = if (favorite) ToolBoxIconKey.StarFilled else ToolBoxIconKey.Star,
-                            modifier = Modifier.weight(1f).testTag("catalog_tool_favorite"),
+                            modifier = Modifier.weight(1f).fillMaxHeight().testTag("catalog_tool_favorite"),
                             selected = favorite,
                             enabled = !writes.isWriting("favorite", state),
                         ) { writes.submit("favorite", onAction) { id -> CatalogAction.SetFavorite(tool.toolId, !favorite, id) } }
-                        PanelShortcut("加入分组", ToolBoxIconKey.Folder, Modifier.weight(1f).testTag("catalog_tool_groups")) {
+                        PanelShortcut("加入分组", ToolBoxIconKey.Folder, Modifier.weight(1f).fillMaxHeight().testTag("catalog_tool_groups")) {
                             page = "groups"
                         }
                     }
@@ -378,14 +378,16 @@ private fun GroupEditorContent(
 
 @Composable
 private fun PanelHeader(title: String, onClose: () -> Unit, onBack: (() -> Unit)? = null, tool: CatalogTool? = null) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"))
-        if (tool != null) CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary))
-        ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary))
-        ToolBoxIconButton(
-            ToolBoxIconKey.Close, "关闭", onClose,
-            Modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full)).background(ToolBoxThemeTokens.colors.surfaceMuted).testTag("catalog_panel_close"),
-        )
+    ToolBoxActionSheetHeader(Modifier.testTag("catalog_panel_header")) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"))
+            if (tool != null) CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary))
+            ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary))
+            ToolBoxIconButton(
+                ToolBoxIconKey.Close, "关闭", onClose,
+                Modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full)).background(ToolBoxThemeTokens.colors.surfaceMuted).testTag("catalog_panel_close"),
+            )
+        }
     }
 }
 
@@ -399,16 +401,16 @@ private fun PanelShortcut(
     onClick: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    Column(
+    Row(
         modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .background(if (selected) colors.softPrimary else colors.surfaceMuted)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .heightIn(min = 96.dp).padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            .heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolBoxIcon(icon, null, tint = if (selected) colors.primary else colors.textSecondary)
-        ToolBoxText(label, style = ToolBoxThemeTokens.textStyles.body.copy(color = if (enabled) colors.textPrimary else colors.textSecondary))
+        ToolBoxText(label, Modifier.weight(1f, fill = false), style = ToolBoxThemeTokens.textStyles.body.copy(color = if (enabled) colors.textPrimary else colors.textSecondary))
     }
 }
 

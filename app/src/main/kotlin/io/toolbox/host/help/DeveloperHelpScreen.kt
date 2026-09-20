@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,12 +26,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxDisclosureRow
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
@@ -298,38 +302,7 @@ private fun LazyListScope.helpArticleBlocks(
                     .padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
             ) {
                 if (block.code) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(ToolBoxThemeTokens.colors.surfaceMuted)
-                            .padding(horizontal = ToolBoxThemeTokens.spacing.one),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AppText(
-                                block.label.ifBlank { "代码" },
-                                modifier = Modifier.weight(1f),
-                                textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                            )
-                            ToolBoxTextButton(
-                                label = if (copiedKey == key) "已复制" else "复制",
-                                onClick = { onCopy(key, block.text) },
-                                outlined = false,
-                                modifier = Modifier.semantics {
-                                    contentDescription = "复制" + article.title + "中的" + block.label.ifBlank { "代码" }
-                                },
-                            )
-                        }
-                        SelectionContainer {
-                            ToolBoxText(
-                                text = block.text,
-                                modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one),
-                                style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                                    color = ToolBoxThemeTokens.colors.textPrimary,
-                                    fontFamily = FontFamily.Monospace,
-                                ),
-                            )
-                        }
-                    }
+                    HelpCodeBlock(block, article.title, key, copiedKey == key) { onCopy(key, block.text) }
                 } else {
                     SelectionContainer {
                         AppText(block.text, textStyle = ToolBoxThemeTokens.textStyles.body)
@@ -337,6 +310,69 @@ private fun LazyListScope.helpArticleBlocks(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HelpCodeBlock(block: HelpBlock, articleTitle: String, key: String, copied: Boolean, onCopy: () -> Unit) {
+    val spacing = ToolBoxThemeTokens.spacing
+    val copyButton: @Composable () -> Unit = {
+        ToolBoxTextButton(
+            label = if (copied) "已复制" else "复制",
+            onClick = onCopy,
+            outlined = false,
+            modifier = Modifier.testTag("help_code_copy:$key").semantics {
+                contentDescription = "复制" + articleTitle + "中的" + block.label.ifBlank { "代码" }
+            },
+        )
+    }
+    val container = Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surfaceMuted)
+        .padding(horizontal = spacing.one)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val codeStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontFamily = FontFamily.Monospace)
+    val buttonStyle = ToolBoxThemeTokens.textStyles.body
+    val codeWidth = remember(block.text, codeStyle, measurer) {
+        if ('\n' in block.text) null else measurer.measure(block.text, codeStyle, softWrap = false).size.width
+    }
+    // Reserve the longer feedback label too, so copying does not change the layout.
+    val buttonTextWidth = remember(buttonStyle, measurer) {
+        measurer.measure("已复制", buttonStyle, softWrap = false).size.width
+    }
+    BoxWithConstraints(container) {
+        val inline = codeWidth != null && codeWidth + buttonTextWidth + with(density) { (32.dp + spacing.one).roundToPx() } <= constraints.maxWidth
+        if (inline) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing.one), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(vertical = spacing.one)) {
+                    if (block.label.isNotBlank()) AppText(block.label, textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.textSecondary)
+                    HelpCodeText(block.text)
+                }
+                copyButton()
+            }
+        } else {
+            Column(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppText(block.label.ifBlank { "代码" }, Modifier.weight(1f), textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                    copyButton()
+                }
+                HelpCodeText(block.text, Modifier.padding(bottom = spacing.one))
+            }
+        }
+    }
+}
+
+@Composable
+private fun HelpCodeText(text: String, modifier: Modifier = Modifier) {
+    SelectionContainer {
+        ToolBoxText(
+            text = text,
+            modifier = modifier,
+            style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                color = ToolBoxThemeTokens.colors.textPrimary,
+                fontFamily = FontFamily.Monospace,
+            ),
+        )
     }
 }
 

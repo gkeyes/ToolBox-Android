@@ -16,6 +16,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.*
@@ -39,6 +40,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     private var isEditing = false
     private var isCreatingGroup = false
     private var importRequests = 0
+    private var installExampleRequests = 0
     private var createGroupRequests = 0
 
     private fun render(restoration: StateRestorationTester? = null) {
@@ -64,7 +66,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                             state = fixture.state(), importState = ImportUiState(),
                             listState = if (destination.value == MainDestination.Home) homeScroll else toolsScroll,
                             contentPadding = padding, onAction = fixture::action,
-                            onImport = { importRequests++ }, onInstallExamples = {}, onDismissImport = {}, onOpenDetails = { fixture.managed += it },
+                            onImport = { importRequests++ }, onInstallExamples = { installExampleRequests++ }, onDismissImport = {}, onOpenDetails = { fixture.managed += it },
                             home = destination.value == MainDestination.Home,
                             editing = editing, onEditingChange = { editing = it },
                             creatingGroup = creatingGroup, onDismissCreateGroup = { creatingGroup = false },
@@ -420,6 +422,87 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
     }
 
+    @Test fun shortNamesUseOneLineAndGroupRowsGrowForCompleteTwoLineNames() {
+        fixture.tools.value = listOf(CatalogTool("a", "测", 1, "1.0", 1, null))
+        fixture.layout.value = CatalogLayout(groups = listOf(CatalogGroup("g1", "工作", listOf("a"))))
+        render()
+        val tile = homeTile("member:g1:a").fetchSemanticsNode()
+        val shortLayout = homeLabelLayout("member:g1:a")
+        val shortLabelHeight = homeLabel("member:g1:a").fetchSemanticsNode().size.height
+        val shortRowHeight = compose.runOnIdle {
+            homeListState.layoutInfo.visibleItemsInfo.single { it.key == "member-row:g1:0" }.size
+        }
+        assertEquals(1, shortLayout.lineCount)
+        val oneLineHeight = shortLayout.getLineBottom(0) - shortLayout.getLineTop(0)
+        assertTrue("A one-line name must not reserve an unused second line: $shortLabelHeight / $oneLineHeight",
+            shortLabelHeight <= ceil(oneLineHeight).toInt() + 1)
+
+        // Derive a two-line Chinese name from the measured font and column, so this also
+        // exercises the wider, scaled-font variant without relying on a device width.
+        val glyphWidth = shortLayout.getLineRight(0) - shortLayout.getLineLeft(0)
+        assertTrue(glyphWidth > 0f)
+        val longName = "测".repeat((tile.size.width / glyphWidth).toInt() + 2)
+        compose.runOnIdle { fixture.tools.value = fixture.tools.value.map { it.copy(name = longName) } }
+        homeTile("member:g1:a").assertContentDescriptionEquals(longName).assertHasClickAction()
+        val longLayout = homeLabelLayout("member:g1:a")
+        assertEquals("The measured fixture must exercise both supported lines", 2, longLayout.lineCount)
+        assertFalse("Both lines of a fitting name must remain visible", longLayout.hasVisualOverflow)
+        assertFalse(longLayout.isLineEllipsized(1))
+        val longRowHeight = compose.runOnIdle {
+            homeListState.layoutInfo.visibleItemsInfo.single { it.key == "member-row:g1:0" }.size
+        }
+        assertTrue("The group row must grow with a second text line: $shortRowHeight -> $longRowHeight",
+            longRowHeight > shortRowHeight)
+        homeTile("member:g1:a").performTouchInput { click() }
+        compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
+    }
+
+    @Test fun recentFavoritesAndGroupMembersShareColumnAndIconAlignment() {
+        fixture.layout.value = CatalogLayout(favorites = listOf("a", "b"),
+            groups = listOf(CatalogGroup("g1", "工作", listOf("a", "b"))))
+        render()
+        data class ColumnGeometry(val left: Float, val width: Int, val iconCenter: Float, val iconWidth: Int)
+        fun measure(prefix: String): List<ColumnGeometry> {
+            homeTile("$prefix:a")
+            return listOf("a", "b").map { id ->
+                val tileTag = "$prefix:$id"
+                val tile = compose.onNodeWithTag(tileTag).assertIsDisplayed().fetchSemanticsNode()
+                val icon = compose.onNode(hasTestTag("catalog_home_icon:$id") and hasAnyAncestor(hasTestTag(tileTag)),
+                    useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode()
+                assertEquals("Icon must stay centered within its cell", tile.positionInRoot.x + tile.size.width / 2f,
+                    icon.positionInRoot.x + icon.size.width / 2f, 1f)
+                ColumnGeometry(tile.positionInRoot.x, tile.size.width,
+                    icon.positionInRoot.x + icon.size.width / 2f, icon.size.width)
+            }
+        }
+        val recent = measure("recent")
+        listOf("favorite", "member:g1").forEach { prefix ->
+            val measured = measure(prefix)
+            measured.zip(recent).forEachIndexed { column, (actual, reference) ->
+                assertEquals("$prefix column $column must align with recent tools", reference.left, actual.left, 1f)
+                assertEquals("$prefix column $column must use the same width", reference.width.toFloat(), actual.width.toFloat(), 1f)
+                assertEquals("$prefix icon $column must align with recent tools", reference.iconCenter, actual.iconCenter, 1f)
+                assertEquals(reference.iconWidth, actual.iconWidth)
+            }
+            assertTrue("Columns must remain separate", measured[0].left + measured[0].width < measured[1].left)
+        }
+    }
+
+    @Test fun emptyHomeShowsOnlyTheGlobalEmptyStateAndBothInstallActionsWork() {
+        fixture.tools.value = emptyList()
+        fixture.layout.value = CatalogLayout()
+        render()
+        compose.onAllNodesWithTag(HostTestTags.CatalogEmptyState).assertCountEquals(1)
+        compose.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
+        listOf("最近使用", "收藏", "分组", "收藏常用工具，放在这里快速打开",
+            "按用途整理工具，同一个工具可以加入多个分组。").forEach { text ->
+            compose.onNodeWithText(text).assertDoesNotExist()
+        }
+        compose.onNodeWithText("安装四个范例").performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        compose.onNodeWithText("导入 .tbx").performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, installExampleRequests); assertEquals(1, importRequests) }
+    }
+
     @Test fun longTitlesRemainAccessibleAndLastTileClearsNavigation() {
         fixture.tools.value = listOf(CatalogTool("long", "这是一个需要跨行显示并保持完整可访问名称的非常长工具标题", 1, "1.0", 1, null))
         fixture.layout.value = CatalogLayout(favorites = listOf("long"), groups = listOf(CatalogGroup("last", "末尾分组", listOf("long"))))
@@ -531,6 +614,19 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         assertTrue("Tile must clear top chrome: $tag $point / $bounds / $padding", point.y >= bounds.top + padding.first)
         assertTrue("Tile must clear bottom chrome: $tag $point / $bounds / $padding", point.y <= bounds.bottom - padding.second)
         return target
+    }
+
+    private fun homeLabel(tileTag: String): SemanticsNodeInteraction = compose.onNode(
+        SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and hasAnyAncestor(hasTestTag(tileTag)),
+        useUnmergedTree = true,
+    )
+
+    private fun homeLabelLayout(tileTag: String): TextLayoutResult {
+        val results = mutableListOf<TextLayoutResult>()
+        homeLabel(tileTag).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+            assertTrue("Tool name must expose its actual text layout", action(results))
+        }
+        return results.single()
     }
 
     private fun moveAccessibly(tag: String, label: String) {

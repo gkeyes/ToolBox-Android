@@ -302,7 +302,7 @@ private fun LiquidGlassNavigationBar(
         .windowInsetsPadding(WindowInsets.navigationBars)
         .padding(
             horizontal = ToolBoxThemeTokens.spacing.oneHalf,
-            vertical = ToolBoxThemeTokens.spacing.one,
+            vertical = ToolBoxThemeTokens.spacing.compact,
         )
         .let { base ->
             if (glassState != null) {
@@ -315,7 +315,7 @@ private fun LiquidGlassNavigationBar(
     BoxWithConstraints(
         modifier = surfaceModifier
             .fillMaxWidth()
-            .height(70.dp),
+            .height(58.dp),
     ) {
         val itemWidth = maxWidth / items.size
         val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
@@ -325,7 +325,7 @@ private fun LiquidGlassNavigationBar(
             label = "navigation selection lens",
         )
         val materials = ToolBoxThemeTokens.materials
-        val selectionShape = RoundedCornerShape(19.dp)
+        val selectionShape = RoundedCornerShape(20.dp)
         if (materials.navigationLensEnabled) {
             Box(
                 Modifier

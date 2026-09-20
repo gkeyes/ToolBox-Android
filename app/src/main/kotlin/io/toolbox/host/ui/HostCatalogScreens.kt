@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.toolBoxOpenDesignSurface
@@ -135,6 +136,7 @@ internal fun ToolManagerContent(
     val direction = LocalLayoutDirection.current
     val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
     val columns = homeGridColumnCount((contentWidth - 32.dp).value, LocalDensity.current.fontScale)
+    val tileWidth = ((contentWidth - 32.dp - 12.dp * (columns - 1)) / columns).coerceAtLeast(0.dp)
     LazyColumn(
         userScrollEnabled = drag.active == null,
         state = listState,
@@ -148,8 +150,8 @@ internal fun ToolManagerContent(
         }
         if (home && recentTools.isNotEmpty()) {
             item("recent-title") { HomeSectionHeader("最近使用") }
-            item("recent-tools") { CatalogRecentTools(recentTools, onAction, editing) { selectedToolId = it } }
-            item("after-recent") { Spacer(Modifier.height(24.dp)) }
+            item("recent-tools") { CatalogRecentTools(recentTools, tileWidth, onAction, editing) { selectedToolId = it } }
+            item("after-recent") { Spacer(Modifier.height(20.dp)) }
         }
         if (!home) {
         item("search") {
@@ -201,7 +203,7 @@ internal fun ToolManagerContent(
             }
         }
 
-        if (home && state.isLoaded) {
+        if (home && state.isLoaded && state.tools.isNotEmpty()) {
             catalogHomeSections(
                 state, toolsById, editing, columns, drag, onAction,
                 onEditGroup = { editingGroupId = it }, onAddFavorites = { addingFavorites = true },
@@ -473,14 +475,15 @@ internal fun CatalogToolRow(
                 Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
                 Column(Modifier.weight(1f)) {
                     AppText(text = tool.name, textStyle = ToolBoxThemeTokens.textStyles.title, weight = FontWeight.SemiBold)
-                    AppText(
-                        text = when (tool.toolId) {
-                            "io.toolbox.positioncalculator" -> "计算 · 本地运行"
-                            "io.toolbox.quicknotes" -> "记录 · 本地存储"
-                            "io.toolbox.backgroundtaskdemo" -> "后台 · 通知"
-                            "io.toolbox.notificationlab" -> "测试 · 系统通知"
-                            else -> "已安装"
-                        },
+                    val summary = when (tool.toolId) {
+                        "io.toolbox.positioncalculator" -> "计算 · 本地运行"
+                        "io.toolbox.quicknotes" -> "记录 · 本地存储"
+                        "io.toolbox.backgroundtaskdemo" -> "后台 · 通知"
+                        "io.toolbox.notificationlab" -> "测试 · 系统通知"
+                        else -> null
+                    }
+                    if (summary != null) AppText(
+                        text = summary,
                         textStyle = ToolBoxThemeTokens.textStyles.metadata,
                         color = ToolBoxThemeTokens.colors.textSecondary,
                     )
@@ -500,17 +503,17 @@ internal fun CatalogToolRow(
 @Composable
 internal fun CatalogRecentTools(
     tools: List<CatalogTool>,
+    tileWidth: Dp,
     onAction: (CatalogAction) -> Unit,
     editing: Boolean = false,
     onOptions: (String) -> Unit,
 ) {
-    val width = (72f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         items(tools, key = CatalogTool::toolId) { tool ->
             CatalogHomeTile(tool, editing,
                 onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                 onOptions = { onOptions(tool.toolId) },
-                modifier = Modifier.width(width).testTag("recent:" + tool.toolId))
+                modifier = Modifier.width(tileWidth).testTag("recent:" + tool.toolId))
         }
     }
 }
@@ -531,7 +534,7 @@ private fun ToolIdentity(tool: CatalogTool) {
         AppText(
             text = tool.name,
             modifier = Modifier.weight(1f),
-            textStyle = ToolBoxThemeTokens.textStyles.screenTitle,
+            textStyle = ToolBoxThemeTokens.textStyles.detailTitle,
             weight = FontWeight.Bold,
         )
     }

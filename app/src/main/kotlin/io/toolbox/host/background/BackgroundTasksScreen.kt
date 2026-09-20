@@ -1,11 +1,13 @@
 package io.toolbox.host.background
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -19,6 +21,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
@@ -157,11 +162,12 @@ internal fun BackgroundTasksContent(
                         }
                     }
                 }
-                if (page.runtimeSessions.isNotEmpty() && page.tasks.isNotEmpty()) {
-                    item("tasks-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
-                }
                 if (page.tasks.isNotEmpty()) {
-                    item("tasks-title") { SectionHeader("已登记任务 · ${page.tasks.size}") }
+                    item("tasks-title") {
+                        Column(Modifier.padding(top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.one else 0.dp)) {
+                            SectionHeader("已登记任务 · ${page.tasks.size}")
+                        }
+                    }
                 }
                 if (page.tasks.isNotEmpty()) item("tasks") {
                     ToolBoxGroupedSurface {
@@ -203,23 +209,22 @@ private fun RuntimeSessionCard(
     stopping: Boolean,
     onStop: () -> Unit,
 ) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+    BackgroundEntryLayout(
+        modifier = Modifier.testTag("background_session:${session.sessionId}"),
+        action = {
+            ToolBoxDestructiveButton(
+                label = if (stopping) "正在停止…" else "停止后台运行",
+                onClick = onStop,
+                modifier = Modifier.testTag("background_stop:${session.sessionId}"),
+                enabled = !stopping,
+            )
+        },
     ) {
         AppText("持续运行环境", textStyle = ToolBoxThemeTokens.textStyles.title)
         AppText(
             "启动于 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.startedAt))}",
             color = ToolBoxThemeTokens.colors.textSecondary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
-        )
-        ToolBoxDestructiveButton(
-            label = if (stopping) "正在停止…" else "停止后台运行",
-            onClick = onStop,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !stopping,
         )
     }
 }
@@ -233,11 +238,16 @@ private fun BackgroundTaskCard(
 ) {
     val cancellable = task.state == TaskState.QUEUED || task.state == TaskState.RUNNING
 
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+    BackgroundEntryLayout(
+        modifier = Modifier.testTag("background_task:${task.taskId}"),
+        action = if (cancellable) ({
+            ToolBoxDestructiveButton(
+                label = if (cancelling) "正在取消…" else "取消任务",
+                onClick = onCancel,
+                modifier = Modifier.testTag("background_cancel:${task.taskId}"),
+                enabled = !cancelling,
+            )
+        }) else null,
     ) {
         AppText(task.key, textStyle = ToolBoxThemeTokens.textStyles.title)
         AppText(
@@ -258,13 +268,37 @@ private fun BackgroundTaskCard(
             )
         }
         TaskResultSummary(result)
-        if (cancellable) {
-            ToolBoxDestructiveButton(
-                label = if (cancelling) "正在取消…" else "取消任务",
-                onClick = onCancel,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !cancelling,
-            )
+    }
+}
+
+@Composable
+private fun BackgroundEntryLayout(
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)?,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val largeText = LocalDensity.current.fontScale >= 1.3f
+    BoxWithConstraints(
+        modifier.fillMaxWidth()
+            .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+    ) {
+        if (action == null) {
+            Column(Modifier.fillMaxWidth(), content = content)
+        } else if (maxWidth < 320.dp || largeText) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+                Column(Modifier.fillMaxWidth(), content = content)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { action() }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.oneHalf),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), content = content)
+                action()
+            }
         }
     }
 }

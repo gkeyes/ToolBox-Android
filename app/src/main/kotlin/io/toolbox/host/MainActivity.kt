@@ -99,15 +99,21 @@ class MainActivity : ComponentActivity() {
                         return@setContent
                     }
                     val themeMode = settingsState.settings.theme.toToolBoxThemeMode()
+                    val themeStyle = if (settingsState.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) {
+                        ToolBoxThemeStyle.Miuix
+                    } else {
+                        ToolBoxThemeStyle.LiquidGlass
+                    }
                     SideEffect {
                         BrowserAppearance.current = BrowserAppearance(
                             themeMode = themeMode,
                             reduceTransparency = settingsState.settings.reduceTransparency,
+                            themeStyle = themeStyle,
                         )
                     }
                     ToolBoxTheme(
                         mode = themeMode,
-                        style = if (settingsState.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) ToolBoxThemeStyle.Miuix else ToolBoxThemeStyle.LiquidGlass,
+                        style = themeStyle,
                         reduceTransparency = settingsState.settings.reduceTransparency,
                     ) {
                         ApplySystemBarAppearance(themeMode)

@@ -60,6 +60,7 @@ data class ToolBoxColorScheme(
 @Immutable
 data class ToolBoxTextStyles(
     val screenTitle: TextStyle,
+    val detailTitle: TextStyle,
     val sectionTitle: TextStyle,
     val title: TextStyle,
     val body: TextStyle,
@@ -100,7 +101,7 @@ data class ToolBoxSizes(
     val compactChrome: Dp = 56.dp,
     val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
-    val catalogRow: Dp = 76.dp,
+    val catalogRow: Dp = 64.dp,
     val compactToolGlyph: Dp = 42.dp,
     val toolGlyph: Dp = 48.dp,
     val factLabelWidth: Dp = 72.dp,
@@ -170,6 +171,7 @@ internal val DarkToolBoxColors = ToolBoxColorScheme(
 
 private val DefaultTextStyles = ToolBoxTextStyles(
     screenTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    detailTitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
     sectionTitle = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
     title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
     body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
@@ -179,6 +181,7 @@ private val DefaultTextStyles = ToolBoxTextStyles(
 
 private val LiquidGlassTextStyles = ToolBoxTextStyles(
     screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
+    detailTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
     sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
     title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
     body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp),
