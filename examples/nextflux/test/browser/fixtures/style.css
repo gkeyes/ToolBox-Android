@@ -1,0 +1,12 @@
+@import "../../../src/index.css";
+@source "../../../src";
+
+/* Only article context and test controls are laid out here. ArticleImage sizing,
+   aspect ratios, margins, image constraints and placeholders use production CSS. */
+html { font-size: 16px; }
+body { margin: 0; }
+#reading-surface { box-sizing: border-box; width: 100%; padding: 20px; }
+[data-testid="returns"] { display: block; height: 24px; }
+#selectable-text { margin: 0 0 16px; }
+#horizontal-container { width: 180px; overflow-x: auto; }
+#horizontal-target { width: 600px; }

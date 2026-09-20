@@ -28,10 +28,39 @@ the same hash-checked Tailwind Oxide archive, not independently upgraded.
 Original location fields describe the source inventory.
 Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
 
-Lockfile SHA-256: dbf51b812a62f53c9e96c4108535eb42a164b9517bd43abcda77dec05ca96b0b
+Lockfile SHA-256: 0ba1aae271f943aeb6b87de11fafb4531b09cb83720aed266a6856fed18a2840
 Build-only cleanup removed unused direct dependencies and unreachable lock entries; the license inventory remains a conservative superset.
 Inventory entries: 236
 Distinct license/notice texts: 118
+
+FRIRSS ADAPTED READING UTILITIES
+
+Source: https://github.com/Fripix/Frirss
+Commit: 9fb386594a64eb78154865a11f94172d27d40b86
+Reference files: src/lib/imageAspect.ts; src/components/ArticleList/SwipeableArticleRow.tsx
+Adapted image dimension memory and touch direction locking for the ToolBox runtime.
+
+MIT License
+
+Copyright (c) 2026 Fripix
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 DEPENDENCY INVENTORY
 

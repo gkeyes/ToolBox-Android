@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils.js";
 import { approvedImageSource, useSafeImage } from "@/toolbox/media.js";
 import { useStore } from "@nanostores/react";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
+import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
 
 function ArticleImage({ imgNode, type = "article" }) {
   const { src, "data-image-source": sanitizedSource, alt = "" } = imgNode.attribs;
@@ -13,8 +14,11 @@ function ArticleImage({ imgNode, type = "article" }) {
   const { containerRef, url, error, retry } = useSafeImage(source, false, galleryOpen);
   const [dimensions, setDimensions] = useState(null);
   const [failedUrl, setFailedUrl] = useState(null);
+  const epoch = imageDimensions.epoch;
   const failure = error || (failedUrl && failedUrl === url ? "图片解码失败，暂时无法显示。" : null);
-  const measured = dimensions?.source === source ? dimensions : null;
+  const measured = imageSize(imgNode.attribs.width, imgNode.attribs.height)
+    || (dimensions?.source === source && dimensions.epoch === epoch ? dimensions : null)
+    || imageDimensions.get(source);
   const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : undefined;
   return (
     <div ref={containerRef} className={cn("flex justify-center my-2 min-h-12", type === "article" ? "max-w-[calc(100%+2.5rem)]! -mx-5" : "rounded-lg shadow-custom! mx-auto overflow-hidden w-fit")}>
@@ -34,11 +38,13 @@ function ArticleImage({ imgNode, type = "article" }) {
                 alt={alt}
                 decoding="async"
                 className="h-auto object-contain my-0 mx-auto max-w-full"
+                style={measured ? { width: "100%", aspectRatio: `${measured.width} / ${measured.height}` } : undefined}
                 onLoad={(event) => {
                   const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
-                  if (width > 0 && height > 0) {
-                    setDimensions((previous) => previous?.source === source && previous.width === width && previous.height === height
-                      ? previous : { source, width, height });
+                  if (epoch === imageDimensions.epoch && imageSize(width, height)) {
+                    imageDimensions.remember(source, width, height, epoch);
+                    setDimensions((previous) => previous?.source === source && previous.epoch === epoch && previous.width === width && previous.height === height
+                      ? previous : { source, width, height, epoch });
                   }
                 }}
                 onError={() => setFailedUrl(url)}
