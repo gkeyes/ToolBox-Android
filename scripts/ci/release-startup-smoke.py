@@ -15,6 +15,39 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def parse_hierarchy(ui):
+    try:
+        document = ET.fromstring(ui.strip())
+    except ET.ParseError as failure:
+        raise ValueError("Android did not provide a valid UI hierarchy") from failure
+    if document.tag != "hierarchy":
+        raise ValueError("Android did not provide a UI hierarchy document")
+    return document
+
+
+def capture_ui_hierarchy(adb, evidence):
+    remote = "/sdcard/toolbox-startup.xml"
+    destination = evidence / "home.xml"
+    # UiAutomator can return exit 0 without producing a file while accessibility
+    # attaches to a freshly started app. Retry collection, never its assertions.
+    for attempt in range(1, 4):
+        destination.unlink(missing_ok=True)
+        adb("shell", "rm", "-f", remote)
+        try:
+            adb("shell", "uiautomator", "dump", "--compressed", remote, record=f"ui-dump-{attempt}.txt")
+            # exec-out does not reliably propagate a remote cat failure. Pull must
+            # actually succeed and supply a parseable, fresh local document.
+            adb("pull", remote, str(destination), record=f"ui-pull-{attempt}.txt")
+            ui = destination.read_text()
+            parse_hierarchy(ui)
+            return ui
+        except (subprocess.SubprocessError, OSError, ValueError) as failure:
+            (evidence / f"ui-collection-error-{attempt}.txt").write_text(str(failure) + "\n")
+            if attempt < 3:
+                time.sleep(.5)
+    raise RuntimeError("Could not collect the initial home UI; see ui-dump/ui-pull evidence")
+
+
 def validate_startup(package, version, code, start, installed, logs, ui, pid):
     component = rf"{re.escape(package)}/(?:{re.escape(package)})?\.MainActivity"
     if not re.search(r"^Status: ok\s*$", start, re.M) or not re.search(component, start):
@@ -29,7 +62,7 @@ def validate_startup(package, version, code, start, installed, logs, ui, pid):
         raise ValueError("Host crash or ANR during startup")
     if not re.fullmatch(r"\d+", pid.strip()):
         raise ValueError("Host process did not remain alive")
-    document = ET.fromstring(ui[ui.index("<?xml"):])
+    document = parse_hierarchy(ui)
     host_nodes = [node for node in document.iter("node") if node.get("package") == package]
     labels = {node.get(key, "") for node in host_nodes for key in ("text", "content-desc")}
     if not {"首页", "全部工具", "设置"}.issubset(labels):
@@ -53,11 +86,12 @@ def main():
     evidence.mkdir(parents=True, exist_ok=True)
 
     def adb(*args, record=None, timeout=60):
-        result = subprocess.run(["adb", "-e", *args], check=True, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout).stdout
+        completed = subprocess.run(["adb", "-e", *args], check=False, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
         if record:
-            (evidence / record).write_text(result)
-        return result
+            (evidence / record).write_text(completed.stdout)
+        completed.check_returncode()
+        return completed.stdout
 
     if adb("shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise RuntimeError("An emulator is required; physical devices are excluded")
@@ -89,8 +123,7 @@ def main():
             if f"Fully drawn {package}/" in logs:
                 break
             time.sleep(.5)
-        adb("shell", "uiautomator", "dump", "/sdcard/toolbox-startup.xml")
-        ui = adb("exec-out", "cat", "/sdcard/toolbox-startup.xml", record="home.xml")
+        ui = capture_ui_hierarchy(adb, evidence)
         logs = adb("logcat", "-b", "main", "-b", "system", "-b", "crash", "-d", record="startup-logcat.txt")
         pid = adb("shell", "pidof", package, record="host-pid.txt")
         validate_startup(package, version, code, start, installed, logs, ui, pid)
