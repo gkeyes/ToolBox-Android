@@ -31,25 +31,26 @@ async function open(page, width = 393, theme = "light", scale = 1) {
 
 async function closeGeometry(button) {
   await expect(button).toBeVisible();
-  const value = await button.evaluate((el) => {
+  // HeroUI dialogs briefly scale during entrance. Visibility alone does not
+  // mean that geometry is settled. Poll the same geometry assertions rather
+  // than disabling the animation or accepting its transient larger bounds.
+  await expect.poll(async () => button.evaluate((el) => {
     const rect = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     const svg = el.querySelector("svg").getBoundingClientRect();
-    return { width: rect.width, height: rect.height,
-      visibleWidth: rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-      visibleHeight: rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+    const rounded = (value) => Math.round(value * 100) / 100;
+    return {
+      width: rounded(rect.width), height: rounded(rect.height),
+      visibleWidth: rounded(rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
+      visibleHeight: rounded(rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)),
       clip: style.backgroundClip, shadow: style.boxShadow,
-      offsetX: svg.x + svg.width / 2 - (rect.x + rect.width / 2),
-      offsetY: svg.y + svg.height / 2 - (rect.y + rect.height / 2) };
+      centered: Math.abs(svg.x + svg.width / 2 - (rect.x + rect.width / 2)) < 1 &&
+        Math.abs(svg.y + svg.height / 2 - (rect.y + rect.height / 2)) < 1,
+    };
+  }), { message: "settled close control must keep a 48px target and centered 32px painted disc" }).toEqual({
+    width: 48, height: 48, visibleWidth: 32, visibleHeight: 32,
+    clip: "content-box", shadow: "none", centered: true,
   });
-  expect(value.width).toBe(48);
-  expect(value.height).toBe(48);
-  expect(value.visibleWidth).toBe(32);
-  expect(value.visibleHeight).toBe(32);
-  expect(value.clip).toBe("content-box");
-  expect(value.shadow).toBe("none");
-  expect(Math.abs(value.offsetX)).toBeLessThan(1);
-  expect(Math.abs(value.offsetY)).toBeLessThan(1);
 }
 
 async function bounds(page) {
