@@ -141,6 +141,12 @@ internal fun ToolBoxNavigation(
     val allSecondaryRoutes = secondaryBackStack.filterIsInstance<ToolBoxRoute>()
     val currentPrimaryRoute = primaryBackStack.lastOrNull()
     val runtimeRoute = allSecondaryRoutes.lastOrNull() as? RuntimeRoute
+    // Presentation identity only: reuse the cached catalog without keeping the covered page subscribed.
+    val runtimeTitle = remember(catalogViewModel, runtimeRoute?.toolId) {
+        runtimeRoute?.toolId?.let { id ->
+            catalogViewModel.state.value.tools.firstOrNull { it.toolId == id }?.name
+        }
+    }
     val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
     val entryProgress = remember(runtimeRoute) { Animatable(if (runtimeRoute == null) 0f else 1f) }
     val sourceReturnProgress = remember(runtimeRoute) { Animatable(0f) }
@@ -327,6 +333,7 @@ internal fun ToolBoxNavigation(
                     dependencies = dependencies,
                     onPresentationReady = { runtimePresentationReady = true },
                     onBack = leaveRuntime,
+                    toolName = runtimeTitle,
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(1f)
@@ -355,7 +362,7 @@ internal fun ToolBoxNavigation(
                         translationX = trailingDirection * entryProgress.value * size.width
                     },
             ) {
-                RuntimeShellPreviewContent()
+                RuntimeShellPreviewContent(toolName = runtimeTitle)
             }
         }
 
@@ -618,6 +625,7 @@ private fun RuntimeSessionLayer(
     onPresentationReady: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    toolName: String? = null,
 ) {
     val owner = remember(route) { RuntimeEntryViewModelStoreOwner() }
     DisposableEffect(owner) {
@@ -634,6 +642,7 @@ private fun RuntimeSessionLayer(
             viewModel = viewModel,
             onBack = onBack,
             onPresentationReady = onPresentationReady,
+            toolName = toolName,
         )
     }
 }
