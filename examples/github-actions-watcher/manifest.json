@@ -4,8 +4,8 @@
   "name": "GitHub 构建守望",
   "shortName": "构建守望",
   "description": "守望选定的 GitHub Actions 工作流，估算构建进度并通过实时通知持续更新。",
-  "version": "1.0.9",
-  "versionCode": 10,
+  "version": "1.1.0",
+  "versionCode": 11,
   "entry": "index.html",
   "icon": "icon.png",
   "apiVersion": "1.0",
@@ -38,6 +38,11 @@
     {
       "name": "background.runtime",
       "reason": "离开页面后继续发现和跟踪构建。",
+      "required": false
+    },
+    {
+      "name": "browser",
+      "reason": "由你点击时在浏览器中查看 GitHub 构建详情；不会自动打开链接。",
       "required": false
     }
   ],

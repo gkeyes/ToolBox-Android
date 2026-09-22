@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.0.8";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.0";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -49,6 +49,9 @@
   const toolbox = () => window.ToolBox;
   let toastTimer = null;
   let foregroundClock = null;
+  // Presentation-only preferences never change background tracking or timing keys.
+  const viewState = { selectedRunKey: null, detailsRunKey: null, jobsSignature: null, activeSignature: null, recentSignature: null, historyExpanded: false };
+
 
   function cleanText(value) {
     return String(value ?? "")
@@ -486,6 +489,7 @@
   }
 
   function renderSetup() {
+    document.body.dataset.monitoring = String(state.monitoring && state.ready);
     $("setup-screen").hidden = state.monitoring;
     $("watch-screen").hidden = !state.monitoring;
     if (!state.repository || !state.workflows.length) {
@@ -748,7 +752,7 @@
       } catch (error) {
         state.nextPollAt = null;
         state.warning = "timer";
-        state.warningMessage = `自动刷新安排失败：${errorLabel(error)}；可点击立即同步`;
+        state.warningMessage = `自动刷新安排失败：${errorLabel(error)}；可点击刷新`;
       }
       state.pollInFlight = false;
       state.pollStartedAt = null;
@@ -876,118 +880,208 @@
     return dot;
   }
 
-  function renderActiveRuns() {
+  // Display aliases only: retain GitHub names unchanged for estimates and debugging.
+  function friendlyName(value) {
+    const raw = cleanText(value);
+    const name = raw.replace(/@[0-9a-f]{40,64}\b/gi, "");
+    const aliases = [
+      [/^Set up job$/i, "准备构建环境"],
+      [/^Complete job$/i, "完成任务"],
+      [/^Enable accelerated behavior test emulator$/i, "启动测试模拟器"],
+      [/^Verify catalog, backup, execution identity, dialogs and Wasm on Android$/i, "验证 Android 行为"],
+      [/^Retain host unit test reports$/i, "保存单元测试报告"],
+      [/^Retain Android behavior and WebView evidence$/i, "保存行为验证结果"],
+      [/^Post (?:Run )?gradle\/actions\/setup-gradle$/i, "Gradle 环境收尾"],
+      [/^Post (?:Run )?actions\/setup-java$/i, "Java 环境收尾"],
+      [/^Post (?:Run )?actions\/checkout$/i, "清理工作目录"],
+      [/^(?:Run )?actions\/upload-artifact(?:@[^\s]+)?$/i, "上传构建产物"],
+      [/^(?:Run )?actions\/download-artifact(?:@[^\s]+)?$/i, "下载构建产物"],
+      [/^(?:Run )?actions\/checkout(?:@[^\s]+)?$/i, "获取仓库代码"],
+      [/^(?:Run )?actions\/setup-java(?:@[^\s]+)?$/i, "准备 Java 环境"],
+      [/^(?:Run )?actions\/setup-node(?:@[^\s]+)?$/i, "准备 Node.js 环境"],
+      [/^(?:Run )?gradle\/actions\/setup-gradle(?:@[^\s]+)?$/i, "准备 Gradle 环境"]
+    ];
+    return aliases.find(([pattern]) => pattern.test(name))?.[1] || name.replace(/^Run\s+/i, "") || "未命名步骤";
+  }
+
+  function displayedRun() {
+    const selected = state.runs.find((run) => model.runKey(run) === viewState.selectedRunKey && isActiveRun(run));
+    return selected || chooseDisplayedRun() || model.choosePrimaryRun(state.runs.filter(isActiveRun));
+  }
+
+  function visibleJobs(run) {
+    return !run || finalJobsPending(run) ? [] : state.jobsByRun[model.runKey(run)] || [];
+  }
+
+  function failedStep(jobs) {
+    const failed = (item) => ["failure", "timed_out", "action_required"].includes(item?.conclusion);
+    for (const job of jobs) {
+      const step = (job.steps || []).find(failed);
+      if (step) return { label: "失败步骤", name: step.name || job.name };
+    }
+    const job = jobs.find(failed);
+    return job ? { label: "失败任务", name: job.name } : null;
+  }
+
+  async function openGitHub(run = displayedRun()) {
+    const owner = state.config?.owner || state.repository?.owner || state.config?.fullName?.split("/")[0];
+    const repo = state.config?.repo || state.repository?.repo || state.config?.fullName?.split("/")[1];
+    if (!owner || !repo) return showToast("请先连接仓库");
+    // Construct a fixed-origin URL; never execute an arbitrary URL from API data.
+    const base = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions`;
+    const id = String(run?.id || "");
+    const url = /^\d+$/.test(id) ? `${base}/runs/${id}` : base;
+    try {
+      if (!toolbox()?.browser?.open) throw new Error("当前宿主不支持打开链接");
+      await toolbox().browser.open(url);
+    } catch (error) {
+      showToast(error?.code === "PERMISSION_DENIED" || error?.code === "NOT_DECLARED"
+        ? "请在小工具权限中开启浏览器访问后重试" : `打开失败：${errorLabel(error)}`);
+    }
+  }
+
+  function renderActiveRuns(primary) {
+    const active = state.runs.filter(isActiveRun).filter((run) => model.runKey(run) !== (primary && model.runKey(primary)));
+    $("active-section").hidden = active.length === 0;
+    $("active-count").textContent = `${active.length} 个`;
+    const signature = JSON.stringify(active.map((run) => [model.runKey(run), run.status, run.name, run.head_branch]));
+    if (signature === viewState.activeSignature) return;
+    viewState.activeSignature = signature;
     const list = $("active-runs");
     list.replaceChildren();
-    const active = state.runs.filter(isActiveRun);
-    $("active-count").textContent = `${active.length} 个`;
-    if (!active.length) {
-      list.append(emptyNode("当前没有活动构建，后台将继续等待。"));
-      return;
-    }
     for (const run of active) {
-      const estimate = calculateEstimate(run);
-      const card = document.createElement("article");
+      const card = document.createElement("button");
+      card.type = "button";
       card.className = "run-card";
-      const header = document.createElement("div");
-      header.className = "run-card-header";
-      const title = document.createElement("div");
+      const title = document.createElement("span");
       title.className = "run-card-title";
-      const strong = document.createElement("strong");
-      strong.textContent = configWorkflowName(run);
-      const sub = document.createElement("span");
-      sub.textContent = `${run.head_branch || "未知分支"} · ${String(run.head_sha || "").slice(0, 7)} · #${run.run_number || run.id}`;
-      title.append(strong, sub);
-      const percent = document.createElement("span");
-      percent.className = "run-percent";
-      percent.textContent = run.status === "in_progress" ? `${estimate.progress}%` : resultLabel(run);
-      header.append(title, percent);
-      const meta = document.createElement("p");
-      meta.className = "run-card-meta";
-      meta.textContent = [estimate.job, estimate.step, `已用 ${formatDuration(estimate.elapsedMs, true)}`].filter(Boolean).join(" · ");
-      card.append(header, meta);
+      const name = document.createElement("strong");
+      name.textContent = configWorkflowName(run);
+      const branch = document.createElement("span");
+      branch.textContent = run.head_branch || "未知分支";
+      title.append(name, branch);
+      const result = document.createElement("span");
+      result.className = "result-label";
+      result.dataset.result = runStatus(run) || "idle";
+      result.textContent = resultLabel(run);
+      card.append(title, result);
+      card.addEventListener("click", () => {
+        viewState.selectedRunKey = model.runKey(run);
+        $("active-section").open = false;
+        renderDashboard();
+        $("watch-title").setAttribute("tabindex", "-1");
+        $("watch-title").focus({ preventScroll: true });
+        $("hero-card").scrollIntoView({ block: "start" });
+      });
       list.append(card);
     }
   }
 
   function renderJobs(run) {
     const list = $("job-list");
-    const jobExpansion = new Map();
-    for (const details of list.children) {
-      if (details.dataset.jobKey) jobExpansion.set(details.dataset.jobKey, details.open);
+    const jobs = visibleJobs(run);
+    const runKey = run ? model.runKey(run) : "";
+    if (viewState.detailsRunKey !== runKey) {
+      viewState.detailsRunKey = runKey;
+      $("build-details").open = false;
+      $("technical-details").open = false;
     }
+    const steps = jobs.flatMap((job) => job.steps || []);
+    const completed = steps.filter((step) => step.status === "completed").length;
+    $("jobs-summary").textContent = jobs.length ? `${jobs.length} 个任务 · ${completed}/${steps.length} 步` : "暂无步骤";
+    const raw = $("raw-names").checked;
+    const signature = JSON.stringify([runKey, run?.status, finalJobsPendingSafe(run), jobs, raw]);
+    if (signature === viewState.jobsSignature) return;
+    viewState.jobsSignature = signature;
+    const expansion = new Map([...list.children].map((details) => [details.dataset.jobKey, details.open]));
     list.replaceChildren();
-    if (!run) {
-      list.append(emptyNode("发现运行中的构建后，将显示 job 与 step。"));
-      return;
-    }
-    if (finalJobsPending(run)) {
-      list.append(emptyNode("构建已结束，等待同步最终步骤。"));
-      return;
-    }
-    const jobs = state.jobsByRun[model.runKey(run)] || [];
     if (!jobs.length) {
-      const message = run.status === "completed" ? "本次构建未生成 job。"
-        : run.status === "queued" ? "构建仍在排队，GitHub 尚未生成 job。" : "尚未读取到 job 详情。";
-      list.append(emptyNode(message));
+      list.append(emptyNode(!run ? "有新构建时，步骤会显示在这里。"
+        : finalJobsPending(run) ? "构建已结束，正在同步最终步骤。"
+        : run.status === "queued" ? "正在排队，等待运行器接手。" : "尚未获取到执行步骤，可稍后刷新。"));
       return;
     }
     for (const job of jobs) {
       const details = document.createElement("details");
-      const jobKey = `${model.runKey(run)}:${job.id}`;
-      details.dataset.jobKey = jobKey;
-      details.open = jobExpansion.has(jobKey) ? jobExpansion.get(jobKey) : job.status === "in_progress";
+      const key = `${runKey}:${job.id}`;
+      details.dataset.jobKey = key;
+      details.open = expansion.get(key) === true;
       const summary = document.createElement("summary");
-      summary.append(stateDot(runStatus(job)));
       const name = document.createElement("strong");
-      name.textContent = cleanText(job.name || "未命名 job");
+      name.textContent = raw ? cleanText(job.name || "未命名任务") : friendlyName(job.name || "未命名任务");
       const status = document.createElement("span");
       status.className = "result-label";
       status.dataset.result = runStatus(job) || "idle";
       status.textContent = resultLabel(job);
-      summary.append(name, status);
-      const steps = document.createElement("ol");
-      steps.className = "step-list";
+      const chevron = document.createElement("span");
+      chevron.className = "chevron";
+      chevron.setAttribute("aria-hidden", "true");
+      summary.append(stateDot(runStatus(job)), name, status, chevron);
+      const stepsList = document.createElement("ol");
+      stepsList.className = "step-list";
       for (const step of job.steps || []) {
         const row = document.createElement("li");
         row.className = "step-row";
-        row.append(stateDot(runStatus(step)));
+        row.dataset.state = runStatus(step) || "idle";
         const stepName = document.createElement("span");
-        stepName.textContent = cleanText(step.name || `步骤 ${step.number || ""}`);
+        const original = cleanText(step.name || `步骤 ${step.number || ""}`);
+        stepName.textContent = raw ? original : friendlyName(original);
+        stepName.title = original;
         const duration = document.createElement("span");
         const actual = model.durationMs(step.started_at, step.completed_at);
         duration.textContent = actual === null ? resultLabel(step) : formatDuration(actual, true);
-        row.append(stepName, duration);
-        steps.append(row);
+        row.setAttribute("aria-label", `${original}，${resultLabel(step)}，${duration.textContent}`);
+        row.append(stateDot(runStatus(step)), stepName, duration);
+        stepsList.append(row);
       }
-      details.append(summary, steps);
+      details.append(summary, stepsList);
       list.append(details);
     }
   }
 
+  function finalJobsPendingSafe(run) {
+    return run ? finalJobsPending(run) : false;
+  }
+
   function renderRecentRuns() {
+    const recent = state.runs.filter((run) => run.status === "completed").slice(0, 10);
+    const signature = JSON.stringify([recent, viewState.historyExpanded]);
+    if (signature === viewState.recentSignature) return;
+    viewState.recentSignature = signature;
     const list = $("recent-runs");
     list.replaceChildren();
-    const recent = state.runs.slice(0, 10);
+    const toggle = $("toggle-history");
+    toggle.hidden = recent.length <= 3;
+    toggle.textContent = viewState.historyExpanded ? "收起" : `查看全部 ${recent.length} 条`;
+    toggle.setAttribute("aria-expanded", String(viewState.historyExpanded));
     if (!recent.length) {
-      list.append(emptyNode("所选范围内暂无 workflow run。"));
+      list.append(emptyNode("完成的构建会保留在这里。"));
       return;
     }
-    for (const run of recent) {
-      const row = document.createElement("div");
+    for (const run of recent.slice(0, viewState.historyExpanded ? 10 : 3)) {
+      const row = document.createElement("button");
+      row.type = "button";
       row.className = "recent-row";
-      const main = document.createElement("div");
+      const main = document.createElement("span");
       main.className = "recent-main";
       const title = document.createElement("strong");
       title.textContent = configWorkflowName(run);
       const meta = document.createElement("span");
-      meta.textContent = `${run.head_branch || "未知分支"} · #${run.run_number || run.id} · ${formatClock(Date.parse(run.created_at || ""))}`;
+      const timestamp = Date.parse(run.created_at || "");
+      const date = Number.isFinite(timestamp) ? new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false
+      }).format(new Date(timestamp)) : "时间未知";
+      const elapsed = model.durationMs(run.run_started_at || run.created_at, run.updated_at);
+      meta.textContent = `#${run.run_number || run.id} · ${date}${elapsed === null ? "" : ` · ${formatDuration(elapsed, true)}`}`;
+      row.title = `${configWorkflowName(run)} · ${run.head_branch || "未知分支"}`;
+      row.setAttribute("aria-label", `${row.title}，${resultLabel(run)}，在 GitHub 查看`);
       main.append(title, meta);
       const result = document.createElement("span");
       result.className = "result-label";
       result.dataset.result = runStatus(run) || "idle";
       result.textContent = resultLabel(run);
-      row.append(main, result);
+      row.append(stateDot(runStatus(run)), main, result);
+      row.addEventListener("click", () => openGitHub(run));
       list.append(row);
     }
   }
@@ -1011,43 +1105,58 @@
 
   function renderHero(run) {
     const estimate = run ? calculateEstimate(run) : null;
-    const presentation = model.statePresentation(run, ["rate_limit", "offline"].includes(state.warning) ? state.warning : null);
+    const presentation = model.statePresentation(run);
+    const fullName = state.config?.fullName || "";
+    const jobs = visibleJobs(run);
+    const steps = jobs.flatMap((job) => job.steps || []);
+    const failure = failedStep(jobs);
+    const terminal = run?.status === "completed";
+    const active = run?.status === "in_progress";
     $("hero-card").dataset.tone = presentation.tone;
-    $("watch-title").textContent = run ? presentation.label : "等待构建";
-    $("run-repository").textContent = state.config?.fullName || "";
-    $("run-workflow").textContent = run ? configWorkflowName(run) : "正在等待新的 workflow run";
-    $("current-step").textContent = run
-      ? [estimate.job, estimate.step].filter(Boolean).join(" · ") || presentation.label
-      : "后台守望已启动";
+    $("hero-card").dataset.stale = String(Boolean(state.warning));
+    $("watch-title").textContent = fullName.split("/").slice(1).join("/") || fullName || "等待构建";
+    $("run-repository").textContent = fullName.split("/")[0] || "GitHub";
+    $("hero-state").textContent = presentation.label;
+    $("hero-state").dataset.state = run ? runStatus(run) || "idle" : "idle";
+    $("run-workflow").textContent = run ? configWorkflowName(run) : "正在关注所选工作流";
+    $("current-step").textContent = failure ? `${failure.label}：${friendlyName(failure.name)}`
+      : terminal ? (run.conclusion === "success" ? "构建完成" : presentation.label)
+      : active ? friendlyName(estimate.step || estimate.job || "正在准备构建")
+      : run ? "等待运行器接手，开始后会自动更新" : "有新构建时会自动跟进";
+    $("stage-dot").dataset.state = failure ? "failure" : run ? runStatus(run) || "idle" : "idle";
+    $("step-count").textContent = steps.length ? `${steps.filter((step) => step.status === "completed").length}/${steps.length} 步已结束` : "";
+    $("meta-repository").textContent = fullName;
+    $("meta-workflow").textContent = run ? configWorkflowName(run) : "--";
     $("run-branch").textContent = run?.head_branch || (state.config?.branchMode === "all" ? "全部分支" : state.config?.branch || "--");
-    $("run-sha").textContent = run?.head_sha ? String(run.head_sha).slice(0, 7) : "--";
+    $("run-sha").textContent = run?.head_sha || "--";
+    $("meta-run").textContent = run ? `#${run.run_number || run.id} · 第 ${run.run_attempt || 1} 次尝试` : "--";
     const progress = estimate?.progress || 0;
-    $("progress-ring").style.setProperty("--progress", `${progress * 3.6}deg`);
+    $("progress-fill").style.width = `${progress}%`;
     $("progress-ring").setAttribute("aria-valuenow", String(progress));
+    $("progress-ring").setAttribute("aria-valuetext", run ? `${progress}% · ${presentation.label}` : "等待构建");
     $("progress-value").textContent = run ? `${progress}%` : "--";
-    $("elapsed-time").textContent = estimate ? formatDuration(estimate.elapsedMs) : "--";
-    if (!estimate?.sampleCount) {
-      $("remaining-time").textContent = run ? "等权步骤" : "等待样本";
-      $("sample-caption").textContent = "暂无可用历史样本，当前按等权步骤估算。";
-    } else if (estimate.remainingMs !== null) {
+    $("progress-caption").textContent = terminal ? "本次已结束" : "预估进度";
+    $("elapsed-time").textContent = estimate ? formatDuration(estimate.elapsedMs, true) : "--";
+    $("remaining-label").textContent = terminal ? "构建结果" : "预计剩余";
+    if (terminal) {
+      $("remaining-time").textContent = resultLabel(run);
+    } else if (estimate?.remainingMs !== null && estimate?.remainingMs !== undefined) {
       $("remaining-time").textContent = `约 ${formatDuration(estimate.remainingMs, true)}`;
-      $("sample-caption").textContent = `估算基于同类最近 ${estimate.sampleCount} 次成功构建的算术平均值。`;
-    } else if (estimate.overrunMs > 0) {
-      $("remaining-time").textContent = `超均值 ${formatDuration(estimate.overrunMs, true)}`;
-      $("sample-caption").textContent = `已超过最近 ${estimate.sampleCount} 次构建的历史均值。`;
     } else {
-      $("remaining-time").textContent = "即将完成";
-      $("sample-caption").textContent = `估算基于同类最近 ${estimate.sampleCount} 次成功构建。`;
+      $("remaining-time").textContent = estimate?.overrunMs > 0 ? "比平时稍久" : "待估算";
     }
+    $("sample-caption").textContent = !estimate?.sampleCount
+      ? "进度按步骤估算，不等于实际耗时百分比；历史样本不足，暂不估计剩余时间。"
+      : `进度与剩余时间参考最近 ${estimate.sampleCount} 次同类成功构建，仅供参考。`;
   }
 
   function renderDashboard() {
     if (!state.monitoring) return;
     renderRuntimeChip();
-    const run = chooseDisplayedRun() || model.choosePrimaryRun(state.runs.filter(isActiveRun));
+    const run = displayedRun();
     renderHero(run);
     renderWarning();
-    renderActiveRuns();
+    renderActiveRuns(run);
     renderJobs(run);
     renderRecentRuns();
     const interval = currentPollInterval();
@@ -1056,14 +1165,14 @@
     const now = Date.now();
     let countdown;
     if (state.pollInFlight) {
-      countdown = `正在同步 · 已等待 ${formatDuration(Math.max(0, now - state.pollStartedAt), true)}`;
+      countdown = `正在刷新 · ${formatDuration(Math.max(0, now - state.pollStartedAt), true)}`;
     } else if (!state.nextPollAt) {
-      countdown = "自动刷新未就绪，请立即同步";
+      countdown = "等待首次刷新";
     } else if (state.nextPollAt <= now) {
-      countdown = `刷新已延迟 ${formatDuration(now - state.nextPollAt, true)} · 可立即同步`;
+      countdown = `刷新已延迟 ${formatDuration(now - state.nextPollAt, true)} · 可手动刷新`;
     } else {
       const waitingForQuota = state.rateRemaining === 0 && state.rateResetAt > now;
-      const label = waitingForQuota ? "额度恢复后刷新" : state.warning ? "下次重试" : "下次刷新";
+      const label = waitingForQuota ? "额度恢复后刷新" : state.warning ? "下次重试" : "自动刷新";
       countdown = `${label} · ${formatDuration(Math.ceil((state.nextPollAt - now) / 1000) * 1000, true)}`;
     }
     $("poll-countdown").textContent = countdown;
@@ -1210,6 +1319,12 @@
   $("start-watching").addEventListener("click", startWatching);
   $("refresh-now").addEventListener("click", () => pollGitHub(true));
   $("stop-watching").addEventListener("click", stopWatching);
+  $("open-github").addEventListener("click", () => openGitHub());
+  $("raw-names").addEventListener("change", () => renderJobs(displayedRun()));
+  $("toggle-history").addEventListener("click", () => {
+    viewState.historyExpanded = !viewState.historyExpanded;
+    renderRecentRuns();
+  });
 
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {

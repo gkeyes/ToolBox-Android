@@ -12,7 +12,7 @@
     <header class="tool-identity" aria-labelledby="app-title">
       <img class="tool-icon" src="icon.png" alt="">
       <div class="identity-copy">
-        <p class="eyebrow">GITHUB ACTIONS WATCHER</p>
+        
         <div class="title-row">
           <h1 id="app-title">构建守望</h1>
           <span id="runtime-chip" class="status-chip" data-state="idle">未配置</span>
@@ -23,12 +23,12 @@
 
     <section id="setup-screen" aria-labelledby="setup-title">
       <div class="surface intro-surface">
-        <p class="eyebrow">READ-ONLY MONITOR</p>
+        
         <h2 id="setup-title">连接一个仓库</h2>
-        <p class="supporting">粘贴仓库、Actions 或 workflow 页面链接。工具只读取构建状态，不会触发、取消或重跑工作流。</p>
+        <p class="supporting">粘贴 GitHub 链接，构建有结果时通知你。只读监控，不会更改仓库。</p>
         <label class="field-label" for="repo-input">GitHub 仓库链接</label>
         <input id="repo-input" class="text-field" type="url" inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repo">
-        <label class="field-label" for="token-input">Fine-grained Token（可选）</label>
+        <label class="field-label" for="token-input">访问令牌 Token（可选）</label>
         <input id="token-input" class="text-field" type="password" autocomplete="off" aria-describedby="token-state" placeholder="私有仓库或快速刷新时使用">
         <p id="token-state" class="supporting" role="status">公共仓库可不填；Token 保存一次即可复用</p>
         <div class="token-row">
@@ -41,7 +41,7 @@
       <div id="selection-surface" class="surface" hidden>
         <div class="section-heading">
           <div>
-            <p class="eyebrow">REPOSITORY</p>
+            
             <h2 id="repository-name">仓库</h2>
           </div>
           <button id="change-repository" class="text-button" type="button">更换</button>
@@ -49,8 +49,8 @@
         <p id="repository-detail" class="supporting"></p>
 
         <fieldset class="choice-group">
-          <legend>选择 workflow</legend>
-          <p class="supporting">至少选择一个启用中的 workflow。</p>
+          <legend>选择工作流</legend>
+          <p class="supporting">选择需要关注的构建流程。</p>
           <div id="workflow-list" class="workflow-list"></div>
         </fieldset>
 
@@ -81,83 +81,95 @@
     </section>
 
     <section id="watch-screen" aria-labelledby="watch-title" hidden>
-      <div class="surface sync-surface" aria-label="GitHub 同步状态">
-        <div class="sync-row">
-          <strong id="poll-countdown" role="timer" aria-live="off">等待首次同步</strong>
-          <button id="refresh-now" class="text-button" type="button">立即同步</button>
-        </div>
-        <p id="poll-caption" class="supporting">尚未同步</p>
-      </div>
-      <div class="hero" id="hero-card" data-tone="neutral">
+      <article class="hero" id="hero-card" data-tone="neutral">
         <div class="hero-topline">
-          <div>
-            <p class="eyebrow">ESTIMATED PROGRESS</p>
+          <div class="hero-identity">
+            <p id="run-repository" class="repo-label"></p>
             <h2 id="watch-title">等待构建</h2>
           </div>
-          <span id="hero-state" class="status-chip" data-state="active">守望中</span>
+          <span id="hero-state" class="status-chip">等待构建</span>
         </div>
-        <div class="progress-layout">
-          <div id="progress-ring" class="progress-ring" role="progressbar" aria-label="估算进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-            <div class="progress-core">
-              <strong id="progress-value">--</strong>
-              <span>估算进度</span>
-            </div>
+        <p id="run-workflow" class="workflow-label"></p>
+        <div class="progress-heading">
+          <strong id="progress-value">--</strong>
+          <div class="progress-caption">
+            <span id="progress-caption">预估进度</span>
+            <span id="step-count"></span>
           </div>
-          <div class="run-summary">
-            <p id="run-repository" class="repo-label"></p>
-            <h3 id="run-workflow">正在等待新的 workflow run</h3>
-            <p id="current-step" class="current-step">后台守望已启动</p>
-            <div class="run-meta">
-              <span id="run-branch">--</span>
-              <span id="run-sha">--</span>
-            </div>
-          </div>
+        </div>
+        <div id="progress-ring" class="progress-track" role="progressbar" aria-label="预估构建进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="progress-fill"></span>
+        </div>
+        <div class="stage-row">
+          <span id="stage-dot" class="state-dot" data-state="idle" aria-hidden="true"></span>
+          <p id="current-step" class="current-step">有新构建时会自动跟进</p>
         </div>
         <div class="time-grid">
           <div><span>已用时间</span><strong id="elapsed-time">--</strong></div>
-          <div><span>预计剩余</span><strong id="remaining-time">等待样本</strong></div>
+          <div><span id="remaining-label">预计剩余</span><strong id="remaining-time">待估算</strong></div>
         </div>
-        <p id="sample-caption" class="sample-caption">暂无可用历史样本，当前按等权步骤估算。</p>
-      </div>
+      </article>
 
-      <div id="network-banner" class="network-banner" data-kind="neutral" hidden>
+      <div id="network-banner" class="network-banner" role="status" hidden>
         <span class="banner-dot" aria-hidden="true"></span>
         <span id="network-message"></span>
       </div>
 
-      <section class="surface" aria-labelledby="active-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">ACTIVE RUNS</p>
-            <h2 id="active-title">活动构建</h2>
-          </div>
+      <div class="sync-row" aria-label="同步状态">
+        <span id="poll-countdown" role="timer" aria-live="off">等待首次同步</span>
+        <button id="refresh-now" class="text-button" type="button">刷新</button>
+      </div>
+
+      <details id="active-section" class="surface disclosure" hidden>
+        <summary class="disclosure-heading">
+          <span>其他构建</span>
           <span id="active-count" class="count-label">0 个</span>
-        </div>
-        <div id="active-runs" class="stack-list"></div>
-      </section>
+          <span class="chevron" aria-hidden="true"></span>
+        </summary>
+        <div id="active-runs" class="stack-list disclosure-body"></div>
+      </details>
 
-      <section class="surface" aria-labelledby="jobs-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">JOBS &amp; STEPS</p>
-            <h2 id="jobs-title">当前执行详情</h2>
-          </div>
+      <details id="build-details" class="surface disclosure">
+        <summary class="disclosure-heading">
+          <span id="jobs-title">构建详情</span>
+          <span id="jobs-summary" class="count-label">暂无步骤</span>
+          <span class="chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="disclosure-body">
+          <label class="toggle-row" for="raw-names">
+            <span>显示原始名称</span>
+            <input id="raw-names" class="switch" type="checkbox">
+          </label>
+          <div id="job-list" class="job-list"></div>
+          <details id="technical-details" class="technical-details">
+            <summary>运行信息与估算说明<span class="chevron" aria-hidden="true"></span></summary>
+            <dl class="metadata">
+              <div><dt>仓库</dt><dd id="meta-repository"></dd></div>
+              <div><dt>工作流</dt><dd id="meta-workflow"></dd></div>
+              <div><dt>分支</dt><dd id="run-branch"></dd></div>
+              <div><dt>提交</dt><dd id="run-sha"></dd></div>
+              <div><dt>运行编号</dt><dd id="meta-run"></dd></div>
+            </dl>
+            <p id="sample-caption" class="supporting"></p>
+            <p id="poll-caption" class="supporting"></p>
+          </details>
         </div>
-        <div id="job-list" class="job-list"></div>
-      </section>
+      </details>
 
-      <section class="surface" aria-labelledby="recent-title">
+      <section class="surface history-surface" aria-labelledby="recent-title">
         <div class="section-heading">
-          <div>
-            <p class="eyebrow">RECENT 10</p>
-            <h2 id="recent-title">最近运行</h2>
-          </div>
+          <h2 id="recent-title">最近完成</h2>
+          <button id="toggle-history" class="text-button" type="button" aria-expanded="false" aria-controls="recent-runs" hidden>查看全部</button>
         </div>
         <div id="recent-runs" class="recent-list"></div>
       </section>
 
       <div class="action-bar">
-        <button id="stop-watching" class="danger-button" type="button">停止守望</button>
+        <div class="action-buttons">
+          <button id="open-github" class="secondary-button" type="button">在 GitHub 查看</button>
+          <button id="stop-watching" class="danger-button" type="button">停止守望</button>
+        </div>
+        <p class="footer-caption">仅停止监控，不会取消 GitHub 构建</p>
       </div>
     </section>
   </main>
