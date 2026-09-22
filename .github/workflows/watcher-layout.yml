@@ -1,0 +1,45 @@
+name: Watcher Layout
+run-name: Watcher layout · ${{ github.ref_name }}
+
+on:
+  push:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/watcher-layout.yml"
+  pull_request:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - "examples/github-actions-watcher/**"
+      - ".github/workflows/watcher-layout.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watcher-layout-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Install isolated browser test dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/watcher-layout-venv"
+          "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m pip install --disable-pip-version-check playwright==1.58.0
+          "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m playwright install --with-deps --only-shell chromium
+      - name: Verify wrapping, horizontal bounds and details interactions
+        run: '"$RUNNER_TEMP/watcher-layout-venv/bin/python" examples/github-actions-watcher/tests/layout.py'
+      - name: Retain layout evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: watcher-layout-${{ github.sha }}
+          path: build/watcher-layout/
+          if-no-files-found: warn

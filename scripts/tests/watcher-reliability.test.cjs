@@ -182,3 +182,14 @@ test('deleted run does not permanently block discovery or polling other runs', a
     assert.equal(h.state.pollInFlight, false);
   } finally { h.close(); }
 });
+
+
+test('a clock continuation after stop must not send a result notification', async () => {
+  const h = harness();
+  h.state.runs = [run(17, 'completed')];
+  h.state.terminalStates[model.runKey(h.state.runs[0])] = { posted: false, holdUntil: Date.now() + 120_000 };
+  h.close();
+  await h.processTerminalResults();
+  assert.equal(h.posts.length, 0);
+  assert.equal(h.state.terminalStates[model.runKey(h.state.runs[0])].posted, false);
+});

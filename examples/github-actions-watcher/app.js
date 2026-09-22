@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.1";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.2";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -994,8 +994,12 @@
   }
 
   async function processTerminalResults() {
+    // A clock callback may resume after stop while awaiting a live-notification RPC.
+    // Do not begin a result-notification side effect for a stopped generation.
+    if (!state.monitoring) return;
     const ownerGeneration = generation;
     for (const run of watchedRuns()) {
+      if (ownerGeneration !== generation || !state.monitoring) return;
       const key = model.runKey(run);
       const terminal = state.terminalStates[key];
       if (!terminal || terminal.posted || terminalPosts.has(key)) continue;

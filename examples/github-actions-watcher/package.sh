@@ -4,7 +4,9 @@ set -euo pipefail
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${source_dir}/../.." && pwd)"
 output_dir="${repo_root}/build/github-actions-watcher"
-output_path="${output_dir}/github-actions-watcher-v1.1.1.tbx"
+version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "${source_dir}/manifest.json")"
+[[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'Invalid tool version\n' >&2; exit 1; }
+output_path="${output_dir}/github-actions-watcher-v${version}.tbx"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-github-actions-watcher.XXXXXX")"
 entries=(manifest.json index.html style.css github-model.js reliability.js app.js icon.png)
 trap 'rm -rf -- "${stage_dir}"' EXIT

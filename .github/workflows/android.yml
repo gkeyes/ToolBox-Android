@@ -35,6 +35,10 @@ on:
       - "scripts/tests/test_release_startup.py"
   workflow_dispatch:
     inputs:
+      run_android_ui_tests:
+        description: "Explicitly run Android emulator behavior and signed-startup checks"
+        type: boolean
+        default: false
       validation_scope:
         description: "Checks to run: full suite or catalog/icon/root-state/network performance regressions"
         type: choice
@@ -62,26 +66,25 @@ jobs:
       verification_run: ${{ steps.baseline.outputs.source_run }}
       verification_commit: ${{ steps.baseline.outputs.base_commit }}
       verification_checks: ${{ steps.android_ui.outputs.enabled == 'false' && 'build_and_unit_only' || steps.baseline.outputs.checks }}
+      android_ui_enabled: ${{ steps.android_ui.outputs.enabled }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
-      # User-requested waiver for this UI-polish branch only. A launcher ANR in
-      # run 35678543276 stole focus; do not represent skipped UI tests as passed.
-      - name: Select branch Android UI test policy
+      - name: Select explicit Android UI test policy
         id: android_ui
         env:
-          SKIP_ANDROID_UI: ${{ (github.event_name == 'pull_request' && github.event.number == 22 && github.head_ref == 'codex/ui-polish-emil-20260922' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/ui-polish-emil-20260922') }}
+          RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
         run: |
-          if [ "$SKIP_ANDROID_UI" = true ]; then
-            echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            printf '%s\n' '## Android UI tests intentionally disabled' \
-              'User-requested waiver for the UI-polish branch after the emulator launcher ANR in run 35678543276.' \
-              'APKs and host unit checks still run. Android UI tests are NOT RUN, not passed; this run cannot be reused as full host-verification evidence.' \
-              'Default-branch checks and release signing are unchanged.' >> "$GITHUB_STEP_SUMMARY"
-          else
+          if [ "$RUN_ANDROID_UI" = true ]; then
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            printf '%s\n' '## Android emulator checks: NOT RUN' \
+              'User-requested default: APK compilation, JVM, JS and contract checks only.' \
+              'Neither Android behavior nor signed-startup checks ran; no full-device validation is claimed.' \
+              'Manual workflow runs can explicitly enable run_android_ui_tests.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Select current or unchanged host verification evidence
         id: baseline
@@ -91,9 +94,15 @@ jobs:
           VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: python3 scripts/ci/reuse-host-verification.py
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Verify watcher polling and stopped-session regressions
+        run: node --test scripts/tests/watcher-reliability.test.cjs
       - name: Verify release evidence and baseline reuse guards
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
@@ -253,11 +262,13 @@ jobs:
             unzip -p "$apk" "assets/$example.tbx" | cmp - "build/bundled-examples/$example.tbx"
           done
       - name: Enable accelerated release startup emulator
+        if: ${{ needs.verify.outputs.android_ui_enabled == 'true' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Cold-start the signed release and verify its initial home
+        if: ${{ needs.verify.outputs.android_ui_enabled == 'true' }}
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -270,6 +281,7 @@ jobs:
       - name: Verify release certificate identity and optimization then assemble delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          ALLOW_UNTESTED_STARTUP: ${{ needs.verify.outputs.android_ui_enabled == 'false' && 'true' || 'false' }}
           HOST_VERIFICATION_SCOPE: ${{ needs.verify.outputs.verification_scope }}
           HOST_VERIFICATION_RUN: ${{ needs.verify.outputs.verification_run }}
           HOST_VERIFICATION_COMMIT: ${{ needs.verify.outputs.verification_commit }}

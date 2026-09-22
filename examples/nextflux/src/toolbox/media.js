@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SERVER_URL } from "./network.js";
 import { createImageCache } from "./imageCache.js";
 import { createMediaTransport } from "./mediaTransport.js";
+import { imageDimensions } from "./imageDimensions.js";
 
 const RASTER_MIME = /^image\//i;
 const transport = createMediaTransport();
@@ -80,6 +81,7 @@ const activeMedia = new Set();
 let mediaEpoch = 0;
 
 export function clearMediaCache() {
+  imageDimensions.clear();
   images.clear();
   mediaEpoch += 1;
   for (const media of activeMedia) media.release();
