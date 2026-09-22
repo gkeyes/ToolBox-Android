@@ -116,7 +116,7 @@ jobs:
           "$tools/apksigner" sign --ks "$signing_dir/toolbox.p12" \
             --ks-key-alias "$TOOLBOX_SIGNING_KEY_ALIAS" \
             --ks-pass env:TOOLBOX_SIGNING_STORE_PASSWORD --key-pass env:TOOLBOX_SIGNING_KEY_PASSWORD \
-            --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+            --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false \
             --v4-signing-enabled false --out delivery/toolbox-v0.8.5-ui-polish-signed.apk input/aligned.apk
       - name: Verify actual APK certificates, package, version and unchanged payload
         shell: bash
@@ -126,6 +126,7 @@ jobs:
           apk=delivery/toolbox-v0.8.5-ui-polish-signed.apk
           "$tools/apksigner" verify --verbose --print-certs "$apk" > delivery/SIGNATURE.txt
           "$tools/apksigner" verify --verbose --print-certs input/reference.apk > delivery/REFERENCE_SIGNATURE.txt
+          cat delivery/SIGNATURE.txt delivery/REFERENCE_SIGNATURE.txt
           "$tools/zipalign" -c -P 16 4 "$apk"
           "$tools/aapt" dump badging "$apk" > delivery/BADGING.txt
           "$tools/aapt" dump badging input/reference.apk > input/reference-badging.txt
@@ -133,9 +134,12 @@ jobs:
           import hashlib, json, os, pathlib, re, zipfile
           d = pathlib.Path('delivery')
           def cert(path):
-              values = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$', path.read_text(), re.M)
-              assert len(values) == 1, 'Expected exactly one APK signer'
-              return values[0].lower()
+              text = path.read_text()
+              assert re.search(r'^Number of signers:\s*1\s*$', text, re.M), 'Expected exactly one APK signer'
+              # Build Tools 37 uses V2 Signer instead of the older Signer #1 label.
+              values = {v.lower() for v in re.findall(r'^.*certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$', text, re.M)}
+              assert len(values) == 1, 'Expected one consistent certificate across signing schemes'
+              return values.pop()
           actual = cert(d / 'SIGNATURE.txt')
           assert actual == cert(d / 'REFERENCE_SIGNATURE.txt') == os.environ['RELEASE_CERT_SHA256']
           def identity(path):
