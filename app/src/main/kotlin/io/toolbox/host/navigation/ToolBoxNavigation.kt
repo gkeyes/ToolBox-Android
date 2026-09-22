@@ -49,6 +49,7 @@ import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.help.DeveloperHelpScreen
 import io.toolbox.host.importflow.ContentResolverPackageInputFactory
 import io.toolbox.host.importflow.ImportViewModel
+import io.toolbox.host.importflow.ImportUiState
 import io.toolbox.host.importflow.SelectedPackageSource
 import io.toolbox.host.importflow.ToolBoxOpenDocument
 import io.toolbox.host.permissions.PermissionCenterScreen
@@ -248,7 +249,7 @@ internal fun ToolBoxNavigation(
                         },
                         organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
                         onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
-                        onCreateGroup = if (selectedDestination == MainDestination.Home) ({ homeCreatingGroup = true }) else null,
+                        onCreateGroup = if (selectedDestination == MainDestination.Home && homeEditing) ({ homeCreatingGroup = true }) else null,
                     ) { padding, layout ->
                         when (currentPrimaryRoute) {
                             HomeRoute, ToolManagerRoute, null -> ToolManagerRouteContent(
@@ -435,7 +436,20 @@ private fun SecondaryRouteContent(
     onPickPackage: () -> Unit,
 ) {
     when (route) {
-        ImportRoute -> ImportScreen(importViewModel, onPickPackage, onBack, onReady)
+        ImportRoute -> {
+            val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
+            val importState by importViewModel.state.collectAsStateWithLifecycle()
+            ImportScreen(
+                viewModel = importViewModel,
+                onPickPackage = onPickPackage,
+                onBack = onBack,
+                onReady = onReady,
+                onOpenTool = { toolId -> catalogViewModel.dispatch(CatalogAction.RequestRuntimeLaunch(toolId)) },
+                installedToolReady = importState.installedToolId?.let { id ->
+                    catalogState.tools.any { it.toolId == id }
+                } == true,
+            )
+        }
         AboutRoute -> AboutScreen(onBack, onReady)
         BackupRestoreRoute -> {
             val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
@@ -547,14 +561,16 @@ private fun ToolManagerRouteContent(
         creatingGroup = creatingGroup,
         onDismissCreateGroup = onDismissCreateGroup,
         state = catalogState,
-        importState = if (importPageVisible) importState.copy(confirmation = null) else importState,
+        // The dedicated import page owns its result and actions. The covered home
+        // must not duplicate the feedback or expire that result after three seconds.
+        importState = if (importPageVisible) ImportUiState() else importState,
         listState = listState,
         contentPadding = contentPadding,
         onAction = catalogViewModel::dispatch,
         onImport = onImport,
         onInstallExamples = importViewModel::installBundledExamples,
         onDismissImport = importViewModel::dismissMessage,
-        onExpireImportSuccess = importViewModel::expireSuccess,
+        onExpireImportSuccess = { if (!importPageVisible) importViewModel.expireSuccess(it) },
         onConfirmImport = importViewModel::confirmVersionReplacement,
         onCancelImport = importViewModel::cancelVersionReplacement,
         onCancelActiveImport = importViewModel::cancelActiveImport,

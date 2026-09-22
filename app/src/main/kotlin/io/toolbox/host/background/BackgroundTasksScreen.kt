@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,8 +35,6 @@ import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
-import io.toolbox.core.ui.component.ToolBoxGroupDivider
-import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -43,6 +42,7 @@ import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
@@ -83,7 +83,8 @@ internal fun BackgroundTasksScreen(
         stoppingSessionId = actionState.stoppingSessionId,
         onBack = onBack,
         resultFor = { task ->
-            val result by operations.observeResult(task.taskId).collectAsStateWithLifecycle(null)
+            val resultFlow = remember(operations, task.taskId) { operations.observeResult(task.taskId) }
+            val result by resultFlow.collectAsStateWithLifecycle(null)
             result
         },
         onStopSession = { actions.stop(it.sessionId) },
@@ -115,11 +116,10 @@ internal fun BackgroundTasksContent(
                 chromePadding,
                 PaddingValues(ToolBoxThemeTokens.spacing.two),
             ),
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
         ) {
             message?.let { text ->
                 item("message") {
-                    SurfaceCard {
+                    SurfaceCard(Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one)) {
                         AppText(text, color = ToolBoxThemeTokens.colors.textSecondary,
                             modifier = Modifier.semantics {
                                 if (cancellingTaskId == null && stoppingSessionId == null) liveRegion = LiveRegionMode.Polite
@@ -144,33 +144,41 @@ internal fun BackgroundTasksContent(
                 }
             } else {
                 if (page.runtimeSessions.isNotEmpty()) {
-                    item("runtime-title") { SectionHeader("持续运行 · ${page.runtimeSessions.size}") }
-                }
-                if (page.runtimeSessions.isNotEmpty()) item("runtime-sessions") {
-                    ToolBoxGroupedSurface {
-                        page.runtimeSessions.forEachIndexed { index, session ->
+                    item("runtime-title") {
+                        Column(Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one)) {
+                            SectionHeader("持续运行 · ${page.runtimeSessions.size}")
+                        }
+                    }
+                    itemsIndexed(
+                        items = page.runtimeSessions,
+                        key = { _, session -> "session:${session.sessionId}" },
+                        contentType = { _, _ -> "runtime-session" },
+                    ) { index, session ->
+                        CatalogLazyGroupItem(index = index, count = page.runtimeSessions.size) {
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
                                 canStop = stoppingSessionId == null,
                                 onStop = { onStopSession(session) },
                             )
-                            if (index != page.runtimeSessions.lastIndex) {
-                                ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
-                            }
                         }
                     }
                 }
                 if (page.tasks.isNotEmpty()) {
                     item("tasks-title") {
-                        Column(Modifier.padding(top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.one else 0.dp)) {
+                        Column(Modifier.padding(
+                            top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.two else 0.dp,
+                            bottom = ToolBoxThemeTokens.spacing.one,
+                        )) {
                             SectionHeader("已登记任务 · ${page.tasks.size}")
                         }
                     }
-                }
-                if (page.tasks.isNotEmpty()) item("tasks") {
-                    ToolBoxGroupedSurface {
-                        page.tasks.forEachIndexed { index, task ->
+                    itemsIndexed(
+                        items = page.tasks,
+                        key = { _, task -> "task:${task.taskId}" },
+                        contentType = { _, _ -> "background-task" },
+                    ) { index, task ->
+                        CatalogLazyGroupItem(index = index, count = page.tasks.size) {
                             BackgroundTaskCard(
                                 task = task,
                                 result = resultFor(task),
@@ -178,7 +186,6 @@ internal fun BackgroundTasksContent(
                                 canCancel = cancellingTaskId == null,
                                 onCancel = { onCancelTask(task) },
                             )
-                            if (index != page.tasks.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         }
                     }
                 }

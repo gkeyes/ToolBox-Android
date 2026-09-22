@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.*
@@ -18,16 +19,19 @@ internal fun ImportScreen(
     onPickPackage: () -> Unit,
     onBack: () -> Unit,
     onReady: () -> Unit,
+    onOpenTool: ((String) -> Unit)? = null,
+    installedToolReady: Boolean = true,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { onReady() }
     DetailScreen(title = "导入小工具", onBack = onBack) { chromePadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                .fillMaxSize().align(Alignment.TopCenter),
             contentPadding = mergePadding(chromePadding, PaddingValues(16.dp)),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
+            item("select-package") {
                 ToolBoxCard(modifier = Modifier.fillMaxWidth(), onClick = if (state.working || state.confirmation != null) null else onPickPackage) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -43,9 +47,14 @@ internal fun ImportScreen(
                 }
             }
             if (state.working || state.message != null) {
-                item {
+                item("import-result") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader("导入结果")
+                        SectionHeader(when {
+                            state.working -> "正在导入"
+                            state.succeeded -> "导入完成"
+                            state.outcome == ImportOutcome.Cancelled -> "已取消导入"
+                            else -> "导入失败"
+                        })
                         FeedbackSurface(
                             message = if (state.working) state.progressMessage else state.message.orEmpty(),
                             tone = state.feedbackTone,
@@ -56,8 +65,25 @@ internal fun ImportScreen(
                         )
                     }
                 }
-                if (!state.working) item {
-                    ToolBoxTextButton(if (state.succeeded) "查看工具" else "重新选择文件", if (state.succeeded) onBack else onPickPackage)
+                if (!state.working && state.confirmation == null) item("result-actions") {
+                    val installedToolId = state.installedToolId
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.succeeded && installedToolId != null && onOpenTool != null) {
+                            ToolBoxPrimaryButton(
+                                label = if (installedToolReady) "打开工具" else "正在更新目录…",
+                                onClick = { onOpenTool(installedToolId) },
+                                modifier = Modifier.fillMaxWidth().testTag("import_open_tool"),
+                                enabled = installedToolReady,
+                            )
+                            ToolBoxTextButton("继续导入", onPickPackage, Modifier.fillMaxWidth(), outlined = false)
+                        } else {
+                            ToolBoxTextButton(
+                                if (state.succeeded) "完成" else "重新选择文件",
+                                if (state.succeeded) onBack else onPickPackage,
+                                Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
         }

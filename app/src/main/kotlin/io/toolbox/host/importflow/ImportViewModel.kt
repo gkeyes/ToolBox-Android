@@ -29,6 +29,7 @@ internal data class ImportUiState(
     val confirmation: HostImportConfirmation? = null,
     val importPhase: PackageImportPhase? = null,
     val feedbackId: Long = 0,
+    val installedToolId: String? = null,
 ) {
     val succeeded: Boolean get() = outcome == ImportOutcome.Success
     val progressMessage: String
@@ -149,6 +150,7 @@ internal class ImportViewModel(
         is HostImportResult.Installed -> ImportUiState(
             message = "$toolName 已安装",
             outcome = ImportOutcome.Success,
+            installedToolId = toolId,
         )
         is HostImportResult.ConfirmationRequired -> ImportUiState(confirmation = confirmation)
         is HostImportResult.Failed -> ImportUiState(message = message)
