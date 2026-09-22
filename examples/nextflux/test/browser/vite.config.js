@@ -7,6 +7,19 @@ import tailwindcss from "@tailwindcss/vite";
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const app = path.resolve(directory, "../..");
 const fixture = path.join(directory, "fixtures");
+const sourceRoot = path.join(app, "src");
+const controlComponents = [
+  "components/ArticleView/components/ActionButtons.jsx",
+  "components/ArticleView/components/AISummary.jsx",
+  "components/Settings/Settings.jsx",
+].map((name) => path.join(sourceRoot, name));
+const controlBoundaries = new Set([
+  "toolbox/actions.js", "handlers/articleHandlers.js",
+  "stores/articlesStore", "stores/articlesStore.js",
+  "stores/basicInfoStore.js", "stores/settingsStore.js",
+  "stores/themeStore.js", "stores/modalStore.js",
+  "api/miniflux", "api/miniflux.js", "api/openai.js",
+].map((name) => path.join(sourceRoot, name)));
 
 export default defineConfig({
   root: fixture,
@@ -15,29 +28,22 @@ export default defineConfig({
       name: "reading-test-boundaries",
       enforce: "pre",
       resolveId(source, importer) {
-        // Mount real reader/close components. Only account, transport and
-        // settings-body dependencies are substituted for the controls fixture.
+        // Vite's alias plugin may resolve @ before this hook. Recognize both
+        // forms, and scope mocks to the real controls rather than all imports.
         const file = importer?.split("?")[0];
-        const controls = [
-          "src/components/ArticleView/components/ActionButtons.jsx",
-          "src/components/ArticleView/components/AISummary.jsx",
-          "src/components/Settings/Settings.jsx",
-        ].map((name) => path.join(app, name));
-        if (controls.includes(file)) {
-          if (/^@\/components\/Settings\/(General|Appearance|Readability|AI|About|Shortcuts)\.jsx$/.test(source)) {
+        if (controlComponents.includes(file)) {
+          const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
+          if (path.dirname(resolved) === path.join(sourceRoot, "components/Settings") &&
+              /^(General|Appearance|Readability|AI|About|Shortcuts)\.jsx$/.test(path.basename(resolved))) {
             return path.join(fixture, "controls-settings-panel.jsx");
           }
-          if ([
-            "@/toolbox/actions.js", "@/handlers/articleHandlers.js",
-            "@/stores/articlesStore", "@/stores/articlesStore.js",
-            "@/stores/basicInfoStore.js", "@/stores/settingsStore.js",
-            "@/stores/themeStore.js", "@/stores/modalStore.js",
-            "@/api/miniflux", "@/api/openai.js",
-          ].includes(source)) return path.join(fixture, "controls-state.js");
+          if (controlBoundaries.has(resolved) || resolved === path.join(fixture, "stores.js")) {
+            return path.join(fixture, "controls-state.js");
+          }
         }
         // Keep real media leases, source validation, cancellation and cleanup.
         // Only the native transport and server/account boundary are substituted.
-        if (importer?.split("?")[0] === path.join(app, "src/toolbox/media.js")) {
+        if (file === path.join(sourceRoot, "toolbox/media.js")) {
           if (source === "./mediaTransport.js") return path.join(fixture, "media-transport.js");
           if (source === "./network.js") return path.join(fixture, "network.js");
         }
@@ -50,7 +56,7 @@ export default defineConfig({
     alias: [
       { find: "@/stores/articlesStore.js", replacement: path.join(fixture, "stores.js") },
       { find: "@/stores/modalStore.js", replacement: path.join(fixture, "stores.js") },
-      { find: "@", replacement: path.join(app, "src") },
+      { find: "@", replacement: sourceRoot },
     ],
   },
   // Tailwind's Vite plugin processes the production CSS; no second PostCSS pass.
