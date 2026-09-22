@@ -99,6 +99,7 @@ FIXTURE = r"""(longNames) => {
     warning: null, warningMessage: ''
   });
   document.getElementById('raw-names').checked = false;
+  document.getElementById('toast').hidden = true;
   renderAll();
   return names;
 }"""
@@ -257,7 +258,7 @@ def main():
                 # Readable product evidence, still explicitly fixture-only data.
                 page.evaluate(FIXTURE, False)
                 page.evaluate('window.scrollTo(0, 0)')
-                page.screenshot(path=str(OUTPUT / f'{name}-compact.png'))
+                page.screenshot(path=str(OUTPUT / f'{name}-compact.png'), full_page=True)
                 result['overviewHeight'] = page.evaluate('document.documentElement.scrollHeight')
                 if width == 393 and font_percent == 100:
                     assert result['overviewHeight'] < 1100, result
