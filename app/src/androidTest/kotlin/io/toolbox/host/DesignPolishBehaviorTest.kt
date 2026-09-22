@@ -139,18 +139,50 @@ class DesignPolishBehaviorTest(
     @Test
     fun disclosureCanBeRetargetedBeforeItsAnimationFinishes() {
         val expanded = mutableStateOf(false)
+        var clicks = 0
         render {
-            ToolBoxDisclosureRow("高级设置", expanded.value, { expanded.value = !expanded.value }, Modifier.testTag("disclosure"))
+            ToolBoxDisclosureRow(
+                title = "高级设置",
+                expanded = expanded.value,
+                onClick = {
+                    clicks++
+                    expanded.value = !expanded.value
+                },
+                modifier = Modifier.testTag("disclosure"),
+            )
         }
-        compose.mainClock.autoAdvance = false
+        // activity.setContent schedules composition; settle it before freezing the clock.
+        compose.waitForIdle()
         val row = compose.onNodeWithTag("disclosure")
-        row.performClick().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
-        compose.mainClock.advanceTimeBy(32)
-        row.performClick().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已折叠"))
-        compose.mainClock.advanceTimeBy(32)
-        row.performClick().assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
-        compose.mainClock.advanceTimeBy(200)
-        compose.mainClock.autoAdvance = true
+        row.assertIsDisplayed().assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已折叠"))
+
+        val previousAutoAdvance = compose.mainClock.autoAdvance
+        compose.mainClock.autoAdvance = false
+        try {
+            row.performClick()
+            // A paused clock also pauses recomposition, not just the arrow animation.
+            compose.mainClock.advanceTimeByFrame()
+            row.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
+            compose.mainClock.advanceTimeBy(32)
+
+            row.performClick()
+            compose.mainClock.advanceTimeByFrame()
+            row.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已折叠"))
+            compose.mainClock.advanceTimeBy(32)
+
+            row.performClick()
+            compose.mainClock.advanceTimeByFrame()
+            row.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
+            compose.mainClock.advanceTimeBy(200)
+            row.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "已展开"))
+        } finally {
+            compose.mainClock.autoAdvance = previousAutoAdvance
+        }
+        compose.runOnIdle {
+            assertEquals(3, clicks)
+            assertTrue(expanded.value)
+        }
     }
 
     @Test
