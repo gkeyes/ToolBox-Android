@@ -1,0 +1,32 @@
+name: Background reliability
+
+on:
+  push:
+    branches: ["codex/fix-watcher-background-20260922"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: background-reliability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Export exact source for code review (not a build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: |
+          git archive --format=tar.gz --output="$RUNNER_TEMP/toolbox-background-source.tar.gz" HEAD
+          printf '%s\n' 'Source audit only. No APK build, tests or signing have run.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: background-source-${{ github.sha }}
+          path: ${{ runner.temp }}/toolbox-background-source.tar.gz
+          retention-days: 3
+          if-no-files-found: error
