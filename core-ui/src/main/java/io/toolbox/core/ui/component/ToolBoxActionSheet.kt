@@ -101,11 +101,13 @@ fun ToolBoxActionSheet(
                         }
                         if (released && (dragOffset >= dismissDistance || tracker.calculateVelocity().y >= dismissVelocity)) {
                             dismiss()
-                        } else {
-                            settleJob = scope.launch {
-                                settle.snapTo(dragOffset)
-                                settle.animateTo(0f) { dragOffset = value }
-                            }
+                        }
+                        // A save in progress or an unsaved-draft guard can keep this
+                        // sheet open. Restore its position even when dismissal was requested.
+                        // Actual dismissal disposes this scope and cancels the animation.
+                        settleJob = scope.launch {
+                            settle.snapTo(dragOffset)
+                            settle.animateTo(0f) { dragOffset = value }
                         }
                     } catch (cancelled: CancellationException) {
                         // Back can replace this header while the same sheet stays open.
