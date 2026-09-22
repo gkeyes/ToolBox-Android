@@ -1,4 +1,5 @@
 import "./index.css";
+import "./compact-controls.css";
 import { initializePreferences } from "./toolbox/preferences.js";
 import { installLinkHandling } from "./toolbox/actions.js";
 

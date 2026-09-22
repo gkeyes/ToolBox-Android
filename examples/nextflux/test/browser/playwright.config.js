@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "reading.spec.js",
+  testMatch: ["reading.spec.js", "controls.spec.js"],
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),

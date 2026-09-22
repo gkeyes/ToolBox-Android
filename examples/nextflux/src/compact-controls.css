@@ -1,0 +1,23 @@
+/* Shared close-button paint is smaller than its existing 48px hit rectangle.
+   No transforms or pseudo hit areas: modal positioning and disabled/pressed
+   behavior remain owned by HeroUI, and adjacent targets cannot overlap. */
+.nextflux-close-button {
+  padding: 8px;
+  border-radius: 50%;
+  background-clip: content-box;
+  box-shadow: none;
+}
+.nextflux-close-button:is(:focus-visible, [data-focus-visible="true"]) {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: -2px;
+}
+
+/* This is the reader's toolbar, not the article typography or host safe area.
+   Its 48px controls already provide vertical space; remove the extra 16px.
+   Zero horizontal gaps keep six separate 48px targets on a 320px display. */
+.action-buttons { padding-block: 0; }
+.action-buttons > div { align-items: center; gap: 0; }
+.action-buttons > div > div:last-child { gap: 0; }
+@media (display-mode: standalone) {
+  .action-buttons { padding-block-start: env(safe-area-inset-top, 0px); }
+}
