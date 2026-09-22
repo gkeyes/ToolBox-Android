@@ -493,6 +493,8 @@ private fun SecondaryRouteContent(
             onBack = onBack,
             onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
             onReady = onReady,
+            packages = dependencies.packageOperations,
+            grants = dependencies.repositories.grants,
         )
 
         AppearanceRoute -> AppearanceScreen(

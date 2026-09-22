@@ -26,7 +26,6 @@ import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxSettingRow
-import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
@@ -92,16 +91,12 @@ internal fun SettingsContent(
             item("background-error") { BackgroundSettingsFeedback(state, onRetryBackground) }
             item("after-background-error") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
-        item("appearance-title") { SectionHeader("外观") }
-        item("before-appearance") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("appearance") {
             ToolBoxGroupedSurface {
-                ToolBoxValueRow("界面样式", if (state.settings.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) "Miuix" else "Liquid Glass", icon = ToolBoxIconKey.Palette)
-                ToolBoxGroupDivider()
                 ToolBoxSettingRow(
-                    title = "外观模式",
+                    title = "外观",
                     modifier = Modifier.testTag(HostTestTags.SettingsAppearance),
-                    summary = state.settings.theme.baseLabel,
+                    summary = "${state.settings.themeStyle.displayLabel} · ${state.settings.theme.baseLabel}",
                     icon = ToolBoxIconKey.Palette,
                     onClick = onAppearance,
                     enabled = state.loaded,
@@ -125,7 +120,7 @@ internal fun SettingsContent(
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow(
                     title = "工具权限",
-                    summary = "按工具管理已声明的能力",
+                    summary = "查看授权状态，按工具调整",
                     icon = ToolBoxIconKey.Shield,
                     onClick = onToolPermissions,
                     enabled = state.loaded,
@@ -134,7 +129,7 @@ internal fun SettingsContent(
         }
         item("backup-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
         item("backup") { ToolBoxGroupedSurface {
-            ToolBoxSettingRow("备份与恢复", summary = "宿主设置、工具包与应用数据", icon = ToolBoxIconKey.Folder,
+            ToolBoxSettingRow("备份与恢复", summary = "导出本地备份，或从文件恢复", icon = ToolBoxIconKey.Folder,
                 onClick = onBackupRestore, enabled = state.loaded, modifier = Modifier.testTag("settings_backup_restore"))
         } }
         item("support-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
@@ -143,7 +138,7 @@ internal fun SettingsContent(
         item("support") {
             ToolBoxGroupedSurface {
                 ToolBoxSettingRow(
-                    title = "Developer Help",
+                    title = "开发者帮助",
                     summary = "离线手册与四个范例",
                     icon = ToolBoxIconKey.Code,
                     onClick = onDeveloperHelp,
@@ -151,7 +146,7 @@ internal fun SettingsContent(
                 )
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow(
-                    title = "关于 ToolBox", summary = "${BuildConfig.VERSION_NAME} · OpenDesign",
+                    title = "关于 ToolBox", summary = "版本 ${BuildConfig.VERSION_NAME}",
                     icon = ToolBoxIconKey.Tools, onClick = onAbout,
                 )
             }
@@ -187,7 +182,13 @@ internal val SettingsUiState.backgroundProgressSummary: String?
         null -> null
     }
 
-private val io.toolbox.core.data.ThemeMode.baseLabel: String
+internal val io.toolbox.core.data.ThemeStyle.displayLabel: String
+    get() = when (this) {
+        io.toolbox.core.data.ThemeStyle.MIUIX -> "Miuix"
+        io.toolbox.core.data.ThemeStyle.LIQUID_GLASS -> "Liquid Glass"
+    }
+
+internal val io.toolbox.core.data.ThemeMode.baseLabel: String
     get() = when (this) {
         io.toolbox.core.data.ThemeMode.SYSTEM,
         io.toolbox.core.data.ThemeMode.MONET_SYSTEM,

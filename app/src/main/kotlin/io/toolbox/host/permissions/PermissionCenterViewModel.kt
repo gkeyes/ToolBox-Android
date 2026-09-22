@@ -242,8 +242,8 @@ internal class PermissionCenterViewModel(
         result: Deferred<PermissionMutationResult>,
     ) {
         val operationId = ++nextOperationId
-        feedbackOperationId = operationId
         activeOperations[capability] = operationId
+        feedbackOperationId = operationId
         mutableState.value = mutableState.value.copy(
             busyCapabilities = busyCapabilities(), message = null, showSystemSettings = false,
         )
@@ -326,7 +326,7 @@ internal class PermissionCenterViewModel(
     }
 }
 
-private fun String.defaultEnabled() = this in setOf(
+internal fun String.defaultEnabled() = this in setOf(
     "storage",
     "storage.secure",
     "device.basic",
