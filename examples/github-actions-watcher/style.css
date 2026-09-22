@@ -42,11 +42,12 @@
 html {
   background: var(--canvas);
   -webkit-text-size-adjust: 100%;
+  scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
 body {
   margin: 0;
-  min-width: 280px;
+  min-width: 0;
   min-height: 100vh;
   background: var(--canvas);
   color: var(--text);
@@ -80,8 +81,21 @@ summary:focus-visible {
 
 .app-shell {
   width: min(100%, 820px);
+  min-width: 0;
   margin: 0 auto;
   padding: 18px 16px calc(28px + env(safe-area-inset-bottom));
+  /* API names and pinned action SHAs must wrap, not widen the WebView. */
+  overflow-wrap: anywhere;
+}
+
+#setup-screen,
+#watch-screen,
+.surface,
+.hero,
+.job-list,
+.job-list details {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tool-identity {
@@ -277,6 +291,17 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.section-heading,
+.hero-topline {
+  flex-wrap: wrap;
+}
+
+.section-heading > div,
+.hero-topline > div,
+.run-meta > span {
+  min-width: 0;
 }
 
 .token-row {
@@ -539,6 +564,8 @@ input[type="radio"] {
 
 .run-meta {
   justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-top: 10px;
   color: var(--text-secondary);
   font-family: ui-monospace, "SFMono-Regular", monospace;
@@ -685,6 +712,12 @@ input[type="radio"] {
   display: none;
 }
 
+.job-list summary > strong,
+.step-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .state-dot {
   width: 10px;
   height: 10px;
@@ -710,9 +743,18 @@ input[type="radio"] {
   min-height: 42px;
   grid-template-columns: 14px minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: center;
+  align-items: start;
+  padding-block: 6px;
   color: var(--text-secondary);
   font-size: 0.8rem;
+}
+
+.step-row .state-dot {
+  margin-top: 0.35em;
+}
+
+.step-row > :last-child {
+  white-space: nowrap;
 }
 
 .recent-row {
@@ -740,12 +782,13 @@ input[type="radio"] {
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
 .action-bar button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .footer-caption {
@@ -767,6 +810,8 @@ input[type="radio"] {
 .loading-card {
   display: grid;
   width: min(100%, 300px);
+  min-width: 0;
+  overflow-wrap: anywhere;
   justify-items: center;
   gap: 9px;
   padding: 26px;
@@ -807,6 +852,7 @@ input[type="radio"] {
   box-shadow: 0 12px 38px rgba(0, 0, 0, 0.3);
   font-size: 0.88rem;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 @keyframes spin {
@@ -920,6 +966,10 @@ input[type="radio"] {
   .job-list summary .result-label {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .step-list {
+    margin-left: 0;
   }
 
   .step-row {
