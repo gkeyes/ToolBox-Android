@@ -61,17 +61,33 @@ jobs:
       verification_scope: ${{ steps.baseline.outputs.scope }}
       verification_run: ${{ steps.baseline.outputs.source_run }}
       verification_commit: ${{ steps.baseline.outputs.base_commit }}
-      verification_checks: ${{ steps.baseline.outputs.checks }}
+      verification_checks: ${{ steps.android_ui.outputs.enabled == 'false' && 'build_and_unit_only' || steps.baseline.outputs.checks }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
+      # User-requested waiver for this UI-polish branch only. A launcher ANR in
+      # run 35678543276 stole focus; do not represent skipped UI tests as passed.
+      - name: Select branch Android UI test policy
+        id: android_ui
+        env:
+          SKIP_ANDROID_UI: ${{ (github.event_name == 'pull_request' && github.event.number == 22 && github.head_ref == 'codex/ui-polish-emil-20260922' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/ui-polish-emil-20260922') }}
+        run: |
+          if [ "$SKIP_ANDROID_UI" = true ]; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            printf '%s\n' '## Android UI tests intentionally disabled' \
+              'User-requested waiver for the UI-polish branch after the emulator launcher ANR in run 35678543276.' \
+              'APKs and host unit checks still run. Android UI tests are NOT RUN, not passed; this run cannot be reused as full host-verification evidence.' \
+              'Default-branch checks and release signing are unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Select current or unchanged host verification evidence
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run }}
+          REUSE_VERIFIED_RUN: ${{ steps.android_ui.outputs.enabled == 'true' && inputs.reuse_verified_run || '' }}
           VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: python3 scripts/ci/reuse-host-verification.py
@@ -97,12 +113,15 @@ jobs:
       - name: Verify Wasm binary packaging
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs' }}
+      - name: ${{ steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs') }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         env:
           VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
+          SKIP_ANDROID_UI: ${{ steps.android_ui.outputs.enabled == 'false' }}
         run: |
-          if [ "$VALIDATION_SCOPE" = performance ]; then
+          if [ "$SKIP_ANDROID_UI" = true ]; then
+            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+          elif [ "$VALIDATION_SCOPE" = performance ]; then
             ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
           else
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
@@ -121,13 +140,13 @@ jobs:
             ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
           fi
       - name: Enable accelerated behavior test emulator
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance behavior on Android' || 'Verify catalog, backup, execution identity, dialogs and Wasm on Android' }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
         id: runtime_emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         env:
@@ -161,7 +180,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Retain Android behavior and WebView evidence
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.runtime_emulator.outcome != 'skipped' }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' && steps.runtime_emulator.outcome != 'skipped' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-webview-${{ github.sha }}
