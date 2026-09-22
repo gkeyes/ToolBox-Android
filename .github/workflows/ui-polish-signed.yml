@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      SOURCE_RUN: "35680323971"
-      SOURCE_ARTIFACT: "10674187065"
-      SOURCE_HEAD: "09dd867350d022a1e96c99d6c12a74051ec7635d"
-      SOURCE_BUILD: "8b807ef395057954b73b6e6509eab8ff80786991"
-      SOURCE_ZIP_SHA256: "0be51ecefed54f1a83d501a5cdd73ed4541140f0931f7ed0a7266597929821a6"
-      SOURCE_APK_SHA256: "5bad9a1b881eb46881069567280419d4165ff0ca8a38bdae145db6b4590634bf"
+      SOURCE_RUN: "35707164552"
+      SOURCE_ARTIFACT: "10684679800"
+      SOURCE_HEAD: "b818122dec51e9b028f049a2fcf40bf6db63cd42"
+      SOURCE_BUILD: "986988fea15ea414bec3a0529004911253679711"
+      SOURCE_ZIP_SHA256: "0467358036ef266f59ef606a53fc50b3b546c336afbb7a87f8a3afc8886f4fd9"
+      SOURCE_APK_SHA256: "734b8705d5f4e3e3c617c713166e67f94f76767de3c793a19caea5f5bc40fe80"
       REFERENCE_APK_SHA256: "193bb200934c5e04138166e071b1161f1500a530236d053e08bce22373092e3a"
       RELEASE_CERT_SHA256: "849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d"
     steps:
@@ -77,7 +77,7 @@ jobs:
           assert metadata['elements'][0]['versionCode'] == 38
           assert metadata['elements'][0]['versionName'] == '0.8.5'
           (p / 'unsigned.apk').write_bytes(apk)
-          print('Pinned successful Release APK: io.toolbox.host 0.8.5 (38). No rebuild or UI tests.')
+          print('Pinned successful stage-two Release APK: io.toolbox.host 0.8.5 (38). No rebuild or UI tests.')
           PY
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -117,13 +117,13 @@ jobs:
             --ks-key-alias "$TOOLBOX_SIGNING_KEY_ALIAS" \
             --ks-pass env:TOOLBOX_SIGNING_STORE_PASSWORD --key-pass env:TOOLBOX_SIGNING_KEY_PASSWORD \
             --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled false \
-            --v4-signing-enabled false --out delivery/toolbox-v0.8.5-ui-polish-signed.apk input/aligned.apk
+            --v4-signing-enabled false --out delivery/toolbox-v0.8.5-ui-stage2-release.apk input/aligned.apk
       - name: Verify actual APK certificates, package, version and unchanged payload
         shell: bash
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"
-          apk=delivery/toolbox-v0.8.5-ui-polish-signed.apk
+          apk=delivery/toolbox-v0.8.5-ui-stage2-release.apk
           "$tools/apksigner" verify --verbose --print-certs "$apk" > delivery/SIGNATURE.txt
           "$tools/apksigner" verify --verbose --print-certs input/reference.apk > delivery/REFERENCE_SIGNATURE.txt
           cat delivery/SIGNATURE.txt delivery/REFERENCE_SIGNATURE.txt
@@ -149,7 +149,7 @@ jobs:
               assert match, 'Missing package identity'
               return match.groups()
           assert identity(d / 'BADGING.txt') == identity(pathlib.Path('input/reference-badging.txt')) == ('io.toolbox.host', '38', '0.8.5')
-          apk = d / 'toolbox-v0.8.5-ui-polish-signed.apk'
+          apk = d / 'toolbox-v0.8.5-ui-stage2-release.apk'
           with zipfile.ZipFile('input/unsigned.apk') as before, zipfile.ZipFile(apk) as after:
               assert before.namelist() == after.namelist(), 'Signing must not add or remove app entries'
               for name in before.namelist():
@@ -164,21 +164,22 @@ jobs:
               'certificate_sha256': actual, 'signed_apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
               'app_payload_unchanged': True, 'certificate_matches_original_release': True,
               'android_ui_tests': 'NOT RUN - user-requested waiver', 'device_installation': 'NOT RUN',
-              'delivery_kind': 'signed UI-polish branch build; not a new official Release',
+              'delivery_kind': 'signed UI-polish branch build including stages 1 and 2; not a new official Release',
           }
           (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
           print(json.dumps(receipt, indent=2))
           PY
-          (cd delivery && sha256sum toolbox-v0.8.5-ui-polish-signed.apk SIGNATURE.txt REFERENCE_SIGNATURE.txt BADGING.txt BUILD_RECEIPT.json > SHA256SUMS.txt)
-          printf '%s\n' '## Original-signature UI-polish APK' \
-            'Signed the exact Release APK from successful run 35680323971; no rebuild.' \
+          (cd delivery && sha256sum toolbox-v0.8.5-ui-stage2-release.apk SIGNATURE.txt REFERENCE_SIGNATURE.txt BADGING.txt BUILD_RECEIPT.json > SHA256SUMS.txt)
+          printf '%s\n' '## Original-signature stage-two UI-polish APK' \
+            'Signed the exact Release APK from successful run 35707164552; no rebuild.' \
+            'Includes stages 1 and 2 plus contextual runtime feedback from source b818122.' \
             'Actual APK certificate equals the published v0.8.5 certificate; package io.toolbox.host, version 0.8.5 (38).' \
             'All APK entry contents are unchanged. UI tests and device installation: NOT RUN.' \
             'No default-branch change, PR merge or public Release publication.' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload APK and signature evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.8.5-ui-polish-original-signature
+          name: toolbox-v0.8.5-ui-stage2-original-signature
           path: delivery/
           if-no-files-found: error
           retention-days: 30
