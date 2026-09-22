@@ -1,0 +1,96 @@
+name: Prepare reviewed consolidation tree
+on:
+  push:
+    branches: ["codex/fix-watcher-background-20260922"]
+    paths: [".github/workflows/apply-consolidation-review.yml"]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: ${{ github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/codex/fix-watcher-background-20260922' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PREVIOUS_HEAD: 4dfce0945e701a3809db2af775f1a52ec2106e8b
+      DEFAULT_HEAD: cf08609012bda1cf3e74109b6402ffe074bca324
+      NEXTFLUX_HEAD: b02196c4fe14840ce99e26dac1a0a2ae31a6cf8c
+      EXPECTED_TREE: 361315ea1dae926f2a30f0d4504870e228bf732e
+      PATCH_SHA256: 1cbaea05eddb0b509d2644f2077c31d08f2d39f3ee528f7c824cc62d9878352a
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apply exact reviewed source and resolve only known conflicts
+        shell: bash
+        env:
+          REVIEW_PATCH_Z64: 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
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$PREVIOUS_HEAD"
+          test "$(git rev-parse refs/remotes/origin/codex/refactor-lightweight-v2)" = "$DEFAULT_HEAD"
+          test "$(git rev-parse refs/remotes/origin/codex/nextflux-reading-1.0.12)" = "$NEXTFLUX_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git merge --no-ff --no-commit "$DEFAULT_HEAD"; then
+            python3 - <<'PY'
+          import subprocess
+          paths = set(subprocess.check_output(['git','diff','--name-only','--diff-filter=U'], text=True).splitlines())
+          expected = {'examples/github-actions-watcher/' + name for name in ('app.js','index.html','manifest.json','package.sh')}
+          assert paths == expected, paths
+          subprocess.run(['git','checkout','3c0795bc7912afb0f30fdcc71d3d54da3e4bfb10','--',*sorted(paths)], check=True)
+          PY
+          fi
+          git commit -m 'Preserve latest default branch history in consolidation'
+          git merge --no-ff --no-commit "$NEXTFLUX_HEAD"
+          git commit -m 'Preserve NextFlux reading fixes in consolidation'
+          python3 - <<'PY'
+          import base64,hashlib,os,pathlib,zlib
+          patch = zlib.decompress(base64.b64decode(os.environ['REVIEW_PATCH_Z64'], validate=True))
+          assert hashlib.sha256(patch).hexdigest() == os.environ['PATCH_SHA256']
+          pathlib.Path(os.environ['RUNNER_TEMP'],'review.patch').write_bytes(patch)
+          PY
+          git apply --index "$RUNNER_TEMP/review.patch"
+          git rm .github/workflows/background-reliability.yml .github/workflows/ui-polish-signed.yml .github/workflows/merge-audit.yml .github/workflows/apply-consolidation-review.yml
+          git diff --cached --check
+          test "$(git write-tree)" = "$EXPECTED_TREE"
+      - name: Store reviewed Git objects without moving any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,json,os,pathlib,subprocess,urllib.request
+          def git(*args): return subprocess.check_output(['git',*args])
+          def api(path, data):
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+path,data=json.dumps(data).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'})
+              with urllib.request.urlopen(req,timeout=60) as response: return json.load(response)
+          final=git('write-tree').decode().strip()
+          assert final==os.environ['EXPECTED_TREE']
+          base=os.environ['GITHUB_SHA']
+          changes=git('diff','--name-status','--no-renames','-z',base,final).decode().rstrip('\0').split('\0')
+          entries=[]
+          for status,path in zip(changes[::2],changes[1::2]):
+              if status=='D': entries.append({'path':path,'mode':'100644','type':'blob','sha':None}); continue
+              raw=git('ls-tree',final,'--',path).decode().split('\t')[0]
+              mode,kind,sha=raw.split()
+              assert kind=='blob'
+              blob=api('/git/blobs',{'encoding':'base64','content':base64.b64encode(git('cat-file','blob',sha)).decode()})
+              assert blob['sha']==sha
+              entries.append({'path':path,'mode':mode,'type':'blob','sha':sha})
+          tree=api('/git/trees',{'base_tree':git('rev-parse',base+'^{tree}').decode().strip(),'tree':entries})
+          assert tree['sha']==final
+          out=pathlib.Path(os.environ['RUNNER_TEMP'],'review-receipt');out.mkdir()
+          receipt={'tree_sha':final,'source_head':base,'default_head':os.environ['DEFAULT_HEAD'],'nextflux_head':os.environ['NEXTFLUX_HEAD'],'changed_files':entries,'branches_modified':False,'builds_or_tests_run':False}
+          (out/'receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+'\n')
+          print('REVIEWED_TREE='+final)
+          print('SOURCE_HEAD='+base)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('Prepared reviewed Git tree '+final+'. No branch was moved. No tests or builds were run.\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-consolidation-tree
+          path: ${{ runner.temp }}/review-receipt/
+          if-no-files-found: error
+          retention-days: 7
