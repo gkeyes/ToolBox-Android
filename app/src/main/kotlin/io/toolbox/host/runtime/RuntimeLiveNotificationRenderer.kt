@@ -34,11 +34,11 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         stopCurrent: PendingIntent,
         toolIcon: Bitmap? = null,
     ): Notification {
-        val live = card.presentation
+        val live = card.presentation.takeIf { card.session.statusText == null }
         val title = live?.request?.title ?: card.session.toolName
         val content = live?.request?.let { request ->
             listOfNotNull(request.primaryText, request.secondaryText?.takeIf(String::isNotBlank)).joinToString(" · ")
-        } ?: "后台环境运行中，可打开工具或停止当前会话"
+        } ?: card.session.statusText ?: "后台环境运行中，可打开工具或停止当前会话"
         // An omitted live body means no expanded prose, not a copy of the status line.
         val body = if (live == null) content else live.request.body?.takeIf(String::isNotBlank)
         val updatedAt = live?.request?.updatedAt ?: live?.receivedAt ?: card.session.startedAt

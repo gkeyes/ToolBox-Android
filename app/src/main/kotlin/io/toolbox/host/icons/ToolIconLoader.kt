@@ -39,9 +39,10 @@ internal class ToolIconLoader(
     // This is an index into the LRU, not another bitmap cache or a reduced identity key.
     private val cachedVersions = mutableMapOf<String, ToolVersion>()
     private val observers = mutableMapOf<String, MutableSet<SendChannel<Unit>>>()
-    private data class Cached(val bitmap: Bitmap?)
+    private data class Cached(val bitmap: Bitmap?, val description: String?)
     private val cache = object : LruCache<ToolVersion, Cached>(4 * 1024 * 1024) {
-        override fun sizeOf(key: ToolVersion, value: Cached): Int = value.bitmap?.allocationByteCount ?: 64 * 1024
+        override fun sizeOf(key: ToolVersion, value: Cached): Int =
+            (value.bitmap?.allocationByteCount ?: 64 * 1024) + (value.description?.length ?: 0) * 2
 
         override fun entryRemoved(evicted: Boolean, key: ToolVersion, oldValue: Cached, newValue: Cached?) {
             synchronized(cacheLock) {
@@ -56,6 +57,13 @@ internal class ToolIconLoader(
         val version = cachedVersions[toolId] ?: return@synchronized null
         if (expectedVersionCode != null && version.versionCode != expectedVersionCode) return@synchronized null
         cache.get(version)?.bitmap
+    }
+
+    /** Shares the icon's full installed identity, bounded cache and invalidation lifecycle. */
+    fun cachedDescription(toolId: String, expectedVersionCode: Int? = null): String? = synchronized(cacheLock) {
+        val version = cachedVersions[toolId] ?: return@synchronized null
+        if (expectedVersionCode != null && version.versionCode != expectedVersionCode) return@synchronized null
+        cache.get(version)?.description
     }
 
     /** The initial signal also covers invalidation between the first cache read and subscription. */
@@ -94,8 +102,13 @@ internal class ToolIconLoader(
                     return@withTool it.bitmap
                 }
                 HostTrace.bestEffortSection("icon.cache.miss") { }
+                var description: String? = null
                 val bitmap = loads.decode {
-                    HostTrace.bestEffortSection("icon.decode") { reader.read(tool)?.let(decode) }
+                    HostTrace.bestEffortSection("icon.decode") {
+                        val presentation = reader.readPresentation(tool)
+                        description = presentation?.description
+                        presentation?.icon?.let(decode)
+                    }
                 }
                 currentCoroutineContext().ensureActive()
                 val currentVersion = HostTrace.bestEffortAsyncSection("icon.catalog.recheck") {
@@ -104,7 +117,7 @@ internal class ToolIconLoader(
                 if (currentVersion != version) return@withTool null
                 synchronized(cacheLock) {
                     cachedVersions[toolId] = version
-                    cache.put(version, Cached(bitmap))
+                    cache.put(version, Cached(bitmap, description))
                 }
                 bitmap
             } catch (cancelled: CancellationException) {

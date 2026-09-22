@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.collectLatest
 
 internal val LocalToolIconLoader = staticCompositionLocalOf<ToolIconLoader?> { null }
 
+internal data class CatalogToolPresentation(val bitmap: Bitmap?, val description: String?)
+
 @Composable
 internal fun CatalogToolGlyph(
     toolId: String,
@@ -22,7 +24,15 @@ internal fun CatalogToolGlyph(
     visual: ToolVisual,
     size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
 ) {
-    val bitmap = rememberCatalogToolBitmap(toolId, versionCode)
+    CatalogToolArtwork(rememberCatalogToolBitmap(toolId, versionCode), visual, size)
+}
+
+@Composable
+internal fun CatalogToolArtwork(
+    bitmap: Bitmap?,
+    visual: ToolVisual,
+    size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
+) {
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
     ToolGlyph(
         icon = visual.icon,
@@ -34,15 +44,22 @@ internal fun CatalogToolGlyph(
 }
 
 @Composable
-internal fun rememberCatalogToolBitmap(toolId: String, versionCode: Int?): Bitmap? {
+internal fun rememberCatalogToolBitmap(toolId: String, versionCode: Int?): Bitmap? =
+    rememberCatalogToolPresentation(toolId, versionCode).bitmap
+
+@Composable
+internal fun rememberCatalogToolPresentation(toolId: String, versionCode: Int?): CatalogToolPresentation {
     val loader = LocalToolIconLoader.current
     return key(toolId, versionCode, loader) {
-        val bitmap by produceState(loader?.cached(toolId, versionCode)) {
+        val presentation by produceState(
+            CatalogToolPresentation(loader?.cached(toolId, versionCode), loader?.cachedDescription(toolId, versionCode)),
+        ) {
             loader?.invalidations(toolId)?.collectLatest {
-                value = loader.cached(toolId, versionCode)
-                value = loader.load(toolId, versionCode)
+                value = CatalogToolPresentation(loader.cached(toolId, versionCode), loader.cachedDescription(toolId, versionCode))
+                val bitmap = loader.load(toolId, versionCode)
+                value = CatalogToolPresentation(bitmap, loader.cachedDescription(toolId, versionCode))
             }
         }
-        bitmap
+        presentation
     }
 }

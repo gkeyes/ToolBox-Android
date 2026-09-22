@@ -53,6 +53,7 @@
       "index.html",
       "style.css",
       "github-model.js",
+      "reliability.js",
       "app.js",
       "icon.png",
       "integrity.json"

@@ -13,6 +13,7 @@ data class InstalledManifest(
     val permissionDeclarations: List<InstalledManifestPermission>,
     val network: InstalledManifestNetwork?,
     val icon: String? = null,
+    val description: String? = null,
 )
 
 data class InstalledManifestPermission(
@@ -80,6 +81,7 @@ object InstalledManifestVerifier {
                     )
                 },
                 icon = parsed.icon,
+                description = parsed.description,
             ),
         )
     }

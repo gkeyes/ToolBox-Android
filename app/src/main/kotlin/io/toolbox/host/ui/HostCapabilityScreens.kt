@@ -2,8 +2,6 @@ package io.toolbox.host.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,11 +12,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.progressSemantics
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -26,30 +28,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxModalDialog
-import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
+
+/** Keep the existing call signature, including positional and trailing-lambda callers. */
+@Composable
+internal fun RuntimeShellScreen(
+    viewModel: RuntimeViewModel,
+    onBack: () -> Unit,
+    onPresentationReady: () -> Unit,
+) = RuntimeShellScreen(viewModel, onBack, onPresentationReady, toolName = null)
 
 @Composable
 internal fun RuntimeShellScreen(
     viewModel: RuntimeViewModel,
     onBack: () -> Unit,
     onPresentationReady: () -> Unit,
+    toolName: String?,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -58,7 +68,7 @@ internal fun RuntimeShellScreen(
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
 
-    RuntimeExitConfirmation(onConfirm = onBack)
+    RuntimeExitConfirmation(onConfirm = onBack, toolName = toolName)
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -70,9 +80,9 @@ internal fun RuntimeShellScreen(
                 .fillMaxSize(),
         ) {
             when (val current = state) {
-                RuntimeUiState.Loading -> RuntimeCenteredState("正在打开工具", "正在准备页面。")
+                RuntimeUiState.Loading -> RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
                 is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
-                is RuntimeUiState.Ready -> {
+                is RuntimeUiState.Ready -> key(current.webView) {
                     AndroidView(
                         factory = { context ->
                             android.widget.FrameLayout(context).also { container ->
@@ -89,7 +99,7 @@ internal fun RuntimeShellScreen(
                         modifier = Modifier.fillMaxSize(),
                         onRelease = { releasedView ->
                             (releasedView as? android.view.ViewGroup)?.removeAllViews()
-                            viewModel.detached()
+                            viewModel.detached(current.webView)
                         },
                     )
                 }
@@ -98,9 +108,12 @@ internal fun RuntimeShellScreen(
     }
 }
 
+@Composable
+internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) = RuntimeExitConfirmation(onConfirm, toolName = null)
+
 /** Confirms host-level Back without detaching or replacing the running WebView. */
 @Composable
-internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) {
+internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?) {
     var visible by rememberSaveable { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
     BackHandler {
@@ -109,50 +122,35 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) {
     if (visible) {
         // Runtime has no Miuix Scaffold popup host. Use a window above the retained WebView.
         ToolBoxModalDialog(onDismissRequest = { visible = false }) {
-            AppText(
-                "返回 ToolBox？",
-                modifier = Modifier.semantics { heading() },
-                textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+            HostConfirmationContent(
+                title = "返回 ToolBox？",
+                summary = runtimeExitSummary(toolName),
+                confirmLabel = "返回 ToolBox",
+                cancelLabel = "继续使用",
+                onCancel = { visible = false },
+                onConfirm = {
+                    if (visible && !leaving) {
+                        visible = false
+                        leaving = true
+                        onConfirm()
+                    }
+                },
             )
-            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
-            AppText(
-                "即将离开当前小工具，返回 ToolBox。请确认需要保留的内容已保存。",
-                color = ToolBoxThemeTokens.colors.textSecondary,
-            )
-            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-            ) {
-                ToolBoxSecondaryButton(
-                    label = "继续使用",
-                    onClick = { visible = false },
-                    modifier = Modifier.weight(1f),
-                )
-                ToolBoxPrimaryButton(
-                    label = "返回 ToolBox",
-                    onClick = {
-                        if (visible && !leaving) {
-                            visible = false
-                            leaving = true
-                            onConfirm()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
         }
     }
 }
 
 @Composable
-internal fun RuntimeShellPreviewContent() {
+internal fun RuntimeShellPreviewContent() = RuntimeShellPreviewContent(toolName = null)
+
+@Composable
+internal fun RuntimeShellPreviewContent(toolName: String?) {
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background),
     ) {
-        RuntimeCenteredState("正在打开工具", "正在准备页面。")
+        RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
     }
 }
 
@@ -164,6 +162,11 @@ private fun RuntimeCenteredState(title: String, detail: String) {
     ) {
         Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally) {
+            // The runtime exposes readiness, not a measurable percentage. Do not invent progress.
+            Box(Modifier.size(24.dp).progressSemantics(), contentAlignment = Alignment.Center) {
+                ToolBoxBusyIndicator()
+            }
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             AppText(
                 title,
                 modifier = Modifier.fillMaxWidth(),
@@ -185,11 +188,12 @@ private fun RuntimeCenteredState(title: String, detail: String) {
 
 @Composable
 private fun RuntimeErrorState(message: String, onRetry: () -> Unit) {
+    val presentation = remember(message) { runtimeErrorPresentation(message) }
     Box(
         Modifier.fillMaxSize().padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
-        HostStatusCard("工具暂时无法打开", message, onRetry)
+        HostStatusCard("工具暂时无法打开", presentation.summary, onRetry, presentation.details)
     }
 }
 
@@ -203,6 +207,7 @@ fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) 
             .padding(ToolBoxThemeTokens.spacing.twoHalf),
         contentAlignment = Alignment.Center,
     ) {
+        // Startup and recovery warnings remain fully visible, never folded as runtime diagnostics.
         HostStatusCard(
             if (loading) "正在打开本机工具目录" else "ToolBox 暂时无法启动",
             message, onRetry.takeUnless { loading },
@@ -211,7 +216,7 @@ fun HostBootstrapScreen(loading: Boolean, message: String, onRetry: () -> Unit) 
 }
 
 @Composable
-private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)?) {
+private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)?, details: String? = null) {
     // Short states stay centered; long errors remain reachable in landscape and at large font sizes.
     Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState())
         .testTag("host_status_scroll")) {
@@ -238,6 +243,22 @@ private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)
                     onClick = onRetry,
                     modifier = Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
                 )
+            }
+            details?.let { fullMessage ->
+                var expanded by rememberSaveable(fullMessage) { mutableStateOf(false) }
+                ToolBoxTextButton(
+                    label = if (expanded) "收起错误详情" else "查看错误详情",
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth().testTag("runtime_error_details").semantics {
+                        stateDescription = if (expanded) "已展开" else "已收起"
+                    },
+                    outlined = false,
+                )
+                if (expanded) SelectionContainer {
+                    AppText(fullMessage, modifier = Modifier.fillMaxWidth(),
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.textSecondary)
+                }
             }
         }
     }

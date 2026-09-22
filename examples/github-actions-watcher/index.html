@@ -12,7 +12,7 @@
     <header class="tool-identity" aria-labelledby="app-title">
       <img class="tool-icon" src="icon.png" alt="">
       <div class="identity-copy">
-        
+
         <div class="title-row">
           <h1 id="app-title">构建守望</h1>
           <span id="runtime-chip" class="status-chip" data-state="idle">未配置</span>
@@ -23,7 +23,7 @@
 
     <section id="setup-screen" aria-labelledby="setup-title">
       <div class="surface intro-surface">
-        
+
         <h2 id="setup-title">连接一个仓库</h2>
         <p class="supporting">粘贴 GitHub 链接，构建有结果时通知你。只读监控，不会更改仓库。</p>
         <label class="field-label" for="repo-input">GitHub 仓库链接</label>
@@ -41,7 +41,7 @@
       <div id="selection-surface" class="surface" hidden>
         <div class="section-heading">
           <div>
-            
+
             <h2 id="repository-name">仓库</h2>
           </div>
           <button id="change-repository" class="text-button" type="button">更换</button>
@@ -184,6 +184,7 @@
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 
   <script src="github-model.js"></script>
+  <script src="reliability.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

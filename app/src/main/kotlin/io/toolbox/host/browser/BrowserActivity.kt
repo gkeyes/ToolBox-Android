@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -146,6 +147,7 @@ class BrowserActivity : ComponentActivity() {
                     validUrl(url)?.let { address = it }
                     title = ""
                     error = null
+                    loadProgress = 0
                     updateNavigation(view)
                 }
 
@@ -231,6 +233,7 @@ class BrowserActivity : ComponentActivity() {
 
     private fun reload() {
         error = null
+        loadProgress = 0
         if (webView == null) createPage() else webView?.reload()
     }
 
@@ -253,6 +256,18 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun unsupported(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+
+    private fun copyAddress() {
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("网址", address))
+        // Android 13+ supplies its own clipboard confirmation.
+        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this, "链接已复制", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openSystemBrowser() {
+        try { startActivity(browserViewIntent(address)) }
+        catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
+        catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
+    }
 
     private fun flushCookies() {
         // Closing the Activity must not cancel its final cookie write.
@@ -330,15 +345,24 @@ class BrowserActivity : ComponentActivity() {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     ToolBoxIconButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish)
-                    Column(Modifier.weight(1f)) {
-                        ToolBoxText(title.ifBlank { "内置浏览器" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val uri = Uri.parse(address)
+                    Column(
+                        Modifier.weight(1f).heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+                            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
+                            .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { fullAddress = true })
+                            .padding(horizontal = 8.dp, vertical = 6.dp).testTag("browser_address"),
+                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                    ) {
+                        ToolBoxText(title.ifBlank { "内置浏览器" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
+                        val uri = remember(address) { Uri.parse(address) }
+                        val unencrypted = uri.scheme == "http"
                         ToolBoxText(
-                            (if (uri.scheme == "http") "未加密 · " else "") + uri.host.orEmpty(),
+                            (if (unencrypted) "未加密 · " else "") + uri.host.orEmpty(),
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = if (unencrypted) colors.danger else colors.textSecondary),
                         )
                     }
-                    ToolBoxTextButton("菜单", { menu = true }, outlined = false)
+                    ToolBoxIconButton(ToolBoxIconKey.More, "浏览器菜单", { menu = true })
                 }
                 Box(Modifier.fillMaxWidth().height(2.dp)) {
                     if (loadProgress in 0..99) Box(Modifier.fillMaxWidth(loadProgress / 100f).fillMaxHeight().background(colors.primary))
@@ -352,28 +376,33 @@ class BrowserActivity : ComponentActivity() {
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             ToolBoxText(message)
+                            Spacer(Modifier.height(12.dp))
                             ToolBoxTextButton("重新加载", ::reload, enabled = !clearing)
+                            ToolBoxTextButton("使用系统浏览器", ::openSystemBrowser, enabled = !clearing, outlined = false)
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    ToolBoxIconButton(ToolBoxIconKey.Back, "网页后退", { webView?.goBack() }, enabled = canBack)
-                    ToolBoxIconButton(ToolBoxIconKey.ChevronRight, "网页前进", { webView?.goForward() }, enabled = canForward)
+                    ToolBoxIconButton(ToolBoxIconKey.Back, "网页后退", { webView?.goBack() }, enabled = canBack && !clearing)
+                    ToolBoxIconButton(ToolBoxIconKey.ChevronRight, "网页前进", { webView?.goForward() }, enabled = canForward && !clearing)
                     ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新加载", ::reload, enabled = !clearing)
                 }
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
         if (menu) ToolBoxModalDialog(onDismissRequest = { menu = false }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                ToolBoxText("浏览器菜单", Modifier.weight(1f).semantics { heading() },
+                    style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
+                ToolBoxIconButton(ToolBoxIconKey.Close, "关闭菜单", { menu = false })
+            }
+            Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth()
                 .semantics { paneTitle = "浏览器菜单" }
                 .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))) {
                 BrowserMenuAction("查看完整地址", ToolBoxIconKey.Note) { menu = false; fullAddress = true }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
-                BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
-                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("网址", address))
-                    menu = false
-                }
+                BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) { copyAddress(); menu = false }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
                 BrowserMenuAction("分享链接", ToolBoxIconKey.Share) {
                     menu = false
@@ -382,12 +411,7 @@ class BrowserActivity : ComponentActivity() {
                     } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
                 }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
-                BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) {
-                    menu = false
-                    try { startActivity(browserViewIntent(address)) }
-                    catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
-                    catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
-                }
+                BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) { menu = false; openSystemBrowser() }
             }
             Spacer(Modifier.height(12.dp))
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
@@ -413,7 +437,9 @@ class BrowserActivity : ComponentActivity() {
                 ToolBoxText(address, modifier = Modifier.fillMaxWidth(),
                     style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary))
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+            ToolBoxTextButton("复制链接", ::copyAddress, Modifier.fillMaxWidth().testTag("browser_copy_address"), outlined = false)
+            Spacer(Modifier.height(8.dp))
             ToolBoxSecondaryButton("关闭", { fullAddress = false }, modifier = Modifier.fillMaxWidth())
         }
         if (clearConfirmation) ToolBoxModalDialog(onDismissRequest = { if (!clearing) clearConfirmation = false }) {

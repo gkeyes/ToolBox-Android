@@ -13,9 +13,9 @@ from playwright.sync_api import expect, sync_playwright
 
 SOURCE = Path(__file__).resolve().parents[1]
 OUTPUT = SOURCE.parents[1] / "build/watcher-layout"
-ENTRY = "  startForegroundClock();\n  boot();\n})();"
+ENTRY = "  startForegroundClock();\n  bootPromise = boot();\n})();"
 TEST_ENTRY = "  window.__watcherLayout = {state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName};\n})();"
-ASSETS = {"index.html", "style.css", "github-model.js", "app.js", "icon.png"}
+ASSETS = {"index.html", "style.css", "github-model.js", "reliability.js", "app.js", "icon.png"}
 CASES = [(width, 100, "light") for width in (280, 320, 360, 393, 420, 480, 699, 700, 820, 1280)]
 CASES += [(320, 150, "light"), (393, 150, "dark"), (700, 150, "dark"), (393, 100, "dark")]
 
@@ -39,7 +39,14 @@ BRIDGE = r"""() => {
       const path = new URL(request.url).pathname;
       let data;
       if (path.endsWith('/actions/runs')) data = {workflow_runs: state.runs};
-      else if (path.endsWith('/jobs')) data = {jobs: state.jobsByRun[model.runKey(state.runs[0])]};
+      else if (/\/actions\/runs\/\d+$/.test(path)) {
+        data = state.runs.find(run => String(run.id) === path.split('/').pop());
+        if (!data) return {status: 404, headers: {}, body: '{}'};
+      }
+      else if (path.endsWith('/jobs')) {
+        const run = state.runs.find(run => String(run.id) === path.split('/').at(-2));
+        data = {jobs: run ? state.jobsByRun[model.runKey(run)] || [] : []};
+      }
       else throw new Error('Unexpected API path: ' + path);
       return {status: 200, headers: {'x-ratelimit-remaining': '4900'}, body: JSON.stringify(data)};
     }}

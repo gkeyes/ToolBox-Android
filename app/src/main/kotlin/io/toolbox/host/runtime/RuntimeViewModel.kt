@@ -1,5 +1,6 @@
 package io.toolbox.host.runtime
 
+import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.StateFlow
 
@@ -17,7 +18,13 @@ internal class RuntimeViewModel(
 
     fun reload() = sessions.reload(toolId)
 
-    fun detached() = sessions.detachForeground(toolId)
+    fun detached(releasedView: WebView) {
+        // Releasing a failed/replaced WebView is not leaving the runtime page.
+        // The route's ViewModel owner remains responsible for final detachment.
+        if ((state.value as? RuntimeUiState.Ready)?.webView === releasedView) {
+            sessions.detachForeground(toolId)
+        }
+    }
 
     override fun onCleared() {
         sessions.detachForeground(toolId)

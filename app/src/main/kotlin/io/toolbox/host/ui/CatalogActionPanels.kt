@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -58,11 +59,26 @@ private fun CatalogToolOptionsSession(
 ) {
     var page by rememberSaveable(tool.toolId) { mutableStateOf("options") }
     var query by rememberSaveable(tool.toolId) { mutableStateOf("") }
-    val newGroupDraft = rememberGroupDraft(null, listOf(tool.toolId))
+    var discardDestination by rememberSaveable(tool.toolId) { mutableStateOf<String?>(null) }
+    val initialMembers = listOf(tool.toolId)
+    val newGroupDraft = rememberGroupDraft(null, initialMembers)
     val editorListState = rememberLazyListState()
     val writes = rememberPanelWrites(state, onAction)
     val session = rememberPanelSession()
     val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
+    val leaveEditor: (String) -> Unit = { destination ->
+        discardDestination = null
+        writes.forget(EDITOR_WRITE, onAction)
+        newGroupDraft.reset(initialMembers)
+        if (destination == "groups") page = "groups" else dismiss()
+    }
+    val requestLeave: (String) -> Unit = { destination ->
+        if (!writes.isWriting(EDITOR_WRITE, state)) {
+            if (page == "create" && newGroupDraft.hasChanges(null, initialMembers)) discardDestination = destination
+            else if (page == "create") leaveEditor(destination)
+            else dismiss()
+        }
+    }
     val currentTool = state.tools.firstOrNull { it.toolId == tool.toolId }
     if (state.isLoaded && currentTool == null) {
         LaunchedEffect(tool.toolId) { dismiss() }
@@ -72,43 +88,50 @@ private fun CatalogToolOptionsSession(
     val favorite = tool.toolId in state.layout.favorites
     ToolBoxActionSheet(
         title = if (page == "options") displayTool.name else if (page == "groups") "加入分组" else "新建分组",
-        onDismissRequest = dismiss,
+        onDismissRequest = { requestLeave("dismiss") },
         onBackRequest = {
-            when (page) {
-                "create" -> {
-                    writes.forget(EDITOR_WRITE, onAction)
-                    newGroupDraft.reset(listOf(tool.toolId))
-                    page = "groups"
-                }
-                "groups" -> page = "options"
+            when {
+                discardDestination != null -> discardDestination = null
+                page == "create" -> requestLeave("groups")
+                page == "groups" -> page = "options"
                 else -> dismiss()
             }
         },
     ) {
-        when (page) {
+        val destination = discardDestination
+        if (destination != null) {
+            DiscardGroupChanges(onDiscard = { leaveEditor(destination) }, onKeepEditing = { discardDestination = null })
+        } else when (page) {
             "create" -> GroupEditorContent(
                 group = null, state = state, creating = true,
                 draft = newGroupDraft, listState = editorListState,
                 writes = writes,
                 onAction = onAction,
-                onCancel = { newGroupDraft.reset(listOf(tool.toolId)); page = "groups" }, onClose = dismiss,
-                onSaved = { newGroupDraft.reset(listOf(tool.toolId)); page = "groups" },
+                onCancel = { requestLeave("groups") }, onClose = { requestLeave("dismiss") },
+                onSaved = { newGroupDraft.reset(initialMembers); page = "groups" },
             )
             "groups" -> Column(Modifier.testTag("catalog_group_picker")) {
                 val groups = state.layout.groups.filter { it.name.contains(query.trim(), ignoreCase = true) }
                 LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item("heading") { PanelHeader("加入分组", dismiss, onBack = { page = "options" }) }
+                    item("context") {
+                        AppText("${displayTool.name} · 已加入 ${state.layout.groups.count { tool.toolId in it.members }} 个分组",
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
+                        AppText("勾选后自动保存", textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
+                    }
                     item("search") {
                         ToolBoxSearchField(query, { query = it }, "搜索分组", Modifier.testTag("catalog_group_search"))
                     }
                     if (groups.isEmpty()) item("empty") {
                         PanelEmpty(if (state.layout.groups.isEmpty()) "还没有分组，创建一个来整理工具。" else "没有匹配的分组")
+                        if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
                     }
                     items(groups, key = { "group:${it.id}" }) { group ->
                         val target = "group:${group.id}"
                         Column {
                             PanelCheckRow(
                                 title = group.name,
+                                summary = "${group.members.size} 个工具",
                                 selected = tool.toolId in group.members,
                                 enabled = !writes.isWriting(target, state),
                                 busy = writes.isWriting(target, state),
@@ -185,27 +208,50 @@ private fun CatalogGroupEditorSession(
     onAction: (CatalogAction) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Dialog content has a separate saveable-state owner. Keep the complete
-    // editing session in the caller's composition, including after restoration.
+    // Keep the draft and write receipts outside the sheet's conditional content.
     val draft = rememberGroupDraft(group)
     val listState = rememberLazyListState()
     val writes = rememberPanelWrites(state, onAction)
     val session = rememberPanelSession()
+    var discarding by rememberSaveable { mutableStateOf(false) }
     val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
+    val requestDismiss = {
+        if (!writes.isWriting(EDITOR_WRITE, state)) {
+            if (draft.hasChanges(group)) discarding = true else dismiss()
+        }
+    }
     if (!creating && group == null) {
         if (state.isLoaded) LaunchedEffect(Unit) { dismiss() }
         return
     }
     ToolBoxActionSheet(
         title = if (creating) "新建分组" else "编辑分组",
-        onDismissRequest = dismiss,
+        onDismissRequest = requestDismiss,
         onBackRequest = {
-            if (draft.confirmingDelete.value) draft.confirmingDelete.value = false else dismiss()
+            when {
+                discarding -> discarding = false
+                draft.confirmingDelete.value -> if (!writes.isWriting(EDITOR_WRITE, state)) draft.confirmingDelete.value = false
+                else -> requestDismiss()
+            }
         },
     ) {
-        GroupEditorContent(group, state, creating, draft, listState, writes,
-            onAction = onAction, onCancel = dismiss, onClose = dismiss, onSaved = dismiss)
+        if (discarding) {
+            DiscardGroupChanges(onDiscard = dismiss, onKeepEditing = { discarding = false })
+        } else {
+            GroupEditorContent(group, state, creating, draft, listState, writes,
+                onAction = onAction, onCancel = requestDismiss, onClose = requestDismiss, onSaved = dismiss)
+        }
     }
+}
+
+@Composable
+private fun DiscardGroupChanges(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
+    HostConfirmationContent(
+        title = "放弃本次修改？",
+        summary = "分组名称和成员尚未保存。继续编辑会保留当前选择。",
+        confirmLabel = "放弃修改", cancelLabel = "继续编辑", destructive = true,
+        onConfirm = onDiscard, onCancel = onKeepEditing,
+    )
 }
 
 @Composable
@@ -222,10 +268,17 @@ internal fun CatalogFavoritesPicker(
     ToolBoxActionSheet("添加收藏", dismiss) {
         LazyColumn(Modifier.fillMaxWidth().testTag("catalog_favorites_picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item("heading") { PanelHeader("添加收藏", dismiss) }
+            item("summary") {
+                AppText("已收藏 ${state.layout.favorites.size} 个 · 勾选后自动保存",
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
+            }
             item("search") {
                 ToolBoxSearchField(query, { query = it }, "搜索工具", Modifier.testTag("catalog_favorites_search"))
             }
-            if (tools.isEmpty()) item("empty") { PanelEmpty(if (state.tools.isEmpty()) "导入工具后，可在这里添加收藏。" else "没有匹配的工具") }
+            if (tools.isEmpty()) item("empty") {
+                PanelEmpty(if (state.tools.isEmpty()) "导入工具后，可在这里添加收藏。" else "没有匹配的工具")
+                if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
+            }
             items(tools, key = { "tool:${it.toolId}" }) { tool ->
                 val target = "favorite:${tool.toolId}"
                 Column {
@@ -256,6 +309,7 @@ private fun GroupEditorContent(
     var members by draft.members
     var query by draft.query
     var confirmingDelete by draft.confirmingDelete
+    var selectedOnly by rememberSaveable(creating, group?.id) { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val finishInput = { focusManager.clearFocus(force = true); keyboard?.hide(); Unit }
@@ -269,9 +323,10 @@ private fun GroupEditorContent(
         operationId?.let { onAction(CatalogAction.ForgetLayoutWrite(it)) }
         writes.ids = writes.ids - EDITOR_WRITE
     }
-    val cancel = { finishInput(); forget(); onCancel() }
-    val close = { finishInput(); forget(); onClose() }
-    val back = { if (confirmingDelete) confirmingDelete = false else cancel() }
+    // Only the owning session discards the draft/receipt after an explicit decision.
+    val cancel = { finishInput(); if (!writing) onCancel() }
+    val close = { finishInput(); if (!writing) onClose() }
+    val back = { if (!writing) { if (confirmingDelete) confirmingDelete = false else cancel() } }
     LaunchedEffect(operationId, status) {
         if (operationId != null && status == CatalogLayoutWriteStatus.Succeeded) {
             forget()
@@ -286,35 +341,35 @@ private fun GroupEditorContent(
     }
     if (confirmingDelete && group != null) {
         LazyColumn(Modifier.fillMaxWidth().testTag("catalog_group_delete_confirmation"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item("heading") { PanelHeader("删除分组", close, onBack = back) }
+            item("heading") { PanelHeader("删除分组", close, onBack = back, enabled = !writing) }
             item("message") {
                 ToolBoxText("删除“${group.name}”？组内工具和收藏会保留。", style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
             }
             error?.let { item("error") { PanelError(it, Modifier.testTag("catalog_group_error")) } }
             item("actions") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ToolBoxSecondaryButton("取消", { confirmingDelete = false }, Modifier.weight(1f))
-                    ToolBoxDestructiveButton(
-                        if (writing) "正在删除…" else "删除分组",
-                        onClick = {
-                            forget()
-                            val id = UUID.randomUUID().toString()
-                            writes.ids = writes.ids + (EDITOR_WRITE to id)
-                            onAction(CatalogAction.DeleteGroup(group.id, id))
-                        },
-                        modifier = Modifier.weight(1f).testTag("catalog_group_delete_confirm"),
-                        enabled = !writing,
-                    )
-                }
+                PanelEditorActions(
+                    cancel = { confirmingDelete = false }, cancelEnabled = !writing,
+                    confirmLabel = if (writing) "正在删除…" else "删除分组",
+                    confirmEnabled = !writing, destructive = true,
+                    confirmTag = "catalog_group_delete_confirm",
+                    confirm = {
+                        forget()
+                        val id = UUID.randomUUID().toString()
+                        writes.ids = writes.ids + (EDITOR_WRITE to id)
+                        onAction(CatalogAction.DeleteGroup(group.id, id))
+                    },
+                )
             }
         }
         return
     }
-    val tools = matchingTools(state.tools, query)
+    val memberIds = remember(members) { members.toSet() }
+    val selectedCount = state.tools.count { it.toolId in memberIds }
+    val tools = matchingTools(state.tools, query).let { if (selectedOnly) it.filter { tool -> tool.toolId in memberIds } else it }
     Column(Modifier.fillMaxWidth().testTag("catalog_group_editor")) {
         LazyColumn(Modifier.weight(1f, fill = false).testTag("catalog_group_members"), state = listState,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item("heading") { PanelHeader(if (creating) "新建分组" else "编辑分组", close, onBack = back) }
+            item("heading") { PanelHeader(if (creating) "新建分组" else "编辑分组", close, onBack = back, enabled = !writing) }
             item("name") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ToolBoxText("分组名称", style = ToolBoxThemeTokens.textStyles.label.copy(color = ToolBoxThemeTokens.colors.textSecondary))
@@ -343,9 +398,26 @@ private fun GroupEditorContent(
             item("search") {
                 ToolBoxSearchField(query, { query = it }, "搜索工具", Modifier.testTag("catalog_member_search"))
             }
-            if (tools.isEmpty()) item("empty") { PanelEmpty(if (state.tools.isEmpty()) "暂无工具，可以先保存空分组。" else "没有匹配的工具") }
+            item("selection-summary") {
+                Column(Modifier.fillMaxWidth()) {
+                    AppText("已选 $selectedCount 个 / 共 ${state.tools.size} 个",
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
+                    ToolBoxTextButton(if (selectedOnly) "显示全部工具" else "仅看已选", { selectedOnly = !selectedOnly },
+                        Modifier.testTag("catalog_selected_only").semantics {
+                            stateDescription = if (selectedOnly) "仅显示已选工具" else "显示全部工具"
+                        }, enabled = !writing, outlined = false)
+                }
+            }
+            if (tools.isEmpty()) item("empty") {
+                PanelEmpty(when {
+                    state.tools.isEmpty() -> "暂无工具，可以先保存空分组。"
+                    selectedOnly -> "没有匹配的已选工具"
+                    else -> "没有匹配的工具"
+                })
+                if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
+            }
             items(tools, key = { "tool:${it.toolId}" }) { tool ->
-                ToolCheckRow(tool, tool.toolId in members, !writing, "group-tool:${tool.toolId}") { selected ->
+                ToolCheckRow(tool, tool.toolId in memberIds, !writing, "group-tool:${tool.toolId}") { selected ->
                     members = if (selected) (members + tool.toolId).distinct() else members - tool.toolId
                 }
             }
@@ -359,35 +431,53 @@ private fun GroupEditorContent(
             }
         }
         error?.let { PanelError(it, Modifier.testTag("catalog_group_error")) }
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ToolBoxSecondaryButton("取消", cancel, Modifier.weight(1f).testTag("catalog_group_cancel"))
-            ToolBoxPrimaryButton(
-                if (writing) "正在保存…" else "保存",
-                onClick = {
-                    finishInput()
-                    forget()
-                    val id = UUID.randomUUID().toString()
-                    writes.ids = writes.ids + (EDITOR_WRITE to id)
-                    val installed = state.tools.mapTo(HashSet()) { it.toolId }
-                    onAction(CatalogAction.SaveGroup(if (creating) null else group?.id, name, members.filter(installed::contains), id))
-                },
-                modifier = Modifier.weight(1f).testTag("catalog_group_save"),
-                enabled = !writing && name.isNotBlank(),
-            )
+        PanelEditorActions(
+            cancel = cancel, cancelEnabled = !writing,
+            confirmLabel = if (writing) "正在保存…" else "保存",
+            confirmEnabled = !writing && name.isNotBlank(), confirmTag = "catalog_group_save",
+            confirm = {
+                finishInput()
+                forget()
+                val id = UUID.randomUUID().toString()
+                writes.ids = writes.ids + (EDITOR_WRITE to id)
+                val installed = state.tools.mapTo(HashSet()) { it.toolId }
+                onAction(CatalogAction.SaveGroup(if (creating) null else group?.id, name, members.filter(installed::contains), id))
+            },
+        )
+    }
+}
+
+@Composable
+private fun PanelEditorActions(
+    cancel: () -> Unit, cancelEnabled: Boolean,
+    confirmLabel: String, confirmEnabled: Boolean, confirmTag: String,
+    destructive: Boolean = false, confirm: () -> Unit,
+) {
+    val largeText = LocalDensity.current.fontScale >= 1.3f
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        val buttons: @Composable (Modifier) -> Unit = { modifier ->
+            ToolBoxSecondaryButton("取消", cancel, modifier.testTag("catalog_group_cancel"), enabled = cancelEnabled)
+            ToolBoxPrimaryButton(confirmLabel, confirm, modifier.testTag(confirmTag), enabled = confirmEnabled, destructive = destructive)
+        }
+        if (maxWidth < 300.dp || largeText) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) { buttons(Modifier.fillMaxWidth()) }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { buttons(Modifier.weight(1f)) }
         }
     }
 }
 
 @Composable
-private fun PanelHeader(title: String, onClose: () -> Unit, onBack: (() -> Unit)? = null, tool: CatalogTool? = null) {
+private fun PanelHeader(title: String, onClose: () -> Unit, onBack: (() -> Unit)? = null, tool: CatalogTool? = null, enabled: Boolean = true) {
     ToolBoxActionSheetHeader(Modifier.testTag("catalog_panel_header")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"))
+            if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"), enabled = enabled)
             if (tool != null) CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary))
             ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary))
             ToolBoxIconButton(
                 ToolBoxIconKey.Close, "关闭", onClose,
                 Modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full)).background(ToolBoxThemeTokens.colors.surfaceMuted).testTag("catalog_panel_close"),
+                enabled = enabled,
             )
         }
     }
@@ -435,6 +525,7 @@ private fun PanelCheckRow(
     modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
     busy: Boolean = false,
+    summary: String? = null,
     onChecked: (Boolean) -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -447,20 +538,23 @@ private fun PanelCheckRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         icon()
-        ToolBoxText(title, Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.body.copy(
-            color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.body.copy(
+                color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+            if (!summary.isNullOrBlank()) ToolBoxText(summary, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary))
+        }
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-        if (busy) ToolBoxBusyIndicator() else Checkbox(
-            state = if (selected) ToggleableState.On else ToggleableState.Off,
-            onClick = null, enabled = enabled, modifier = Modifier.clearAndSetSemantics { },
-            colors = CheckboxDefaults.checkboxColors(
-                checkedForegroundColor = colors.onPrimary,
-                checkedBackgroundColor = colors.primary,
-                uncheckedBackgroundColor = colors.divider,
-                disabledCheckedBackgroundColor = colors.primary.copy(alpha = 0.5f),
-                disabledUncheckedBackgroundColor = colors.divider,
-            ),
-        )
+            if (busy) ToolBoxBusyIndicator() else Checkbox(
+                state = if (selected) ToggleableState.On else ToggleableState.Off,
+                onClick = null, enabled = enabled, modifier = Modifier.clearAndSetSemantics { },
+                colors = CheckboxDefaults.checkboxColors(
+                    checkedForegroundColor = colors.onPrimary,
+                    checkedBackgroundColor = colors.primary,
+                    uncheckedBackgroundColor = colors.divider,
+                    disabledCheckedBackgroundColor = colors.primary.copy(alpha = 0.5f),
+                    disabledUncheckedBackgroundColor = colors.divider,
+                ),
+            )
         }
     }
 }
@@ -484,6 +578,9 @@ private fun matchingTools(tools: List<CatalogTool>, query: String): List<Catalog
     return if (term.isEmpty()) tools else tools.filter { it.name.contains(term, true) || it.toolId.contains(term, true) }
 }
 
+internal fun groupDraftHasChanges(name: String, members: List<String>, originalName: String, originalMembers: List<String>): Boolean =
+    name.trim() != originalName.trim() || members != originalMembers
+
 private class GroupDraft(
     initialName: String,
     initialMembers: List<String>,
@@ -494,6 +591,9 @@ private class GroupDraft(
     val members = mutableStateOf(initialMembers)
     val query = mutableStateOf(initialQuery)
     val confirmingDelete = mutableStateOf(initialConfirmingDelete)
+
+    fun hasChanges(group: CatalogGroup?, initialMembers: List<String> = emptyList()) =
+        groupDraftHasChanges(name.value, members.value, group?.name.orEmpty(), group?.members ?: initialMembers)
 
     fun reset(initialMembers: List<String>) {
         name.value = ""

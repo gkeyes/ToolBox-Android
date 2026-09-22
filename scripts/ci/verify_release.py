@@ -49,6 +49,26 @@ def verify_release(signature: str, badging: str, gradle: str, mapping: str, expe
     return config
 
 
+def verify_startup_scope(startup: dict | None, config: dict, apk_sha256: str, *,
+                         allow_not_run: bool, host_checks: str, host_scope: str,
+                         host_commit: str, build_commit: str) -> dict[str, str]:
+    if allow_not_run:
+        if (host_checks != "build_and_unit_only" or host_scope != "current_run" or
+                not re.fullmatch(r"[0-9a-f]{40}", build_commit) or host_commit != build_commit):
+            raise ValueError("A startup waiver requires current-commit build/unit evidence")
+        if startup is not None:
+            raise ValueError("Cannot waive an attempted startup check or mask its result")
+        return {"MINIFIED_STARTUP_SMOKE": "NOT_RUN_USER_REQUEST", "STARTUP_ANDROID_VERSION": "NOT_RUN"}
+    if not startup or startup.get("status") != "PASS" or startup.get("scope") != "cold_start_initial_home":
+        raise ValueError("Signed release startup verification did not pass")
+    if startup.get("apk_sha256") != apk_sha256:
+        raise ValueError("Startup verification used a different APK")
+    for field, config_key in (("application_id", "applicationId"), ("version_name", "versionName"), ("version_code", "versionCode")):
+        if startup.get(field) != config[config_key]:
+            raise ValueError("Startup verification used a different installed version")
+    return {"MINIFIED_STARTUP_SMOKE": "PASS_API_35_EMULATOR_INITIAL_HOME_ONLY", "STARTUP_ANDROID_VERSION": startup["android_version"]}
+
+
 def main() -> None:
     if os.environ.get("VERIFY_JOB_RESULT") != "success":
         raise ValueError("Host verification must pass before delivery")
@@ -59,15 +79,15 @@ def main() -> None:
         (ROOT / "app/build.gradle.kts").read_text(),
         (ROOT / "app/build/outputs/mapping/release/mapping.txt").read_text(), expected,
     )
-    startup = json.loads((evidence / "startup/result.json").read_text())
+    startup_file = evidence / "startup/result.json"
+    startup = json.loads(startup_file.read_text()) if startup_file.exists() else None
     apk = ROOT / "app/build/outputs/apk/release/app-release.apk"
-    if startup.get("status") != "PASS" or startup.get("scope") != "cold_start_initial_home":
-        raise ValueError("Signed release startup verification did not pass")
-    if startup.get("apk_sha256") != hashlib.sha256(apk.read_bytes()).hexdigest():
-        raise ValueError("Startup verification used a different APK")
-    for field, config_key in (("application_id", "applicationId"), ("version_name", "versionName"), ("version_code", "versionCode")):
-        if startup.get(field) != config[config_key]:
-            raise ValueError("Startup verification used a different installed version")
+    startup_scope = verify_startup_scope(
+        startup, config, hashlib.sha256(apk.read_bytes()).hexdigest(),
+        allow_not_run=os.environ.get("ALLOW_UNTESTED_STARTUP") == "true",
+        host_checks=os.environ["HOST_VERIFICATION_CHECKS"], host_scope=os.environ["HOST_VERIFICATION_SCOPE"],
+        host_commit=os.environ["HOST_VERIFICATION_COMMIT"], build_commit=os.environ["GITHUB_SHA"],
+    )
     delivery = ROOT / "build/ci-delivery"
     delivery.mkdir(parents=True, exist_ok=False)
     filename = f"toolbox-v{config['versionName']}-release.apk"
@@ -87,8 +107,7 @@ def main() -> None:
         "EMBEDDED_EXAMPLE_BYTES": "PASS",
         "STANDALONE_TBX_VALIDATION": "SEPARATE_TBX_CI",
         "HOST_SCREENSHOT_VALIDATION": "REMOVED_BY_USER_REQUEST",
-        "MINIFIED_STARTUP_SMOKE": "PASS_API_35_EMULATOR_INITIAL_HOME_ONLY",
-        "STARTUP_ANDROID_VERSION": startup["android_version"],
+        **startup_scope,
         "REAL_DEVICE": "NOT_RUN", "REAL_SERVER_LOGIN": "NOT_RUN", "MINIFIED_RUNTIME_DEVICE_TEST": "NOT_RUN",
     }
     (delivery / "BUILD_RECEIPT.txt").write_text("".join(f"{key}={value}\n" for key, value in receipt.items()))

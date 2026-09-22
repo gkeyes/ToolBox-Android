@@ -10,6 +10,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 
 internal data class ToolIconSource(val bytes: ByteArray, val isSvg: Boolean)
+internal data class InstalledToolPresentation(val icon: ToolIconSource?, val description: String?)
 
 internal class IconResourcesUnavailable : Exception("Icon exceeds currently available memory")
 
@@ -17,9 +18,10 @@ internal class InstalledToolIconReader(
     private val privateFilesRoot: () -> Path,
     private val availableHeapBytes: () -> Long = io.toolbox.core.data.ResourceCapacity::availableHeapBytes,
 ) {
-    fun read(tool: InstalledTool): ToolIconSource? = readInstalled(tool)
+    fun read(tool: InstalledTool): ToolIconSource? = readPresentation(tool)?.icon
 
-    private fun readInstalled(tool: InstalledTool): ToolIconSource? {
+    /** Description and artwork share one verified manifest read; no database migration is needed. */
+    fun readPresentation(tool: InstalledTool): InstalledToolPresentation? {
         val version = tool.currentVersion
         if (version.toolId != tool.metadata.id) return null
         val locator = RuntimeIdentity.expectedBundleLocator(version.toolId, version.versionCode)
@@ -31,11 +33,13 @@ internal class InstalledToolIconReader(
         val verified = InstalledManifestVerifier.verify(
             manifestBytes, tool.metadata.id, version.versionCode, tool.metadata.securityProfile,
         ) as? InstalledManifestVerification.Verified ?: return null
-        val icon = verified.manifest.icon ?: return null
-        val file = safePath(bundle, icon) ?: return null
+        val description = verified.manifest.description?.replace(WHITESPACE, " ")?.trim()
+            ?.take(160)?.takeIf(String::isNotBlank)
+        val icon = verified.manifest.icon ?: return InstalledToolPresentation(null, description)
+        val file = safePath(bundle, icon) ?: return InstalledToolPresentation(null, description)
         val isSvg = icon.substringAfterLast('.', "").equals("svg", ignoreCase = true)
-        val bytes = readBounded(file) ?: return null
-        return ToolIconSource(bytes, isSvg)
+        val bytes = readBounded(file) ?: return InstalledToolPresentation(null, description)
+        return InstalledToolPresentation(ToolIconSource(bytes, isSvg), description)
     }
 
     private fun safePath(root: Path, relative: String, directory: Boolean = false): Path? {
@@ -68,5 +72,9 @@ internal class InstalledToolIconReader(
             }
             bytes
         }
+    }
+
+    private companion object {
+        val WHITESPACE = Regex("\\s+")
     }
 }

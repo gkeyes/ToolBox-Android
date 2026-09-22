@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.0";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.2";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -11,6 +11,49 @@
   const CLOCK_INTERVAL_MS = 10_000;
   const TERMINAL_HOLD_MS = 120_000;
   const model = window.GitHubWatcherModel;
+  const reliability = window.GitHubWatcherReliability;
+  const REQUEST_TIMEOUT_MS = 15_000;
+  const POLL_DEADLINE_MS = 60_000;
+  let activePoll = null;
+  let timingWork = null;
+  let nextTimingAt = 0;
+  let discoveryQueue = [];
+  let lastDiscoveryAt = 0;
+  let lastActiveSweepAt = 0;
+  let lastFrontPageAt = 0;
+  let activeCursor = 0;
+  let generation = 0;
+  const discoveryVisited = new Set();
+  let clockSessionId = null;
+  let bootPromise = null;
+  let resumeInFlight = null;
+  const terminalPosts = new Map();
+  const unavailableRuns = new Map();
+
+  async function bounded(value, lease, timeout = 20_000) {
+    if (lease) return lease.wait(value, timeout);
+    const operation = new reliability.Lease(timeout);
+    try { return await operation.wait(value); } finally { operation.invalidate(); }
+  }
+
+  function retireWork() {
+    generation += 1;
+    state.liveInFlight = false;
+    discoveryVisited.clear();
+    terminalPosts.clear();
+    unavailableRuns.clear();
+    activePoll?.invalidate();
+    timingWork?.invalidate();
+    activePoll = null;
+    timingWork = null;
+    state.pollInFlight = false;
+    state.pollStartedAt = null;
+    discoveryQueue = [];
+    lastDiscoveryAt = 0;
+    lastActiveSweepAt = 0;
+    lastFrontPageAt = 0;
+    clockSessionId = null;
+  }
 
   const state = {
     ready: false,
@@ -32,6 +75,8 @@
     terminalStates: {},
     watchStartedAt: null,
     lastPollAt: null,
+    lastAttemptAt: null,
+    lastNotificationAt: null,
     nextPollAt: null,
     rateRemaining: null,
     rateResetAt: null,
@@ -206,6 +251,8 @@
         terminalStates: state.terminalStates,
         watchStartedAt: state.watchStartedAt,
         lastPollAt: state.lastPollAt,
+        lastAttemptAt: state.lastAttemptAt,
+        lastNotificationAt: state.lastNotificationAt,
         nextPollAt: state.nextPollAt,
         rateRemaining: state.rateRemaining,
         rateResetAt: state.rateResetAt
@@ -234,6 +281,8 @@
     if (saved.terminalStates && typeof saved.terminalStates === "object") state.terminalStates = saved.terminalStates;
     state.watchStartedAt = Number.isFinite(saved.watchStartedAt) ? saved.watchStartedAt : null;
     state.lastPollAt = Number.isFinite(saved.lastPollAt) ? saved.lastPollAt : null;
+    state.lastAttemptAt = Number.isFinite(saved.lastAttemptAt) ? saved.lastAttemptAt : null;
+    state.lastNotificationAt = Number.isFinite(saved.lastNotificationAt) ? saved.lastNotificationAt : null;
     state.nextPollAt = Number.isFinite(saved.nextPollAt) ? saved.nextPollAt : null;
     state.rateRemaining = Number.isFinite(saved.rateRemaining) ? saved.rateRemaining : null;
     state.rateResetAt = Number.isFinite(saved.rateResetAt) ? saved.rateResetAt : null;
@@ -294,7 +343,8 @@
     if (Number.isFinite(resetSeconds) && resetSeconds > 0) state.rateResetAt = resetSeconds * 1000;
   }
 
-  async function apiRequest(url, tokenOverride) {
+  async function apiRequest(url, tokenOverride, lease) {
+    lease?.assert();
     const target = new URL(url);
     if (target.origin !== API_ROOT || target.username || target.password) throw createError("github", "GitHub API 地址无效");
     const headers = {
@@ -309,15 +359,17 @@
     if (token) headers.Authorization = `Bearer ${token}`;
     let response;
     try {
-      response = await toolbox().network.request({
+      response = await bounded(toolbox().network.request({
         url,
         method: "GET",
         headers,
-      });
+        timeoutMs: REQUEST_TIMEOUT_MS,
+      }), lease);
     } catch (error) {
       if (error?.code) throw error;
       throw createError("offline", "GitHub API 网络请求失败");
     }
+    lease?.assert();
     updateRateState(response.headers);
     const remainingHeader = headerValue(response.headers, "x-ratelimit-remaining");
     const responseRemaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
@@ -328,7 +380,11 @@
     }
     const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds);
     if (failure === "invalid_token") throw createError(failure, "GitHub Token 无效", response.status);
-    if (failure === "rate_limit") throw createError(failure, "GitHub API rate limit exceeded", response.status);
+    if (failure === "rate_limit") {
+      state.rateRemaining = 0;
+      state.rateResetAt = Math.max(state.rateResetAt || 0, Date.now() + 60_000);
+      throw createError(failure, "GitHub API rate limit exceeded", response.status);
+    }
     if (failure === "permission") throw createError(failure, "GitHub Actions read permission required", response.status);
     if (failure === "not_found") throw createError(failure, "Repository or Actions resource not found", response.status);
     if (failure) throw createError(failure, `GitHub API 返回 ${response.status}`, response.status);
@@ -340,14 +396,16 @@
     }
   }
 
-  async function fetchPaged(firstUrl, collectionKey, tokenOverride) {
+  async function fetchPaged(firstUrl, collectionKey, tokenOverride, lease, maxPages = 20) {
     const items = [];
     let url = firstUrl;
     const visited = new Set();
     while (url) {
       if (visited.has(url)) throw createError("github", "GitHub 分页链接发生循环");
+      if (visited.size >= maxPages) throw createError("github", "分页尚未完整读取，请缩小查询范围后重试");
       visited.add(url);
-      const response = await apiRequest(url, tokenOverride);
+      const response = await apiRequest(url, tokenOverride, lease);
+      lease?.assert();
       const pageItems = collectionKey ? response.data?.[collectionKey] : response.data;
       if (!Array.isArray(pageItems)) throw createError("github", `GitHub 响应缺少 ${collectionKey || "列表"}`);
       items.push(...pageItems);
@@ -377,7 +435,8 @@
       const base = `${API_ROOT}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
       const repositoryResponse = await apiRequest(base);
       const workflows = await fetchPaged(`${base}/actions/workflows?per_page=100`, "workflows", undefined);
-      const runs = await fetchPaged(`${base}/actions/runs?per_page=100`, "workflow_runs");
+      // Setup only needs branch candidates, not the repository's entire build history.
+      const runs = (await apiRequest(`${base}/actions/runs?per_page=100`)).data.workflow_runs || [];
       let repositoryBranches = [];
       let branchCatalogComplete = false;
       try {
@@ -524,13 +583,22 @@
     return model.pollInterval(state.hasToken, active);
   }
 
-  async function configureTimers() {
+  async function configureTimers(lease) {
     if (!state.monitoring) return;
-    const interval = Math.max(currentPollInterval(), state.rateRemaining === 0 && state.rateResetAt
-      ? state.rateResetAt - Date.now() : 0);
-    await toolbox().background.setTimer(POLL_TIMER, interval);
-    state.nextPollAt = Date.now() + interval;
-    await toolbox().background.setTimer(CLOCK_TIMER, CLOCK_INTERVAL_MS);
+    lease?.assert();
+    const started = state.pollStartedAt || Date.now();
+    const delay = reliability.nextDelay(started, currentPollInterval(), Date.now(),
+      state.rateRemaining === 0 ? state.rateResetAt || 0 : 0);
+    await bounded(toolbox().background.setTimer(POLL_TIMER, delay), lease, 5_000);
+    lease?.assert();
+    if (!state.monitoring) return;
+    state.nextPollAt = Date.now() + delay;
+    // The independent native clock is also a watchdog. Do not reset it every poll.
+    if (clockSessionId !== state.sessionId) {
+      await bounded(toolbox().background.setTimer(CLOCK_TIMER, CLOCK_INTERVAL_MS), lease, 5_000);
+      lease?.assert();
+      clockSessionId = state.sessionId;
+    }
   }
 
   async function ensureSession() {
@@ -550,21 +618,21 @@
     let firstError = null;
     for (const key of [POLL_TIMER, CLOCK_TIMER]) {
       try {
-        await toolbox().background.cancelTimer(key);
+        await bounded(toolbox().background.cancelTimer(key), null, 5_000);
       } catch (error) {
         if (error?.code !== "NOT_FOUND" && !firstError) firstError = error;
       }
     }
     if (state.liveActive && state.sessionId) {
       try {
-        await toolbox().notifications.live.end(state.sessionId);
+        await bounded(toolbox().notifications.live.end(state.sessionId), null, 5_000);
       } catch (error) {
         if (error?.code !== "NOT_FOUND" && !firstError) firstError = error;
       }
     }
     if (state.sessionId) {
       try {
-        await toolbox().background.stop(state.sessionId);
+        await bounded(toolbox().background.stop(state.sessionId), null, 5_000);
       } catch (error) {
         if (error?.code !== "NOT_FOUND" && !firstError) firstError = error;
       }
@@ -581,6 +649,7 @@
       showToast("请选择至少一个 workflow 和分支范围");
       return;
     }
+    retireWork();
     setBusy(true);
     setLoading(true, "启动守望", "正在创建可恢复的后台环境");
     try {
@@ -593,6 +662,8 @@
         branchMode,
         branch: branchMode === "branch" ? branch : ""
       };
+      state.runs = model.selectedRuns(state.discoveryRuns, workflowIds, branchMode, branch);
+      state.lastPollAt = null;
       state.monitoring = true;
       state.watchStartedAt = Date.now();
       state.trackedRunKeys = state.discoveryRuns.filter(isActiveRun).map(model.runKey);
@@ -617,12 +688,13 @@
     }
   }
 
-  async function fetchJobs(run) {
+  async function fetchJobs(run, lease) {
     const key = model.runKey(run);
     const jobs = await fetchPaged(
       repoUrl(`/actions/runs/${run.id}/attempts/${Number(run.run_attempt) || 1}/jobs?per_page=100`),
-      "jobs"
+      "jobs", undefined, lease, 10
     );
+    lease?.assert();
     state.jobsByRun[key] = jobs;
     const terminal = state.terminalStates[key];
     if (run.status === "completed" && terminal) {
@@ -638,28 +710,32 @@
     return !state.terminalStates[key]?.jobsSynced || !Array.isArray(state.jobsByRun[key]);
   }
 
-  async function ensureTimingModel(run) {
+  async function ensureTimingModel(run, lease) {
     const key = timingKey(run);
     if (state.timingModels[key]) return state.timingModels[key];
     try {
-      const candidates = await fetchPaged(repoUrl(`/actions/workflows/${run.workflow_id}/runs?status=success&per_page=100`), "workflow_runs");
-      const samples = model.selectHistoricalRuns(candidates, run);
+      const candidates = (await apiRequest(repoUrl(`/actions/workflows/${run.workflow_id}/runs?status=success&per_page=10&branch=${encodeURIComponent(run.head_branch || "")}`), undefined, lease)).data.workflow_runs || [];
+      const samples = model.selectHistoricalRuns(candidates, run).slice(0, 3);
       const sampleJobs = {};
       for (const sample of samples) {
         sampleJobs[model.runKey(sample)] = await fetchPaged(
           repoUrl(`/actions/runs/${sample.id}/attempts/${Number(sample.run_attempt) || 1}/jobs?per_page=100`),
-          "jobs"
+          "jobs", undefined, lease, 5
         );
       }
+      lease?.assert();
       state.timingModels[key] = model.buildTimingModel(samples, sampleJobs);
     } catch (error) {
-      if (["rate_limit", "offline"].includes(error?.kind)) throw error;
+      lease?.assert();
+      if (["rate_limit", "offline"].includes(error?.kind) || error?.code) throw error;
       state.timingModels[key] = model.buildTimingModel([], {});
     }
     return state.timingModels[key];
   }
 
   function calculateEstimate(run, now = Date.now()) {
+    // A ticking notification is not a new GitHub response. Freeze estimates once stale.
+    if (state.lastPollAt && now - state.lastPollAt > Math.max(45_000, currentPollInterval() * 2)) now = state.lastPollAt;
     const key = model.runKey(run);
     const timing = state.timingModels[timingKey(run)] || null;
     const jobs = finalJobsPending(run) ? [] : state.jobsByRun[key] || [];
@@ -688,7 +764,7 @@
     const eligible = watchedRuns().filter((run) => {
       if (isActiveRun(run)) return true;
       const terminal = state.terminalStates[model.runKey(run)];
-      return terminal && !terminal.posted && terminal.holdUntil > now;
+      return terminal && terminal.holdUntil > now;
     });
     return model.choosePrimaryRun(eligible);
   }
@@ -703,61 +779,165 @@
     }
   }
 
+  function acceptRuns(runs, lease) {
+    lease.assert();
+    const selected = model.selectedRuns(runs, state.config.selectedWorkflowIds, state.config.branchMode, state.config.branch);
+    state.runs = reliability.mergeRuns(state.runs, selected);
+    trackDiscoveredRuns(selected);
+    registerTerminalRuns();
+    // Keep active/unannounced runs, plus a bounded recent-history view.
+    state.runs = state.runs.filter((run, index) => index < 100 || isActiveRun(run) ||
+      (state.terminalStates[model.runKey(run)] && !state.terminalStates[model.runKey(run)].posted));
+  }
+
+  function queueDiscovery() {
+    if (discoveryQueue.length) return;
+    const now = Date.now();
+    if (now - lastDiscoveryAt < (state.hasToken ? 60_000 : 300_000)) return;
+    const branch = state.config.branchMode === "branch" ? `&branch=${encodeURIComponent(state.config.branch)}` : "";
+    const since = new Date(Math.max(0, lastDiscoveryAt ? lastDiscoveryAt - 120_000 : now - 86_400_000)).toISOString();
+    discoveryVisited.clear();
+    // Each successful page advances a cursor. Never walk an unbounded history in one cycle.
+    discoveryQueue = state.config.selectedWorkflowIds.map((id) =>
+      repoUrl(`/actions/workflows/${id}/runs?per_page=100&created=${encodeURIComponent(">=" + since)}${branch}`));
+    lastDiscoveryAt = now;
+    if (now - lastActiveSweepAt >= (state.hasToken ? 600_000 : 1_800_000)) {
+      const statuses = ["in_progress", "queued", "waiting", "pending", "requested"];
+      discoveryQueue.push(...statuses.map((status) => repoUrl(`/actions/runs?status=${status}&per_page=100${branch}`)));
+      lastActiveSweepAt = now;
+    }
+  }
+
+  function learnTimingLater() {
+    const run = state.runs.find((item) => isActiveRun(item) && !state.timingModels[timingKey(item)]);
+    if (!run || timingWork || Date.now() < nextTimingAt || !state.hasToken || state.warning) return;
+    const lease = new reliability.Lease(25_000);
+    timingWork = lease;
+    nextTimingAt = Date.now() + 300_000;
+    // Optional ETA learning has a separate deadline and never holds the polling lock.
+    ensureTimingModel(run, lease).catch(() => {}).finally(() => {
+      if (timingWork === lease) timingWork = null;
+      lease.invalidate();
+    });
+  }
+
   async function pollGitHub(manual) {
-    if (!state.monitoring || state.pollInFlight) return;
+    if (!state.monitoring) return;
+    if (state.pollInFlight) {
+      if (activePoll && !activePoll.remaining()) activePoll.invalidate(reliability.timeoutError());
+      return;
+    }
     if (state.rateResetAt && state.rateRemaining === 0 && Date.now() < state.rateResetAt) {
       state.warning = "rate_limit";
       state.warningMessage = `额度将在 ${formatClock(state.rateResetAt)} 恢复`;
-      await updateLiveNotification();
+      state.nextPollAt = state.rateResetAt;
       renderDashboard();
       return;
     }
+    const lease = new reliability.Lease(POLL_DEADLINE_MS);
+    activePoll = lease;
     state.pollInFlight = true;
-    state.pollStartedAt = Date.now();
+    state.lastAttemptAt = state.pollStartedAt = Date.now();
     renderDashboard();
+    let detailError = null;
     try {
-      const allRuns = await fetchPaged(repoUrl("/actions/runs?per_page=100"), "workflow_runs");
-      const filtered = model.selectedRuns(allRuns, state.config.selectedWorkflowIds, state.config.branchMode, state.config.branch)
-        .sort((a, b) => (Date.parse(b.created_at || "") || 0) - (Date.parse(a.created_at || "") || 0));
-      trackDiscoveredRuns(filtered);
-      state.runs = filtered;
-      registerTerminalRuns();
-      const active = state.runs.filter(isActiveRun);
-      const pendingTerminalRuns = watchedRuns().filter((run) => finalJobsPending(run)
-        && !state.terminalStates[model.runKey(run)]?.posted);
-      for (const run of [...active, ...pendingTerminalRuns]) {
-        await fetchJobs(run);
+      // Current run IDs first: completion cannot disappear behind a newer history page.
+      const tracked = state.runs.filter((run) => (unavailableRuns.get(run.id) || 0) <= Date.now() &&
+        (isActiveRun(run) || finalJobsPending(run) && !state.terminalStates[model.runKey(run)]?.posted));
+      const ordered = tracked.length ? [...tracked.slice(activeCursor % tracked.length), ...tracked.slice(0, activeCursor % tracked.length)] : [];
+      const batch = ordered.slice(0, state.hasToken ? 6 : 1);
+      activeCursor += batch.length;
+      for (const run of batch) {
+        let latest;
+        try {
+          latest = (await apiRequest(repoUrl(`/actions/runs/${run.id}`), undefined, lease)).data;
+        } catch (error) {
+          lease.assert();
+          if (error?.status !== 404) throw error;
+          // A deleted/inaccessible run must not starve every other tracked run.
+          unavailableRuns.set(run.id, Date.now() + 300_000);
+          detailError = error;
+          continue;
+        }
+        acceptRuns([latest], lease);
+        state.lastPollAt = Date.now();
+        state.warning = null;
+        state.warningMessage = "";
+        await bounded(updateLiveNotification(), lease, 5_000);
+        await bounded(processTerminalResults(), lease, 5_000);
       }
-      for (const run of active) {
-        await ensureTimingModel(run);
-        calculateEstimate(run);
+      // Always refresh the front page periodically, even if old cursors are still
+      // draining. Otherwise a large backlog could hide builds started more recently.
+      let freshPageReads = 0;
+      if (Date.now() - lastFrontPageAt >= (state.hasToken ? 60_000 : 300_000) && lease.remaining() > 5_000) {
+        const branch = state.config.branchMode === "branch" ? `&branch=${encodeURIComponent(state.config.branch)}` : "";
+        const front = (await apiRequest(repoUrl(`/actions/runs?per_page=100${branch}`), undefined, lease)).data;
+        if (!Array.isArray(front?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
+        acceptRuns(front.workflow_runs, lease);
+        state.lastPollAt = lastFrontPageAt = Date.now();
+        freshPageReads = 1;
       }
+      queueDiscovery();
+      const pageBudget = (state.hasToken ? 4 : 1) - freshPageReads;
+      for (let page = 0; page < pageBudget && discoveryQueue.length && lease.remaining() > 5_000; page += 1) {
+        const url = discoveryQueue[0];
+        const response = await apiRequest(url, undefined, lease);
+        if (!Array.isArray(response.data?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
+        acceptRuns(response.data.workflow_runs, lease);
+        discoveryQueue.shift();
+        discoveryVisited.add(url);
+        const next = model.parseNextLink(headerValue(response.headers, "link"));
+        if (next && !discoveryVisited.has(next) && !discoveryQueue.includes(next)) discoveryQueue.push(next);
+        state.lastPollAt = Date.now();
+      }
+      lease.assert();
       state.warning = null;
       state.warningMessage = "";
-      state.lastPollAt = Date.now();
-      state.rateResetAt = state.rateRemaining === 0 ? state.rateResetAt : null;
-      await updateLiveNotification();
-      await processTerminalResults();
-    } catch (error) {
-      state.warning = error?.kind === "rate_limit" ? "rate_limit" : "offline";
-      state.warningMessage = errorLabel(error);
-      if (["invalid_token", "permission", "not_found"].includes(error?.kind)) {
-        state.warning = error.kind;
+      // Publish the authoritative run state before slower job-detail requests.
+      await bounded(updateLiveNotification(), lease, 5_000);
+      await bounded(processTerminalResults(), lease, 5_000);
+      const primary = chooseDisplayedRun();
+      const jobs = [...new Map([primary, ...batch, ...state.runs.filter(isActiveRun)].filter(Boolean)
+        .map((run) => [run.id, state.runs.find((current) => current.id === run.id) || run])).values()].slice(0, state.hasToken ? 6 : 1);
+      for (const run of jobs) {
+        if (lease.remaining() < 5_000) break;
+        try { await fetchJobs(run, lease); }
+        catch (error) { lease.assert(); detailError = error; break; }
       }
-      await updateLiveNotification();
+      lease.assert();
+      state.rateResetAt = state.rateRemaining === 0 ? state.rateResetAt : null;
+      if (detailError) state.warningMessage = `部分构建或任务详情稍后重试：${errorLabel(detailError)}`;
+      await bounded(updateLiveNotification(), lease, 5_000);
+    } catch (error) {
+      if (activePoll !== lease || !state.monitoring) return;
+      state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
+      state.warningMessage = errorLabel(error);
       if (manual) showToast(errorLabel(error));
     } finally {
-      try {
-        await configureTimers();
-      } catch (error) {
-        state.nextPollAt = null;
-        state.warning = "timer";
-        state.warningMessage = `自动刷新安排失败：${errorLabel(error)}；可点击刷新`;
+      if (activePoll === lease) {
+        // Retire before cleanup; cleanup is bounded separately and cannot mutate a new run.
+        lease.invalidate();
+        const cleanup = new reliability.Lease(8_000);
+        try {
+          if (state.monitoring) await configureTimers(cleanup);
+        } catch (error) {
+          if (activePoll === lease && state.monitoring) {
+            state.nextPollAt = Date.now() + currentPollInterval();
+            state.warningMessage = `定时器安排失败，将由后台时钟重试：${errorLabel(error)}`;
+          }
+        } finally {
+          cleanup.invalidate();
+          if (activePoll === lease) {
+            activePoll = null;
+            state.pollInFlight = false;
+            state.pollStartedAt = null;
+            // Storage/notification errors must never retain the polling lock.
+            bounded(persist(), null, 5_000).catch(() => {});
+            renderDashboard();
+            if (state.monitoring) learnTimingLater();
+          }
+        }
       }
-      state.pollInFlight = false;
-      state.pollStartedAt = null;
-      await persist();
-      renderDashboard();
     }
   }
 
@@ -765,12 +945,17 @@
     const estimate = run ? calculateEstimate(run) : { progress: 0 };
     const warning = ["rate_limit", "offline"].includes(state.warning) ? state.warning : null;
     const summary = model.buildNotificationSummary(state.config.fullName, run, estimate, warning);
+    if (!warning && (!state.lastPollAt || Date.now() - state.lastPollAt > Math.max(45_000, currentPollInterval() * 2))) {
+      summary.primaryText = `${summary.progress}% · 同步已延迟`;
+      summary.tone = "warning";
+      summary.color = "#F59E0B";
+    }
     return {
       sessionId: state.sessionId,
       title: cleanText(summary.title),
       primaryText: cleanText(summary.primaryText),
       shortText: cleanText(summary.shortText),
-      updatedAt: Date.now(),
+      updatedAt: state.lastPollAt || state.watchStartedAt || Date.now(),
       progress: summary.progress,
       accentColor: summary.color,
       tone: summary.tone
@@ -780,70 +965,88 @@
   async function updateLiveNotification() {
     if (!state.monitoring || !state.sessionId || state.liveInFlight) return;
     const run = chooseDisplayedRun();
-    if (!run && !state.liveActive) return;
-    if (!run && state.liveActive) return;
+    if (!run) return;
     state.liveInFlight = true;
+    const ownerGeneration = generation;
+    const current = () => ownerGeneration === generation && state.monitoring;
     try {
       const request = liveRequestFor(run);
       if (state.liveActive) {
         try {
-          await toolbox().notifications.live.update(request);
+          await bounded(toolbox().notifications.live.update(request), null, 5_000);
         } catch (error) {
+          if (!current()) return;
           if (!["NOT_FOUND", "INVALID_SESSION"].includes(error?.code)) throw error;
-          await toolbox().notifications.live.start(request);
+          await bounded(toolbox().notifications.live.start(request), null, 5_000);
         }
       } else {
-        await toolbox().notifications.live.start(request);
+        await bounded(toolbox().notifications.live.start(request), null, 5_000);
+      }
+      if (current()) {
         state.liveActive = true;
+        state.lastNotificationAt = Date.now();
       }
     } catch (error) {
-      state.warningMessage = `实时展示失败：${errorLabel(error)}`;
+      if (current()) state.warningMessage = `实时展示失败：${errorLabel(error)}`;
     } finally {
-      state.liveInFlight = false;
+      if (ownerGeneration === generation) state.liveInFlight = false;
     }
   }
 
   async function processTerminalResults() {
-    const now = Date.now();
-    let endedPrimary = false;
+    // A clock callback may resume after stop while awaiting a live-notification RPC.
+    // Do not begin a result-notification side effect for a stopped generation.
+    if (!state.monitoring) return;
+    const ownerGeneration = generation;
     for (const run of watchedRuns()) {
+      if (ownerGeneration !== generation || !state.monitoring) return;
       const key = model.runKey(run);
       const terminal = state.terminalStates[key];
-      if (!terminal || terminal.posted || terminal.holdUntil > now) continue;
+      if (!terminal || terminal.posted || terminalPosts.has(key)) continue;
+      const postOwner = {};
+      terminalPosts.set(key, postOwner);
       const workflow = configWorkflowName(run);
       const title = `${workflow} · ${resultLabel(run)}`;
       const body = `${state.config.fullName} · ${run.head_branch || "未知分支"} · ${String(run.head_sha || "").slice(0, 7)}`;
       try {
-        await toolbox().notifications.post(`github-watch-result-${run.id}-${run.run_attempt || 1}`, cleanText(title), cleanText(body));
+        await bounded(toolbox().notifications.post(`github-watch-result-${run.id}-${run.run_attempt || 1}`, cleanText(title), cleanText(body)), null, 5_000);
+        if (ownerGeneration !== generation || !state.monitoring) return;
         terminal.posted = true;
-        endedPrimary = true;
       } catch (error) {
-        state.warningMessage = `结果通知失败：${errorLabel(error)}`;
+        if (ownerGeneration === generation && state.monitoring) state.warningMessage = `结果通知失败：${errorLabel(error)}`;
+      } finally {
+        if (terminalPosts.get(key) === postOwner) terminalPosts.delete(key);
       }
     }
-    if (endedPrimary && !state.runs.some(isActiveRun) && state.liveActive) {
+    if (ownerGeneration !== generation || !state.monitoring) return;
+    if (!chooseDisplayedRun() && !state.runs.some(isActiveRun) && state.liveActive) {
       try {
-        await toolbox().notifications.live.end(state.sessionId);
-        state.liveActive = false;
+        await bounded(toolbox().notifications.live.end(state.sessionId), null, 5_000);
+        if (ownerGeneration === generation && state.monitoring) state.liveActive = false;
       } catch (error) {
-        if (error?.code !== "NOT_FOUND") state.warningMessage = `结束实时展示失败：${errorLabel(error)}`;
+        if (ownerGeneration === generation && state.monitoring && error?.code !== "NOT_FOUND") state.warningMessage = `结束实时展示失败：${errorLabel(error)}`;
       }
     }
   }
 
   async function clockTick(background) {
     if (!state.monitoring) return;
+    if (activePoll && !activePoll.remaining()) activePoll.invalidate(reliability.timeoutError());
+    if (!state.pollInFlight && (!state.nextPollAt || state.nextPollAt <= Date.now())) pollGitHub(false);
+
     for (const run of state.runs.filter(isActiveRun)) calculateEstimate(run);
     renderDashboard();
     if (background) {
       await updateLiveNotification();
       await processTerminalResults();
-      await persist();
+      await bounded(persist(), null, 5_000).catch(() => {});
     }
   }
 
   async function stopWatching() {
     if (state.busy || !state.monitoring) return;
+    state.monitoring = false;
+    retireWork();
     setBusy(true);
     setLoading(true, "停止守望", "正在清理后台时钟和实时展示");
     try {
@@ -854,7 +1057,7 @@
       state.nextPollAt = null;
       state.warning = null;
       state.warningMessage = "";
-      await persist();
+      await bounded(persist(true), null, 5_000);
       renderAll();
       showToast(cleanupError ? `守望已停止；部分清理失败：${errorLabel(cleanupError)}` : "守望已停止，后台资源已清理");
     } catch (error) {
@@ -1175,11 +1378,12 @@
       const label = waitingForQuota ? "额度恢复后刷新" : state.warning ? "下次重试" : "自动刷新";
       countdown = `${label} · ${formatDuration(Math.ceil((state.nextPollAt - now) / 1000) * 1000, true)}`;
     }
-    $("poll-countdown").textContent = countdown;
+    $("poll-countdown").textContent = countdown + (discoveryQueue.length ? ` · 新构建扫描中（${discoveryQueue.length} 页待查）` : "");
     $("refresh-now").disabled = state.busy || state.pollInFlight;
     $("poll-caption").textContent = state.lastPollAt
       ? `上次同步 ${formatClock(state.lastPollAt)} · ${tokenLabel}轮询 ${formatDuration(interval, true)}${rate}`
       : `等待首次同步 · ${tokenLabel}轮询 ${formatDuration(interval, true)}`;
+    $("poll-caption").title = `最后尝试 ${formatClock(state.lastAttemptAt)} · 最后成功 ${formatClock(state.lastPollAt)} · 通知更新 ${formatClock(state.lastNotificationAt)}`;
   }
 
   function renderRuntimeChip() {
@@ -1333,18 +1537,20 @@
     });
   }
   if (toolbox()?.background?.onRestore) {
-    toolbox().background.onRestore(async () => {
-      try {
-        const saved = await toolbox().storage.get(STORAGE_KEY);
-        restoreObject(saved);
-        await loadToken();
-        await reconcileSession();
+    toolbox().background.onRestore(() => {
+      if (resumeInFlight) return;
+      resumeInFlight = (async () => {
+        await bootPromise;
+        if (!state.ready || !state.monitoring) return;
+        if (state.pollInFlight) return;
+        clockSessionId = null;
+        await bounded(reconcileSession(), null, 10_000);
         await pollGitHub(false);
-      } catch (error) {
+      })().catch((error) => {
         state.warning = "offline";
         state.warningMessage = `恢复后同步失败：${errorLabel(error)}`;
         renderAll();
-      }
+      }).finally(() => { resumeInFlight = null; });
     });
   }
 
@@ -1366,5 +1572,5 @@
   window.addEventListener("pagehide", stopForegroundClock);
   window.addEventListener("pageshow", startForegroundClock);
   startForegroundClock();
-  boot();
+  bootPromise = boot();
 })();

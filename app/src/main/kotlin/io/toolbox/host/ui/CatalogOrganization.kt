@@ -60,21 +60,31 @@ internal fun LazyListScope.catalogHomeSections(
     onEditGroup: (String) -> Unit,
     onAddFavorites: () -> Unit,
     onOptions: (String) -> Unit,
+    hasRecentTools: Boolean = false,
+    recentContent: @Composable () -> Unit = {},
 ) {
-    item("favorites-heading") { HomeSectionHeader("收藏", if (editing) "添加" else null, onAddFavorites) }
     val favorites = state.layout.favorites.mapNotNull(toolsById::get)
+    if (favorites.isNotEmpty() || editing) item("favorites-heading") {
+        HomeSectionHeader("收藏", if (editing && favorites.isNotEmpty()) "添加" else null, onAddFavorites)
+    }
     if (favorites.isEmpty()) item("favorites-empty") {
-        HomeEmptySection("收藏常用工具，放在这里快速打开", "添加收藏", onAddFavorites)
+        HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
     }
     homeToolGrid(favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
         onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) })
-    item("groups-heading") {
+    if (hasRecentTools) {
+        item("recent-title") {
+            Spacer(Modifier.height(20.dp))
+            HomeSectionHeader("最近使用")
+        }
+        item("recent-tools") { recentContent() }
+    }
+    if (state.layout.groups.isNotEmpty() || editing) item("groups-heading") {
         Spacer(Modifier.height(20.dp))
         HomeSectionHeader("分组")
     }
-    if (state.layout.groups.isEmpty()) item("groups-empty") {
-        AppText("按用途整理工具，同一个工具可以加入多个分组。", color = ToolBoxThemeTokens.colors.textSecondary,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata, modifier = Modifier.padding(vertical = 12.dp))
+    if (editing && state.layout.groups.isEmpty()) item("groups-empty") {
+        HomeEmptySection("按用途整理工具", "新建分组", { onEditGroup("") })
     }
     state.layout.groups.forEachIndexed { index, group ->
         val members = group.members.mapNotNull(toolsById::get)
@@ -246,9 +256,11 @@ internal fun CatalogHomeTile(
 
 @Composable
 private fun HomeEmptySection(message: String, action: String, onAction: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surface, RoundedCornerShape(ToolBoxThemeTokens.radii.card))
-        .padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AppText(message, color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+    Row(Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surface, RoundedCornerShape(ToolBoxThemeTokens.radii.card))
+        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        AppText(message, Modifier.weight(1f), color = ToolBoxThemeTokens.colors.textSecondary,
+            textStyle = ToolBoxThemeTokens.textStyles.metadata)
         ToolBoxTextButton(action, onAction, outlined = false)
     }
 }

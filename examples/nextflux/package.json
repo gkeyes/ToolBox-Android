@@ -1,11 +1,12 @@
 {
   "name": "nextflux-toolbox",
   "private": true,
-  "version": "1.0.11",
+  "version": "1.0.12",
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "package": "npm run build && python3 package.py"
+    "package": "npm run build && python3 package.py",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@heroui/react": "^3.0.4",

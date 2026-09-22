@@ -1,3 +1,5 @@
+import { imageDimension } from "./imageDimensions.js";
+
 export const ALLOWED_TAGS = new Set("p div span br hr h1 h2 h3 h4 h5 h6 blockquote pre code strong b em i u s del ins small sub sup mark abbr q cite kbd samp var ul ol li dl dt dd table thead tbody tfoot tr th td caption colgroup col figure figcaption details summary a img".split(" "));
 export const DROP_CONTENT = new Set(["script", "style", "object", "embed", "svg", "math", "template", "form", "input", "button", "textarea", "select", "option", "meta", "link", "base"]);
 
@@ -13,6 +15,7 @@ export function cleanAttributes(tag, attributes, baseUrl) {
   const clean = {};
   for (const [name, value] of Object.entries(attributes)) {
     if (["alt", "title"].includes(name)) clean[name] = String(value);
+    if (tag === "img" && ["width", "height"].includes(name) && imageDimension(value)) clean[name] = String(imageDimension(value));
     if (["colspan", "rowspan", "start"].includes(name) && /^\d+$/.test(value)) clean[name] = value;
     // Keep article-local anchors as inert metadata, never document-global IDs.
     if ((name === "id" && tag !== "img") || (name === "name" && tag === "a")) {
