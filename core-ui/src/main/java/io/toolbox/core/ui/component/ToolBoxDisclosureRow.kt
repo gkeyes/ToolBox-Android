@@ -1,5 +1,8 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -32,6 +35,11 @@ fun ToolBoxDisclosureRow(
     val spacing = ToolBoxThemeTokens.spacing
     val colors = ToolBoxThemeTokens.colors
     val rotation = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -90f else 90f
+    val angle = animateFloatAsState(
+        targetValue = if (expanded) rotation else 0f,
+        animationSpec = tween(140, easing = LinearOutSlowInEasing),
+        label = "disclosure direction",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -69,7 +77,7 @@ fun ToolBoxDisclosureRow(
         ToolBoxIcon(
             icon = ToolBoxIconKey.ChevronRight,
             contentDescription = null,
-            modifier = Modifier.rotate(if (expanded) rotation else 0f),
+            modifier = Modifier.graphicsLayer { rotationZ = angle.value },
         )
     }
 }

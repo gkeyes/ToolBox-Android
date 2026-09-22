@@ -1,12 +1,14 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
@@ -43,6 +46,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -60,17 +64,26 @@ fun ToolBoxSearchField(
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val colors = ToolBoxThemeTokens.colors
+    val spacing = ToolBoxThemeTokens.spacing
+    val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = toolBoxSearchFieldMinHeight())
-            .toolBoxOpenDesignSurface(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
-            .padding(start = 13.dp, end = 5.dp),
+            .toolBoxOpenDesignSurface(shape)
+            .border(1.dp, if (focused) colors.primary.copy(alpha = 0.55f) else Color.Transparent, shape)
+            .padding(start = spacing.oneHalf, end = spacing.half),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ToolBoxIcon(ToolBoxIconKey.Search, null, Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
+        ToolBoxIcon(
+            ToolBoxIconKey.Search, null, Modifier.size(18.dp),
+            tint = if (focused) colors.primary else colors.textSecondary,
+        )
+        Spacer(Modifier.width(spacing.one))
         BasicTextField(
             value = value, onValueChange = onValueChange, singleLine = true,
-            modifier = Modifier.weight(1f).padding(vertical = 10.dp).focusRequester(focusRequester)
+            modifier = Modifier.weight(1f).padding(vertical = spacing.row).focusRequester(focusRequester)
+                .onFocusChanged { focused = it.isFocused }
                 .semantics { this.contentDescription = contentDescription },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
@@ -78,18 +91,28 @@ fun ToolBoxSearchField(
             cursorBrush = SolidColor(ToolBoxThemeTokens.colors.primary),
             decorationBox = { field ->
                 Box {
-                    if (value.isEmpty()) ToolBoxText(placeholder, style = ToolBoxThemeTokens.textStyles.body.copy(
-                        color = ToolBoxThemeTokens.colors.textSecondary))
+                    if (value.isEmpty()) {
+                        ToolBoxText(
+                            placeholder,
+                            style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     field()
                 }
             },
         )
-        if (value.isNotEmpty()) {
-            ToolBoxIconButton(ToolBoxIconKey.Close, "清空${contentDescription}", onClick = {
-                onValueChange("")
-                focusRequester.requestFocus()
-            })
-        } else Spacer(Modifier.width(8.dp))
+        // Reserve the same space in both states so the first keystroke does not
+        // move the text or cursor. The empty slot has no hidden click semantics.
+        Box(Modifier.size(ToolBoxThemeTokens.sizes.touchTarget), contentAlignment = Alignment.Center) {
+            if (value.isNotEmpty()) {
+                ToolBoxIconButton(ToolBoxIconKey.Close, "清空${contentDescription}", onClick = {
+                    onValueChange("")
+                    focusRequester.requestFocus()
+                })
+            }
+        }
     }
 }
 
@@ -104,22 +127,34 @@ fun ToolBoxSettingRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
+    val spacing = ToolBoxThemeTokens.spacing
+    val colors = ToolBoxThemeTokens.colors
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 64.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 13.dp, vertical = 10.dp),
+            .padding(horizontal = spacing.oneHalf, vertical = spacing.row),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        icon?.let { ToolBoxPreferenceIcon(it, enabled); Spacer(Modifier.width(12.dp)) }
-        Column(Modifier.weight(1f)) {
-            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
-                color = if (enabled) ToolBoxThemeTokens.colors.textPrimary else ToolBoxThemeTokens.disabledContent))
-            summary?.let { ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                color = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent)) }
+        icon?.let {
+            ToolBoxPreferenceIcon(it, enabled)
+            Spacer(Modifier.width(spacing.oneHalf))
         }
-        Spacer(Modifier.width(8.dp))
-        ToolBoxIcon(ToolBoxIconKey.ChevronRight, null, Modifier.size(18.dp),
-            tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.half)) {
+            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
+                color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+            summary?.takeIf(String::isNotBlank)?.let {
+                ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                    color = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent))
+            }
+        }
+        // A disclosure indicator promises navigation: informational rows must not show one.
+        if (onClick != null) {
+            Spacer(Modifier.width(spacing.one))
+            ToolBoxIcon(
+                ToolBoxIconKey.ChevronRight, null, Modifier.size(18.dp),
+                tint = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent,
+            )
+        }
     }
 }
 
@@ -204,11 +239,11 @@ fun ToolBoxValueRow(
 
 @Composable
 private fun ToolBoxValueLabel(title: String, summary: String?, modifier: Modifier = Modifier) {
-    Column(modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half)) {
         ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
             color = ToolBoxThemeTokens.colors.textPrimary, fontWeight = FontWeight.Medium,
         ))
-        summary?.let {
+        summary?.takeIf(String::isNotBlank)?.let {
             ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
         }
     }
