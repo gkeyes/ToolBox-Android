@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -81,7 +82,7 @@ internal fun RuntimeShellScreen(
             when (val current = state) {
                 RuntimeUiState.Loading -> RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
                 is RuntimeUiState.Error -> RuntimeErrorState(current.message, viewModel::retry)
-                is RuntimeUiState.Ready -> {
+                is RuntimeUiState.Ready -> key(current.webView) {
                     AndroidView(
                         factory = { context ->
                             android.widget.FrameLayout(context).also { container ->
@@ -98,7 +99,7 @@ internal fun RuntimeShellScreen(
                         modifier = Modifier.fillMaxSize(),
                         onRelease = { releasedView ->
                             (releasedView as? android.view.ViewGroup)?.removeAllViews()
-                            viewModel.detached()
+                            viewModel.detached(current.webView)
                         },
                     )
                 }

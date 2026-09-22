@@ -13,20 +13,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  source:
-    name: Export exact source for code review (not a build)
+  verify:
+    name: Build host and watcher; JVM and JS regressions (no emulator)
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - name: Archive tracked source only
-        run: |
-          git archive --format=tar.gz --output="$RUNNER_TEMP/toolbox-background-source.tar.gz" HEAD
-          printf '%s\n' 'Source audit only. No APK build, tests or signing have run.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          name: background-source-${{ github.sha }}
-          path: ${{ runner.temp }}/toolbox-background-source.tar.gz
-          retention-days: 3
+          node-version: "22"
+      - name: Watcher fault injection and package integrity
+        run: |
+          set -euo pipefail
+          mkdir -p build/background-evidence
+          node --test scripts/tests/watcher-reliability.test.cjs | tee build/background-evidence/watcher-tests.txt
+          python3 scripts/ci/tbx.py build --tool github-actions-watcher
+      - name: Host contracts and package verification
+        run: |
+          node scripts/ci/verify-host-contract.mjs
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Compile Debug and Release APKs
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+      - name: Host JVM regressions including bounded runtime recovery
+        run: ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+      - name: Record validation scope
+        run: |
+          printf '%s\n' '## Background reliability validation' \
+            'Debug/Release compilation, JVM tests, watcher JS fault injection and TBX integrity checks completed.' \
+            'Android emulator/UI tests: NOT RUN, following the user-requested waiver.' \
+            'Release signing and real-device installation: NOT RUN. PR/build APKs are not original-signature delivery packages.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload APKs and watcher
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: background-fix-build-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/
+            build/tbx/github-actions-watcher/delivery/
           if-no-files-found: error
+      - name: Retain regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: background-fix-evidence-${{ github.sha }}
+          path: |
+            build/background-evidence/
+            app/build/test-results/
+            app/build/reports/tests/
+            core-data/build/test-results/
+            tool-package/build/test-results/
+            tool-runtime/build/test-results/
+          if-no-files-found: warn
+          retention-days: 14

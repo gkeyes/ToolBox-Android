@@ -15,6 +15,7 @@ import android.location.LocationManager
 import android.webkit.WebView
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.DataResult
+import io.toolbox.core.data.ToolVersion
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.tool.runtime.RuntimeWebViewTheme
 import io.toolbox.host.HostTrace
@@ -88,6 +89,7 @@ internal data class RuntimeBackgroundSessionUi(
     val toolName: String,
     val startedAt: Long,
     val notificationId: Int,
+    val statusText: String? = null,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -132,6 +134,8 @@ internal class RuntimeSessionManager(
     private val hosts = mutableMapOf<String, RuntimeHost>()
     private val openingTools = mutableMapOf<String, Job>()
     private val visibleTools = mutableSetOf<String>()
+    private val recoveryStatus = mutableMapOf<String, String>()
+    private val recovery = BackgroundRuntimeRecovery(scope, android.os.SystemClock::elapsedRealtime)
     private val sessionsByTool = mutableMapOf<String, MutableMap<String, StoredRuntimeSession>>()
     private val notificationIds = RuntimeNotificationIds()
     private val restoredToolNames = mutableMapOf<String, String>()
@@ -200,6 +204,9 @@ internal class RuntimeSessionManager(
 
     fun retry(toolId: String) {
         scope.launch {
+            recovery.cancel(toolId)?.join()
+            recoveryStatus.remove(toolId)
+            openingTools[toolId]?.cancelAndJoin()
             destroyHost(toolId)
             stateFlow(toolId).value = RuntimeUiState.Loading
             ensureRuntime(toolId, restoreReason = null)
@@ -257,7 +264,7 @@ internal class RuntimeSessionManager(
             recovery.forEach { persisted ->
                 restoredToolNames[persisted.toolId] = persisted.toolName
                 val restorable = persisted.sessions.filter { session ->
-                    if (restoreReason == RESTORE_REASON_REBOOT) session.restoreAfterReboot else session.restoreAfterProcessDeath
+                    backgroundRestoreOptedIn(restoreReason, session.restoreAfterProcessDeath, session.restoreAfterReboot)
                 }.map { it.copy(notificationId = notificationIds.claim(it.sessionId, it.notificationId)) }
                 (persisted.sessions.map(StoredRuntimeSession::sessionId) - restorable.map(StoredRuntimeSession::sessionId).toSet())
                     .forEach(notificationIds::release)
@@ -290,6 +297,8 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun stopTool(toolId: String, removeAlarms: Boolean = true) = withContext(Dispatchers.Main.immediate) {
+        recovery.cancel(toolId)?.join()
+        recoveryStatus.remove(toolId)
         val removedSessionIds = sessionsByTool.remove(toolId)?.keys.orEmpty()
         removedSessionIds.forEach(::cancelReminder)
         removedSessionIds.forEach(notificationIds::release)
@@ -308,6 +317,8 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun releaseTool(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        recovery.cancel(toolId)?.join()
+        recoveryStatus.remove(toolId)
         // An IO preparation may not own a WebView yet. Drain it before a same-version
         // replacement can publish new files or an old opener can acquire the new profile.
         openingTools[toolId]?.cancelAndJoin()
@@ -445,8 +456,8 @@ internal class RuntimeSessionManager(
         try {
             // Await persisted appearance before constructing WebView, avoiding a light first document.
             currentTheme = withContext(Dispatchers.IO) { repositories.settings.settings.first().theme }
+            val installed = withContext(Dispatchers.IO) { repositories.catalog.observeTool(toolId).first() }
             val prepared = HostTrace.bestEffortAsyncSection("tool.prepare") {
-                val installed = withContext(Dispatchers.IO) { repositories.catalog.observeTool(toolId).first() }
                 withContext(Dispatchers.IO) { preparer.prepare(toolId, installed) }
             }
             if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
@@ -454,6 +465,13 @@ internal class RuntimeSessionManager(
             if (runtime == null) {
                 val failure = prepared as RuntimePreparationResult.Failed
                 stateFlow(toolId).value = RuntimeUiState.Error(failure.code.name, failure.message)
+                return
+            }
+            if (restoreReason != null && (
+                "background.runtime" !in runtime.declaredCapabilities ||
+                !backgroundRecoveryAllowed(toolId, checkNotNull(installed).currentVersion, restoreReason)
+            )) {
+                stateFlow(toolId).value = RuntimeUiState.Error("BACKGROUND_RESTORE_BLOCKED", "后台恢复已停止，请检查授权后重新打开工具。")
                 return
             }
             when (val permit = permitProvider.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease = false)) {
@@ -470,9 +488,9 @@ internal class RuntimeSessionManager(
                         runtime = runtime,
                         creationPermit = permit.permit,
                         callbacks = RuntimeWebViewCallbacks(
-                            onMainEntryLoaded = { onMainEntryLoaded(toolId, restoreReason) },
-                            onMainEntryFailed = { message -> onRuntimeFailed(toolId, "ENTRY_LOAD_FAILED", message) },
-                            onRendererGone = { onRuntimeFailed(toolId, "RENDERER_GONE", "工具渲染进程已退出，点击重试可重新打开。") },
+                            onMainEntryLoaded = { onMainEntryLoaded(toolId, runtime, restoreReason) },
+                            onMainEntryFailed = { message -> onRuntimeFailed(toolId, runtime, "ENTRY_LOAD_FAILED", message) },
+                            onRendererGone = { onRuntimeFailed(toolId, runtime, "RENDERER_GONE", "工具渲染进程已退出。") },
                         ),
                         bridgeProvider = bridgeProvider(),
                     )
@@ -485,6 +503,7 @@ internal class RuntimeSessionManager(
                             }
                             val host = RuntimeHost(
                                 runtime = runtime,
+                                installedVersion = checkNotNull(installed).currentVersion,
                                 webView = result.webView,
                                 mainEntryLoaded = false,
                                 state = when {
@@ -516,13 +535,16 @@ internal class RuntimeSessionManager(
         }
     }
 
-    private fun onMainEntryLoaded(toolId: String, restoreReason: String?) {
+    private fun onMainEntryLoaded(toolId: String, runtime: PreparedToolRuntime, restoreReason: String?) {
         scope.launch {
-            val current = hosts[toolId] ?: return@launch
+            val current = hosts[toolId]?.takeIf { it.runtime === runtime } ?: return@launch
+            recoveryStatus.remove(toolId)
             current.mainEntryLoaded = true
             current.state = if (toolId in visibleTools) RuntimeHostState.ATTACHED else RuntimeHostState.BACKGROUND_DETACHED
             stateFlow(toolId).value = current.toUiState()
             restoreReason?.let { reason -> current.emitRestore(reason) }
+            updateSessionProjection()
+            refreshForegroundService()
         }
     }
 
@@ -539,11 +561,68 @@ internal class RuntimeSessionManager(
         )
     }
 
-    private fun onRuntimeFailed(toolId: String, code: String, message: String) {
+    private fun onRuntimeFailed(toolId: String, runtime: PreparedToolRuntime, code: String, message: String) {
         scope.launch {
+            // A delayed callback from a released WebView must not destroy its replacement.
+            val failed = hosts[toolId]?.takeIf { it.runtime === runtime } ?: return@launch
+            restoredToolNames[toolId] = runtime.toolName
             destroyHost(toolId)
+            timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
+            clearAllWatches(toolId)
+            liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
             stateFlow(toolId).value = RuntimeUiState.Error(code, message)
+            requestBackgroundRecovery(toolId, failed.installedVersion)
         }
+    }
+
+    private suspend fun backgroundRecoveryAllowed(
+        toolId: String,
+        expectedVersion: ToolVersion,
+        reason: String = RESTORE_REASON_PROCESS,
+    ): Boolean {
+        fun optedIn() = sessionsByTool[toolId].orEmpty().values.any {
+            backgroundRestoreOptedIn(reason, it.restoreAfterProcessDeath, it.restoreAfterReboot)
+        }
+        if (io.toolbox.host.backup.BackupRuntimeGate.paused || !optedIn()) return false
+        val valid = withContext(Dispatchers.IO) {
+            repositories.settings.settings.first().backgroundEnabled &&
+                repositories.catalog.observeTool(toolId).first()?.currentVersion == expectedVersion &&
+                repositories.grants.observeGrants(toolId).first().any { it.capability == "background.runtime" && it.granted }
+        }
+        return valid && !io.toolbox.host.backup.BackupRuntimeGate.paused &&
+            optedIn()
+    }
+
+    private fun requestBackgroundRecovery(toolId: String, expectedVersion: ToolVersion) {
+        if (sessionsByTool[toolId].isNullOrEmpty()) return
+        recovery.request(
+            toolId = toolId,
+            allowed = { backgroundRecoveryAllowed(toolId, expectedVersion) },
+            restart = {
+                destroyHost(toolId)
+                ensureRuntime(toolId, RESTORE_REASON_PROCESS)
+                val result = stateFlow(toolId).first { state ->
+                    state is RuntimeUiState.Error || state is RuntimeUiState.Ready && state.mainEntryLoaded
+                }
+                result is RuntimeUiState.Ready && backgroundRecoveryAllowed(toolId, expectedVersion)
+            },
+            onRecovering = { attempt ->
+                recoveryStatus[toolId] = "后台环境中断，正在恢复（$attempt/3）"
+                liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
+                updateSessionProjection()
+                refreshForegroundService()
+            },
+            onInterrupted = {
+                destroyHost(toolId)
+                timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
+                clearAllWatches(toolId)
+                recoveryStatus[toolId] = "后台已中断，请打开工具重试或停止会话"
+                stateFlow(toolId).value = RuntimeUiState.Error("BACKGROUND_INTERRUPTED", recoveryStatus.getValue(toolId))
+                liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
+                updateSessionProjection()
+                refreshForegroundService()
+            },
+        )
     }
 
     private fun destroyHost(toolId: String) {
@@ -644,12 +723,17 @@ internal class RuntimeSessionManager(
             if (sessionsByTool[toolId].isNullOrEmpty()) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "请先启动后台运行环境")
             }
+            val expectedVersion = checkNotNull(hosts[toolId]).installedVersion
             val jobs = timersByTool.getOrPut(toolId, ::linkedMapOf)
             jobs.remove(key)?.cancel()
             jobs[key] = scope.launch {
                 while (isActive) {
                     delay(intervalMillis)
-                    val host = hosts[toolId] ?: continue
+                    val host = hosts[toolId]
+                    if (host == null) {
+                        requestBackgroundRecovery(toolId, expectedVersion)
+                        continue
+                    }
                     HardenedRuntimeWebView.emitEvent(
                         host.webView,
                         EVENT_BACKGROUND_TIMER,
@@ -797,6 +881,8 @@ internal class RuntimeSessionManager(
         cancelReminder(removed.sessionId)
         liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
+            recovery.cancel(toolId)?.join()
+            recoveryStatus.remove(toolId)
             timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
             clearBackgroundWatches(toolId)
             cancelRuntimeNotifications(listOf(sessionId))
@@ -908,6 +994,7 @@ internal class RuntimeSessionManager(
                     toolName = hostNames[toolId] ?: restoredToolNames[toolId] ?: toolId,
                     startedAt = record.startedAt,
                     notificationId = record.notificationId,
+                    statusText = recoveryStatus[toolId],
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
@@ -1093,6 +1180,7 @@ internal class RuntimeSessionManager(
 
     private data class RuntimeHost(
         val runtime: PreparedToolRuntime,
+        val installedVersion: ToolVersion,
         val webView: WebView,
         var mainEntryLoaded: Boolean,
         var state: RuntimeHostState,
