@@ -1,0 +1,35 @@
+{
+  "name": "socialcoach-toolbox",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "node --import tsx --test test/*.test.ts && tsx scripts/check-corpus.ts && tsx scripts/check-avatars.ts && tsx scripts/check-practice-policy.ts && tsx scripts/check-pattern-guard.ts",
+    "test:browser": "playwright test",
+    "package": "npm run build && bash package.sh"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^13.1.1",
+    "lucide-react": "^1.39.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@playwright/test": "1.55.1",
+    "tailwindcss": "^4.1.11",
+    "tsx": "4.20.5",
+    "typescript": "^5",
+    "vite": "^6.0.7"
+  }
+}

@@ -1,0 +1,44 @@
+import type {Report,RoleplayMeta} from '@/lib/types';
+import type {LLM} from '@/lib/llm-core';
+import type {ScheduleInput,ScheduleOutput,AssessInput,RehearseInput,TurnInput,ReflectInput,PatternInput} from '@/lib/tasks/types';
+import {byokConfig,openModelSheet} from '@/lib/byok';
+import {makeByokLLM} from '../../platform/llm';
+import {requestScope,abortError} from '../../platform/network';
+import {parsePartialJSON} from '@/lib/partial-json';
+import {runSchedule} from '@/lib/tasks/schedule';
+import {runRehearse} from '@/lib/tasks/rehearse';
+import {runHint} from '@/lib/tasks/hint';
+import {runRoleplay} from '@/lib/tasks/roleplay';
+import {runReflect} from '@/lib/tasks/reflect';
+import {runAssess} from '@/lib/tasks/assess';
+import {runPattern} from '@/lib/tasks/pattern';
+
+export class ApiError extends Error {
+  constructor(message:string,public readonly status:number,public readonly kind:'http'|'network'|'stream'){super(message);}
+}
+export type ScheduleResult=ScheduleOutput;
+async function task<T>(run:(llm:LLM,fast:string,smart:string)=>Promise<T>,signal?:AbortSignal):Promise<T>{
+  const c=byokConfig();
+  if(!c){openModelSheet();throw new ApiError('请先配置模型 API，再开始 AI 练习。',401,'http');}
+  const scope=requestScope(signal);
+  try{
+    if(scope.signal.aborted)throw abortError();
+    const result=await run(makeByokLLM(c,scope.signal),c.fastModel.trim(),c.smartModel.trim());
+    if(scope.signal.aborted)throw abortError();
+    return result;
+  }finally{scope.dispose();}
+}
+export const schedule=(body:ScheduleInput,signal?:AbortSignal)=>task((llm,fast)=>runSchedule(body,llm,fast),signal);
+export const hint=(body:TurnInput)=>task((llm,fast)=>runHint(body,llm,fast));
+export const rehearse=(body:RehearseInput)=>task((llm,fast)=>runRehearse(body,llm,fast));
+export const pattern=(body:PatternInput)=>task((llm,_fast,smart)=>runPattern(body,llm,smart));
+export const assessStream=(body:AssessInput,onPartial:(p:Partial<Report>)=>void)=>task((llm,_fast,smart)=>{
+  let acc='';return runAssess(body,llm,smart,d=>{acc+=d;const p=parsePartialJSON<Report>(acc);if(p)onPartial(p);});
+});
+export const roleplayStream=(body:TurnInput,onText:(full:string)=>void,signal?:AbortSignal)=>task((llm,fast)=>{
+  let acc='';return runRoleplay(body,llm,fast,d=>{acc+=d;onText(acc);});
+},signal);
+export const reflectStream=(body:ReflectInput,onText:(full:string)=>void)=>task((llm,fast)=>{
+  let acc='';return runReflect(body,llm,fast,d=>{acc+=d;onText(acc);});
+});
+

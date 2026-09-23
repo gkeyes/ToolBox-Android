@@ -1,0 +1,10 @@
+/* Keep the upstream warm-paper visual language; use installed system fonts only. */
+:root { --font-hanken: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", sans-serif; }
+html, body, #root { min-height: 100%; }
+body { margin: 0; overscroll-behavior-y: none; }
+button, a, input, textarea { touch-action: manipulation; }
+.tbx-boot { min-height: 70dvh; max-width: 36rem; margin: auto; padding: 3rem 1.5rem; display: flex; flex-direction: column; justify-content: center; gap: 1rem; color: var(--ink); }
+.tbx-boot button, .tbx-storage-warning button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--card); }
+.tbx-storage-warning { position: sticky; top: 0; z-index: 90; background: var(--danger-soft); color: var(--danger); padding: 12px; font-size: 13px; }
+.sheet-dialog { max-height: calc(100dvh - 16px); }
+@media (max-width: 420px) { .sheet-dialog { width: calc(100% - 16px); } }

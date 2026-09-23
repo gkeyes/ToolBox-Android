@@ -1,0 +1,8 @@
+{
+  "repository": "GeminiLight/SocialCoach",
+  "commit": "f639887d9cc69b01c1164c5b8a6f04b701fc94bf",
+  "license": "Apache-2.0",
+  "imported": "2026-09-23",
+  "distribution": "ToolBox TBX 1.0.0",
+  "modifications": ["Vite React SPA with hash routing", "ToolBox secure storage and native HTTPS transport", "Task cancellation and SSE validation", "No server routes, telemetry, feedback upload, service worker or voice capture", "Native backup and restore; API keys excluded", "Model form and Android navigation adaptation"]
+}

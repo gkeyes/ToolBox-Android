@@ -181,5 +181,15 @@
       "icon.svg",
       "integrity.json"
     ]
+  },
+  "socialcoach": {
+    "manifest": "manifest.json",
+    "npm": true,
+    "javascript": [],
+    "package": [
+      "bash",
+      "package.sh",
+      "{output}"
+    ]
   }
 }

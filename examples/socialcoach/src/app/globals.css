@@ -1,0 +1,454 @@
+@import "tailwindcss";
+
+/* ───────────── Design tokens: "warm paper" ───────────── */
+:root {
+  --paper: oklch(0.975 0.008 80);
+  --paper-deep: oklch(0.955 0.011 78);
+  --card: oklch(0.992 0.004 85);
+  --inset: oklch(0.95 0.012 78);
+  --ink: oklch(0.24 0.02 60);
+  --ink-2: oklch(0.4 0.02 60);
+  --ink-3: oklch(0.52 0.018 62);
+  --ink-4: oklch(0.7 0.014 65);
+  --line: oklch(0.885 0.012 75);
+  --line-strong: oklch(0.8 0.016 72);
+  --accent: oklch(0.6 0.155 40);
+  --accent-deep: oklch(0.52 0.15 38);
+  --accent-soft: oklch(0.94 0.04 48);
+  --accent-ink: oklch(0.985 0.01 70);
+  --action: var(--accent-deep);
+  --action-hover: oklch(0.46 0.14 38);
+  --overlay: oklch(0.17 0.016 60 / 0.45);
+  --teal: oklch(0.46 0.08 200);
+  --teal-soft: oklch(0.93 0.03 200);
+  --moss: oklch(0.55 0.1 145);
+  --moss-soft: oklch(0.93 0.04 145);
+  --danger: oklch(0.55 0.17 25);
+  --danger-soft: oklch(0.94 0.04 25);
+  --gold: oklch(0.78 0.14 85);
+
+  /* Scene pigments: colored stock and matching ink, never a full hue wheel. */
+  --scene-clay-color: light-dark(oklch(0.47 0.115 35), oklch(0.76 0.105 35));
+  --scene-clay-paper: light-dark(oklch(0.935 0.032 35), oklch(0.255 0.030 35));
+  --scene-ochre-color: light-dark(oklch(0.47 0.095 78), oklch(0.78 0.105 78));
+  --scene-ochre-paper: light-dark(oklch(0.945 0.042 78), oklch(0.265 0.030 78));
+  --scene-olive-color: light-dark(oklch(0.45 0.065 130), oklch(0.76 0.075 130));
+  --scene-olive-paper: light-dark(oklch(0.935 0.028 130), oklch(0.250 0.025 130));
+  --scene-teal-color: light-dark(oklch(0.44 0.065 190), oklch(0.75 0.075 190));
+  --scene-teal-paper: light-dark(oklch(0.935 0.025 190), oklch(0.250 0.025 190));
+  --scene-rose-color: light-dark(oklch(0.47 0.085 15), oklch(0.77 0.085 15));
+  --scene-rose-paper: light-dark(oklch(0.935 0.030 15), oklch(0.255 0.025 15));
+
+  /* Portrait pigments stay physical in both themes: skin and hair never invert. */
+  --avatar-skin-0: oklch(0.88 0.055 58);
+  --avatar-shade-0: oklch(0.76 0.075 49);
+  --avatar-skin-1: oklch(0.78 0.075 57);
+  --avatar-shade-1: oklch(0.66 0.085 48);
+  --avatar-skin-2: oklch(0.66 0.085 52);
+  --avatar-shade-2: oklch(0.54 0.080 43);
+  --avatar-skin-3: oklch(0.53 0.070 48);
+  --avatar-shade-3: oklch(0.43 0.065 40);
+  --avatar-hair-0: oklch(0.28 0.025 55);
+  --avatar-hair-1: oklch(0.39 0.060 48);
+  --avatar-hair-2: oklch(0.56 0.060 76);
+  --avatar-feature: oklch(0.25 0.030 45);
+  --avatar-linen: oklch(0.94 0.020 78);
+  --avatar-clay-paper: light-dark(oklch(0.92 0.037 45), oklch(0.40 0.035 45));
+  --avatar-clay-ink: oklch(0.49 0.100 36);
+  --avatar-ochre-paper: light-dark(oklch(0.93 0.050 85), oklch(0.42 0.040 85));
+  --avatar-ochre-ink: oklch(0.51 0.065 77);
+  --avatar-olive-paper: light-dark(oklch(0.91 0.035 130), oklch(0.40 0.030 130));
+  --avatar-olive-ink: oklch(0.44 0.050 140);
+  --avatar-teal-paper: light-dark(oklch(0.91 0.025 190), oklch(0.40 0.030 190));
+  --avatar-teal-ink: oklch(0.43 0.045 200);
+  --avatar-rose-paper: light-dark(oklch(0.92 0.030 15), oklch(0.40 0.030 15));
+  --avatar-rose-ink: oklch(0.47 0.065 15);
+
+  /* Large high-contrast surfaces — the rehearse banner, the next-step slab.
+     Small controls invert happily in dark; a full-width near-white block does
+     not, which is the glare the design brief rules out. */
+  --slab: var(--ink);
+  --slab-ink: var(--paper);
+  /* Paper grain, the sheet's inner edge, and the loading sweep all used to be
+     hardcoded near-white and would glow in the dark palette. */
+  --grain: oklch(0.93 0.012 75);
+  --edge-hi: oklch(1 0 0 / 0.5);
+  --sweep-hi: oklch(1 0 0 / 0.6);
+  --edge-shadow: oklch(0.2 0.02 60 / 0.5);
+
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+
+  /* frame: every width step in the app is one of these */
+  --col: 480px;        /* the phone column */
+  --rail-w: 232px;     /* desktop nav rail */
+  --content-max: 1600px; /* widest the content block gets; the paper itself fills */
+  --margin-w: 232px;   /* marginalia column */
+  --measure: 62ch;     /* comfortable line length for running text */
+  --form-max: 760px;
+  --focus-max: 1120px;
+  --dialog-max: 520px;
+  --tile-w: 256px;
+
+  --font-sans: var(--font-hanken), "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+
+  color-scheme: light;
+}
+
+/* ── Dark: paper in a dim room, not a glowing UI ──
+   Same hues, mirrored lightness. The ground stays warm brown-black rather than
+   neutral or blue so the "worn paperback" reading survives at night, and the
+   accent lifts instead of saturating. Three states: system by default, with an
+   explicit choice winning in either direction. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --paper: oklch(0.205 0.012 62);
+    --paper-deep: oklch(0.165 0.011 60);
+    --card: oklch(0.238 0.013 63);
+    --inset: oklch(0.272 0.014 63);
+    --ink: oklch(0.935 0.012 78);
+    --ink-2: oklch(0.80 0.013 75);
+    --ink-3: oklch(0.655 0.013 70);
+    --ink-4: oklch(0.515 0.012 68);
+    --line: oklch(0.315 0.014 65);
+    --line-strong: oklch(0.425 0.016 65);
+    --accent: oklch(0.70 0.145 42);
+    /* In light this is the darker, more emphatic ochre; on a dark tint it has
+       to move the other way to stay emphatic. */
+    --accent-deep: oklch(0.795 0.125 46);
+    --accent-soft: oklch(0.315 0.055 44);
+    --accent-ink: oklch(0.17 0.02 50);
+    --action-hover: oklch(0.84 0.10 46);
+    --teal: oklch(0.715 0.085 200);
+    --teal-soft: oklch(0.285 0.04 200);
+    --moss: oklch(0.725 0.10 145);
+    --moss-soft: oklch(0.275 0.045 145);
+    --danger: oklch(0.715 0.155 25);
+    --danger-soft: oklch(0.305 0.06 25);
+    --gold: oklch(0.815 0.13 85);
+
+    --slab: oklch(0.30 0.016 62);
+    --slab-ink: var(--ink);
+    --grain: oklch(0.275 0.014 68);
+    --edge-hi: oklch(1 0 0 / 0.06);
+    --sweep-hi: oklch(1 0 0 / 0.10);
+    --edge-shadow: oklch(0 0 0 / 0.55);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: oklch(0.205 0.012 62);
+  --paper-deep: oklch(0.165 0.011 60);
+  --card: oklch(0.238 0.013 63);
+  --inset: oklch(0.272 0.014 63);
+  --ink: oklch(0.935 0.012 78);
+  --ink-2: oklch(0.80 0.013 75);
+  --ink-3: oklch(0.655 0.013 70);
+  --ink-4: oklch(0.515 0.012 68);
+  --line: oklch(0.315 0.014 65);
+  --line-strong: oklch(0.425 0.016 65);
+  --accent: oklch(0.70 0.145 42);
+  --accent-deep: oklch(0.795 0.125 46);
+  --accent-soft: oklch(0.315 0.055 44);
+  --accent-ink: oklch(0.17 0.02 50);
+  --action-hover: oklch(0.84 0.10 46);
+  --teal: oklch(0.715 0.085 200);
+  --teal-soft: oklch(0.285 0.04 200);
+  --moss: oklch(0.725 0.10 145);
+  --moss-soft: oklch(0.275 0.045 145);
+  --danger: oklch(0.715 0.155 25);
+  --danger-soft: oklch(0.305 0.06 25);
+  --gold: oklch(0.815 0.13 85);
+
+  --slab: oklch(0.30 0.016 62);
+  --slab-ink: var(--ink);
+  --grain: oklch(0.275 0.014 68);
+  --edge-hi: oklch(1 0 0 / 0.06);
+  --sweep-hi: oklch(1 0 0 / 0.10);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-deep: var(--paper-deep);
+  --color-card: var(--card);
+  --color-inset: var(--inset);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-moss: var(--moss);
+  --color-moss-soft: var(--moss-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-gold: var(--gold);
+  --color-slab: var(--slab);
+  --color-slab-ink: var(--slab-ink);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+}
+
+@layer base {
+html {
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+body {
+  min-height: 100dvh;
+  margin: 0;
+  line-height: 1.55;
+}
+/* subtle paper grain outside the app column on wide screens */
+@media (min-width: 560px) {
+  body {
+    background-image: radial-gradient(var(--grain) 0.6px, transparent 0.6px);
+    background-size: 14px 14px;
+  }
+}
+::selection { background: var(--accent-soft); color: var(--ink); }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; }
+input, textarea { font: inherit; color: inherit; }
+textarea { resize: none; }
+button:not(:disabled), [role="button"], select { cursor: pointer; }
+input, textarea, select { min-width: 0; }
+h1, h2, h3 { text-wrap: balance; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+a { color: inherit; text-decoration: none; }
+
+}
+
+@layer components {
+/* ── The paper ──
+   A centered column on phone (480) and tablet portrait (640), with grain and a
+   hairline edge showing outside it. From `lg` the paper fills the window
+   instead — no edge to draw, and no wasted gutter. Line length is then held by
+   the content itself (see --measure), not by the width of the paper. */
+.sheet {
+  width: 100%;
+  max-width: var(--col);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+  position: relative;
+}
+@media (min-width: 560px) {
+  .sheet { border-left: 1px solid var(--line); border-right: 1px solid var(--line); box-shadow: 0 0 0 1px var(--edge-hi) inset; }
+}
+@media (min-width: 48rem) { .sheet { max-width: 40rem; } }
+@media (min-width: 64rem) {
+  .sheet { max-width: none; border-left: 0; border-right: 0; box-shadow: none; }
+  body { background-image: none; }
+}
+
+/* Bottom action bar: floats over the page on phone/tablet with its width
+   tracking the sheet, then rejoins the document flow on desktop so each page
+   can put it where it belongs. */
+.bar-fixed {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--col);
+  background-image: linear-gradient(to top, var(--paper) 0%, var(--paper) 50%, transparent 100%);
+}
+@media (min-width: 48rem) { .bar-fixed { max-width: 40rem; } }
+@media (min-width: 64rem) {
+  .bar-fixed { position: static; transform: none; width: auto; max-width: none; background-image: none; }
+}
+
+.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.018em; }
+.num { font-family: var(--font-display); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.inset { background: var(--inset); border-radius: var(--radius-sm); }
+.hairline { height: 1px; background: var(--line); }
+
+[data-tone="clay"] { --scene-color: var(--scene-clay-color); --scene-paper: var(--scene-clay-paper); }
+[data-tone="ochre"] { --scene-color: var(--scene-ochre-color); --scene-paper: var(--scene-ochre-paper); }
+[data-tone="olive"] { --scene-color: var(--scene-olive-color); --scene-paper: var(--scene-olive-paper); }
+[data-tone="teal"] { --scene-color: var(--scene-teal-color); --scene-paper: var(--scene-teal-paper); }
+[data-tone="rose"] { --scene-color: var(--scene-rose-color); --scene-paper: var(--scene-rose-paper); }
+.scenario-cover, .scenario-tile { --scene-rule: color-mix(in oklch, var(--scene-color) 18%, var(--scene-paper)); }
+.scenario-cover { background: var(--scene-paper); }
+.scenario-tile { background: color-mix(in oklch, var(--scene-color) 8%, var(--scene-paper)); color: var(--scene-color); border-color: var(--scene-rule); }
+/* The tall cover is a ruled page. `--rule` is both the line spacing of the paper
+   and the line-height of the quote, and both are anchored to the bottom edge, so
+   the text sits on the rules whatever its line count. The stock darkens a touch
+   toward the foot so the sheet reads as paper, not a flat tint. */
+.scenario-cover-tall {
+  --rule: 30px;
+  --scene-rule-soft: color-mix(in oklch, var(--scene-color) 9%, var(--scene-paper));
+  background: linear-gradient(to bottom, var(--scene-paper), color-mix(in oklch, var(--scene-color) 6%, var(--scene-paper)));
+}
+.scenario-ruling { background-image: repeating-linear-gradient(to top, var(--scene-rule-soft) 0 1px, transparent 1px var(--rule)); }
+
+.skip-link { position: fixed; top: 12px; left: 12px; z-index: 70; padding: 12px 20px; background: var(--ink); color: var(--paper); border-radius: var(--radius-sm); transform: translateY(-160%); }
+.skip-link:focus { transform: translateY(0); }
+.notebook-row { border-bottom: 1px solid var(--line); transition: background-color 160ms var(--ease-out); }
+.notebook-row:hover { background: var(--paper-deep); }
+.writing-field { border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--card); transition: border-color 160ms var(--ease-out); }
+.writing-field:focus-within { border-color: var(--accent-deep); outline: 2px solid var(--accent-soft); outline-offset: 3px; }
+.sheet-dialog { position: fixed; inset: auto 0 0; width: min(100%, var(--col)); max-width: none; max-height: 88dvh; padding: 0; margin: 0 auto; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg) var(--radius-lg) 0 0; overflow: hidden; }
+.sheet-dialog[open] { display: flex; flex-direction: column; animation: rise 220ms var(--ease-out); }
+.sheet-dialog::backdrop { background: var(--overlay); }
+@media (min-width: 48rem) { .sheet-dialog { width: 40rem; } }
+@media (min-width: 64rem) { .sheet-dialog { inset: 0; width: min(calc(100% - 48px), var(--dialog-max)); margin: auto; max-height: 80dvh; border-radius: var(--radius-lg); } }
+
+/* pointer devices get a hover affordance on tappable rows; the press
+   transform below still wins while the pointer is down */
+@media (hover: hover) and (pointer: fine) {
+  .card-link:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+}
+.dotted { border-top: 1px dashed var(--line-strong); }
+
+/* pressable */
+.press { transition: transform 120ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), opacity 160ms; }
+.press:active { transform: scale(0.985); }
+.press:disabled { opacity: 0.5; pointer-events: none; }
+
+/* underline "annotation" mark used for evidence quotes */
+.mark-quote {
+  background-image: linear-gradient(transparent 62%, var(--accent-soft) 62%, var(--accent-soft) 92%, transparent 92%);
+  padding: 0 1px;
+}
+.mark-good {
+  background-image: linear-gradient(transparent 62%, var(--moss-soft) 62%, var(--moss-soft) 92%, transparent 92%);
+  padding: 0 1px;
+}
+
+/* scrollbars */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* chat bubbles */
+.bubble-npc { background: var(--card); border: 1px solid var(--line); border-radius: 18px 18px 18px 6px; }
+.bubble-me { background: var(--ink); color: var(--paper); border-radius: 18px 18px 6px 18px; }
+.bubble-coach { background: var(--accent-soft); border-radius: 12px; }
+
+/* typing dots */
+@keyframes blink { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+.dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; display: inline-block; animation: blink 1.2s infinite var(--ease-out); }
+.dot:nth-child(2) { animation-delay: 0.15s; }
+.dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* ink fill for objective boxes */
+@keyframes inkfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.inkfill { transform-origin: left; animation: inkfill 600ms var(--ease-expo) forwards; }
+
+/* staged loader */
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.sweep::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--sweep-hi), transparent); animation: sweep 1.4s infinite var(--ease-out); }
+
+/* entrance */
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.rise { animation: rise 520ms var(--ease-expo) both; animation-delay: calc(var(--i, 0) * 60ms); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* safe areas */
+.pb-safe { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.pt-safe { padding-top: max(8px, env(safe-area-inset-top)); }
+
+/* range input */
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: var(--line-strong); border-radius: 999px; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 999px; background: var(--card); border: 2px solid var(--ink); box-shadow: 0 1px 2px oklch(0 0 0 / 0.15); }
+input[type="range"]::-moz-range-track { height: 4px; background: var(--line-strong); border-radius: 999px; }
+input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 999px; background: var(--card); border: 2px solid var(--ink); }
+}
+
+/* A tinted opening page in the growth journal. */
+.growth-invitation {
+  background: color-mix(in oklch, var(--scene-ochre-paper) 65%, var(--card));
+  border: 1px solid color-mix(in oklch, var(--scene-ochre-color) 18%, var(--card));
+}
+
+/* Related paper stocks distinguish personal notes from the reading library. */
+.profile-paper, .rehearsal-invitation, .rehearsal-guide {
+  background: color-mix(in oklch, var(--scene-ochre-paper) 50%, var(--paper));
+  border: 1px solid color-mix(in oklch, var(--scene-ochre-color) 18%, var(--paper));
+}
+@media (min-width: 1024px) {
+  .knowledge-selected {
+    background: color-mix(in oklch, var(--scene-teal-paper) 65%, var(--card));
+    border-color: color-mix(in oklch, var(--scene-teal-color) 30%, var(--line));
+  }
+}
+
+.knowledge-principle { background: var(--scene-teal-paper); }
+
+/* A contact sheet of portraits: focus and selection have separate outlines. */
+.avatar-preview { background: var(--paper-deep); border: 1px solid var(--line); }
+.avatar-option {
+  min-height: 76px; display: flex; align-items: center; justify-content: center;
+  position: relative; border: 1px solid transparent; border-radius: var(--radius);
+  background: transparent;
+}
+.avatar-option[aria-pressed="true"] { border-color: var(--action); background: var(--accent-soft); }
+.avatar-option-check {
+  position: absolute; right: 4px; bottom: 4px; display: grid; place-items: center;
+  width: 18px; height: 18px; border-radius: 50%; background: var(--action); color: var(--accent-ink);
+}
+.avatar-swatch { min-width: 44px; min-height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1px solid transparent; }
+.avatar-swatch[aria-pressed="true"] { border-color: var(--action); }
+.avatar-swatch-pigment { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line-strong); }
+.avatar-swatch[aria-pressed="true"] .avatar-swatch-pigment { outline: 2px solid var(--paper); outline-offset: -4px; }
+@media (hover: hover) and (pointer: fine) {
+  .avatar-option:hover { background: var(--inset); }
+  .avatar-option[aria-pressed="true"]:hover { background: var(--accent-soft); }
+  .avatar-swatch:hover { background: var(--inset); }
+}
+
+/* Practice is a quiet workspace: orientation above, conversation on the page. */
+.practice-context summary::-webkit-details-marker { display: none; }
+.practice-context[open] summary svg { transform: rotate(180deg); }
+.chat-transcript > * { flex-shrink: 0; }
+.chat-transcript { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.today-feature { border-color: var(--line-strong); }
+.review-index { scrollbar-width: thin; }
+.review-index a:focus-visible { outline-offset: -2px; }
+@media (min-width: 64rem) {
+  .chat-transcript { background: color-mix(in oklch, var(--card) 30%, var(--paper)); }
+  .practice-journey { min-height: 64px; }
+}

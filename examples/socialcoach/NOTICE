@@ -1,0 +1,10 @@
+SocialCoach TBX
+Adapted from GeminiLight/SocialCoach at f639887d9cc69b01c1164c5b8a6f04b701fc94bf.
+Upstream source: https://github.com/GeminiLight/SocialCoach
+The upstream software is licensed under Apache License 2.0; see LICENSE.
+Original React components, corpus data, prompts and training tasks retain their upstream attribution.
+Modifications for ToolBox: static SPA entry, hash navigation, native network/storage adapters,
+model configuration, backup/restore and lifecycle handling. Modified on 2026-09-23.
+Book/theory references and teaching examples in src/data/corpus retain their individual source fields.
+Third-party books, papers, trademarks and cited materials are not relicensed by this distribution.
+No bundled font files. React, Zustand, Framer Motion, Lucide, clsx and Zod retain their respective licenses.

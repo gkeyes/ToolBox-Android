@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "io.toolbox.socialcoach",
+  "name": "SocialCoach",
+  "shortName": "SocialCoach",
+  "description": "本地沟通练习场：场景排练、AI 角色对话与证据式复盘。需自备模型 API。",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "entry": "index.html",
+  "icon": "icon.png",
+  "apiVersion": "1.0",
+  "minHostVersion": "0.8.0",
+  "categories": ["学习", "效率"],
+  "permissions": [
+    {"name": "storage", "reason": "保存个人档案、练习记录、草稿与设置。", "required": true},
+    {"name": "storage.secure", "reason": "安全保存你配置的模型 API 密钥。", "required": true},
+    {"name": "network", "reason": "仅在使用 AI 功能时请求你配置的模型服务。", "required": true},
+    {"name": "files.open", "reason": "由你选择并恢复练习数据备份。", "required": false},
+    {"name": "files.save", "reason": "由你导出不含 API 密钥的练习备份。", "required": false},
+    {"name": "share", "reason": "由你主动分享复盘摘要。", "required": false},
+    {"name": "browser", "reason": "由你主动打开理论来源等外部链接。", "required": false}
+  ],
+  "securityProfile": "strict",
+  "ui": {"orientation": "unspecified", "allowFullscreen": false, "statusBarStyle": "auto", "showHostToolbar": true}
+}

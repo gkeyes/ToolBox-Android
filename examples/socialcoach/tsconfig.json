@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx",
+    "strict": true, "skipLibCheck": true, "esModuleInterop": true,
+    "noEmit": true, "allowImportingTsExtensions": true,
+    "baseUrl": ".", "paths": {"@/*": ["src/*"], "@platform/*": ["platform/*"], "next/link": ["platform/navigation.tsx"], "next/navigation": ["platform/navigation.tsx"]}
+  },
+  "include": ["src", "platform", "vite.config.ts"]
+}
