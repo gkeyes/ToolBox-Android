@@ -87,7 +87,7 @@ object HardenedRuntimeWebView {
         var runtimeClient: RuntimeWebViewClient? = null
         try {
             WebView.setWebContentsDebuggingEnabled(false)
-            val createdWebView = WebView(context)
+            val createdWebView = RuntimeWindowWebView(context)
             webView = createdWebView
             val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
             val serviceWorkerIntercept = WebViewFeature.isFeatureSupported(
