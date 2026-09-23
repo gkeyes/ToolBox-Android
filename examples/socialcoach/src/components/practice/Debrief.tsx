@@ -342,7 +342,7 @@ function ReportView({ session, report, streaming, onAgain }: { session: Session;
               { id: "review-weaknesses", label: "rp_weaknesses" as const, show: weaknesses.length > 0 },
               { id: "review-alternatives", label: "rp_alternatives" as const, show: alternatives.length > 0 },
               { id: "review-reflect", label: "rp_reflect" as const, show: questions.length > 0 },
-            ].filter((item) => item.show).map((item) => <a key={item.id} href={`#${item.id}`} className="press shrink-0 inline-flex items-center justify-center rounded-full px-3 min-h-11 text-[13px] text-ink-2 hover:bg-inset">{t(lang, item.label)}</a>)}
+            ].filter((item) => item.show).map((item) => <button key={item.id} type="button" onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })} className="press shrink-0 inline-flex items-center justify-center rounded-full px-3 min-h-11 text-[13px] text-ink-2 hover:bg-inset">{t(lang, item.label)}</button>)}
           </nav>
         )}
 

@@ -114,17 +114,16 @@ export default function Progress() {
               <ul className="flex flex-col gap-2">
                 {done.map((s) => (
                   <li key={s.id}>
-                    <Link href={`/practice/${s.id}`} className="press card card-link flex items-center gap-3 p-3">
+                    <Link href={`/practice/${s.id}`} className="press card card-link flex items-start gap-3 p-3">
                       <ScenarioCover scenario={s.scenario} size={44} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-medium truncate">{s.scenario.title[lang]}</p>
-                        <p className="text-[12px] text-ink-3 num">
+                      <div className="progress-history-copy flex-1 min-w-0">
+                        <p className="text-[14px] font-medium leading-snug line-clamp-2 [overflow-wrap:anywhere]">{s.scenario.title[lang]}</p>
+                        <p className="mt-1 text-[12px] text-ink-3 num whitespace-nowrap">
                           {relDate(s.startedAt, lang)} · {sessionMinutes(s)} {t(lang, "min")}
                         </p>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        {s.report?.scoringVersion === 2 && !s.report.ratings?.length ? <span className="text-[11px] text-ink-3">{t(lang, "rp_unrated")}</span> : <Stars n={s.report?.stars ?? 0} size={14} />}
-                        {(s.report?.scoringVersion !== 2 || !!s.report.ratings?.length) && <span className="text-[11px] text-ink-3">{s.report?.scoringVersion === 2 ? t(lang, "rp_quality", { n: s.report.stars }) : t(lang, "rp_legacy")}</span>}
+                      <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5" title={s.report?.scoringVersion === 2 ? t(lang, "rp_quality", { n: s.report.stars }) : t(lang, "rp_legacy")}>
+                        {s.report?.scoringVersion === 2 && !s.report.ratings?.length ? <span className="text-[11px] text-ink-3 whitespace-nowrap">{t(lang, "rp_unrated")}</span> : <Stars n={s.report?.stars ?? 0} size={14} />}
                       </div>
                     </Link>
                   </li>

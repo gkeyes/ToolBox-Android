@@ -8,3 +8,15 @@ button, a, input, textarea { touch-action: manipulation; }
 .tbx-storage-warning { position: sticky; top: 0; z-index: 90; background: var(--danger-soft); color: var(--danger); padding: 12px; font-size: 13px; }
 .sheet-dialog { max-height: calc(100dvh - 16px); }
 @media (max-width: 420px) { .sheet-dialog { width: calc(100% - 16px); } }
+
+
+/* Phone visual viewport can collapse to ~400px when the IME is visible.
+   Keep the transcript and send control usable rather than letting fixed-height
+   header/composer content expand the document beyond the viewport. */
+@media (max-width: 63.999rem) and (max-height: 560px) {
+  .practice-chat .practice-journey { min-height: 44px; padding-block: 0; }
+  .practice-context-body { max-height: 15dvh !important; padding-bottom: 8px; }
+  .practice-composer { max-height: 40dvh; }
+  .practice-composer textarea { max-height: 72px !important; }
+  .practice-composer-meta { display: none; }
+}

@@ -20,7 +20,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 export function Button({ variant = "primary", size = "md", loading, block, className, children, disabled, ...rest }: ButtonProps) {
   const base = "press min-w-0 [&>svg]:shrink-0 inline-flex items-center justify-center gap-2 font-semibold rounded-full select-none text-center leading-snug";
-  const sizes = { sm: "min-h-11 px-4 text-[13px]", md: "h-12 px-5 text-[15px]", lg: "h-14 px-6 text-base" }[size];
+  const sizes = { sm: "min-h-11 px-4 py-2 text-[13px]", md: "min-h-12 px-5 py-2.5 text-[15px]", lg: "min-h-14 px-6 py-3 text-base" }[size];
   const variants: Record<Variant, string> = {
     primary: "bg-action text-accent-ink hover:bg-action-hover",
     ink: "bg-ink text-paper hover:opacity-90",

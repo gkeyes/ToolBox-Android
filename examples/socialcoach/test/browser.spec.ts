@@ -131,3 +131,55 @@ test('MiniMax reasoning-only hint shows an error and cannot become a saved coach
   await page.getByRole('button',{name:'提示',exact:true}).click();
   await expect(page.getByText('先表达感受，再提出一个具体的沟通时间。',{exact:true})).toBeVisible();expect(errors).toEqual([]);
 });
+
+
+test('mobile chat keeps transcript and controls usable in a short viewport and wraps long tokens',async({page})=>{
+  await setup(page);const errors=consoleCheck(page);await page.setViewportSize({width:360,height:420});await startScene(page);
+  await page.locator('details.practice-context summary').click();
+  const long='第一行\n第二行\n第三行\nhttps://example.invalid/'+('A'.repeat(260));
+  const box=page.getByRole('textbox',{name:'说点什么…',exact:true});await box.fill(long);
+  const before=await page.evaluate(()=>{
+    const transcript=document.querySelector('.chat-transcript') as HTMLElement;
+    const send=document.querySelector('button[aria-label="发送"]') as HTMLElement;
+    return {doc:document.documentElement.scrollHeight,view:innerHeight,transcript:transcript.getBoundingClientRect().height,sendBottom:send.getBoundingClientRect().bottom};
+  });
+  expect(before.doc).toBeLessThanOrEqual(before.view+1);expect(before.transcript).toBeGreaterThanOrEqual(48);expect(before.sendBottom).toBeLessThanOrEqual(before.view+1);
+  await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
+  const overflow=await page.evaluate(()=>{
+    const transcript=document.querySelector('.chat-transcript') as HTMLElement;
+    const bubbles=Array.from(document.querySelectorAll('.bubble-me,.bubble-npc,.bubble-coach')) as HTMLElement[];
+    return {transcript:transcript.scrollWidth-transcript.clientWidth,bubbles:Math.max(0,...bubbles.map(x=>x.scrollWidth-x.clientWidth))};
+  });
+  expect(overflow.transcript).toBeLessThanOrEqual(1);expect(overflow.bubbles).toBeLessThanOrEqual(1);expect(errors).toEqual([]);
+});
+
+test('phone journey is compact and review section buttons preserve the SPA route',async({page})=>{
+  await setup(page);const errors=consoleCheck(page);await page.setViewportSize({width:320,height:568});await startScene(page);
+  await expect(page.locator('.practice-journey-compact')).toBeVisible();
+  const compact=await page.locator('.practice-journey-compact').boundingBox();expect(compact?.width??0).toBeGreaterThan(100);
+  await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');
+  const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();
+  await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();
+  const before=new URL(page.url()).hash;
+  const first=page.locator('nav.review-index button').first();await expect(first).toBeVisible();await first.click();
+  expect(new URL(page.url()).hash).toBe(before);await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();
+  await page.goto('/#/progress');const row=page.locator('.progress-history-copy').first();await expect(row).toBeVisible();
+  const width=await row.evaluate(el=>el.getBoundingClientRect().width);expect(width).toBeGreaterThan(110);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
+test('model settings stack primary actions on a narrow phone',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.setViewportSize({width:320,height:568});await page.goto('/#/settings');
+  await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();
+  await page.getByLabel('API Key',{exact:true}).fill(key);await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');
+  await page.getByLabel('对话模型',{exact:true}).fill('mock-chat');await page.getByLabel('复盘模型',{exact:true}).fill('mock-assess');
+  const load=page.getByRole('button',{name:'读取模型',exact:true}), save=page.getByRole('button',{name:'测试并保存',exact:true});
+  const [a,b]=await Promise.all([load.boundingBox(),save.boundingBox()]);
+  expect(a&&b).toBeTruthy();expect((b?.y??0)).toBeGreaterThan((a?.y??0)+(a?.height??0)-1);
+  expect(a?.width??0).toBeGreaterThan(240);expect(b?.width??0).toBeGreaterThan(240);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});

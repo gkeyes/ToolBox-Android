@@ -60,7 +60,7 @@ export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void;forced
       <button className="text-sm text-accent-deep min-h-11 text-left" type="button" onClick={()=>update({smartModel:draft.fastModel})}>{tr('两个用途使用同一模型','Use the conversation model for both')}</button>
       {draft.provider==='openai'&&<div className="flex flex-col gap-2"><span className="text-sm">{tr('令牌参数','Token parameter')}</span><div className="flex flex-wrap gap-2">{(['max_tokens','max_completion_tokens'] as const).map(p=><Chip key={p} active={draft.tokenParam===p} onClick={()=>update({tokenParam:p})}>{p}</Chip>)}</div><p className="text-xs text-ink-3">{tr('推理模型若不接受 max_tokens，请选 max_completion_tokens。','Choose max_completion_tokens when required by a reasoning model.')}</p></div>}
       {note&&<p role="status" className="text-sm text-ink-2 leading-relaxed break-words">{note}</p>}
-      <div className="flex gap-2"><Button variant="secondary" disabled={busy||!draft.apiKey.trim()} onClick={load}>{tr('读取模型','Load models')}</Button><Button className="flex-1" disabled={busy||!ready} onClick={()=>save(true)}>{busy?<Spinner/>:tr('测试并保存','Test and save')}</Button></div>
+      <div className="model-actions grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] gap-2"><Button block variant="secondary" disabled={busy||!draft.apiKey.trim()} onClick={load}>{tr('读取模型','Load models')}</Button><Button block disabled={busy||!ready} onClick={()=>save(true)}>{busy?<Spinner/>:tr('测试并保存','Test and save')}</Button></div>
       <Button variant="ghost" disabled={busy||!ready} onClick={()=>save(false)}>{tr('仅保存配置','Save without testing')}</Button>
       {busy&&<Button variant="ghost" onClick={abortRequests}>{tr('取消请求','Cancel request')}</Button>}
     </div>

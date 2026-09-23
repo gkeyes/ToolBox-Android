@@ -432,10 +432,10 @@ export function Chat({ session }: { session: Session }) {
   };
 
   return (
-    <div className="h-dvh flex flex-col pt-safe lg:grid lg:grid-cols-[minmax(0,1fr)_var(--margin-w)] lg:gap-8 lg:px-6 lg:mx-auto lg:w-full lg:max-w-[var(--focus-max)]">
+    <div className="practice-chat h-dvh overflow-hidden flex flex-col pt-safe lg:grid lg:grid-cols-[minmax(0,1fr)_var(--margin-w)] lg:gap-8 lg:px-6 lg:mx-auto lg:w-full lg:max-w-[var(--focus-max)]">
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
       {/* header */}
-      <header className="px-3 border-b border-line bg-paper flex flex-col shrink-0">
+      <header className="practice-chat-header px-3 border-b border-line bg-paper flex flex-col shrink-0">
         <PracticeJourney phase={1} onBack={() => setEndOpen(true)} backLabel={t(lang, "pr_leave_options")} />
         <div className="flex items-center gap-2 py-2">
           <div className="flex-1 min-w-0 px-1">
@@ -459,7 +459,7 @@ export function Chat({ session }: { session: Session }) {
             <span>{t(lang, "pr_context_toggle")}</span>
             <span className="flex items-center gap-2"><span className="num">{session.objectiveDone.filter(Boolean).length}/{objectives.length}</span><ChevronDown size={15} /></span>
           </summary>
-          <div className="pb-4 flex flex-col gap-4 max-h-[30dvh] overflow-y-auto">
+          <div className="practice-context-body pb-4 flex flex-col gap-4 max-h-[24dvh] overflow-y-auto overscroll-contain">
             <Stance name={stanceName} value={stance} prev={prevStance} lang={lang} />
             <Objectives items={objectives} done={session.objectiveDone} label={t(lang, "pr_objectives")} layout="stack" />
           </div>
@@ -481,7 +481,7 @@ export function Chat({ session }: { session: Session }) {
             return (
               <motion.div key={m.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="bubble-coach px-3.5 py-2.5 text-[13.5px] leading-relaxed flex gap-2 self-stretch">
                 <Lightbulb size={15} className="mt-0.5 shrink-0 text-accent-deep" />
-                <span>{m.text}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{m.text}</span>
               </motion.div>
             );
           }
@@ -496,7 +496,7 @@ export function Chat({ session }: { session: Session }) {
           }
           if (m.role === "learner") {
             return (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.25 }} className="self-end max-w-[82%] bubble-me px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
+              <motion.div key={m.id} initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.25 }} className="self-end min-w-0 max-w-[82%] bubble-me px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
                 {m.text}
               </motion.div>
             );
@@ -504,11 +504,11 @@ export function Chat({ session }: { session: Session }) {
           const c = sc.characters.find((x) => x.id === m.characterId) ?? npcs[0];
           const prevSame = session.messages[i - 1]?.role === "npc" && session.messages[i - 1]?.characterId === m.characterId;
           return (
-            <motion.div key={m.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="self-start max-w-[86%] flex gap-2 items-end">
+            <motion.div key={m.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="self-start min-w-0 max-w-[86%] flex gap-2 items-end">
               <span className={clsx("shrink-0", prevSame && "invisible")}><Avatar name={c?.name[lang] ?? "?"} hue={c?.hue ?? 40} size={32} /></span>
-              <div className="flex flex-col gap-1">
+              <div className="min-w-0 flex flex-col gap-1">
                 {!prevSame && <span className="text-[11px] text-ink-3 pl-1">{c?.name[lang]}</span>}
-                <div className="bubble-npc px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">{m.text || <Spinner />}</div>
+                <div className="bubble-npc min-w-0 px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{m.text || <Spinner />}</div>
               </div>
             </motion.div>
           );
@@ -543,7 +543,7 @@ export function Chat({ session }: { session: Session }) {
         </div>
       )}
       {/* composer */}
-      <div className="relative border-t border-line bg-paper px-3 lg:px-5 pt-3 pb-safe shrink-0">
+      <div className="practice-composer relative max-h-[45dvh] overflow-y-auto overscroll-contain border-t border-line bg-paper px-3 lg:px-5 pt-3 pb-safe shrink-0">
         {/* The other side's patience, burning down along the rule the composer
             sits on. No digits: the room tells you how it is going. */}
         <span
@@ -595,7 +595,7 @@ export function Chat({ session }: { session: Session }) {
             <ArrowUp size={20} />
           </button>
         </div>
-        <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 px-1 mt-2 text-[11px] text-ink-3">
+        <div className="practice-composer-meta flex flex-wrap justify-between gap-x-3 gap-y-1 px-1 mt-2 text-[11px] text-ink-3">
           <p role="status">{busy ? t(lang, "pr_replying") : input ? t(lang, draftSaved ? "pr_draft_saved" : "pr_draft_unsaved") : t(lang, "pr_ready_reply")}</p>
           <p id="composer-hint" className="hidden lg:block">{t(lang, "pr_keyboard_hint")}</p>
         </div>
