@@ -1,0 +1,62 @@
+name: SocialCoach TBX
+
+on:
+  push:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - ".github/workflows/socialcoach.yml"
+      - "examples/socialcoach/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: socialcoach-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Prepare pinned migration workspace
+        if: ${{ hashFiles('examples/socialcoach/package.json') == '' }}
+        run: |
+          mkdir -p build/socialcoach-review
+          curl --fail --location --retry 3 https://codeload.github.com/GeminiLight/SocialCoach/tar.gz/f639887d9cc69b01c1164c5b8a6f04b701fc94bf -o build/socialcoach-review/upstream.tar.gz
+          git archive HEAD sdk schema scripts tool-api tool-runtime tool-package examples .gitignore > build/socialcoach-review/host-reference.tar
+      - name: Save migration workspace
+        if: ${{ hashFiles('examples/socialcoach/package.json') == '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: socialcoach-migration-workspace
+          path: build/socialcoach-review/
+          retention-days: 2
+          if-no-files-found: error
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+        with:
+          node-version: "22"
+      - name: Build SocialCoach
+        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+        working-directory: examples/socialcoach
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run build
+      - name: Package SocialCoach
+        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+        run: |
+          mkdir -p build/socialcoach
+          python3 scripts/package-tool.py examples/socialcoach/dist build/socialcoach/socialcoach-1.0.0.tbx
+      - name: Save TBX
+        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: socialcoach-1.0.0
+          path: build/socialcoach/
+          if-no-files-found: error
