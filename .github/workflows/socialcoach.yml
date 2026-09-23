@@ -58,7 +58,7 @@ jobs:
           p=pathlib.Path('build/socialcoach/socialcoach-v1.0.2.tbx')
           with zipfile.ZipFile(p) as z:
               m=json.loads(z.read('manifest.json')); h=json.loads(z.read('integrity.json'))
-              assert m['version']=='1.0.2' and m['versionCode']==2 and m['entry'] in z.namelist()
+              assert m['version']=='1.0.2' and m['versionCode']==3 and m['entry'] in z.namelist()
               assert not any(pathlib.Path(n).suffix.lower() in {'.woff','.woff2','.ttf','.otf'} for n in z.namelist())
               for name,digest in h['files'].items():
                   assert hashlib.sha256(z.read(name)).hexdigest()==digest,name
