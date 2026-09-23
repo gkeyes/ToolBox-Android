@@ -1,4 +1,5 @@
 name: SocialCoach TBX
+run-name: SocialCoach 1.0.0 · ${{ github.ref_name }}
 
 on:
   push:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: socialcoach-${{ github.ref }}
@@ -18,45 +19,106 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          persist-credentials: false
-      - name: Prepare pinned migration workspace
-        if: ${{ hashFiles('examples/socialcoach/package.json') == '' }}
-        run: |
-          mkdir -p build/socialcoach-review
-          curl --fail --location --retry 3 https://codeload.github.com/GeminiLight/SocialCoach/tar.gz/f639887d9cc69b01c1164c5b8a6f04b701fc94bf -o build/socialcoach-review/upstream.tar.gz
-          git archive HEAD sdk schema scripts tool-api tool-runtime tool-package examples .gitignore > build/socialcoach-review/host-reference.tar
-      - name: Save migration workspace
-        if: ${{ hashFiles('examples/socialcoach/package.json') == '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: socialcoach-migration-workspace
-          path: build/socialcoach-review/
-          retention-days: 2
-          if-no-files-found: error
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
         with:
           node-version: "22"
-      - name: Build SocialCoach
-        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+      - name: Expand verified one-time migration
+        if: ${{ hashFiles('examples/socialcoach/.migration/*.b64') != '' }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,hashlib,json,pathlib
+          root=pathlib.Path('examples/socialcoach')
+          chunks=sorted((root/'.migration').glob('*.b64'))
+          assert len(chunks)==7
+          raw=base64.b64decode(''.join(p.read_text().strip() for p in chunks),validate=True)
+          assert hashlib.sha256(raw).hexdigest()=='fcaf251b89ed4ae93906fed4d444c051e9fb3f68fc7d60be6724d2a1f3f1bf6e'
+          for name,text in json.loads(gzip.decompress(raw)).items():
+              p=pathlib.PurePosixPath(name)
+              assert not p.is_absolute() and '..' not in p.parts and '\\' not in name
+              target=root.joinpath(*p.parts)
+              assert not target.exists()
+              target.parent.mkdir(parents=True,exist_ok=True)
+              target.write_text(text,encoding='utf-8')
+          PY
+          mkdir -p "$RUNNER_TEMP/socialcoach-upstream"
+          curl --fail --location --retry 3 https://codeload.github.com/GeminiLight/SocialCoach/tar.gz/f639887d9cc69b01c1164c5b8a6f04b701fc94bf -o "$RUNNER_TEMP/socialcoach-upstream.tar.gz"
+          echo "bfbb83d96a03ee3f0481ad7d6ffb93e6de69168811401283823bd34ea8388560  $RUNNER_TEMP/socialcoach-upstream.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/socialcoach-upstream.tar.gz" -C "$RUNNER_TEMP/socialcoach-upstream" --strip-components=1
+          python3 examples/socialcoach/bootstrap.py --source "$RUNNER_TEMP/socialcoach-upstream"
+      - name: Resolve and install dependencies
         working-directory: examples/socialcoach
         run: |
+          if [ ! -f package-lock.json ]; then npm install --package-lock-only --ignore-scripts; fi
           npm ci --ignore-scripts
-          npm test
-          npm run build
-      - name: Package SocialCoach
-        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+      - name: Persist standalone source and lockfile
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
         run: |
+          python3 - <<'PY'
+          import json,pathlib,shutil
+          path=pathlib.Path('scripts/ci/tbx-targets.json')
+          data=json.loads(path.read_text())
+          if 'socialcoach' not in data:
+              data['socialcoach']={'manifest':'manifest.json','npm':True,'javascript':[],'package':['bash','package.sh','{output}']}
+              path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+          shutil.rmtree('examples/socialcoach/.migration',ignore_errors=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add examples/socialcoach scripts/ci/tbx-targets.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(socialcoach): import React training application and native TBX platform'
+            git pull --rebase origin "$TARGET_BRANCH"
+            git push origin "HEAD:$TARGET_BRANCH"
+          fi
           mkdir -p build/socialcoach
-          python3 scripts/package-tool.py examples/socialcoach/dist build/socialcoach/socialcoach-1.0.0.tbx
-      - name: Save TBX
-        if: ${{ hashFiles('examples/socialcoach/package.json') != '' }}
+          git rev-parse HEAD > build/socialcoach/SOURCE_COMMIT.txt
+      - name: Unit and upstream corpus regressions
+        working-directory: examples/socialcoach
+        run: npm test
+      - name: Type check and static React build
+        working-directory: examples/socialcoach
+        run: npm run build
+      - name: Install browser for mobile and desktop checks
+        working-directory: examples/socialcoach
+        run: npx playwright install --with-deps chromium
+      - name: Browser interaction regressions
+        working-directory: examples/socialcoach
+        run: npm run test:browser
+      - name: Package and verify TBX
+        run: |
+          python3 scripts/package-tool.py examples/socialcoach/dist build/socialcoach/socialcoach-v1.0.0.tbx
+          python3 - <<'PY'
+          import pathlib,zipfile,json,hashlib
+          p=pathlib.Path('build/socialcoach/socialcoach-v1.0.0.tbx')
+          with zipfile.ZipFile(p) as z:
+              m=json.loads(z.read('manifest.json')); h=json.loads(z.read('integrity.json'))
+              assert m['version']=='1.0.0' and m['entry'] in z.namelist()
+              assert not any(pathlib.Path(n).suffix.lower() in {'.woff','.woff2','.ttf','.otf'} for n in z.namelist())
+              for name,digest in h['files'].items():
+                  assert hashlib.sha256(z.read(name)).hexdigest()==digest,name
+          (p.parent/'SHA256SUMS.txt').write_text(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n')
+          PY
+      - name: Collect source and test evidence
+        if: always()
+        run: |
+          mkdir -p build/socialcoach/evidence
+          if [ -d examples/socialcoach/test-results ]; then cp -r examples/socialcoach/test-results build/socialcoach/evidence/; fi
+          tar --exclude=node_modules --exclude=dist --exclude=test-results --exclude=.migration -czf build/socialcoach/source-workspace.tar.gz -C examples socialcoach
+          if [ -d examples/socialcoach/dist ]; then tar -czf build/socialcoach/preview.tar.gz -C examples/socialcoach dist; fi
+      - name: Save deliverable and checks
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: socialcoach-1.0.0
+          name: socialcoach-1.0.0-${{ github.run_attempt }}
           path: build/socialcoach/
           if-no-files-found: error
+          retention-days: 30
