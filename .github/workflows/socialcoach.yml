@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: socialcoach-${{ github.ref }}
@@ -19,66 +19,21 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-      - name: Expand verified one-time migration
-        if: ${{ hashFiles('examples/socialcoach/.migration/*.b64') != '' }}
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import base64,gzip,hashlib,json,pathlib
-          root=pathlib.Path('examples/socialcoach')
-          chunks=sorted((root/'.migration').glob('*.b64'))
-          assert len(chunks)==7
-          raw=base64.b64decode(''.join(p.read_text().strip() for p in chunks),validate=True)
-          assert hashlib.sha256(raw).hexdigest()=='fcaf251b89ed4ae93906fed4d444c051e9fb3f68fc7d60be6724d2a1f3f1bf6e'
-          for name,text in json.loads(gzip.decompress(raw)).items():
-              p=pathlib.PurePosixPath(name)
-              assert not p.is_absolute() and '..' not in p.parts and '\\' not in name
-              target=root.joinpath(*p.parts)
-              assert not target.exists()
-              target.parent.mkdir(parents=True,exist_ok=True)
-              target.write_text(text,encoding='utf-8')
-          PY
-          mkdir -p "$RUNNER_TEMP/socialcoach-upstream"
-          curl --fail --location --retry 3 https://codeload.github.com/GeminiLight/SocialCoach/tar.gz/f639887d9cc69b01c1164c5b8a6f04b701fc94bf -o "$RUNNER_TEMP/socialcoach-upstream.tar.gz"
-          echo "bfbb83d96a03ee3f0481ad7d6ffb93e6de69168811401283823bd34ea8388560  $RUNNER_TEMP/socialcoach-upstream.tar.gz" | sha256sum -c -
-          tar xzf "$RUNNER_TEMP/socialcoach-upstream.tar.gz" -C "$RUNNER_TEMP/socialcoach-upstream" --strip-components=1
-          python3 examples/socialcoach/bootstrap.py --source "$RUNNER_TEMP/socialcoach-upstream"
-      - name: Resolve and install dependencies
+          cache: npm
+          cache-dependency-path: examples/socialcoach/package-lock.json
+      - name: Install locked dependencies
         working-directory: examples/socialcoach
+        run: npm ci --ignore-scripts
+      - name: Record exact source commit
         run: |
-          if [ ! -f package-lock.json ]; then npm install --package-lock-only --ignore-scripts; fi
-          npm ci --ignore-scripts
-      - name: Persist standalone source and lockfile
-        env:
-          TARGET_BRANCH: ${{ github.ref_name }}
-        run: |
-          python3 - <<'PY'
-          import json,pathlib,shutil
-          path=pathlib.Path('scripts/ci/tbx-targets.json')
-          data=json.loads(path.read_text())
-          if 'socialcoach' not in data:
-              data['socialcoach']={'manifest':'manifest.json','npm':True,'javascript':[],'package':['bash','package.sh','{output}']}
-              path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
-          shutil.rmtree('examples/socialcoach/.migration',ignore_errors=True)
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add examples/socialcoach scripts/ci/tbx-targets.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'feat(socialcoach): import React training application and native TBX platform'
-            git pull --rebase origin "$TARGET_BRANCH"
-            git push origin "HEAD:$TARGET_BRANCH"
-          fi
           mkdir -p build/socialcoach
           git rev-parse HEAD > build/socialcoach/SOURCE_COMMIT.txt
       - name: Unit and upstream corpus regressions
@@ -112,7 +67,7 @@ jobs:
         run: |
           mkdir -p build/socialcoach/evidence
           if [ -d examples/socialcoach/test-results ]; then cp -r examples/socialcoach/test-results build/socialcoach/evidence/; fi
-          tar --exclude=node_modules --exclude=dist --exclude=test-results --exclude=.migration -czf build/socialcoach/source-workspace.tar.gz -C examples socialcoach
+          tar --exclude=node_modules --exclude=dist --exclude=test-results --exclude=__pycache__ -czf build/socialcoach/source-workspace.tar.gz -C examples socialcoach
           if [ -d examples/socialcoach/dist ]; then tar -czf build/socialcoach/preview.tar.gz -C examples/socialcoach dist; fi
       - name: Save deliverable and checks
         if: always()

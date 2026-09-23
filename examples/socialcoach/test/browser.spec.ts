@@ -37,7 +37,7 @@ async function setup(page:Page,{withProfile=true,withKey=true}:{withProfile?:boo
   await page.route('https://**/*',route=>route.abort());
 }
 function consoleCheck(page:Page){const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});return errors;}
-async function screenshot(page:Page,name:string){await page.screenshot({path:test.info().outputPath(name+'.png'),fullPage:false});}
+async function screenshot(page:Page,name:string){await page.screenshot({path:test.info().outputPath(name+'.png'),fullPage:false,animations:'disabled'});}
 async function arena(page:Page){await page.goto('/#/arena');await expect(page.getByRole('heading',{level:1})).toBeVisible();await expect(page).toHaveTitle(/SocialCoach/);}
 async function startScene(page:Page){await arena(page);await page.getByRole('searchbox').fill(scene.title.zh);await page.getByRole('button').filter({has:page.getByText(scene.title.zh,{exact:true})}).first().click();await expect(page.getByText('测试准备：先承认反馈延迟，再讨论具体安排。')).toBeVisible();await page.getByRole('button',{name:'进入对话',exact:true}).filter({visible:true}).click();await expect(page.getByRole('textbox',{name:'说点什么…',exact:true})).toBeVisible();}
 
@@ -49,4 +49,24 @@ test('full API key typing, model list selection, save and modal Back',async({pag
 
 test('scene preparation -> streamed dialogue -> grounded report -> backup and reopen',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();await screenshot(page,'conversation');await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'review');const hash=new URL(page.url()).hash;await page.reload();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(hash);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'导出'}).first().click();const exported=await page.evaluate(()=>(window as any).__testHost.exports[0]);expect(exported.content).not.toContain(key);expect(JSON.parse(exported.content).sessions[0].report.scoringVersion).toBe(2);expect(errors).toEqual([]);});
 
-test('cancel generation releases the native stream and preserves the learner turn',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.evaluate(()=>{(window as any).__testHost.hold=true;});await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await page.getByRole('button',{name:'停止生成',exact:true}).click();await expect(page.getByText('请求已取消',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();const count=await page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].messages.filter((m:any)=>m.role==='learner').length);expect(count).toBe(1);await page.evaluate(()=>{(window as any).__testHost.hold=false;});await page.getByRole('button',{name:'重试',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();expect(await page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].messages.filter((m:any)=>m.role==='learner').length)).toBe(1);expect(errors).toEqual([]);});
+test('cancel generation releases the native stream and preserves the learner turn',async({page})=>{
+  await setup(page);
+  const errors=consoleCheck(page);
+  await startScene(page);
+  const baseline=await page.evaluate(()=>{const h=(window as any).__testHost;h.hold=true;return {calls:h.calls.length,cancelled:h.cancelled};});
+  await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);
+  await page.getByRole('button',{name:'发送',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.calls.length)).toBeGreaterThan(baseline.calls);
+  await page.getByRole('button',{name:'停止生成',exact:true}).click();
+  // The alert deliberately includes a retry button; match its semantic container.
+  await expect(page.getByRole('alert')).toContainText('请求已取消');
+  await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.cancelled)).toBeGreaterThan(baseline.cancelled);
+  const learnerCount=()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].messages.filter((m:any)=>m.role==='learner').length);
+  expect(await learnerCount()).toBe(1);
+  await page.evaluate(()=>{(window as any).__testHost.hold=false;});
+  await page.getByRole('button',{name:'重试',exact:true}).click();
+  await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
+  expect(await learnerCount()).toBe(1);
+  expect(errors).toEqual([]);
+});
