@@ -3,7 +3,7 @@ import {Button,Chip,Sheet,Spinner} from '@/components/ui';
 import {useByok,isReady,type ByokConfig} from '@/lib/byok';
 import {useLang} from '@/store/useApp';
 import {pick} from '@/lib/i18n';
-import {listModels,makeByokLLM} from './llm';
+import {listModels,makeByokLLM,isMiniMaxM3} from './llm';
 import {flushStorage} from './storage';
 import {endpoint,abortRequests} from './network';
 
@@ -17,6 +17,13 @@ export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void;forced
   const tr=(zh:string,en:string)=>pick({zh,en},lang);
   useEffect(()=>{if(open){setDraft({...useByok.getState()});setNote('');setModels([]);setTarget(null);}},[open]);
   const update=(p:Partial<ByokConfig>)=>{setDraft(d=>({...d,...p}));setNote('');};
+  const miniMaxPreset=(baseUrl:string)=>{
+    let sameOrigin=false;
+    try{sameOrigin=new URL(draft.baseUrl).origin===new URL(baseUrl).origin;}catch{}
+    update({provider:'openai',baseUrl,fastModel:'MiniMax-M3',smartModel:'MiniMax-M3',tokenParam:'max_completion_tokens',apiKey:sameOrigin?draft.apiKey:''});
+    setModels([]);setTarget(null);
+    setNote(tr('已填入 MiniMax M3。请使用与该区域对应的 API Key；更换区域不会沿用原密钥。','MiniMax M3 selected. Use the API key for this region; switching regions clears the previous key.'));
+  };
   const ready=isReady({...draft,enabled:true});
   const config:ByokConfig={enabled:true,provider:draft.provider,tokenParam:draft.tokenParam,apiKey:draft.apiKey.trim(),baseUrl:draft.baseUrl.trim(),fastModel:draft.fastModel.trim(),smartModel:draft.smartModel.trim()};
   const load=async()=>{
@@ -40,6 +47,8 @@ export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void;forced
     <div className="flex flex-col gap-4 pb-3">
       <p className="text-[13px] text-ink-3 leading-relaxed">{tr('训练记录留在本机。对话会发送到你填写的模型服务；API Key 由 ToolBox 安全存储保存。','Practice stays on this device. Your conversation is sent to your chosen model provider; ToolBox stores your key securely.')}</p>
       <div className="flex flex-wrap gap-2">{(['openai','anthropic'] as const).map(p=><Chip key={p} active={draft.provider===p} onClick={()=>{update({provider:p,baseUrl:'',fastModel:'',smartModel:''});setModels([]);}}>{p==='openai'?tr('OpenAI / 兼容接口','OpenAI / compatible'):'Anthropic'}</Chip>)}</div>
+      <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={busy} onClick={()=>miniMaxPreset('https://api.minimaxi.com/v1')}>{tr('MiniMax M3 · 国内','MiniMax M3 · China')}</Button><Button size="sm" variant="secondary" disabled={busy} onClick={()=>miniMaxPreset('https://api.minimax.io/v1')}>{tr('MiniMax M3 · 国际','MiniMax M3 · Global')}</Button></div>
+      {(isMiniMaxM3(config,config.fastModel)||isMiniMaxM3(config,config.smartModel))&&<p className="text-[12px] text-ink-3 leading-relaxed">{tr('M3 专用适配已启用：提示与角色对话关闭思考，复盘保留推理；只显示最终答案。无需读取模型列表。','M3 adaptation is active: hints and dialogue skip thinking; assessments retain reasoning. Only final answers are shown. Loading the model list is optional.')}</p>}
       <label className="flex flex-col gap-2 text-sm">{tr('API 地址','API base URL')}<input className={input} value={draft.baseUrl} onChange={e=>{update({baseUrl:e.target.value});setModels([]);}} placeholder={draft.provider==='openai'?'https://api.openai.com/v1':'https://api.anthropic.com/v1'} autoCapitalize="none" autoCorrect="off" spellCheck={false}/></label>
       <p className="text-[12px] text-ink-3">{tr('留空使用官方地址。兼容接口填写到 /v1 等基路径，不要填 /chat/completions。Gemini 可使用其 OpenAI 兼容端点。','Leave blank for the official endpoint. Use the base path, not /chat/completions. Gemini can use its OpenAI-compatible endpoint.')}</p>
       <label className="flex flex-col gap-2 text-sm">API Key<input className={input} type="password" value={draft.apiKey} onChange={e=>{update({apiKey:e.target.value});setModels([]);}} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={tr('粘贴你的密钥','Paste your API key')}/></label>

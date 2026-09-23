@@ -4,9 +4,22 @@
 
 ## 使用
 
-在 ToolBox 0.8.0 或更新版本导入 `socialcoach-v1.0.0.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
+在 ToolBox 0.8.0 或更新版本导入 `socialcoach-v1.0.1.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
 
 支持 OpenAI Chat Completions 兼容接口及 Anthropic Messages；Gemini 可使用其 OpenAI 兼容端点。兼容服务的 Base URL 填到 `/v1` 等基路径，不要包含 `/chat/completions`。推理模型可选择 `max_completion_tokens`。首版不提供共享 API、不内置密钥、不部署服务器。
+
+## MiniMax M3 适配（1.0.1）
+
+在「模型设置」选择「MiniMax M3 · 国内」或「MiniMax M3 · 国际」，填入对应平台的密钥，再「测试并保存」。两个模型均填 `MiniMax-M3`；OpenAI 兼容基地址分别是 `https://api.minimaxi.com/v1` 与 `https://api.minimax.io/v1`。国内官方 `api.minimax.cn` 也会识别。已有官方 M3 配置自动适配，不必重新填写。区域预设改变域名时清空当前密钥，避免把其他服务的密钥发往新地址。
+
+- 提示、角色对话及原本 `thinking:false` 的短任务：发送 `thinking:{type:"disabled"}`；复盘：显式使用 `adaptive`，保留推理需求。
+- OpenAI 兼容请求发送顶层 `reasoning_split:true`，M3 使用 `max_completion_tokens`。短任务保持原输出上限；复盘为推理和答案预留至少 16384 tokens 的总上限，不是每次实际用量，也不会自动重试增加费用。
+- 同时兼容 MiniMax Anthropic 协议：SDK 基地址 `/anthropic` 映射到 `/anthropic/v1/messages`，只读取 text 块；不拼接 thinking 块。该协议与 OpenAI 兼容接口的默认思考开关不同，因此按任务显式设置。
+- 返回解析在界面、角色元数据和 JSON 复盘解析之前完成：忽略单独的推理字段，并增量过滤正文中的 `<think>` / `<thinking>` 保留标记。标签跨流式片段、中文 UTF-8 分块和嵌套标记均有回归测试；只返回思考、标签未结束、输出截断或 MiniMax HTTP 200 业务错误时明确报错，不保存为有效提示或报告。
+- 未验证的第三方网关不会收到 MiniMax 专属请求参数，但仍使用最终答案过滤。网关需要支持相应原生参数才能关闭模型思考；不会擅自更改现有地址或密钥。本工具没有 function/tool-call 链路，不把该过滤器作为通用工具调用历史序列化器。
+- 保持 TBX ID、存储键和权限不变。更新前建议备份，直接导入更新，无需卸载。已保存的旧提示不自动改写；重新请求提示或开启一次新练习查看效果。
+
+官方依据（核对日期 2026-09-24）：[OpenAI 兼容接口](https://platform.minimax.io/docs/api-reference/text-openai-api)、[Anthropic 兼容接口](https://platform.minimax.io/docs/api-reference/text-anthropic-api)、[国内接口文档](https://platform.minimaxi.com/docs/api-reference/text-openai-api)。`reasoning_split` 仅分离内容，不等于关闭思考；M2.x 与 M3 的开关能力不能混用。
 
 ## 本地与联网边界
 
@@ -34,7 +47,7 @@ npm ci --ignore-scripts
 npm test
 npm run build
 npm run test:browser
-bash package.sh ../../build/socialcoach-v1.0.0.tbx
+bash package.sh ../../build/socialcoach-v1.0.1.tbx
 ```
 
 浏览器集成测试使用明确标记的模拟 ToolBox/模型响应，仅验证协议与界面交互，不代表真实模型效果或 Android 真机验证。未使用任何用户密钥进行测试。
