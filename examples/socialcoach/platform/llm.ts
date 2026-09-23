@@ -9,7 +9,7 @@ function apiUrl(c: ByokConfig, path: string) {
   if (c.provider === 'anthropic' && new URL(root).pathname === '/') root += '/v1';
   return endpoint(root, path);
 }
-function headers(c: ByokConfig) {
+function headers(c: ByokConfig): Record<string, string> {
   return c.provider === 'openai'
     ? {'Content-Type': 'application/json', Authorization: `Bearer ${c.apiKey.trim()}`}
     : {'Content-Type': 'application/json', 'x-api-key': c.apiKey.trim(), 'anthropic-version': '2023-06-01'};
