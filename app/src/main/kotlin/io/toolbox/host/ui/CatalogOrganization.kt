@@ -71,6 +71,7 @@ internal fun LazyListScope.catalogHomeSections(
         HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
     }
     homeToolGrid(favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
+        showLabels = false,
         onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) })
     if (hasRecentTools) {
         item("recent-title") {
@@ -118,6 +119,7 @@ private fun LazyListScope.homeToolGrid(
     drag: CatalogHomeDragState,
     onAction: (CatalogAction) -> Unit,
     onOptions: (String) -> Unit,
+    showLabels: Boolean = true,
     grouped: Boolean = false,
     onMove: (CatalogTool, Int) -> Unit,
 ) {
@@ -140,6 +142,7 @@ private fun LazyListScope.homeToolGrid(
                         tool, editing,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onOptions = { onOptions(tool.toolId) },
+                        showLabel = showLabels,
                         modifier = Modifier.weight(1f).testTag(prefix + ":" + tool.toolId)
                             .catalogDragTarget(drag, prefix + ":" + tool.toolId, collection, index, tools.size, tool.name, tool,
                                 enabled = editing, onMove = { onMove(tool, it) }),
@@ -220,6 +223,8 @@ internal fun CatalogHomeTile(
     editing: Boolean,
     onOpen: () -> Unit,
     onOptions: () -> Unit,
+    showLabel: Boolean = true,
+    labelMaxLines: Int = 2,
     modifier: Modifier = Modifier,
     onMoveBefore: (() -> Unit)? = null,
     onMoveAfter: (() -> Unit)? = null,
@@ -248,9 +253,11 @@ internal fun CatalogHomeTile(
                 ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(16.dp))
             }
         }
-        Spacer(Modifier.height(6.dp))
-        AppText(tool.name, maxLines = 2, align = TextAlign.Center,
-            textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
+        if (showLabel) {
+            Spacer(Modifier.height(6.dp))
+            AppText(tool.name, maxLines = labelMaxLines, align = TextAlign.Center,
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
+        }
     }
 }
 

@@ -464,7 +464,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }
 
-    @Test fun recentFavoritesAndGroupMembersShareColumnAndIconAlignment() {
+    @Test fun favoritesHideLabelsWhileRecentUsesWiderSingleLineTilesAndGridStaysAligned() {
         fixture.layout.value = CatalogLayout(favorites = listOf("a", "b"),
             groups = listOf(CatalogGroup("g1", "工作", listOf("a", "b"))))
         render()
@@ -482,17 +482,28 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                     icon.positionInRoot.x + icon.size.width / 2f, icon.size.width)
             }
         }
-        val recent = measure("recent")
-        listOf("favorite", "member:g1").forEach { prefix ->
-            val measured = measure(prefix)
-            measured.zip(recent).forEachIndexed { column, (actual, reference) ->
-                assertEquals("$prefix column $column must align with recent tools", reference.left, actual.left, 1f)
-                assertEquals("$prefix column $column must use the same width", reference.width.toFloat(), actual.width.toFloat(), 1f)
-                assertEquals("$prefix icon $column must align with recent tools", reference.iconCenter, actual.iconCenter, 1f)
-                assertEquals(reference.iconWidth, actual.iconWidth)
-            }
-            assertTrue("Columns must remain separate", measured[0].left + measured[0].width < measured[1].left)
+
+        val favorites = measure("favorite")
+        homeTile("favorite:a")
+        homeLabel("favorite:a").assertDoesNotExist()
+        homeTile("favorite:b")
+        homeLabel("favorite:b").assertDoesNotExist()
+
+        val members = measure("member:g1")
+        members.zip(favorites).forEachIndexed { column, (actual, reference) ->
+            assertEquals("member column $column must align with favorites", reference.left, actual.left, 1f)
+            assertEquals("member column $column must use the same width", reference.width.toFloat(), actual.width.toFloat(), 1f)
+            assertEquals("member icon $column must align with favorites", reference.iconCenter, actual.iconCenter, 1f)
+            assertEquals(reference.iconWidth, actual.iconWidth)
         }
+
+        val recent = measure("recent")
+        assertTrue("Recent tiles need more room for a single-line title", recent[0].width > favorites[0].width)
+        listOf("a", "b").forEach { id ->
+            homeTile("recent:$id")
+            assertEquals("Recent titles must stay on one line", 1, homeLabelLayout("recent:$id").lineCount)
+        }
+        assertTrue("Recent items must remain separate", recent[0].left + recent[0].width < recent[1].left)
     }
 
     @Test fun emptyHomeShowsOnlyTheGlobalEmptyStateAndBothInstallActionsWork() {
@@ -515,7 +526,9 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         fixture.layout.value = CatalogLayout(favorites = listOf("long"), groups = listOf(CatalogGroup("last", "末尾分组", listOf("long"))))
         render()
         homeTile("favorite:long").assertHasClickAction()
-            .assertTextContains(fixture.tools.value.single().name, substring = true)
+            .assertContentDescriptionEquals(fixture.tools.value.single().name)
+        homeLabel("favorite:long").assertDoesNotExist()
+        homeTile("member:last:long").assertContentDescriptionEquals(fixture.tools.value.single().name)
         assertLastTileClearsNavigation("member:last:long")
     }
 

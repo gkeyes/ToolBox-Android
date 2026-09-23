@@ -143,8 +143,9 @@ internal fun ToolManagerContent(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val direction = LocalLayoutDirection.current
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
-        val columns = homeGridColumnCount((contentWidth - 32.dp).value, LocalDensity.current.fontScale)
-        val tileWidth = ((contentWidth - 32.dp - 12.dp * (columns - 1)) / columns).coerceAtLeast(0.dp)
+        val fontScale = LocalDensity.current.fontScale
+        val columns = homeGridColumnCount((contentWidth - 32.dp).value, fontScale)
+        val recentTileWidth = (112.dp * fontScale.coerceIn(1f, 1.35f)).coerceAtMost(contentWidth * 0.45f)
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
@@ -201,7 +202,7 @@ internal fun ToolManagerContent(
                     onOptions = { selectedToolId = it },
                     hasRecentTools = recentTools.isNotEmpty(),
                     recentContent = {
-                        CatalogRecentTools(recentTools, tileWidth, onAction, editing) { selectedToolId = it }
+                        CatalogRecentTools(recentTools, recentTileWidth, onAction, editing) { selectedToolId = it }
                     },
                 )
                 item("running-tools", contentType = "running-tools") { runningTools() }
@@ -438,6 +439,7 @@ internal fun CatalogRecentTools(
             CatalogHomeTile(tool, editing,
                 onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                 onOptions = { onOptions(tool.toolId) },
+                labelMaxLines = 1,
                 modifier = Modifier.width(tileWidth).testTag("recent:" + tool.toolId))
         }
     }
