@@ -49,7 +49,7 @@ test('full API key typing, model list selection, save and modal Back',async({pag
 
 test('scene preparation -> streamed dialogue -> grounded report -> backup and reopen',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();await screenshot(page,'conversation');await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'review');const hash=new URL(page.url()).hash;await page.reload();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(hash);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'导出'}).first().click();const exported=await page.evaluate(()=>(window as any).__testHost.exports[0]);expect(exported.content).not.toContain(key);expect(JSON.parse(exported.content).sessions[0].report.scoringVersion).toBe(2);expect(errors).toEqual([]);});
 
-test('cancel generation releases the native stream and preserves the learner turn',async({page})=>{
+test('cancel and edit-resend release the stream and retain one learner message',async({page})=>{
   await setup(page);
   const errors=consoleCheck(page);
   await startScene(page);
@@ -66,7 +66,11 @@ test('cancel generation releases the native stream and preserves the learner tur
   expect(await learnerCount()).toBe(1);
   await page.evaluate(()=>{(window as any).__testHost.hold=false;});
   await page.getByRole('button',{name:'重试',exact:true}).click();
+  // Preserve upstream behavior: retry restores an editable draft, then the user sends.
+  await expect(page.getByRole('textbox',{name:'说点什么…',exact:true})).toHaveValue(learnerLine);
+  await expect.poll(learnerCount).toBe(0);
+  await page.getByRole('button',{name:'发送',exact:true}).click();
   await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
-  expect(await learnerCount()).toBe(1);
+  await expect.poll(learnerCount).toBe(1);
   expect(errors).toEqual([]);
 });
