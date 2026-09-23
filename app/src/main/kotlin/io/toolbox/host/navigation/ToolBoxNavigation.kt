@@ -2,7 +2,6 @@ package io.toolbox.host.navigation
 
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -47,17 +46,13 @@ import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.help.DeveloperHelpScreen
-import io.toolbox.host.importflow.ContentResolverPackageInputFactory
 import io.toolbox.host.importflow.ImportViewModel
-import io.toolbox.host.importflow.ImportUiState
-import io.toolbox.host.importflow.SelectedPackageSource
-import io.toolbox.host.importflow.ToolBoxOpenDocument
+import io.toolbox.host.importflow.rememberPackageImportPicker
 import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.ToolPermissionsScreen
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.AppearanceScreen
-import io.toolbox.host.importflow.ImportScreen
 import io.toolbox.host.settings.AboutScreen
 import io.toolbox.host.settings.SettingsScreen
 import io.toolbox.host.settings.SettingsViewModel
@@ -90,22 +85,15 @@ internal fun ToolBoxNavigation(
 ) {
     val primaryBackStack = rememberNavBackStack<ToolBoxRoute>(HomeRoute)
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
+    // Preserve decoding of old saved stacks, but never restore the removed page.
+    LaunchedEffect(Unit) { secondaryBackStack.removeAll { it == ImportRoute } }
     val toolsListState = rememberLazyListState()
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
     var homeEditing by rememberSaveable { mutableStateOf(false) }
     var homeCreatingGroup by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-    val packageInputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
-    val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
-        coroutineScope.launch {
-            when (val source = packageInputFactory.fromPickerResult(uri)) {
-                SelectedPackageSource.Cancelled -> Unit
-                is SelectedPackageSource.Ready -> importViewModel.importPackage(source.input)
-                is SelectedPackageSource.Rejected -> importViewModel.pickerRejected(source.message)
-            }
-        }
-    }
+    val onPickPackage = rememberPackageImportPicker(importViewModel, contentResolver)
 
     fun navigate(route: ToolBoxRoute) {
         if (secondaryBackStack.lastOrNull() != route) secondaryBackStack.add(route)
@@ -249,7 +237,7 @@ internal fun ToolBoxNavigation(
                         onDestination = ::navigateMain,
                         title = selectedDestination.label,
                         onImport = if (selectedDestination != MainDestination.Settings) {
-                            { navigate(ImportRoute) }
+                            onPickPackage
                         } else {
                             null
                         },
@@ -268,14 +256,13 @@ internal fun ToolBoxNavigation(
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
                                 importViewModel = importViewModel,
-                                importPageVisible = allSecondaryRoutes.contains(ImportRoute),
                                 listState = if (selectedDestination == MainDestination.Home) homeListState else toolsListState,
                                 contentPadding = padding,
                                 layout = layout,
                                 // Freeze only while the settled runtime fully covers the base page.
                                 // Resume before the source's return animation, not after route removal.
                                 uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
-                                onImport = { navigate(ImportRoute) },
+                                onImport = onPickPackage,
                                 onOpenDetails = { navigate(ToolDetailRoute(it)) },
                             )
 
@@ -319,7 +306,6 @@ internal fun ToolBoxNavigation(
                             onBack = requestBack,
                             onReady = signalReady,
                             onNavigate = ::navigate,
-                            onPickPackage = { picker.launch(ToolBoxOpenDocument.mimeTypes()) },
                         )
                     }
                 }
@@ -440,23 +426,10 @@ private fun SecondaryRouteContent(
     onBack: () -> Unit,
     onReady: () -> Unit,
     onNavigate: (ToolBoxRoute) -> Unit,
-    onPickPackage: () -> Unit,
 ) {
     when (route) {
-        ImportRoute -> {
-            val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
-            val importState by importViewModel.state.collectAsStateWithLifecycle()
-            ImportScreen(
-                viewModel = importViewModel,
-                onPickPackage = onPickPackage,
-                onBack = onBack,
-                onReady = onReady,
-                onOpenTool = { toolId -> catalogViewModel.dispatch(CatalogAction.RequestRuntimeLaunch(toolId)) },
-                installedToolReady = importState.installedToolId?.let { id ->
-                    catalogState.tools.any { it.toolId == id }
-                } == true,
-            )
-        }
+        // A restored legacy entry is removed by ToolBoxNavigation's initial effect.
+        ImportRoute -> Unit
         AboutRoute -> AboutScreen(onBack, onReady)
         BackupRestoreRoute -> {
             val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
@@ -541,7 +514,6 @@ private fun ToolManagerRouteContent(
     onEditingChange: (Boolean) -> Unit,
     creatingGroup: Boolean,
     onDismissCreateGroup: () -> Unit,
-    importPageVisible: Boolean = false,
     dependencies: HostDependencies,
     viewModelStoreOwner: ViewModelStoreOwner,
     catalogViewModel: CatalogViewModel,
@@ -570,16 +542,14 @@ private fun ToolManagerRouteContent(
         creatingGroup = creatingGroup,
         onDismissCreateGroup = onDismissCreateGroup,
         state = catalogState,
-        // The dedicated import page owns its result and actions. The covered home
-        // must not duplicate the feedback or expire that result after three seconds.
-        importState = if (importPageVisible) ImportUiState() else importState,
+        importState = importState,
         listState = listState,
         contentPadding = contentPadding,
         onAction = catalogViewModel::dispatch,
         onImport = onImport,
         onInstallExamples = importViewModel::installBundledExamples,
         onDismissImport = importViewModel::dismissMessage,
-        onExpireImportSuccess = { if (!importPageVisible) importViewModel.expireSuccess(it) },
+        onExpireImportSuccess = importViewModel::expireSuccess,
         onConfirmImport = importViewModel::confirmVersionReplacement,
         onCancelImport = importViewModel::cancelVersionReplacement,
         onCancelActiveImport = importViewModel::cancelActiveImport,
