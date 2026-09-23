@@ -11,6 +11,8 @@ const sourceRoot = path.join(app, "src");
 const controlComponents = [
   "components/ArticleView/components/ActionButtons.jsx",
   "components/ArticleView/components/AISummary.jsx",
+  "components/ArticleView/components/ArticleTitleFilterButton.jsx",
+  "components/ArticleList/components/FeedTitleFilterButton.jsx",
   "components/Settings/Settings.jsx",
 ].map((name) => path.join(sourceRoot, name));
 const controlBoundaries = new Set([
@@ -18,6 +20,7 @@ const controlBoundaries = new Set([
   "stores/articlesStore", "stores/articlesStore.js",
   "stores/basicInfoStore.js", "stores/settingsStore.js",
   "stores/themeStore.js", "stores/modalStore.js",
+  "stores/authStore.js", "stores/feedsStore.js", "toolbox/network.js",
   "api/miniflux", "api/miniflux.js", "api/openai.js",
 ].map((name) => path.join(sourceRoot, name)));
 

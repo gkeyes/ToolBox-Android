@@ -304,6 +304,7 @@ async function collectSnapshot(accountCheck) {
         categoryId: feed.category?.id, parsing_error_count: feed.parsing_error_count,
         scraper_rules: feed.scraper_rules, keeplist_rules: feed.keeplist_rules,
         blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
+        block_filter_entry_rules: feed.block_filter_entry_rules,
       })),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
     };
