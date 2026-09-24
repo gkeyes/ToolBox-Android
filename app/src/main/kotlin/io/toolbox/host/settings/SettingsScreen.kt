@@ -35,6 +35,7 @@ import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
 internal fun SettingsScreen(
@@ -80,8 +81,11 @@ internal fun SettingsContent(
 ) {
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .overScrollVertical(),
         contentPadding = contentPadding,
+        overscrollEffect = null,
     ) {
         state.error?.let {
             item("error") { SurfaceCard { AppText(it, color = ToolBoxThemeTokens.colors.danger) } }

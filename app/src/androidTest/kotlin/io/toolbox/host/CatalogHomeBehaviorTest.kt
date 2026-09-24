@@ -68,13 +68,13 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                     }, destination.value.label, onImport = { importRequests++ }, organizeEditing = editing,
                         onOrganize = if (destination.value == MainDestination.Home) ({ editing = !editing }) else null,
                         onCreateGroup = if (destination.value == MainDestination.Home) ({ createGroupRequests++; creatingGroup = true }) else null,
-                    ) { padding, _ ->
-                        if (destination.value != MainDestination.Settings) ToolManagerContent(
+                    ) { pageDestination, padding, _ ->
+                        if (pageDestination != MainDestination.Settings) ToolManagerContent(
                             state = fixture.state(), importState = ImportUiState(),
-                            listState = if (destination.value == MainDestination.Home) homeScroll else toolsScroll,
+                            listState = if (pageDestination == MainDestination.Home) homeScroll else toolsScroll,
                             contentPadding = padding, onAction = fixture::action,
                             onImport = { importRequests++ }, onInstallExamples = { installExampleRequests++ }, onDismissImport = {}, onOpenDetails = { fixture.managed += it },
-                            home = destination.value == MainDestination.Home,
+                            home = pageDestination == MainDestination.Home,
                             editing = editing, onEditingChange = { editing = it },
                             creatingGroup = creatingGroup, onDismissCreateGroup = { creatingGroup = false },
                         ) else AppText("设置内容")

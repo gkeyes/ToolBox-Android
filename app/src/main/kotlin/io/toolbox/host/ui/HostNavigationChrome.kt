@@ -2,6 +2,8 @@ package io.toolbox.host.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -25,12 +27,17 @@ import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +50,7 @@ import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxLargeTopBar
+import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.core.ui.component.ToolBoxMenuAction
 import io.toolbox.core.ui.component.ToolBoxOverflowMenu
 import io.toolbox.core.ui.component.ToolBoxNavigationBar
@@ -54,6 +62,9 @@ import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.component.toolBoxGlassEffect
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.absoluteValue
+import kotlin.math.abs
 
 @Composable
 internal fun PrimaryScreen(
@@ -65,7 +76,7 @@ internal fun PrimaryScreen(
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
-    content: @Composable (PaddingValues, HostRouteLayout) -> Unit,
+    content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
     BoxWithConstraints(
@@ -92,12 +103,17 @@ internal fun PrimaryScreen(
                         .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
                         .consumeWindowInsets(scaffoldPadding),
                 ) {
-                    content(
-                        mergePadding(
+                    PrimaryPager(
+                        selected = selected,
+                        onDestination = onDestination,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = mergePadding(
                             if (isGlass) scaffoldPadding else PaddingValues(0.dp),
                             layout.contentPadding(),
                         ),
-                        layout,
+                        layout = layout,
+                        userScrollEnabled = !organizeEditing,
+                        content = content,
                     )
                 }
             }
@@ -126,10 +142,89 @@ internal fun PrimaryScreen(
                             .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
                             .align(Alignment.CenterHorizontally),
                     ) {
-                        content(layout.contentPadding(), layout)
+                        PrimaryPager(
+                            selected = selected,
+                            onDestination = onDestination,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = layout.contentPadding(),
+                            layout = layout,
+                            userScrollEnabled = false,
+                            content = content,
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryPager(
+    selected: MainDestination,
+    onDestination: (MainDestination) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues,
+    layout: HostRouteLayout,
+    userScrollEnabled: Boolean,
+    content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
+) {
+    val destinations = MainDestination.entries
+    val pagerState = rememberPagerState(
+        initialPage = selected.ordinal,
+        pageCount = { destinations.size },
+    )
+    val latestSelected = rememberUpdatedState(selected)
+    val latestOnDestination = rememberUpdatedState(onDestination)
+
+    LaunchedEffect(selected) {
+        val targetPage = selected.ordinal
+        if (pagerState.currentPage != targetPage || pagerState.currentPageOffsetFraction != 0f) {
+            pagerState.animateScrollToPage(
+                page = targetPage,
+                animationSpec = ToolBoxMotion.pageSpec(
+                    distance = abs(targetPage - pagerState.currentPage),
+                ),
+            )
+        }
+    }
+
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.isScrollInProgress to pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { (scrolling, page) ->
+                if (!scrolling) {
+                    val destination = destinations[page]
+                    if (destination != latestSelected.value) {
+                        latestOnDestination.value(destination)
+                    }
+                }
+            }
+    }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier,
+        beyondViewportPageCount = 1,
+        userScrollEnabled = userScrollEnabled && layout.isCompact,
+    ) { page ->
+        val pageOffset = (
+            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+        ).absoluteValue.coerceIn(0f, 1f)
+        val pageScale = 1f - pageOffset * 0.012f
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = 1f - pageOffset * 0.08f
+                    scaleX = pageScale
+                    scaleY = pageScale
+                }
+                .then(
+                    if (page == pagerState.currentPage) Modifier
+                    else Modifier.clearAndSetSemantics { },
+                ),
+        ) {
+            content(destinations[page], contentPadding, layout)
         }
     }
 }

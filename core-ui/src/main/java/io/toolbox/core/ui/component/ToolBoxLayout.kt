@@ -79,6 +79,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.squircle.squircleBorder
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 data class ToolBoxNavigationItem(
     val id: String,
@@ -384,7 +385,7 @@ private fun LiquidGlassNavigationBar(
         val selectedIndex = items.indexOfFirst { it.id == selectedId }
         val selectionOffset = animateDpAsState(
             targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
-            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "navigation selection lens",
         )
         val materials = ToolBoxThemeTokens.materials
@@ -438,7 +439,7 @@ private fun RowScope.LiquidGlassNavigationItem(
     val pressFeedbackEnabled = ToolBoxThemeTokens.materials.pressFeedbackEnabled
     val contentScale = animateFloatAsState(
         targetValue = if (pressed && pressFeedbackEnabled) 0.97f else 1f,
-        animationSpec = tween(if (pressed) 100 else 140, easing = LinearOutSlowInEasing),
+        animationSpec = ToolBoxMotion.pressSpec(pressed),
         label = "navigation item press",
     )
     val colors = ToolBoxThemeTokens.colors
@@ -518,6 +519,8 @@ fun ToolBoxCard(
         ),
         onClick = onClick,
         onLongPress = onLongClick,
+        pressFeedbackType = PressFeedbackType.Sink,
+        showIndication = onClick != null || onLongClick != null,
         content = content,
     )
 }

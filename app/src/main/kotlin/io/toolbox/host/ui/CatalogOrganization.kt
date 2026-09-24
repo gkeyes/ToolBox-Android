@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -229,8 +231,20 @@ internal fun CatalogHomeTile(
     onMoveBefore: (() -> Unit)? = null,
     onMoveAfter: (() -> Unit)? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.95f else 1f,
+        animationSpec = ToolBoxMotion.pressSpec(pressed),
+        label = "home tool press",
+    )
     Column(
-        modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(16.dp))
+        modifier.heightIn(min = 48.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(RoundedCornerShape(16.dp))
             .semantics(mergeDescendants = true) {
                 contentDescription = tool.name
                 customActions = buildList {
@@ -239,9 +253,27 @@ internal fun CatalogHomeTile(
                     onMoveAfter?.let { add(CustomAccessibilityAction("后移") { it(); true }) }
                 }
             }
-            .then(if (editing) Modifier.clickable(role = Role.Button, onClickLabel = "收藏、分组与管理", onClick = onOptions)
-                else Modifier.combinedClickable(role = Role.Button, onClickLabel = "打开" + tool.name, onClick = onOpen,
-                    onLongClickLabel = "收藏、分组与管理", onLongClick = onOptions))
+            .then(
+                if (editing) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Button,
+                        onClickLabel = "收藏、分组与管理",
+                        onClick = onOptions,
+                    )
+                } else {
+                    Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        role = Role.Button,
+                        onClickLabel = "打开" + tool.name,
+                        onClick = onOpen,
+                        onLongClickLabel = "收藏、分组与管理",
+                        onLongClick = onOptions,
+                    )
+                },
+            )
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

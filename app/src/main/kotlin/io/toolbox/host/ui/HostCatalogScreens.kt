@@ -82,6 +82,7 @@ import io.toolbox.host.importflow.ImportUiState
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.DateFormat
 import java.util.Date
 
@@ -149,9 +150,12 @@ internal fun ToolManagerContent(
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
-            modifier = Modifier.fillMaxSize().testTag(if (home) "catalog_home_list" else "catalog_tools_list")
+            modifier = Modifier.fillMaxSize()
+                .overScrollVertical()
+                .testTag(if (home) "catalog_home_list" else "catalog_tools_list")
                 .catalogDragSurface(drag, home && editing),
             contentPadding = contentPadding,
+            overscrollEffect = null,
         ) {
             if (home && editing) item("organize-help") {
                 AppText("长按拖动排序，点击工具或分组旁的 ··· 编辑", color = ToolBoxThemeTokens.colors.textSecondary,
@@ -302,6 +306,7 @@ internal fun ToolDetailScreen(
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
                 .fillMaxHeight()
+                .overScrollVertical()
                 .align(Alignment.TopCenter),
             contentPadding = mergePadding(
                 chromePadding,
@@ -312,6 +317,7 @@ internal fun ToolDetailScreen(
                     bottom = ToolBoxThemeTokens.spacing.twoHalf,
                 ),
             ),
+            overscrollEffect = null,
         ) {
             if (tool == null) {
                 item("missing") { CatalogStatusState("该工具已不存在") }

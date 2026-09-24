@@ -4,6 +4,8 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -37,8 +41,15 @@ fun ToolBoxDisclosureRow(
     val rotation = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -90f else 90f
     val angle = animateFloatAsState(
         targetValue = if (expanded) rotation else 0f,
-        animationSpec = tween(140, easing = LinearOutSlowInEasing),
+        animationSpec = tween(180, easing = ToolBoxMotion.StandardEasing),
         label = "disclosure direction",
+    )
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = ToolBoxMotion.pressSpec(pressed),
+        label = "disclosure press",
     )
     Row(
         modifier = modifier
@@ -48,7 +59,13 @@ fun ToolBoxDisclosureRow(
                 stateDescription = if (expanded) "已展开" else "已折叠"
                 if (sectionHeading) heading()
             }
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clickable(
+                interactionSource = interactionSource,
+                indication = null,
                 role = Role.Button,
                 onClickLabel = if (expanded) "收起$title" else "展开$title",
                 onClick = onClick,

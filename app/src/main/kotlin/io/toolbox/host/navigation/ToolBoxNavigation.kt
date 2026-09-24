@@ -3,7 +3,6 @@ package io.toolbox.host.navigation
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,6 +33,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import io.toolbox.core.ui.component.ToolBoxGlassActivity
+import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.host.HostDependencies
 import io.toolbox.host.HostFeatureViewModelFactory
 import io.toolbox.host.PermissionCenterViewModelFactory
@@ -67,12 +67,8 @@ import io.toolbox.host.ui.ToolManagerContent
 import io.toolbox.host.ui.ToolDetailScreen
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
-import top.yukonga.miuix.kmp.nav.runtime.NavProgrammaticEasing
 
-private val RetainedPageMotion = tween<Float>(
-    durationMillis = 180,
-    easing = NavProgrammaticEasing,
-)
+private val RetainedPageMotion = ToolBoxMotion.pageSpec()
 
 @Composable
 internal fun ToolBoxNavigation(
@@ -203,7 +199,19 @@ internal fun ToolBoxNavigation(
                 .fillMaxSize()
                 .zIndex(if (runtimeRoute == null || sourceAboveRuntime) 2f else 0f)
                 .graphicsLayer {
-                    translationX = -trailingDirection * sourceReturnProgress.value * size.width
+                    val enteringDepth = if (
+                        runtimeRoute != null && entryCoverVisible && !sourceAboveRuntime
+                    ) {
+                        1f - entryProgress.value
+                    } else {
+                        0f
+                    }
+                    val depth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
+                    translationX = -trailingDirection * depth * size.width * 0.14f
+                    val depthScale = 1f - depth * 0.012f
+                    scaleX = depthScale
+                    scaleY = depthScale
+                    alpha = 1f - depth * 0.08f
                 }
                 .then(
                     if (runtimeRoute != null && !sourceAboveRuntime) {
@@ -244,10 +252,10 @@ internal fun ToolBoxNavigation(
                         organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
                         onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
                         onCreateGroup = if (selectedDestination == MainDestination.Home && homeEditing) ({ homeCreatingGroup = true }) else null,
-                    ) { padding, layout ->
-                        when (currentPrimaryRoute) {
-                            HomeRoute, ToolManagerRoute, null -> ToolManagerRouteContent(
-                                home = selectedDestination == MainDestination.Home,
+                    ) { destination, padding, layout ->
+                        when (destination) {
+                            MainDestination.Home, MainDestination.Tools -> ToolManagerRouteContent(
+                                home = destination == MainDestination.Home,
                                 editing = homeEditing,
                                 onEditingChange = { homeEditing = it },
                                 creatingGroup = homeCreatingGroup,
@@ -256,17 +264,17 @@ internal fun ToolBoxNavigation(
                                 viewModelStoreOwner = viewModelStoreOwner,
                                 catalogViewModel = catalogViewModel,
                                 importViewModel = importViewModel,
-                                listState = if (selectedDestination == MainDestination.Home) homeListState else toolsListState,
+                                listState = if (destination == MainDestination.Home) homeListState else toolsListState,
                                 contentPadding = padding,
                                 layout = layout,
                                 // Freeze only while the settled runtime fully covers the base page.
                                 // Resume before the source's return animation, not after route removal.
-                                uiVisible = runtimeRoute == null || entryCoverVisible || sourceAboveRuntime,
+                                uiVisible = destination == selectedDestination && (runtimeRoute == null || entryCoverVisible || sourceAboveRuntime),
                                 onImport = onPickPackage,
                                 onOpenDetails = { navigate(ToolDetailRoute(it)) },
                             )
 
-                            SettingsRoute -> SettingsScreen(
+                            MainDestination.Settings -> SettingsScreen(
                                 viewModel = settingsViewModel,
                                 listState = settingsListState,
                                 contentPadding = padding,
@@ -277,8 +285,6 @@ internal fun ToolBoxNavigation(
                                 onAbout = { navigate(AboutRoute) },
                                 onBackupRestore = { navigate(BackupRestoreRoute) },
                             )
-
-                            else -> error("Route is not a primary destination: $currentPrimaryRoute")
                         }
                     }
                 }
@@ -345,7 +351,12 @@ internal fun ToolBoxNavigation(
                         }
                     }
                     .graphicsLayer {
-                        translationX = trailingDirection * entryProgress.value * size.width
+                        val motion = entryProgress.value.coerceIn(0f, 1f)
+                        translationX = trailingDirection * motion * size.width
+                        val incomingScale = 1f - motion * 0.012f
+                        scaleX = incomingScale
+                        scaleY = incomingScale
+                        alpha = 1f - motion * 0.08f
                     },
             ) {
                 RuntimeShellPreviewContent(toolName = runtimeTitle)
@@ -404,7 +415,12 @@ private fun RetainedSecondaryPage(
                 }
             }
             .graphicsLayer {
-                translationX = trailingDirection * progress.value * size.width
+                val motion = progress.value.coerceIn(0f, 1f)
+                translationX = trailingDirection * motion * size.width
+                val incomingScale = 1f - motion * 0.012f
+                scaleX = incomingScale
+                scaleY = incomingScale
+                alpha = 1f - motion * 0.08f
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
