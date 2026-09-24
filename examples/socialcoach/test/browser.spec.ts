@@ -197,7 +197,9 @@ test('today recommendation cover aligns badges with notebook content and leaves 
     root.state.sessions=[scheduled];root.state.todaySessionId=scheduled.id;root.state.todayDate=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
     outer['socialcoach.v1']=JSON.stringify(root);localStorage.setItem(storageKey,JSON.stringify(outer));
   },{scheduled});
-  await page.goto('/#/');
+  // Hash navigation keeps the same document; reload once so the simulated
+  // ToolBox bridge rehydrates from the storage fixture we just changed.
+  await page.goto('/#/');await page.reload();
   const feature=page.locator('.today-feature');await expect(feature).toBeVisible();
   const geometry=await page.evaluate(()=>{
     const card=document.querySelector('.today-feature') as HTMLElement;
