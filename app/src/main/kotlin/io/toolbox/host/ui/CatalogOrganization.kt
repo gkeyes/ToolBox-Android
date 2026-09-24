@@ -227,6 +227,10 @@ internal fun CatalogHomeTile(
     onOptions: () -> Unit,
     showLabel: Boolean = true,
     labelMaxLines: Int = 2,
+    iconSize: Dp = 52.dp,
+    labelFontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    labelLineHeight: androidx.compose.ui.unit.TextUnit = 18.sp,
+    labelSpacing: Dp = 6.dp,
     modifier: Modifier = Modifier,
     onMoveBefore: (() -> Unit)? = null,
     onMoveAfter: (() -> Unit)? = null,
@@ -279,16 +283,19 @@ internal fun CatalogHomeTile(
     ) {
         Box(Modifier.testTag("catalog_home_icon:" + tool.toolId)) {
             CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode,
-                visual = tool.visual(ToolBoxThemeTokens.colors.primary), size = 52.dp)
+                visual = tool.visual(ToolBoxThemeTokens.colors.primary), size = iconSize)
             if (editing) Box(Modifier.align(Alignment.TopEnd).size(20.dp)
                 .background(ToolBoxThemeTokens.colors.surfaceMuted, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                 ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(16.dp))
             }
         }
         if (showLabel) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(labelSpacing))
             AppText(tool.name, maxLines = labelMaxLines, align = TextAlign.Center,
-                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(
+                    fontSize = labelFontSize,
+                    lineHeight = labelLineHeight,
+                ))
         }
     }
 }

@@ -464,7 +464,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }
 
-    @Test fun favoritesHideLabelsWhileRecentUsesWiderSingleLineTilesAndGridStaysAligned() {
+    @Test fun favoritesHideLabelsWhileRecentUsesCompactSingleLineTilesAndGridStaysAligned() {
         fixture.layout.value = CatalogLayout(favorites = listOf("a", "b"),
             groups = listOf(CatalogGroup("g1", "工作", listOf("a", "b"))))
         render()
@@ -498,11 +498,12 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         }
 
         val recent = measure("recent")
-        assertTrue("Recent tiles need more room for a single-line title", recent[0].width > favorites[0].width)
         listOf("a", "b").forEach { id ->
             homeTile("recent:$id")
             assertEquals("Recent titles must stay on one line", 1, homeLabelLayout("recent:$id").lineCount)
         }
+        assertTrue("Recent icons should be visually smaller than the main grid icons", recent[0].iconWidth < favorites[0].iconWidth)
+        assertTrue("Recent tiles should stay compact enough to increase visible item count", recent[0].width <= favorites[0].width + recent[0].iconWidth)
         assertTrue("Recent items must remain separate", recent[0].left + recent[0].width < recent[1].left)
     }
 

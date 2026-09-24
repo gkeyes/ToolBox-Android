@@ -146,7 +146,7 @@ internal fun ToolManagerContent(
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
         val fontScale = LocalDensity.current.fontScale
         val columns = homeGridColumnCount((contentWidth - 32.dp).value, fontScale)
-        val recentTileWidth = (112.dp * fontScale.coerceIn(1f, 1.35f)).coerceAtMost(contentWidth * 0.45f)
+        val recentTileWidth = (76.dp * fontScale.coerceIn(1f, 1.35f)).coerceAtMost(contentWidth * 0.34f)
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
@@ -440,12 +440,16 @@ internal fun CatalogRecentTools(
     editing: Boolean = false,
     onOptions: (String) -> Unit,
 ) {
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(tools, key = CatalogTool::toolId) { tool ->
             CatalogHomeTile(tool, editing,
                 onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                 onOptions = { onOptions(tool.toolId) },
                 labelMaxLines = 1,
+                iconSize = 44.dp,
+                labelFontSize = 12.sp,
+                labelLineHeight = 16.sp,
+                labelSpacing = 4.dp,
                 modifier = Modifier.width(tileWidth).testTag("recent:" + tool.toolId))
         }
     }
