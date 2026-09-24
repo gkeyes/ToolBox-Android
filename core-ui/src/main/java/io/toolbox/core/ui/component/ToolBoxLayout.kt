@@ -317,7 +317,6 @@ fun ToolBoxNavigationBar(
             selectedId = selectedId,
             onItemSelected = onItemSelected,
             modifier = modifier,
-            glassState = glassState,
             navigationShape = navigationShape,
         )
         return
@@ -358,7 +357,6 @@ private fun LiquidGlassNavigationBar(
     selectedId: String,
     onItemSelected: (ToolBoxNavigationItem) -> Unit,
     modifier: Modifier,
-    glassState: ToolBoxGlassState?,
     navigationShape: RoundedCornerShape,
 ) {
     if (items.isEmpty()) return
@@ -368,13 +366,11 @@ private fun LiquidGlassNavigationBar(
             horizontal = ToolBoxThemeTokens.spacing.oneHalf,
             vertical = ToolBoxThemeTokens.spacing.compact,
         )
-        .let { base ->
-            if (glassState != null) {
-                base.toolBoxGlassEffect(glassState, navigationShape)
-            } else {
-                base.toolBoxSolidGlass(navigationShape)
-            }
-        }
+        // Bottom chrome must keep one material while pages move. A live Haze
+        // backdrop can briefly fall back while the pager re-layers content,
+        // which visibly shifts the whole navigation bar from tinted glass to white.
+        // Keep the bar itself deterministic; the selection lens still animates.
+        .toolBoxSolidGlass(navigationShape)
 
     BoxWithConstraints(
         modifier = surfaceModifier
