@@ -1,5 +1,7 @@
 package io.toolbox.host.ui
 
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
@@ -27,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -35,7 +39,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
-import io.toolbox.core.ui.component.ToolBoxModalDialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
@@ -111,31 +114,36 @@ internal fun RuntimeShellScreen(
 @Composable
 internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) = RuntimeExitConfirmation(onConfirm, toolName = null)
 
-/** Confirms host-level Back without detaching or replacing the running WebView. */
+/**
+ * The first host-level Back is consumed and only shows a short hint. A second Back
+ * within the confirmation window leaves the tool. The running WebView is untouched
+ * until that second Back, so an accidental edge swipe never detaches the page.
+ */
 @Composable
 internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?) {
-    var visible by rememberSaveable { mutableStateOf(false) }
-    var leaving by remember { mutableStateOf(false) }
-    BackHandler {
-        if (!leaving) visible = !visible
+    val context = LocalContext.current
+    val hintText = remember(toolName) { runtimeExitHint(toolName) }
+    val exitHint = remember(context, hintText) {
+        Toast.makeText(context.applicationContext, hintText, Toast.LENGTH_SHORT)
     }
-    if (visible) {
-        // Runtime has no Miuix Scaffold popup host. Use a window above the retained WebView.
-        ToolBoxModalDialog(onDismissRequest = { visible = false }) {
-            HostConfirmationContent(
-                title = "返回 ToolBox？",
-                summary = runtimeExitSummary(toolName),
-                confirmLabel = "返回 ToolBox",
-                cancelLabel = "继续使用",
-                onCancel = { visible = false },
-                onConfirm = {
-                    if (visible && !leaving) {
-                        visible = false
-                        leaving = true
-                        onConfirm()
-                    }
-                },
-            )
+    var lastBackAt by remember { mutableStateOf(0L) }
+    var leaving by remember { mutableStateOf(false) }
+
+    DisposableEffect(exitHint) {
+        onDispose { exitHint.cancel() }
+    }
+
+    BackHandler(enabled = !leaving) {
+        val now = SystemClock.elapsedRealtime()
+        if (shouldExitRuntimeOnBack(lastBackAt, now)) {
+            lastBackAt = 0L
+            leaving = true
+            exitHint.cancel()
+            onConfirm()
+        } else {
+            lastBackAt = now
+            exitHint.cancel()
+            exitHint.show()
         }
     }
 }

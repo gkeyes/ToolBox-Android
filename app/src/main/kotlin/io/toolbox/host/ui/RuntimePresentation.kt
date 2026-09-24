@@ -3,10 +3,15 @@ package io.toolbox.host.ui
 internal fun runtimeLoadingTitle(toolName: String?): String =
     toolName?.trim()?.takeIf(String::isNotEmpty) ?: "正在打开工具"
 
-internal fun runtimeExitSummary(toolName: String?): String {
-    val identity = toolName?.trim()?.takeIf(String::isNotEmpty)?.let { "“$it”" } ?: "当前小工具"
-    return "即将离开$identity，返回 ToolBox。请确认需要保留的内容已保存。"
+internal const val RUNTIME_EXIT_BACK_WINDOW_MS = 2_000L
+
+internal fun runtimeExitHint(toolName: String?): String {
+    val identity = toolName?.trim()?.takeIf(String::isNotEmpty)?.let { "“$it”" } ?: "小工具"
+    return "再次返回即可离开$identity"
 }
+
+internal fun shouldExitRuntimeOnBack(lastBackAt: Long, now: Long): Boolean =
+    lastBackAt > 0L && now >= lastBackAt && now - lastBackAt <= RUNTIME_EXIT_BACK_WINDOW_MS
 
 internal data class RuntimeErrorPresentation(val summary: String, val details: String?)
 

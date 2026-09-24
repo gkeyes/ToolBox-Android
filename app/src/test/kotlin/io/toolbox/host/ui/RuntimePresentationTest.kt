@@ -14,9 +14,18 @@ class RuntimePresentationTest {
     }
 
     @Test
-    fun exitKeepsTheSaveWarningWithOrWithoutAName() {
-        assertEquals("即将离开当前小工具，返回 ToolBox。请确认需要保留的内容已保存。", runtimeExitSummary(null))
-        assertEquals("即将离开“笔记工具”，返回 ToolBox。请确认需要保留的内容已保存。", runtimeExitSummary("笔记工具"))
+    fun exitHintUsesKnownToolNameAndGenericFallback() {
+        assertEquals("再次返回即可离开小工具", runtimeExitHint(null))
+        assertEquals("再次返回即可离开“笔记工具”", runtimeExitHint("  笔记工具  "))
+    }
+
+    @Test
+    fun runtimeExitRequiresASecondBackInsideTheTwoSecondWindow() {
+        assertTrue(!shouldExitRuntimeOnBack(0L, 10_000L))
+        assertTrue(shouldExitRuntimeOnBack(10_000L, 10_001L))
+        assertTrue(shouldExitRuntimeOnBack(10_000L, 12_000L))
+        assertTrue(!shouldExitRuntimeOnBack(10_000L, 12_001L))
+        assertTrue(!shouldExitRuntimeOnBack(10_000L, 9_999L))
     }
 
     @Test
