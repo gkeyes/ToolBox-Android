@@ -1,5 +1,5 @@
 name: SocialCoach TBX
-run-name: SocialCoach 1.0.2 · ${{ github.ref_name }}
+run-name: SocialCoach 1.0.3 · ${{ github.ref_name }}
 
 on:
   push:
@@ -52,13 +52,13 @@ jobs:
         run: npm run test:browser
       - name: Package and verify TBX
         run: |
-          python3 scripts/package-tool.py examples/socialcoach/dist build/socialcoach/socialcoach-v1.0.2.tbx
+          python3 scripts/package-tool.py examples/socialcoach/dist build/socialcoach/socialcoach-v1.0.3.tbx
           python3 - <<'PY'
           import pathlib,zipfile,json,hashlib
-          p=pathlib.Path('build/socialcoach/socialcoach-v1.0.2.tbx')
+          p=pathlib.Path('build/socialcoach/socialcoach-v1.0.3.tbx')
           with zipfile.ZipFile(p) as z:
               m=json.loads(z.read('manifest.json')); h=json.loads(z.read('integrity.json'))
-              assert m['version']=='1.0.2' and m['versionCode']==3 and m['entry'] in z.namelist()
+              assert m['version']=='1.0.3' and m['versionCode']==4 and m['entry'] in z.namelist()
               assert not any(pathlib.Path(n).suffix.lower() in {'.woff','.woff2','.ttf','.otf'} for n in z.namelist())
               for name,digest in h['files'].items():
                   assert hashlib.sha256(z.read(name)).hexdigest()==digest,name
@@ -75,7 +75,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: socialcoach-1.0.2-${{ github.run_attempt }}
+          name: socialcoach-1.0.3-${{ github.run_attempt }}
           path: build/socialcoach/
           if-no-files-found: error
           retention-days: 30

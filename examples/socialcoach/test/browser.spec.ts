@@ -183,3 +183,36 @@ test('model settings stack primary actions on a narrow phone',async({page})=>{
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
+
+
+test('today recommendation cover aligns badges with notebook content and leaves vertical breathing room',async({page})=>{
+  await setup(page);const errors=consoleCheck(page);await page.setViewportSize({width:360,height:740});await page.goto('/#/arena');
+  const scheduled={
+    id:'today-layout-test',scenario:scene,learnerCharacterId:scene.characters.find(c=>c.playable)?.id??scene.characters[0].id,
+    messages:[],objectiveDone:scene.objectives.map(()=>false),status:'briefing',startedAt:Date.now(),reflections:[],origin:'scheduled'
+  };
+  await page.evaluate(({scheduled})=>{
+    const storageKey='test.native.ordinary';const outer=JSON.parse(localStorage.getItem(storageKey)||'{}');
+    const root=JSON.parse(outer['socialcoach.v1']);const d=new Date();const p=(n:number)=>String(n).padStart(2,'0');
+    root.state.sessions=[scheduled];root.state.todaySessionId=scheduled.id;root.state.todayDate=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+    outer['socialcoach.v1']=JSON.stringify(root);localStorage.setItem(storageKey,JSON.stringify(outer));
+  },{scheduled});
+  await page.goto('/#/');
+  const feature=page.locator('.today-feature');await expect(feature).toBeVisible();
+  const geometry=await page.evaluate(()=>{
+    const card=document.querySelector('.today-feature') as HTMLElement;
+    const cover=card.querySelector(':scope > div.relative') as HTMLElement;
+    const badges=card.querySelector('[data-today-badges]') as HTMLElement;
+    const speaker=card.querySelector('.scenario-cover:not(.scenario-cover-tall) .eyebrow') as HTMLElement;
+    const quote=card.querySelector('.scenario-cover:not(.scenario-cover-tall) p.display') as HTMLElement;
+    const b=badges.getBoundingClientRect(),s=speaker.getBoundingClientRect(),q=quote.getBoundingClientRect(),c=cover.getBoundingClientRect();
+    return {coverHeight:c.height,badgeLeft:b.left-cover.getBoundingClientRect().left,speakerLeft:s.left-c.left,gap:s.top-b.bottom,quoteBottom:q.bottom-c.top};
+  });
+  expect(geometry.coverHeight).toBeGreaterThanOrEqual(159);
+  expect(Math.abs(geometry.badgeLeft-geometry.speakerLeft)).toBeLessThanOrEqual(2);
+  expect(geometry.badgeLeft).toBeGreaterThanOrEqual(40);
+  expect(geometry.gap).toBeGreaterThanOrEqual(6);
+  expect(geometry.quoteBottom).toBeLessThanOrEqual(geometry.coverHeight-12);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
