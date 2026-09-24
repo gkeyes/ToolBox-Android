@@ -210,10 +210,10 @@ test('today recommendation cover aligns badges with notebook content and leaves 
     const b=badges.getBoundingClientRect(),s=speaker.getBoundingClientRect(),q=quote.getBoundingClientRect(),c=cover.getBoundingClientRect();
     return {coverHeight:c.height,badgeLeft:b.left-cover.getBoundingClientRect().left,speakerLeft:s.left-c.left,gap:s.top-b.bottom,quoteBottom:q.bottom-c.top};
   });
-  expect(geometry.coverHeight).toBeGreaterThanOrEqual(159);
+  expect(geometry.coverHeight).toBeGreaterThanOrEqual(175);
   expect(Math.abs(geometry.badgeLeft-geometry.speakerLeft)).toBeLessThanOrEqual(2);
   expect(geometry.badgeLeft).toBeGreaterThanOrEqual(40);
-  expect(geometry.gap).toBeGreaterThanOrEqual(6);
+  expect(geometry.gap).toBeGreaterThanOrEqual(10);
   expect(geometry.quoteBottom).toBeLessThanOrEqual(geometry.coverHeight-12);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);

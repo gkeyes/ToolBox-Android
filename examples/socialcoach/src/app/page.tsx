@@ -260,7 +260,7 @@ function TodayCard({ session, onStart, onSwap }: { session: ReturnType<typeof bu
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="today-feature card overflow-hidden lg:grid lg:grid-cols-[minmax(0,1fr)_32%] lg:min-h-[380px]"
     >
-      <div className="relative h-40 bg-paper-deep lg:order-2 lg:h-auto lg:border-l lg:border-line">
+      <div className="relative h-44 bg-paper-deep lg:order-2 lg:h-auto lg:border-l lg:border-line">
         <ScenarioCover scenario={sc} size={160} full className="lg:hidden" />
         <ScenarioCover scenario={sc} tall className="hidden lg:block" />
         <div data-today-badges className="absolute left-11 right-4 top-4 flex flex-wrap gap-2 lg:hidden">
