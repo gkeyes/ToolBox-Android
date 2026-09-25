@@ -1,9 +1,17 @@
 .nf-fulltext-adapt{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;min-width:0}
 .nf-fulltext-note{margin:0;color:var(--muted);font-size:.8125rem;line-height:1.6;overflow-wrap:anywhere}
+.nf-fulltext-status{display:flex;align-items:center;gap:9px;min-height:36px;padding:8px 10px;border:1px solid var(--separator);border-radius:12px;background:var(--default);color:var(--muted);font-size:.8125rem}
+.nf-fulltext-spinner{width:16px;height:16px;box-sizing:border-box;border:2px solid color-mix(in srgb,currentColor 22%,transparent);border-top-color:currentColor;border-radius:50%;animation:nf-fulltext-spin .8s linear infinite;flex:0 0 16px}
+@keyframes nf-fulltext-spin{to{transform:rotate(360deg)}}
 .nf-fulltext-card{border:1px solid var(--separator);border-radius:14px;padding:12px;background:var(--default);min-width:0}
 .nf-fulltext-card strong{display:block;margin-bottom:6px}
 .nf-fulltext-rule{display:block;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font:inherit;font-size:.8125rem;line-height:1.55;background:var(--overlay);padding:10px;border-radius:10px}
+.nf-fulltext-stream-card{border:1px solid var(--separator);border-radius:12px;background:var(--default);overflow:hidden}
+.nf-fulltext-stream-card>summary{cursor:pointer;list-style:none;padding:9px 11px;font-size:.8125rem;font-weight:600;color:var(--foreground)}
+.nf-fulltext-stream-card>summary::-webkit-details-marker{display:none}
+.nf-fulltext-stream{margin:0;border-top:1px solid var(--separator);max-height:180px;overflow:auto;padding:10px 11px;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.75rem;line-height:1.55;color:var(--muted);user-select:text}
 .nf-fulltext-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .nf-fulltext-metric{text-align:center;padding:8px;border-radius:10px;background:var(--overlay)}
 .nf-fulltext-metric b{display:block;font-size:1rem}
 .nf-fulltext-preview{max-height:150px;overflow:auto;white-space:pre-wrap;font-size:.8125rem;line-height:1.6;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.nf-fulltext-spinner{animation-duration:1.8s}}

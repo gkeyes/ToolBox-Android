@@ -95,7 +95,7 @@ export function parseScraperCandidate(text, { provider = "generic" } = {}) {
   throw fail("AI_FORMAT", message);
 }
 
-export async function suggestScraperRule({ article, feed, structure, settings, signal, previousTest = null }) {
+export async function suggestScraperRule({ article, feed, structure, settings, signal, previousTest = null, onReasoning, onOutput }) {
   if (!settings?.aiApiKey) throw fail("AI_REQUIRED", "请先在设置中配置 AI API Key。");
   const miniMax = isMiniMaxProvider(settings);
   let output = "";
@@ -126,7 +126,8 @@ Return the final scraper selector now using the required output contract.`;
     baseUrl: settings.aiBaseUrl,
     apiKey: settings.aiApiKey,
     signal,
-    onDelta: chunk => { output += chunk; },
+    onDelta: chunk => { output += chunk; onOutput?.(chunk); },
+    onReasoning: chunk => { onReasoning?.(chunk); },
     body: {
       model: settings.aiModel,
       messages: [{ role: "system", content: system }, { role: "user", content: user }],

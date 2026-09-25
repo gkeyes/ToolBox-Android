@@ -67,3 +67,11 @@ test("metrics are bounded plain text", () => {
   const m = contentMetrics("<p>A <b>B</b></p><p>C</p><img>");
   assert.equal(m.images, 1); assert.equal(m.paragraphs, 2); assert.match(m.sample, /A B C/);
 });
+
+
+test("reasoning stream extractor accepts MiniMax string and block formats without leaking metadata", async () => {
+  const { extractReasoningText, extractContentText } = await import("../src/toolbox/ai-network.js");
+  assert.equal(extractReasoningText({ delta: { reasoning_content: "先找正文" } }), "先找正文");
+  assert.equal(extractReasoningText({ delta: { reasoning_details: [{ type: "reasoning.text", text: "分析结构" }, { signature: "secret-metadata" }] } }), "分析结构");
+  assert.equal(extractContentText({ delta: { content: [{ type: "text", text: "<scraper_rule>article</scraper_rule>" }] } }), "<scraper_rule>article</scraper_rule>");
+});

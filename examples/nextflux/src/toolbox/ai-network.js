@@ -50,8 +50,42 @@ function waitForRead(promise, signal) {
   });
 }
 
+function textFragments(value, depth = 0) {
+  if (depth > 4 || value == null) return [];
+  if (typeof value === "string") return value ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap((item) => textFragments(item, depth + 1));
+  if (typeof value !== "object") return [];
+  // OpenAI-compatible providers use several shapes for reasoning blocks.
+  // Read only known textual keys so IDs/signatures/metadata are never shown as prose.
+  for (const key of ["text", "content", "reasoning_content", "reasoning", "summary"]) {
+    if (value[key] != null) {
+      const parts = textFragments(value[key], depth + 1);
+      if (parts.length) return parts;
+    }
+  }
+  return [];
+}
+
+export function extractReasoningText(choice) {
+  const delta = choice?.delta;
+  const message = choice?.message;
+  const values = delta
+    ? [delta.reasoning_content, delta.reasoning_details]
+    : [message?.reasoning_content, message?.reasoning_details];
+  return values.flatMap((value) => textFragments(value)).join("");
+}
+
+export function extractContentText(choice) {
+  const delta = choice?.delta;
+  const message = choice?.message;
+  const value = delta ? delta.content : message?.content;
+  return textFragments(value).join("");
+}
+
 // Decode complete SSE events, preserving multibyte characters across native chunks.
-export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDelta }) {
+// onReasoning receives only provider-exposed reasoning fields; it never reconstructs
+// or invents hidden reasoning when the provider does not send them.
+export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDelta, onReasoning }) {
   if (signal?.aborted) throw safeError("CANCELLED");
   const data = payload({ baseUrl, apiKey, body: { ...body, stream: true } });
   const network = bridge();
@@ -89,18 +123,10 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       try { json = JSON.parse(event); } catch { throw safeError("INVALID_RESPONSE"); }
       if (json.error) throw safeError("INVALID_RESPONSE");
       const choice = json.choices?.[0];
-      const content = choice?.delta?.content ?? choice?.message?.content;
-      if (typeof content === "string") {
-        if (content) onDelta(content);
-      } else if (Array.isArray(content)) {
-        for (const part of content) {
-          const value = typeof part === "string" ? part : (part?.text ?? part?.content);
-          if (typeof value === "string" && value) onDelta(value);
-        }
-      }
-      // MiniMax M-series may stream reasoning_details/reasoning_content separately.
-      // They are intentionally ignored: only the final content is part of the
-      // machine-readable scraper result.
+      const reasoning = extractReasoningText(choice);
+      if (reasoning && typeof onReasoning === "function") onReasoning(reasoning);
+      const content = extractContentText(choice);
+      if (content && typeof onDelta === "function") onDelta(content);
       if (choice?.finish_reason) finishedChoice = true;
     };
     const processLine = (line) => {
