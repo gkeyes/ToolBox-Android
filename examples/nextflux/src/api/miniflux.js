@@ -461,6 +461,7 @@ export const getIconByFeedId = async (feedId) => {
 // 为了兼容现有代码，提供一个默认导出对象
 const minifluxApi = {
   getFeeds,
+  getFeed,
   getFeedEntries,
   updateEntryStatus,
   updateEntriesStatus,
