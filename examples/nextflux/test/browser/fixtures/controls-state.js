@@ -1,7 +1,7 @@
 import { atom } from "nanostores";
 
 // Fixture data only; no account, database, token, server or native bridge.
-export const activeArticle = atom({ id: 42, title: "Fixture article", url: "https://example.invalid/article", status: "read", starred: 1 });
+export const activeArticle = atom({ id: 42, feedId: 1, title: "Fixture article", url: "https://example.invalid/article", status: "read", starred: 1 });
 export const filteredArticles = atom([{ id: 41 }, activeArticle.get(), { id: 43 }]);
 export const loadingOriginContent = atom(false);
 export const hasIntegrations = atom(false);

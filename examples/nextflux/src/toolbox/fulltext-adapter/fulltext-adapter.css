@@ -1,0 +1,9 @@
+.nf-fulltext-adapt{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;min-width:0}
+.nf-fulltext-note{margin:0;color:var(--muted);font-size:.8125rem;line-height:1.6;overflow-wrap:anywhere}
+.nf-fulltext-card{border:1px solid var(--separator);border-radius:14px;padding:12px;background:var(--default);min-width:0}
+.nf-fulltext-card strong{display:block;margin-bottom:6px}
+.nf-fulltext-rule{display:block;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font:inherit;font-size:.8125rem;line-height:1.55;background:var(--overlay);padding:10px;border-radius:10px}
+.nf-fulltext-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.nf-fulltext-metric{text-align:center;padding:8px;border-radius:10px;background:var(--overlay)}
+.nf-fulltext-metric b{display:block;font-size:1rem}
+.nf-fulltext-preview{max-height:150px;overflow:auto;white-space:pre-wrap;font-size:.8125rem;line-height:1.6;color:var(--muted)}

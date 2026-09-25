@@ -76,6 +76,7 @@ for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393,
     await bounds(page);
     const toolbar = await page.locator(".action-buttons").boundingBox();
     expect(toolbar.height).toBeLessThanOrEqual(49);
+    await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
     await closeGeometry(page.locator(".ai-summary .nextflux-close-button"));
     if (width === 393 && scale === 1) await info.attach(`toolbar-${theme}.png`, {
       body: await page.screenshot(), contentType: "image/png",

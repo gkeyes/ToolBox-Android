@@ -116,6 +116,14 @@ export const getFeeds = async (check) => {
   }
 };
 
+// 获取单个订阅源（用于并发安全的规则编辑）
+export const getFeed = async (feedId, check) => {
+  const id = Number(feedId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("订阅编号无效。");
+  const response = await withAdmissionRetry(() => apiClient.get(`/v1/feeds/${id}`), check);
+  return response.data;
+};
+
 // 获取指定订阅源的文章
 export const getFeedEntries = async (feedId, params = {}, check) => {
   try {
