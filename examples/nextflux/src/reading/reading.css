@@ -1,0 +1,2 @@
+.article-content .article-preserve-breaks{white-space:pre-line}
+.article-content :is(table,pre,code,kbd,samp) .article-preserve-breaks{white-space:pre-wrap}

@@ -11,6 +11,7 @@ import {
   loadingOriginContent,
 } from "../stores/articlesStore.js";
 import minifluxAPI from "@/api/miniflux";
+import { loadBestFullText } from "@/reading/fulltext.mjs";
 
 // 处理文章状态更新
 export const handleMarkStatus = async (article) => {
@@ -84,12 +85,14 @@ export const handleToggleContent = async (article) => {
     const showOriginal = !article.shownOriginal;
 
     await runAccountOperation(async (check) => {
-      const content = showOriginal
-        ? await minifluxAPI.fetchEntryContent(article.id)
-        : article.originalContent;
+      const result = showOriginal
+        ? await loadBestFullText({ article, api: minifluxAPI })
+        : { content: article.originalContent, source: "rss" };
       check(false);
       if (activeArticle.get()?.id === article.id) {
-        activeArticle.set({ ...activeArticle.get(), content, shownOriginal: showOriginal });
+        activeArticle.set({ ...activeArticle.get(), content: result.content, shownOriginal: showOriginal,
+          fullTextSource: showOriginal ? result.source : null,
+          fullTextCandidates: showOriginal ? result.candidates : null });
       }
     });
   } catch (error) {

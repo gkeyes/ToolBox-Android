@@ -1,9 +1,9 @@
-import { analyzeReadingStructure } from "../reading-normalizer.mjs";
+import { analyzeArticle } from "../../reading/analyze.mjs";
 function fail(code, message, extra = {}) { return Object.assign(new Error(message), { code, ...extra }); }
 export function contentMetrics(html) {
   const source = String(html || "");
   const text = source.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/&[a-z0-9#]+;/gi," ").replace(/\s+/g," ").trim();
-  const structure = analyzeReadingStructure(source);
+  const structure = analyzeArticle(source);
   return {
     ...structure,
     textChars: text.length,

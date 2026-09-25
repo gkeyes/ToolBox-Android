@@ -3,7 +3,7 @@ let nextTaskId = 0;
 // All DOM work is bounded by both a time budget and an operation cap. Waiting
 // for the next pull until this batch is mounted gives the worker backpressure.
 export function startProgressiveReading({ html, baseUrl, apply, onBatch, onDone, onError }, {
-  createWorker = () => new Worker(new URL("./reading-worker.js", import.meta.url), { type: "module" }),
+  createWorker = () => new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
   schedule = (callback) => requestAnimationFrame(callback),
   unschedule = (handle) => cancelAnimationFrame(handle),
   now = () => performance.now(),
@@ -61,7 +61,7 @@ export function startProgressiveReading({ html, baseUrl, apply, onBatch, onDone,
 }
 
 export function createHighlightQueue({
-  createWorker = () => new Worker(new URL("./highlight-worker.js", import.meta.url), { type: "module" }),
+  createWorker = () => new Worker(new URL("../lib/highlight-worker.js", import.meta.url), { type: "module" }),
   schedule = (callback) => setTimeout(callback, 0),
   unschedule = (handle) => clearTimeout(handle),
 } = {}) {

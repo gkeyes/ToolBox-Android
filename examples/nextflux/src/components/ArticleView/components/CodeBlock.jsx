@@ -1,5 +1,5 @@
 import { themeState } from "@/stores/themeStore.js";
-import { observeCodeVisibility } from "@/lib/reading-client.js";
+import { observeCodeVisibility } from "@/reading/client.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { Check, Copy } from "lucide-react";

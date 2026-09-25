@@ -1,4 +1,4 @@
-import { createReadingParser } from "./reading-parser.js";
+import { createReadingParser } from "./parser.js";
 
 let current;
 self.addEventListener("message", ({ data }) => {

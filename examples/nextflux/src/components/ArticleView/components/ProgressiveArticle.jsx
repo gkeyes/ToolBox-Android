@@ -4,8 +4,8 @@ import { Chip, Link } from "@heroui/react";
 import ArticleImage from "./ArticleImage.jsx";
 import Iframe from "./Iframe.jsx";
 import CodeBlock from "./CodeBlock.jsx";
-import { createReadingDom } from "@/lib/reading-dom.js";
-import { createHighlightQueue, startProgressiveReading } from "@/lib/reading-client.js";
+import { createReadingRenderer } from "@/reading/renderer.js";
+import { createHighlightQueue, startProgressiveReading } from "@/reading/client.js";
 import { sameReadingSource } from "@/lib/articleReadingState.js";
 
 function ReadingPortal({ item, highlights }) {
@@ -32,7 +32,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
     const highlights = createHighlightQueue();
     const items = [];
     let mounted = true, lastPortalCount = 0;
-    const dom = createReadingDom(root, baseUrl, (item) => items.push(<ReadingPortal key={item.id} item={item} highlights={highlights} />));
+    const dom = createReadingRenderer(root, baseUrl, (item) => items.push(<ReadingPortal key={item.id} item={item} highlights={highlights} />));
     domRef.current = dom;
     setState({ complete: false, error: null });
     setPortals([]);

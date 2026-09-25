@@ -1,16 +1,9 @@
-import { Parser } from "htmlparser2";
-import { ALLOWED_TAGS, DROP_CONTENT, cleanAttributes, safeContentUrl } from "../toolbox/content.js";
-import {
-  createReadingNormalizationPlan,
-  shouldPreserveTextBreaks,
-  shouldRecoverInlineSection,
-  shouldRemoveStandaloneNoise,
-} from "../toolbox/reading-normalizer.mjs";
+import { analyzeArticle } from "./analyze.mjs";
+import { createNormalizationPlan, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
 const BATCH_TEXT = 16 * 1024;
-const BLOCK_TAGS = new Set("p div h1 h2 h3 h4 h5 h6 blockquote pre li dt dd th td caption figcaption summary".split(" "));
 const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/proxy/") ? "https://miniflux.xiaochen.win/" : base);
 
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is
@@ -18,7 +11,8 @@ const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/p
 // Pulling one bounded batch at a time also bounds the worker/main-thread queue.
 export function createReadingParser(html, baseUrl) {
   const source = typeof html === "string" ? html : "";
-  const normalization = createReadingNormalizationPlan(source);
+  const analysis = analyzeArticle(source);
+  const normalization = createNormalizationPlan(analysis);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];
   const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, textPreview: "", hasMedia: false }];
@@ -143,16 +137,12 @@ export function createReadingParser(html, baseUrl) {
         hasMedia: entry.hasMedia, plan: normalization,
       })) {
         emit({ type: "remove", id: entry.id, preserveBoundary: !BLOCK_TAGS.has(entry.tag) });
-      } else if (entry.id && shouldRecoverInlineSection({
-        tag: entry.tag, text: entry.textPreview, textLength: entry.textLength,
-        parentTag: entry.parentTag, plan: normalization,
-      })) {
-        emit({ type: "recoverSection", id: entry.id });
       }
     },
     onend() { flushText(); },
   }, { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true, xmlMode: false });
   return {
+    analysis,
     normalization,
     next() {
       const start = performance.now();

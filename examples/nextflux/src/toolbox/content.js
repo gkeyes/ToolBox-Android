@@ -1,7 +1,7 @@
 import { imageDimension } from "./imageDimensions.js";
 
-export const ALLOWED_TAGS = new Set("p div span br hr h1 h2 h3 h4 h5 h6 blockquote pre code strong b em i u s del ins small sub sup mark abbr q cite kbd samp var ul ol li dl dt dd table thead tbody tfoot tr th td caption colgroup col figure figcaption details summary a img".split(" "));
-export const DROP_CONTENT = new Set(["script", "style", "object", "embed", "svg", "math", "template", "form", "input", "button", "textarea", "select", "option", "meta", "link", "base"]);
+import { ALLOWED_TAGS, DROP_CONTENT } from "../reading/schema.mjs";
+export { ALLOWED_TAGS, DROP_CONTENT };
 
 export function safeContentUrl(value, baseUrl) {
   if (typeof value !== "string" || !value || Array.from(value).some((char) => char.codePointAt(0) <= 32 || char.codePointAt(0) === 127)) return null;

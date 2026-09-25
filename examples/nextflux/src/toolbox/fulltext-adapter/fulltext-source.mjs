@@ -1,17 +1,5 @@
 const STRUCTURE_LIMIT = 12000;
-const RESPONSE_LIMIT = 2 * 1024 * 1024;
-const DROP = "script,style,noscript,template,svg,canvas,iframe,object,embed,form,input,textarea,select,button";
-
-function fail(code, message) { return Object.assign(new Error(message), { code }); }
-function decode(response) {
-  if (response?.bodyEncoding !== "base64") return response?.body || "";
-  return new TextDecoder().decode(Uint8Array.from(atob(response.body || ""), c => c.charCodeAt(0)));
-}
-export function validateArticleUrl(value) {
-  let url; try { url = new URL(value); } catch { throw fail("INVALID_URL", "文章地址无效。"); }
-  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) throw fail("INVALID_URL", "只支持普通 HTTP/HTTPS 文章地址。");
-  return url.href;
-}
+import { fetchWebDocument } from "../../reading/extractors/source.mjs";
 function safeToken(value) {
   return typeof value === "string" && value.length <= 48 && /^[A-Za-z_][A-Za-z0-9_-]*$/.test(value) && !/[0-9a-f]{10,}/i.test(value);
 }
@@ -56,14 +44,6 @@ export function summarizeHtmlStructure(html) {
   return (`PAGE_TITLE: ${title}\nCANDIDATE_CONTAINERS:\n` + lines.join("\n")).slice(0, STRUCTURE_LIMIT);
 }
 export async function fetchSourceSnapshot(url, network = () => globalThis.window?.ToolBox?.network) {
-  const target = validateArticleUrl(url);
-  const bridge = network();
-  if (!bridge?.request) throw fail("BRIDGE_REQUIRED", "请在 ToolBox 内使用全文适配。");
-  let response;
-  try { response = await bridge.request({ url: target, method: "GET", timeoutMs: 15000, maxResponseBytes: RESPONSE_LIMIT, headers: { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1" } }); }
-  catch (error) { throw fail(error?.code || "NETWORK_ERROR", "无法读取原网页结构；可能存在反爬、登录或网络限制。"); }
-  if (!response || response.status < 200 || response.status >= 300) throw fail("HTTP_ERROR", `原网页返回 HTTP ${response?.status || "?"}。`);
-  const html = decode(response);
-  if (!/<(?:html|article|main|body|div)[\s>]/i.test(html)) throw fail("NOT_HTML", "原网页没有返回可分析的 HTML。");
-  return { url: target, html, structure: summarizeHtmlStructure(html) };
+  const source = await fetchWebDocument(url, network);
+  return { ...source, structure: summarizeHtmlStructure(source.html) };
 }

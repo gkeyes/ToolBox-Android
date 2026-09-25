@@ -4,7 +4,7 @@ const SAFE_ATTRIBUTES = new Set(["alt", "title", "colspan", "rowspan", "start", 
 
 // Only this module owns descendants of the supplied empty article body. React
 // owns its surrounding UI and portals; no raw HTML is ever assigned to the DOM.
-export function createReadingDom(root, baseUrl, addPortal) {
+export function createReadingRenderer(root, baseUrl, addPortal) {
   const document = root.ownerDocument;
   const nodes = new Map([[0, root]]);
   const dirty = new Set();
@@ -56,27 +56,9 @@ export function createReadingDom(root, baseUrl, addPortal) {
         const target = nodes.get(operation.id);
         if (!target || target === root) return;
         const parentElement = target.parentElement;
-        if (operation.preserveBoundary && parentElement) {
-          const marker = document.createElement("span");
-          marker.className = "article-recovered-boundary";
-          marker.setAttribute("aria-hidden", "true");
-          target.before(marker);
-        }
         target.remove();
         nodes.delete(operation.id);
         if (parentElement) mark(parentElement);
-        return;
-      }
-      if (operation.type === "recoverSection") {
-        const target = nodes.get(operation.id);
-        if (!target || target === root || target.classList.contains("article-recovered-section-label")) return;
-        const marker = document.createElement("span");
-        marker.className = "article-recovered-boundary";
-        marker.setAttribute("aria-hidden", "true");
-        target.before(marker);
-        target.classList.add("article-recovered-section-label");
-        target.setAttribute("data-font-block", "");
-        mark(target);
         return;
       }
       const parent = nodes.get(operation.parent);
