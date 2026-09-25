@@ -75,3 +75,15 @@ test("reasoning stream extractor accepts MiniMax string and block formats withou
   assert.equal(extractReasoningText({ delta: { reasoning_details: [{ type: "reasoning.text", text: "分析结构" }, { signature: "secret-metadata" }] } }), "分析结构");
   assert.equal(extractContentText({ delta: { content: [{ type: "text", text: "<scraper_rule>article</scraper_rule>" }] } }), "<scraper_rule>article</scraper_rule>");
 });
+
+
+test("full-text metrics flag long sparse newline content but not structured HTML", () => {
+  const sparse = "<div>" + Array.from({ length: 8 }, (_, index) => ("第" + index + "段 " + "正文".repeat(45))).join("\n") + "</div>";
+  const a = contentMetrics(sparse);
+  assert.equal(a.needsRepair, true);
+  assert.ok(a.meaningfulNewlines >= 3);
+  const structured = Array.from({ length: 8 }, (_, index) => "<p>第" + index + "段 " + "正文".repeat(45) + "</p>").join("");
+  const b = contentMetrics(structured);
+  assert.equal(b.needsRepair, false);
+  assert.equal(b.paragraphs, 8);
+});

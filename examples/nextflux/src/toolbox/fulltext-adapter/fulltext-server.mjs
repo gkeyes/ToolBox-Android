@@ -1,8 +1,15 @@
+import { analyzeReadingLayout } from "../reading-layout.mjs";
 function fail(code, message, extra = {}) { return Object.assign(new Error(message), { code, ...extra }); }
 export function contentMetrics(html) {
   const source = String(html || "");
   const text = source.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/gi," ").replace(/&[a-z0-9#]+;/gi," ").replace(/\s+/g," ").trim();
-  return { textChars: text.length, images: (source.match(/<img\b/gi)||[]).length, paragraphs: (source.match(/<p\b/gi)||[]).length, sample: text.slice(0, 500) };
+  const structure = analyzeReadingLayout(source);
+  return {
+    ...structure,
+    textChars: text.length,
+    images: (source.match(/<img\b/gi)||[]).length,
+    sample: text.slice(0, 500),
+  };
 }
 export async function testScraperRule({ feedId, entryId, candidate, baselineRule, api }) {
   const current = await api.getFeed(feedId);

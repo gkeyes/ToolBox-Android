@@ -1,5 +1,6 @@
 import { Parser } from "htmlparser2";
 import { ALLOWED_TAGS, DROP_CONTENT, cleanAttributes, safeContentUrl } from "../toolbox/content.js";
+import { analyzeReadingLayout, shouldPreserveTextBreaks } from "../toolbox/reading-layout.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
@@ -12,21 +13,23 @@ const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/p
 // Pulling one bounded batch at a time also bounds the worker/main-thread queue.
 export function createReadingParser(html, baseUrl) {
   const source = typeof html === "string" ? html : "";
+  const layout = analyzeReadingLayout(source);
+  const repairPlainTextLayout = layout.needsRepair;
   let offset = 0, nextId = 1, ended = false;
   const pending = [];
-  const stack = [{ id: 0, blocked: false, depth: 0 }];
+  const stack = [{ id: 0, blocked: false, depth: 0, layoutProtected: false }];
   let queuedText = 0;
   const emit = (operation) => { pending.push(operation); queuedText += operation.text?.length || 0; };
-  let textTail = "", textParent = 0;
-  const emitDisplayText = (parent, text) => {
+  let textTail = "", textParent = 0, textPreserveBreaks = false;
+  const emitDisplayText = (parent, text, preserveBreaks = false) => {
     // Older WebViews only recognize keycaps with VS16 before the enclosing mark.
     // This is a display stream; stored HTML, attributes and literal code stay raw.
     const display = text.replace(/([0-9#*])\ufe0f?\u20e3\ufe0f?/gu, "$1\ufe0f\u20e3");
     for (let index = 0; index < display.length; index += INPUT_CHUNK) {
-      emit({ type: "text", parent, text: display.slice(index, index + INPUT_CHUNK) });
+      emit({ type: "text", parent, text: display.slice(index, index + INPUT_CHUNK), preserveBreaks });
     }
   };
-  const flushText = () => { emitDisplayText(textParent, textTail); textTail = ""; };
+  const flushText = () => { emitDisplayText(textParent, textTail, textPreserveBreaks); textTail = ""; textPreserveBreaks = false; };
   const openCodeLine = (code) => {
     code.lineId = nextId++;
     emit({ type: "element", id: code.lineId, parent: code.parent, tag: "span", attrs: {}, codeLine: true });
@@ -46,7 +49,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code" };
+      const entry = { tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag) };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -95,11 +98,13 @@ export function createReadingParser(html, baseUrl) {
       if (parent.code) { appendCode(parent.code, text); return; }
       if (!parent.literalText) {
         const combined = textTail + text;
+        const preserveBreaks = shouldPreserveTextBreaks(combined, parent.layoutProtected, repairPlainTextLayout);
         // Hold at most three code units across entities and tokenizer chunks.
         // Flush at markup boundaries so differently styled text is not rewritten.
         textTail = combined.match(/[0-9#*](?:\ufe0f\u20e3?|\u20e3\ufe0f?)?$/u)?.[0] || "";
         textParent = parent.id;
-        emitDisplayText(parent.id, combined.slice(0, combined.length - textTail.length));
+        textPreserveBreaks = preserveBreaks;
+        emitDisplayText(parent.id, combined.slice(0, combined.length - textTail.length), preserveBreaks);
         return;
       }
       // Text callbacks may span tokenizer chunks (entities/raw text). Split them

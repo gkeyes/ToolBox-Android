@@ -23,6 +23,12 @@
   @apply my-0!
 }
 
+/* Sparse full-text HTML sometimes relies on source newlines after Miniflux
+   strips site CSS. Only text nodes flagged by the reading parser use this. */
+.article-preserve-breaks {
+  white-space: pre-line;
+}
+
 /* 文章标题链接样式 */
 .article-title a {
   @apply text-foreground font-medium no-underline

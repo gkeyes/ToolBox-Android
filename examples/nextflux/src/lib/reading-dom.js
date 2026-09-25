@@ -68,7 +68,14 @@ export function createReadingDom(root, baseUrl, addPortal) {
       }
       if (!parent) throw new Error("Invalid article node parent");
       if (operation.type === "text") {
-        parent.appendChild(document.createTextNode(operation.text));
+        if (operation.preserveBreaks) {
+          const span = document.createElement("span");
+          span.className = "article-preserve-breaks";
+          span.appendChild(document.createTextNode(operation.text));
+          parent.appendChild(span);
+        } else {
+          parent.appendChild(document.createTextNode(operation.text));
+        }
         mark(parent);
         return;
       }
