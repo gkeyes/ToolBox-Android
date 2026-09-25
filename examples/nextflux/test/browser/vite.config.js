@@ -11,6 +11,7 @@ const sourceRoot = path.join(app, "src");
 const controlComponents = [
   "components/ArticleView/components/ActionButtons.jsx",
   "components/ArticleView/components/AISummary.jsx",
+  "components/ArticleView/components/FullTextAdaptButton.jsx",
   "components/ArticleView/components/ArticleTitleFilterButton.jsx",
   "components/ArticleList/components/FeedTitleFilterButton.jsx",
   "components/Settings/Settings.jsx",
