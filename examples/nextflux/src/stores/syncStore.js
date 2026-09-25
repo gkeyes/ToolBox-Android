@@ -246,49 +246,28 @@ async function collectSnapshot(accountCheck) {
     staging = operation.catch((failure) => { requestFailure ||= failure; });
     return operation;
   };
-  const consume = async (method, args, priority) => {
-    const collected = await method(...args, (batch) => addEntries(batch, priority));
+  const consume = async (method, args, priority, progressLabel) => {
+    let count = 0;
+    const onPage = async (batch) => {
+      await addEntries(batch, priority);
+      count += batch.length;
+      if (progressLabel) syncProgress.set(`${progressLabel} · ${count}`);
+    };
+    const collected = await method(...args, onPage);
     // Keeps the collection API usable for existing consumers and injected tests.
-    if (Array.isArray(collected)) await addEntries(collected, priority);
+    if (Array.isArray(collected)) await onPage(collected);
   };
   syncProgress.set("正在准备未读文章同步…");
   try {
-    const initialUnread = async () => {
-      let offset = 0;
-      let total = Infinity;
-      let pageSize = 1000;
-      const seen = new Set();
-      while (offset < total) {
-        check();
-        const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
-        check();
-        if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
-          throw new Error("同步返回的文章列表无效，请重试。");
-        }
-        total = page.total;
-        if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
-        const fresh = page.entries.filter((entry) => {
-          if (seen.has(entry.id)) return false;
-          seen.add(entry.id);
-          return true;
-        });
-        if (page.entries.length && !fresh.length) throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
-        await addEntries(fresh, -1);
-        offset += page.entries.length;
-        syncProgress.set(`正在优先同步未读文章 · ${offset} / ${total}`);
-        if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
-      }
-    };
     const since = previous ? new Date(previous.getTime() - 24 * 60 * 60 * 1000) : null;
     await runPrioritizedArticleSync({
       initial: !previous,
       setProgress: (message) => syncProgress.set(message),
       unread: previous
-        ? () => consume(minifluxAPI.getUnreadChangedEntries, [since, check], -1)
-        : initialUnread,
-      starred: () => consume(minifluxAPI.getAllStarredEntries, [check], 1),
-      changed: () => consume(minifluxAPI.getChangedEntries, [since, check], 0),
-      fresh: () => consume(minifluxAPI.getNewEntries, [since, check], 1),
+        ? () => consume(minifluxAPI.getUnreadChangedEntries, [since, check], -1, "正在优先同步未读文章")
+        : () => consume(minifluxAPI.getAllUnreadEntries, [check], -1, "正在优先同步未读文章"),
+      starred: () => consume(minifluxAPI.getAllStarredEntries, [check], 1, "正在同步已读收藏"),
+      readChanged: () => consume(minifluxAPI.getReadChangedEntries, [since, check], 0, "正在同步已读状态与收藏"),
     });
     await staging;
     check();

@@ -11,7 +11,7 @@ export function assertAiUrl(baseUrl) {
 
 function safeError(code, status) {
   const messages = {
-    CANCELLED: "AI 摘要已停止。",
+    CANCELLED: "AI 请求已停止。",
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
     NETWORK_TIMEOUT: "AI 服务响应超时，请稍后重试。",
     QUOTA_EXCEEDED: "可用资源不足，无法继续接收 AI 响应，请稍后重试。",
@@ -36,7 +36,7 @@ function payload({ baseUrl, apiKey, body }) {
 
 function bridge() {
   const network = globalThis.window?.ToolBox?.network;
-  if (!network) throw new Error("请在 ToolBox 中使用 AI 摘要。");
+  if (!network) throw new Error("请在 ToolBox 中使用 AI 功能。");
   return network;
 }
 
@@ -89,7 +89,18 @@ export async function streamChatCompletion({ baseUrl, apiKey, body, signal, onDe
       try { json = JSON.parse(event); } catch { throw safeError("INVALID_RESPONSE"); }
       if (json.error) throw safeError("INVALID_RESPONSE");
       const choice = json.choices?.[0];
-      if (typeof choice?.delta?.content === "string") onDelta(choice.delta.content);
+      const content = choice?.delta?.content ?? choice?.message?.content;
+      if (typeof content === "string") {
+        if (content) onDelta(content);
+      } else if (Array.isArray(content)) {
+        for (const part of content) {
+          const value = typeof part === "string" ? part : (part?.text ?? part?.content);
+          if (typeof value === "string" && value) onDelta(value);
+        }
+      }
+      // MiniMax M-series may stream reasoning_details/reasoning_content separately.
+      // They are intentionally ignored: only the final content is part of the
+      // machine-readable scraper result.
       if (choice?.finish_reason) finishedChoice = true;
     };
     const processLine = (line) => {

@@ -3,6 +3,7 @@ import { authState, logout } from "../stores/authStore.js";
 import { toast } from "sonner";
 import { SERVER_URL, basicAuth, toolboxAxiosAdapter } from "../toolbox/network.js";
 import { waitForRateLimit } from "../toolbox/rate-limit.js";
+import { adaptivePageRequest, nextEntryCursor, SYNC_PAGE_SIZE, SYNC_MIN_PAGE_SIZE } from "../toolbox/sync-pagination.mjs";
 
 // 创建 axios 实例
 const createApiClient = () => {
@@ -169,63 +170,66 @@ export const updateEntryStarred = async (entry, check) => {
   }
 };
 
-// Fewer round trips for ordinary articles; large bodies still shrink the page
-// when ToolBox reports insufficient response resources, without advancing the offset.
-// Keep the upstream synchronization batch size. The adaptive fallback below
-// only handles a single response that cannot fit the available native resources.
-const SYNC_PAGE_SIZE = 1000;
-async function fetchEntryPage(endpoint, filters, offset, requestedSize, check) {
-  let pageSize = requestedSize;
+// Large Miniflux libraries are synchronized with bounded cursor pages instead of
+// deep OFFSET scans. Transient gateway/transport failures shrink 200→100→50→25
+// before retrying; the cursor advances only after a complete page is accepted.
+async function fetchEntryPage(endpoint, filters, cursor, requestedSize, check) {
   const current = operationCheck(check);
-  while (true) {
-    await current();
-    try {
-      const { data } = await withAdmissionRetry(() => apiClient.get(endpoint, {
-        params: { ...filters, offset, limit: pageSize },
-      }), current);
+  const direction = String(filters.direction || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+  const cursorParam = direction === "asc" ? "after_entry_id" : "before_entry_id";
+  const baseFilters = { ...filters };
+  delete baseFilters.after_entry_id;
+  delete baseFilters.before_entry_id;
+  delete baseFilters.offset;
+  delete baseFilters.limit;
+
+  return adaptivePageRequest({
+    pageSize: Math.max(SYNC_MIN_PAGE_SIZE, Math.min(Number(requestedSize) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)),
+    minPageSize: SYNC_MIN_PAGE_SIZE,
+    check: current,
+    request: async (pageSize) => {
+      const params = { ...baseFilters, limit: pageSize };
+      if (cursor > 0) params[cursorParam] = cursor;
+      const { data } = await withAdmissionRetry(() => apiClient.get(endpoint, { params }), current);
       await current();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
-      return { data, pageSize };
-    } catch (error) {
-      await current();
-      if (error.code !== "QUOTA_EXCEEDED" || pageSize <= 1) throw error;
-      pageSize = Math.max(1, Math.floor(pageSize / 2));
-    }
-  }
+      return data;
+    },
+  });
 }
 
-// Stable ID order avoids the publication-time reordering of the visual list.
+// Stable ID cursor pagination keeps database work bounded even when the archive
+// contains tens of thousands of entries. New rows arriving during a descending
+// walk are picked up by the existing changed_at overlap on the next sync.
 export async function getEntriesInBatches(endpoint, params = {}, check, onPage) {
   const current = operationCheck(check);
-  const initialOffset = params.offset || 0;
-  const filters = { order: "id", direction: "asc", ...params };
+  const filters = { order: "id", direction: "desc", ...params };
   delete filters.limit;
   delete filters.offset;
+  const direction = String(filters.direction).toLowerCase() === "asc" ? "asc" : "desc";
+  let cursor = Number(direction === "asc" ? filters.after_entry_id : filters.before_entry_id) || 0;
+  delete filters.after_entry_id;
+  delete filters.before_entry_id;
+
   const entries = [];
-  const seen = new Set();
-  let offset = initialOffset;
   let pageSize = SYNC_PAGE_SIZE;
   while (true) {
-    const result = await fetchEntryPage(endpoint, filters, offset, pageSize, current);
+    const result = await fetchEntryPage(endpoint, filters, cursor, pageSize, current);
     pageSize = result.pageSize;
-    const { entries: batch, total } = result.data;
-    if (!batch.length && Number.isFinite(total) && offset < total) {
-      throw new Error("同步结果不完整，请重试。");
-    }
-    const fresh = [];
+    const batch = result.data.entries;
+    if (!batch.length) return onPage ? undefined : entries;
+
+    const ids = new Set();
     for (const entry of batch) {
-      if (!seen.has(entry.id)) { seen.add(entry.id); fresh.push(entry); }
+      if (ids.has(entry.id)) throw new Error("服务器同一页返回了重复文章，已停止同步。");
+      ids.add(entry.id);
     }
-    if (batch.length && !fresh.length) {
-      throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
-    }
-    // The streaming consumer durably stages each bounded page before requesting
-    // another. Collection remains available for callers that need an array.
-    if (onPage) await onPage(fresh);
-    else entries.push(...fresh);
+    const nextCursor = nextEntryCursor(batch, cursor, direction);
+    if (onPage) await onPage(batch);
+    else entries.push(...batch);
     await current();
-    offset += batch.length;
-    if (!batch.length || (Number.isFinite(total) ? offset >= total : batch.length < pageSize)) return onPage ? undefined : entries;
+    cursor = nextCursor;
+    if (batch.length < pageSize) return onPage ? undefined : entries;
   }
 }
 
@@ -250,6 +254,18 @@ export const getUnreadChangedEntries = async (lastSyncTime, check, onPage) => {
     changed_after: timestamp,
   }, check, onPage);
 };
+
+export const getReadChangedEntries = async (lastSyncTime, check, onPage) => {
+  const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
+  return getEntriesInBatches("/v1/entries", {
+    status: "read",
+    changed_after: timestamp,
+  }, check, onPage);
+};
+
+export const getAllUnreadEntries = (check, onPage) => getEntriesInBatches("/v1/entries", {
+  status: "unread",
+}, check, onPage);
 
 // 标记全部已读
 export const markAllAsRead = async (type, id = null, check) => {
@@ -394,10 +410,11 @@ export const importOPML = async (file) => {
   }
 };
 
-// 分页获取未读文章
+// 兼容旧调用：offset=0 使用首个游标页；新同步链路使用 getAllUnreadEntries。
 export const getUnreadEntriesByPage = async (offset = 0, limit = SYNC_PAGE_SIZE, check) => {
-  const { data } = await fetchEntryPage("/v1/entries", { status: "unread", direction: "desc" }, offset,
-    Math.max(1, Math.min(Number(limit) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)), check);
+  if (Number(offset) !== 0) throw new Error("新版同步已停用深 OFFSET 分页，请重新开始同步。");
+  const { data } = await fetchEntryPage("/v1/entries", { status: "unread", direction: "desc" }, 0,
+    Math.max(SYNC_MIN_PAGE_SIZE, Math.min(Number(limit) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)), check);
   return data;
 };
 
@@ -479,6 +496,8 @@ const minifluxApi = {
   getChangedEntries,
   getNewEntries,
   getUnreadChangedEntries,
+  getReadChangedEntries,
+  getAllUnreadEntries,
   markAllAsRead,
   getAllStarredEntries,
   fetchEntryContent,

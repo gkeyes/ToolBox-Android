@@ -57,6 +57,7 @@ export default function FullTextAdaptButton() {
   const footer=phase==="done"
     ? <Button fullWidth onPress={close}>完成</Button>
     : <><Button variant="tertiary" fullWidth onPress={close} isDisabled={busy}>取消</Button>
+      {phase==="error"&&<Button fullWidth onPress={()=>start()}>重新生成</Button>}
       {phase==="candidate"&&<Button fullWidth onPress={test}>测试全文抓取</Button>}
       {phase==="tested"&&<Button fullWidth onPress={apply}>应用此规则</Button>}</>;
   return <>

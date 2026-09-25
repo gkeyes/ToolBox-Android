@@ -1,13 +1,13 @@
 /**
- * Keep unread entries ahead of all lower-priority synchronization work.
- * The caller owns staging/commit; this helper only controls request order.
+ * Keep unread entries ahead of lower-priority synchronization work.
+ * Incremental phases are disjoint by status, so a changed entry is downloaded
+ * once instead of through overlapping unread/changed/new queries.
  */
 export async function runPrioritizedArticleSync({
   initial,
   unread,
   starred,
-  changed,
-  fresh,
+  readChanged,
   setProgress = () => {},
 }) {
   setProgress("正在优先同步未读文章…");
@@ -19,6 +19,6 @@ export async function runPrioritizedArticleSync({
     return;
   }
 
-  setProgress("正在同步文章状态…");
-  await Promise.all([changed(), fresh()]);
+  setProgress("正在同步已读状态与收藏…");
+  await readChanged();
 }
