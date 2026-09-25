@@ -40,3 +40,16 @@ test("reading parser marks sparse source newline text without rewriting structur
   }
   assert.equal(normalOps.some((operation) => operation.type === "text" && operation.preserveBreaks), false);
 });
+
+
+test("typography CSS remains scoped to article content and keeps code opt-out rules", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../src/components/ArticleView/ReadingTypography.css", import.meta.url), "utf8");
+  assert.match(css, /\.article-content\s*\{/);
+  assert.match(css, /line-break:\s*strict/);
+  assert.match(css, /text-autospace:\s*ideograph-alpha ideograph-numeric/);
+  assert.match(css, /\.article-content\s+:is\(pre, code, kbd, samp\)/);
+  assert.match(css, /text-autospace:\s*no-autospace/);
+  assert.match(css, /\.article-content\s+figcaption/);
+  assert.match(css, /\.article-content\s+table/);
+});

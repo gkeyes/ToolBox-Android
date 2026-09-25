@@ -1,0 +1,187 @@
+/*
+ * NextFlux reading typography
+ * ---------------------------
+ * Scoped to article content so feed lists, dialogs and controls are untouched.
+ * Inspired by Chinese long-form typography practices (typo.css / Han.css ideas)
+ * while preserving NextFlux user-selected font, size, width and line-height.
+ */
+.article-content {
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  line-break: strict;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hanging-punctuation: allow-end;
+  text-spacing-trim: normal;
+  text-emphasis-position: under right;
+}
+
+@supports (text-autospace: ideograph-alpha) {
+  .article-content {
+    text-autospace: ideograph-alpha ideograph-numeric;
+  }
+}
+
+@supports (text-wrap: pretty) {
+  .article-content :is(p, li, blockquote, figcaption) {
+    text-wrap: pretty;
+  }
+}
+
+@supports (text-wrap: balance) {
+  .article-content :is(h1, h2, h3, h4, h5, h6) {
+    text-wrap: balance;
+  }
+}
+
+/* Paragraph rhythm: comfortable for Chinese long-form without modifying source. */
+.article-content p {
+  margin-block: 0 1.08em !important;
+  orphans: 2;
+  widows: 2;
+}
+.article-content p:last-child {
+  margin-block-end: 0;
+}
+
+/* Headings remain close to their following text while clearly separating sections. */
+.article-content :is(h1, h2, h3, h4, h5, h6) {
+  margin-block-start: 1.5em !important;
+  margin-block-end: .62em !important;
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.article-content :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-block-start: .2em !important;
+}
+
+/* Restore explicit list semantics often weakened by site CSS removal. */
+.article-content ul {
+  list-style: disc;
+  padding-inline-start: 1.45em;
+  margin-block: .75em 1.08em;
+}
+.article-content ol {
+  list-style: decimal;
+  padding-inline-start: 1.75em;
+  margin-block: .75em 1.08em;
+}
+.article-content li {
+  margin-block: .32em !important;
+  padding-inline-start: .12em;
+}
+.article-content li::marker {
+  color: var(--muted, currentColor);
+}
+.article-content li > :is(p, ul, ol) {
+  margin-block: .38em !important;
+}
+.article-content :is(ul, ol) :is(ul, ol) {
+  margin-block: .42em;
+}
+
+/* Quotes should read as a distinct editorial voice, not as ordinary paragraphs. */
+.article-content blockquote {
+  margin: 1.3em 0 !important;
+  padding: .18em .2em .18em 1em;
+  border-inline-start: 3px solid color-mix(in oklch, var(--accent, currentColor) 72%, transparent);
+  color: color-mix(in oklch, var(--foreground, currentColor) 72%, var(--muted, currentColor));
+  background: color-mix(in oklch, var(--foreground, currentColor) 3%, transparent);
+  border-radius: 0 .65em .65em 0;
+}
+.article-content blockquote > :first-child { margin-block-start: 0 !important; }
+.article-content blockquote > :last-child { margin-block-end: 0 !important; }
+
+/* Images and captions form one visual unit. */
+.article-content figure {
+  margin-block: 1.45em !important;
+}
+.article-content figure > :is(img, [data-font-block]) {
+  margin-block: 0 !important;
+}
+.article-content figcaption {
+  margin-block-start: .58em;
+  color: var(--muted, currentColor);
+  font-size: .84em;
+  line-height: 1.55;
+  text-align: start;
+}
+.article-content figcaption :is(a, strong, b) {
+  color: inherit;
+}
+
+/* Tables stay usable on phones instead of squeezing columns until unreadable. */
+.article-content table {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  border-collapse: collapse;
+  margin-block: 1.2em;
+}
+.article-content :is(th, td) {
+  padding: .55em .72em;
+  border-block-end: 1px solid var(--separator, var(--border, #8883));
+  vertical-align: top;
+  line-height: 1.55;
+}
+.article-content th {
+  font-weight: 650;
+  background: color-mix(in oklch, var(--foreground, currentColor) 4%, transparent);
+}
+
+/* Code is not Chinese prose: disable CJK spacing/strict line-breaking here. */
+.article-content :is(pre, code, kbd, samp) {
+  line-break: auto;
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
+}
+.article-content pre {
+  margin-block: 1.25em !important;
+  line-height: 1.58;
+}
+
+/* Small editorial details. */
+.article-content hr {
+  border: 0;
+  border-block-start: 1px solid var(--separator, var(--border, #8883));
+  margin-block: 1.8em;
+}
+.article-content abbr[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: .14em;
+  cursor: help;
+}
+.article-content mark {
+  color: inherit;
+  background: color-mix(in oklch, var(--warning, #eab308) 22%, transparent);
+  border-radius: .18em;
+  padding-inline: .12em;
+}
+.article-content :is(sub, sup) {
+  font-size: .75em;
+  line-height: 0;
+}
+
+/* The v23 structural fallback marks only suspicious plain-text nodes. */
+.article-content .article-preserve-breaks {
+  white-space: pre-line;
+}
+
+/* Keep typography stable in dense/semantic structures. */
+.article-content :is(table, pre, code, kbd, samp) .article-preserve-breaks {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .article-content blockquote {
+    margin-inline: 0 !important;
+    padding-inline-start: .85em;
+  }
+  .article-content :is(th, td) {
+    padding: .5em .62em;
+  }
+}
