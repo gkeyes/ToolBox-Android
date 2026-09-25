@@ -24,6 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.13",
+    "defuddle": "0.19.4",
     "framer-motion": "^12.4.4",
     "htmlparser2": "10.1.0",
     "i18next": "^24.2.2",
