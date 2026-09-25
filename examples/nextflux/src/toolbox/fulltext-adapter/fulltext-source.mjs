@@ -1,5 +1,7 @@
 const STRUCTURE_LIMIT = 12000;
 import { fetchWebDocument } from "../../reading/extractors/source.mjs";
+const STRUCTURE_DROP = "script,style,noscript,template,svg,canvas,iframe,object,embed,form,input,textarea,select,button";
+
 function safeToken(value) {
   return typeof value === "string" && value.length <= 48 && /^[A-Za-z_][A-Za-z0-9_-]*$/.test(value) && !/[0-9a-f]{10,}/i.test(value);
 }
@@ -28,7 +30,7 @@ export function inspectSelector(html, selector) {
 }
 export function summarizeHtmlStructure(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll(DROP).forEach(node => node.remove());
+  doc.querySelectorAll(STRUCTURE_DROP).forEach(node => node.remove());
   const rows = [...doc.querySelectorAll("article,main,[role=main],section,div")].map((el, index) => {
     const textChars = (el.textContent || "").replace(/\s+/g, " ").trim().length;
     return { index, selector: hint(el), textChars, p: el.querySelectorAll("p").length, br: el.querySelectorAll("br").length, li: el.querySelectorAll("li").length, fig: el.querySelectorAll("figure").length, cap: el.querySelectorAll("figcaption").length, img: el.querySelectorAll("img").length, headings: el.querySelectorAll("h1,h2,h3,h4,h5,h6").length };
