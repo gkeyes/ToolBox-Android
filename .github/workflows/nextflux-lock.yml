@@ -1,0 +1,25 @@
+name: NextFlux lock refresh
+on:
+  push:
+    paths:
+      - .github/workflows/nextflux-lock.yml
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+      - name: Refresh lock with Defuddle
+        working-directory: examples/nextflux
+        run: npm install --package-lock-only --ignore-scripts --save-exact defuddle@0.19.4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-lock-refresh
+          path: |
+            examples/nextflux/package.json
+            examples/nextflux/package-lock.json
+          if-no-files-found: error
