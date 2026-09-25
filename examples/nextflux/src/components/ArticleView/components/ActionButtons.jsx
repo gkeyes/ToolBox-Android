@@ -11,6 +11,7 @@ import {
   CloudUpload,
   ArrowRight,
   Sparkles,
+  Ellipsis,
 } from "lucide-react";
 import {
   handleMarkStatus,
@@ -18,7 +19,7 @@ import {
   handleToggleStar,
   handleToggleContent,
 } from "@/handlers/articleHandlers.js";
-import { Button, CloseButton, cn, Spinner, Tooltip } from "@heroui/react";
+import { Button, CloseButton, cn, Dropdown, Label, Spinner, Tooltip } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import {
@@ -212,7 +213,7 @@ export default function ActionButtons() {
           <FullTextAdaptButton />
           <Tooltip delay={0}>
             <Button
-              className="nextflux-toolbar-button"
+              className="nextflux-toolbar-button max-[359px]:hidden"
               aria-label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
               onPress={() => handleMarkStatus($activeArticle)}
               variant="ghost"
@@ -234,7 +235,7 @@ export default function ActionButtons() {
           </Tooltip>
           <Tooltip delay={0}>
             <Button
-              className="nextflux-toolbar-button"
+              className="nextflux-toolbar-button max-[359px]:hidden"
               aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
               ref={buttonRef}
               variant="ghost"
@@ -334,7 +335,7 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
           <Tooltip delay={0}>
-            <Button className="nextflux-toolbar-button" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
+            <Button className="nextflux-toolbar-button max-[359px]:hidden" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
               <Share className="size-4 text-muted" />
             </Button>
             <Tooltip.Content showArrow>
@@ -342,6 +343,44 @@ export default function ActionButtons() {
               {t("common.share")}
             </Tooltip.Content>
           </Tooltip>
+          <Dropdown>
+            <Button
+              className="nextflux-toolbar-button min-[360px]:hidden"
+              aria-label="更多操作"
+              variant="ghost"
+              isIconOnly
+              size="sm"
+            >
+              <Ellipsis className="size-4 text-muted" />
+            </Button>
+            <Dropdown.Popover>
+              <Dropdown.Menu
+                aria-label="文章更多操作"
+                onAction={(key) => {
+                  if (key === "status") handleMarkStatus($activeArticle);
+                  if (key === "star") handleToggleStar($activeArticle);
+                  if (key === "share") handleShare();
+                }}
+              >
+                <Dropdown.Item id="status" textValue={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}>
+                  {$activeArticle?.status === "unread" ? (
+                    <CircleDot className="size-4 text-muted p-0.5 fill-current" />
+                  ) : (
+                    <Circle className="size-4 text-muted p-0.5" />
+                  )}
+                  <Label>{$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}</Label>
+                </Dropdown.Item>
+                <Dropdown.Item id="star" textValue={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}>
+                  <Star className={`size-4 text-muted ${$activeArticle?.starred === 1 ? "fill-current" : ""}`} />
+                  <Label>{$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}</Label>
+                </Dropdown.Item>
+                <Dropdown.Item id="share" textValue={t("common.share")}>
+                  <Share className="size-4 text-muted" />
+                  <Label>{t("common.share")}</Label>
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
         </div>
       </div>
     </div>
