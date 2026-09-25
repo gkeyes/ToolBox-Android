@@ -4,7 +4,7 @@ import { addCategoryModalOpen, addFeedModalOpen } from "@/stores/modalStore";
 import { useSidebar } from "@/components/ui/sidebar.jsx";
 import minifluxAPI from "@/api/miniflux";
 import { toast } from "sonner";
-import { forceSync } from "@/stores/syncStore";
+import { backgroundSync, requestForegroundPriority } from "@/stores/syncStore";
 import { useTranslation } from "react-i18next";
 
 export default function AddFeedButton() {
@@ -12,14 +12,15 @@ export default function AddFeedButton() {
   const { isMobile, setOpenMobile } = useSidebar();
 
   const importFile = async () => {
+    requestForegroundPriority();
     try {
       const token = await window.ToolBox.files.open(["text/xml", "application/xml", "text/x-opml", "application/octet-stream"]);
       if (!token) return;
       const bytes = await window.ToolBox.files.read(token.token);
       const xml = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       await minifluxAPI.importOPML({ text: async () => xml });
-      await forceSync();
-      toast.success(t("common.success"));
+      toast.success("导入完成，正在后台同步订阅。");
+      void backgroundSync().catch(() => {});
     } catch (error) {
       toast.error(error.code === "PERMISSION_DENIED" ? "请先在小工具权限中开启文件读取和网络。" : (error.message || "导入失败，请重试。"));
     }

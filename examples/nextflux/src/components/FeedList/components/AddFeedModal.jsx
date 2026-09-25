@@ -20,7 +20,7 @@ import { useStore } from "@nanostores/react";
 import { categories } from "@/stores/feedsStore";
 import { addFeedModalOpen } from "@/stores/modalStore";
 import minifluxAPI from "@/api/miniflux";
-import { forceSync } from "@/stores/syncStore";
+import { backgroundSync, refreshSingleFeed, requestForegroundPriority } from "@/stores/syncStore";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Search, Rss, Loader2, ChevronDown } from "lucide-react";
@@ -116,6 +116,7 @@ export default function AddFeedModal() {
 
   const handleSearch = async () => {
     if (!searchQuery) return;
+    requestForegroundPriority();
 
     try {
       setSearching(true);
@@ -183,6 +184,7 @@ export default function AddFeedModal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    requestForegroundPriority();
     try {
       setLoading(true);
       const response = await minifluxAPI.createFeed(
@@ -196,13 +198,18 @@ export default function AddFeedModal() {
           rewrite_rules: formData.rewrite_rules,
         },
       );
-      await forceSync(); // 重新加载订阅源列表以更新UI
+      const feedId = Number(response.feed_id);
+      // Server creation is the completion point for this dialog. Do not hold
+      // the UI open behind an account-wide article synchronization.
       onClose();
-      // 导航到新增的订阅源
-      console.log(response);
-      navigate(`/feed/${response.feed_id}`);
+      navigate(`/feed/${feedId}`);
+      toast.success("订阅已添加，正在后台获取文章。");
+      void refreshSingleFeed(feedId)
+        .catch(() => {})
+        .finally(() => backgroundSync().catch(() => {}));
     } catch (error) {
       console.error("添加订阅源失败:", error);
+      toast.error(error.message || "添加订阅失败，请重试。");
     } finally {
       setLoading(false);
     }

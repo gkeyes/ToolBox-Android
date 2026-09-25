@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { SERVER_URL, basicAuth, toolboxAxiosAdapter } from "../toolbox/network.js";
 import { waitForRateLimit } from "../toolbox/rate-limit.js";
 import { adaptivePageRequest, nextEntryCursor, SYNC_PAGE_SIZE, SYNC_MIN_PAGE_SIZE } from "../toolbox/sync-pagination.mjs";
+import { createNetworkPriorityGate } from "../toolbox/foreground-gate.mjs";
 
 // 创建 axios 实例
 const createApiClient = () => {
@@ -47,6 +48,7 @@ const createApiClient = () => {
 // 创建 API 客户端实例
 let apiClient = createApiClient();
 let authGeneration = 0;
+const networkPriority = createNetworkPriorityGate();
 
 // 监听认证状态变化
 authState.listen((newAuth) => {
@@ -78,31 +80,40 @@ function checkAuthGeneration(generation) {
 // bound to the credentials with which it started during an admission wait.
 function operationCheck(check) {
   const generation = authGeneration;
-  return async () => {
+  const current = async () => {
     checkAuthGeneration(generation);
     if (await check?.() === false) throw cancelled();
     checkAuthGeneration(generation);
   };
+  current.networkPriority = check?.networkPriority || "foreground";
+  return current;
 }
 
 async function withAdmissionRetry(operation, check) {
   const generation = authGeneration;
   const current = operationCheck(check);
-  while (true) {
-    await current();
-    // Optional mutation hooks distinguish a sent toggle from one the host
-    // rejected before execution. Waiting checks never mark a batch as sent.
-    if (await check?.beforeRequest?.() === false) throw cancelled();
-    checkAuthGeneration(generation);
-    try {
-      const result = await operation();
+  const isBackground = current.networkPriority === "background";
+  const releaseForeground = isBackground ? null : networkPriority.beginForeground();
+  try {
+    while (true) {
+      await current();
+      if (isBackground) await networkPriority.waitForForeground(current);
+      // Optional mutation hooks distinguish a sent toggle from one the host
+      // rejected before execution. Waiting checks never mark a batch as sent.
+      if (await check?.beforeRequest?.() === false) throw cancelled();
       checkAuthGeneration(generation);
-      return result;
-    } catch (error) {
-      if (error?.code !== "RATE_LIMITED" || error?.response) throw error;
-      await check?.onRateLimited?.(error);
-      if (!await waitForRateLimit(error, current)) throw cancelled();
+      try {
+        const result = await operation();
+        checkAuthGeneration(generation);
+        return result;
+      } catch (error) {
+        if (error?.code !== "RATE_LIMITED" || error?.response) throw error;
+        await check?.onRateLimited?.(error);
+        if (!await waitForRateLimit(error, current)) throw cancelled();
+      }
     }
+  } finally {
+    releaseForeground?.();
   }
 }
 

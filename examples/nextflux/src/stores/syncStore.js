@@ -4,7 +4,7 @@ import minifluxAPI from "../api/miniflux.js";
 import {
   getLastSyncTime, prepareArticleSync, stageArticleSync, prepareArticleSyncCommit, commitArticleSync,
   abortArticleSync, invalidateArticleReads, addCategory, updateCategory,
-  deleteFeedWithArticles, getFeedIcon, setFeedIcon,
+  deleteFeedWithArticles, getFeedIcon, setFeedIcon, addFeeds,
 } from "../db/storage.js";
 import { settingsState } from "./settingsStore.js";
 import { authState } from "./authStore.js";
@@ -25,6 +25,8 @@ let activeOperation = null;
 let pumpScheduled = false;
 let iconQueue = Promise.resolve();
 let currentSync = null;
+let currentSyncMode = null;
+let backgroundPreemptRequested = false;
 
 function cancellation() {
   const failure = new Error("登录状态已改变，此次操作已停止。");
@@ -32,11 +34,23 @@ function cancellation() {
   return failure;
 }
 
-function accountCheck(epoch, requireOnline = true) {
-  return (needsNetwork = requireOnline) => {
+function accountCheck(epoch, requireOnline = true, networkPriority = "foreground") {
+  const check = (needsNetwork = requireOnline) => {
     if (epoch !== accountEpoch || !authState.get().userId) throw cancellation();
     if (needsNetwork && (!isOnline.get() || navigator.onLine === false)) throw new Error("当前离线，请联网后重试；操作尚未执行。");
   };
+  check.networkPriority = networkPriority;
+  return check;
+}
+
+function syncPreempted() {
+  const failure = new Error("后台同步已让位给前台操作。");
+  failure.code = "SYNC_PREEMPTED";
+  return failure;
+}
+
+export function requestForegroundPriority() {
+  if (currentSync && currentSyncMode === "background") backgroundPreemptRequested = true;
 }
 
 export function onAccountInvalidated(listener) {
@@ -57,7 +71,7 @@ function pumpAccountQueue() {
     pumpScheduled = false;
     const item = pendingManual.shift() ?? pendingAutomatic.shift();
     if (!item) return;
-    const check = accountCheck(item.epoch, item.requireOnline);
+    const check = accountCheck(item.epoch, item.requireOnline, item.priority === "auto" ? "background" : "foreground");
     const operation = (async () => {
       check(false);
       while (recoveries.length) {
@@ -83,7 +97,7 @@ function pumpAccountQueue() {
 export function runAccountOperation(task, { requireOnline = true, priority = "manual" } = {}) {
   const operation = new Promise((resolve, reject) => {
     const queue = priority === "auto" ? pendingAutomatic : pendingManual;
-    queue.push({ task, requireOnline, epoch: accountEpoch, resolve, reject });
+    queue.push({ task, requireOnline, priority, epoch: accountEpoch, resolve, reject });
   });
   pumpAccountQueue();
   return operation;
@@ -104,6 +118,7 @@ export function cancelAccountOperations() {
 export function runAccountScopeOperation(task) {
   const check = accountCheck(accountEpoch);
   return (async () => {
+    requestForegroundPriority();
     while (currentSync) { await currentSync.catch(() => {}); check(false); }
     check();
     return runAccountOperation(task);
@@ -185,6 +200,30 @@ if (typeof window !== "undefined") {
   window.addEventListener("offline", () => isOnline.set(false));
 }
 
+const mapServerFeed = (feed) => ({
+  id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,
+  crawler: feed.crawler, hide_globally: feed.hide_globally,
+  categoryId: feed.category?.id, parsing_error_count: feed.parsing_error_count,
+  scraper_rules: feed.scraper_rules, keeplist_rules: feed.keeplist_rules,
+  blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
+  block_filter_entry_rules: feed.block_filter_entry_rules,
+});
+
+export function refreshSingleFeed(feedId) {
+  return runAccountScopeOperation(async (check) => {
+    const serverFeed = await minifluxAPI.getFeed(feedId, check);
+    check(false);
+    const localFeed = mapServerFeed(serverFeed);
+    await addFeeds([localFeed]);
+    check(false);
+    const { feeds, unreadCounts, starredCounts } = await import("./feedsStore.js");
+    feeds.set([...feeds.get().filter((item) => item.id !== localFeed.id), localFeed]);
+    unreadCounts.set({ ...unreadCounts.get(), [localFeed.id]: unreadCounts.get()[localFeed.id] || 0 });
+    starredCounts.set({ ...starredCounts.get(), [localFeed.id]: starredCounts.get()[localFeed.id] || 0 });
+    return localFeed;
+  });
+}
+
 const mapEntryToArticle = (entry) => ({
   id: entry.id, feedId: entry.feed?.id, title: entry.title, author: entry.author,
   url: entry.url, content: entry.content, status: entry.status,
@@ -203,12 +242,14 @@ async function joinSyncRequests(tasks, check) {
   return results.map((result) => result.value);
 }
 
-async function collectSnapshot(accountCheck) {
+async function collectSnapshot(baseCheck) {
   let requestFailure;
-  const check = () => {
-    accountCheck();
+  const check = (needsNetwork = true) => {
+    baseCheck(needsNetwork);
+    if (currentSyncMode === "background" && backgroundPreemptRequested) throw syncPreempted();
     if (requestFailure) throw requestFailure;
   };
+  check.networkPriority = "background";
   const join = (tasks) => joinSyncRequests(tasks.map((task) => task.catch((failure) => {
     requestFailure ||= failure;
     throw failure;
@@ -276,20 +317,13 @@ async function collectSnapshot(accountCheck) {
     // makes unread data the first server workload and avoids competing with it.
     syncProgress.set("正在同步订阅信息…");
     const [serverFeeds, serverCategories] = await join([
-      minifluxAPI.getFeeds(), minifluxAPI.getCategories(),
+      minifluxAPI.getFeeds(check), minifluxAPI.getCategories(check),
     ]);
     await staging;
     check();
     return {
       token, syncedAt,
-      feeds: serverFeeds.map((feed) => ({
-        id: feed.id, title: feed.title, url: feed.feed_url, site_url: feed.site_url,
-        crawler: feed.crawler, hide_globally: feed.hide_globally,
-        categoryId: feed.category?.id, parsing_error_count: feed.parsing_error_count,
-        scraper_rules: feed.scraper_rules, keeplist_rules: feed.keeplist_rules,
-        blocklist_rules: feed.blocklist_rules, rewrite_rules: feed.rewrite_rules,
-        block_filter_entry_rules: feed.block_filter_entry_rules,
-      })),
+      feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
     };
   } catch (failure) {
@@ -299,12 +333,20 @@ async function collectSnapshot(accountCheck) {
   }
 }
 
-export function sync() {
-  if (currentSync) return currentSync;
+export function sync(mode = "foreground") {
+  if (currentSync) {
+    if (mode === "foreground" && currentSyncMode === "background") {
+      requestForegroundPriority();
+      return currentSync.catch(() => {}).then(() => sync("foreground"));
+    }
+    return currentSync;
+  }
+  currentSyncMode = mode;
+  backgroundPreemptRequested = false;
   isSyncing.set(true);
   syncProgress.set("正在准备同步…");
   error.set(null);
-  const check = accountCheck(accountEpoch);
+  const check = accountCheck(accountEpoch, true, "background");
   const operation = (async () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       // Finish preceding catalog actions/recovery before reserving this sync.
@@ -335,6 +377,7 @@ export function sync() {
     }
   })();
   currentSync = operation.catch((failure) => {
+    if (failure.code === "SYNC_PREEMPTED") return;
     if (failure.code !== "ACCOUNT_CHANGED") {
       error.set(failure);
       toast.error(failure.message || "同步失败，请检查网络权限后重试。");
@@ -342,6 +385,8 @@ export function sync() {
     throw failure;
   }).finally(() => {
     currentSync = null;
+    currentSyncMode = null;
+    backgroundPreemptRequested = false;
     isSyncing.set(false);
     syncProgress.set("");
   });
@@ -355,27 +400,40 @@ function resetSyncInterval() {
   if (minutes > 0) syncInterval = setInterval(performSync, minutes * 60 * 1000);
 }
 
+const foregroundIntent = () => requestForegroundPriority();
+const visibilityIntent = () => {
+  if (document.visibilityState === "visible") requestForegroundPriority();
+};
+
 export function startAutoSync() {
   if (typeof window === "undefined") return;
   performSync();
   resetSyncInterval();
   window.addEventListener("beforeunload", stopAutoSync);
+  window.addEventListener("pointerdown", foregroundIntent, true);
+  window.addEventListener("keydown", foregroundIntent, true);
+  document.addEventListener("visibilitychange", visibilityIntent);
 }
 
 export function stopAutoSync() {
   if (syncInterval) clearInterval(syncInterval);
   syncInterval = null;
   globalThis.window?.removeEventListener("beforeunload", stopAutoSync);
+  globalThis.window?.removeEventListener("pointerdown", foregroundIntent, true);
+  globalThis.window?.removeEventListener("keydown", foregroundIntent, true);
+  globalThis.document?.removeEventListener("visibilitychange", visibilityIntent);
 }
 
 async function performSync() {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
   if (!isOnline.get() || isSyncing.get() || !authState.get().userId) return;
   const minutes = parseInt(settingsState.get().syncInterval, 10);
   if (!(minutes > 0)) return;
   const previous = getLastSyncTime();
   if (!previous || Date.now() - previous.getTime() > minutes * 60 * 1000) {
-    try { await sync(); } catch { /* sync already reports a user-visible error */ }
+    try { await sync("background"); } catch { /* sync already reports a user-visible error */ }
   }
 }
 
-export const forceSync = () => sync();
+export const forceSync = () => sync("foreground");
+export const backgroundSync = () => sync("background");

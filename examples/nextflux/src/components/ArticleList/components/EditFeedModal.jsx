@@ -23,7 +23,7 @@ import { categories, feeds } from "@/stores/feedsStore";
 import { editFeedModalOpen, currentFeedId } from "@/stores/modalStore";
 import { useParams } from "react-router-dom";
 import minifluxAPI from "@/api/miniflux";
-import { forceSync } from "@/stores/syncStore";
+import { backgroundSync, refreshSingleFeed, requestForegroundPriority } from "@/stores/syncStore";
 import { Check, Copy, ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import CustomModal from "@/components/ui/CustomModal.jsx";
@@ -99,11 +99,13 @@ export default function EditFeedModal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    requestForegroundPriority();
     try {
       setLoading(true);
       await minifluxAPI.updateFeed(feedId, formData);
-      await forceSync(); // 重新加载订阅源列表以更新UI
+      await refreshSingleFeed(feedId);
       onClose();
+      void backgroundSync().catch(() => {});
     } catch (error) {
       console.error("更新订阅源失败:", error);
     } finally {

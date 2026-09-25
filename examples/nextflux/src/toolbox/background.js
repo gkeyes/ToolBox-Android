@@ -1,6 +1,6 @@
 import { atom } from "nanostores";
 import { settingsState } from "../stores/settingsStore.js";
-import { forceSync } from "../stores/syncStore.js";
+import { backgroundSync } from "../stores/syncStore.js";
 import { toast } from "sonner";
 
 export const continuousSync = atom(false);
@@ -20,7 +20,7 @@ export async function initializeBackground() {
   if (!initialized) {
     initialized = true;
     api().onTimer(event => {
-      if (event.key === TIMER_KEY && continuousSync.get()) forceSync().catch(() => {});
+      if (event.key === TIMER_KEY && continuousSync.get()) backgroundSync().catch(() => {});
     });
     api().onRestore(async () => {
       try {
