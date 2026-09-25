@@ -19,7 +19,7 @@ import {
   handleToggleStar,
   handleToggleContent,
 } from "@/handlers/articleHandlers.js";
-import { Button, CloseButton, cn, Dropdown, Label, Spinner, Tooltip } from "@heroui/react";
+import { Button, CloseButton, cn, Spinner, Tooltip } from "@heroui/react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import {
@@ -51,6 +51,7 @@ export default function ActionButtons() {
   const buttonRef = useRef(null);
   const fetchLoading = useStore(loadingOriginContent);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const $hasIntegrations = useStore(hasIntegrations);
   const { aiApiKey, floatingSidebar } = useStore(settingsState);
   const $aiSummaries = useStore(aiSummaries);
@@ -343,44 +344,67 @@ export default function ActionButtons() {
               {t("common.share")}
             </Tooltip.Content>
           </Tooltip>
-          <Dropdown>
+          <div className="relative shrink-0 min-[360px]:hidden">
             <Button
-              className="nextflux-toolbar-button min-[360px]:hidden"
+              className="nextflux-toolbar-button"
               aria-label="更多操作"
+              aria-expanded={moreOpen}
               variant="ghost"
               isIconOnly
               size="sm"
+              onPress={() => setMoreOpen((value) => !value)}
             >
               <Ellipsis className="size-4 text-muted" />
             </Button>
-            <Dropdown.Popover>
-              <Dropdown.Menu
+            {moreOpen && (
+              <div
+                role="menu"
                 aria-label="文章更多操作"
-                onAction={(key) => {
-                  if (key === "status") handleMarkStatus($activeArticle);
-                  if (key === "star") handleToggleStar($activeArticle);
-                  if (key === "share") handleShare();
-                }}
+                className="absolute right-0 top-full z-[60] mt-1 min-w-36 overflow-hidden rounded-xl border border-foreground/10 bg-overlay/95 p-1 shadow-custom-md backdrop-blur-sm"
               >
-                <Dropdown.Item id="status" textValue={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}>
+                <Button
+                  role="menuitem"
+                  variant="ghost"
+                  className="h-10 w-full justify-start gap-2 px-3"
+                  onPress={() => {
+                    handleMarkStatus($activeArticle);
+                    setMoreOpen(false);
+                  }}
+                >
                   {$activeArticle?.status === "unread" ? (
                     <CircleDot className="size-4 text-muted p-0.5 fill-current" />
                   ) : (
                     <Circle className="size-4 text-muted p-0.5" />
                   )}
-                  <Label>{$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}</Label>
-                </Dropdown.Item>
-                <Dropdown.Item id="star" textValue={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}>
+                  {$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
+                </Button>
+                <Button
+                  role="menuitem"
+                  variant="ghost"
+                  className="h-10 w-full justify-start gap-2 px-3"
+                  onPress={() => {
+                    handleToggleStar($activeArticle);
+                    setMoreOpen(false);
+                  }}
+                >
                   <Star className={`size-4 text-muted ${$activeArticle?.starred === 1 ? "fill-current" : ""}`} />
-                  <Label>{$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}</Label>
-                </Dropdown.Item>
-                <Dropdown.Item id="share" textValue={t("common.share")}>
+                  {$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
+                </Button>
+                <Button
+                  role="menuitem"
+                  variant="ghost"
+                  className="h-10 w-full justify-start gap-2 px-3"
+                  onPress={() => {
+                    handleShare();
+                    setMoreOpen(false);
+                  }}
+                >
                   <Share className="size-4 text-muted" />
-                  <Label>{t("common.share")}</Label>
-                </Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
+                  {t("common.share")}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
