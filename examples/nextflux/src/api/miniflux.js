@@ -241,6 +241,16 @@ export const getNewEntries = async (lastSyncTime, check, onPage) => {
   return getEntriesInBatches("/v1/entries", { after: timestamp }, check, onPage);
 };
 
+// 优先同步自上次窗口以来仍为未读的文章；changed_after 也能覆盖
+// “旧文章被重新标为未读”的情况，而不必每次重拉全部未读历史。
+export const getUnreadChangedEntries = async (lastSyncTime, check, onPage) => {
+  const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
+  return getEntriesInBatches("/v1/entries", {
+    status: "unread",
+    changed_after: timestamp,
+  }, check, onPage);
+};
+
 // 标记全部已读
 export const markAllAsRead = async (type, id = null, check) => {
   const current = operationCheck(check);
@@ -468,6 +478,7 @@ const minifluxApi = {
   updateEntryStarred,
   getChangedEntries,
   getNewEntries,
+  getUnreadChangedEntries,
   markAllAsRead,
   getAllStarredEntries,
   fetchEntryContent,

@@ -8,6 +8,7 @@ import {
 } from "../db/storage.js";
 import { settingsState } from "./settingsStore.js";
 import { authState } from "./authStore.js";
+import { runPrioritizedArticleSync } from "../toolbox/sync-priority.mjs";
 
 export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
@@ -250,49 +251,53 @@ async function collectSnapshot(accountCheck) {
     // Keeps the collection API usable for existing consumers and injected tests.
     if (Array.isArray(collected)) await addEntries(collected, priority);
   };
-  syncProgress.set("正在读取订阅和文章…");
+  syncProgress.set("正在准备未读文章同步…");
   try {
-    const collectArticles = async () => {
-      if (!previous) {
-        const unread = async () => {
-          let offset = 0;
-          let total = Infinity;
-          let pageSize = 1000;
-          const seen = new Set();
-          while (offset < total) {
-            check();
-            const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
-            check();
-            if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
-              throw new Error("同步返回的文章列表无效，请重试。");
-            }
-            total = page.total;
-            if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
-            const fresh = page.entries.filter((entry) => {
-              if (seen.has(entry.id)) return false;
-              seen.add(entry.id);
-              return true;
-            });
-            if (page.entries.length && !fresh.length) throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
-            await addEntries(fresh, 0);
-            offset += page.entries.length;
-            syncProgress.set(`正在同步文章 · ${offset} / ${total}`);
-            if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
-          }
-        };
-        await join([unread(), consume(minifluxAPI.getAllStarredEntries, [check], 1)]);
-      } else {
-        const since = new Date(previous.getTime() - 24 * 60 * 60 * 1000);
-        await join([
-          consume(minifluxAPI.getChangedEntries, [since, check], 0),
-          consume(minifluxAPI.getNewEntries, [since, check], 1),
-        ]);
+    const initialUnread = async () => {
+      let offset = 0;
+      let total = Infinity;
+      let pageSize = 1000;
+      const seen = new Set();
+      while (offset < total) {
+        check();
+        const page = await minifluxAPI.getUnreadEntriesByPage(offset, pageSize, check);
+        check();
+        if (!Array.isArray(page.entries) || !Number.isFinite(page.total) || page.total < 0) {
+          throw new Error("同步返回的文章列表无效，请重试。");
+        }
+        total = page.total;
+        if (!page.entries.length && offset < total) throw new Error("同步结果不完整，请重试。");
+        const fresh = page.entries.filter((entry) => {
+          if (seen.has(entry.id)) return false;
+          seen.add(entry.id);
+          return true;
+        });
+        if (page.entries.length && !fresh.length) throw new Error("服务器重复返回同一页文章，同步结果不完整，请重试。");
+        await addEntries(fresh, -1);
+        offset += page.entries.length;
+        syncProgress.set(`正在优先同步未读文章 · ${offset} / ${total}`);
+        if (page.entries.length) pageSize = Math.min(pageSize, page.entries.length);
       }
     };
-    // Four requests at most; each article stream awaits its bounded staging
-    // batch. The window never accumulates the archive's complete article bodies.
+    const since = previous ? new Date(previous.getTime() - 24 * 60 * 60 * 1000) : null;
+    await runPrioritizedArticleSync({
+      initial: !previous,
+      setProgress: (message) => syncProgress.set(message),
+      unread: previous
+        ? () => consume(minifluxAPI.getUnreadChangedEntries, [since, check], -1)
+        : initialUnread,
+      starred: () => consume(minifluxAPI.getAllStarredEntries, [check], 1),
+      changed: () => consume(minifluxAPI.getChangedEntries, [since, check], 0),
+      fresh: () => consume(minifluxAPI.getNewEntries, [since, check], 1),
+    });
+    await staging;
+    check();
+
+    // Catalog requests wait until unread and article-state work finishes. This
+    // makes unread data the first server workload and avoids competing with it.
+    syncProgress.set("正在同步订阅信息…");
     const [serverFeeds, serverCategories] = await join([
-      minifluxAPI.getFeeds(), minifluxAPI.getCategories(), collectArticles(),
+      minifluxAPI.getFeeds(), minifluxAPI.getCategories(),
     ]);
     await staging;
     check();
