@@ -1,0 +1,86 @@
+name: NextFlux NYT extractor diagnostic
+on:
+  push:
+    paths:
+      - .github/workflows/nextflux-nyt-diagnostic.yml
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+      - name: Install NextFlux dependencies
+        working-directory: examples/nextflux
+        run: npm ci --ignore-scripts
+      - name: Fetch and analyze NYT article
+        working-directory: examples/nextflux
+        env:
+          ARTICLE_URL: https://cn.nytimes.com/world/20260925/trump-xi-state-dinner-menu/
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from "node:fs";
+          import { parseHTML } from "linkedom";
+          import { Defuddle } from "defuddle/node";
+          import { analyzeArticle, scoreArticle } from "./src/reading/analyze.mjs";
+
+          const url=process.env.ARTICLE_URL;
+          const response=await fetch(url,{
+            redirect:"follow",
+            headers:{
+              "User-Agent":"Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36",
+              "Accept":"text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+              "Accept-Language":"zh-CN,zh;q=0.9,en;q=0.5",
+              "Cache-Control":"no-cache"
+            }
+          });
+          const html=await response.text();
+          const report={url,status:response.status,finalUrl:response.url,rawBytes:Buffer.byteLength(html)};
+          if(!response.ok){
+            report.fetchError=html.slice(0,300).replace(/\s+/g," ");
+          }else{
+            const {document}=parseHTML(html);
+            const result=await Defuddle(document,url,{debug:true,useAsync:false,removeHiddenElements:false,standardize:true});
+            const content=String(result?.content||"");
+            const analysis=analyzeArticle(content);
+            report.defuddle={
+              title:result?.title||"",
+              author:result?.author||"",
+              selector:result?.debug?.contentSelector||"",
+              removals:Array.isArray(result?.debug?.removals)?result.debug.removals.length:0,
+              outputBytes:Buffer.byteLength(content),
+              score:scoreArticle(analysis),
+              analysis,
+              tagCounts:{
+                p:(content.match(/<p\b/gi)||[]).length,
+                h:(content.match(/<h[1-6]\b/gi)||[]).length,
+                figure:(content.match(/<figure\b/gi)||[]).length,
+                figcaption:(content.match(/<figcaption\b/gi)||[]).length,
+                img:(content.match(/<img\b/gi)||[]).length,
+                li:(content.match(/<li\b/gi)||[]).length
+              },
+              sample:content.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim().slice(0,700)
+            };
+            report.rawStructure={
+              article:document.querySelectorAll("article").length,
+              main:document.querySelectorAll("main").length,
+              p:document.querySelectorAll("p").length,
+              figure:document.querySelectorAll("figure").length,
+              figcaption:document.querySelectorAll("figcaption").length,
+              img:document.querySelectorAll("img").length
+            };
+            fs.writeFileSync("nyt-defuddle-output.html",content);
+          }
+          fs.writeFileSync("nyt-diagnostic.json",JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report,null,2));
+          EOF
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-nyt-diagnostic
+          path: |
+            examples/nextflux/nyt-diagnostic.json
+            examples/nextflux/nyt-defuddle-output.html
+          if-no-files-found: warn
