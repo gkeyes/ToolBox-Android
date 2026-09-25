@@ -4,6 +4,7 @@ import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
 import "./ArticleView.css";
+import "./ReadingNormalizer.css";
 import "./ReadingTypography.css";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";
 import { generateReadableDate } from "@/lib/format.js";

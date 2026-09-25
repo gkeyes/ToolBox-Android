@@ -87,3 +87,12 @@ test("full-text metrics flag long sparse newline content but not structured HTML
   assert.equal(b.needsRepair, false);
   assert.equal(b.paragraphs, 8);
 });
+
+
+test("full-text metrics and reader normalizer share the same repair mode", () => {
+  const body = "正文".repeat(220);
+  const html = `<p>${body}<strong>第一道菜</strong>${body}<strong>第二道菜</strong>${body}</p>`;
+  const metrics = contentMetrics(html);
+  assert.equal(metrics.normalizationMode, "recover-inline-sections");
+  assert.equal(metrics.needsRepair, true);
+});

@@ -52,6 +52,33 @@ export function createReadingDom(root, baseUrl, addPortal) {
   };
   return {
     apply(operation) {
+      if (operation.type === "remove") {
+        const target = nodes.get(operation.id);
+        if (!target || target === root) return;
+        const parentElement = target.parentElement;
+        if (operation.preserveBoundary && parentElement) {
+          const marker = document.createElement("span");
+          marker.className = "article-recovered-boundary";
+          marker.setAttribute("aria-hidden", "true");
+          target.before(marker);
+        }
+        target.remove();
+        nodes.delete(operation.id);
+        if (parentElement) mark(parentElement);
+        return;
+      }
+      if (operation.type === "recoverSection") {
+        const target = nodes.get(operation.id);
+        if (!target || target === root || target.classList.contains("article-recovered-section-label")) return;
+        const marker = document.createElement("span");
+        marker.className = "article-recovered-boundary";
+        marker.setAttribute("aria-hidden", "true");
+        target.before(marker);
+        target.classList.add("article-recovered-section-label");
+        target.setAttribute("data-font-block", "");
+        mark(target);
+        return;
+      }
       const parent = nodes.get(operation.parent);
       if (operation.type === "blockify") { replaceContainer(operation.id, "div"); return; }
       if (operation.type === "code") {

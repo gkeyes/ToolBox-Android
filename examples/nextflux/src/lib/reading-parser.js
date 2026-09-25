@@ -1,6 +1,11 @@
 import { Parser } from "htmlparser2";
 import { ALLOWED_TAGS, DROP_CONTENT, cleanAttributes, safeContentUrl } from "../toolbox/content.js";
-import { analyzeReadingLayout, shouldPreserveTextBreaks } from "../toolbox/reading-layout.mjs";
+import {
+  createReadingNormalizationPlan,
+  shouldPreserveTextBreaks,
+  shouldRecoverInlineSection,
+  shouldRemoveStandaloneNoise,
+} from "../toolbox/reading-normalizer.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
@@ -13,11 +18,10 @@ const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/p
 // Pulling one bounded batch at a time also bounds the worker/main-thread queue.
 export function createReadingParser(html, baseUrl) {
   const source = typeof html === "string" ? html : "";
-  const layout = analyzeReadingLayout(source);
-  const repairPlainTextLayout = layout.needsRepair;
+  const normalization = createReadingNormalizationPlan(source);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];
-  const stack = [{ id: 0, blocked: false, depth: 0, layoutProtected: false }];
+  const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, textPreview: "", hasMedia: false }];
   let queuedText = 0;
   const emit = (operation) => { pending.push(operation); queuedText += operation.text?.length || 0; };
   let textTail = "", textParent = 0, textPreserveBreaks = false;
@@ -49,7 +53,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag) };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -65,6 +69,7 @@ export function createReadingParser(html, baseUrl) {
         entry.blocked = true;
         entry.media = { id: nextId++, parent: parent.id, kind: tag, url: mediaUrl(attributes.src, baseUrl) };
         entry.ownsMedia = true;
+        for (const ancestor of stack) ancestor.hasMedia = true;
         return;
       }
       if (!ALLOWED_TAGS.has(tag)) return;
@@ -73,6 +78,7 @@ export function createReadingParser(html, baseUrl) {
       const attrs = cleanAttributes(tag, attributes, baseUrl);
       entry.attrs = attrs;
       if (tag === "img") {
+        for (const ancestor of stack) ancestor.hasMedia = true;
         const paragraph = stack.findLast((item) => item.tag === "p" && !item.blocked);
         if (paragraph) emit({ type: "blockify", id: paragraph.id });
         if (parent.tag === "a" && parent.attrs?.href) {
@@ -95,10 +101,22 @@ export function createReadingParser(html, baseUrl) {
     ontext(text) {
       const parent = stack.at(-1);
       if (parent.blocked || !text) return;
+      const normalized = text.replace(/\s+/g, " ").trim();
+      if (normalized) {
+        for (let index = 1; index < stack.length; index += 1) {
+          const entry = stack[index];
+          if (entry.blocked) continue;
+          entry.textLength += normalized.length;
+          if (entry.textPreview.length < 192) {
+            entry.textPreview = (entry.textPreview ? entry.textPreview + " " + normalized : normalized)
+              .replace(/\s+/g, " ").trim().slice(0, 192);
+          }
+        }
+      }
       if (parent.code) { appendCode(parent.code, text); return; }
       if (!parent.literalText) {
         const combined = textTail + text;
-        const preserveBreaks = shouldPreserveTextBreaks(combined, parent.layoutProtected, repairPlainTextLayout);
+        const preserveBreaks = shouldPreserveTextBreaks(combined, parent.layoutProtected, normalization);
         // Hold at most three code units across entities and tokenizer chunks.
         // Flush at markup boundaries so differently styled text is not rewritten.
         textTail = combined.match(/[0-9#*](?:\ufe0f\u20e3?|\u20e3\ufe0f?)?$/u)?.[0] || "";
@@ -120,10 +138,22 @@ export function createReadingParser(html, baseUrl) {
       if (entry.ownsMedia) emit({ type: "media", ...entry.media });
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });
       if (entry.linkWithImage) emit({ type: "imageLink", parent: entry.id, id: nextId++, href: entry.attrs.href });
+      if (entry.id && shouldRemoveStandaloneNoise({
+        tag: entry.tag, text: entry.textPreview, textLength: entry.textLength,
+        hasMedia: entry.hasMedia, plan: normalization,
+      })) {
+        emit({ type: "remove", id: entry.id, preserveBoundary: !BLOCK_TAGS.has(entry.tag) });
+      } else if (entry.id && shouldRecoverInlineSection({
+        tag: entry.tag, text: entry.textPreview, textLength: entry.textLength,
+        parentTag: entry.parentTag, plan: normalization,
+      })) {
+        emit({ type: "recoverSection", id: entry.id });
+      }
     },
     onend() { flushText(); },
   }, { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true, xmlMode: false });
   return {
+    normalization,
     next() {
       const start = performance.now();
       while (!ended && pending.length < BATCH_NODES && queuedText < BATCH_TEXT && performance.now() - start < 8) {

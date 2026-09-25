@@ -166,16 +166,6 @@
   line-height: 0;
 }
 
-/* The v23 structural fallback marks only suspicious plain-text nodes. */
-.article-content .article-preserve-breaks {
-  white-space: pre-line;
-}
-
-/* Keep typography stable in dense/semantic structures. */
-.article-content :is(table, pre, code, kbd, samp) .article-preserve-breaks {
-  white-space: pre-wrap;
-}
-
 @media (max-width: 640px) {
   .article-content blockquote {
     margin-inline: 0 !important;
