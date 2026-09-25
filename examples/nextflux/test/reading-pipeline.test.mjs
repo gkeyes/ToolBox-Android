@@ -50,3 +50,12 @@ test("reading presentation stays separate from extraction logic",async()=>{
   assert.match(typography,/line-break:\s*strict/);
   assert.doesNotMatch(typography,/article-preserve-breaks/);
 });
+
+
+test("many nested divs do not disguise one dominant flattened article block",()=>{
+  const html=`<div><div><div><div>${"正文".repeat(260)}</div></div></div></div>`;
+  const metrics=analyzeArticle(html);
+  assert.equal(metrics.largestBlockRatio,1);
+  assert.equal(metrics.structureSparse,true);
+  assert.ok(scoreArticle(metrics)<30);
+});

@@ -64,10 +64,16 @@ export function analyzeArticle(html) {
   parser.end(source);
   const semanticBlocks=metrics.paragraphs+metrics.breaks+metrics.listItems+metrics.headings+metrics.blockquotes+metrics.tables+metrics.preformatted+metrics.figures+metrics.captions;
   const averageDivText=metrics.textualDivs?metrics.textChars/metrics.textualDivs:metrics.textChars;
-  const structureSparse=semanticBlocks<=2&&(metrics.textualDivs<=3||averageDivText>=360);
-  const restoreSourceBreaks=metrics.textChars>=500&&metrics.meaningfulNewlines>=3&&structureSparse;
   const linkDensity=metrics.textChars?metrics.linkTextChars/metrics.textChars:0;
   const largestBlockRatio=metrics.textChars?metrics.largestBlockChars/metrics.textChars:0;
+  // Generic div wrappers are not semantic structure. A long article with almost
+  // no paragraphs/headings/lists and one dominant block is sparse even when an
+  // extractor emitted many nested divs.
+  const structureSparse=semanticBlocks<=2&&(
+    metrics.textualDivs<=3 || averageDivText>=360 ||
+    (metrics.textChars>=500&&largestBlockRatio>=.82)
+  );
+  const restoreSourceBreaks=metrics.textChars>=500&&metrics.meaningfulNewlines>=3&&structureSparse;
   return {...metrics,semanticBlocks,averageDivText,structureSparse,restoreSourceBreaks,
     normalizationMode:restoreSourceBreaks?"restore-lines":"preserve",
     needsRepair:restoreSourceBreaks,linkDensity,largestBlockRatio};
@@ -83,8 +89,9 @@ export function scoreArticle(htmlOrMetrics) {
   score+=Math.min(8,m.figures*2+m.captions*2);
   score+=Math.min(6,m.images*1.2);
   if(m.textChars>=800&&m.semanticBlocks>=4)score+=10;
-  if(m.textChars>=1000&&m.semanticBlocks<=2)score-=24;
-  if(m.textChars>=1000&&m.largestBlockRatio>.82)score-=15;
+  if(m.textChars>=500&&m.semanticBlocks<=2)score-=24;
+  if(m.textChars>=500&&m.largestBlockRatio>.82)score-=15;
+  if(m.textChars>=500&&m.paragraphs===0&&m.headings===0&&m.listItems===0)score-=12;
   if(m.linkDensity>.35)score-=18;
   score-=Math.min(15,m.standaloneNoiseBlocks*5);
   if(m.needsRepair)score-=8;
