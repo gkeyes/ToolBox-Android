@@ -28,10 +28,38 @@ the same hash-checked Tailwind Oxide archive, not independently upgraded.
 Original location fields describe the source inventory.
 Source inventory lockfile SHA-256: d9be22538f9a6060638f48035f90456611f71df2364ed106f86984fec2559de2
 
-Lockfile SHA-256: 0ba1aae271f943aeb6b87de11fafb4531b09cb83720aed266a6856fed18a2840
+Lockfile SHA-256: c7fc1ae4774015c7bd6ad59ce36c55fc25f5b37df746a52ccd90b09a1375eb86
 Build-only cleanup removed unused direct dependencies and unreachable lock entries; the license inventory remains a conservative superset.
 Inventory entries: 236
 Distinct license/notice texts: 118
+
+DEFUDDLE ARTICLE EXTRACTION
+
+Source: https://github.com/kepano/defuddle
+Version: 0.19.4
+License: MIT
+Integration: NextFlux uses the browser core locally to extract and standardize article HTML.
+Network/API fallbacks are disabled (useAsync=false); no Defuddle third-party service is called.
+
+MIT License
+
+Copyright (c) 2025 Steph Ango (@kepano)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE.
 
 FRIRSS ADAPTED READING UTILITIES
 
