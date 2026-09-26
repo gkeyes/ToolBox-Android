@@ -146,3 +146,17 @@ test("parser semanticization stays conservative for normal paragraph inline text
   const parsed=operationsFor("<p><span>这是普通正文</span><span>继续正文。</span></p>");
   assert.equal(parsed.operations.filter(op=>op.type==="blockify"&&op.role).length,0);
 });
+
+
+test("ordinary paragraphs discard source indentation before CSS adds the canonical two-em indent",()=>{
+  const parsed=operationsFor("<p>    普通空格</p><p>&nbsp;&nbsp;不换行空格</p><p>　　全角空格</p>");
+  const text=parsed.operations.filter(op=>op.type==="text").map(op=>op.text).join("|");
+  assert.equal(text,"普通空格|不换行空格|全角空格");
+});
+
+test("protected structural paragraphs retain source whitespace",()=>{
+  const parsed=operationsFor("<blockquote><p>  引用保留</p></blockquote><ul><li><p>  列表保留</p></li></ul>");
+  const text=parsed.operations.filter(op=>op.type==="text").map(op=>op.text).join("|");
+  assert.match(text,/  引用保留/);
+  assert.match(text,/  列表保留/);
+});
