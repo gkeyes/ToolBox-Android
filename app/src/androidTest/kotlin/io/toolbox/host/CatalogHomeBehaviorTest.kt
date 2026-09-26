@@ -93,11 +93,11 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.onNodeWithTag(HostTestTags.BottomTools).performClick()
         compose.onNodeWithText("搜索工具").assertExists()
         compose.onNodeWithText("排序").assertExists()
-        compose.onNodeWithText("最近使用").assertDoesNotExist()
+        compose.onNodeWithText("快捷工具").assertDoesNotExist()
         compose.onNodeWithTag("catalog_organize").assertDoesNotExist()
         compose.runOnIdle { assertFalse(isEditing) }
         compose.onNodeWithTag(HostTestTags.BottomHome).performClick()
-        compose.onNodeWithText("最近使用").assertIsDisplayed()
+        compose.onNodeWithText("快捷工具").assertIsDisplayed()
         compose.onNodeWithText("搜索工具").assertDoesNotExist()
         enterOrganizing()
         compose.onNodeWithTag(HostTestTags.BottomSettings).performClick()
@@ -464,47 +464,47 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }
 
-    @Test fun favoritesHideLabelsWhileRecentUsesCompactSingleLineTilesAndGridStaysAligned() {
-        fixture.layout.value = CatalogLayout(favorites = listOf("a", "b"),
-            groups = listOf(CatalogGroup("g1", "工作", listOf("a", "b"))))
+    @Test fun shortcutsAndGroupTilesUseCompactSingleLineLabelsAndGridStaysAligned() {
+        fixture.layout.value = CatalogLayout(
+            favorites = listOf("a", "b"),
+            groups = listOf(CatalogGroup("g1", "工作", listOf("a", "b"))),
+        )
         render()
+
         data class ColumnGeometry(val left: Float, val width: Int, val iconCenter: Float, val iconWidth: Int)
         fun measure(prefix: String): List<ColumnGeometry> {
             homeTile("$prefix:a")
             return listOf("a", "b").map { id ->
                 val tileTag = "$prefix:$id"
                 val tile = compose.onNodeWithTag(tileTag).assertIsDisplayed().fetchSemanticsNode()
-                val icon = compose.onNode(hasTestTag("catalog_home_icon:$id") and hasAnyAncestor(hasTestTag(tileTag)),
-                    useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode()
-                assertEquals("Icon must stay centered within its cell", tile.positionInRoot.x + tile.size.width / 2f,
-                    icon.positionInRoot.x + icon.size.width / 2f, 1f)
-                ColumnGeometry(tile.positionInRoot.x, tile.size.width,
-                    icon.positionInRoot.x + icon.size.width / 2f, icon.size.width)
+                val icon = compose.onNode(
+                    hasTestTag("catalog_home_icon:$id") and hasAnyAncestor(hasTestTag(tileTag)),
+                    useUnmergedTree = true,
+                ).assertIsDisplayed().fetchSemanticsNode()
+                assertEquals(
+                    "Icon must stay centered within its cell",
+                    tile.positionInRoot.x + tile.size.width / 2f,
+                    icon.positionInRoot.x + icon.size.width / 2f,
+                    1f,
+                )
+                assertEquals("Compact titles must stay on one line", 1, homeLabelLayout(tileTag).lineCount)
+                ColumnGeometry(
+                    tile.positionInRoot.x,
+                    tile.size.width,
+                    icon.positionInRoot.x + icon.size.width / 2f,
+                    icon.size.width,
+                )
             }
         }
 
-        val favorites = measure("favorite")
-        homeTile("favorite:a")
-        homeLabel("favorite:a").assertDoesNotExist()
-        homeTile("favorite:b")
-        homeLabel("favorite:b").assertDoesNotExist()
-
+        val shortcuts = measure("favorite")
         val members = measure("member:g1")
-        members.zip(favorites).forEachIndexed { column, (actual, reference) ->
-            assertEquals("member column $column must align with favorites", reference.left, actual.left, 1f)
+        members.zip(shortcuts).forEachIndexed { column, (actual, reference) ->
+            assertEquals("member column $column must align with shortcuts", reference.left, actual.left, 1f)
             assertEquals("member column $column must use the same width", reference.width.toFloat(), actual.width.toFloat(), 1f)
-            assertEquals("member icon $column must align with favorites", reference.iconCenter, actual.iconCenter, 1f)
+            assertEquals("member icon $column must align with shortcuts", reference.iconCenter, actual.iconCenter, 1f)
             assertEquals(reference.iconWidth, actual.iconWidth)
         }
-
-        val recent = measure("recent")
-        listOf("a", "b").forEach { id ->
-            homeTile("recent:$id")
-            assertEquals("Recent titles must stay on one line", 1, homeLabelLayout("recent:$id").lineCount)
-        }
-        assertTrue("Recent icons should be visually smaller than the main grid icons", recent[0].iconWidth < favorites[0].iconWidth)
-        assertTrue("Recent tiles should stay compact enough to increase visible item count", recent[0].width <= favorites[0].width + recent[0].iconWidth)
-        assertTrue("Recent items must remain separate", recent[0].left + recent[0].width < recent[1].left)
     }
 
     @Test fun emptyHomeShowsOnlyTheGlobalEmptyStateAndBothInstallActionsWork() {
@@ -513,8 +513,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         render()
         compose.onAllNodesWithTag(HostTestTags.CatalogEmptyState).assertCountEquals(1)
         compose.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
-        listOf("最近使用", "收藏", "分组", "收藏常用工具，放在这里快速打开",
-            "按用途整理工具，同一个工具可以加入多个分组。").forEach { text ->
+        listOf("快捷工具", "分组", "把常用工具放在首页", "按用途整理工具").forEach { text ->
             compose.onNodeWithText(text).assertDoesNotExist()
         }
         compose.onNodeWithText("安装四个范例").performScrollTo().assertIsDisplayed().performTouchInput { click() }
@@ -528,7 +527,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         render()
         homeTile("favorite:long").assertHasClickAction()
             .assertContentDescriptionEquals(fixture.tools.value.single().name)
-        homeLabel("favorite:long").assertDoesNotExist()
+        assertEquals(1, homeLabelLayout("favorite:long").lineCount)
         homeTile("member:last:long").assertContentDescriptionEquals(fixture.tools.value.single().name)
         assertLastTileClearsNavigation("member:last:long")
     }

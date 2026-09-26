@@ -114,7 +114,6 @@ internal fun ToolManagerContent(
     var previousHome by rememberSaveable { mutableStateOf(home) }
     val toolsById = remember(state.tools) { state.tools.associateBy { it.toolId } }
     val selectedTool = selectedToolId?.let(toolsById::get)
-    val recentTools = state.recentTools
     val drag = rememberCatalogHomeDragState(home && editing, listState, contentPadding)
     BackHandler(home && editing && selectedToolId == null && editingGroupId == null && !addingFavorites && !creatingGroup) {
         onEditingChange(false)
@@ -146,7 +145,6 @@ internal fun ToolManagerContent(
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
         val fontScale = LocalDensity.current.fontScale
         val columns = homeGridColumnCount((contentWidth - 32.dp).value, fontScale)
-        val recentTileWidth = (76.dp * fontScale.coerceIn(1f, 1.35f)).coerceAtMost(contentWidth * 0.34f)
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
@@ -204,12 +202,8 @@ internal fun ToolManagerContent(
                     state, toolsById, editing, columns, drag, onAction,
                     onEditGroup = { editingGroupId = it }, onAddFavorites = { addingFavorites = true },
                     onOptions = { selectedToolId = it },
-                    hasRecentTools = recentTools.isNotEmpty(),
-                    recentContent = {
-                        CatalogRecentTools(recentTools, recentTileWidth, onAction, editing) { selectedToolId = it }
-                    },
+                    runningContent = runningTools,
                 )
-                item("running-tools", contentType = "running-tools") { runningTools() }
             }
 
             when {

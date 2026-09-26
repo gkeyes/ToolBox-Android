@@ -92,6 +92,7 @@ internal fun PrimaryScreen(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
                     TopBar(title, subtitle, onImport, glassState = glassState,
+                        compact = selected == MainDestination.Home,
                         organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
                 },
                 bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
@@ -131,6 +132,7 @@ internal fun PrimaryScreen(
                         onImport,
                         defaultWindowInsetsPadding = false,
                         glassState = glassState,
+                        compact = selected == MainDestination.Home,
                         organizeEditing = organizeEditing,
                         onOrganize = onOrganize,
                         onCreateGroup = onCreateGroup,
@@ -378,6 +380,7 @@ private fun TopBar(
     onImport: (() -> Unit)?,
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState,
+    compact: Boolean = false,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
@@ -387,6 +390,7 @@ private fun TopBar(
         subtitle = subtitle,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         glassState = glassState,
+        compact = compact,
         actions = {
             if (onOrganize != null) {
                 if (organizeEditing) {

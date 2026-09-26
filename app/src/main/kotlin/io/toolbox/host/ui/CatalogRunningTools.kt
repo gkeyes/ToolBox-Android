@@ -70,15 +70,20 @@ internal fun CatalogRunningToolsContent(
     Column {
         if (state.sessions.isNotEmpty()) {
             Column(Modifier.testTag("catalog-running-tools")) {
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { SectionHeader("正在运行") }
+                    AppText(
+                        "正在运行",
+                        modifier = Modifier.weight(1f),
+                        textStyle = ToolBoxThemeTokens.textStyles.title,
+                    )
                     AppText(
                         "${state.sessions.size} 个",
                         color = ToolBoxThemeTokens.colors.textSecondary,
                         textStyle = ToolBoxThemeTokens.textStyles.metadata,
                     )
                 }
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
                 ToolBoxGroupedSurface {
                     state.sessions.forEachIndexed { index, session ->
                         key(session.sessionId) {
@@ -94,7 +99,7 @@ internal fun CatalogRunningToolsContent(
                         }
                     }
                 }
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             }
         }
         state.feedback?.let { feedback ->
@@ -158,10 +163,10 @@ internal fun RunningToolRow(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .heightIn(min = ToolBoxThemeTokens.sizes.denseRow + ToolBoxThemeTokens.spacing.one)
+                .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
                 .then(if (onOpen != null) Modifier.clickable(role = Role.Button, onClick = onOpen)
                     .semantics { contentDescription = "打开${session.toolName}" } else Modifier)
-                .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+                .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CatalogToolGlyph(

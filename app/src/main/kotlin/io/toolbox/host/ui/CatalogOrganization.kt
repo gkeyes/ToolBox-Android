@@ -44,7 +44,7 @@ internal val CatalogSort.label: String get() = when (this) {
 internal fun HomeSectionHeader(title: String, action: String? = null, onAction: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         AppText(title, Modifier.weight(1f).semantics { heading() },
-            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold))
+            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold))
         if (action != null) ToolBoxTextButton(action, onAction, outlined = false)
     }
 }
@@ -62,28 +62,40 @@ internal fun LazyListScope.catalogHomeSections(
     onEditGroup: (String) -> Unit,
     onAddFavorites: () -> Unit,
     onOptions: (String) -> Unit,
-    hasRecentTools: Boolean = false,
-    recentContent: @Composable () -> Unit = {},
+    runningContent: @Composable () -> Unit = {},
 ) {
     val favorites = state.layout.favorites.mapNotNull(toolsById::get)
-    if (favorites.isNotEmpty() || editing) item("favorites-heading") {
-        HomeSectionHeader("收藏", if (editing && favorites.isNotEmpty()) "添加" else null, onAddFavorites)
-    }
-    if (favorites.isEmpty()) item("favorites-empty") {
-        HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
-    }
-    homeToolGrid(favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
-        showLabels = false,
-        onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) })
-    if (hasRecentTools) {
-        item("recent-title") {
-            Spacer(Modifier.height(20.dp))
-            HomeSectionHeader("最近使用")
+    if (editing) {
+        item("favorites-heading") {
+            HomeSectionHeader("快捷工具", "添加", onAddFavorites)
         }
-        item("recent-tools") { recentContent() }
+        if (favorites.isEmpty()) item("favorites-empty") {
+            HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
+        }
+        homeToolGrid(
+            favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
+            showLabels = true, compact = true,
+            onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) },
+        )
+    } else {
+        val shortcuts = (favorites + state.recentTools)
+            .distinctBy(CatalogTool::toolId)
+            .take(HOME_SHORTCUT_LIMIT)
+        item("shortcuts-heading") { HomeSectionHeader("快捷工具") }
+        if (shortcuts.isEmpty()) item("favorites-empty") {
+            HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
+        }
+        homeToolGrid(
+            shortcuts, "favorite", "shortcuts", columns, false, drag, onAction, onOptions,
+            showLabels = true, compact = true,
+            onMove = { _, _ -> },
+        )
     }
+
+    item("running-tools", contentType = "running-tools") { runningContent() }
+
     if (state.layout.groups.isNotEmpty() || editing) item("groups-heading") {
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(12.dp))
         HomeSectionHeader("分组")
     }
     if (editing && state.layout.groups.isEmpty()) item("groups-empty") {
@@ -100,16 +112,21 @@ internal fun LazyListScope.catalogHomeSections(
         }
         if (expanded) {
             if (members.isEmpty()) item("empty-group:" + group.id) {
-                Box(Modifier.groupSurface(bottom = true).padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                Box(Modifier.groupSurface(bottom = true).padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
                     ToolBoxTextButton("添加工具", { onEditGroup(group.id) }, outlined = false)
                 }
             }
-            homeToolGrid(members, "member:" + group.id, "members:" + group.id, columns, editing, drag, onAction, onOptions,
-                grouped = true, onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) })
+            homeToolGrid(
+                members, "member:" + group.id, "members:" + group.id, columns, editing, drag, onAction, onOptions,
+                grouped = true, compact = true,
+                onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) },
+            )
         }
-        item("after-group:" + group.id) { Spacer(Modifier.height(12.dp)) }
+        item("after-group:" + group.id) { Spacer(Modifier.height(8.dp)) }
     }
 }
+
+private const val HOME_SHORTCUT_LIMIT = 8
 
 /** Lazy rows retain one continuous group surface without nesting another vertical scroll container. */
 private fun LazyListScope.homeToolGrid(
@@ -123,17 +140,23 @@ private fun LazyListScope.homeToolGrid(
     onOptions: (String) -> Unit,
     showLabels: Boolean = true,
     grouped: Boolean = false,
+    compact: Boolean = false,
     onMove: (CatalogTool, Int) -> Unit,
 ) {
     val rows = ((tools.size.toLong() + columns - 1) / columns).toInt()
     val rowPrefix = if (prefix == "favorite") "favorite-row" else "member-row:" + prefix.removePrefix("member:")
     items(rows, key = { rowPrefix + ":" + it }, contentType = { "home-grid-row" }) { row ->
+        val cellGap = if (compact || grouped) 8.dp else 12.dp
+        val horizontalPadding = if (compact || grouped) 12.dp else 16.dp
         Row(
             Modifier.fillMaxWidth()
                 .then(if (grouped) Modifier.groupSurface(bottom = row == rows - 1) else Modifier)
-                .padding(start = 16.dp, end = 16.dp,
-                    bottom = if (row < rows - 1) 12.dp else if (grouped) 8.dp else 0.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    bottom = if (row < rows - 1) cellGap else if (grouped) 8.dp else 0.dp,
+                ),
+            horizontalArrangement = Arrangement.spacedBy(cellGap),
         ) {
             repeat(columns) { column ->
                 val index = row * columns + column
@@ -145,6 +168,11 @@ private fun LazyListScope.homeToolGrid(
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onOptions = { onOptions(tool.toolId) },
                         showLabel = showLabels,
+                        labelMaxLines = if (compact) 1 else 2,
+                        iconSize = if (compact) 46.dp else 52.dp,
+                        labelFontSize = if (compact) 12.sp else 13.sp,
+                        labelLineHeight = if (compact) 16.sp else 18.sp,
+                        labelSpacing = if (compact) 4.dp else 6.dp,
                         modifier = Modifier.weight(1f).testTag(prefix + ":" + tool.toolId)
                             .catalogDragTarget(drag, prefix + ":" + tool.toolId, collection, index, tools.size, tool.name, tool,
                                 enabled = editing, onMove = { onMove(tool, it) }),
@@ -188,7 +216,7 @@ private fun GroupHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            Modifier.weight(1f).heightIn(min = 52.dp).testTag("catalog_group:" + group.id)
+            Modifier.weight(1f).heightIn(min = 48.dp).testTag("catalog_group:" + group.id)
                 .semantics {
                     stateDescription = if (expanded) "已展开" else "已收起"
                     customActions = buildList {
@@ -202,15 +230,15 @@ private fun GroupHeader(
                     else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
                         role = Role.Button, onClick = onExpand, onLongClick = onEdit,
                         onLongClickLabel = "编辑分组" + group.name))
-                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            AppText(group.name, Modifier.weight(1f), maxLines = 2,
-                textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold))
+            AppText(group.name, Modifier.weight(1f), maxLines = 1,
+                textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold))
             AppText(count.toString(), color = ToolBoxThemeTokens.colors.textSecondary,
                 modifier = Modifier.semantics { contentDescription = count.toString() + " 个工具" },
-                textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 13.sp))
+                textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 12.sp))
             ToolBoxIcon(ToolBoxIconKey.ChevronDown, null, Modifier.rotate(arrowRotation),
                 tint = ToolBoxThemeTokens.colors.textSecondary)
         }

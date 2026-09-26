@@ -245,6 +245,7 @@ fun ToolBoxLargeTopBar(
     subtitle: String = "",
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState? = null,
+    compact: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
@@ -257,12 +258,12 @@ fun ToolBoxLargeTopBar(
                     if (defaultWindowInsetsPadding) Modifier.windowInsetsPadding(WindowInsets.statusBars)
                     else Modifier,
                 )
-                .heightIn(min = 76.dp)
+                .heightIn(min = if (compact) 60.dp else 76.dp)
                 .padding(
                     start = ToolBoxThemeTokens.spacing.two,
-                    top = ToolBoxThemeTokens.spacing.one,
+                    top = if (compact) ToolBoxThemeTokens.spacing.compact else ToolBoxThemeTokens.spacing.one,
                     end = ToolBoxThemeTokens.spacing.one,
-                    bottom = ToolBoxThemeTokens.spacing.one,
+                    bottom = if (compact) ToolBoxThemeTokens.spacing.compact else ToolBoxThemeTokens.spacing.one,
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -270,6 +271,8 @@ fun ToolBoxLargeTopBar(
                 ToolBoxText(
                     text = title,
                     style = ToolBoxThemeTokens.textStyles.screenTitle.copy(
+                        fontSize = if (compact) 28.sp else ToolBoxThemeTokens.textStyles.screenTitle.fontSize,
+                        lineHeight = if (compact) 34.sp else ToolBoxThemeTokens.textStyles.screenTitle.lineHeight,
                         color = ToolBoxThemeTokens.colors.textPrimary,
                     ),
                 )
