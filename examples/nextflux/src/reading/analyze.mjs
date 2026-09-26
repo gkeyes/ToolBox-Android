@@ -11,7 +11,7 @@ export function analyzeArticle(html) {
     textChars:0, paragraphs:0, breaks:0, listItems:0, headings:0, divs:0, textualDivs:0,
     blockquotes:0, tables:0, preformatted:0, figures:0, captions:0, images:0,
     links:0, linkTextChars:0, meaningfulNewlines:0, standaloneNoiseBlocks:0,
-    largestBlockChars:0,
+    largestBlockChars:0, topLevelTextChars:0,
   };
   const stack=[{tag:null,blocked:false,protected:false,textLength:0,preview:"",link:false}];
   const parser=new Parser({
@@ -39,6 +39,7 @@ export function analyzeArticle(html) {
       if(leaf.blocked||!text)return;
       const len=visibleLength(text);
       metrics.textChars+=len;
+      if(stack.length===1)metrics.topLevelTextChars+=len;
       if(leaf.link)metrics.linkTextChars+=len;
       if(!leaf.protected)metrics.meaningfulNewlines+=meaningfulBreaks(text);
       const normalized=compact(text);
@@ -66,6 +67,12 @@ export function analyzeArticle(html) {
   const averageDivText=metrics.textualDivs?metrics.textChars/metrics.textualDivs:metrics.textChars;
   const linkDensity=metrics.textChars?metrics.linkTextChars/metrics.textChars:0;
   const largestBlockRatio=metrics.textChars?metrics.largestBlockChars/metrics.textChars:0;
+  const topLevelTextRatio=metrics.textChars?metrics.topLevelTextChars/metrics.textChars:0;
+  // A sanitizer can remove layout containers but preserve their text, leaving
+  // large runs of article copy directly at the document root. That content is
+  // text-complete but structurally flattened and should lose to an equivalent
+  // source-DOM candidate when one is available.
+  const flattenedRootText=metrics.textChars>=240&&metrics.topLevelTextChars>=120&&topLevelTextRatio>=.32;
   // Generic div wrappers are not semantic structure. A long article with almost
   // no paragraphs/headings/lists and one dominant block is sparse even when an
   // extractor emitted many nested divs.
@@ -76,7 +83,8 @@ export function analyzeArticle(html) {
   const restoreSourceBreaks=metrics.textChars>=500&&metrics.meaningfulNewlines>=3&&structureSparse;
   return {...metrics,semanticBlocks,averageDivText,structureSparse,restoreSourceBreaks,
     normalizationMode:restoreSourceBreaks?"restore-lines":"preserve",
-    needsRepair:restoreSourceBreaks,linkDensity,largestBlockRatio};
+    needsRepair:restoreSourceBreaks||flattenedRootText,linkDensity,largestBlockRatio,
+    topLevelTextRatio,flattenedRootText};
 }
 
 export function scoreArticle(htmlOrMetrics) {
@@ -93,6 +101,7 @@ export function scoreArticle(htmlOrMetrics) {
   if(m.textChars>=500&&m.largestBlockRatio>.82)score-=15;
   if(m.textChars>=500&&m.paragraphs===0&&m.headings===0&&m.listItems===0)score-=12;
   if(m.linkDensity>.35)score-=18;
+  if(m.flattenedRootText)score-=22;
   score-=Math.min(15,m.standaloneNoiseBlocks*5);
   if(m.needsRepair)score-=8;
   return Math.max(0,Math.min(100,Math.round(score)));
