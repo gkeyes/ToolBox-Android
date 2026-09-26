@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.result.contract.ActivityResultContracts
 import io.toolbox.tool.packagekit.PackageInput
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -35,13 +36,14 @@ internal sealed interface SelectedPackageSource {
 
 internal class ContentResolverPackageInputFactory(
     private val contentResolver: ContentResolver,
+    private val importCacheDirectory: File,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun fromPickerResult(uri: Uri?): SelectedPackageSource {
         if (uri == null) return selectedPackageSource(null, null)
         return withContext(ioDispatcher) {
             val displayNameCandidate = readDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/')
-            selectedPackageSource(displayNameCandidate) {
+            selectedPackageSource(displayNameCandidate, importCacheDirectory) {
                 contentResolver.openInputStream(uri)
                     ?: throw FileNotFoundException("The selected package is no longer available")
             }
@@ -64,6 +66,7 @@ internal class ContentResolverPackageInputFactory(
 
 internal fun selectedPackageSource(
     rawDisplayName: String?,
+    importCacheDirectory: File? = null,
     sourceOpener: (() -> InputStream)?,
 ): SelectedPackageSource {
     if (sourceOpener == null) return SelectedPackageSource.Cancelled
@@ -72,10 +75,16 @@ internal fun selectedPackageSource(
         return SelectedPackageSource.Rejected("所选文件名包含不安全字符")
     }
     val displayName = safePackageDisplayName(rawDisplayName)
-    if (!displayName.endsWith(ToolBoxOpenDocument.FILE_EXTENSION, ignoreCase = true)) {
-        return SelectedPackageSource.Rejected("请选择 .tbx 工具包")
+    return when {
+        displayName.endsWith(ToolBoxOpenDocument.FILE_EXTENSION, ignoreCase = true) ->
+            SelectedPackageSource.Ready(OneShotPackageInput(displayName, sourceOpener))
+        displayName.endsWith(".zip", ignoreCase = true) -> {
+            val cacheDirectory = importCacheDirectory
+                ?: return SelectedPackageSource.Rejected("当前环境无法准备压缩包导入")
+            ZipPackageResolver.resolve(cacheDirectory, sourceOpener)
+        }
+        else -> SelectedPackageSource.Rejected("请选择 .tbx 工具包或包含 TBX 的 .zip 压缩包")
     }
-    return SelectedPackageSource.Ready(OneShotPackageInput(displayName, sourceOpener))
 }
 
 internal class OneShotPackageInput(
