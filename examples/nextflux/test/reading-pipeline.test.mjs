@@ -67,6 +67,11 @@ test("semanticization promotes high-confidence inline menu lines without flatten
     parentChildElements:[{tag:"span"},{tag:"span"},{tag:"span"}]
   });
   assert.equal(line?.tag,"div");
+  const divLine=semanticizeElement({
+    tag:"div",parentTag:"div",text:"芝麻脆皮海鲈鱼",textLength:8,
+    parentChildElements:[{tag:"div"},{tag:"div"},{tag:"div"}]
+  });
+  assert.equal(divLine?.role,"semantic-line");
   const heading=semanticizeElement({
     tag:"span",parentTag:"div",text:"第一道菜",textLength:4,
     parentChildElements:[{tag:"span"},{tag:"span"}]
@@ -76,4 +81,12 @@ test("semanticization promotes high-confidence inline menu lines without flatten
     tag:"span",parentTag:"p",text:"这是普通正文",textLength:6,
     parentChildElements:[{tag:"span"},{tag:"span"}]
   }),null);
+});
+
+test("semantic hierarchy has dedicated presentation rules",async()=>{
+  const {readFile}=await import("node:fs/promises");
+  const typography=await readFile(new URL("../src/reading/typography.css",import.meta.url),"utf8");
+  assert.match(typography,/data-semantic-role="semantic-section"/);
+  assert.match(typography,/data-semantic-role="semantic-line"/);
+  assert.match(typography,/display:\s*block\s*!important/);
 });
