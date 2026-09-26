@@ -2,7 +2,7 @@ import { Parser } from "htmlparser2";
 import { cleanAttributes, safeContentUrl } from "../toolbox/content.js";
 import { ALLOWED_TAGS, BLOCK_TAGS, DROP_CONTENT } from "./schema.mjs";
 import { analyzeArticle } from "./analyze.mjs";
-import { createNormalizationPlan, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
+import { createNormalizationPlan, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
@@ -18,7 +18,7 @@ export function createReadingParser(html, baseUrl) {
   const normalization = createNormalizationPlan(analysis);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];
-  const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, textPreview: "", hasMedia: false }];
+  const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false }];
   let queuedText = 0;
   const emit = (operation) => { pending.push(operation); queuedText += operation.text?.length || 0; };
   let textTail = "", textParent = 0, textPreserveBreaks = false;
@@ -50,7 +50,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -75,6 +75,10 @@ export function createReadingParser(html, baseUrl) {
       const attrs = cleanAttributes(tag, attributes, baseUrl);
       entry.attrs = attrs;
       if (tag === "img") {
+        if (parent.id) {
+          parent.childElements.push({tag:"img",textLength:0});
+          parent.hasBlockChild=true;
+        }
         for (const ancestor of stack) ancestor.hasMedia = true;
         const paragraph = stack.findLast((item) => item.tag === "p" && !item.blocked);
         if (paragraph) emit({ type: "blockify", id: paragraph.id });
@@ -86,6 +90,10 @@ export function createReadingParser(html, baseUrl) {
         return;
       }
       if (tag === "pre") {
+        if (parent.id) {
+          parent.childElements.push({tag:"pre",textLength:0});
+          parent.hasBlockChild=true;
+        }
         entry.code = { id: entry.id, parent: nextId++, parts: [], language: "text" };
         entry.ownsCode = true;
         emit({ type: "element", id: entry.id, parent: parent.id, tag, attrs, block: true, codeBlock: true });
@@ -94,6 +102,10 @@ export function createReadingParser(html, baseUrl) {
         return;
       }
       emit({ type: "element", id: entry.id, parent: parent.id, tag, attrs, block: BLOCK_TAGS.has(tag) });
+      if (parent.id) {
+        parent.childElements.push({tag,textLength:0,id:entry.id});
+        if (BLOCK_TAGS.has(tag)) parent.hasBlockChild=true;
+      }
     },
     ontext(text) {
       const parent = stack.at(-1);

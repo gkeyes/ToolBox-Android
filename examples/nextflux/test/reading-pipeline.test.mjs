@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { analyzeArticle, chooseBestArticleCandidate, scoreArticle } from "../src/reading/analyze.mjs";
-import { createNormalizationPlan, shouldPreserveTextBreaks } from "../src/reading/normalize.mjs";
+import { createNormalizationPlan, semanticizeElement, shouldPreserveTextBreaks } from "../src/reading/normalize.mjs";
 import { createReadingParser } from "../src/reading/parser.js";
 
 function operationsFor(html){
@@ -58,4 +58,22 @@ test("many nested divs do not disguise one dominant flattened article block",()=
   assert.equal(metrics.largestBlockRatio,1);
   assert.equal(metrics.structureSparse,true);
   assert.ok(scoreArticle(metrics)<30);
+});
+
+
+test("semanticization promotes high-confidence inline menu lines without flattening prose",()=>{
+  const line=semanticizeElement({
+    tag:"span",parentTag:"div",text:"芝麻脆皮海鲈鱼",textLength:8,
+    parentChildElements:[{tag:"span"},{tag:"span"},{tag:"span"}]
+  });
+  assert.equal(line?.tag,"div");
+  const heading=semanticizeElement({
+    tag:"span",parentTag:"div",text:"第一道菜",textLength:4,
+    parentChildElements:[{tag:"span"},{tag:"span"}]
+  });
+  assert.equal(heading?.tag,"h3");
+  assert.equal(semanticizeElement({
+    tag:"span",parentTag:"p",text:"这是普通正文",textLength:6,
+    parentChildElements:[{tag:"span"},{tag:"span"}]
+  }),null);
 });

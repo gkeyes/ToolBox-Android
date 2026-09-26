@@ -62,7 +62,12 @@ export function createReadingRenderer(root, baseUrl, addPortal) {
         return;
       }
       const parent = nodes.get(operation.parent);
-      if (operation.type === "blockify") { replaceContainer(operation.id, "div"); return; }
+      if (operation.type === "blockify") { 
+        const tag = /^h[1-6]$/.test(operation.tag||"") ? operation.tag : "div";
+        const element = replaceContainer(operation.id, tag);
+        if (element && operation.role) element.setAttribute("data-semantic-role", operation.role);
+        return;
+      }
       if (operation.type === "code") {
         const plainElement = nodes.get(operation.id);
         if (!plainElement) return;
