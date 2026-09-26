@@ -40,7 +40,7 @@ internal class ContentResolverPackageInputFactory(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun fromPickerResult(uri: Uri?): SelectedPackageSource {
-        if (uri == null) return selectedPackageSource(null, null)
+        if (uri == null) return selectedPackageSource(null, importCacheDirectory, null)
         return withContext(ioDispatcher) {
             val displayNameCandidate = readDisplayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/')
             selectedPackageSource(displayNameCandidate, importCacheDirectory) {
