@@ -42,7 +42,7 @@ function article(overrides={}){
 
 test("cache core persists article bodies and acknowledged state through a sync transaction",async()=>{
   const storage=memoryStorage();
-  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cache-core",digest});
+  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cachecore",digest});
   await cache.initialize(ACCOUNT);
   await cache.updateCatalog({feeds:[FEED],categories:[CATEGORY]});
 
@@ -66,7 +66,7 @@ test("cache core persists article bodies and acknowledged state through a sync t
 
 test("cache treats a durable root with a lost native reply as a successful commit",async()=>{
   const storage=memoryStorage();
-  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cache-lost-reply",digest});
+  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cachelostreply",digest});
   await cache.initialize(ACCOUNT);
   storage.loseNextRootReply();
   await cache.updateCatalog({feeds:[FEED],categories:[CATEGORY]});
@@ -88,7 +88,7 @@ test("legacy cache migrates once to v3 and garbage collection retires old parts"
     [feedKey]:JSON.stringify([FEED]),
     [metaKey]:JSON.stringify({lastSyncTime:SYNCED_AT}),
   });
-  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cache-migrate",digest});
+  const cache=createArticleCache(storage,{autoGc:false,tokenPrefix:"cachemigrate",digest});
   const meta=await cache.initialize(ACCOUNT);
   assert.equal(meta.version,3);
   assert.equal(meta.lastSyncTime,SYNCED_AT);
@@ -103,11 +103,11 @@ test("legacy cache migrates once to v3 and garbage collection retires old parts"
 
 test("persisted cache refuses a different account binding",async()=>{
   const storage=memoryStorage();
-  const first=createArticleCache(storage,{autoGc:false,tokenPrefix:"cache-account-a",digest});
+  const first=createArticleCache(storage,{autoGc:false,tokenPrefix:"cacheaccounta",digest});
   await first.initialize(ACCOUNT);
   await first.updateCatalog({feeds:[FEED],categories:[CATEGORY]});
 
-  const second=createArticleCache(storage,{autoGc:false,tokenPrefix:"cache-account-b",digest});
+  const second=createArticleCache(storage,{autoGc:false,tokenPrefix:"cacheaccountb",digest});
   await assert.rejects(
     second.initialize({...ACCOUNT,userId:"8"}),
     error=>error?.code==="ACCOUNT_CHANGED",
