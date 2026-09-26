@@ -1,0 +1,48 @@
+name: NextFlux scraper outerHTML regression
+on:
+  push:
+    paths:
+      - .github/workflows/nextflux-scraper-outerhtml-regression.yml
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+      - working-directory: examples/nextflux
+        run: npm ci --ignore-scripts
+      - name: Verify Miniflux-style outerHTML input
+        working-directory: examples/nextflux
+        env:
+          ARTICLE_URL: https://cn.nytimes.com/world/20260925/trump-xi-state-dinner-menu/
+        run: |
+          node --input-type=module <<'EOF'
+          import { parseHTML } from "linkedom";
+          import { createReadingParser } from "./src/reading/parser.js";
+          const response=await fetch(process.env.ARTICLE_URL,{headers:{
+            "User-Agent":"Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+            "Accept-Language":"zh-CN,zh;q=0.9"
+          }});
+          if(!response.ok) throw new Error("fetch "+response.status);
+          const html=await response.text();
+          const {document}=parseHTML(html);
+          const root=document.querySelector("article.article-content.font-normal");
+          if(!root) throw new Error("selector did not match");
+          // Miniflux custom scraper rules use goquery.OuterHtml(selection).
+          const minifluxStyleContent=root.outerHTML;
+          const parser=createReadingParser(minifluxStyleContent,process.env.ARTICLE_URL);
+          const operations=[];
+          for(;;){const batch=parser.next();operations.push(...batch.operations);if(batch.done)break;}
+          const semantic=operations.filter(op=>op.type==="blockify"&&op.role);
+          const sections=semantic.filter(op=>op.role==="semantic-section").length;
+          const lines=semantic.filter(op=>op.role==="semantic-line").length;
+          const articleNodes=operations.filter(op=>op.type==="element"&&op.tag==="article").length;
+          console.log(JSON.stringify({status:response.status,articleNodes,sections,lines,semantic},null,2));
+          if(articleNodes!==1) throw new Error("article wrapper was not preserved");
+          if(sections<3) throw new Error("section hierarchy was not recovered");
+          if(lines<6) throw new Error("line hierarchy was not recovered");
+          EOF
