@@ -16,6 +16,7 @@ export function shouldRemoveStandaloneNoise({tag,text,textLength,hasMedia,plan})
 
 const INLINE_SEMANTIC_TAGS = new Set(["span","b","strong","em","i","small"]);
 const EMPHASIS_TAGS = new Set(["b","strong"]);
+const STRUCTURAL_PARENT_TAGS = new Set(["div","article","section","main"]);
 const prosePunctuation=/[。！？!?；;，,：:]$/u;
 
 function isStructuralSectionCandidate(item){
@@ -53,7 +54,7 @@ export function semanticizeElement({
   // Generic structural heading detection: a short generic block whose visible
   // content is almost entirely a single strong/b element, among repeated sibling
   // blocks. No site names, menu words or article-specific text are involved.
-  if (parentTag==="div" && isStructuralSectionCandidate({
+  if (STRUCTURAL_PARENT_TAGS.has(parentTag) && isStructuralSectionCandidate({
     tag,textLength,text:value,childElements,hasBlockChild,hasMedia,
   })) {
     const siblingBlocks=siblings.filter(item=>item.tag==="div"||item.tag==="span");
@@ -62,7 +63,7 @@ export function semanticizeElement({
 
   // Inline visual rows are common in card/list-like source markup.
   const inlineChildren=siblings.filter((item)=>INLINE_SEMANTIC_TAGS.has(item.tag));
-  if (tag==="span" && parentTag==="div" && inlineChildren.length>=2 &&
+  if (tag==="span" && STRUCTURAL_PARENT_TAGS.has(parentTag) && inlineChildren.length>=2 &&
       textLength>=2 && textLength<=96 && value.length<=96) {
     return {tag:"div",role:"semantic-line"};
   }
@@ -71,7 +72,7 @@ export function semanticizeElement({
   // detected section. This prevents ordinary short <div> paragraphs elsewhere
   // in an article from being reformatted merely because they are siblings.
   const siblingBlocks=siblings.filter((item)=>item.tag==="div");
-  if (tag==="div" && parentTag==="div" && siblingBlocks.length>=3 &&
+  if (tag==="div" && STRUCTURAL_PARENT_TAGS.has(parentTag) && siblingBlocks.length>=3 &&
       hasActiveSectionBefore(siblings,siblingIndex) &&
       textLength>=2 && textLength<=96 && value.length<=96 &&
       !prosePunctuation.test(value)) {
