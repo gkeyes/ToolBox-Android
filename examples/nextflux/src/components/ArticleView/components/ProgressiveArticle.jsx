@@ -36,8 +36,6 @@ function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
     domRef.current = dom;
     setState({ complete: false, error: null });
     setPortals([]);
-    // Keep the scroll range while original/feed content replaces this body's
-    // nodes. No delayed scrollTo can overwrite the user's own new scrolling.
     if (root.firstChild) root.style.minHeight = `${root.getBoundingClientRect().height}px`;
     root.replaceChildren();
     const notify = (blocks, extra = {}) => window.dispatchEvent(new CustomEvent("nextflux:reading-content", { detail: { root, blocks, ...extra } }));
@@ -66,7 +64,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
     };
   }, [articleId, html, baseUrl, shownOriginal, attempt]);
   return <>
-    <div ref={rootRef} className="article-body" data-font-reading-root="" data-font-article-id={articleId} data-font-block="" data-reading-complete={String(state.complete)} onClick={(event) => {
+    <div ref={rootRef} className="article-body article-content" data-font-reading-root="" data-font-article-id={articleId} data-font-block="" data-reading-complete={String(state.complete)} onClick={(event) => {
       const anchor = event.target.closest?.("a[data-reading-local-anchor]");
       if (!anchor || !event.currentTarget.contains(anchor)) return;
       event.preventDefault(); event.stopPropagation();
