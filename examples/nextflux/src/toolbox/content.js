@@ -40,8 +40,8 @@ function imageSource(attributes, baseUrl) {
     const source = safeImageSource(attributes?.[name], baseUrl);
     if (source) return source;
   }
-  return srcsetImageSource(attributes?.srcset, baseUrl)
-    || safeImageSource(attributes?.src, baseUrl);
+  return safeImageSource(attributes?.src, baseUrl)
+    || srcsetImageSource(attributes?.srcset, baseUrl);
 }
 
 export function cleanAttributes(tag, attributes, baseUrl) {
@@ -65,8 +65,8 @@ export function cleanAttributes(tag, attributes, baseUrl) {
     }
   }
   if (tag === "img") {
-    // Prefer the original lazy-load source, then the richest srcset candidate,
-    // then src. The chosen value stays inert metadata until ArticleImage applies
+    // Prefer the original lazy-load source, otherwise preserve src semantics
+    // and only fall back to the richest srcset candidate. The chosen value stays inert metadata until ArticleImage applies
     // the stricter media transport validation.
     const source = imageSource(sourceAttributes, baseUrl);
     if (source) clean["data-image-source"] = source;
