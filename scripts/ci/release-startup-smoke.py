@@ -73,7 +73,7 @@ def validate_startup(package, version, code, start, installed, logs, ui, pid):
     ) for node in host_nodes):
         raise ValueError("The initial home tab is not selected")
     # This job installs on a fresh emulator: content must be ready, not just its navigation shell.
-    if not {"还没有工具", "安装四个范例", "导入 .tbx"}.issubset(labels):
+    if not {"还没有工具", "安装四个范例", "导入工具"}.issubset(labels):
         raise ValueError("The fresh-install home content did not load")
     if any("无法读取" in label for label in labels):
         raise ValueError("The initial home reports a loading failure")
