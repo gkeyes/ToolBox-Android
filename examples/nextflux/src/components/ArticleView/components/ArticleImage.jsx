@@ -8,7 +8,8 @@ import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
 
 function ArticleImage({ imgNode, type = "article" }) {
-  const { src, "data-image-source": sanitizedSource, alt = "" } = imgNode.attribs;
+  const attributes = imgNode?.attribs && typeof imgNode.attribs === "object" ? imgNode.attribs : {};
+  const { src, "data-image-source": sanitizedSource, alt = "" } = attributes;
   const source = sanitizedSource || src;
   const galleryOpen = useStore(imageGalleryActive);
   const { containerRef, url, error, retry } = useSafeImage(source, false, galleryOpen);
@@ -16,9 +17,9 @@ function ArticleImage({ imgNode, type = "article" }) {
   const [failedUrl, setFailedUrl] = useState(null);
   const epoch = imageDimensions.epoch;
   const failure = error || (failedUrl && failedUrl === url ? "图片解码失败，暂时无法显示。" : null);
-  const measured = imageSize(imgNode.attribs.width, imgNode.attribs.height)
-    || (dimensions?.source === source && dimensions.epoch === epoch ? dimensions : null)
-    || imageDimensions.get(source);
+  const measured = imageSize(attributes.width, attributes.height)
+    || (dimensions && dimensions.source === source && dimensions.epoch === epoch ? dimensions : null)
+    || (source ? imageDimensions.get(source) : null);
   const imageStyle = measured ? { width: measured.width, aspectRatio: `${measured.width} / ${measured.height}` } : undefined;
   return (
     <div ref={containerRef} className={cn("flex justify-center my-2 min-h-12", type === "article" ? "max-w-[calc(100%+2.5rem)]! -mx-5" : "rounded-lg shadow-custom! mx-auto overflow-hidden w-fit")}>

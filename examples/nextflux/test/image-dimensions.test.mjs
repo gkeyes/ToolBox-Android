@@ -20,6 +20,20 @@ test("sanitizer preserves dimensions without admitting styles, handlers or activ
   assert.deepEqual(cleanAttributes("div", { width: "10", height: "20" }), {});
 });
 
+test("sanitizer promotes lazy and srcset image sources without activating unsafe attributes", () => {
+  const base = "https://news.example/articles/1";
+  const transparent = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  assert.deepEqual(cleanAttributes("img", {
+    src: transparent, "data-src": "/media/full.jpg", onerror: "alert(1)",
+  }, base), { "data-image-source": "https://news.example/media/full.jpg" });
+  assert.deepEqual(cleanAttributes("img", {
+    srcset: "/media/small.jpg 320w, /media/large.jpg 1280w",
+  }, base), { "data-image-source": "https://news.example/media/large.jpg" });
+  assert.deepEqual(cleanAttributes("img", {
+    src: "https://news.example/fallback.jpg", "data-src": "javascript:alert(1)",
+  }, base), { "data-image-source": "https://news.example/fallback.jpg" });
+});
+
 test("measurements follow exact source identity, not query reordering or decoding", () => {
   const cache = createImageDimensions();
   const source = "https://images.example/media/v1/key?sig=a%2Fb&v=2";

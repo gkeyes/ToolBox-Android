@@ -34,6 +34,16 @@ test("display normalization only restores real source newlines",()=>{
   assert.equal(shouldPreserveTextBreaks("第一行\n第二行",true,plan),false);
 });
 
+test("parser keeps lazy images usable and source-less images inert",()=>{
+  const transparent="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  const parsed=operationsFor(`<p><img src="${transparent}" data-src="/full.jpg" alt="lazy"><img srcset="/small.jpg 320w, /large.jpg 1280w"><img alt="missing"></p>`);
+  const images=parsed.operations.filter(op=>op.type==="image");
+  assert.equal(images.length,3);
+  assert.equal(images[0].attrs["data-image-source"],"https://example.test/full.jpg");
+  assert.equal(images[1].attrs["data-image-source"],"https://example.test/large.jpg");
+  assert.deepEqual(images[2].attrs,{alt:"missing"});
+});
+
 test("parser removes exact standalone ad labels but leaves normal prose",()=>{
   const parsed=operationsFor("<p>正文。</p><p>广告</p><p>这篇文章讨论广告行业。</p>");
   assert.ok(parsed.operations.some(op=>op.type==="remove"));
