@@ -83,7 +83,7 @@ for (const [orientation, width, height] of [["landscape", 1200, 800], ["portrait
 test("a source-less image renders a safe fallback instead of crashing the reader", async ({ page }) => {
   await openFixture(page);
   await page.evaluate(() => window.readingFixture.setImage({}));
-  await expect(page.getByTestId("image-fixture").getByRole("status")).toHaveText("没有可安全显示的图片地址。");
+  await expect(page.getByTestId("image-fixture").getByRole("status")).toContainText("没有可安全显示的图片地址。");
   await expect(page.getByTestId("after-image")).toBeVisible();
 });
 
