@@ -1,0 +1,103 @@
+name: NextFlux live article structure diagnostic
+on:
+  push:
+    paths:
+      - .github/workflows/nextflux-live-structure-diagnostic.yml
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/nextflux/package-lock.json
+      - name: Install dependencies
+        working-directory: examples/nextflux
+        run: npm ci --ignore-scripts
+      - name: Diagnose extraction and reading semantics
+        working-directory: examples/nextflux
+        env:
+          ARTICLE_URL: https://cn.nytimes.com/world/20260925/trump-xi-state-dinner-menu/
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from "node:fs";
+          import { parseHTML } from "linkedom";
+          import { Defuddle } from "defuddle/node";
+          import { createReadingParser } from "./src/reading/parser.js";
+
+          const url=process.env.ARTICLE_URL;
+          const response=await fetch(url,{
+            redirect:"follow",
+            headers:{
+              "User-Agent":"Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36",
+              "Accept":"text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+              "Accept-Language":"zh-CN,zh;q=0.9,en;q=0.5",
+              "Cache-Control":"no-cache"
+            }
+          });
+          const html=await response.text();
+          const report={status:response.status,rawBytes:Buffer.byteLength(html),finalUrl:response.url};
+          if(!response.ok) throw new Error("fetch failed "+response.status);
+
+          const {document:working}=parseHTML(html);
+          const result=await Defuddle(working,url,{debug:true,useAsync:false,removeHiddenElements:false,standardize:true});
+          const selector=String(result?.debug?.contentSelector||"");
+          const {document:original}=parseHTML(html);
+          let root=null;
+          try { root=selector?original.querySelector(selector):null; } catch {}
+          report.selector=selector;
+          report.rootTag=root?.tagName||null;
+          report.rootChars=String(root?.textContent||"").replace(/\s+/g," ").trim().length;
+          report.rootCounts={
+            p:root?.querySelectorAll("p").length||0,
+            div:root?.querySelectorAll("div").length||0,
+            span:root?.querySelectorAll("span").length||0,
+            h:root?.querySelectorAll("h1,h2,h3,h4,h5,h6").length||0,
+            figure:root?.querySelectorAll("figure").length||0,
+            figcaption:root?.querySelectorAll("figcaption").length||0
+          };
+
+          const labels=["第一道菜","第二道菜","芝麻脆皮海鲈鱼","爽脆嫩白菜","甜点","甜點"];
+          report.matches=[];
+          for(const label of labels){
+            const nodes=[...(root?.querySelectorAll("*")||[])].filter(n=>String(n.textContent||"").replace(/\s+/g," ").trim()===label);
+            for(const node of nodes.slice(0,4)){
+              const trail=[];
+              let cur=node;
+              for(let i=0;i<4&&cur&&cur!==root;i++,cur=cur.parentElement){
+                trail.push({tag:cur.tagName?.toLowerCase(),class:String(cur.getAttribute?.("class")||"").slice(0,140),children:cur.children?.length||0,text:String(cur.textContent||"").replace(/\s+/g," ").trim().slice(0,120)});
+              }
+              report.matches.push({label,trail});
+            }
+          }
+
+          const source=String(root?.innerHTML||result?.content||"");
+          const parser=createReadingParser(source,url);
+          const operations=[];
+          for(;;){
+            const batch=parser.next();
+            operations.push(...batch.operations);
+            if(batch.done)break;
+          }
+          const semantic=operations.filter(op=>op.type==="blockify"&&op.role);
+          report.parser={
+            totalOperations:operations.length,
+            blockify:operations.filter(op=>op.type==="blockify").length,
+            semanticBlockify:semantic.length,
+            semanticRoles:semantic.map(op=>({id:op.id,tag:op.tag,role:op.role})).slice(0,50),
+            elements:{
+              p:operations.filter(op=>op.type==="element"&&op.tag==="p").length,
+              div:operations.filter(op=>op.type==="element"&&op.tag==="div").length,
+              span:operations.filter(op=>op.type==="element"&&op.tag==="span").length,
+              h3:operations.filter(op=>op.type==="element"&&op.tag==="h3").length
+            }
+          };
+          fs.writeFileSync("live-structure-diagnostic.json",JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report,null,2));
+          EOF
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nextflux-live-structure-diagnostic
+          path: examples/nextflux/live-structure-diagnostic.json
