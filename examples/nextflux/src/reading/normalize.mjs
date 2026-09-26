@@ -35,5 +35,14 @@ export function semanticizeElement({tag,textLength,text,childElements,parentTag,
       textLength>=2 && textLength<=96 && value.length<=96) {
     return {tag:"div",role:"semantic-line"};
   }
+  // Some publishers use generic divs for every visual line. Treat a short
+  // run of sibling divs as editorial lines only when the parent is itself a
+  // generic container and the candidate does not look like normal prose.
+  const siblingBlocks=(parentChildElements||[]).filter((item)=>item.tag==="div");
+  const prosePunctuation=/[。！？!?；;，,：:]$/u;
+  if (tag==="div" && parentTag==="div" && siblingBlocks.length>=2 &&
+      textLength>=2 && textLength<=96 && value.length<=96 && !prosePunctuation.test(value)) {
+    return {tag:"div",role:"semantic-line"};
+  }
   return null;
 }
