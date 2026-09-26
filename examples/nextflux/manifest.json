@@ -5,7 +5,7 @@
   "shortName": "NextFlux",
   "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要及后台同步。",
   "version": "1.0.12",
-  "versionCode": 30,
+  "versionCode": 31,
   "entry": "index.html",
   "icon": "web-app-manifest-512x512.png",
   "apiVersion": "1.0",
