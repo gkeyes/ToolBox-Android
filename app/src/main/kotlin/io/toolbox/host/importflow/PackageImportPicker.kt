@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -20,7 +21,13 @@ internal fun rememberPackageImportPicker(
     contentResolver: ContentResolver,
 ): () -> Unit {
     val scope = rememberCoroutineScope()
-    val inputFactory = remember(contentResolver) { ContentResolverPackageInputFactory(contentResolver) }
+    val context = LocalContext.current
+    val inputFactory = remember(contentResolver, context) {
+        ContentResolverPackageInputFactory(
+            contentResolver = contentResolver,
+            importCacheDirectory = context.cacheDir,
+        )
+    }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var resolvingPackage by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ToolBoxOpenDocument.contract) { uri ->
@@ -38,7 +45,7 @@ internal fun rememberPackageImportPicker(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    viewModel.pickerRejected("无法读取所选文件，请重新选择 .tbx 工具包。")
+                    viewModel.pickerRejected("无法读取所选文件，请重新选择 .tbx 或 .zip。")
                 } finally {
                     resolvingPackage = false
                 }
