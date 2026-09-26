@@ -61,25 +61,29 @@ test("many nested divs do not disguise one dominant flattened article block",()=
 });
 
 
-test("semanticization promotes high-confidence inline menu lines without flattening prose",()=>{
-  const line=semanticizeElement({
-    tag:"span",parentTag:"div",text:"芝麻脆皮海鲈鱼",textLength:8,
-    parentChildElements:[{tag:"span"},{tag:"span"},{tag:"span"}]
-  });
-  assert.equal(line?.tag,"div");
-  const divLine=semanticizeElement({
-    tag:"div",parentTag:"div",text:"芝麻脆皮海鲈鱼",textLength:8,
-    parentChildElements:[{tag:"div"},{tag:"div"},{tag:"div"}]
-  });
-  assert.equal(divLine?.role,"semantic-line");
+test("semanticization infers hierarchy from generic structure instead of article words",()=>{
+  const siblings=[
+    {tag:"div",text:"普通导语。",textLength:5,childElements:[]},
+    {tag:"div",text:"阶段 A",textLength:4,childElements:[{tag:"strong",text:"阶段 A",textLength:4}]},
+    {tag:"div",text:"项目甲",textLength:3,childElements:[]},
+    {tag:"div",text:"项目乙",textLength:3,childElements:[]},
+  ];
   const heading=semanticizeElement({
-    tag:"span",parentTag:"div",text:"第一道菜",textLength:4,
-    parentChildElements:[{tag:"span"},{tag:"span"}]
+    ...siblings[1],parentTag:"div",parentChildElements:siblings,siblingIndex:1,
   });
   assert.equal(heading?.tag,"h3");
+  assert.equal(heading?.role,"semantic-section");
+  const line=semanticizeElement({
+    ...siblings[2],parentTag:"div",parentChildElements:siblings,siblingIndex:2,
+  });
+  assert.equal(line?.role,"semantic-line");
+  const lead=semanticizeElement({
+    ...siblings[0],parentTag:"div",parentChildElements:siblings,siblingIndex:0,
+  });
+  assert.equal(lead,null);
   assert.equal(semanticizeElement({
     tag:"span",parentTag:"p",text:"这是普通正文",textLength:6,
-    parentChildElements:[{tag:"span"},{tag:"span"}]
+    parentChildElements:[{tag:"span"},{tag:"span"}],siblingIndex:0,
   }),null);
 });
 
@@ -92,16 +96,16 @@ test("semantic hierarchy has dedicated presentation rules",async()=>{
 });
 
 
-test("parser wires semantic hierarchy into production operations after sibling discovery",()=>{
-  const parsed=operationsFor("<div><span>芝麻脆皮海鲈鱼</span><span>爽脆嫩白菜</span><span>第一道菜</span></div>");
+test("parser wires structural hierarchy into production operations after sibling discovery",()=>{
+  const parsed=operationsFor("<div><div>普通导语。</div><div><strong>阶段 A</strong></div><div>项目甲</div><div>项目乙</div><div><b>阶段 B</b></div><div>项目丙</div></div>");
   const semantic=parsed.operations.filter(op=>op.type==="blockify"&&op.role);
   assert.deepEqual(semantic.map(op=>[op.tag,op.role]),[
+    ["h3","semantic-section"],
     ["div","semantic-line"],
     ["div","semantic-line"],
     ["h3","semantic-section"],
+    ["div","semantic-line"],
   ]);
-  // The first sibling can only be classified after later siblings are known.
-  // This guards against reintroducing the previous imported-but-unused wiring bug.
   assert.ok(semantic[0]?.id);
 });
 
