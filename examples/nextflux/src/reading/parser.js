@@ -93,7 +93,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -142,7 +142,13 @@ export function createReadingParser(html, baseUrl) {
     ontext(text) {
       const parent = stack.at(-1);
       if (parent.blocked || !text) return;
-      const normalized = text.replace(/\s+/g, " ").trim();
+      const paragraph = stack.findLast((entry) => entry.tag === "p" && !entry.blocked);
+      let displayText = text;
+      if (paragraph && !paragraph.layoutProtected && !paragraph.displayStarted) {
+        displayText = displayText.replace(/^[\s\u00a0\u3000]+/u, "");
+        if (displayText) paragraph.displayStarted = true;
+      }
+      const normalized = displayText.replace(/\s+/g, " ").trim();
       if (normalized) {
         for (let index = 1; index < stack.length; index += 1) {
           const entry = stack[index];
@@ -156,7 +162,7 @@ export function createReadingParser(html, baseUrl) {
       }
       if (parent.code) { appendCode(parent.code, text); return; }
       if (!parent.literalText) {
-        const combined = textTail + text;
+        const combined = textTail + displayText;
         const preserveBreaks = shouldPreserveTextBreaks(combined, parent.layoutProtected, normalization);
         // Hold at most three code units across entities and tokenizer chunks.
         // Flush at markup boundaries so differently styled text is not rewritten.
@@ -168,8 +174,8 @@ export function createReadingParser(html, baseUrl) {
       }
       // Text callbacks may span tokenizer chunks (entities/raw text). Split them
       // as well, including huge articles containing one uninterrupted text node.
-      for (let index = 0; index < text.length; index += INPUT_CHUNK) {
-        emit({ type: "text", parent: parent.id, text: text.slice(index, index + INPUT_CHUNK) });
+      for (let index = 0; index < displayText.length; index += INPUT_CHUNK) {
+        emit({ type: "text", parent: parent.id, text: displayText.slice(index, index + INPUT_CHUNK) });
       }
     },
     onclosetag() {
