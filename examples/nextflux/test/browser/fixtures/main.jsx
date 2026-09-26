@@ -4,6 +4,10 @@ import { PhotoProvider } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
 import "./style.css";
 import "../../../src/components/ArticleView/ArticleView.css";
+import "../../../src/reading/reading.css";
+import "../../../src/reading/typography.css";
+import { createReadingParser } from "@/reading/parser.js";
+import { createReadingRenderer } from "@/reading/renderer.js";
 import ArticleImage from "@/components/ArticleView/components/ArticleImage.jsx";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture.js";
 import { clearMediaCache } from "@/toolbox/media.js";
@@ -39,6 +43,34 @@ function ReadingFixture() {
       dimensions: (source) => imageDimensions.get(source),
       setGalleryActive: (value) => imageGalleryActive.set(value),
       setModalOpen: (value) => isModalOpen.set(value),
+      renderArticle: (html, baseUrl) => {
+        const root = document.getElementById("live-render-surface");
+        root.replaceChildren();
+        const renderer = createReadingRenderer(root, baseUrl, () => {});
+        const parser = createReadingParser(html, baseUrl);
+        for (;;) {
+          const batch = parser.next();
+          for (const operation of batch.operations) renderer.apply(operation);
+          if (batch.done) break;
+        }
+        renderer.finish();
+        return {
+          roles: [...root.querySelectorAll("[data-semantic-role]")].map((node) => {
+            const style = getComputedStyle(node);
+            return {
+              tag: node.tagName.toLowerCase(),
+              role: node.getAttribute("data-semantic-role"),
+              textLength: String(node.textContent || "").replace(/\\s+/g, " ").trim().length,
+              display: style.display,
+              marginTop: style.marginTop,
+              marginBottom: style.marginBottom,
+              paddingLeft: style.paddingLeft,
+              fontWeight: style.fontWeight,
+              borderLeftWidth: style.borderLeftWidth,
+            };
+          }),
+        };
+      },
     };
     return () => { delete window.readingFixture; };
   }, []);
@@ -54,6 +86,7 @@ function ReadingFixture() {
             <p data-testid="after-image">The article continues here.</p>
           </section>
         </PhotoProvider>
+        <section id="live-render-surface" className="article-content prose max-w-none" data-font-reading-root="" />
         <div className="code-block"><span id="code-target">Horizontal code</span></div>
         <input id="range-target" aria-label="Audio position" type="range" />
         <div id="horizontal-container"><div id="horizontal-target">Scrollable article table</div></div>
