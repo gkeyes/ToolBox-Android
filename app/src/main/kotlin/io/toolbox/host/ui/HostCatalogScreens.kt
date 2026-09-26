@@ -534,7 +534,7 @@ internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Un
             align = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
         ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
-        ToolBoxTextButton("导入 .tbx", onImport, Modifier.fillMaxWidth())
+        ToolBoxTextButton("导入工具", onImport, Modifier.fillMaxWidth())
     }
 }
 
