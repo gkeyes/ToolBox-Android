@@ -1,0 +1,121 @@
+name: NextFlux exact Miniflux scraper regression
+on:
+  push:
+    paths:
+      - .github/workflows/nextflux-exact-miniflux-regression.yml
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: toolbox
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: miniflux/v2
+          path: miniflux
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: miniflux/go.mod
+          cache-dependency-path: miniflux/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: toolbox/examples/nextflux/package-lock.json
+      - name: Run official Miniflux ProcessEntryWebPage
+        working-directory: miniflux
+        env:
+          ARTICLE_URL: https://cn.nytimes.com/world/20260925/trump-xi-state-dinner-menu/
+          SCRAPER_RULE: article.article-content
+          OUTPUT_HTML: ${{ github.workspace }}/miniflux-final-entry.html
+        run: |
+          cat > internal/reader/processor/live_exact_test.go <<'EOF'
+          package processor
+
+          import (
+            "os"
+            "testing"
+
+            "miniflux.app/v2/internal/config"
+            "miniflux.app/v2/internal/model"
+          )
+
+          func TestLiveExactScraper(t *testing.T) {
+            config.Opts = config.NewConfigOptions()
+            url := os.Getenv("ARTICLE_URL")
+            rule := os.Getenv("SCRAPER_RULE")
+            out := os.Getenv("OUTPUT_HTML")
+            feed := &model.Feed{
+              SiteURL: url,
+              FeedURL: url,
+              ScraperRules: rule,
+            }
+            entry := model.NewEntry()
+            entry.URL = url
+            entry.Feed = feed
+            user := &model.User{
+              ShowReadingTime: false,
+              OpenExternalLinksInNewTab: false,
+            }
+            if err := ProcessEntryWebPage(feed, entry, user); err != nil {
+              t.Fatal(err)
+            }
+            if entry.Content == "" {
+              t.Fatal("empty entry content")
+            }
+            if err := os.WriteFile(out, []byte(entry.Content), 0644); err != nil {
+              t.Fatal(err)
+            }
+            t.Logf("final content bytes=%d", len(entry.Content))
+          }
+          EOF
+          go test ./internal/reader/processor -run TestLiveExactScraper -count=1 -v
+          rm internal/reader/processor/live_exact_test.go
+      - name: Analyze exact Miniflux output with current NextFlux parser
+        working-directory: toolbox/examples/nextflux
+        run: |
+          npm ci --ignore-scripts
+          node --input-type=module <<'EOF'
+          import fs from "node:fs";
+          import { parseHTML } from "linkedom";
+          import { createReadingParser } from "./src/reading/parser.js";
+
+          const html=fs.readFileSync(process.env.GITHUB_WORKSPACE+"/miniflux-final-entry.html","utf8");
+          const {document}=parseHTML("<body>"+html+"</body>");
+          const root=document.body;
+          const counts={
+            article:root.querySelectorAll("article").length,
+            section:root.querySelectorAll("section").length,
+            main:root.querySelectorAll("main").length,
+            div:root.querySelectorAll("div").length,
+            span:root.querySelectorAll("span").length,
+            p:root.querySelectorAll("p").length,
+            strong:root.querySelectorAll("strong").length,
+            b:root.querySelectorAll("b").length,
+            h:root.querySelectorAll("h1,h2,h3,h4,h5,h6").length,
+            br:root.querySelectorAll("br").length
+          };
+          const parser=createReadingParser(html,"https://cn.nytimes.com/");
+          const operations=[];
+          for(;;){const batch=parser.next();operations.push(...batch.operations);if(batch.done)break;}
+          const semantic=operations.filter(op=>op.type==="blockify"&&op.role);
+          const report={
+            bytes:Buffer.byteLength(html),
+            counts,
+            analysis:parser.analysis,
+            semanticSections:semantic.filter(op=>op.role==="semantic-section").length,
+            semanticLines:semantic.filter(op=>op.role==="semantic-line").length,
+            semantic,
+            elementTags:operations.filter(op=>op.type==="element").reduce((acc,op)=>(acc[op.tag]=(acc[op.tag]||0)+1,acc),{})
+          };
+          fs.writeFileSync(process.env.GITHUB_WORKSPACE+"/exact-miniflux-report.json",JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report,null,2));
+          if(report.semanticSections<1) process.exitCode=11;
+          EOF
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exact-miniflux-regression
+          path: |
+            miniflux-final-entry.html
+            exact-miniflux-report.json
