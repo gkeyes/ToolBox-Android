@@ -62,8 +62,8 @@ test("many nested divs do not disguise one dominant flattened article block",()=
 
 
 test("sanitizer-flattened root text is detected and penalized",()=>{
-  const flat='<h1>标题</h1>'+('正文内容'.repeat(45))+'<b>分组甲</b>项目一项目二项目三<b>分组乙</b>项目四项目五'+'<p>作者信息</p>';
-  const structured='<div><h1>标题</h1><p>'+('正文内容'.repeat(45))+'</p><div><b>分组甲</b></div><div>项目一</div><div>项目二</div><div>项目三</div><div><b>分组乙</b></div><div>项目四</div><div>项目五</div><p>作者信息</p></div>';
+  const flat='<h1>标题</h1>'+('正文内容'.repeat(70))+'<b>分组甲</b>项目一项目二项目三<b>分组乙</b>项目四项目五'+'<p>作者信息</p>';
+  const structured='<div><h1>标题</h1><p>'+('正文内容'.repeat(70))+'</p><div><b>分组甲</b></div><div>项目一</div><div>项目二</div><div>项目三</div><div><b>分组乙</b></div><div>项目四</div><div>项目五</div><p>作者信息</p></div>';
   const flatMetrics=analyzeArticle(flat);
   assert.equal(flatMetrics.flattenedRootText,true);
   assert.ok(flatMetrics.topLevelTextRatio>.32);
