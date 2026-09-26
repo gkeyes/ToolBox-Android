@@ -517,7 +517,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             compose.onNodeWithText(text).assertDoesNotExist()
         }
         compose.onNodeWithText("安装四个范例").performScrollTo().assertIsDisplayed().performTouchInput { click() }
-        compose.onNodeWithText("导入 .tbx").performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        compose.onNodeWithText("导入工具").performScrollTo().assertIsDisplayed().performTouchInput { click() }
         compose.runOnIdle { assertEquals(1, installExampleRequests); assertEquals(1, importRequests) }
     }
 
