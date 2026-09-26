@@ -418,7 +418,7 @@ private fun TopBar(
                 if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
                     ToolBoxIconButton(
                         icon = ToolBoxIconKey.Add,
-                        contentDescription = "导入 .tbx 工具包",
+                        contentDescription = "导入工具（支持 .tbx / .zip）",
                         onClick = onImport,
                         modifier = Modifier
                             .toolBoxOpenDesignSurface(CircleShape)
@@ -431,7 +431,7 @@ private fun TopBar(
                         onClick = onImport,
                         modifier = Modifier
                             .testTag(HostTestTags.ImportFab)
-                            .semantics { contentDescription = "导入 .tbx 工具包" },
+                            .semantics { contentDescription = "导入工具（支持 .tbx / .zip）" },
                         contentColor = ToolBoxThemeTokens.colors.primary,
                     )
                 }
