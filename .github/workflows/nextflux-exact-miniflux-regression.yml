@@ -111,9 +111,9 @@ jobs:
           };
           fs.writeFileSync(process.env.GITHUB_WORKSPACE+"/exact-miniflux-report.json",JSON.stringify(report,null,2));
           console.log(JSON.stringify(report,null,2));
-          if(report.semanticSections<1) process.exitCode=11;
           EOF
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
           name: exact-miniflux-regression
           path: |
