@@ -71,7 +71,8 @@ export function createReadingParser(html, baseUrl) {
   };
   const semanticizeChildren = (entry) => {
     if (!entry?.childElements?.length) return;
-    for (const child of entry.childElements) {
+    for (let siblingIndex = 0; siblingIndex < entry.childElements.length; siblingIndex += 1) {
+      const child = entry.childElements[siblingIndex];
       if (!child.id) continue;
       const semantic = semanticizeElement({
         tag: child.tag,
@@ -83,6 +84,7 @@ export function createReadingParser(html, baseUrl) {
         parentTextLength: entry.textLength,
         hasBlockChild: child.hasBlockChild,
         hasMedia: child.hasMedia,
+        siblingIndex,
       });
       if (semantic) emit({ type: "blockify", id: child.id, tag: semantic.tag, role: semantic.role });
     }
