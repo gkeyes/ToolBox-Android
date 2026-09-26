@@ -24,16 +24,16 @@ export function semanticizeElement({tag,textLength,text,childElements,parentTag,
   // A common editorial pattern uses sibling spans as visual lines inside a div.
   // Preserve ordinary inline prose; only promote short, standalone siblings
   // when the parent itself is a generic container with multiple inline children.
+  // Menu/section labels are higher-confidence than generic inline lines,
+  // so classify them before the sibling-span fallback.
+  if ((tag==="div"||tag==="span") && parentTag==="div" &&
+      SEMANTIC_ITEM_RE.test(value) && textLength<=24) {
+    return {tag:"h3",role:"semantic-section"};
+  }
   const inlineChildren=(parentChildElements||[]).filter((item)=>INLINE_SEMANTIC_TAGS.has(item.tag));
   if (tag==="span" && parentTag==="div" && inlineChildren.length>=2 &&
       textLength>=2 && textLength<=96 && value.length<=96) {
     return {tag:"div",role:"semantic-line"};
-  }
-  // Menu/section labels are high-confidence headings when they are standalone
-  // text nodes, not ordinary prose.
-  if ((tag==="div"||tag==="span") && parentTag==="div" &&
-      SEMANTIC_ITEM_RE.test(value) && textLength<=24) {
-    return {tag:"h3",role:"semantic-section"};
   }
   return null;
 }
