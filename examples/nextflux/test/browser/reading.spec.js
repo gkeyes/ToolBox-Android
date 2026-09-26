@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import { createReadingParser } from "../../src/reading/parser.js";
 
 const SOURCE = "https://reader.example.invalid/proxy/image?signature=a";
 const OTHER_SOURCE = "https://reader.example.invalid/proxy/image?signature=b";
@@ -295,4 +296,96 @@ test("a modal appearing during a swipe cancels its pending navigation", async ({
   await page.evaluate(() => window.readingFixture.setModalOpen(false));
   await swipe(page);
   await expect(page.getByTestId("returns")).toHaveText("1");
+});
+
+
+base("live NYT Miniflux outerHTML probe", async ({ browser }) => {
+  const target = "https://cn.nytimes.com/world/20260925/trump-xi-state-dinner-menu/";
+  const page = await browser.newPage({
+    locale: "zh-CN",
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+  });
+  let response = null;
+  let navigationError = null;
+  try {
+    response = await page.goto(target, { waitUntil: "domcontentloaded", timeout: 25_000 });
+  } catch (error) {
+    navigationError = String(error?.message || error);
+  }
+
+  const matchCount = await page.locator("article.article-content").count().catch(() => 0);
+  const probe = {
+    url: page.url(),
+    status: response?.status?.() ?? null,
+    navigationError,
+    matchCount,
+  };
+
+  if (matchCount > 0) {
+    const locator = page.locator("article.article-content").first();
+    const outerHTML = await locator.evaluate((root) => root.outerHTML);
+    Object.assign(probe, await locator.evaluate((root) => {
+      const compact = (value) => String(value || "").replace(/\s+/g, " ").trim();
+      const tagCounts = {};
+      for (const node of root.querySelectorAll("*")) {
+        const tag = node.tagName.toLowerCase();
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      }
+      const shape = (node) => ({
+        tag: node.tagName.toLowerCase(),
+        classes: [...node.classList].slice(0, 8),
+        childTags: [...node.children].slice(0, 12).map((child) => child.tagName.toLowerCase()),
+        childCount: node.children.length,
+        textLength: compact(node.textContent).length,
+      });
+      const directChildren = [...root.children].slice(0, 30).map(shape);
+      const emphasizedContainers = [...root.querySelectorAll("div,p,span,section")]
+        .filter((node) => {
+          const children = [...node.children];
+          if (children.length !== 1) return false;
+          const child = children[0];
+          if (!["STRONG", "B"].includes(child.tagName)) return false;
+          const own = compact(node.textContent);
+          const emphasized = compact(child.textContent);
+          return own && emphasized && emphasized.length >= Math.max(1, Math.floor(own.length * .8));
+        })
+        .slice(0, 30)
+        .map(shape);
+      return {
+        rootClasses: [...root.classList],
+        outerHTMLLength: root.outerHTML.length,
+        tagCounts,
+        directChildren,
+        emphasizedContainers,
+      };
+    }));
+
+    const parser = createReadingParser(outerHTML, target);
+    const operations = [];
+    for (;;) {
+      const batch = parser.next();
+      operations.push(...batch.operations);
+      if (batch.done) break;
+    }
+    probe.analysis = {
+      textChars: parser.analysis.textChars,
+      paragraphs: parser.analysis.paragraphs,
+      divs: parser.analysis.divs,
+      headings: parser.analysis.headings,
+      listItems: parser.analysis.listItems,
+      semanticBlocks: parser.analysis.semanticBlocks,
+      structureSparse: parser.analysis.structureSparse,
+    };
+    probe.semanticOperations = operations
+      .filter((operation) => operation.type === "blockify" && operation.role)
+      .map(({ tag, role }) => ({ tag, role }));
+  }
+
+  console.log("NYT_LIVE_PROBE=" + JSON.stringify(probe));
+  await page.close();
+
+  expect(navigationError, "live NYT page should be reachable from CI").toBeNull();
+  expect(response?.status(), "live NYT response should be successful").toBeLessThan(400);
+  expect(matchCount, "Miniflux rule article.article-content must match the live page").toBeGreaterThan(0);
+  expect(probe.outerHTMLLength, "matched outerHTML must contain a real article subtree").toBeGreaterThan(1000);
 });
