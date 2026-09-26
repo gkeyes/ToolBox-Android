@@ -34,6 +34,29 @@
   }
 }
 
+/* Reconstructed editorial lines: make source-layout semantics visible even when
+   the publisher depended on its own site CSS. These roles are emitted only by
+   the conservative reading normalizer, never by arbitrary source markup. */
+.article-content [data-semantic-role="semantic-section"] {
+  display: block !important;
+  margin-block: 1.35em .58em !important;
+  padding-inline-start: .72em;
+  border-inline-start: 3px solid color-mix(in oklch, var(--accent, currentColor) 68%, transparent);
+  font-size: 1.04em;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.article-content [data-semantic-role="semantic-line"] {
+  display: block !important;
+  margin-block: .28em !important;
+  padding-inline-start: 1em;
+  line-height: 1.72;
+}
+.article-content [data-semantic-role="semantic-line"] + [data-semantic-role="semantic-line"] {
+  margin-block-start: .12em !important;
+}
+
 /* Paragraph rhythm: comfortable for Chinese long-form without modifying source. */
 .article-content p {
   margin-block: 0 1.08em !important;
