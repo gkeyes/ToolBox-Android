@@ -14,34 +14,67 @@ export function shouldRemoveStandaloneNoise({tag,text,textLength,hasMedia,plan})
   return textLength>0&&textLength<=24&&STANDALONE_NOISE_RE.test(value);
 }
 
-
 const INLINE_SEMANTIC_TAGS = new Set(["span","b","strong","em","i","small"]);
-const SEMANTIC_ITEM_RE = /^(?:第[一二三四五六七八九十百]+道菜|前菜|主菜|甜点|甜點|饮品|飲品|表演|菜单|菜單|配料|配料表|ingredients?|dessert|appetizer|main course|performance)$/i;
+const EMPHASIS_TAGS = new Set(["b","strong"]);
+const prosePunctuation=/[。！？!?；;，,：:]$/u;
 
-export function semanticizeElement({tag,textLength,text,childElements,parentTag,parentChildElements,parentTextLength,hasBlockChild,hasMedia} = {}) {
+function isStructuralSectionCandidate(item){
+  if(!item || !["div","span"].includes(item.tag)) return false;
+  if(item.hasMedia || item.hasBlockChild || item.textLength<1 || item.textLength>32) return false;
+  const children=(item.childElements||[]).filter(child=>child?.id || child?.tag);
+  if(children.length!==1) return false;
+  const only=children[0];
+  if(!EMPHASIS_TAGS.has(only.tag)) return false;
+  const own=compact(item.text);
+  const emphasized=compact(only.text);
+  return Boolean(own && emphasized && emphasized.length>=Math.max(1,Math.floor(own.length*.8)));
+}
+
+function hasActiveSectionBefore(parentChildElements=[], siblingIndex=-1){
+  if(siblingIndex<=0) return false;
+  for(let i=siblingIndex-1;i>=0;i-=1){
+    const sibling=parentChildElements[i];
+    if(isStructuralSectionCandidate(sibling)) return true;
+    const value=compact(sibling?.text);
+    if((sibling?.textLength||0)>120 || prosePunctuation.test(value)) return false;
+  }
+  return false;
+}
+
+export function semanticizeElement({
+  tag,textLength,text,childElements,parentTag,parentChildElements,
+  parentTextLength,hasBlockChild,hasMedia,siblingIndex,
+} = {}) {
   const value=compact(text);
   if (!value || hasMedia || hasBlockChild) return null;
-  // A common editorial pattern uses sibling spans as visual lines inside a div.
-  // Preserve ordinary inline prose; only promote short, standalone siblings
-  // when the parent itself is a generic container with multiple inline children.
-  // Menu/section labels are higher-confidence than generic inline lines,
-  // so classify them before the sibling-span fallback.
-  if ((tag==="div"||tag==="span") && parentTag==="div" &&
-      SEMANTIC_ITEM_RE.test(value) && textLength<=24) {
-    return {tag:"h3",role:"semantic-section"};
+
+  const siblings=parentChildElements||[];
+
+  // Generic structural heading detection: a short generic block whose visible
+  // content is almost entirely a single strong/b element, among repeated sibling
+  // blocks. No site names, menu words or article-specific text are involved.
+  if (parentTag==="div" && isStructuralSectionCandidate({
+    tag,textLength,text:value,childElements,hasBlockChild,hasMedia,
+  })) {
+    const siblingBlocks=siblings.filter(item=>item.tag==="div"||item.tag==="span");
+    if(siblingBlocks.length>=3) return {tag:"h3",role:"semantic-section"};
   }
-  const inlineChildren=(parentChildElements||[]).filter((item)=>INLINE_SEMANTIC_TAGS.has(item.tag));
+
+  // Inline visual rows are common in card/list-like source markup.
+  const inlineChildren=siblings.filter((item)=>INLINE_SEMANTIC_TAGS.has(item.tag));
   if (tag==="span" && parentTag==="div" && inlineChildren.length>=2 &&
       textLength>=2 && textLength<=96 && value.length<=96) {
     return {tag:"div",role:"semantic-line"};
   }
-  // Some publishers use generic divs for every visual line. Treat a short
-  // run of sibling divs as editorial lines only when the parent is itself a
-  // generic container and the candidate does not look like normal prose.
-  const siblingBlocks=(parentChildElements||[]).filter((item)=>item.tag==="div");
-  const prosePunctuation=/[。！？!?；;，,：:]$/u;
-  if (tag==="div" && parentTag==="div" && siblingBlocks.length>=2 &&
-      textLength>=2 && textLength<=96 && value.length<=96 && !prosePunctuation.test(value)) {
+
+  // Generic div-based rows are only promoted while inside a structurally
+  // detected section. This prevents ordinary short <div> paragraphs elsewhere
+  // in an article from being reformatted merely because they are siblings.
+  const siblingBlocks=siblings.filter((item)=>item.tag==="div");
+  if (tag==="div" && parentTag==="div" && siblingBlocks.length>=3 &&
+      hasActiveSectionBefore(siblings,siblingIndex) &&
+      textLength>=2 && textLength<=96 && value.length<=96 &&
+      !prosePunctuation.test(value)) {
     return {tag:"div",role:"semantic-line"};
   }
   return null;
