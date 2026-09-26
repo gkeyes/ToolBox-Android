@@ -1,6 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { NotFancyLogo } from "@/components/Settings/components/NotFancyLogo.jsx";
 import { Heart } from "lucide-react";
+import manifest from "../../../manifest.json";
+import { SERVER_URL } from "@/toolbox/network.js";
+
+const SERVER_HOST = new URL(SERVER_URL).host;
 
 export default function About() {
   const { t } = useTranslation();
@@ -8,7 +12,7 @@ export default function About() {
   return (
     <div className="flex flex-col gap-4">
       <NotFancyLogo since={2025} />
-      <p className="text-center text-sm text-muted">ToolBox 适配版 1.0.3 · miniflux.xiaochen.win</p>
+      <p className="text-center text-sm text-muted">ToolBox 适配版 {manifest.version} · {SERVER_HOST}</p>
 
       {/* Made with love section */}
       <div className="text-center text-muted px-3">

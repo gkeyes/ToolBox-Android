@@ -14,9 +14,6 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-UPSTREAM_URL = "https://github.com/electh/nextflux"
-UPSTREAM_COMMIT = "a9f97de654d00f62cbbad877d583fae7cd76ec59"
-
 
 class UnsupportedSchema(RuntimeError):
     pass

@@ -46,6 +46,47 @@ export function createReadingParser(html, baseUrl) {
       for (let start = 0; start < lines[index].length; start += INPUT_CHUNK) emit({ type: "text", parent: code.lineId, text: lines[index].slice(start, start + INPUT_CHUNK) });
     }
   };
+  // Semantic classification needs the complete sibling set, which is only
+  // known when the parent closes. Record lightweight child metadata while
+  // streaming, then emit a late blockify operation that preserves mounted text.
+  const recordChild = (parent, entry) => {
+    if (!parent?.id) return;
+    const child = {
+      id: entry.id, tag: entry.tag, textLength: 0, text: "",
+      hasBlockChild: false, hasMedia: false, childElements: entry.childElements,
+    };
+    parent.childElements.push(child);
+    entry.parentChildRecord = child;
+    if (BLOCK_TAGS.has(entry.tag) || entry.tag === "img") parent.hasBlockChild = true;
+  };
+  const finishChildRecord = (entry) => {
+    if (!entry?.parentChildRecord) return;
+    Object.assign(entry.parentChildRecord, {
+      textLength: entry.textLength,
+      text: entry.textPreview,
+      hasBlockChild: entry.hasBlockChild,
+      hasMedia: entry.hasMedia,
+      childElements: entry.childElements,
+    });
+  };
+  const semanticizeChildren = (entry) => {
+    if (!entry?.childElements?.length) return;
+    for (const child of entry.childElements) {
+      if (!child.id) continue;
+      const semantic = semanticizeElement({
+        tag: child.tag,
+        textLength: child.textLength,
+        text: child.text,
+        childElements: child.childElements,
+        parentTag: entry.tag,
+        parentChildElements: entry.childElements,
+        parentTextLength: entry.textLength,
+        hasBlockChild: child.hasBlockChild,
+        hasMedia: child.hasMedia,
+      });
+      if (semantic) emit({ type: "blockify", id: child.id, tag: semantic.tag, role: semantic.role });
+    }
+  };
   const parser = new Parser({
     onopentag(tag, attributes) {
       flushText();
@@ -74,11 +115,8 @@ export function createReadingParser(html, baseUrl) {
       entry.depth += 1;
       const attrs = cleanAttributes(tag, attributes, baseUrl);
       entry.attrs = attrs;
+      recordChild(parent, entry);
       if (tag === "img") {
-        if (parent.id) {
-          parent.childElements.push({tag:"img",textLength:0});
-          parent.hasBlockChild=true;
-        }
         for (const ancestor of stack) ancestor.hasMedia = true;
         const paragraph = stack.findLast((item) => item.tag === "p" && !item.blocked);
         if (paragraph) emit({ type: "blockify", id: paragraph.id });
@@ -90,10 +128,6 @@ export function createReadingParser(html, baseUrl) {
         return;
       }
       if (tag === "pre") {
-        if (parent.id) {
-          parent.childElements.push({tag:"pre",textLength:0});
-          parent.hasBlockChild=true;
-        }
         entry.code = { id: entry.id, parent: nextId++, parts: [], language: "text" };
         entry.ownsCode = true;
         emit({ type: "element", id: entry.id, parent: parent.id, tag, attrs, block: true, codeBlock: true });
@@ -102,10 +136,6 @@ export function createReadingParser(html, baseUrl) {
         return;
       }
       emit({ type: "element", id: entry.id, parent: parent.id, tag, attrs, block: BLOCK_TAGS.has(tag) });
-      if (parent.id) {
-        parent.childElements.push({tag,textLength:0,id:entry.id});
-        if (BLOCK_TAGS.has(tag)) parent.hasBlockChild=true;
-      }
     },
     ontext(text) {
       const parent = stack.at(-1);
@@ -143,6 +173,8 @@ export function createReadingParser(html, baseUrl) {
     onclosetag() {
       flushText();
       const entry = stack.pop();
+      finishChildRecord(entry);
+      semanticizeChildren(entry);
       if (entry.code && !entry.ownsCode && /^(p|div|h[1-6])$/.test(entry.tag) && !entry.blocked) appendCode(entry.code, "\n");
       if (entry.ownsMedia) emit({ type: "media", ...entry.media });
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });

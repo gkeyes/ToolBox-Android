@@ -90,3 +90,22 @@ test("semantic hierarchy has dedicated presentation rules",async()=>{
   assert.match(typography,/data-semantic-role="semantic-line"/);
   assert.match(typography,/display:\s*block\s*!important/);
 });
+
+
+test("parser wires semantic hierarchy into production operations after sibling discovery",()=>{
+  const parsed=operationsFor("<div><span>芝麻脆皮海鲈鱼</span><span>爽脆嫩白菜</span><span>第一道菜</span></div>");
+  const semantic=parsed.operations.filter(op=>op.type==="blockify"&&op.role);
+  assert.deepEqual(semantic.map(op=>[op.tag,op.role]),[
+    ["div","semantic-line"],
+    ["div","semantic-line"],
+    ["h3","semantic-section"],
+  ]);
+  // The first sibling can only be classified after later siblings are known.
+  // This guards against reintroducing the previous imported-but-unused wiring bug.
+  assert.ok(semantic[0]?.id);
+});
+
+test("parser semanticization stays conservative for normal paragraph inline text",()=>{
+  const parsed=operationsFor("<p><span>这是普通正文</span><span>继续正文。</span></p>");
+  assert.equal(parsed.operations.filter(op=>op.type==="blockify"&&op.role).length,0);
+});
