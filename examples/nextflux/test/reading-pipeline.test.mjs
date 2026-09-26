@@ -109,6 +109,28 @@ test("parser wires structural hierarchy into production operations after sibling
   assert.ok(semantic[0]?.id);
 });
 
+test("scraper outerHTML semantic containers keep hierarchy inference",()=>{
+  const html='<article class="article-content font-normal"><div>普通导语。</div><div><strong>阶段 A</strong></div><div>项目甲</div><div>项目乙</div><div><b>阶段 B</b></div><div>项目丙</div></article>';
+  const parsed=operationsFor(html);
+  const semantic=parsed.operations.filter(op=>op.type==="blockify"&&op.role);
+  assert.deepEqual(semantic.map(op=>[op.tag,op.role]),[
+    ["h3","semantic-section"],
+    ["div","semantic-line"],
+    ["div","semantic-line"],
+    ["h3","semantic-section"],
+    ["div","semantic-line"],
+  ]);
+  assert.ok(parsed.operations.some(op=>op.type==="element"&&op.tag==="article"));
+});
+
+test("section and main wrappers are structural containers too",()=>{
+  for(const wrapper of ["section","main"]){
+    const parsed=operationsFor(`<${wrapper}><div><strong>分组</strong></div><div>条目甲</div><div>条目乙</div></${wrapper}>`);
+    assert.ok(parsed.operations.some(op=>op.type==="blockify"&&op.role==="semantic-section"));
+    assert.ok(parsed.operations.some(op=>op.type==="blockify"&&op.role==="semantic-line"));
+  }
+});
+
 test("parser semanticization stays conservative for normal paragraph inline text",()=>{
   const parsed=operationsFor("<p><span>这是普通正文</span><span>继续正文。</span></p>");
   assert.equal(parsed.operations.filter(op=>op.type==="blockify"&&op.role).length,0);
