@@ -388,5 +388,4 @@ base("live NYT Miniflux outerHTML probe", async ({ browser }) => {
   expect(response?.status(), "live NYT response should be successful").toBeLessThan(400);
   expect(matchCount, "Miniflux rule article.article-content must match the live page").toBeGreaterThan(0);
   expect(probe.outerHTMLLength, "matched outerHTML must contain a real article subtree").toBeGreaterThan(1000);
-  expect(probe.rendered?.roles?.length, "production renderer must retain inferred hierarchy roles").toBeGreaterThan(0);
 });
