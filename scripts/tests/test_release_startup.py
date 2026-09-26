@@ -19,7 +19,7 @@ class ReleaseStartupEvidenceTest(unittest.TestCase):
             logs="ActivityTaskManager: Fully drawn io.toolbox.host/.MainActivity: +712ms\n",
             ui='<?xml version="1.0"?><hierarchy><node package="io.toolbox.host" content-desc="首页" selected="true" />' + ''.join(
                 f'<node package="io.toolbox.host" text="{label}" />' for label in
-                ("全部工具", "设置", "还没有工具", "安装四个范例", "导入 .tbx")) + '</hierarchy>',
+                ("全部工具", "设置", "还没有工具", "安装四个范例", "导入工具")) + '</hierarchy>',
             pid="1245\n",
         )
 
