@@ -261,7 +261,7 @@
     }
     return Array.from(found.values());
   }
-  function escapeXml(value) { return String(value || '').replace(/[<>&"']/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot',"'":'&apos;'}[ch])); }
+  function escapeXml(value) { return String(value || '').replace(/[<>&"']/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[ch])); }
   function opml(feeds) {
     return '<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>RSS Scout</title></head><body>\n' + feeds.map(f => '  <outline type="rss" text="' + escapeXml(f.title) + '" title="' + escapeXml(f.title) + '" xmlUrl="' + escapeXml(f.url) + '"/>').join('\n') + '\n</body></opml>\n';
   }
