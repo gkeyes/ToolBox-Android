@@ -1,0 +1,14 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const ctx={URL,URLSearchParams,console,DOMException};ctx.globalThis=ctx;ctx.window=ctx;vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(new URL('./core.js',import.meta.url),'utf8'),ctx);
+vm.runInContext(fs.readFileSync(new URL('./rules.js',import.meta.url),'utf8'),ctx);
+const privatePayload=fs.readFileSync(new URL('./private-rules.json',import.meta.url),'utf8');
+const radarPayload=JSON.stringify({'example.com':{_name:'Example','.':[{title:'Example Feed',source:['/:id'],target:'/example/:id'}]}});
+const privateURL='https://rules.example/rss-scout-rules.json';
+const calls=[];
+const network={request:async(url)=>{calls.push(url); if(url===privateURL)return {status:200,text:privatePayload}; if(url.includes('raw.githubusercontent.com/DIYgod/RSSHub'))return {status:200,text:radarPayload}; return {status:404,text:''};}};
+const settings={hubBase:'https://rsshub.example',ruleMode:'auto',ruleUrl:'',usePrivateRules:true,privateRuleUrl:privateURL};
+const cache=await ctx.RSSScoutRules.sync(network,settings,'',new AbortController().signal);
+assert.ok(cache.rules.length>=9);assert.ok(cache.source.includes('私人规则订阅'));assert.ok(cache.source.includes('GitHub 官方构建'));assert.equal(ctx.RSSScoutRules.cacheValid(cache,settings),true);
+assert.equal(JSON.stringify(ctx.RSSScoutCore.radarCandidates('https://telega.io/c/readhub_cn',cache.rules,'https://rsshub.example').map(x=>x.url)),JSON.stringify(['https://rsshub.example/telegram/channel/readhub_cn']));
+console.log('combined rule sync passed:',cache.rules.length,'rules',calls.length,'requests');
