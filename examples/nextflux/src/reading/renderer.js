@@ -38,7 +38,7 @@ export function createReadingRenderer(root, baseUrl, addPortal) {
     if (!old || old === root || old.tagName.toLowerCase() === tag) return old;
     const element = document.createElement(tag);
     for (const attribute of old.attributes) {
-      if (["data-font-block", "data-article-anchor", "title"].includes(attribute.name)) element.setAttribute(attribute.name, attribute.value);
+      if (["data-font-block", "data-article-anchor", "data-reading-indent", "title"].includes(attribute.name)) element.setAttribute(attribute.name, attribute.value);
     }
     while (old.firstChild) element.appendChild(old.firstChild);
     old.replaceWith(element);
@@ -59,6 +59,11 @@ export function createReadingRenderer(root, baseUrl, addPortal) {
         target.remove();
         nodes.delete(operation.id);
         if (parentElement) mark(parentElement);
+        return;
+      }
+      if (operation.type === "paragraphStyle") {
+        const element = nodes.get(operation.id);
+        if (element && operation.indent) element.setAttribute("data-reading-indent", "");
         return;
       }
       const parent = nodes.get(operation.parent);
