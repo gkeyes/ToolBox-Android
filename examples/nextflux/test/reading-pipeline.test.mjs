@@ -206,9 +206,11 @@ test("Telegram adapter converts br-separated message blocks into canonical parag
   const adapted=adaptArticleSource({html,baseUrl:"https://t.me/example/123",title});
   assert.equal(adapted.adapter,"telegram");
   assert.equal(adapted.changed,true);
-  assert.doesNotMatch(adapted.html,/太空之弦/);
-  assert.match(adapted.html,/<p>在第五届全球数字贸易博览会期间，项目正式启动。<\/p>/);
-  assert.match(adapted.html,/<p>—— 澎湃新闻<\/p>/);
+  assert.equal(analyzeArticle(adapted.html).paragraphs,2);
+  const visible=operationsFor(adapted.html).operations.filter(op=>op.type==="text").map(op=>op.text).join("");
+  assert.doesNotMatch(visible,/太空之弦/);
+  assert.match(visible,/在第五届全球数字贸易博览会期间，项目正式启动。/);
+  assert.match(visible,/—— 澎湃新闻/);
 });
 
 test("Telegram canonical paragraphs reuse generic paragraph semantics",()=>{
