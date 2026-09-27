@@ -1,4 +1,4 @@
-/* RSS Scout 1.3.0 — independently implemented, no remote code execution. */
+/* RSS Scout 1.4.0 — independently implemented, no remote code execution. */
 (function (root) {
   'use strict';
   const FEED_TYPES = /^(application\/(rss\+xml|atom\+xml|rdf\+xml|feed\+json)|text\/(rss\+xml|atom\+xml))$/i;
@@ -205,11 +205,26 @@
     return { rules, skipped, imported:rules.length };
   }
 
+  function safeTargetPattern(target) {
+    if (typeof target !== 'string' || !target.startsWith('/') || target.startsWith('//') || /[\\\u0000-\u0020#{}()]/.test(target)) return false;
+    return target.split('/').slice(1).every(part => !part || /^:[A-Za-z_]\w*\??$/.test(part) || /^[\w.~-]+$/.test(part));
+  }
+
   function importScoutRules(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.schemaVersion !== 1 || !Array.isArray(payload.rules)) throw new Error('私人规则不是 RSS Scout Rules v1');
     const rules = []; let skipped = 0;
     for (const item of payload.rules) {
-      if (!item || item.enabled === false || typeof item.target !== 'string' || !item.target.startsWith('/') || item.target.startsWith('//') || /[\\\s{}()#]/.test(item.target)) { skipped++; continue; }
+      if (!item || item.enabled === false) { skipped++; continue; }
+      const targets = Object.create(null);
+      if (item.targets && typeof item.targets === 'object' && !Array.isArray(item.targets)) {
+        for (const service of ['rsshub', 'worker']) {
+          if (safeTargetPattern(item.targets[service])) targets[service] = item.targets[service];
+        }
+      }
+      if (!Object.keys(targets).length && safeTargetPattern(item.target)) {
+        targets[item.service === 'private' || item.service === 'worker' ? 'worker' : 'rsshub'] = item.target;
+      }
+      if (!Object.keys(targets).length) { skipped++; continue; }
       const hosts = Array.isArray(item.hosts) ? item.hosts : [item.host];
       const sources = Array.isArray(item.source) ? item.source : [item.source];
       const deny = item.paramDeny && typeof item.paramDeny === 'object' && !Array.isArray(item.paramDeny) ? item.paramDeny : {};
@@ -229,7 +244,7 @@
             if (!/^[A-Za-z_]\w*$/.test(key) || !Array.isArray(values)) continue;
             safePrefix[key] = values.map(v => cleanText(v, 20)).filter(Boolean).slice(0, 20);
           }
-          rules.push({host, source, target:item.target, title:cleanText(item.title || payload.name || host, 300), origin:'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix});
+          rules.push({host, source, targets:{...targets}, title:cleanText(item.title || payload.name || host, 300), origin:'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix});
         }
       }
     }
@@ -237,7 +252,7 @@
     return {rules, skipped, imported:rules.length, name:cleanText(payload.name || '私人规则', 200)};
   }
 
-  function radarCandidates(value, rules, hubBase) {
+  function radarCandidates(value, rules, hubBase, workerBase) {
     const u = new URL(value), found = new Map();
     for (const rule of rules || []) {
       if (!(rule.host === u.hostname || (rule.host === 'www.' + u.hostname) || ('www.' + rule.host === u.hostname))) continue;
@@ -254,11 +269,22 @@
         }
         if (denied) continue;
       }
-      const path = fillTarget(rule.target, params); if (!path) continue;
-      const chosenBase = hubBase || 'https://rsshub.app';
-      let url; try { url = urlOf(chosenBase.replace(/\/+$/, '') + path); } catch (_) { continue; }
-      if (new URL(url).origin !== new URL(chosenBase).origin) continue;
-      if (!found.has(url)) found.set(url, {url, title:rule.title, kind:'rsshub', sources:[rule.origin==='private'?'私人规则':'RSSHub 规则'], type:''});
+      const targets = rule.targets && typeof rule.targets === 'object' ? rule.targets : {rsshub:rule.target};
+      for (const service of ['rsshub', 'worker']) {
+        const target = targets[service]; if (!target) continue;
+        const chosenBase = service === 'worker' ? workerBase : (hubBase || 'https://rsshub.app');
+        if (!chosenBase) continue;
+        const path = fillTarget(target, params); if (!path) continue;
+        let url; try { url = urlOf(chosenBase.replace(/\/+$/, '') + path); } catch (_) { continue; }
+        if (new URL(url).origin !== new URL(chosenBase).origin) continue;
+        if (!found.has(url)) found.set(url, {
+          url,
+          title:rule.title,
+          kind:service === 'worker' ? 'rssworker' : 'rsshub',
+          sources:[rule.origin === 'private' ? ('私人规则 · ' + (service === 'worker' ? 'RSSWorker' : 'RSSHub')) : 'RSSHub 规则'],
+          type:''
+        });
+      }
     }
     return Array.from(found.values());
   }
@@ -266,5 +292,5 @@
   function opml(feeds) {
     return '<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>RSS Scout</title></head><body>\n' + feeds.map(f => '  <outline type="rss" text="' + escapeXml(f.title) + '" title="' + escapeXml(f.title) + '" xmlUrl="' + escapeXml(f.url) + '"/>').join('\n') + '\n</body></opml>\n';
   }
-  root.RSSScoutCore = {cleanText,urlOf,inputUrl,serviceBase,header,feedHint,parseFeed,extractPage,nativeTemplates,commonPaths,safePathPattern,matchPath,fillTarget,importRadar,importScoutRules,radarCandidates,opml};
+  root.RSSScoutCore = {cleanText,urlOf,inputUrl,serviceBase,header,feedHint,parseFeed,extractPage,nativeTemplates,commonPaths,safePathPattern,matchPath,fillTarget,safeTargetPattern,importRadar,importScoutRules,radarCandidates,opml};
 })(typeof window === 'undefined' ? globalThis : window);
