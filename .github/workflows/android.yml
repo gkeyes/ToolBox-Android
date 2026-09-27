@@ -97,6 +97,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
+      - name: Verify browser picker selection and restore regressions
+        run: node --test scripts/tests/browser-picker.test.cjs
       - name: Verify watcher polling and stopped-session regressions
         run: node --test scripts/tests/watcher-reliability.test.cjs
       - name: Verify release evidence and baseline reuse guards
@@ -311,3 +313,4 @@ jobs:
             build/release-evidence/
             app/build/outputs/mapping/release/
           if-no-files-found: warn
+

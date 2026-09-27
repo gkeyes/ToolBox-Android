@@ -77,8 +77,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-/** Ordinary web content: no asset loader, tool profile, bridge, injected script or native RPC. */
+/** Ordinary web content: no asset loader, tool profile, page-to-native bridge or native RPC.
+ * Local content-filter scripts only manipulate the current webpage DOM. */
 class BrowserActivity : ComponentActivity() {
+    private val filters by lazy { BrowserFilterController(this) }
     private var webView by mutableStateOf<WebView?>(null)
     private var address by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -125,6 +127,7 @@ class BrowserActivity : ComponentActivity() {
         try {
             val page = WebView(this)
             webView = page
+            filters.attach(page, address)
             page.settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -146,6 +149,13 @@ class BrowserActivity : ComponentActivity() {
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(page, false)
             page.webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                    filters.intercept(request)
+
+                override fun onPageCommitVisible(view: WebView, url: String) {
+                    if (view === webView) filters.applyToPage()
+                }
+
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (view !== webView) return true
                     if (validUrl(request.url.toString()) != null) return false
@@ -156,6 +166,7 @@ class BrowserActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                     if (view !== webView) return
                     validUrl(url)?.let { address = it }
+                    filters.navigated(url)
                     title = ""
                     error = null
                     loadProgress = 0
@@ -168,12 +179,14 @@ class BrowserActivity : ComponentActivity() {
                     interaction = interaction.pageFinished()
                     loadProgress = 100
                     updateNavigation(view)
+                    filters.applyToPage()
                     flushCookies()
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
                     if (view !== webView) return
                     validUrl(url)?.let { address = it }
+                    filters.historyChanged(url)
                     updateNavigation(view)
                 }
 
@@ -276,6 +289,7 @@ class BrowserActivity : ComponentActivity() {
                 title = page.title.orEmpty()
                 loadProgress = 100
                 updateNavigation(page)
+                page.post { if (page === webView) filters.applyToPage() }
             }
         } catch (_: android.util.AndroidRuntimeException) {
             webView?.let(::destroyPage)
@@ -293,6 +307,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun reload() {
+        filters.stopPicker()
         when (interaction.loadAction(clearing)) {
             BrowserLoadAction.Disabled -> return
             BrowserLoadAction.Recover -> { interaction = interaction.requestRecoveryPrompt(); return }
@@ -338,6 +353,7 @@ class BrowserActivity : ComponentActivity() {
         when {
             ViewCompat.getRootWindowInsets(decor)?.isVisible(WindowInsetsCompat.Type.ime()) == true ->
                 WindowInsetsControllerCompat(window, decor).hide(WindowInsetsCompat.Type.ime())
+            filters.picker.active -> filters.stopPicker()
             fullScreenView != null -> hideFullScreen()
             !interaction.unresponsive && !interaction.restarting && webView?.canGoBack() == true -> webView?.goBack()
             else -> finish()
@@ -352,6 +368,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun destroyPage(page: WebView) {
+        filters.detach(page)
         if (page === webView) webView = null
         page.setWebViewRenderProcessClient(null as WebViewRenderProcessClient?)
         (page.parent as? ViewGroup)?.removeView(page)
@@ -429,6 +446,7 @@ class BrowserActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         webView?.onResume()
+        filters.refresh()
         resumed = true
     }
 
@@ -474,9 +492,11 @@ class BrowserActivity : ComponentActivity() {
                         }
                     }
                 }
+                BrowserFilterControls(filters, resumed)
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
+        BrowserFilterSheet(filters, canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing, reload = ::reload)
         if (menu) ToolBoxModalDialog(onDismissRequest = { menu = false }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 ToolBoxText("浏览器菜单", Modifier.weight(1f).semantics { heading() },
@@ -491,6 +511,14 @@ class BrowserActivity : ComponentActivity() {
                     enabled = canForward && !clearing && !interaction.unresponsive && !interaction.restarting) {
                     menu = false
                     webView?.goForward()
+                }
+                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
+                BrowserMenuAction("广告过滤", ToolBoxIconKey.Shield,
+                    enabled = !clearing && !interaction.unresponsive && !interaction.restarting) {
+                    menu = false
+                    filters.stopPicker()
+                    filters.refresh()
+                    filters.sheet = true
                 }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
                 BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) { copyAddress(); menu = false }
@@ -566,7 +594,7 @@ class BrowserActivity : ComponentActivity() {
             )
         }
         // Avoid stacked dialogs and background-window prompts; a recovery callback removes this immediately.
-        if (interaction.showRecoveryPrompt && resumed && !menu && !fullAddress && !clearConfirmation) {
+        if (interaction.showRecoveryPrompt && resumed && !menu && !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
             ToolBoxModalDialog(onDismissRequest = { interaction = interaction.keepWaiting() }) {
                 ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
                     style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
@@ -594,8 +622,8 @@ class BrowserActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish)
-            BrowserToolbarButton(ToolBoxIconKey.Back, "网页后退", { webView?.goBack() },
-                enabled = canBack && !clearing && !interaction.unresponsive && !interaction.restarting)
+            BrowserToolbarButton(ToolBoxIconKey.Back, "网页后退", { if (filters.picker.active) filters.stopPicker() else webView?.goBack() },
+                enabled = (canBack || filters.picker.active) && !clearing && !interaction.unresponsive && !interaction.restarting)
             Box(
                 Modifier.weight(1f).heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(14.dp))
@@ -680,3 +708,4 @@ class BrowserActivity : ComponentActivity() {
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
+
