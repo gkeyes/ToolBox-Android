@@ -600,50 +600,58 @@ class BrowserActivity : ComponentActivity() {
         val action = interaction.loadAction(clearing)
         val filterState = filters.snapshot
         val filtering = filterState.active(filters.site)
+        val addressColor = if (unencrypted || interaction.unresponsive) colors.danger else colors.textPrimary
+        val shieldTint = if (unencrypted) colors.danger else colors.primary
+        val filterTint = if (filtering) colors.primary else ToolBoxThemeTokens.disabledContent
 
         Row(
-            Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 10.dp, vertical = 6.dp)
+            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 10.dp, vertical = 5.dp)
                 .testTag("browser_toolbar"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish)
+            BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish, compact = true)
             Row(
-                Modifier.weight(1f).height(46.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                Modifier.weight(1f).height(42.dp)
+                    .clip(RoundedCornerShape(17.dp))
                     .background(colors.surface)
                     .testTag("browser_address"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
+                Row(
                     Modifier.weight(1f)
                         .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { fullAddress = true })
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center,
+                        .padding(start = 11.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ToolBoxText(
-                            (if (interaction.unresponsive) "未响应 · " else if (unencrypted) "未加密 · " else "") + uri.host.orEmpty(),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = ToolBoxThemeTokens.textStyles.body.copy(
-                                fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold,
-                                color = if (unencrypted || interaction.unresponsive) colors.danger else colors.textPrimary,
-                            ),
-                        )
-                        ToolBoxText(
-                            when {
-                                !filterState.enabled -> "广告过滤已关闭"
-                                filtering -> "安全连接 · 广告过滤已开启"
-                                else -> "此网站未启用广告过滤"
-                            },
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                                fontSize = 10.sp, lineHeight = 13.sp, color = colors.textSecondary,
-                            ),
-                        )
-                    }
+                    ToolBoxIcon(
+                        ToolBoxIconKey.Shield,
+                        if (unencrypted) "连接未加密" else "安全连接",
+                        modifier = Modifier.size(17.dp),
+                        tint = shieldTint,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    ToolBoxIcon(
+                        ToolBoxIconKey.Haptics,
+                        if (filtering) "广告过滤已开启" else "广告过滤未开启",
+                        modifier = Modifier.size(17.dp),
+                        tint = filterTint,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    ToolBoxText(
+                        (if (interaction.unresponsive) "未响应 · " else "") + uri.host.orEmpty(),
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = ToolBoxThemeTokens.textStyles.body.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = addressColor,
+                        ),
+                    )
                 }
-                Box(Modifier.width(1.dp).height(22.dp).background(colors.textSecondary.copy(alpha = 0.10f)))
+                Box(Modifier.width(1.dp).height(20.dp).background(colors.textSecondary.copy(alpha = 0.10f)))
                 BrowserToolbarButton(
                     ToolBoxIconKey.Refresh,
                     when (action) {
@@ -739,9 +747,9 @@ class BrowserActivity : ComponentActivity() {
         compact: Boolean = false,
     ) {
         val tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent
-        val size = if (compact) 42.dp else 44.dp
+        val size = if (compact) 40.dp else 44.dp
         Box(
-            Modifier.size(size).clip(RoundedCornerShape(if (compact) 15.dp else 16.dp))
+            Modifier.size(size).clip(RoundedCornerShape(if (compact) 14.dp else 16.dp))
                 .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
                 .semantics { contentDescription = label },
             contentAlignment = Alignment.Center,
