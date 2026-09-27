@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "name": "gkeyes RSS Scout 私人发现规则",
-  "updatedAt": "2026-09-27T15:20:00Z",
+  "updatedAt": "2026-09-28T00:00:00+09:00",
   "rules": [
     {
-      "id": "telegram-rsshub-direct",
-      "title": "Telegram 频道（RSSHub）",
+      "id": "telegram-channel-direct",
+      "title": "Telegram 频道",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -13,7 +13,10 @@
       "source": [
         "/:channel"
       ],
-      "target": "/telegram/channel/:channel",
+      "targets": {
+        "rsshub": "/telegram/channel/:channel",
+        "worker": "/rss/telegram/channel/:channel"
+      },
       "paramDeny": {
         "channel": [
           "s",
@@ -33,8 +36,8 @@
       }
     },
     {
-      "id": "telegram-rsshub-preview",
-      "title": "Telegram 频道（RSSHub）",
+      "id": "telegram-channel-preview",
+      "title": "Telegram 频道",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -42,11 +45,14 @@
       "source": [
         "/s/:channel"
       ],
-      "target": "/telegram/channel/:channel"
+      "targets": {
+        "rsshub": "/telegram/channel/:channel",
+        "worker": "/rss/telegram/channel/:channel"
+      }
     },
     {
-      "id": "telega-rsshub-channel",
-      "title": "Telegram 频道（Telega → RSSHub）",
+      "id": "telega-channel",
+      "title": "Telegram 频道（Telega）",
       "hosts": [
         "telega.io",
         "www.telega.io"
@@ -55,87 +61,42 @@
         "/c/:channel",
         "/channels/:channel/card"
       ],
-      "target": "/telegram/channel/:channel"
+      "targets": {
+        "rsshub": "/telegram/channel/:channel",
+        "worker": "/rss/telegram/channel/:channel"
+      }
     },
     {
-      "id": "bilibili-dynamic-rssworker",
-      "title": "Bilibili 用户动态（RSSWorker）",
+      "id": "bilibili-user-dynamic",
+      "title": "Bilibili 用户动态",
       "hosts": [
         "space.bilibili.com"
       ],
       "source": [
         "/:uid/dynamic"
       ],
-      "target": "/rss/bilibili/user/dynamic/:uid"
+      "targets": {
+        "rsshub": "/bilibili/user/dynamic/:uid",
+        "worker": "/rss/bilibili/user/dynamic/:uid"
+      }
     },
     {
-      "id": "bilibili-video-rssworker",
-      "title": "Bilibili 用户视频（RSSWorker）",
+      "id": "bilibili-user-video",
+      "title": "Bilibili 用户视频",
       "hosts": [
         "space.bilibili.com"
       ],
       "source": [
         "/:uid/video"
       ],
-      "target": "/rss/bilibili/user/video/:uid"
-    },
-    {
-      "id": "telegram-rssworker-direct",
-      "title": "Telegram 频道（RSSWorker）",
-      "hosts": [
-        "t.me",
-        "telegram.me"
-      ],
-      "source": [
-        "/:channel"
-      ],
-      "target": "/rss/telegram/channel/:channel",
-      "paramDeny": {
-        "channel": [
-          "s",
-          "c",
-          "share",
-          "proxy",
-          "addstickers",
-          "joinchat",
-          "login",
-          "iv"
-        ]
-      },
-      "paramDenyPrefix": {
-        "channel": [
-          "+"
-        ]
+      "targets": {
+        "rsshub": "/bilibili/user/video/:uid",
+        "worker": "/rss/bilibili/user/video/:uid"
       }
     },
     {
-      "id": "telegram-rssworker-preview",
-      "title": "Telegram 频道（RSSWorker）",
-      "hosts": [
-        "t.me",
-        "telegram.me"
-      ],
-      "source": [
-        "/s/:channel"
-      ],
-      "target": "/rss/telegram/channel/:channel"
-    },
-    {
-      "id": "telega-rssworker-channel",
-      "title": "Telegram 频道（Telega → RSSWorker）",
-      "hosts": [
-        "telega.io",
-        "www.telega.io"
-      ],
-      "source": [
-        "/c/:channel",
-        "/channels/:channel/card"
-      ],
-      "target": "/rss/telegram/channel/:channel"
-    },
-    {
-      "id": "weibo-user-rssworker",
-      "title": "微博用户（RSSWorker）",
+      "id": "weibo-user",
+      "title": "微博用户",
       "hosts": [
         "weibo.com",
         "www.weibo.com",
@@ -144,11 +105,14 @@
       "source": [
         "/u/:uid"
       ],
-      "target": "/rss/weibo/user/:uid"
+      "targets": {
+        "rsshub": "/weibo/user/:uid",
+        "worker": "/rss/weibo/user/:uid"
+      }
     },
     {
-      "id": "xiaohongshu-user-rssworker",
-      "title": "小红书用户（RSSWorker）",
+      "id": "xiaohongshu-user",
+      "title": "小红书用户",
       "hosts": [
         "xiaohongshu.com",
         "www.xiaohongshu.com"
@@ -156,7 +120,24 @@
       "source": [
         "/user/profile/:uid"
       ],
-      "target": "/rss/xiaohongshu/user/:uid"
+      "targets": {
+        "rsshub": "/xiaohongshu/user/:uid/notes",
+        "worker": "/rss/xiaohongshu/user/:uid"
+      }
+    },
+    {
+      "id": "github-actions-success",
+      "title": "GitHub Actions 成功运行",
+      "hosts": [
+        "github.com",
+        "www.github.com"
+      ],
+      "source": [
+        "/:owner/:repo/actions/workflows/:workflow"
+      ],
+      "targets": {
+        "worker": "/rss/github/actions/:owner/:repo/:workflow"
+      }
     },
     {
       "id": "geekerline-newsflashes",
@@ -168,7 +149,9 @@
       "source": [
         "/newsflashes"
       ],
-      "target": "/geekerline/newsflashes"
+      "targets": {
+        "rsshub": "/geekerline/newsflashes"
+      }
     },
     {
       "id": "geekerline-select-share",
@@ -180,7 +163,9 @@
       "source": [
         "/select-share"
       ],
-      "target": "/geekerline/select-share"
+      "targets": {
+        "rsshub": "/geekerline/select-share"
+      }
     },
     {
       "id": "kejiwanjia-jingxuanpost",
@@ -192,7 +177,9 @@
       "source": [
         "/jingxuanpost"
       ],
-      "target": "/kejiwanjia/jingxuanpost"
+      "targets": {
+        "rsshub": "/kejiwanjia/jingxuanpost"
+      }
     },
     {
       "id": "heiliao-latest",
@@ -204,7 +191,9 @@
       "source": [
         "/"
       ],
-      "target": "/heiliao/latest"
+      "targets": {
+        "rsshub": "/heiliao/latest"
+      }
     }
   ]
 }
