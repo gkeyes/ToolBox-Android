@@ -234,7 +234,7 @@ const ArticleView = () => {
                         textAlign: alignJustify ? "justify" : "left",
                       }}
                     >
-                      <ProgressiveArticle articleId={displayedArticle.id} html={displayedArticle.content} baseUrl={displayedArticle.url} shownOriginal={Boolean(displayedArticle.shownOriginal)} />
+                      <ProgressiveArticle articleId={displayedArticle.id} html={displayedArticle.content} baseUrl={displayedArticle.url} title={displayedArticle.titleText ?? displayedArticle.title} shownOriginal={Boolean(displayedArticle.shownOriginal)} />
                       <Attachments article={$activeArticle} />
                     </div>
                   </PhotoProvider>
