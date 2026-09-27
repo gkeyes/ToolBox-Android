@@ -1,4 +1,4 @@
-/* RSS Scout 1.2.1: unified RSSHub base + private rule subscriptions + Radar + Miniflux discovery. */
+/* RSS Scout 1.3.0 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function(){
   'use strict';
   const C=window.RSSScoutCore, R=window.RSSScoutRules, $=id=>document.getElementById(id);
@@ -183,7 +183,7 @@
   function openHub(){if(state.busy||state.writing)return;const s=state.settings;$('rsshub-base').value=s.hubBase;$('hub-key').value=hubKey();$('use-radar').checked=s.useRadar;$('rule-url').value=s.ruleUrl;$('use-private-rules').checked=!!s.usePrivateRules;$('private-rule-url').value=s.privateRuleUrl||'';document.querySelector('[name=rule-mode][value="'+s.ruleMode+'"]').checked=true;toggleRuleField();togglePrivateField();status('hub-save-status','');showRuleStatus();renderRuleLog();drafts.set('hub-modal',draftValue('hub-modal'));openModal('hub-modal');controls();}
   function toggleRuleField(){$('custom-rule-field').hidden=document.querySelector('[name=rule-mode]:checked').value!=='custom';}
   function togglePrivateField(){$('private-rule-field').hidden=!$('use-private-rules').checked;}
-  function readHub(){const mode=document.querySelector('[name=rule-mode]:checked').value;const usePrivate=$('use-private-rules').checked;const privateURL=$('private-rule-url').value.trim();const settings={...state.settings,hubBase:C.serviceBase($('rsshub-base').value||defaults.hubBase),useRadar:$('use-radar').checked,ruleMode:mode,ruleUrl:mode==='custom'?R.publicURL($('rule-url').value):$('rule-url').value.trim(),usePrivateRules:usePrivate,privateRuleUrl:usePrivate?R.publicURL(privateURL):privateURL};const key=$('hub-key').value.trim();if(/[\u0000-\u001f\u007f]/.test(key))throw new Error('实例密钥含有非法控制字符');return {settings,auth:key?{base:settings.hubBase,key}:null};}
+  function readHub(){const mode=document.querySelector('[name=rule-mode]:checked').value;const usePrivate=$('use-private-rules').checked;const privateURL=$('private-rule-url').value.trim();const settings={...state.settings,hubBase:C.serviceBase($('rsshub-base').value.trim()||defaults.hubBase),useRadar:$('use-radar').checked,ruleMode:mode,ruleUrl:mode==='custom'?R.publicURL($('rule-url').value):$('rule-url').value.trim(),usePrivateRules:usePrivate,privateRuleUrl:usePrivate?R.publicURL(privateURL):privateURL};const key=$('hub-key').value.trim();if(/[\u0000-\u001f\u007f]/.test(key))throw new Error('实例密钥含有非法控制字符');return {settings,auth:key?{base:settings.hubBase,key}:null};}
   async function persistHub(){
     const {settings,auth}=readHub();
     if(JSON.stringify(auth)!==JSON.stringify(state.hubAuth)){if(auth)await state.api.storage.secure.set(KEYS.hub,auth);else await state.api.storage.secure.remove(KEYS.hub);state.hubAuth=auth;}
