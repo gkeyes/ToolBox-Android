@@ -14,6 +14,20 @@ export function shouldRemoveStandaloneNoise({tag,text,textLength,hasMedia,plan})
   return textLength>0&&textLength<=24&&STANDALONE_NOISE_RE.test(value);
 }
 
+export function normalizeParagraphLeadingText(text,{started=false,protectedText=false}={}){
+  const value=String(text||"");
+  return !started&&!protectedText ? value.replace(/^[\s\u00a0\u3000]+/u,"") : value;
+}
+
+export function hasSentenceTerminal(text){
+  return /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(String(text||""));
+}
+
+export function paragraphPresentation({tag,protectedText=false,hasSentence=false}={}){
+  if(tag!=="p"||protectedText||!hasSentence)return null;
+  return {indent:true};
+}
+
 const INLINE_SEMANTIC_TAGS = new Set(["span","b","strong","em","i","small"]);
 const EMPHASIS_TAGS = new Set(["b","strong"]);
 const STRUCTURAL_PARENT_TAGS = new Set(["div","article","section","main"]);
