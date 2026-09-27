@@ -39,8 +39,8 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal }) 
     if (root.firstChild) root.style.minHeight = `${root.getBoundingClientRect().height}px`;
     root.replaceChildren();
     const notify = (blocks, extra = {}) => window.dispatchEvent(new CustomEvent("nextflux:reading-content", { detail: { root, blocks, ...extra } }));
-    const title = root.closest(".article-scroll-area")?.querySelector(".article-title");
-    notify([root], { reset: true, title });
+    const titleElement = root.closest(".article-scroll-area")?.querySelector(".article-title");
+    notify([root], { reset: true, title: titleElement });
     const request = startProgressiveReading({ html, baseUrl, title,
       apply: (operation) => dom.apply(operation),
       onBatch() {
