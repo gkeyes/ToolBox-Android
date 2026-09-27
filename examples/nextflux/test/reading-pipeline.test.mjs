@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { analyzeArticle, chooseBestArticleCandidate, scoreArticle } from "../src/reading/analyze.mjs";
 import { createNormalizationPlan, semanticizeElement, shouldPreserveTextBreaks } from "../src/reading/normalize.mjs";
 import { createReadingParser } from "../src/reading/parser.js";
+import { adaptArticleSource } from "../src/reading/adapters/index.mjs";
+import { createReadingPipeline } from "../src/reading/pipeline.mjs";
 
 function operationsFor(html){
   const parser=createReadingParser(html,"https://example.test/post");
@@ -185,4 +187,47 @@ test("paragraph indentation presentation is opt-in rather than global",async()=>
   const typography=await readFile(new URL("../src/reading/typography.css",import.meta.url),"utf8");
   assert.match(typography,/p\[data-reading-indent\][^{]*\{[^}]*text-indent:\s*2em/s);
   assert.match(typography,/\.article-content p\s*\{[^}]*text-indent:\s*0/s);
+});
+
+
+function pipelineOperations({html,baseUrl,title}){
+  const pipeline=createReadingPipeline({html,baseUrl,title});
+  const operations=[];
+  for(;;){
+    const batch=pipeline.parser.next();
+    operations.push(...batch.operations);
+    if(batch.done)return {operations,adapter:pipeline.adapter,changed:pipeline.changed};
+  }
+}
+
+test("Telegram adapter converts br-separated message blocks into canonical paragraphs",()=>{
+  const title='中国启动“太空之弦”计算星座建设';
+  const html='<p><strong>'+title+'</strong><br><br>在第五届全球数字贸易博览会期间，项目正式启动。<br><br>—— 澎湃新闻</p>';
+  const adapted=adaptArticleSource({html,baseUrl:"https://t.me/example/123",title});
+  assert.equal(adapted.adapter,"telegram");
+  assert.equal(adapted.changed,true);
+  assert.doesNotMatch(adapted.html,/太空之弦/);
+  assert.match(adapted.html,/<p>在第五届全球数字贸易博览会期间，项目正式启动。<\/p>/);
+  assert.match(adapted.html,/<p>—— 澎湃新闻<\/p>/);
+});
+
+test("Telegram canonical paragraphs reuse generic paragraph semantics",()=>{
+  const title="重复标题";
+  const parsed=pipelineOperations({
+    html:"<p><strong>重复标题</strong><br><br>这是完整正文。<br><br>—— 来源</p>",
+    baseUrl:"https://t.me/example/456",
+    title,
+  });
+  assert.equal(parsed.adapter,"telegram");
+  const paragraphs=parsed.operations.filter(op=>op.type==="element"&&op.tag==="p").map(op=>op.id);
+  const indented=new Set(parsed.operations.filter(op=>op.type==="paragraphStyle"&&op.indent).map(op=>op.id));
+  assert.deepEqual(paragraphs.map(id=>indented.has(id)),[true,false]);
+});
+
+test("generic sources bypass site adapters unchanged",()=>{
+  const html="<p><strong>标题</strong><br><br>正文。</p>";
+  const adapted=adaptArticleSource({html,baseUrl:"https://example.test/post",title:"标题"});
+  assert.equal(adapted.adapter,"generic");
+  assert.equal(adapted.changed,false);
+  assert.equal(adapted.html,html);
 });
