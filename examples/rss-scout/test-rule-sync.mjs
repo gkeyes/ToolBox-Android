@@ -10,5 +10,8 @@ const network={request:async(url)=>{calls.push(url); if(url===privateURL)return 
 const settings={hubBase:'https://rsshub.example',ruleMode:'auto',ruleUrl:'',usePrivateRules:true,privateRuleUrl:privateURL};
 const cache=await ctx.RSSScoutRules.sync(network,settings,'',new AbortController().signal);
 assert.ok(cache.rules.length>=9);assert.ok(cache.source.includes('私人规则订阅'));assert.ok(cache.source.includes('GitHub 官方构建'));assert.equal(ctx.RSSScoutRules.cacheValid(cache,settings),true);
-assert.equal(JSON.stringify(ctx.RSSScoutCore.radarCandidates('https://telega.io/c/readhub_cn',cache.rules,'https://rsshub.example').map(x=>x.url)),JSON.stringify(['https://rsshub.example/telegram/channel/readhub_cn']));
+const urls=ctx.RSSScoutCore.radarCandidates('https://telega.io/c/readhub_cn',cache.rules,settings.hubBase).map(x=>x.url);
+assert.ok(urls.includes('https://rsshub.example/telegram/channel/readhub_cn'));
+assert.ok(urls.includes('https://rsshub.example/rss/telegram/channel/readhub_cn'));
+assert.ok(urls.every(url=>url.startsWith(settings.hubBase+'/')));
 console.log('combined rule sync passed:',cache.rules.length,'rules',calls.length,'requests');
