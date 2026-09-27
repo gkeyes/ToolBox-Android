@@ -84,7 +84,8 @@ export function startArticleRead(articleId, { load, getCurrent, getAcknowledgedS
 // cached metadata and typography changes cannot restart safe body preparation.
 export function sameReadingSource(previous, next) {
   return previous.articleId === next.articleId && previous.html === next.html &&
-    previous.baseUrl === next.baseUrl && Boolean(previous.shownOriginal) === Boolean(next.shownOriginal);
+    previous.baseUrl === next.baseUrl && previous.title === next.title &&
+    Boolean(previous.shownOriginal) === Boolean(next.shownOriginal);
 }
 
 export function createArticleScrollReset() {
