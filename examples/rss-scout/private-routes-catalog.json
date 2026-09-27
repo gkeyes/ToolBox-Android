@@ -1,33 +1,18 @@
 {
   "schemaVersion": 1,
-  "routes": [
-    {
-      "id": "telegram-aliases",
-      "status": "active",
-      "source": ["https://t.me/<channel>","https://t.me/s/<channel>","https://telega.io/c/<channel>"],
-      "route": "/telegram/channel/:channel",
-      "note": "RSSHub 官方 Telegram route；这里维护额外发现映射，不是自定义服务端实现。"
-    },
-    {
-      "id": "github-actions-success",
-      "status": "planned",
-      "source": "https://github.com/:owner/:repo/actions/workflows/:workflow",
-      "route": "/github/actions/:owner/:repo/:workflow",
-      "note": "此前已设计为仅输出成功 workflow run；尚未检索到已部署的私人 RSSHub 实现。"
-    },
-    {
-      "id": "heiliao-latest",
-      "status": "planned",
-      "source": "https://heiliao.com/",
-      "route": "/heiliao/latest",
-      "note": "此前设计，尚未检索到已部署实现。"
-    },
-    {
-      "id": "heiliao-category",
-      "status": "planned",
-      "source": "https://heiliao.com/:slug/",
-      "route": "/heiliao/category/:slug",
-      "note": "此前设计，尚未检索到已部署实现。"
-    }
+  "verifiedAt": "2026-09-27",
+  "implementationRepo": "gkeyes/RSSWorker",
+  "mount": "/rss",
+  "verifiedRoutes": [
+    {"id":"bilibili-dynamic","route":"/rss/bilibili/user/dynamic/:uid","source":"https://space.bilibili.com/:uid/dynamic"},
+    {"id":"bilibili-video","route":"/rss/bilibili/user/video/:uid","source":"https://space.bilibili.com/:uid/video"},
+    {"id":"telegram-channel","route":"/rss/telegram/channel/:username","source":"https://t.me/:username"},
+    {"id":"weibo-user","route":"/rss/weibo/user/:uid","source":"https://m.weibo.cn/u/:uid"},
+    {"id":"xiaohongshu-user","route":"/rss/xiaohongshu/user/:uid","source":"https://www.xiaohongshu.com/user/profile/:uid"}
+  ],
+  "discussedNotImplemented": [
+    {"id":"github-actions-success","proposedRoute":"/github/actions/:owner/:repo/:workflow","status":"not found in current RSSWorker code"},
+    {"id":"heiliao-latest","proposedRoute":"/heiliao/latest","status":"not found in current RSSWorker code"},
+    {"id":"heiliao-category","proposedRoute":"/heiliao/category/:slug","status":"not found in current RSSWorker code"}
   ]
 }
