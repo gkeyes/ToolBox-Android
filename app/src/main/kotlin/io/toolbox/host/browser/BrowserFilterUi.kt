@@ -243,7 +243,6 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                             ToolBoxDestructiveButton("清除此网站的点选规则", { resetConfirm = true }, Modifier.fillMaxWidth())
                         }
                     }
-                    }
                 }
                 filters.notice?.let { message ->
                     ToolBoxText(message, style = ToolBoxThemeTokens.textStyles.metadata)
