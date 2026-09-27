@@ -160,7 +160,7 @@ class BrowserActivity : ComponentActivity() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (view !== webView) return true
                     if (validUrl(request.url.toString()) != null) return false
-                    if (request.isForMainFrame) unsupported("此链接需要其他应用，请从菜单选择系统浏览器。")
+                    if (request.isForMainFrame) unsupported("此链接需要其他应用，请从底部“更多”选择系统浏览器。")
                     return true
                 }
 
@@ -602,21 +602,21 @@ class BrowserActivity : ComponentActivity() {
         val filtering = filterState.active(filters.site)
 
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 58.dp).padding(horizontal = 10.dp, vertical = 6.dp)
+            Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 10.dp, vertical = 6.dp)
                 .testTag("browser_toolbar"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish)
             Row(
-                Modifier.weight(1f).heightIn(min = 46.dp)
+                Modifier.weight(1f).height(46.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(colors.surface)
                     .testTag("browser_address"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.weight(1f).fillMaxHeight()
+                    Modifier.weight(1f)
                         .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { fullAddress = true })
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center,
@@ -666,7 +666,7 @@ class BrowserActivity : ComponentActivity() {
         val blocked = filters.blockedCount
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                .heightIn(min = 64.dp)
+                .height(64.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(ToolBoxThemeTokens.colors.surface),
             verticalAlignment = Alignment.CenterVertically,
