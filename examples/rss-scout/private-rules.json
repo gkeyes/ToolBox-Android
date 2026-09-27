@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "gkeyes RSS Scout 私人发现规则",
-  "updatedAt": "2026-09-27T14:54:29Z",
+  "updatedAt": "2026-09-27T14:58:07Z",
   "rules": [
     {
       "id": "telegram-rsshub-direct",
@@ -206,6 +206,19 @@
         "/jingxuanpost"
       ],
       "target": "/kejiwanjia/jingxuanpost"
+    },
+    {
+      "id": "heiliao-latest",
+      "title": "黑料网 最新",
+      "service": "rsshub",
+      "hosts": [
+        "heiliao.com",
+        "www.heiliao.com"
+      ],
+      "source": [
+        "/"
+      ],
+      "target": "/heiliao/latest"
     }
   ]
 }
