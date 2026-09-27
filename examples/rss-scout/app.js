@@ -1,9 +1,9 @@
-/* RSS Scout 1.3.0 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.0 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function(){
   'use strict';
   const C=window.RSSScoutCore, R=window.RSSScoutRules, $=id=>document.getElementById(id);
   const KEYS={settings:'rss-scout.settings.v1',account:'rss-scout.miniflux.v1',rules:'rss-scout.radar.v2',legacyRules:'rss-scout.radar.v1',hub:'rss-scout.hub-auth.v1'};
-  const defaults={hubBase:'https://rsshub.app',useRadar:true,checkHome:true,timeout:20000,ruleMode:'auto',ruleUrl:'',usePrivateRules:true,privateRuleUrl:'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/codex/refactor-lightweight-v2/examples/rss-scout/private-rules.json'};
+  const defaults={hubBase:'https://rsshub.app',workerBase:'',useRadar:true,checkHome:true,timeout:20000,ruleMode:'auto',ruleUrl:'',usePrivateRules:true,privateRuleUrl:'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/codex/refactor-lightweight-v2/examples/rss-scout/private-rules.json'};
   const state={api:null,network:null,miniflux:null,settings:{...defaults},account:null,hubAuth:null,cache:null,
     records:[],lastUrl:'',filter:'all',busy:false,writing:0,controller:null,nextId:1,scanWarning:'',
     accountDraft:null,categoryContext:'saved',categoryBusy:false,categoryEpoch:0,categoryController:null,
@@ -39,7 +39,7 @@
     else if(topModal())$(topModal()).querySelector('[role=dialog]').focus({preventScroll:true});
   }
   const drafts=new Map();
-  function draftValue(id){if(id==='account-modal')return JSON.stringify([$('miniflux-base').value,$('miniflux-token').value,state.accountDraft?.category]);if(id==='hub-modal')return JSON.stringify([$('rsshub-base').value,$('hub-key').value,$('use-radar').checked,document.querySelector('[name=rule-mode]:checked')?.value,$('rule-url').value,$('use-private-rules').checked,$('private-rule-url').value]);if(id==='preferences-modal')return JSON.stringify([$('check-home').checked,$('timeout').value]);return '';}
+  function draftValue(id){if(id==='account-modal')return JSON.stringify([$('miniflux-base').value,$('miniflux-token').value,state.accountDraft?.category]);if(id==='hub-modal')return JSON.stringify([$('rsshub-base').value,$('hub-key').value,$('use-radar').checked,document.querySelector('[name=rule-mode]:checked')?.value,$('rule-url').value,$('use-private-rules').checked,$('private-rule-url').value,$('rssworker-base').value]);if(id==='preferences-modal')return JSON.stringify([$('check-home').checked,$('timeout').value]);return '';}
   function confirmAction(title,message,label,handler){$('confirm-title').textContent=title;$('confirm-message').textContent=message;$('confirm-action').textContent=label;state.confirm=handler;openModal('confirm-modal');}
   function requestClose(){
     const id=topModal();if(!id)return;
@@ -71,7 +71,7 @@
     $('account-summary').textContent=a?new URL(a.base).host+(a.username?' · '+a.username:''):'未配置 · 点击连接自己的阅读器';
     $('account-badge').textContent=a?(a.checkedAt?'已验证':'已保存'):'设置';
     $('category-summary').textContent=categoryName(a);
-    $('hub-summary').textContent=!state.settings.useRadar?'已关闭':((state.settings.ruleMode==='instance'?'当前实例':state.settings.ruleMode==='custom'?'自定义 Radar':'官方 Radar')+(state.settings.usePrivateRules?' + 私人规则':'')+' · '+(cacheUsable()?state.cache.rules.length+' 个匹配项':'尚未同步'));
+    $('hub-summary').textContent=!state.settings.useRadar?'已关闭':((state.settings.workerBase?'RSSHub + RSSWorker':'RSSHub')+' · '+(state.settings.ruleMode==='instance'?'当前实例':state.settings.ruleMode==='custom'?'自定义 Radar':'官方 Radar')+(state.settings.usePrivateRules?' + 私人规则':'')+' · '+(cacheUsable()?state.cache.rules.length+' 个匹配项':'尚未同步'));
     $('preferences-summary').textContent=(state.settings.checkHome?'首页补查开启':'仅检查当前页')+' · '+(state.settings.timeout?state.settings.timeout/1000+' 秒超时':'不限请求时长');
   }
   function showRuleStatus(){
@@ -180,16 +180,16 @@
     catch(e){status('category-status','分类未保存：'+safeError(e),'error');}
     finally{state.writing--;controls();}
   }
-  function openHub(){if(state.busy||state.writing)return;const s=state.settings;$('rsshub-base').value=s.hubBase;$('hub-key').value=hubKey();$('use-radar').checked=s.useRadar;$('rule-url').value=s.ruleUrl;$('use-private-rules').checked=!!s.usePrivateRules;$('private-rule-url').value=s.privateRuleUrl||'';document.querySelector('[name=rule-mode][value="'+s.ruleMode+'"]').checked=true;toggleRuleField();togglePrivateField();status('hub-save-status','');showRuleStatus();renderRuleLog();drafts.set('hub-modal',draftValue('hub-modal'));openModal('hub-modal');controls();}
+  function openHub(){if(state.busy||state.writing)return;const s=state.settings;$('rsshub-base').value=s.hubBase;$('rssworker-base').value=s.workerBase||'';$('hub-key').value=hubKey();$('use-radar').checked=s.useRadar;$('rule-url').value=s.ruleUrl;$('use-private-rules').checked=!!s.usePrivateRules;$('private-rule-url').value=s.privateRuleUrl||'';document.querySelector('[name=rule-mode][value="'+s.ruleMode+'"]').checked=true;toggleRuleField();togglePrivateField();status('hub-save-status','');showRuleStatus();renderRuleLog();drafts.set('hub-modal',draftValue('hub-modal'));openModal('hub-modal');controls();}
   function toggleRuleField(){$('custom-rule-field').hidden=document.querySelector('[name=rule-mode]:checked').value!=='custom';}
   function togglePrivateField(){$('private-rule-field').hidden=!$('use-private-rules').checked;}
-  function readHub(){const mode=document.querySelector('[name=rule-mode]:checked').value;const usePrivate=$('use-private-rules').checked;const privateURL=$('private-rule-url').value.trim();const settings={...state.settings,hubBase:C.serviceBase($('rsshub-base').value.trim()||defaults.hubBase),useRadar:$('use-radar').checked,ruleMode:mode,ruleUrl:mode==='custom'?R.publicURL($('rule-url').value):$('rule-url').value.trim(),usePrivateRules:usePrivate,privateRuleUrl:usePrivate?R.publicURL(privateURL):privateURL};const key=$('hub-key').value.trim();if(/[\u0000-\u001f\u007f]/.test(key))throw new Error('实例密钥含有非法控制字符');return {settings,auth:key?{base:settings.hubBase,key}:null};}
+  function readHub(){const mode=document.querySelector('[name=rule-mode]:checked').value;const usePrivate=$('use-private-rules').checked;const privateURL=$('private-rule-url').value.trim();const workerRaw=$('rssworker-base').value.trim();const settings={...state.settings,hubBase:C.serviceBase($('rsshub-base').value.trim()||defaults.hubBase),workerBase:workerRaw?C.serviceBase(workerRaw):'',useRadar:$('use-radar').checked,ruleMode:mode,ruleUrl:mode==='custom'?R.publicURL($('rule-url').value):$('rule-url').value.trim(),usePrivateRules:usePrivate,privateRuleUrl:usePrivate?R.publicURL(privateURL):privateURL};const key=$('hub-key').value.trim();if(/[\u0000-\u001f\u007f]/.test(key))throw new Error('实例密钥含有非法控制字符');return {settings,auth:key?{base:settings.hubBase,key}:null};}
   async function persistHub(){
     const {settings,auth}=readHub();
     if(JSON.stringify(auth)!==JSON.stringify(state.hubAuth)){if(auth)await state.api.storage.secure.set(KEYS.hub,auth);else await state.api.storage.secure.remove(KEYS.hub);state.hubAuth=auth;}
     await state.api.storage.set(KEYS.settings,settings);state.settings=settings;drafts.set('hub-modal',draftValue('hub-modal'));summaries();return settings;
   }
-  async function saveHub(event){event.preventDefault();if(state.writing||state.busy)return;state.writing++;controls();try{await persistHub();closeModal();toast('RSSHub 设置已保存');}catch(e){status('hub-save-status','未全部保存：'+safeError(e),'error');}finally{state.writing--;controls();}}
+  async function saveHub(event){event.preventDefault();if(state.writing||state.busy)return;state.writing++;controls();try{await persistHub();closeModal();toast('RSS 服务设置已保存');}catch(e){status('hub-save-status','未全部保存：'+safeError(e),'error');}finally{state.writing--;controls();}}
   function renderRuleLog(){$('rule-log').textContent=state.ruleAttempts.length?state.ruleAttempts.map(a=>a.source+' · '+redact(a.message)).join('\n'):'尚无失败记录。';}
   async function syncRules(signal){
     state.ruleAttempts=[];
@@ -212,7 +212,7 @@
   function openPreferences(){if(state.writing||state.busy)return;$('check-home').checked=state.settings.checkHome;$('timeout').value=state.settings.timeout/1000;status('preferences-status','');drafts.set('preferences-modal',draftValue('preferences-modal'));openModal('preferences-modal');controls();}
   async function savePreferences(event){event.preventDefault();if(state.writing||state.busy)return;const secs=Number($('timeout').value);if($('timeout').value.trim()===''||!Number.isSafeInteger(secs)||secs<0||secs>2147483){status('preferences-status','请输入 0–2147483 的整数秒数。','error');return;}state.writing++;controls();try{const settings={...state.settings,checkHome:$('check-home').checked,timeout:secs*1000};await state.api.storage.set(KEYS.settings,settings);state.settings=settings;drafts.set('preferences-modal',draftValue('preferences-modal'));closeModal();summaries();toast('探测偏好已保存');}catch(e){status('preferences-status',safeError(e),'error');}finally{state.writing--;controls();}}
 
-  function addRadarCandidates(url){const items=C.radarCandidates(url,state.cache.rules,state.settings.hubBase);const key=hubKey();if(key)for(const item of items){const u=new URL(item.url);u.searchParams.set('key',key);item.url=u.href;}addCandidates(items);}
+  function addRadarCandidates(url){const items=C.radarCandidates(url,state.cache.rules,state.settings.hubBase,state.settings.workerBase);const key=hubKey();if(key)for(const item of items){if(item.kind!=='rsshub')continue;const u=new URL(item.url);u.searchParams.set('key',key);item.url=u.href;}addCandidates(items);}
   function candidate(input) {
     let url;try{url=C.urlOf(input.url);}catch(_){return null;}
     const old=state.records.find(f=>f.url===url||f.aliases.includes(url));
@@ -286,7 +286,7 @@
             catch(error){if(signal.aborted)throw error;note('首页补查：'+safeError(error));}
           }
           if(state.settings.useRadar){
-            $('scan-status').textContent='正在匹配 RSSHub 路由并验证候选…';
+            $('scan-status').textContent='正在匹配 RSSHub / RSSWorker 路由并验证候选…';
             if(!cacheUsable()){
               try{await syncRules(signal);}
               catch(error){if(signal.aborted)throw error;note('Radar 不可用，不影响原生源结果：'+safeError(error));state.scanWarning+=(state.scanWarning?'；':'')+'RSSHub 规则暂不可用，原生源已继续检查';}
@@ -350,11 +350,11 @@
   function renderNow(){
     const list=$('results');
     for(const b of $('filters').querySelectorAll('[data-filter]'))b.setAttribute('aria-pressed',String(b.dataset.filter===state.filter));
-    const records=state.records.filter(f=>state.filter==='all'||(state.filter==='valid'&&(f.validation==='valid'||f.subStatus==='subscribed'))||(state.filter==='rsshub'&&f.kind==='rsshub'));
+    const records=state.records.filter(f=>state.filter==='all'||(state.filter==='valid'&&(f.validation==='valid'||f.subStatus==='subscribed'))||(state.filter==='route'&&['rsshub','rssworker'].includes(f.kind)));
     const valid=state.records.filter(f=>f.validation==='valid').length;
     $('result-count').textContent=state.records.length?state.records.length+' 个候选 · '+valid+' 个已验证':state.lastUrl?'暂未找到候选':'尚未开始探测';
     $('empty').hidden=records.length>0;
-    if(!records.length){$('empty').querySelector('h3').textContent=state.lastUrl?'没有符合条件的结果':'等待一个网址';$('empty').querySelector('p').textContent=state.lastUrl?'尝试切换筛选，或展开“更多发现方式”继续补查。':'粘贴网页链接即可开始。没有原生 RSS，也可以寻找 RSSHub 路由。';}
+    if(!records.length){$('empty').querySelector('h3').textContent=state.lastUrl?'没有符合条件的结果':'等待一个网址';$('empty').querySelector('p').textContent=state.lastUrl?'尝试切换筛选，或展开“更多发现方式”继续补查。':'粘贴网页链接即可开始。没有原生 RSS，也可以寻找 RSSHub / RSSWorker 路由。';}
     const ids=new Set(records.map(f=>String(f.id)));for(const node of [...list.children])if(!ids.has(node.dataset.feedId))node.remove();
     for(const [index,f] of records.entries()){
       let card=list.querySelector('[data-feed-id="'+f.id+'"]');
@@ -368,7 +368,7 @@
       const top=element('div','feed-top');top.append(element('h3','feed-title',f.title));
       const label=f.subStatus==='subscribed'?'已订阅':({valid:'已验证',checking:'验证中',pending:'待验证',invalid:'非订阅源',error:'未验证'})[f.validation];
       top.append(element('span','badge '+((f.validation==='valid'||f.subStatus==='subscribed')?'valid':''),label));card.append(top);
-      card.append(element('p','feed-meta',[f.kind==='rsshub'?'RSSHub 路由':f.kind==='guess'?'路径候选':'网站原生',f.type].filter(Boolean).join(' · ')));
+      card.append(element('p','feed-meta',[f.kind==='rsshub'?'RSSHub 路由':f.kind==='rssworker'?'RSSWorker 路由':f.kind==='guess'?'路径候选':'网站原生',f.type].filter(Boolean).join(' · ')));
       card.append(element('p','feed-url',displayURL(f.url)));
       if(f.validationError)card.append(element('p','feed-error',redact(f.validationError)));
       if(f.subError)card.append(element('p','feed-error',redact(f.subError)));
@@ -409,13 +409,13 @@
   $('clear-url').addEventListener('click',()=>{$('url').value='';$('url').focus();});
   $('export').addEventListener('click',()=>{if(validRecords().some(f=>/[?&](key|code|token|auth|access_token)=/i.test(f.url)))confirmAction('导出含鉴权参数的链接？','OPML 中将保留完整订阅地址，可能包含访问密钥，请妥善保存。','导出 OPML',exportFeeds);else exportFeeds();});
   $('filters').addEventListener('click',event=>{const b=event.target.closest('[data-filter]');if(b){state.filter=b.dataset.filter;render();}});
-  $('copy-log').addEventListener('click',()=>nativeAction(async()=>{if(!state.api)throw new Error('请在 ToolBox 中使用复制功能');const text='RSS Scout 1.2.0\n'+redact($('log').textContent)+'\n规则同步\n'+redact($('rule-log').textContent);await state.api.clipboard.writeText(text);toast('已复制诊断信息（密钥已隐藏）');}));
+  $('copy-log').addEventListener('click',()=>nativeAction(async()=>{if(!state.api)throw new Error('请在 ToolBox 中使用复制功能');const text='RSS Scout 1.4.0\n'+redact($('log').textContent)+'\n规则同步\n'+redact($('rule-log').textContent);await state.api.clipboard.writeText(text);toast('已复制诊断信息（密钥已隐藏）');}));
   async function init(){
     if(!window.ToolBox){$('environment').textContent='浏览器预览未连接原生能力。请将 .tbx 导入 ToolBox 使用。';controls();render();return;}
     try{
       await window.ToolBox.ready();if(!window.ToolBox.network?.openStream||!window.ToolBox.network?.readStream)throw new Error('宿主缺少流式网络接口，请使用已修复导入问题的 ToolBox 0.7.8 或更新版本');
       state.api=window.ToolBox;state.network=new window.RSSScoutNetwork(state.api,()=>state.settings.timeout);const warnings=[];
-      try{const s=await state.api.storage.get(KEYS.settings);if(s&&typeof s==='object')state.settings={...defaults,hubBase:C.serviceBase(s.hubBase||defaults.hubBase),useRadar:s.useRadar!==false,checkHome:s.checkHome!==false,timeout:Number.isSafeInteger(s.timeout)&&s.timeout>=0&&s.timeout<=2147483647?s.timeout:defaults.timeout,ruleMode:['auto','instance','custom'].includes(s.ruleMode)?s.ruleMode:'auto',ruleUrl:typeof s.ruleUrl==='string'?s.ruleUrl:'',usePrivateRules:s.usePrivateRules!==false,privateRuleUrl:typeof s.privateRuleUrl==='string'&&s.privateRuleUrl?s.privateRuleUrl:defaults.privateRuleUrl};}catch(e){warnings.push('设置读取失败：'+safeError(e));}
+      try{const s=await state.api.storage.get(KEYS.settings);if(s&&typeof s==='object')state.settings={...defaults,hubBase:C.serviceBase(s.hubBase||defaults.hubBase),workerBase:typeof s.workerBase==='string'&&s.workerBase.trim()?C.serviceBase(s.workerBase):'',useRadar:s.useRadar!==false,checkHome:s.checkHome!==false,timeout:Number.isSafeInteger(s.timeout)&&s.timeout>=0&&s.timeout<=2147483647?s.timeout:defaults.timeout,ruleMode:['auto','instance','custom'].includes(s.ruleMode)?s.ruleMode:'auto',ruleUrl:typeof s.ruleUrl==='string'?s.ruleUrl:'',usePrivateRules:s.usePrivateRules!==false,privateRuleUrl:typeof s.privateRuleUrl==='string'&&s.privateRuleUrl?s.privateRuleUrl:defaults.privateRuleUrl};}catch(e){warnings.push('设置读取失败：'+safeError(e));}
       try{const a=await state.api.storage.secure.get(KEYS.account);if(a&&typeof a.token==='string'&&a.token){state.account={base:C.serviceBase(a.base),token:a.token,categories:Array.isArray(a.categories)?a.categories.filter(c=>c&&Number.isSafeInteger(c.id)&&c.id>0).map(c=>({id:c.id,title:C.cleanText(c.title,200)})):[]};if(Number.isSafeInteger(a.category)&&a.category>0)state.account.category=a.category;if(a.categoryTitle)state.account.categoryTitle=C.cleanText(a.categoryTitle,200);if(a.username)state.account.username=C.cleanText(a.username,100);if(a.checkedAt)state.account.checkedAt=a.checkedAt;}}catch(e){warnings.push('安全存储读取失败：'+safeError(e));}
       try{const auth=await state.api.storage.secure.get(KEYS.hub);if(auth?.base&&typeof auth.key==='string')state.hubAuth={base:C.serviceBase(auth.base),key:auth.key};}catch(e){note('实例密钥不可读：'+safeError(e));}
       try{let c=await state.api.storage.get(KEYS.rules);if(!c){const old=await state.api.storage.get(KEYS.legacyRules);if(old?.base&&Array.isArray(old.rules))c={...old,sourceKey:'legacy:'+old.base,source:'旧版实例缓存',attempts:[]};}if(c&&Array.isArray(c.rules)&&Number.isFinite(c.at)&&typeof c.sourceKey==='string')state.cache={...c,skipped:Number.isSafeInteger(c.skipped)?c.skipped:0,source:c.source||'已缓存规则'};}catch(e){note('规则缓存不可读：'+safeError(e));}
