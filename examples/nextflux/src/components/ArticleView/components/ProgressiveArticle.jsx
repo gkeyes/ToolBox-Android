@@ -21,7 +21,7 @@ function ReadingPortal({ item, highlights }) {
   return createPortal(content, item.target, String(item.id));
 }
 
-function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
+function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal }) {
   const rootRef = useRef(null);
   const domRef = useRef(null);
   const [portals, setPortals] = useState([]);
@@ -41,7 +41,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
     const notify = (blocks, extra = {}) => window.dispatchEvent(new CustomEvent("nextflux:reading-content", { detail: { root, blocks, ...extra } }));
     const title = root.closest(".article-scroll-area")?.querySelector(".article-title");
     notify([root], { reset: true, title });
-    const request = startProgressiveReading({ html, baseUrl,
+    const request = startProgressiveReading({ html, baseUrl, title,
       apply: (operation) => dom.apply(operation),
       onBatch() {
         if (!mounted) return;
@@ -62,7 +62,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, shownOriginal }) {
       if (domRef.current === dom) domRef.current = null;
       notify([], { removed: true });
     };
-  }, [articleId, html, baseUrl, shownOriginal, attempt]);
+  }, [articleId, html, baseUrl, title, shownOriginal, attempt]);
   return <>
     <div ref={rootRef} className="article-body article-content" data-font-reading-root="" data-font-article-id={articleId} data-font-block="" data-reading-complete={String(state.complete)} onClick={(event) => {
       const anchor = event.target.closest?.("a[data-reading-local-anchor]");
