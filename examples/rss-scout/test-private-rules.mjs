@@ -6,23 +6,34 @@ vm.runInContext(fs.readFileSync(new URL('./core.js',import.meta.url),'utf8'),ctx
 const C=ctx.RSSScoutCore;
 const payload=JSON.parse(fs.readFileSync(new URL('./private-rules.json',import.meta.url),'utf8'));
 const imported=C.importScoutRules(payload);
-assert.ok(imported.rules.length>=5);
+assert.ok(imported.rules.length>=10);
 assert.equal(imported.rules.some(rule=>Object.hasOwn(rule,'service')),false);
 const hub='https://rsshub.example';
-const fallbackHub='https://rsshub.app';
-const route=(u)=>C.radarCandidates(u,imported.rules,hub).map(x=>x.url);
-const fallbackRoute=(u)=>C.radarCandidates(u,imported.rules,'').map(x=>x.url);
-const direct=route('https://t.me/inside1024');
-assert.ok(direct.includes('https://rsshub.example/telegram/channel/inside1024'));
-assert.ok(direct.includes('https://rsshub.example/rss/telegram/channel/inside1024'));
-assert.ok(direct.every(url=>url.startsWith(hub+'/')));
-assert.ok(fallbackRoute('https://telega.io/c/readhub_cn').every(url=>url.startsWith(fallbackHub+'/')));
-const preview=route('https://t.me/s/inside1024');
-assert.ok(preview.includes('https://rsshub.example/telegram/channel/inside1024'));
-assert.ok(preview.includes('https://rsshub.example/rss/telegram/channel/inside1024'));
-const telega=route('https://telega.io/c/readhub_cn');
-assert.ok(telega.includes('https://rsshub.example/telegram/channel/readhub_cn'));
-assert.ok(telega.includes('https://rsshub.example/rss/telegram/channel/readhub_cn'));
-assert.ok(route('https://telega.io/channels/readhub_cn/card').every(url=>url.startsWith(hub+'/')));
-for(const bad of ['https://t.me/share','https://t.me/proxy','https://t.me/joinchat','https://t.me/c/123/456','https://t.me/+abcdef']) assert.equal(JSON.stringify(route(bad)),'[]',bad);
-console.log('private rules tests passed:', imported.rules.length);
+const worker='https://worker.example';
+const route=(u,w=worker)=>C.radarCandidates(u,imported.rules,hub,w).map(x=>x.url);
+assert.deepEqual(route('https://t.me/inside1024'),[
+  'https://rsshub.example/telegram/channel/inside1024',
+  'https://worker.example/rss/telegram/channel/inside1024'
+]);
+assert.deepEqual(route('https://telega.io/c/readhub_cn'),[
+  'https://rsshub.example/telegram/channel/readhub_cn',
+  'https://worker.example/rss/telegram/channel/readhub_cn'
+]);
+assert.deepEqual(route('https://space.bilibili.com/2267573/dynamic'),[
+  'https://rsshub.example/bilibili/user/dynamic/2267573',
+  'https://worker.example/rss/bilibili/user/dynamic/2267573'
+]);
+assert.deepEqual(route('https://www.xiaohongshu.com/user/profile/abc123'),[
+  'https://rsshub.example/xiaohongshu/user/abc123/notes',
+  'https://worker.example/rss/xiaohongshu/user/abc123'
+]);
+assert.deepEqual(route('https://github.com/ReChronoRain/HyperCeiler/actions/workflows/ci_build.yml'),[
+  'https://worker.example/rss/github/actions/ReChronoRain/HyperCeiler/ci_build.yml'
+]);
+assert.deepEqual(route('https://t.me/inside1024',''),[
+  'https://rsshub.example/telegram/channel/inside1024'
+]);
+for(const bad of ['https://t.me/share','https://t.me/proxy','https://t.me/joinchat','https://t.me/c/123/456','https://t.me/+abcdef']) assert.deepEqual(route(bad),[],bad);
+const legacy=C.importScoutRules({schemaVersion:1,rules:[{host:'example.com',source:'/:id',target:'/legacy/:id',service:'private'}]});
+assert.deepEqual(C.radarCandidates('https://example.com/a',legacy.rules,hub,worker).map(x=>x.url),['https://worker.example/legacy/a']);
+console.log('private rules dual-service tests passed:', imported.rules.length);
