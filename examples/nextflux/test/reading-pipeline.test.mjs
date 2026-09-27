@@ -158,7 +158,7 @@ test("parser semanticization stays conservative for normal paragraph inline text
 });
 
 
-test("ordinary paragraphs discard source indentation before CSS adds the canonical two-em indent",()=>{
+test("ordinary paragraphs discard source indentation before presentation styling",()=>{
   const parsed=operationsFor("<p>    普通空格</p><p>&nbsp;&nbsp;不换行空格</p><p>　　全角空格</p>");
   const text=parsed.operations.filter(op=>op.type==="text").map(op=>op.text).join("|");
   assert.equal(text,"普通空格|不换行空格|全角空格");
@@ -169,4 +169,20 @@ test("protected structural paragraphs retain source whitespace",()=>{
   const text=parsed.operations.filter(op=>op.type==="text").map(op=>op.text).join("|");
   assert.match(text,/  引用保留/);
   assert.match(text,/  列表保留/);
+});
+
+
+test("only sentence-like ordinary paragraphs receive the two-em indent marker",()=>{
+  const parsed=operationsFor("<p>这是完整正文。</p><p>第二段正文！</p><p>English sentence.</p><p>作者：某某</p><p>2026-09-27</p><p>短说明</p>");
+  const paragraphIds=parsed.operations.filter(op=>op.type==="element"&&op.tag==="p").map(op=>op.id);
+  const indented=new Set(parsed.operations.filter(op=>op.type==="paragraphStyle"&&op.indent).map(op=>op.id));
+  assert.equal(indented.size,3);
+  assert.deepEqual(paragraphIds.map(id=>indented.has(id)),[true,true,true,false,false,false]);
+});
+
+test("paragraph indentation presentation is opt-in rather than global",async()=>{
+  const {readFile}=await import("node:fs/promises");
+  const typography=await readFile(new URL("../src/reading/typography.css",import.meta.url),"utf8");
+  assert.match(typography,/p\[data-reading-indent\][^{]*\{[^}]*text-indent:\s*2em/s);
+  assert.match(typography,/\.article-content p\s*\{[^}]*text-indent:\s*0/s);
 });
