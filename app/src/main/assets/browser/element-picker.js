@@ -88,7 +88,7 @@
         shield = document.createElement('div'); outline = document.createElement('div');
         shield.setAttribute('aria-label', '选择要屏蔽的网页区域');
         shield.style.cssText = 'position:fixed!important;inset:0!important;z-index:2147483647!important;background:transparent!important;touch-action:pan-y pinch-zoom!important;';
-        outline.style.cssText = 'position:fixed!important;pointer-events:none!important;z-index:2147483646!important;box-sizing:border-box!important;border:2px solid #1677ff!important;background:rgba(22,119,255,.16)!important;border-radius:4px!important;';
+        outline.style.cssText = 'display:none;position:fixed!important;pointer-events:none!important;z-index:2147483646!important;box-sizing:border-box!important;border:2px solid #1677ff!important;background:rgba(22,119,255,.16)!important;border-radius:4px!important;';
         shield.addEventListener('pointerdown', event => { down = { x: event.clientX, y: event.clientY }; event.stopImmediatePropagation(); });
         shield.addEventListener('pointerup', event => {
             event.stopImmediatePropagation();

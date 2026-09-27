@@ -22,7 +22,7 @@ class BrowserFilterController(context: Context) {
     @Volatile private var engine = snapshot
     private data class RequestPage(val host: String, val blocked: AtomicInteger = AtomicInteger())
     @Volatile private var requestPage = RequestPage("")
-    private var page: WebView? = null
+    @Volatile private var page: WebView? = null
     private var generation = 0
     private var pickerEpoch = 0
     private var pollPending = false
@@ -72,7 +72,10 @@ class BrowserFilterController(context: Context) {
 
     fun detach(view: WebView) {
         if (page !== view) return
-        stopPicker()
+        // The renderer may already be gone; do not evaluate script while disposing it.
+        pickerEpoch++
+        pollPending = false
+        picker = PickerState()
         page = null
         generation++
         requestPage = RequestPage("")
@@ -88,7 +91,8 @@ class BrowserFilterController(context: Context) {
         applyToPage()
     }
 
-    fun intercept(request: WebResourceRequest): WebResourceResponse? {
+    fun intercept(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+        if (page !== view) return null
         val current = requestPage
         if (!engine.blocks(current.host, request.url.toString(), request.isForMainFrame)) return null
         current.blocked.incrementAndGet()

@@ -150,7 +150,7 @@ class BrowserActivity : ComponentActivity() {
             CookieManager.getInstance().setAcceptThirdPartyCookies(page, false)
             page.webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                    filters.intercept(request)
+                    filters.intercept(view, request)
 
                 override fun onPageCommitVisible(view: WebView, url: String) {
                     if (view === webView) filters.applyToPage()
