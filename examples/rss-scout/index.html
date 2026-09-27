@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>RSS 探测</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="core.js" defer></script><script src="network.js" defer></script>
+  <script src="miniflux.js" defer></script><script src="rules.js" defer></script><script src="app.js" defer></script>
+</head>
+<body>
+<div id="app-shell">
+<main id="discovery-view" class="view">
+  <header class="topbar">
+    <div><h1>RSS 探测</h1><p class="subtitle">发现订阅源，一键加入 Miniflux。</p></div>
+    <button id="settings-toggle" class="icon-button" type="button" aria-label="打开设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
+  </header>
+  <p id="environment" class="notice" role="status">正在连接 ToolBox…</p>
+  <section class="search-section" aria-label="发现订阅源">
+    <form id="search-form">
+      <div class="input-heading"><label for="url">网页或订阅源</label><div class="inline-actions"><button id="clear-url" class="text-button" type="button" aria-label="清空网址">清空</button><button id="paste" class="text-button" type="button" disabled>粘贴</button></div></div>
+      <textarea id="url" rows="2" placeholder="粘贴网址或包含网址的分享文字" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="scan-status"></textarea>
+      <div class="search-actions"><button id="scan" class="primary" type="submit" disabled>发现 RSS</button><button id="stop" class="secondary" type="button" hidden>停止</button></div>
+    </form>
+    <div id="scan-progress" class="progress-track" hidden aria-hidden="true"><span></span></div>
+    <p id="scan-status" class="status-line" role="status" aria-live="polite">先寻找原生订阅源，再匹配 RSSHub 路由。</p>
+    <details class="more-discovery"><summary>更多发现方式</summary><div class="pair-actions"><button id="deep-scan" type="button" class="secondary" disabled>常见路径补查</button><button id="server-discover" type="button" class="secondary" disabled>Miniflux 补查</button></div></details>
+  </section>
+  <button id="destination" class="destination row" type="button" aria-haspopup="dialog"><span class="row-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h5l2 3h7v13H5zM9 11h6M9 15h6"/></svg></span><span class="row-copy"><span class="row-title" id="destination-title">连接 Miniflux</span><span class="row-value" id="destination-detail">配置后可一键订阅；不影响发现 RSS</span></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+  <section aria-labelledby="results-heading" class="result-section">
+    <div class="section-heading"><div><h2 id="results-heading">发现结果</h2><p id="result-count" class="caption">尚未开始探测</p></div><button id="export" class="text-button" type="button" disabled>导出</button></div>
+    <div id="filters" class="segments" role="group" aria-label="结果筛选"><button type="button" data-filter="all" aria-pressed="true">全部</button><button type="button" data-filter="valid" aria-pressed="false">已验证</button><button type="button" data-filter="rsshub" aria-pressed="false">RSSHub</button></div>
+    <div id="results" class="results"></div>
+    <div id="empty" class="empty"><svg class="empty-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 12c13 0 24 11 24 24M12 22c8 0 14 6 14 14"/><circle cx="13" cy="35" r="2"/></svg><h3>等待一个网址</h3><p>粘贴网页链接即可开始。<br>没有原生 RSS，也可以寻找 RSSHub 路由。</p></div>
+  </section>
+  <details id="diagnostics" class="diagnostics"><summary>查看探测记录</summary><p class="caption">记录仅在本次打开期间保留；不会记录 API Token。</p><pre id="log"></pre><button id="copy-log" class="text-button" type="button">复制诊断信息</button></details>
+  <footer>RSS Scout 1.2.0 · 按需运行</footer>
+</main>
+<section id="settings-view" class="view" hidden aria-labelledby="settings-title">
+  <header class="page-header"><button type="button" id="close-settings" class="text-button back-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>发现</button><h1 id="settings-title">设置</h1><span class="header-spacer"></span></header>
+  <p class="page-intro">管理订阅账户、规则来源和探测偏好。</p>
+  <h2 class="group-label">订阅</h2>
+  <div class="settings-group">
+    <button id="edit-account" class="row" type="button"><span class="row-copy"><span class="row-title">Miniflux 账户</span><span id="account-summary" class="row-value">未配置</span></span><span id="account-badge" class="small-state">设置</span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+    <button id="settings-category" class="row" type="button" aria-haspopup="dialog"><span class="row-copy"><span class="row-title">默认订阅分类</span><span id="category-summary" class="row-value">服务器默认分类</span></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+  </div>
+  <h2 class="group-label">发现</h2>
+  <div class="settings-group">
+    <button id="edit-hub" class="row" type="button"><span class="row-copy"><span class="row-title">RSSHub 与规则</span><span id="hub-summary" class="row-value">官方规则源 · 尚未同步</span></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+    <button id="edit-preferences" class="row" type="button"><span class="row-copy"><span class="row-title">探测偏好</span><span id="preferences-summary" class="row-value">首页补查 · 20 秒超时</span></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+  </div>
+  <p class="settings-footnote">设置保存在本工具内。Token 与实例密钥使用安全存储；关闭安全存储权限可能清除凭据。</p>
+  <footer>RSS Scout 1.2.0</footer>
+</section>
+</div>
+<div id="modal-root">
+  <div id="account-modal" class="modal" hidden><section class="sheet tall-sheet" role="dialog" aria-modal="true" aria-labelledby="account-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="account-title">Miniflux</h2><button id="save-account" form="account-form" class="text-button strong" type="submit">保存</button></header><div class="sheet-body"><form id="account-form" novalidate>
+    <label for="miniflux-base">服务地址</label><input id="miniflux-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://reader.example.com"><p class="help">支持子路径，无需添加 /v1。</p>
+    <label for="miniflux-token">API Token</label><div class="password-field"><input id="miniflux-token" type="password" autocomplete="off" spellcheck="false" placeholder="Miniflux → 设置 → API 密钥"><button id="toggle-token" class="text-button" type="button" aria-label="显示 API Token" aria-pressed="false">显示</button></div>
+    <div class="pair-actions connection-actions"><button id="connect" class="secondary" type="button">测试连接并读取分类</button><button id="stop-connect" class="secondary" type="button" hidden>停止测试</button></div><p id="connection-status" class="status-line" role="status">测试成功后可选择分类。</p>
+    <label id="account-category-label">默认订阅分类</label><button id="category" class="picker-button" type="button" aria-labelledby="account-category-label category-label" aria-haspopup="dialog"><span id="category-label">服务器默认分类</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+    <p id="account-save-status" class="status-line" role="status"></p>
+  </form><details class="form-details"><summary>凭据与连接说明</summary><p class="help">Token 只发给你填写的 Miniflux，不发送给待探测网页和公共规则源。测试不会自动保存；保存后会保留分类名称。</p><button id="forget" class="text-button danger" type="button">移除本地账户</button></details></div></section></div>
+  <div id="category-modal" class="modal" hidden><section class="sheet category-sheet" role="dialog" aria-modal="true" aria-labelledby="category-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="category-title">选择分类</h2><button id="refresh-categories" class="text-button" type="button">刷新</button></header><div class="sheet-body"><label class="sr-only" for="category-search">搜索分类</label><input id="category-search" type="search" placeholder="搜索分类名称" autocomplete="off"><p id="category-status" class="status-line" role="status"></p><div id="category-list" role="group" aria-label="订阅分类"></div></div><div class="sheet-bottom"><p id="category-hint" class="caption">选择后立即保存。</p></div></section></div>
+  <div id="hub-modal" class="modal" hidden><section class="sheet tall-sheet" role="dialog" aria-modal="true" aria-labelledby="hub-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="hub-title">RSSHub 与规则</h2><button id="save-hub" form="hub-form" class="text-button strong" type="submit">保存</button></header><div class="sheet-body"><form id="hub-form" novalidate>
+    <label class="switch-line"><span>启用 RSSHub 路由匹配</span><input id="use-radar" type="checkbox" role="switch" checked></label>
+    <label for="rsshub-base">订阅实例地址</label><input id="rsshub-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://rsshub.app"><p class="help">生成的订阅链接使用这个实例；规则可以从其他来源获取。</p>
+    <label>规则来源</label><div id="rule-mode" class="radio-group" role="radiogroup" aria-label="规则来源"><label><input type="radio" name="rule-mode" value="auto" checked><span>自动<span class="help">官方 GitHub → 备用镜像 → 当前实例</span></span></label><label><input type="radio" name="rule-mode" value="instance"><span>仅当前实例</span></label><label><input type="radio" name="rule-mode" value="custom"><span>自定义 JSON 地址</span></label></div>
+    <div id="custom-rule-field" hidden><label for="rule-url">公开 JSON 地址</label><input id="rule-url" type="url" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://example.com/radar-rules.json"></div>
+    <div class="private-rule-box"><label class="switch-line compact-switch"><span><strong>私人规则订阅</strong><span class="help">与上面的 Radar 规则叠加，不会替换官方规则。</span></span><input id="use-private-rules" type="checkbox" role="switch"></label><div id="private-rule-field"><label for="private-rule-url">规则 Repo JSON 地址</label><input id="private-rule-url" type="url" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://raw.githubusercontent.com/user/repo/main/rss-scout-rules.json"><p class="help">只读取声明式 RSS Scout Rules v1 JSON，不执行远程 JavaScript。</p><label for="private-base">私人路由实例地址</label><input id="private-base" type="url" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://your-rss-worker.example.com"><p class="help">仅用于规则中 service=private 的路由，例如 RSSWorker；留空时只使用 RSSHub 类规则。</p></div></div>
+    <details class="form-details"><summary>实例鉴权（可选）</summary><label for="hub-key">RSSHub 访问密钥</label><input id="hub-key" type="password" autocomplete="off" spellcheck="false" placeholder="实例未启用鉴权时留空"><p class="help">使用 RSSHub 的 key 鉴权。密钥只用于本实例，不发往公共规则源；生成的订阅 URL 将携带密钥，分享时注意接收方。</p></details>
+    <div class="pair-actions"><button id="sync-rules" type="button" class="secondary">同步规则</button><button id="stop-sync" type="button" class="secondary" hidden>停止同步</button></div>
+    <p id="rule-status" class="status-line" role="status">尚未同步</p><p id="hub-save-status" class="status-line" role="status"></p>
+    <details id="rule-diagnostics" class="form-details"><summary>同步详情</summary><pre id="rule-log"></pre><p class="help">403 表示服务拒绝访问，不是手机存储权限。同步失败不会删除旧缓存；私人规则和 Radar 都只解析声明式字符串规则，不执行远程脚本或函数规则。</p></details>
+  </form></div></section></div>
+  <div id="preferences-modal" class="modal" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="preferences-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="preferences-title">探测偏好</h2><button id="save-preferences" form="preferences-form" class="text-button strong" type="submit">保存</button></header><div class="sheet-body"><form id="preferences-form" novalidate>
+    <label class="switch-line"><span>当前页没找到源时补查首页</span><input id="check-home" type="checkbox" role="switch" checked></label>
+    <label for="timeout">单次请求超时（秒）</label><input id="timeout" type="number" min="0" max="2147483" step="1" inputmode="numeric" value="20"><p class="help">0 表示不设调用时限。探测最多并发 2 个请求；同步可随时停止。</p><p id="preferences-status" class="status-line" role="status"></p>
+  </form></div></section></div>
+  <div id="actions-modal" class="modal" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="actions-title" tabindex="-1"><header class="sheet-header"><span class="header-spacer"></span><h2 id="actions-title">订阅源操作</h2><button class="text-button" type="button" data-close>完成</button></header><div id="feed-detail" class="sheet-body"></div></section></div>
+  <div id="confirm-modal" class="modal" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1"><header class="sheet-header"><span class="header-spacer"></span><h2 id="confirm-title">确认操作</h2><button class="text-button" type="button" data-close>取消</button></header><div class="sheet-body"><p id="confirm-message"></p><button id="confirm-action" class="primary full-width" type="button">确认</button></div></section></div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body></html>
