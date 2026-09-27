@@ -28,9 +28,19 @@ fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
     if (state.active) {
         var advanced by remember { mutableStateOf(false) }
         var collapsed by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surface).padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(ToolBoxThemeTokens.colors.surface)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ToolBoxText(if (state.count == 0) "点击要隐藏的区域" else "匹配 ${state.count} 处",
+                Box(
+                    Modifier.size(9.dp).clip(RoundedCornerShape(50))
+                        .background(ToolBoxThemeTokens.colors.primary)
+                )
+                Spacer(Modifier.width(10.dp))
+                ToolBoxText(if (state.count == 0) "点击网页中的广告区域" else "已选择 · 匹配 ${state.count} 处",
                     Modifier.weight(1f), style = ToolBoxThemeTokens.textStyles.metadata)
                 ToolBoxIconButton(ToolBoxIconKey.More, if (collapsed) "展开操作条" else "收起操作条", { collapsed = !collapsed })
                 ToolBoxIconButton(ToolBoxIconKey.Close, "退出选择", filters::stopPicker)
@@ -98,21 +108,74 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                         ToolBoxSecondaryButton("取消", { resetConfirm = false }, Modifier.fillMaxWidth())
                     }
                     screen == "home" -> {
-                        ToolBoxText(site.ifEmpty { "当前页面不支持过滤" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
-                        ToolBoxSwitchSettingRow("广告过滤", state.enabled, { value -> filters.change { it.copy(enabled = value) } })
-                        ToolBoxSwitchSettingRow("对此网站启用", site !in state.exceptions, { enabled ->
-                            filters.change { it.copy(exceptions = if (enabled) it.exceptions - site else it.exceptions + site) }
-                        }, enabled = state.enabled && site.isNotEmpty())
-                        ToolBoxTextButton("选择广告位", filters::startPicker, Modifier.fillMaxWidth(),
-                            enabled = canPick && state.active(site), outlined = false)
-                        ToolBoxSettingRow("此网站的规则", summary = "${siteRules.size} 条", onClick = { screen = "site" })
-                        ToolBoxSettingRow("全部规则", summary = "${state.rules.size} 条 · 按网站管理", onClick = { screen = "all" })
-                        ToolBoxSwitchSettingRow("基础广告请求拦截", state.builtIn, { value -> filters.change { it.copy(builtIn = value) } },
-                            summary = "本页已拦截 $blocked 次请求", enabled = state.enabled)
-                        ToolBoxText("点选用于隐藏广告位；网络规则用于阻止加载。网络规则变更后请刷新网页。",
-                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
+                        ToolBoxText(
+                            site.ifEmpty { "当前页面不支持过滤" },
+                            Modifier.padding(horizontal = 6.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+                        )
+
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                .background(ToolBoxThemeTokens.colors.primary.copy(alpha = 0.08f))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            ToolBoxSwitchSettingRow(
+                                if (state.enabled) "过滤已开启" else "过滤已关闭",
+                                state.enabled,
+                                { value -> filters.change { it.copy(enabled = value) } },
+                                summary = if (state.enabled) "本页已拦截 $blocked 次请求" else "广告过滤当前暂停",
+                            )
+                        }
+
+                        FilterSectionLabel("当前网站")
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                .background(ToolBoxThemeTokens.colors.surfaceMuted)
+                        ) {
+                            ToolBoxSwitchSettingRow(
+                                "对此网站启用",
+                                site !in state.exceptions,
+                                { enabled ->
+                                    filters.change { it.copy(exceptions = if (enabled) it.exceptions - site else it.exceptions + site) }
+                                },
+                                summary = if (site.isEmpty()) "当前页面不可用" else "仅影响 $site",
+                                enabled = state.enabled && site.isNotEmpty(),
+                            )
+                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
+                            ToolBoxSettingRow(
+                                "选择广告位",
+                                summary = "直接点选页面元素并隐藏",
+                                onClick = filters::startPicker,
+                                enabled = canPick && state.active(site),
+                            )
+                        }
+
+                        FilterSectionLabel("规则与拦截")
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                                .background(ToolBoxThemeTokens.colors.surfaceMuted)
+                        ) {
+                            ToolBoxSettingRow("此网站的规则", summary = "${siteRules.size} 条 · 点选与手动规则", onClick = { screen = "site" })
+                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
+                            ToolBoxSettingRow("全部规则", summary = "${state.rules.size} 条 · 按网站管理", onClick = { screen = "all" })
+                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
+                            ToolBoxSwitchSettingRow(
+                                "基础广告请求拦截",
+                                state.builtIn,
+                                { value -> filters.change { it.copy(builtIn = value) } },
+                                summary = "阻止常见广告资源主机",
+                                enabled = state.enabled,
+                            )
+                        }
+
                         ToolBoxSecondaryButton("刷新网页", { filters.sheet = false; reload() }, Modifier.fillMaxWidth())
+                        ToolBoxText(
+                            "点选用于隐藏页面元素；网络规则用于阻止资源加载。网络规则变更后刷新页面生效。",
+                            Modifier.padding(horizontal = 6.dp),
+                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+                        )
                     }
                     else -> {
                         ToolBoxTextButton("添加规则", { editing = BrowserFilterRule(site = site, value = "") }, Modifier.fillMaxWidth(), outlined = false)
@@ -147,6 +210,16 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
             }
         }
     }
+}
+
+
+@Composable
+private fun FilterSectionLabel(text: String) {
+    ToolBoxText(
+        text,
+        Modifier.padding(start = 8.dp, top = 6.dp, bottom = 2.dp),
+        style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+    )
 }
 
 @Composable
