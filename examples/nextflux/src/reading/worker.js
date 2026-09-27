@@ -1,9 +1,9 @@
-import { createReadingParser } from "./parser.js";
+import { createReadingPipeline } from "./pipeline.mjs";
 
 let current;
 self.addEventListener("message", ({ data }) => {
   try {
-    if (data.type === "reading:start") current = { id: data.id, parser: createReadingParser(data.html, data.baseUrl) };
+    if (data.type === "reading:start") { const pipeline = createReadingPipeline(data); current = { id: data.id, parser: pipeline.parser, adapter: pipeline.adapter }; }
     else if (data.type !== "reading:next") return;
     if (!current || data.id !== current.id) return;
     const batch = current.parser.next();
