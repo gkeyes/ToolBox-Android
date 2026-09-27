@@ -1,0 +1,39 @@
+name: RSS Scout TBX
+
+on:
+  push:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - "examples/rss-scout/**"
+      - ".github/workflows/rss-scout.yml"
+      - "scripts/package-tool.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rss-scout-tbx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Validate and package RSS Scout
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("examples/rss-scout/manifest.json"))["version"])')"
+          mkdir -p build/rss-scout
+          bash examples/rss-scout/package.sh "build/rss-scout/rss-scout-v${version}.tbx"
+          sha256sum "build/rss-scout/rss-scout-v${version}.tbx" > build/rss-scout/SHA256SUMS.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rss-scout-${{ github.sha }}
+          path: build/rss-scout/
+          if-no-files-found: error
