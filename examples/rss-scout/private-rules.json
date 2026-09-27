@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "gkeyes RSS Scout 私人发现规则",
+  "updatedAt": "2026-09-27T13:45:00Z",
+  "rules": [
+    {
+      "id": "telegram-direct",
+      "title": "Telegram 频道",
+      "hosts": ["t.me","telegram.me"],
+      "source": ["/:channel"],
+      "target": "/telegram/channel/:channel",
+      "paramDeny": {"channel":["s","c","share","proxy","addstickers","joinchat","login","iv"]},
+      "paramDenyPrefix": {"channel":["+"]}
+    },
+    {
+      "id": "telegram-preview",
+      "title": "Telegram 频道",
+      "hosts": ["t.me","telegram.me"],
+      "source": ["/s/:channel"],
+      "target": "/telegram/channel/:channel"
+    },
+    {
+      "id": "telega-channel",
+      "title": "Telegram 频道（Telega）",
+      "hosts": ["telega.io","www.telega.io"],
+      "source": ["/c/:channel","/channels/:channel/card"],
+      "target": "/telegram/channel/:channel"
+    }
+  ]
+}
