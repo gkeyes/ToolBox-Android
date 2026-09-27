@@ -2,7 +2,7 @@ import { Parser } from "htmlparser2";
 import { cleanAttributes, safeContentUrl } from "../toolbox/content.js";
 import { ALLOWED_TAGS, BLOCK_TAGS, DROP_CONTENT } from "./schema.mjs";
 import { analyzeArticle } from "./analyze.mjs";
-import { createNormalizationPlan, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
+import { createNormalizationPlan, hasSentenceTerminal, normalizeParagraphLeadingText, paragraphPresentation, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
@@ -94,7 +94,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentencePunctuation: false };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentenceTerminal: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -145,12 +145,13 @@ export function createReadingParser(html, baseUrl) {
       if (parent.blocked || !text) return;
       const paragraph = stack.findLast((entry) => entry.tag === "p" && !entry.blocked);
       let displayText = text;
-      if (paragraph && !paragraph.layoutProtected && !paragraph.displayStarted) {
-        displayText = displayText.replace(/^[\s\u00a0\u3000]+/u, "");
+      if (paragraph) {
+        displayText = normalizeParagraphLeadingText(displayText, {
+          started: paragraph.displayStarted,
+          protectedText: paragraph.layoutProtected,
+        });
         if (displayText) paragraph.displayStarted = true;
-      }
-      if (paragraph && !paragraph.layoutProtected && hasSentencePunctuation(displayText)) {
-        paragraph.hasSentencePunctuation = true;
+        if (!paragraph.layoutProtected && hasSentenceTerminal(displayText)) paragraph.hasSentenceTerminal = true;
       }
       const normalized = displayText.replace(/\s+/g, " ").trim();
       if (normalized) {
@@ -191,9 +192,12 @@ export function createReadingParser(html, baseUrl) {
       if (entry.ownsMedia) emit({ type: "media", ...entry.media });
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });
       if (entry.linkWithImage) emit({ type: "imageLink", parent: entry.id, id: nextId++, href: entry.attrs.href });
-      if (entry.tag === "p" && entry.id && !entry.layoutProtected && entry.hasSentencePunctuation) {
-        emit({ type: "paragraphStyle", id: entry.id, indent: true });
-      }
+      const presentation = paragraphPresentation({
+        tag: entry.tag,
+        protectedText: entry.layoutProtected,
+        hasSentence: entry.hasSentenceTerminal,
+      });
+      if (entry.id && presentation) emit({ type: "paragraphStyle", id: entry.id, ...presentation });
       if (entry.id && shouldRemoveStandaloneNoise({
         tag: entry.tag, text: entry.textPreview, textLength: entry.textLength,
         hasMedia: entry.hasMedia, plan: normalization,
