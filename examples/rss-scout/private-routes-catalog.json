@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    {
+      "id": "telegram-aliases",
+      "status": "active",
+      "source": ["https://t.me/<channel>","https://t.me/s/<channel>","https://telega.io/c/<channel>"],
+      "route": "/telegram/channel/:channel",
+      "note": "RSSHub 官方 Telegram route；这里维护额外发现映射，不是自定义服务端实现。"
+    },
+    {
+      "id": "github-actions-success",
+      "status": "planned",
+      "source": "https://github.com/:owner/:repo/actions/workflows/:workflow",
+      "route": "/github/actions/:owner/:repo/:workflow",
+      "note": "此前已设计为仅输出成功 workflow run；尚未检索到已部署的私人 RSSHub 实现。"
+    },
+    {
+      "id": "heiliao-latest",
+      "status": "planned",
+      "source": "https://heiliao.com/",
+      "route": "/heiliao/latest",
+      "note": "此前设计，尚未检索到已部署实现。"
+    },
+    {
+      "id": "heiliao-category",
+      "status": "planned",
+      "source": "https://heiliao.com/:slug/",
+      "route": "/heiliao/category/:slug",
+      "note": "此前设计，尚未检索到已部署实现。"
+    }
+  ]
+}
