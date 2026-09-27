@@ -176,11 +176,11 @@
       "manifest.json",
       "index.html",
       "style.css",
+      "app.js",
       "core.js",
       "network.js",
       "miniflux.js",
       "rules.js",
-      "app.js",
       "integrity.json"
     ]
   },
