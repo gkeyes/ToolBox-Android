@@ -60,12 +60,17 @@
 /* Paragraph rhythm: comfortable for Chinese long-form without modifying source. */
 .article-content p {
   margin-block: 0 1.08em !important;
-  text-indent: 2em;
+  text-indent: 0;
   orphans: 2;
   widows: 2;
 }
 
-/* Keep structural/editorial blocks aligned; only ordinary prose paragraphs indent. */
+/* Only prose-like paragraphs containing sentence punctuation receive CJK indentation. */
+.article-content p[data-reading-indent] {
+  text-indent: 2em;
+}
+
+/* Keep structural/editorial blocks aligned even if source markup is unusual. */
 .article-content :is(li, blockquote, figure, figcaption, table, th, td) p {
   text-indent: 0;
 }
