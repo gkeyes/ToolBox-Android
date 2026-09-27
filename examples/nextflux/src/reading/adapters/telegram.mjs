@@ -48,7 +48,6 @@ export function adaptTelegramArticle({ html, title }) {
     const inner = DomUtils.getInnerHTML(paragraph);
     const candidate = splitMessageParagraph(inner);
     if (candidate.length < 2) continue;
-    if (compact(DomUtils.textContent(paragraph)).length < 24) continue;
     target = paragraph;
     segments = candidate;
     break;
