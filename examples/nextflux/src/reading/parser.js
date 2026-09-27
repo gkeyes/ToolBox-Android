@@ -8,6 +8,7 @@ const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
 const BATCH_TEXT = 16 * 1024;
 const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/proxy/") ? "https://miniflux.xiaochen.win/" : base);
+const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(text);
 
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is
 // involved, so malformed markup cannot become executable when inserted later.
@@ -93,7 +94,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentencePunctuation: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -148,6 +149,9 @@ export function createReadingParser(html, baseUrl) {
         displayText = displayText.replace(/^[\s\u00a0\u3000]+/u, "");
         if (displayText) paragraph.displayStarted = true;
       }
+      if (paragraph && !paragraph.layoutProtected && hasSentencePunctuation(displayText)) {
+        paragraph.hasSentencePunctuation = true;
+      }
       const normalized = displayText.replace(/\s+/g, " ").trim();
       if (normalized) {
         for (let index = 1; index < stack.length; index += 1) {
@@ -187,6 +191,9 @@ export function createReadingParser(html, baseUrl) {
       if (entry.ownsMedia) emit({ type: "media", ...entry.media });
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });
       if (entry.linkWithImage) emit({ type: "imageLink", parent: entry.id, id: nextId++, href: entry.attrs.href });
+      if (entry.tag === "p" && entry.id && !entry.layoutProtected && entry.hasSentencePunctuation) {
+        emit({ type: "paragraphStyle", id: entry.id, indent: true });
+      }
       if (entry.id && shouldRemoveStandaloneNoise({
         tag: entry.tag, text: entry.textPreview, textLength: entry.textLength,
         hasMedia: entry.hasMedia, plan: normalization,
