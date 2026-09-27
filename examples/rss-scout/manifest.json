@@ -5,20 +5,47 @@
   "shortName": "RSS 探测",
   "description": "发现与验证 RSS，搜索选择 Miniflux 分类，一键订阅；支持 RSSHub Radar、私人规则订阅源和实例鉴权。",
   "version": "1.2.0",
-  "versionCode": 3,
+  "versionCode": 4,
   "entry": "index.html",
   "apiVersion": "1.0",
   "minHostVersion": "0.7.8",
-  "categories": ["网络","阅读"],
+  "categories": [
+    "网络",
+    "阅读"
+  ],
   "permissions": [
-    {"name":"network","reason":"读取网页与公开规则、验证订阅源并调用你指定的 Miniflux/RSSHub"},
-    {"name":"storage","reason":"保存探测偏好和安全解析后的 Radar 字符串规则"},
-    {"name":"storage.secure","reason":"保存本工具的 Miniflux 账户、分类，以及可选 RSSHub 实例访问密钥"},
-    {"name":"clipboard.read","reason":"仅在点击粘贴时读取分享文字或网址"},
-    {"name":"clipboard.write","reason":"点击复制时写入选中的订阅源网址"},
-    {"name":"browser","reason":"点击打开时使用宿主内置浏览器查看网址"},
-    {"name":"files.save","reason":"按用户操作导出已验证订阅源为 OPML"},
-    {"name":"share","reason":"按用户操作分享一个订阅源网址"}
+    {
+      "name": "network",
+      "reason": "读取网页与公开规则、验证订阅源并调用你指定的 Miniflux/RSSHub"
+    },
+    {
+      "name": "storage",
+      "reason": "保存探测偏好和安全解析后的 Radar 字符串规则"
+    },
+    {
+      "name": "storage.secure",
+      "reason": "保存本工具的 Miniflux 账户、分类，以及可选 RSSHub 实例访问密钥"
+    },
+    {
+      "name": "clipboard.read",
+      "reason": "仅在点击粘贴时读取分享文字或网址"
+    },
+    {
+      "name": "clipboard.write",
+      "reason": "点击复制时写入选中的订阅源网址"
+    },
+    {
+      "name": "browser",
+      "reason": "点击打开时使用宿主内置浏览器查看网址"
+    },
+    {
+      "name": "files.save",
+      "reason": "按用户操作导出已验证订阅源为 OPML"
+    },
+    {
+      "name": "share",
+      "reason": "按用户操作分享一个订阅源网址"
+    }
   ],
   "securityProfile": "strict"
 }
