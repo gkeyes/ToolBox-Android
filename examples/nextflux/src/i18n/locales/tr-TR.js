@@ -86,6 +86,15 @@ export default {
     categoryName: "Başlık",
     categoryNamePlaceholder: "Lütfen kategori başlığını girin",
     categoryNameRequired: "Lütfen kategori başlığını girin",
+    backgroundSync: {
+      title: "Arka plan senkronizasyonu",
+      off: "Kapalı",
+      starting: "Başlatılıyor…",
+      stopping: "Durduruluyor…",
+      syncing: "Senkronize ediliyor…",
+      running: "Etkin · {{minutes}} dk'da bir",
+      failed: "Etkin · son senkronizasyon başarısız",
+    },
     profile: {
       about: "Hakkında",
       settings: "Ayarlar",

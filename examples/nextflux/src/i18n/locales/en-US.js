@@ -86,6 +86,15 @@ export default {
     categoryName: "Title",
     categoryNamePlaceholder: "Please enter category title",
     categoryNameRequired: "Please enter category title",
+    backgroundSync: {
+      title: "Background sync",
+      off: "Off",
+      starting: "Starting…",
+      stopping: "Stopping…",
+      syncing: "Syncing…",
+      running: "Active · every {{minutes}} min",
+      failed: "Active · last sync failed",
+    },
     profile: {
       about: "About",
       settings: "Settings",

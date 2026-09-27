@@ -2,20 +2,22 @@ import { atom } from "nanostores";
 import { settingsState } from "../stores/settingsStore.js";
 import { backgroundSync } from "../stores/syncStore.js";
 import { toast } from "sonner";
+import { backgroundHealth, backgroundIntervalMs } from "./background-policy.mjs";
 
 export const continuousSync = atom(false);
+export const backgroundSyncHealth = atom(backgroundHealth());
 const TIMER_KEY = "nextflux.sync";
 const STATE_KEY = "nextflux.background-sync.v1";
+const HEALTH_KEY = "nextflux.background-sync.health.v1";
 let sessionId = null;
 let initialized = false;
+let backgroundRun = null;
+let observedInterval = null;
 
 function toolbox() { return globalThis.window?.ToolBox; }
 function api() { return toolbox()?.background; }
 function storage() { return toolbox()?.storage; }
-function intervalMs() {
-  const value = Number(settingsState.get().syncInterval);
-  return Number.isFinite(value) && value >= 0 ? value * 60000 : 15 * 60000;
-}
+function intervalMs() { return backgroundIntervalMs(settingsState.get().syncInterval); }
 
 async function readEnabledIntent() {
   if (!storage()?.get) return false;
@@ -26,6 +28,21 @@ async function readEnabledIntent() {
 async function writeEnabledIntent(enabled) {
   if (!storage()?.set) throw new Error("当前 ToolBox 不支持保存后台同步状态。");
   await storage().set(STATE_KEY, { enabled: Boolean(enabled) });
+}
+
+async function restoreHealth() {
+  if (!storage()?.get) return;
+  const saved = await storage().get(HEALTH_KEY).catch(() => null);
+  if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+    backgroundSyncHealth.set(backgroundHealth(saved));
+  }
+}
+
+function setHealth(event, now = Date.now()) {
+  const next = backgroundHealth(backgroundSyncHealth.get(), event, now, intervalMs());
+  backgroundSyncHealth.set(next);
+  storage()?.set?.(HEALTH_KEY, next).catch(() => {});
+  return next;
 }
 
 async function findSession() {
@@ -48,24 +65,45 @@ async function ensureSession() {
 }
 
 async function refreshTimer() {
-  if (!sessionId) return;
+  if (!sessionId) return null;
   const interval = intervalMs();
-  if (interval === 0) await api().cancelTimer(TIMER_KEY).catch((error) => {
-    if (error?.code !== "NOT_FOUND") throw error;
-  });
-  else await api().setTimer(TIMER_KEY, interval);
+  await api().setTimer(TIMER_KEY, interval);
+  if (continuousSync.get()) setHealth({ type: "enabled" });
+  return interval;
+}
+
+async function runBackgroundSync(reason) {
+  if (!continuousSync.get()) return false;
+  if (backgroundRun) return backgroundRun;
+  const attemptAt = Date.now();
+  setHealth({ type: "attempt", reason }, attemptAt);
+  backgroundRun = (async () => {
+    try {
+      await backgroundSync();
+      setHealth({ type: "success" });
+      return true;
+    } catch (error) {
+      setHealth({ type: "failure", message: error?.message || "后台同步失败" });
+      return false;
+    }
+  })().finally(() => { backgroundRun = null; });
+  return backgroundRun;
 }
 
 async function restoreContinuousSync() {
+  await restoreHealth();
   const enabled = await readEnabledIntent();
   if (!enabled) {
     sessionId = null;
     continuousSync.set(false);
-    return;
+    setHealth({ type: "stopped" });
+    return false;
   }
   await ensureSession();
-  await refreshTimer();
   continuousSync.set(true);
+  await refreshTimer();
+  setHealth({ type: "enabled" });
+  return true;
 }
 
 export async function initializeBackground() {
@@ -73,17 +111,21 @@ export async function initializeBackground() {
   if (!initialized) {
     initialized = true;
     api().onTimer((event) => {
-      if (event.key === TIMER_KEY && continuousSync.get()) backgroundSync().catch(() => {});
+      if (event.key === TIMER_KEY && continuousSync.get()) void runBackgroundSync("timer");
     });
     api().onRestore(async () => {
       try {
-        await restoreContinuousSync();
+        if (await restoreContinuousSync()) await runBackgroundSync("restore");
       } catch {
         sessionId = null;
         continuousSync.set(false);
+        setHealth({ type: "stopped" });
       }
     });
-    settingsState.listen(() => {
+    settingsState.listen((value) => {
+      const nextInterval = String(value?.syncInterval ?? "");
+      if (nextInterval === observedInterval) return;
+      observedInterval = nextInterval;
       if (!continuousSync.get()) return;
       refreshTimer().catch(() => toast.error("后台同步间隔未更新，请重新开启后台同步。"));
     });
@@ -93,6 +135,7 @@ export async function initializeBackground() {
   } catch {
     sessionId = null;
     continuousSync.set(false);
+    setHealth({ type: "stopped" });
   }
 }
 
@@ -100,9 +143,11 @@ export async function startContinuousSync() {
   if (!api()) throw new Error("当前 ToolBox 不支持后台同步。");
   try {
     await ensureSession();
+    continuousSync.set(true);
     await refreshTimer();
     await writeEnabledIntent(true);
-    continuousSync.set(true);
+    setHealth({ type: "enabled" });
+    await runBackgroundSync("start");
   } catch {
     try {
       await api().cancelTimer(TIMER_KEY);
@@ -112,6 +157,7 @@ export async function startContinuousSync() {
       sessionId = null;
     }
     continuousSync.set(false);
+    setHealth({ type: "stopped" });
     throw new Error("未能开启后台同步，请开启小工具的后台运行权限和宿主后台保障。");
   }
 }
@@ -134,4 +180,7 @@ export async function stopContinuousSync() {
   }
   sessionId = null;
   continuousSync.set(false);
+  setHealth({ type: "stopped" });
 }
+
+export { runBackgroundSync };

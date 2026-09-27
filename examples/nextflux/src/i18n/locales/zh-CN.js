@@ -86,6 +86,15 @@ export default {
     categoryNamePlaceholder: "请输入分类标题",
     categoryNameRequired: "请输入分类标题",
     addFeed: "新增订阅",
+    backgroundSync: {
+      title: "后台同步",
+      off: "已关闭",
+      starting: "正在开启…",
+      stopping: "正在停止…",
+      syncing: "正在同步…",
+      running: "运行中 · 每 {{minutes}} 分钟",
+      failed: "运行中 · 最近同步失败",
+    },
     profile: {
       about: "关于",
       settings: "设置",

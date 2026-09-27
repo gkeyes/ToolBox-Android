@@ -87,6 +87,15 @@ export default {
     categoryName: "Titre",
     categoryNamePlaceholder: "Veuillez entrer le titre de la catégorie",
     categoryNameRequired: "Veuillez entrer le titre de la catégorie",
+    backgroundSync: {
+      title: "Synchronisation en arrière-plan",
+      off: "Désactivée",
+      starting: "Démarrage…",
+      stopping: "Arrêt…",
+      syncing: "Synchronisation…",
+      running: "Active · toutes les {{minutes}} min",
+      failed: "Active · dernière synchronisation échouée",
+    },
     profile: {
       about: "À propos",
       settings: "Paramètres",
