@@ -229,7 +229,7 @@
             if (!/^[A-Za-z_]\w*$/.test(key) || !Array.isArray(values)) continue;
             safePrefix[key] = values.map(v => cleanText(v, 20)).filter(Boolean).slice(0, 20);
           }
-          rules.push({host, source, target:item.target, title:cleanText(item.title || payload.name || host, 300), origin:'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix});
+          rules.push({host, source, target:item.target, title:cleanText(item.title || payload.name || host, 300), origin:'private', service:item.service==='rsshub'?'rsshub':'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix});
         }
       }
     }
@@ -237,7 +237,7 @@
     return {rules, skipped, imported:rules.length, name:cleanText(payload.name || '私人规则', 200)};
   }
 
-  function radarCandidates(value, rules, hubBase) {
+  function radarCandidates(value, rules, hubBase, privateBase) {
     const u = new URL(value), found = new Map();
     for (const rule of rules || []) {
       if (!(rule.host === u.hostname || (rule.host === 'www.' + u.hostname) || ('www.' + rule.host === u.hostname))) continue;
@@ -255,8 +255,10 @@
         if (denied) continue;
       }
       const path = fillTarget(rule.target, params); if (!path) continue;
-      let url; try { url = urlOf(hubBase.replace(/\/+$/, '') + path); } catch (_) { continue; }
-      if (new URL(url).origin !== new URL(hubBase).origin) continue;
+      const chosenBase = rule.origin==='private' && rule.service!=='rsshub' ? privateBase : hubBase;
+      if (!chosenBase) continue;
+      let url; try { url = urlOf(chosenBase.replace(/\/+$/, '') + path); } catch (_) { continue; }
+      if (new URL(url).origin !== new URL(chosenBase).origin) continue;
       if (!found.has(url)) found.set(url, {url, title:rule.title, kind:'rsshub', sources:[rule.origin==='private'?'私人规则':'RSSHub 规则'], type:''});
     }
     return Array.from(found.values());
