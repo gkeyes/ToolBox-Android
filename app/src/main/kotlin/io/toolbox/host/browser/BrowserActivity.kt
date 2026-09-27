@@ -59,6 +59,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
+import io.toolbox.core.ui.component.ToolBoxActionSheet
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
@@ -493,54 +494,34 @@ class BrowserActivity : ComponentActivity() {
                     }
                 }
                 BrowserFilterControls(filters, resumed)
+                if (fullScreenView == null) BrowserBottomBar()
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
         BrowserFilterSheet(filters, canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing, reload = ::reload)
-        if (menu) ToolBoxModalDialog(onDismissRequest = { menu = false }) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                ToolBoxText("浏览器菜单", Modifier.weight(1f).semantics { heading() },
-                    style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
-                ToolBoxIconButton(ToolBoxIconKey.Close, "关闭菜单", { menu = false })
-            }
-            Spacer(Modifier.height(8.dp))
-            Column(Modifier.fillMaxWidth()
-                .semantics { paneTitle = "浏览器菜单" }
-                .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))) {
-                BrowserMenuAction("网页前进", ToolBoxIconKey.ChevronRight,
-                    enabled = canForward && !clearing && !interaction.unresponsive && !interaction.restarting) {
-                    menu = false
-                    webView?.goForward()
-                }
-                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
-                BrowserMenuAction("广告过滤", ToolBoxIconKey.Shield,
-                    enabled = !clearing && !interaction.unresponsive && !interaction.restarting) {
-                    menu = false
-                    filters.stopPicker()
-                    filters.refresh()
-                    filters.sheet = true
-                }
-                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
+        if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
+                    .background(colors.surface)
+            ) {
                 BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) { copyAddress(); menu = false }
-                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
-                BrowserMenuAction("分享链接", ToolBoxIconKey.Share) {
-                    menu = false
-                    try {
-                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, address), "分享链接"))
-                    } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
-                }
                 ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
                 BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) { menu = false; openSystemBrowser() }
             }
-            Spacer(Modifier.height(12.dp))
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-                .background(colors.softDanger)) {
+            Spacer(Modifier.height(10.dp))
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp)
+                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
+                    .background(colors.softDanger)
+            ) {
                 BrowserMenuAction("清除浏览器网站数据", ToolBoxIconKey.Shield, destructive = true,
                     enabled = !clearing && !interaction.restarting) {
                     menu = false
                     clearConfirmation = true
                 }
             }
+            Spacer(Modifier.height(12.dp))
         }
         if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
             ToolBoxText(
@@ -617,41 +598,134 @@ class BrowserActivity : ComponentActivity() {
         val uri = remember(address) { Uri.parse(address) }
         val unencrypted = uri.scheme == "http"
         val action = interaction.loadAction(clearing)
+        val filterState = filters.snapshot
+        val filtering = filterState.active(filters.site)
+
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 4.dp).testTag("browser_toolbar"),
+            Modifier.fillMaxWidth().heightIn(min = 58.dp).padding(horizontal = 10.dp, vertical = 6.dp)
+                .testTag("browser_toolbar"),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish)
-            BrowserToolbarButton(ToolBoxIconKey.Back, "网页后退", { if (filters.picker.active) filters.stopPicker() else webView?.goBack() },
-                enabled = (canBack || filters.picker.active) && !clearing && !interaction.unresponsive && !interaction.restarting)
-            Box(
-                Modifier.weight(1f).heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { fullAddress = true })
-                    .padding(horizontal = 6.dp, vertical = 8.dp).testTag("browser_address"),
-                contentAlignment = Alignment.Center,
+            Row(
+                Modifier.weight(1f).heightIn(min = 46.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(colors.surface)
+                    .testTag("browser_address"),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToolBoxText(
-                    (if (interaction.unresponsive) "未响应 · " else if (unencrypted) "未加密 · " else "") + uri.host.orEmpty(),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = ToolBoxThemeTokens.textStyles.body.copy(
-                        fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
-                        color = if (unencrypted || interaction.unresponsive) colors.danger else colors.textPrimary,
-                    ),
+                Box(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clickable(role = Role.Button, onClickLabel = "查看完整地址", onClick = { fullAddress = true })
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        ToolBoxText(
+                            (if (interaction.unresponsive) "未响应 · " else if (unencrypted) "未加密 · " else "") + uri.host.orEmpty(),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = ToolBoxThemeTokens.textStyles.body.copy(
+                                fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (unencrypted || interaction.unresponsive) colors.danger else colors.textPrimary,
+                            ),
+                        )
+                        ToolBoxText(
+                            when {
+                                !filterState.enabled -> "广告过滤已关闭"
+                                filtering -> "安全连接 · 广告过滤已开启"
+                                else -> "此网站未启用广告过滤"
+                            },
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                                fontSize = 10.sp, lineHeight = 13.sp, color = colors.textSecondary,
+                            ),
+                        )
+                    }
+                }
+                Box(Modifier.width(1.dp).height(22.dp).background(colors.textSecondary.copy(alpha = 0.10f)))
+                BrowserToolbarButton(
+                    ToolBoxIconKey.Refresh,
+                    when (action) {
+                        BrowserLoadAction.Stop -> "停止加载"
+                        BrowserLoadAction.Recover -> "查看网页恢复选项"
+                        else -> "重新加载"
+                    },
+                    ::performLoadAction,
+                    enabled = action != BrowserLoadAction.Disabled,
+                    stop = action == BrowserLoadAction.Stop,
+                    compact = true,
                 )
             }
-            BrowserToolbarButton(
-                ToolBoxIconKey.Refresh,
-                when (action) {
-                    BrowserLoadAction.Stop -> "停止加载"
-                    BrowserLoadAction.Recover -> "查看网页恢复选项"
-                    else -> "重新加载"
-                },
-                ::performLoadAction,
-                enabled = action != BrowserLoadAction.Disabled,
-                stop = action == BrowserLoadAction.Stop,
+        }
+    }
+
+    @Composable
+    private fun BrowserBottomBar() {
+        val canInteract = !clearing && !interaction.unresponsive && !interaction.restarting
+        val blocked = filters.blockedCount
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                .heightIn(min = 64.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(ToolBoxThemeTokens.colors.surface),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            BrowserDockButton(ToolBoxIconKey.Back, "后退",
+                enabled = (canBack || filters.picker.active) && canInteract) {
+                if (filters.picker.active) filters.stopPicker() else webView?.goBack()
+            }
+            BrowserDockButton(ToolBoxIconKey.ChevronRight, "前进", enabled = canForward && canInteract) {
+                webView?.goForward()
+            }
+            BrowserDockButton(ToolBoxIconKey.Shield, if (blocked > 0) "屏蔽 $blocked" else "屏蔽",
+                highlighted = filters.snapshot.active(filters.site), enabled = canInteract) {
+                filters.stopPicker()
+                filters.refresh()
+                filters.sheet = true
+            }
+            BrowserDockButton(ToolBoxIconKey.Share, "分享", enabled = canInteract) {
+                try {
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, address), "分享链接"))
+                } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
+            }
+            BrowserDockButton(ToolBoxIconKey.More, "更多", enabled = canInteract) { menu = true }
+        }
+    }
+
+    @Composable
+    private fun BrowserDockButton(
+        icon: ToolBoxIconKey,
+        label: String,
+        enabled: Boolean = true,
+        highlighted: Boolean = false,
+        onClick: () -> Unit,
+    ) {
+        val colors = ToolBoxThemeTokens.colors
+        val tint = when {
+            !enabled -> ToolBoxThemeTokens.disabledContent
+            highlighted -> colors.primary
+            else -> colors.textSecondary
+        }
+        Column(
+            Modifier.widthIn(min = 52.dp).heightIn(min = 52.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .padding(horizontal = 5.dp, vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = tint)
+            Spacer(Modifier.height(2.dp))
+            ToolBoxText(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                    fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = tint,
+                ),
             )
-            BrowserToolbarButton(ToolBoxIconKey.More, "浏览器菜单", { menu = true })
         }
     }
 
@@ -662,11 +736,12 @@ class BrowserActivity : ComponentActivity() {
         onClick: () -> Unit,
         enabled: Boolean = true,
         stop: Boolean = false,
+        compact: Boolean = false,
     ) {
         val tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent
-        // Compact artwork, not compact hit areas. No gesture detector competes with webpage input.
+        val size = if (compact) 42.dp else 44.dp
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+            Modifier.size(size).clip(RoundedCornerShape(if (compact) 15.dp else 16.dp))
                 .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
                 .semantics { contentDescription = label },
             contentAlignment = Alignment.Center,
