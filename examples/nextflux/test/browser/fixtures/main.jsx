@@ -6,8 +6,8 @@ import "./style.css";
 import "../../../src/components/ArticleView/ArticleView.css";
 import "../../../src/reading/reading.css";
 import "../../../src/reading/typography.css";
-import { createReadingParser } from "@/reading/parser.js";
 import { createReadingRenderer } from "@/reading/renderer.js";
+import { createReadingPipeline } from "@/reading/pipeline.mjs";
 import ArticleImage from "@/components/ArticleView/components/ArticleImage.jsx";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture.js";
 import { clearMediaCache } from "@/toolbox/media.js";
@@ -43,18 +43,20 @@ function ReadingFixture() {
       dimensions: (source) => imageDimensions.get(source),
       setGalleryActive: (value) => imageGalleryActive.set(value),
       setModalOpen: (value) => isModalOpen.set(value),
-      renderArticle: (html, baseUrl) => {
+      renderArticle: (html, baseUrl, title = "") => {
         const root = document.getElementById("live-render-surface");
         root.replaceChildren();
         const renderer = createReadingRenderer(root, baseUrl, () => {});
-        const parser = createReadingParser(html, baseUrl);
+        const pipeline = createReadingPipeline({ html, baseUrl, title });
         for (;;) {
-          const batch = parser.next();
+          const batch = pipeline.parser.next();
           for (const operation of batch.operations) renderer.apply(operation);
           if (batch.done) break;
         }
         renderer.finish();
         return {
+          adapter: pipeline.adapter,
+          paragraphs: [...root.querySelectorAll("p")].map((node) => ({ text: String(node.textContent || "").replace(/\\s+/g, " ").trim(), indent: getComputedStyle(node).textIndent })),
           roles: [...root.querySelectorAll("[data-semantic-role]")].map((node) => {
             const style = getComputedStyle(node);
             return {
