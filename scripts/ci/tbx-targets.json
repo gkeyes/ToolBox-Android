@@ -162,6 +162,38 @@
       "integrity.json"
     ]
   },
+  "rss-scout": {
+    "manifest": "manifest.json",
+    "javascript": [
+      "*.js"
+    ],
+    "package": [
+      "bash",
+      "package.sh",
+      "{output}"
+    ],
+    "expected_files": [
+      "manifest.json",
+      "index.html",
+      "style.css",
+      "core.js",
+      "network.js",
+      "miniflux.js",
+      "rules.js",
+      "app.js",
+      "integrity.json"
+    ]
+  },
+  "socialcoach": {
+    "manifest": "manifest.json",
+    "npm": true,
+    "javascript": [],
+    "package": [
+      "bash",
+      "package.sh",
+      "{output}"
+    ]
+  },
   "stock-monitor": {
     "manifest": "manifest.json",
     "javascript": [
@@ -180,16 +212,6 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
-  },
-  "socialcoach": {
-    "manifest": "manifest.json",
-    "npm": true,
-    "javascript": [],
-    "package": [
-      "bash",
-      "package.sh",
-      "{output}"
     ]
   }
 }
