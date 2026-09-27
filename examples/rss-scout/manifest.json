@@ -3,9 +3,9 @@
   "id": "io.toolbox.rssscout",
   "name": "RSS 探测",
   "shortName": "RSS 探测",
-  "description": "发现与验证 RSS，搜索选择 Miniflux 分类，一键订阅；支持 RSSHub Radar、私人规则订阅源、统一 RSSHub 实例地址和实例鉴权。",
-  "version": "1.3.0",
-  "versionCode": 6,
+  "description": "发现与验证 RSS，搜索选择 Miniflux 分类，一键订阅；支持 RSSHub + RSSWorker 双服务并行探测、Radar、私人规则和实例鉴权。",
+  "version": "1.4.0",
+  "versionCode": 7,
   "entry": "index.html",
   "apiVersion": "1.0",
   "minHostVersion": "0.7.8",
@@ -16,7 +16,7 @@
   "permissions": [
     {
       "name": "network",
-      "reason": "读取网页与公开规则、验证订阅源并调用你指定的 Miniflux/RSSHub"
+      "reason": "读取网页与公开规则、验证订阅源并调用你指定的 Miniflux、RSSHub 与 RSSWorker"
     },
     {
       "name": "storage",
