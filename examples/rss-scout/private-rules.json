@@ -1,12 +1,11 @@
 {
   "schemaVersion": 1,
   "name": "gkeyes RSS Scout 私人发现规则",
-  "updatedAt": "2026-09-27T14:58:07Z",
+  "updatedAt": "2026-09-27T15:20:00Z",
   "rules": [
     {
       "id": "telegram-rsshub-direct",
       "title": "Telegram 频道（RSSHub）",
-      "service": "rsshub",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -36,7 +35,6 @@
     {
       "id": "telegram-rsshub-preview",
       "title": "Telegram 频道（RSSHub）",
-      "service": "rsshub",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -49,7 +47,6 @@
     {
       "id": "telega-rsshub-channel",
       "title": "Telegram 频道（Telega → RSSHub）",
-      "service": "rsshub",
       "hosts": [
         "telega.io",
         "www.telega.io"
@@ -63,7 +60,6 @@
     {
       "id": "bilibili-dynamic-rssworker",
       "title": "Bilibili 用户动态（RSSWorker）",
-      "service": "private",
       "hosts": [
         "space.bilibili.com"
       ],
@@ -75,7 +71,6 @@
     {
       "id": "bilibili-video-rssworker",
       "title": "Bilibili 用户视频（RSSWorker）",
-      "service": "private",
       "hosts": [
         "space.bilibili.com"
       ],
@@ -87,7 +82,6 @@
     {
       "id": "telegram-rssworker-direct",
       "title": "Telegram 频道（RSSWorker）",
-      "service": "private",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -117,7 +111,6 @@
     {
       "id": "telegram-rssworker-preview",
       "title": "Telegram 频道（RSSWorker）",
-      "service": "private",
       "hosts": [
         "t.me",
         "telegram.me"
@@ -130,7 +123,6 @@
     {
       "id": "telega-rssworker-channel",
       "title": "Telegram 频道（Telega → RSSWorker）",
-      "service": "private",
       "hosts": [
         "telega.io",
         "www.telega.io"
@@ -144,7 +136,6 @@
     {
       "id": "weibo-user-rssworker",
       "title": "微博用户（RSSWorker）",
-      "service": "private",
       "hosts": [
         "weibo.com",
         "www.weibo.com",
@@ -158,7 +149,6 @@
     {
       "id": "xiaohongshu-user-rssworker",
       "title": "小红书用户（RSSWorker）",
-      "service": "private",
       "hosts": [
         "xiaohongshu.com",
         "www.xiaohongshu.com"
@@ -171,7 +161,6 @@
     {
       "id": "geekerline-newsflashes",
       "title": "Geeker 每日发现",
-      "service": "rsshub",
       "hosts": [
         "geekerline.com",
         "www.geekerline.com"
@@ -184,7 +173,6 @@
     {
       "id": "geekerline-select-share",
       "title": "Geeker 精选分享",
-      "service": "rsshub",
       "hosts": [
         "geekerline.com",
         "www.geekerline.com"
@@ -197,7 +185,6 @@
     {
       "id": "kejiwanjia-jingxuanpost",
       "title": "科技玩家精选",
-      "service": "rsshub",
       "hosts": [
         "kejiwanjia.com",
         "www.kejiwanjia.com"
@@ -210,7 +197,6 @@
     {
       "id": "heiliao-latest",
       "title": "黑料网 最新",
-      "service": "rsshub",
       "hosts": [
         "heiliao.com",
         "www.heiliao.com"
