@@ -1,6 +1,7 @@
 package io.toolbox.host.browser
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,6 +78,10 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
     var editing by remember { mutableStateOf<BrowserFilterRule?>(null) }
     var resetConfirm by remember { mutableStateOf(false) }
     var blocked by remember { mutableIntStateOf(filters.blockedCount) }
+    var expandedHosts by remember(screen, filters.site) {
+        mutableStateOf(if (screen == "all" && filters.site.isNotBlank()) setOf(filters.site) else emptySet())
+    }
+    var expandedRules by remember(screen) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(Unit) { while (true) { blocked = filters.blockedCount; delay(500) } }
     val state = filters.snapshot
     val site = filters.site
@@ -180,26 +185,64 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                     else -> {
                         ToolBoxTextButton("添加规则", { editing = BrowserFilterRule(site = site, value = "") }, Modifier.fillMaxWidth(), outlined = false)
                         val rows = if (screen == "site") siteRules else state.rules
-                        if (rows.isEmpty()) ToolBoxText("还没有规则。可以返回网页点选广告位，也可以手动添加。")
-                        rows.groupBy { it.site }.toSortedMap().forEach { (host, rules) ->
-                            ToolBoxText(host, style = ToolBoxThemeTokens.textStyles.title)
-                            rules.forEach { rule -> key(rule.id) {
-                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ToolBoxThemeTokens.colors.surfaceMuted).padding(8.dp)) {
-                                    ToolBoxSwitchSettingRow(if (rule.kind == BrowserFilterKind.Cosmetic) "隐藏区域" else "拦截请求域名", rule.enabled, { enabled ->
-                                        filters.change { state -> state.copy(rules = state.rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it }) }
-                                    }, summary = if (rule.source == BrowserFilterSource.Picker) "点选生成" else "手动添加")
-                                    ToolBoxText(rule.value, Modifier.padding(horizontal = 12.dp), maxLines = 3, overflow = TextOverflow.Ellipsis,
-                                        style = ToolBoxThemeTokens.textStyles.metadata)
-                                    Row {
-                                        ToolBoxTextButton("编辑", { editing = rule }, Modifier.weight(1f), outlined = false)
-                                        ToolBoxTextButton("删除", { filters.delete(rule) }, Modifier.weight(1f), outlined = false)
+                        if (rows.isEmpty()) {
+                            ToolBoxText("还没有规则。可以返回网页点选广告位，也可以手动添加。")
+                        } else if (screen == "site") {
+                            ToolBoxText(
+                                site,
+                                Modifier.padding(horizontal = 6.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = ToolBoxThemeTokens.textStyles.title,
+                            )
+                            rows.forEach { rule -> key(rule.id) {
+                                FilterCompactRule(
+                                    rule = rule,
+                                    filters = filters,
+                                    expanded = rule.id in expandedRules,
+                                    onToggleExpanded = {
+                                        expandedRules = if (rule.id in expandedRules) expandedRules - rule.id else expandedRules + rule.id
+                                    },
+                                    onEdit = { editing = rule },
+                                )
+                            } }
+                        } else {
+                            val groups = rows.groupBy { it.site }.entries.sortedWith(
+                                compareByDescending<Map.Entry<String, List<BrowserFilterRule>>> { it.key == site }
+                                    .thenBy { it.key }
+                            )
+                            groups.forEach { (host, rules) ->
+                                val expanded = host in expandedHosts
+                                FilterHostAccordionHeader(
+                                    host = host,
+                                    rules = rules,
+                                    expanded = expanded,
+                                    current = host == site,
+                                    onClick = {
+                                        expandedHosts = if (expanded) expandedHosts - host else expandedHosts + host
+                                    },
+                                )
+                                if (expanded) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        rules.forEach { rule -> key(rule.id) {
+                                            FilterCompactRule(
+                                                rule = rule,
+                                                filters = filters,
+                                                expanded = rule.id in expandedRules,
+                                                onToggleExpanded = {
+                                                    expandedRules = if (rule.id in expandedRules) expandedRules - rule.id else expandedRules + rule.id
+                                                },
+                                                onEdit = { editing = rule },
+                                            )
+                                        } }
                                     }
                                 }
-                            } }
+                            }
                         }
                         if (screen == "site" && rows.any { it.source == BrowserFilterSource.Picker }) {
                             ToolBoxDestructiveButton("清除此网站的点选规则", { resetConfirm = true }, Modifier.fillMaxWidth())
                         }
+                    }
                     }
                 }
                 filters.notice?.let { message ->
@@ -212,6 +255,86 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
     }
 }
 
+
+
+@Composable
+private fun FilterHostAccordionHeader(
+    host: String,
+    rules: List<BrowserFilterRule>,
+    expanded: Boolean,
+    current: Boolean,
+    onClick: () -> Unit,
+) {
+    val enabledCount = rules.count { it.enabled }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(ToolBoxThemeTokens.colors.surfaceMuted)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            ToolBoxText(
+                if (current) "$host · 当前网站" else host,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.title,
+            )
+            Spacer(Modifier.height(3.dp))
+            ToolBoxText(
+                "${rules.size} 条规则 · $enabledCount 条启用",
+                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+            )
+        }
+        ToolBoxIcon(
+            if (expanded) ToolBoxIconKey.ChevronDown else ToolBoxIconKey.ChevronRight,
+            if (expanded) "收起 $host" else "展开 $host",
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
+private fun FilterCompactRule(
+    rule: BrowserFilterRule,
+    filters: BrowserFilterController,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val kind = if (rule.kind == BrowserFilterKind.Cosmetic) "隐藏区域" else "拦截请求域名"
+    val source = if (rule.source == BrowserFilterSource.Picker) "点选生成" else "手动添加"
+    val status = if (rule.enabled) "已启用" else "已停用"
+    val compactValue = if (rule.value.length > 54) rule.value.take(54) + "…" else rule.value
+
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(ToolBoxThemeTokens.colors.surfaceMuted)
+    ) {
+        ToolBoxSettingRow(
+            title = kind,
+            summary = "$status · $source · $compactValue",
+            onClick = onToggleExpanded,
+        )
+        if (expanded) {
+            ToolBoxGroupDivider(startPadding = 14.dp, endPadding = 14.dp)
+            ToolBoxSwitchSettingRow(
+                "启用此规则",
+                rule.enabled,
+                { enabled ->
+                    filters.change { state ->
+                        state.copy(rules = state.rules.map { if (it.id == rule.id) it.copy(enabled = enabled) else it })
+                    }
+                },
+                summary = rule.value,
+            )
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                ToolBoxTextButton("编辑", onEdit, Modifier.weight(1f), outlined = false)
+                ToolBoxTextButton("删除", { filters.delete(rule) }, Modifier.weight(1f), outlined = false)
+            }
+        }
+    }
+}
 
 @Composable
 private fun FilterSectionLabel(text: String) {
