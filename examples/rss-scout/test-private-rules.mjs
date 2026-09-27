@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const ctx={URL,URLSearchParams,console};ctx.globalThis=ctx;ctx.window=ctx;vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(new URL('./core.js',import.meta.url),'utf8'),ctx);
+const C=ctx.RSSScoutCore;
+const payload=JSON.parse(fs.readFileSync(new URL('./private-rules.json',import.meta.url),'utf8'));
+const imported=C.importScoutRules(payload);
+assert.ok(imported.rules.length>=5);
+const hub='https://rsshub.example';
+const route=(u)=>C.radarCandidates(u,imported.rules,hub).map(x=>x.url);
+assert.equal(JSON.stringify(route('https://t.me/inside1024')),JSON.stringify(['https://rsshub.example/telegram/channel/inside1024']));
+assert.equal(JSON.stringify(route('https://t.me/s/inside1024')),JSON.stringify(['https://rsshub.example/telegram/channel/inside1024']));
+assert.equal(JSON.stringify(route('https://telegram.me/inside1024')),JSON.stringify(['https://rsshub.example/telegram/channel/inside1024']));
+assert.equal(JSON.stringify(route('https://telega.io/c/readhub_cn')),JSON.stringify(['https://rsshub.example/telegram/channel/readhub_cn']));
+assert.equal(JSON.stringify(route('https://telega.io/channels/readhub_cn/card')),JSON.stringify(['https://rsshub.example/telegram/channel/readhub_cn']));
+for(const bad of ['https://t.me/share','https://t.me/proxy','https://t.me/joinchat','https://t.me/c/123/456','https://t.me/+abcdef']) assert.equal(JSON.stringify(route(bad)),'[]',bad);
+console.log('private rules tests passed:', imported.rules.length);
