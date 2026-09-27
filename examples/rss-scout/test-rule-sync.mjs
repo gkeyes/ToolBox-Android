@@ -11,12 +11,11 @@ const settings={hubBase:'https://rsshub.example',workerBase:'https://worker.exam
 const cache=await ctx.RSSScoutRules.sync(network,settings,'',new AbortController().signal);
 assert.ok(cache.rules.length>=10);assert.ok(cache.source.includes('私人规则订阅'));assert.ok(cache.source.includes('GitHub 官方构建'));assert.equal(ctx.RSSScoutRules.cacheValid(cache,settings),true);
 const urls=ctx.RSSScoutCore.radarCandidates('https://telega.io/c/readhub_cn',cache.rules,settings.hubBase,settings.workerBase).map(x=>x.url);
-assert.deepEqual(urls,[
-  'https://rsshub.example/telegram/channel/readhub_cn',
-  'https://worker.example/rss/telegram/channel/readhub_cn'
-]);
+assert.equal(JSON.stringify(urls,[
+  'https://rsshub.example/telegram/channel/readhub_cn'),JSON.stringify('https://worker.example/rss/telegram/channel/readhub_cn'
+]));
 const actionUrls=ctx.RSSScoutCore.radarCandidates('https://github.com/ReChronoRain/HyperCeiler/actions/workflows/ci_build.yml',cache.rules,settings.hubBase,settings.workerBase).map(x=>x.url);
-assert.deepEqual(actionUrls,['https://worker.example/rss/github/actions/ReChronoRain/HyperCeiler/ci_build.yml']);
+assert.equal(JSON.stringify(actionUrls),JSON.stringify(['https://worker.example/rss/github/actions/ReChronoRain/HyperCeiler/ci_build.yml']));
 const official=ctx.RSSScoutCore.radarCandidates('https://example.com/42',cache.rules,settings.hubBase,settings.workerBase).map(x=>x.url);
-assert.deepEqual(official,['https://rsshub.example/example/42']);
+assert.equal(JSON.stringify(official),JSON.stringify(['https://rsshub.example/example/42']));
 console.log('combined dual-service rule sync passed:',cache.rules.length,'rules',calls.length,'requests');
