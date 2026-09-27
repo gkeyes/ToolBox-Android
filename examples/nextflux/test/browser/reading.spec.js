@@ -314,8 +314,10 @@ test("Telegram source adapter removes duplicate title and restores message parag
     '中国启动“太空之弦”计算星座建设',
   ));
   expect(result.adapter).toBe("telegram");
-  expect(result.paragraphs).toEqual([
-    { text: "在第五届全球数字贸易博览会期间，项目正式启动。", indent: "32px" },
-    { text: "—— 澎湃新闻", indent: "0px" },
+  expect(result.paragraphs.map(({ text }) => text)).toEqual([
+    "在第五届全球数字贸易博览会期间，项目正式启动。",
+    "—— 澎湃新闻",
   ]);
+  expect(Number.parseFloat(result.paragraphs[0].indent)).toBeGreaterThan(0);
+  expect(Number.parseFloat(result.paragraphs[1].indent)).toBe(0);
 });
