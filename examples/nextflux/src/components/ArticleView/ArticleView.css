@@ -30,8 +30,9 @@
 }
 
 /* 文章标题链接样式 */
-.article-title a {
-  @apply text-foreground font-medium no-underline
+.article-title a,
+.article-title .nextflux-shared-title-link {
+  @apply text-foreground font-semibold no-underline
 }
 
 /* 文章内容链接样式 */
@@ -137,10 +138,39 @@ div.force-dark-code-theme .shiki span {
 }
 
 
-/* Mobile continuous-reading spring transition. The overlay is portaled to
-   body so the current article can keep native scrolling until the bottom edge. */
+/* Mobile continuous-reading spring transition.
+   Uses an existing HeroUI progress circle, Motion shared-layout headers, and
+   Material-style fade-through for the article body. */
 .nextflux-continuous-current-surface {
   will-change: transform, opacity;
+}
+
+.nextflux-shared-article-header {
+  transform-origin: top left;
+}
+
+.nextflux-shared-feed {
+  min-height: 24px;
+}
+
+.nextflux-shared-feed-button {
+  color: inherit;
+  font: inherit;
+}
+
+.nextflux-shared-title-link {
+  display: inline;
+  color: inherit;
+  font-weight: 600;
+}
+
+.nextflux-shared-date {
+  min-height: 20px;
+}
+
+.nextflux-article-fade-through {
+  transform-origin: 50% 0;
+  will-change: opacity, transform;
 }
 
 .nextflux-continuous-layer {
@@ -158,88 +188,94 @@ div.force-dark-code-theme .shiki span {
   left: 0;
   right: 0;
   top: 100%;
-  height: 96px;
+  height: 112px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--background) 97%, var(--foreground) 3%), color-mix(in srgb, var(--background) 92%, var(--foreground) 8%));
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  will-change: transform;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--background) 97%, var(--foreground) 3%),
+    color-mix(in srgb, var(--background) 92%, var(--foreground) 8%)
+  );
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 7%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent);
+  will-change: transform, opacity;
+}
+
+.nextflux-continuous-progress-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 5px;
+}
+
+.nextflux-continuous-progress-circle {
+  width: 48px;
+  height: 48px;
+  color: var(--accent);
+}
+
+.nextflux-continuous-progress-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1;
 }
 
 .nextflux-continuous-springbar {
-  width: 44px;
-  height: 5px;
-  margin-bottom: 10px;
+  width: 28px;
+  height: 3px;
+  margin-bottom: 5px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
   transform-origin: center;
-  will-change: transform, background;
+  will-change: transform, opacity;
 }
 
 .nextflux-continuous-label {
   color: color-mix(in srgb, var(--foreground) 66%, transparent);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .nextflux-continuous-hint {
-  margin-top: 4px;
-  color: color-mix(in srgb, var(--foreground) 42%, transparent);
-  font-size: 11px;
-}
-
-.nextflux-continuous-meter {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 0;
-  height: 3px;
-  background: var(--accent);
-  opacity: 0.9;
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  font-size: 10.5px;
+  line-height: 1.25;
 }
 
 .nextflux-continuous-preview {
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(100% + 96px);
+  top: calc(100% + 112px);
   height: 100%;
   background: var(--background);
-  box-shadow: 0 -14px 42px rgb(0 0 0 / 4%);
-  will-change: transform, box-shadow;
+  box-shadow: 0 -12px 36px rgb(0 0 0 / 4%);
+  will-change: transform, box-shadow, background-color;
 }
 
 .nextflux-continuous-preview-inner {
   width: 100%;
-  max-width: 70ch;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 74px) 20px 88px;
+  padding: calc(env(safe-area-inset-top) + 20px) 20px 96px;
 }
 
-.nextflux-continuous-feed {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: var(--muted);
-  font-size: 14px;
+.nextflux-continuous-shared-header {
+  width: 100%;
 }
 
-.nextflux-continuous-preview h2 {
-  margin: 0 0 10px;
-  color: var(--foreground);
-  font-size: 1.75rem;
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-}
-
-.nextflux-continuous-date {
-  color: color-mix(in srgb, var(--foreground) 42%, transparent);
-  font-size: 13px;
+.nextflux-continuous-preview-body {
+  will-change: opacity, transform;
 }
 
 .nextflux-continuous-rule {
@@ -253,6 +289,14 @@ div.force-dark-code-theme .shiki span {
   color: color-mix(in srgb, var(--foreground) 72%, transparent);
   font-size: 15px;
   line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nextflux-continuous-progress-circle,
+  .nextflux-continuous-preview,
+  .nextflux-continuous-bridge {
+    transition: none !important;
+  }
 }
 
 @media (min-width: 768px) {

@@ -1,20 +1,20 @@
-export const CONTINUOUS_PULL_TRIGGER = 92;
-export const CONTINUOUS_PULL_MAX = 170;
-export const CONTINUOUS_BRIDGE_HEIGHT = 96;
+export const CONTINUOUS_PULL_TRIGGER = 132;
+export const CONTINUOUS_PULL_MAX = 260;
+export const CONTINUOUS_BRIDGE_HEIGHT = 112;
 
 export function continuousPullResistance(rawPull) {
   const x = Math.max(0, Math.min(CONTINUOUS_PULL_MAX, Number(rawPull) || 0));
-  if (x <= 24) return x * 0.82;
-  if (x <= 72) {
-    const t = (x - 24) / 48;
+  if (x <= 32) return x * 0.72;
+  if (x <= 96) {
+    const t = (x - 32) / 64;
     const eased = t * t * (3 - 2 * t);
-    return 19.68 + 29 * eased;
+    return 23.04 + 38 * eased;
   }
   if (x <= CONTINUOUS_PULL_TRIGGER) {
-    const t = (x - 72) / (CONTINUOUS_PULL_TRIGGER - 72);
-    return 48.68 + 8.5 * (1 - Math.pow(1 - t, 2.2));
+    const t = (x - 96) / (CONTINUOUS_PULL_TRIGGER - 96);
+    return 61.04 + 14 * (1 - Math.pow(1 - t, 2.35));
   }
-  return 57.18 + (x - CONTINUOUS_PULL_TRIGGER) * 0.18;
+  return 75.04 + (x - CONTINUOUS_PULL_TRIGGER) * 0.12;
 }
 
 export function findNextUnreadArticle(articles, currentId) {

@@ -1,13 +1,18 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
-import { filteredArticles, imageGalleryActive } from "@/stores/articlesStore.js";
+import { ProgressCircle } from "@heroui/react";
+import {
+  activeArticle,
+  filteredArticles,
+  imageGalleryActive,
+} from "@/stores/articlesStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { handleMarkRead } from "@/handlers/articleHandlers.js";
-import FeedIcon from "@/components/ui/FeedIcon.jsx";
-import { generateReadableDate } from "@/lib/format.js";
+import { getArticleById } from "@/db/storage.js";
+import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx";
 import {
   CONTINUOUS_BRIDGE_HEIGHT,
   CONTINUOUS_PULL_MAX,
@@ -19,22 +24,35 @@ import {
 
 const INTERACTIVE_SELECTOR = "iframe,video,audio,input,textarea,select,[contenteditable='true'],.PhotoView-Slider__BannerWrap";
 
+function previewTextOf(article) {
+  const source = article?.contentText ?? article?.summary ?? article?.content ?? "";
+  return String(source)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150);
+}
+
 export default function ContinuousNextUnread({ articleId, scrollAreaRef, surfaceRef, enabled }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const articles = useStore(filteredArticles);
   const galleryActive = useStore(imageGalleryActive);
-  const { reduceMotion } = useStore(settingsState);
+  const { reduceMotion, maxWidth, fontFamily } = useStore(settingsState);
   const nextUnread = useMemo(
     () => findNextUnreadArticle(articles, articleId),
     [articles, articleId],
   );
 
+  const [progressValue, setProgressValue] = useState(0);
+  const [handoffArticle, setHandoffArticle] = useState(null);
+  const previewArticle = handoffArticle ?? nextUnread;
+
   const layerRef = useRef(null);
   const bridgeRef = useRef(null);
   const previewRef = useRef(null);
+  const previewBodyRef = useRef(null);
   const springBarRef = useRef(null);
-  const meterRef = useRef(null);
   const bridgeTextRef = useRef(null);
   const bridgeSubRef = useRef(null);
 
@@ -46,6 +64,19 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   const velocityRef = useRef(0);
   const animationRef = useRef(0);
   const crossedRef = useRef(false);
+  const preparedRef = useRef({ id: null, promise: null });
+
+  useEffect(() => {
+    if (!nextUnread?.id) {
+      preparedRef.current = { id: null, promise: null };
+      return;
+    }
+    const id = String(nextUnread.id);
+    preparedRef.current = {
+      id,
+      promise: getArticleById(id).catch(() => null),
+    };
+  }, [nextUnread?.id]);
 
   const cancelAnimation = () => {
     if (!animationRef.current) return;
@@ -57,7 +88,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const text = bridgeTextRef.current;
     const sub = bridgeSubRef.current;
     if (!text || !sub) return;
-    if (!nextUnread) {
+    if (!previewArticle) {
       text.textContent = t("articleView.continuousReading.end");
       sub.textContent = t("articleView.continuousReading.releaseBack");
       return;
@@ -74,19 +105,17 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const bridge = bridgeRef.current;
     const preview = previewRef.current;
     const springBar = springBarRef.current;
-    const meter = meterRef.current;
     const surface = surfaceRef.current;
     const layer = layerRef.current;
-    if (!bridge || !preview || !springBar || !meter || !layer) return;
+    if (!bridge || !preview || !springBar || !layer) return;
 
     layer.style.opacity = offset > 0 ? "1" : "0";
     bridge.style.transform = `translate3d(0,${-offset}px,0)`;
     preview.style.transform = `translate3d(0,${-offset}px,0)`;
-    springBar.style.transform = `scaleX(${1 + ratio * 0.72}) scaleY(${1 - ratio * 0.38})`;
-    springBar.style.background = crossed ? "color-mix(in srgb, var(--accent) 34%, var(--muted))" : "";
-    meter.style.width = `${Math.min(100, ratio * 100)}%`;
-    preview.style.boxShadow = `0 -18px 44px rgba(0,0,0,${0.04 + Math.min(1, ratio) * 0.08})`;
-    if (surface) surface.style.transform = `translate3d(0,${-offset * 0.13}px,0)`;
+    springBar.style.transform = `scaleX(${1 + ratio * 0.42}) scaleY(${1 - ratio * 0.2})`;
+    springBar.style.opacity = crossed ? "0.45" : "0.75";
+    preview.style.boxShadow = `0 -18px 44px rgba(0,0,0,${0.035 + Math.min(1, ratio) * 0.055})`;
+    if (surface) surface.style.transform = `translate3d(0,${-offset * 0.1}px,0)`;
     setCopy(crossed);
   };
 
@@ -96,6 +125,8 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const offset = continuousPullResistance(raw);
     const ratio = Math.min(1, raw / CONTINUOUS_PULL_TRIGGER);
     const crossed = raw >= CONTINUOUS_PULL_TRIGGER;
+
+    setProgressValue(Math.round(ratio * 100));
 
     if (crossed && !crossedRef.current) {
       crossedRef.current = true;
@@ -110,26 +141,43 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     rawPullRef.current = 0;
     pullingRef.current = false;
     crossedRef.current = false;
+    setProgressValue(0);
+
     const layer = layerRef.current;
     const bridge = bridgeRef.current;
     const preview = previewRef.current;
+    const previewBody = previewBodyRef.current;
     const springBar = springBarRef.current;
-    const meter = meterRef.current;
     const surface = surfaceRef.current;
-    if (layer) layer.style.opacity = "0";
-    if (bridge) bridge.style.transform = "";
+
+    if (layer) {
+      layer.style.opacity = "0";
+      layer.style.transition = "";
+    }
+    if (bridge) {
+      bridge.style.transform = "";
+      bridge.style.opacity = "";
+      bridge.style.transition = "";
+    }
     if (preview) {
       preview.style.transform = "";
       preview.style.boxShadow = "";
+      preview.style.background = "";
+      preview.style.transition = "";
+    }
+    if (previewBody) {
+      previewBody.style.opacity = "";
+      previewBody.style.transform = "";
+      previewBody.style.transition = "";
     }
     if (springBar) {
       springBar.style.transform = "";
-      springBar.style.background = "";
+      springBar.style.opacity = "";
     }
-    if (meter) meter.style.width = "0";
     if (surface) {
       surface.style.transform = "";
       surface.style.opacity = "";
+      surface.style.transition = "";
     }
     setCopy(false);
   };
@@ -166,29 +214,67 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       clearVisualState();
       return;
     }
-    const initialVelocity = Math.max(-420, Math.min(420, -velocityRef.current * 160));
+    const initialVelocity = Math.max(-320, Math.min(320, -velocityRef.current * 120));
     springTo({
       from,
       to: 0,
       velocity: initialVelocity,
-      stiffness: 420,
-      damping: 36,
+      stiffness: 390,
+      damping: 38,
       onUpdate: (x) => {
         const safe = Math.max(0, x);
-        applyVisibleOffset(safe, Math.min(1, safe / 57.18), false);
+        const ratio = Math.min(1, safe / continuousPullResistance(CONTINUOUS_PULL_TRIGGER));
+        setProgressValue(Math.round(ratio * 100));
+        applyVisibleOffset(safe, ratio, false);
       },
       onDone: clearVisualState,
     });
   };
 
-  const navigateToNext = () => {
-    if (!nextUnread) {
-      springBack();
-      return;
+  const resolvePreparedArticle = async (article) => {
+    if (!article?.id) return article;
+    const id = String(article.id);
+    if (preparedRef.current.id === id && preparedRef.current.promise) {
+      const prepared = await preparedRef.current.promise;
+      if (prepared) return prepared;
     }
+    return (await getArticleById(id).catch(() => null)) ?? article;
+  };
+
+  const navigatePrepared = async (article) => {
+    if (!article) return;
+    const prepared = await resolvePreparedArticle(article);
+    activeArticle.set(prepared);
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
-    navigate(`${basePath}/article/${nextUnread.id}`);
-    if (nextUnread.status !== "read") void handleMarkRead(nextUnread);
+    navigate(`${basePath}/article/${article.id}`);
+    if (article.status !== "read") void handleMarkRead(article);
+  };
+
+  const finishSharedHandoff = () => {
+    const bridge = bridgeRef.current;
+    const preview = previewRef.current;
+    const previewBody = previewBodyRef.current;
+
+    if (bridge) {
+      bridge.style.transition = "opacity 180ms cubic-bezier(.4,0,1,1)";
+      bridge.style.opacity = "0";
+    }
+    if (previewBody) {
+      previewBody.style.transition = "opacity 170ms cubic-bezier(.4,0,1,1), transform 220ms cubic-bezier(.2,0,0,1)";
+      previewBody.style.opacity = "0";
+      previewBody.style.transform = "translate3d(0,-6px,0)";
+    }
+    if (preview) {
+      preview.style.transition = "background-color 360ms cubic-bezier(.2,0,0,1), box-shadow 360ms cubic-bezier(.2,0,0,1)";
+      preview.style.background = "transparent";
+      preview.style.boxShadow = "none";
+    }
+
+    setTimeout(() => {
+      clearVisualState();
+      setHandoffArticle(null);
+      transitioningRef.current = false;
+    }, 460);
   };
 
   const commitNext = () => {
@@ -197,45 +283,52 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       return;
     }
     transitioningRef.current = true;
+    setHandoffArticle(nextUnread);
+    setProgressValue(100);
 
     if (reduceMotion) {
-      navigateToNext();
-      clearVisualState();
-      transitioningRef.current = false;
+      void navigatePrepared(nextUnread).finally(() => {
+        clearVisualState();
+        setHandoffArticle(null);
+        transitioningRef.current = false;
+      });
       return;
     }
 
     const from = continuousPullResistance(rawPullRef.current);
     const target = window.innerHeight + CONTINUOUS_BRIDGE_HEIGHT;
-    const initialVelocity = Math.max(160, Math.min(920, velocityRef.current * 260 + 220));
+    const initialVelocity = Math.max(110, Math.min(560, velocityRef.current * 165 + 135));
     const surface = surfaceRef.current;
+    const navigationPromise = resolvePreparedArticle(nextUnread);
 
     springTo({
       from,
       to: target,
       velocity: initialVelocity,
-      stiffness: 250,
-      damping: 28,
+      stiffness: 190,
+      damping: 32,
       onUpdate: (x) => {
         const progress = Math.min(1, Math.max(0, (x - from) / Math.max(1, target - from)));
-        applyVisibleOffset(x, Math.max(0, 1 - progress) * 0.78, true);
+        applyVisibleOffset(x, Math.max(0, 1 - progress) * 0.58, true);
         if (surface) {
-          surface.style.transform = `translate3d(0,${-Math.min(115, x * 0.15)}px,0)`;
-          surface.style.opacity = String(1 - progress * 0.82);
+          surface.style.transform = `translate3d(0,${-Math.min(72, x * 0.085)}px,0)`;
+          surface.style.opacity = String(1 - progress * 0.58);
         }
       },
-      onDone: () => {
-        navigateToNext();
-        const layer = layerRef.current;
-        if (layer) {
-          layer.style.transition = "opacity 160ms ease";
-          requestAnimationFrame(() => { layer.style.opacity = "0"; });
+      onDone: async () => {
+        const prepared = await navigationPromise;
+        activeArticle.set(prepared ?? nextUnread);
+        const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
+        navigate(`${basePath}/article/${nextUnread.id}`);
+        if (nextUnread.status !== "read") void handleMarkRead(nextUnread);
+        if (surface) {
+          surface.style.transition = "transform 360ms cubic-bezier(.2,0,0,1), opacity 260ms cubic-bezier(.2,0,0,1)";
+          requestAnimationFrame(() => {
+            surface.style.transform = "translate3d(0,0,0)";
+            surface.style.opacity = "1";
+          });
         }
-        setTimeout(() => {
-          if (layer) layer.style.transition = "";
-          clearVisualState();
-          transitioningRef.current = false;
-        }, 180);
+        requestAnimationFrame(() => requestAnimationFrame(finishSharedHandoff));
       },
     });
   };
@@ -278,8 +371,8 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       if (event.cancelable) event.preventDefault();
 
       const nextRaw = move > 0
-        ? rawPullRef.current + move
-        : Math.max(0, rawPullRef.current + move * 1.05);
+        ? rawPullRef.current + move * 0.82
+        : Math.max(0, rawPullRef.current + move * 0.96);
       applyPull(nextRaw);
       if (nextRaw <= 0 && move < 0) {
         pullingRef.current = false;
@@ -304,41 +397,57 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       viewport.removeEventListener("touchend", finish);
       viewport.removeEventListener("touchcancel", finish);
       cancelAnimation();
-      clearVisualState();
+      if (!transitioningRef.current) clearVisualState();
     };
   }, [articleId, enabled, galleryActive, nextUnread?.id, reduceMotion]);
 
   useEffect(() => {
     setCopy(false);
-  }, [nextUnread?.id, i18n.language]);
+  }, [previewArticle?.id, i18n.language]);
 
   if (!enabled || typeof document === "undefined") return null;
+
+  const sharedLayoutId = previewArticle ? `nextflux-article-${previewArticle.id}` : undefined;
+  const previewText = previewTextOf(previewArticle);
 
   return createPortal(
     <div ref={layerRef} className="nextflux-continuous-layer" aria-hidden="true">
       <div ref={bridgeRef} className="nextflux-continuous-bridge">
+        <div className="nextflux-continuous-progress-wrap">
+          <ProgressCircle
+            aria-label={t("articleView.continuousReading.pull")}
+            value={progressValue}
+            className="nextflux-continuous-progress-circle"
+          />
+          <span className="nextflux-continuous-progress-glyph">
+            {progressValue >= 100 ? "✓" : "↑"}
+          </span>
+        </div>
         <div ref={springBarRef} className="nextflux-continuous-springbar" />
         <div ref={bridgeTextRef} className="nextflux-continuous-label" />
         <div ref={bridgeSubRef} className="nextflux-continuous-hint" />
-        <div ref={meterRef} className="nextflux-continuous-meter" />
       </div>
+
       <section ref={previewRef} className="nextflux-continuous-preview">
-        <div className="nextflux-continuous-preview-inner">
-          {nextUnread ? (
+        <div
+          className="nextflux-continuous-preview-inner"
+          style={{ maxWidth: `${maxWidth}ch`, fontFamily }}
+        >
+          {previewArticle ? (
             <>
-              <div className="nextflux-continuous-feed">
-                <FeedIcon feedId={nextUnread.feed?.id ?? nextUnread.feedId} />
-                <span>{nextUnread.feed?.title || t("articleView.continuousReading.nextUnread")}</span>
+              <ArticleHeader
+                article={previewArticle}
+                layoutId={sharedLayoutId}
+                interactive={false}
+                className="nextflux-continuous-shared-header"
+              />
+              <div ref={previewBodyRef} className="nextflux-continuous-preview-body">
+                <div className="nextflux-continuous-rule" />
+                <p>{previewText || t("articleView.continuousReading.preview")}</p>
               </div>
-              <h2>{nextUnread.titleText ?? nextUnread.title}</h2>
-              <div className="nextflux-continuous-date">
-                {generateReadableDate(nextUnread.published_at)}
-              </div>
-              <div className="nextflux-continuous-rule" />
-              <p>{t("articleView.continuousReading.preview")}</p>
             </>
           ) : (
-            <div className="nextflux-continuous-empty">
+            <div ref={previewBodyRef} className="nextflux-continuous-empty">
               {t("articleView.continuousReading.end")}
             </div>
           )}
