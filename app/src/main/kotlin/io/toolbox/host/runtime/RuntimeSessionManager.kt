@@ -30,6 +30,7 @@ import io.toolbox.tool.runtime.RuntimeAlarmHandler
 import io.toolbox.tool.runtime.RuntimeAlarmSummary
 import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeContinuousBackgroundHandler
+import io.toolbox.tool.runtime.RuntimeBackgroundActivityRequest
 import io.toolbox.tool.runtime.RuntimeBackgroundSessionSummary
 import io.toolbox.tool.runtime.RuntimeBackgroundStartOptions
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
@@ -90,6 +91,9 @@ internal data class RuntimeBackgroundSessionUi(
     val startedAt: Long,
     val notificationId: Int,
     val statusText: String? = null,
+    val activityText: String? = null,
+    val activityDetail: String? = null,
+    val activityUpdatedAt: Long? = null,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -718,6 +722,27 @@ internal class RuntimeSessionManager(
             sessionsByTool[toolId].orEmpty().values.map(StoredRuntimeSession::toRuntimeSummary)
         }
 
+        override suspend fun updateActivity(request: RuntimeBackgroundActivityRequest) =
+            withContext(Dispatchers.Main.immediate) {
+                ensureCurrentRuntime(toolId, versionCode)
+                val current = sessionsByTool[toolId]?.get(request.sessionId)
+                    ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "后台运行会话不存在")
+                val updated = current.copy(
+                    activityText = request.text,
+                    activityDetail = request.detail?.takeIf(String::isNotBlank),
+                    activityUpdatedAt = request.updatedAt ?: nowMillis(),
+                )
+                sessionsByTool.getValue(toolId)[request.sessionId] = updated
+                try {
+                    persistSessions(toolId)
+                } catch (failure: Exception) {
+                    sessionsByTool.getValue(toolId)[request.sessionId] = current
+                    throw failure
+                }
+                updateSessionProjection()
+                refreshForegroundService()
+            }
+
         override suspend fun setTimer(key: String, intervalMillis: Long) = withContext(Dispatchers.Main.immediate) {
             ensureCurrentRuntime(toolId, versionCode)
             if (sessionsByTool[toolId].isNullOrEmpty()) {
@@ -995,6 +1020,9 @@ internal class RuntimeSessionManager(
                     startedAt = record.startedAt,
                     notificationId = record.notificationId,
                     statusText = recoveryStatus[toolId],
+                    activityText = record.activityText,
+                    activityDetail = record.activityDetail,
+                    activityUpdatedAt = record.activityUpdatedAt,
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
@@ -1203,6 +1231,9 @@ internal class RuntimeSessionManager(
         val restoreAfterReboot: Boolean,
         val lastReminderAt: Long?,
         val notificationId: Int,
+        val activityText: String? = null,
+        val activityDetail: String? = null,
+        val activityUpdatedAt: Long? = null,
     ) {
         fun toRuntimeSummary() = RuntimeBackgroundSessionSummary(
             sessionId,
@@ -1217,7 +1248,12 @@ internal class RuntimeSessionManager(
             .put("restoreAfterProcessDeath", restoreAfterProcessDeath)
             .put("restoreAfterReboot", restoreAfterReboot)
             .put("notificationId", notificationId)
-            .apply { lastReminderAt?.let { put("lastReminderAt", it) } }
+            .apply {
+                lastReminderAt?.let { put("lastReminderAt", it) }
+                activityText?.let { put("activityText", it) }
+                activityDetail?.let { put("activityDetail", it) }
+                activityUpdatedAt?.let { put("activityUpdatedAt", it) }
+            }
 
         companion object {
             fun fromJson(value: JSONObject) = StoredRuntimeSession(
@@ -1227,6 +1263,9 @@ internal class RuntimeSessionManager(
                 restoreAfterReboot = value.optBoolean("restoreAfterReboot", false),
                 lastReminderAt = value.optLong("lastReminderAt").takeIf { value.has("lastReminderAt") },
                 notificationId = value.optInt("notificationId", 0),
+                activityText = value.optString("activityText").takeIf { value.has("activityText") && it.isNotBlank() },
+                activityDetail = value.optString("activityDetail").takeIf { value.has("activityDetail") && it.isNotBlank() },
+                activityUpdatedAt = value.optLong("activityUpdatedAt").takeIf { value.has("activityUpdatedAt") },
             )
         }
     }
