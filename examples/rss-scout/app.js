@@ -248,7 +248,9 @@
     if(f.validation!=='pending')return;
     f.validation='checking';render();
     try {
-      const r=await state.network.request(f.url,{signal,headers:{Accept:'application/rss+xml,application/atom+xml,application/feed+json,application/xml;q=0.9,*/*;q=0.5'}});
+      const isXhsWorker=f.kind==='rssworker'&&new URL(f.url).pathname.startsWith('/rss/xiaohongshu/user/');
+      const timeoutMs=isXhsWorker?(state.settings.timeout===0?0:Math.max(state.settings.timeout,45000)):state.settings.timeout;
+      const r=await state.network.request(f.url,{signal,timeoutMs,headers:{Accept:'application/rss+xml,application/atom+xml,application/feed+json,application/xml;q=0.9,*/*;q=0.5'}});
       if(signal.aborted)throw new DOMException('已停止','AbortError');
       if(r.status<200||r.status>=300)throw new Error('HTTP '+r.status+'；保留为候选，未验证成功');
       const feed=C.parseFeed(r.text);
