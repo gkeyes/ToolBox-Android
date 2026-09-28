@@ -444,6 +444,7 @@ class RuntimeBridgeSession internal constructor(
                   start: options => call('background.start', options === undefined ? {} : options),
                   stop: sessionId => call('background.stop', { sessionId }),
                   status: sessionId => call('background.status', { sessionId }),
+                  updateActivity: request => call('background.updateActivity', request),
                   list: () => call('background.list'),
                   listSessions: () => call('background.listSessions'),
                   getResult: taskId => call('background.getResult', { taskId }),
