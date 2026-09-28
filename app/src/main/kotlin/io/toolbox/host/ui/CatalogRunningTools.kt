@@ -187,13 +187,20 @@ internal fun RunningToolRow(
                 val runtimeStatus = when {
                     stopping -> "正在停止后台会话"
                     !session.statusText.isNullOrBlank() -> session.statusText
+                    !session.activityPrimaryText.isNullOrBlank() -> "● 运行中 · ${session.activityPrimaryText}"
                     detailedLiveProgress && refreshedAt != null -> "● 运行中 · $refreshedAt 已刷新"
                     !session.livePrimaryText.isNullOrBlank() -> "● 运行中 · ${session.livePrimaryText}"
                     else -> "● 运行中"
                 }
                 AppText(text = runtimeStatus, color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
-                if (!stopping && session.statusText.isNullOrBlank() && !detailedLiveProgress && !session.liveSecondaryText.isNullOrBlank()) {
-                    AppText(text = session.liveSecondaryText, color = colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                val detailText = when {
+                    stopping || !session.statusText.isNullOrBlank() -> null
+                    !session.activitySecondaryText.isNullOrBlank() -> session.activitySecondaryText
+                    !detailedLiveProgress && !session.liveSecondaryText.isNullOrBlank() -> session.liveSecondaryText
+                    else -> null
+                }
+                detailText?.let {
+                    AppText(text = it, color = colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
                 }
             }
         }
