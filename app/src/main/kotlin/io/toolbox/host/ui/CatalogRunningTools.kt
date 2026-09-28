@@ -178,7 +178,17 @@ internal fun RunningToolRow(
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             Column(Modifier.weight(1f)) {
                 AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
-                AppText(text = if (stopping) "正在停止后台会话" else "● 运行中",
+                val runtimeStatus = when {
+                    stopping -> "正在停止后台会话"
+                    !session.statusText.isNullOrBlank() -> session.statusText
+                    !session.livePrimaryText.isNullOrBlank() -> listOfNotNull(
+                        "● 运行中",
+                        session.livePrimaryText,
+                        session.liveSecondaryText?.takeIf(String::isNotBlank),
+                    ).joinToString(" · ")
+                    else -> "● 运行中"
+                }
+                AppText(text = runtimeStatus,
                     color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
             }
         }
