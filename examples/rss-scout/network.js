@@ -20,7 +20,8 @@
       if (!url.startsWith('https://')) throw new Error('该源为 HTTP：ToolBox 原生网络不能直接验证，可用 Miniflux 补查或尝试订阅');
       const {signal} = options;
       if (signal && signal.aborted) throw cancelled();
-      const request = {url, method:options.method || 'GET', headers:options.headers || {}, timeoutMs:this.timeout()};
+      const timeoutMs = Number.isSafeInteger(options.timeoutMs) && options.timeoutMs >= 0 ? options.timeoutMs : this.timeout();
+      const request = {url, method:options.method || 'GET', headers:options.headers || {}, timeoutMs};
       if (options.body !== undefined) request.body = JSON.stringify(options.body);
       const response = await this.api.network.openStream(request, signal ? {signal} : undefined);
       const chunks = []; let total = 0, complete = false;
