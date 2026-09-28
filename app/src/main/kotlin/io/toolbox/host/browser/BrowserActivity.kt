@@ -95,6 +95,8 @@ class BrowserActivity : ComponentActivity() {
     private var menu by mutableStateOf(false)
     private var clearConfirmation by mutableStateOf(false)
     private var fullAddress by mutableStateOf(false)
+    private var pendingSslHandler: SslErrorHandler? = null
+    private var pendingSslUrl by mutableStateOf<String?>(null)
     private var clearing by mutableStateOf(false)
     private var fullScreenView by mutableStateOf<View?>(null)
     private var fullScreenCallback: WebChromeClient.CustomViewCallback? = null
@@ -206,9 +208,13 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    handler.cancel()
-                    if (view !== webView) return
-                    error = "网站证书无法验证，连接已停止。请检查网址或稍后重试。"
+                    if (view !== webView) {
+                        handler.cancel()
+                        return
+                    }
+                    pendingSslHandler?.cancel()
+                    pendingSslHandler = handler
+                    pendingSslUrl = failure.url ?: address
                     interaction = interaction.pageFinished()
                     loadProgress = 100
                 }
@@ -454,6 +460,9 @@ class BrowserActivity : ComponentActivity() {
     override fun onDestroy() {
         resumed = false
         hideFullScreen()
+        pendingSslHandler?.cancel()
+        pendingSslHandler = null
+        pendingSslUrl = null
         unresponsiveRenderer = null
         webView?.let(::destroyPage)
         super.onDestroy()
@@ -499,6 +508,62 @@ class BrowserActivity : ComponentActivity() {
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
         BrowserFilterSheet(filters, canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing, reload = ::reload)
+        pendingSslUrl?.let { failedUrl ->
+            ToolBoxActionSheet(
+                title = "证书警告",
+                onDismissRequest = {
+                    pendingSslHandler?.cancel()
+                    pendingSslHandler = null
+                    pendingSslUrl = null
+                },
+            ) {
+                ToolBoxText(
+                    "此网站的证书无法验证。继续访问可能存在安全风险。",
+                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textPrimary),
+                )
+                Spacer(Modifier.height(6.dp))
+                ToolBoxText(
+                    failedUrl,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
+                )
+                Spacer(Modifier.height(14.dp))
+                ToolBoxTextButton(
+                    "仍然继续访问",
+                    {
+                        val handler = pendingSslHandler
+                        pendingSslHandler = null
+                        pendingSslUrl = null
+                        handler?.proceed()
+                    },
+                    Modifier.fillMaxWidth(),
+                    outlined = false,
+                )
+                Spacer(Modifier.height(6.dp))
+                ToolBoxSecondaryButton(
+                    "使用系统浏览器",
+                    {
+                        pendingSslHandler?.cancel()
+                        pendingSslHandler = null
+                        pendingSslUrl = null
+                        openSystemBrowser()
+                    },
+                    Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                ToolBoxTextButton(
+                    "取消",
+                    {
+                        pendingSslHandler?.cancel()
+                        pendingSslHandler = null
+                        pendingSslUrl = null
+                    },
+                    Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+        }
         if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
@@ -600,8 +665,9 @@ class BrowserActivity : ComponentActivity() {
         val action = interaction.loadAction(clearing)
         val filterState = filters.snapshot
         val filtering = filterState.active(filters.site)
-        val addressColor = if (unencrypted || interaction.unresponsive) colors.danger else colors.textPrimary
-        val shieldTint = if (unencrypted) colors.danger else colors.primary
+        val certificateWarning = pendingSslUrl != null
+        val addressColor = if (unencrypted || certificateWarning || interaction.unresponsive) colors.danger else colors.textPrimary
+        val shieldTint = if (unencrypted || certificateWarning) colors.danger else colors.primary
         val filterTint = if (filtering) colors.primary else ToolBoxThemeTokens.disabledContent
 
         Row(
@@ -626,7 +692,11 @@ class BrowserActivity : ComponentActivity() {
                 ) {
                     ToolBoxIcon(
                         ToolBoxIconKey.Shield,
-                        if (unencrypted) "连接未加密" else "安全连接",
+                        when {
+                            certificateWarning -> "证书无法验证"
+                            unencrypted -> "连接未加密"
+                            else -> "安全连接"
+                        },
                         modifier = Modifier.size(17.dp),
                         tint = shieldTint,
                     )
@@ -673,32 +743,58 @@ class BrowserActivity : ComponentActivity() {
         val canInteract = !clearing && !interaction.unresponsive && !interaction.restarting
         val blocked = filters.blockedCount
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                .height(64.dp)
-                .clip(RoundedCornerShape(24.dp))
+            Modifier.fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 3.dp)
+                .height(54.dp)
+                .clip(RoundedCornerShape(20.dp))
                 .background(ToolBoxThemeTokens.colors.surface),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            BrowserDockButton(ToolBoxIconKey.Back, "后退",
-                enabled = (canBack || filters.picker.active) && canInteract) {
+            BrowserDockButton(
+                ToolBoxIconKey.Back,
+                "后退",
+                Modifier.weight(1f),
+                enabled = (canBack || filters.picker.active) && canInteract,
+            ) {
                 if (filters.picker.active) filters.stopPicker() else webView?.goBack()
             }
-            BrowserDockButton(ToolBoxIconKey.ChevronRight, "前进", enabled = canForward && canInteract) {
+            BrowserDockButton(
+                ToolBoxIconKey.ChevronRight,
+                "前进",
+                Modifier.weight(1f),
+                enabled = canForward && canInteract,
+            ) {
                 webView?.goForward()
             }
-            BrowserDockButton(ToolBoxIconKey.Shield, if (blocked > 0) "屏蔽 $blocked" else "屏蔽",
-                highlighted = filters.snapshot.active(filters.site), enabled = canInteract) {
+            BrowserDockButton(
+                ToolBoxIconKey.Shield,
+                if (blocked > 0) "屏蔽 $blocked" else "屏蔽",
+                Modifier.weight(1f),
+                highlighted = filters.snapshot.active(filters.site),
+                enabled = canInteract,
+            ) {
                 filters.stopPicker()
                 filters.refresh()
                 filters.sheet = true
             }
-            BrowserDockButton(ToolBoxIconKey.Share, "分享", enabled = canInteract) {
+            BrowserDockButton(
+                ToolBoxIconKey.Share,
+                "分享",
+                Modifier.weight(1f),
+                enabled = canInteract,
+            ) {
                 try {
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, address), "分享链接"))
-                } catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的分享应用。") }
+                } catch (_: android.content.ActivityNotFoundException) {
+                    unsupported("没有可用的分享应用。")
+                }
             }
-            BrowserDockButton(ToolBoxIconKey.More, "更多", enabled = canInteract) { menu = true }
+            BrowserDockButton(
+                ToolBoxIconKey.More,
+                "更多",
+                Modifier.weight(1f),
+                enabled = canInteract,
+            ) { menu = true }
         }
     }
 
@@ -706,6 +802,7 @@ class BrowserActivity : ComponentActivity() {
     private fun BrowserDockButton(
         icon: ToolBoxIconKey,
         label: String,
+        modifier: Modifier = Modifier,
         enabled: Boolean = true,
         highlighted: Boolean = false,
         onClick: () -> Unit,
@@ -717,21 +814,24 @@ class BrowserActivity : ComponentActivity() {
             else -> colors.textSecondary
         }
         Column(
-            Modifier.widthIn(min = 52.dp).heightIn(min = 52.dp)
-                .clip(RoundedCornerShape(18.dp))
+            modifier.height(48.dp)
+                .clip(RoundedCornerShape(15.dp))
                 .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                .padding(horizontal = 5.dp, vertical = 5.dp),
+                .padding(horizontal = 2.dp, vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = tint)
-            Spacer(Modifier.height(2.dp))
+            ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = tint)
+            Spacer(Modifier.height(1.dp))
             ToolBoxText(
                 label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                    fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = tint,
+                    fontSize = 9.5.sp,
+                    lineHeight = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = tint,
                 ),
             )
         }
