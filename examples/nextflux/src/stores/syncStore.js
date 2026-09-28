@@ -323,6 +323,7 @@ async function collectSnapshot(baseCheck) {
     check();
     return {
       token, syncedAt,
+      updatedCount: entryChanges.size,
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
     };
@@ -367,7 +368,14 @@ export function sync(mode = "foreground") {
           commitCheck(false);
           lastSync.set(collected.syncedAt);
         });
-        return { outcome: "committed", syncedAt: collected.syncedAt.toISOString() };
+        const { unreadCounts } = await import("./feedsStore.js");
+        const unreadCount = Object.values(unreadCounts.get()).reduce((sum, value) => sum + (Number(value) || 0), 0);
+        return {
+          outcome: "committed",
+          syncedAt: collected.syncedAt.toISOString(),
+          updatedCount: collected.updatedCount || 0,
+          unreadCount,
+        };
       } catch (failure) {
         await abortArticleSync(collected.token).catch(() => {});
         check(false);
