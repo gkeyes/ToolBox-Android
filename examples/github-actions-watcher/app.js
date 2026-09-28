@@ -671,7 +671,14 @@
       state.warning = null;
       state.warningMessage = "";
       await ensureSession();
-      await updateBackgroundActivity();
+      if (typeof toolbox()?.background?.updateActivity === "function") {
+        await bounded(toolbox().background.updateActivity({
+          sessionId: state.sessionId,
+          text: "等待首次刷新",
+          detail: state.config.fullName,
+          updatedAt: Date.now(),
+        }), null, 5_000);
+      }
       await configureTimers();
       await persist(true);
       renderAll();
