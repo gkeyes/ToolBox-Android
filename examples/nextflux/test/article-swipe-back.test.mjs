@@ -221,8 +221,8 @@ test("holding a short flick before release expires velocity and cancels back", (
   withAnimationClock((clock) => {
     const h = harness(clock);
     h.start();
-    h.move(100, 100, { timeStamp: 20 });
-    h.end(100, 100, { timeStamp: 200 });
+    h.move(90, 100, { timeStamp: 20 });
+    h.end(90, 100, { timeStamp: 200 });
     clock.settle();
     assert.equal(h.backs(), 0);
     assert.equal(h.offset(), 0);
