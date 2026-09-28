@@ -17,7 +17,37 @@ let observedInterval = null;
 function toolbox() { return globalThis.window?.ToolBox; }
 function api() { return toolbox()?.background; }
 function storage() { return toolbox()?.storage; }
+function notifications() { return toolbox()?.notifications?.live; }
 function intervalMs() { return backgroundIntervalMs(settingsState.get().syncInterval); }
+
+function formatClock(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "--:--";
+  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+}
+
+async function publishBackgroundStatus(result, tone = "positive") {
+  if (!sessionId || !notifications()?.start) return;
+  const updatedAt = Date.parse(result?.syncedAt || "") || Date.now();
+  const updatedCount = Math.max(0, Number(result?.updatedCount) || 0);
+  const unreadCount = Math.max(0, Number(result?.unreadCount) || 0);
+  const primaryText = updatedCount > 0 ? `${formatClock(updatedAt)} 已同步 · 更新 ${updatedCount} 条` : `${formatClock(updatedAt)} 已同步 · 暂无更新`;
+  const request = {
+    sessionId,
+    title: "NextFlux",
+    primaryText,
+    secondaryText: `未读 ${unreadCount} 条`,
+    shortText: updatedCount > 0 ? `+${updatedCount}` : "已同步",
+    updatedAt,
+    tone,
+  };
+  try {
+    await notifications().update(request);
+  } catch (error) {
+    if (!["NOT_FOUND", "INVALID_SESSION"].includes(error?.code)) throw error;
+    await notifications().start(request);
+  }
+}
 
 async function readEnabledIntent() {
   if (!storage()?.get) return false;
@@ -84,6 +114,7 @@ async function runBackgroundSync(reason) {
         throw new Error("后台同步未完成写入。");
       }
       setHealth({ type: "success" });
+      await publishBackgroundStatus(result);
       return true;
     } catch (error) {
       if (error?.code === "SYNC_PREEMPTED") {
@@ -93,6 +124,7 @@ async function runBackgroundSync(reason) {
             const result = await forceSync();
             if (result?.outcome === "committed") {
               setHealth({ type: "success" });
+              await publishBackgroundStatus(result);
               return true;
             }
           } catch (foregroundError) {
