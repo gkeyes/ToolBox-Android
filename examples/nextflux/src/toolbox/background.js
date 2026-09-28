@@ -19,6 +19,52 @@ function api() { return toolbox()?.background; }
 function storage() { return toolbox()?.storage; }
 function intervalMs() { return backgroundIntervalMs(settingsState.get().syncInterval); }
 
+function clockLabel(value = Date.now()) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function shortMessage(error) {
+  const value = String(error?.message || error || "后台同步失败").replace(/\s+/g, " ").trim();
+  return value.length > 48 ? `${value.slice(0, 47)}…` : value;
+}
+
+async function updateActivity(text, detail = null, updatedAt = Date.now()) {
+  if (!sessionId || typeof api()?.updateActivity !== "function") return;
+  try {
+    await api().updateActivity({
+      sessionId,
+      text,
+      ...(detail ? { detail } : {}),
+      updatedAt,
+    });
+  } catch {
+    // Activity summaries are informative only; sync must remain independent.
+  }
+}
+
+async function successfulActivity(result) {
+  const syncedAt = Date.parse(result?.syncedAt || "") || Date.now();
+  let unread = null;
+  try {
+    const { totalUnreadCount } = await import("../stores/feedsStore.js");
+    unread = totalUnreadCount.get();
+  } catch { /* Keep the sync result even if the optional count is unavailable. */ }
+  const newEntries = result?.newEntries;
+  const primary = newEntries == null
+    ? `${clockLabel(syncedAt)} 已完成首次同步`
+    : newEntries > 0
+      ? `${clockLabel(syncedAt)} 已同步 · 新增 ${newEntries} 条`
+      : `${clockLabel(syncedAt)} 已同步 · 暂无新增`;
+  const details = [];
+  if (Number.isFinite(result?.updatedEntries) && result.updatedEntries > 0) details.push(`本次处理 ${result.updatedEntries} 条变更`);
+  if (Number.isFinite(unread)) details.push(`未读 ${unread} 条`);
+  await updateActivity(primary, details.join(" · ") || "Miniflux 同步正常", syncedAt);
+}
+
 async function readEnabledIntent() {
   if (!storage()?.get) return false;
   const saved = await storage().get(STATE_KEY);
@@ -84,6 +130,7 @@ async function runBackgroundSync(reason) {
         throw new Error("后台同步未完成写入。");
       }
       setHealth({ type: "success" });
+      await successfulActivity(result);
       return true;
     } catch (error) {
       if (error?.code === "SYNC_PREEMPTED") {
@@ -93,16 +140,19 @@ async function runBackgroundSync(reason) {
             const result = await forceSync();
             if (result?.outcome === "committed") {
               setHealth({ type: "success" });
+              await successfulActivity(result);
               return true;
             }
           } catch (foregroundError) {
             setHealth({ type: "failure", message: foregroundError?.message || "前台补同步失败" });
+            await updateActivity(`${clockLabel()} 同步异常`, `${shortMessage(foregroundError)} · 将自动重试`);
             return false;
           }
         }
         return false;
       }
       setHealth({ type: "failure", message: error?.message || "后台同步失败" });
+      await updateActivity(`${clockLabel()} 同步异常`, `${shortMessage(error)} · 将自动重试`);
       return false;
     }
   })().finally(() => { backgroundRun = null; });
@@ -120,6 +170,7 @@ async function restoreContinuousSync() {
   }
   await ensureSession();
   continuousSync.set(true);
+  await updateActivity("等待下次同步", "后台同步已恢复");
   await refreshTimer();
   setHealth({ type: "enabled" });
   return true;
@@ -163,6 +214,7 @@ export async function startContinuousSync() {
   try {
     await ensureSession();
     continuousSync.set(true);
+    await updateActivity("等待首次同步", "后台同步已开启");
     await refreshTimer();
     await writeEnabledIntent(true);
     setHealth({ type: "enabled" });
