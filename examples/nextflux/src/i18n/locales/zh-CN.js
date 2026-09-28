@@ -159,6 +159,16 @@ export default {
     aiSummarize: "AI 总结",
     aiSummary: "AI 总结",
     aiSummaryGenerating: "正在生成总结...",
+    continuousReading: {
+      pull: "继续上拉 · 下一篇未读",
+      hint: "穿过阻尼后松手",
+      release: "松手 · 弹入下一篇",
+      crossed: "已越过阻尼",
+      end: "没有更多未读文章",
+      releaseBack: "松手返回",
+      nextUnread: "下一篇未读",
+      preview: "松手后继续阅读这篇文章",
+    },
   },
   player: {
     "Current time": "当前时间",

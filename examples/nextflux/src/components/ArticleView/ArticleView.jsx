@@ -22,6 +22,7 @@ import { settingsState } from "@/stores/settingsStore";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
 import ProgressiveArticle from "@/components/ArticleView/components/ProgressiveArticle.jsx";
+import ContinuousNextUnread from "@/components/ArticleView/components/ContinuousNextUnread.jsx";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils.js";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
@@ -55,6 +56,7 @@ const ArticleView = () => {
   const { lightTheme } = useStore(themeState);
   const $currentThemeMode = useStore(currentThemeMode);
   const scrollAreaRef = useRef(null);
+  const articleSurfaceRef = useRef(null);
   const { isMedium } = useIsMobile();
   const displayedArticle = String($activeArticle?.id) === articleId ? $activeArticle : null;
   const isArticleVisible = Boolean(displayedArticle) && !error;
@@ -145,8 +147,12 @@ const ArticleView = () => {
             >
               <ActionButtons />
 
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
+              <div
+                ref={articleSurfaceRef}
+                className="nextflux-continuous-current-surface"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
                   key={articleId}
                   initial={reduceMotion ? {} : { y: 50, opacity: 0 }}
                   animate={{
@@ -238,8 +244,15 @@ const ArticleView = () => {
                       <Attachments article={$activeArticle} />
                     </div>
                   </PhotoProvider>
-                </motion.div>
-              </AnimatePresence>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+              <ContinuousNextUnread
+                articleId={articleId}
+                scrollAreaRef={scrollAreaRef}
+                surfaceRef={articleSurfaceRef}
+                enabled={isMedium && isArticleVisible}
+              />
             </ScrollShadow>
           )}
         </motion.div>

@@ -160,6 +160,16 @@ export default {
     aiSummarize: "AI Summary",
     aiSummary: "AI Summary",
     aiSummaryGenerating: "Generating summary...",
+    continuousReading: {
+      pull: "Keep pulling · next unread",
+      hint: "Pull through the resistance, then release",
+      release: "Release · spring to next article",
+      crossed: "Resistance crossed",
+      end: "No more unread articles",
+      releaseBack: "Release to return",
+      nextUnread: "Next unread",
+      preview: "Release to continue reading this article",
+    },
   },
   player: {
     "Current time": "Current time",

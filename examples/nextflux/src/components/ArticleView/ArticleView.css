@@ -135,3 +135,128 @@ div.force-dark-code-theme .shiki span {
 .PhotoView-Slider__ArrowLeft svg, .PhotoView-Slider__ArrowRight svg {
   @apply bg-black/50 rounded-full p-2 size-4;
 }
+
+
+/* Mobile continuous-reading spring transition. The overlay is portaled to
+   body so the current article can keep native scrolling until the bottom edge. */
+.nextflux-continuous-current-surface {
+  will-change: transform, opacity;
+}
+
+.nextflux-continuous-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  pointer-events: none;
+  opacity: 0;
+  overflow: hidden;
+  will-change: opacity;
+}
+
+.nextflux-continuous-bridge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--background) 97%, var(--foreground) 3%), color-mix(in srgb, var(--background) 92%, var(--foreground) 8%));
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  will-change: transform;
+}
+
+.nextflux-continuous-springbar {
+  width: 44px;
+  height: 5px;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 24%, transparent);
+  transform-origin: center;
+  will-change: transform, background;
+}
+
+.nextflux-continuous-label {
+  color: color-mix(in srgb, var(--foreground) 66%, transparent);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.nextflux-continuous-hint {
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-size: 11px;
+}
+
+.nextflux-continuous-meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+.nextflux-continuous-preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 96px);
+  height: 100%;
+  background: var(--background);
+  box-shadow: 0 -14px 42px rgb(0 0 0 / 4%);
+  will-change: transform, box-shadow;
+}
+
+.nextflux-continuous-preview-inner {
+  width: 100%;
+  max-width: 70ch;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 74px) 20px 88px;
+}
+
+.nextflux-continuous-feed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nextflux-continuous-preview h2 {
+  margin: 0 0 10px;
+  color: var(--foreground);
+  font-size: 1.75rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.nextflux-continuous-date {
+  color: color-mix(in srgb, var(--foreground) 42%, transparent);
+  font-size: 13px;
+}
+
+.nextflux-continuous-rule {
+  height: 1px;
+  margin: 18px 0;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.nextflux-continuous-preview p,
+.nextflux-continuous-empty {
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+@media (min-width: 768px) {
+  .nextflux-continuous-layer {
+    display: none;
+  }
+}

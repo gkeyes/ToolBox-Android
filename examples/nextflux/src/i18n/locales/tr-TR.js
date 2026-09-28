@@ -160,6 +160,16 @@ export default {
     aiSummarize: "AI Özeti",
     aiSummary: "AI Özeti",
     aiSummaryGenerating: "Özet oluşturuluyor...",
+    continuousReading: {
+      pull: "Yukarı çekmeye devam · sonraki okunmamış",
+      hint: "Direnci aşınca bırakın",
+      release: "Bırak · sonraki makaleye geç",
+      crossed: "Direnç aşıldı",
+      end: "Başka okunmamış makale yok",
+      releaseBack: "Geri dönmek için bırakın",
+      nextUnread: "Sonraki okunmamış",
+      preview: "Bu makaleyi okumaya devam etmek için bırakın",
+    },
   },
   player: {
     "Current time": "Şimdiki zaman",

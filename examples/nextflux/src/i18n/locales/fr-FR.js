@@ -162,6 +162,16 @@ export default {
     aiSummarize: "Résumé IA",
     aiSummary: "Résumé IA",
     aiSummaryGenerating: "Génération du résumé...",
+    continuousReading: {
+      pull: "Continuez à tirer · prochain non lu",
+      hint: "Franchissez la résistance puis relâchez",
+      release: "Relâchez · article suivant",
+      crossed: "Résistance franchie",
+      end: "Aucun autre article non lu",
+      releaseBack: "Relâchez pour revenir",
+      nextUnread: "Prochain non lu",
+      preview: "Relâchez pour continuer la lecture",
+    },
   },
   player: {
     "Current time": "Temps actuel",
