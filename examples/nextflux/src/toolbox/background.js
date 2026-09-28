@@ -170,7 +170,7 @@ async function restoreContinuousSync() {
   }
   await ensureSession();
   continuousSync.set(true);
-  await updateActivity("等待下次同步", "后台同步已恢复");
+  // Keep the last durable sync summary visible until a new background run finishes.
   await refreshTimer();
   setHealth({ type: "enabled" });
   return true;
