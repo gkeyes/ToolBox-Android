@@ -16,7 +16,7 @@
   function sourceKey(settings){
     const base=settings.ruleMode==='instance'?'instance:'+settings.hubBase:settings.ruleMode==='custom'?'custom:'+settings.ruleUrl:'official';
     const extra=settings.usePrivateRules?'|private:'+settings.privateRuleUrl:'|private:off';
-    return 'dual-targets-v1|'+base+extra;
+    return 'dual-targets-v2-query-passthrough|'+base+extra;
   }
   function basePlan(settings,accessKey){
     const instance={name:'当前 RSSHub 实例',url:instanceURL(settings.hubBase,'/api/radar/rules',accessKey),instance:true,kind:'radar'};
