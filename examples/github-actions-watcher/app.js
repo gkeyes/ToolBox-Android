@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.2";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.3";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -164,6 +164,11 @@
       second: "2-digit",
       hour12: false
     }).format(new Date(value));
+  }
+
+  function formatStatusClock(value) {
+    if (!Number.isFinite(value)) return "--:--";
+    return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
   }
 
   function formatDuration(milliseconds, compact = false) {
@@ -942,8 +947,22 @@
   }
 
   function liveRequestFor(run) {
-    const estimate = run ? calculateEstimate(run) : { progress: 0 };
     const warning = ["rate_limit", "offline"].includes(state.warning) ? state.warning : null;
+    if (!run) {
+      const updatedAt = state.lastPollAt || state.lastAttemptAt || state.watchStartedAt || Date.now();
+      const refreshed = Boolean(state.lastPollAt);
+      return {
+        sessionId: state.sessionId,
+        title: "GitHub 构建守望",
+        primaryText: refreshed ? `${formatStatusClock(updatedAt)} 已刷新` : "等待首次刷新",
+        secondaryText: warning ? (state.warningMessage || "网络异常，稍后自动重试") : "暂无活动构建",
+        shortText: refreshed ? "已刷新" : "守望中",
+        updatedAt,
+        accentColor: warning ? "#F59E0B" : "#0A84FF",
+        tone: warning ? "warning" : "neutral"
+      };
+    }
+    const estimate = calculateEstimate(run);
     const summary = model.buildNotificationSummary(state.config.fullName, run, estimate, warning);
     if (!warning && (!state.lastPollAt || Date.now() - state.lastPollAt > Math.max(45_000, currentPollInterval() * 2))) {
       summary.primaryText = `${summary.progress}% · 同步已延迟`;
@@ -965,7 +984,6 @@
   async function updateLiveNotification() {
     if (!state.monitoring || !state.sessionId || state.liveInFlight) return;
     const run = chooseDisplayedRun();
-    if (!run) return;
     state.liveInFlight = true;
     const ownerGeneration = generation;
     const current = () => ownerGeneration === generation && state.monitoring;
@@ -1019,14 +1037,6 @@
       }
     }
     if (ownerGeneration !== generation || !state.monitoring) return;
-    if (!chooseDisplayedRun() && !state.runs.some(isActiveRun) && state.liveActive) {
-      try {
-        await bounded(toolbox().notifications.live.end(state.sessionId), null, 5_000);
-        if (ownerGeneration === generation && state.monitoring) state.liveActive = false;
-      } catch (error) {
-        if (ownerGeneration === generation && state.monitoring && error?.code !== "NOT_FOUND") state.warningMessage = `结束实时展示失败：${errorLabel(error)}`;
-      }
-    }
   }
 
   async function clockTick(background) {
