@@ -671,6 +671,7 @@
       state.warning = null;
       state.warningMessage = "";
       await ensureSession();
+      await updateBackgroundActivity();
       await configureTimers();
       await persist(true);
       renderAll();
@@ -908,10 +909,12 @@
       state.rateResetAt = state.rateRemaining === 0 ? state.rateResetAt : null;
       if (detailError) state.warningMessage = `部分构建或任务详情稍后重试：${errorLabel(detailError)}`;
       await bounded(updateLiveNotification(), lease, 5_000);
+      await bounded(updateBackgroundActivity(), lease, 5_000);
     } catch (error) {
       if (activePoll !== lease || !state.monitoring) return;
       state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
       state.warningMessage = errorLabel(error);
+      await updateBackgroundActivity(error);
       if (manual) showToast(errorLabel(error));
     } finally {
       if (activePoll === lease) {
@@ -960,6 +963,26 @@
       accentColor: summary.color,
       tone: summary.tone
     };
+  }
+
+  async function updateBackgroundActivity(error = null) {
+    if (!state.monitoring || !state.sessionId || typeof toolbox()?.background?.updateActivity !== "function") return;
+    const updatedAt = error ? (state.lastAttemptAt || Date.now()) : (state.lastPollAt || Date.now());
+    const text = error ? `${formatClock(updatedAt)} 刷新异常` : `${formatClock(updatedAt)} 已刷新`;
+    const activeCount = state.runs.filter(isActiveRun).length;
+    const detail = error
+      ? errorLabel(error)
+      : [state.config?.fullName, activeCount ? `${activeCount} 个构建运行中` : "监控正常"].filter(Boolean).join(" · ");
+    try {
+      await bounded(toolbox().background.updateActivity({
+        sessionId: state.sessionId,
+        text: cleanText(text),
+        detail: cleanText(detail),
+        updatedAt,
+      }), null, 5_000);
+    } catch {
+      // The watcher remains functional when only the optional summary update fails.
+    }
   }
 
   async function updateLiveNotification() {
