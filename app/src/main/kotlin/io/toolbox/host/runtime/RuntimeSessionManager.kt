@@ -94,6 +94,9 @@ internal data class RuntimeBackgroundSessionUi(
     val liveSecondaryText: String? = null,
     val liveUpdatedAt: Long? = null,
     val liveProgress: Int? = null,
+    val activityPrimaryText: String? = null,
+    val activitySecondaryText: String? = null,
+    val activityUpdatedAt: Long? = null,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -723,6 +726,32 @@ internal class RuntimeSessionManager(
             sessionsByTool[toolId].orEmpty().values.map(StoredRuntimeSession::toRuntimeSummary)
         }
 
+        override suspend fun updateStatus(
+            sessionId: String,
+            primaryText: String?,
+            secondaryText: String?,
+            updatedAt: Long?,
+        ) = withContext(Dispatchers.Main.immediate) {
+            ensureCurrentRuntime(toolId, versionCode)
+            val current = sessionsByTool[toolId]?.get(sessionId)
+                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background session was not found")
+            val cleared = primaryText == null
+            val updated = current.copy(
+                activityPrimaryText = primaryText,
+                activitySecondaryText = if (cleared) null else secondaryText,
+                activityUpdatedAt = if (cleared) null else (updatedAt ?: nowMillis()),
+            )
+            sessionsByTool.getValue(toolId)[sessionId] = updated
+            try {
+                persistSessions(toolId)
+            } catch (failure: Exception) {
+                sessionsByTool.getValue(toolId)[sessionId] = current
+                throw failure
+            }
+            updateSessionProjection()
+            refreshForegroundService()
+        }
+
         override suspend fun setTimer(key: String, intervalMillis: Long) = withContext(Dispatchers.Main.immediate) {
             ensureCurrentRuntime(toolId, versionCode)
             if (sessionsByTool[toolId].isNullOrEmpty()) {
@@ -1005,6 +1034,9 @@ internal class RuntimeSessionManager(
                     liveSecondaryText = live?.request?.secondaryText,
                     liveUpdatedAt = live?.request?.updatedAt ?: live?.receivedAt,
                     liveProgress = live?.request?.progress,
+                    activityPrimaryText = record.activityPrimaryText,
+                    activitySecondaryText = record.activitySecondaryText,
+                    activityUpdatedAt = record.activityUpdatedAt,
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
@@ -1213,6 +1245,9 @@ internal class RuntimeSessionManager(
         val restoreAfterReboot: Boolean,
         val lastReminderAt: Long?,
         val notificationId: Int,
+        val activityPrimaryText: String? = null,
+        val activitySecondaryText: String? = null,
+        val activityUpdatedAt: Long? = null,
     ) {
         fun toRuntimeSummary() = RuntimeBackgroundSessionSummary(
             sessionId,
@@ -1227,7 +1262,12 @@ internal class RuntimeSessionManager(
             .put("restoreAfterProcessDeath", restoreAfterProcessDeath)
             .put("restoreAfterReboot", restoreAfterReboot)
             .put("notificationId", notificationId)
-            .apply { lastReminderAt?.let { put("lastReminderAt", it) } }
+            .apply {
+                lastReminderAt?.let { put("lastReminderAt", it) }
+                activityPrimaryText?.let { put("activityPrimaryText", it) }
+                activitySecondaryText?.let { put("activitySecondaryText", it) }
+                activityUpdatedAt?.let { put("activityUpdatedAt", it) }
+            }
 
         companion object {
             fun fromJson(value: JSONObject) = StoredRuntimeSession(
@@ -1237,6 +1277,9 @@ internal class RuntimeSessionManager(
                 restoreAfterReboot = value.optBoolean("restoreAfterReboot", false),
                 lastReminderAt = value.optLong("lastReminderAt").takeIf { value.has("lastReminderAt") },
                 notificationId = value.optInt("notificationId", 0),
+                activityPrimaryText = value.optString("activityPrimaryText").takeIf { value.has("activityPrimaryText") && it.isNotBlank() },
+                activitySecondaryText = value.optString("activitySecondaryText").takeIf { value.has("activitySecondaryText") && it.isNotBlank() },
+                activityUpdatedAt = value.optLong("activityUpdatedAt").takeIf { value.has("activityUpdatedAt") },
             )
         }
     }
