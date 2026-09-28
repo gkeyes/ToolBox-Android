@@ -37,7 +37,7 @@
     },
     {
       "name": "background.runtime",
-      "reason": "离开页面后继续发现和跟踪构建。",
+      "reason": "离开页面后继续发现和跟踪构建，并向宿主更新最近一次刷新结果。",
       "required": false
     },
     {
