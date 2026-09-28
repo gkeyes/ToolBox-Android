@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.selection.selectable
@@ -49,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -68,17 +70,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 data class ToolBoxNavigationItem(
@@ -556,6 +554,121 @@ fun ToolBoxGroupDivider(
     )
 }
 
+private enum class ToolBoxActionTone { Primary, Neutral, Danger }
+
+@Composable
+private fun ToolBoxActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tone: ToolBoxActionTone,
+    contentColorOverride: Color? = null,
+    icon: ToolBoxIconKey? = null,
+    outlined: Boolean = true,
+    compact: Boolean = false,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && pressed) 0.975f else 1f,
+        animationSpec = ToolBoxMotion.pressSpec(pressed),
+        label = "toolbox-button-scale",
+    )
+    val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
+    val contentColor = contentColorOverride ?: when (tone) {
+        ToolBoxActionTone.Primary -> colors.primary
+        ToolBoxActionTone.Neutral -> colors.textPrimary
+        ToolBoxActionTone.Danger -> colors.onSoftDanger
+    }
+    val topColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.surface.copy(alpha = 0.98f)
+        ToolBoxActionTone.Neutral -> colors.surface.copy(alpha = 0.98f)
+        ToolBoxActionTone.Danger -> colors.surface.copy(alpha = 0.98f)
+    }
+    val bottomColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.softPrimary.copy(alpha = if (pressed) 0.86f else 0.68f)
+        ToolBoxActionTone.Neutral -> colors.surfaceMuted.copy(alpha = if (pressed) 0.96f else 0.76f)
+        ToolBoxActionTone.Danger -> colors.softDanger.copy(alpha = if (pressed) 0.90f else 0.66f)
+    }
+    val outlineColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.primary.copy(alpha = if (pressed) 0.28f else 0.16f)
+        ToolBoxActionTone.Neutral -> colors.textSecondary.copy(alpha = if (pressed) 0.22f else 0.12f)
+        ToolBoxActionTone.Danger -> colors.danger.copy(alpha = if (pressed) 0.28f else 0.16f)
+    }
+    val elevation = if (pressed) 1.dp else 3.dp
+    val visualHeight = if (compact) 36.dp else 40.dp
+    val horizontalPadding = if (compact) 10.dp else 14.dp
+    val surface = if (outlined) {
+        Modifier
+            .shadow(
+                elevation = elevation,
+                shape = shape,
+                clip = false,
+                ambientColor = contentColor.copy(alpha = 0.07f),
+                spotColor = contentColor.copy(alpha = 0.06f),
+            )
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(topColor, bottomColor)))
+            .border(1.dp, outlineColor, shape)
+    } else {
+        Modifier
+            .clip(shape)
+            .background(if (pressed) colors.surfaceMuted.copy(alpha = 0.52f) else Color.Transparent)
+    }
+
+    Box(
+        modifier = modifier
+            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.46f
+            }
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = visualHeight)
+                .then(surface)
+                .padding(horizontal = horizontalPadding, vertical = if (compact) 6.dp else 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Box(
+                    Modifier
+                        .size(if (compact) 20.dp else 24.dp)
+                        .clip(RoundedCornerShape(if (compact) 6.dp else 7.dp))
+                        .background(contentColor.copy(alpha = 0.09f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ToolBoxIcon(icon, null, tint = contentColor)
+                }
+                Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
+            }
+            ToolBoxText(
+                text = label,
+                style = (if (compact) ToolBoxThemeTokens.textStyles.metadata else ToolBoxThemeTokens.textStyles.body).copy(
+                    color = contentColor,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 @Composable
 fun ToolBoxPrimaryButton(
     label: String,
@@ -564,29 +677,15 @@ fun ToolBoxPrimaryButton(
     enabled: Boolean = true,
     destructive: Boolean = false,
 ) {
-    val colors = ToolBoxThemeTokens.colors
-    val containerColor = if (destructive) colors.danger else colors.primary
-    val contentColor = if (destructive) colors.onDanger else colors.onPrimary
-    Button(
+    ToolBoxActionButton(
+        label = label,
         onClick = onClick,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
+        modifier = modifier,
         enabled = enabled,
-        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        colors = ButtonDefaults.buttonColorsPrimary(
-            color = containerColor,
-            contentColor = contentColor,
-        ),
-    ) {
-        ToolBoxText(
-            text = label,
-            style = ToolBoxThemeTokens.textStyles.body.copy(
-                color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
-            ),
-        )
-    }
+        tone = if (destructive) ToolBoxActionTone.Danger else ToolBoxActionTone.Primary,
+    )
 }
 
-/** Neutral filled action for modal surfaces; stays readable over blurred content. */
 @Composable
 fun ToolBoxSecondaryButton(
     label: String,
@@ -594,21 +693,7 @@ fun ToolBoxSecondaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val colors = ToolBoxThemeTokens.colors
-    Button(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
-        enabled = enabled,
-        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        colors = ButtonDefaults.buttonColorsPrimary(
-            color = colors.surfaceMuted,
-            contentColor = colors.textPrimary,
-        ),
-    ) {
-        ToolBoxText(label, style = ToolBoxThemeTokens.textStyles.body.copy(
-            color = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.46f),
-        ))
-    }
+    ToolBoxActionButton(label, onClick, modifier, enabled, ToolBoxActionTone.Neutral)
 }
 
 @Composable
@@ -618,27 +703,10 @@ fun ToolBoxDestructiveButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val colors = ToolBoxThemeTokens.colors
-    Button(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
-        enabled = enabled,
-        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        colors = ButtonDefaults.buttonColorsPrimary(
-            color = colors.softDanger,
-            contentColor = colors.onSoftDanger,
-        ),
-    ) {
-        ToolBoxText(
-            text = label,
-            style = ToolBoxThemeTokens.textStyles.body.copy(
-                color = colors.onSoftDanger.copy(alpha = if (enabled) 1f else 0.46f),
-            ),
-        )
-    }
+    ToolBoxActionButton(label, onClick, modifier, enabled, ToolBoxActionTone.Danger)
 }
 
-/** Standalone actions have an outline; actions embedded in a row can opt out. */
+/** Standalone actions use a light material surface; embedded text actions stay minimal. */
 @Composable
 fun ToolBoxTextButton(
     label: String,
@@ -648,40 +716,20 @@ fun ToolBoxTextButton(
     contentColor: Color = ToolBoxThemeTokens.colors.primary,
     outlined: Boolean = true,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val outlineModifier = if (outlined) {
-        Modifier.squircleBorder(
-            width = 1.dp,
-            color = toolBoxTextButtonOutlineColor(ToolBoxThemeTokens.colors.textSecondary, enabled, pressed),
-            cornerRadius = ButtonDefaults.CornerRadius,
-        )
-    } else Modifier
-    TextButton(
-        text = label,
+    ToolBoxActionButton(
+        label = label,
         onClick = onClick,
-        modifier = modifier.heightIn(min = ToolBoxThemeTokens.sizes.touchTarget).then(outlineModifier),
+        modifier = modifier,
         enabled = enabled,
-        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        colors = ButtonDefaults.textButtonColors(
-            color = Color.Transparent,
-            disabledColor = Color.Transparent,
-            textColor = contentColor,
-            disabledTextColor = contentColor.copy(alpha = 0.46f),
-        ),
-        textStyle = ToolBoxThemeTokens.textStyles.body.copy(
-            color = contentColor.copy(alpha = if (enabled) 1f else 0.46f),
-        ),
-        interactionSource = interactionSource,
+        tone = if (contentColor == ToolBoxThemeTokens.colors.onSoftDanger || contentColor == ToolBoxThemeTokens.colors.danger) {
+            ToolBoxActionTone.Danger
+        } else {
+            ToolBoxActionTone.Neutral
+        },
+        contentColorOverride = contentColor,
+        outlined = outlined,
     )
 }
-
-internal fun toolBoxTextButtonOutlineColor(foreground: Color, enabled: Boolean, pressed: Boolean): Color =
-    foreground.copy(alpha = when {
-        !enabled -> 0.36f
-        pressed -> 1f
-        else -> 0.78f
-    })
 
 @Composable
 fun ToolBoxRunningStatusButton(
@@ -690,25 +738,13 @@ fun ToolBoxRunningStatusButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val colors = ToolBoxThemeTokens.colors
-    Button(
+    ToolBoxActionButton(
+        label = if (stopping) "停止中" else "停止",
         onClick = onClick,
-        modifier = modifier.sizeIn(
-            minWidth = ToolBoxThemeTokens.sizes.touchTarget,
-            minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        ),
+        modifier = modifier.sizeIn(minWidth = ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
-        minHeight = ToolBoxThemeTokens.sizes.touchTarget,
-        colors = ButtonDefaults.buttonColorsPrimary(
-            color = colors.softDanger,
-            contentColor = colors.onSoftDanger,
-        ),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ToolBoxText(
-                text = if (stopping) "停止中" else "停止",
-                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.onSoftDanger),
-            )
-        }
-    }
+        tone = ToolBoxActionTone.Danger,
+        icon = ToolBoxIconKey.Stop,
+        compact = true,
+    )
 }

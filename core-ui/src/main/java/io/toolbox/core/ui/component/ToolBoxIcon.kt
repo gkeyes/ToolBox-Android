@@ -6,6 +6,7 @@ import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -68,6 +69,7 @@ enum class ToolBoxIconKey {
     Clock,
     Check,
     Close,
+    Stop,
     Note,
     Palette,
     Device,
@@ -141,6 +143,7 @@ internal fun ToolBoxIconKey.asImageVector(): ImageVector = when (this) {
     ToolBoxIconKey.Clock -> Icons.Outlined.AccessTime
     ToolBoxIconKey.Check -> Icons.Outlined.Check
     ToolBoxIconKey.Close -> Icons.Outlined.Close
+    ToolBoxIconKey.Stop -> Icons.Outlined.Stop
     ToolBoxIconKey.Note -> Icons.Outlined.Description
     ToolBoxIconKey.Palette -> Icons.Outlined.Palette
     ToolBoxIconKey.Device -> Icons.Outlined.Devices
