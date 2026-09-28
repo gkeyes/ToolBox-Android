@@ -262,11 +262,11 @@ test("desktop reading uses the normal article layout without a mobile overlay", 
 test("right-swipe tracks the finger and a short paused release cancels", async ({ page }) => {
   await openArticle(page);
   await touch(page, "touchstart", 60, 250);
-  await touch(page, "touchmove", 130, 252);
+  await touch(page, "touchmove", 110, 252);
   await expect.poll(() => page.locator(".article-scroll-area").evaluate((element) =>
-    element.parentElement.getBoundingClientRect().left)).toBeCloseTo(70, 0);
+    element.parentElement.getBoundingClientRect().left)).toBeCloseTo(50, 0);
   await page.waitForTimeout(160); // Model a stationary finger before release.
-  await touch(page, "touchend", 130, 252);
+  await touch(page, "touchend", 110, 252);
   await expect.poll(() => page.locator(".article-scroll-area").evaluate((element) =>
     element.parentElement.getBoundingClientRect().left)).toBeCloseTo(0, 0);
   await expect(page.getByTestId("route")).toHaveText("/article/1");
