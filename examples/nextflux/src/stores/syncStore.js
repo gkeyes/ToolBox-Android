@@ -257,6 +257,8 @@ async function collectSnapshot(baseCheck) {
   // Starting before network requests preserves the existing overlap semantics.
   const syncedAt = new Date();
   const previous = getLastSyncTime();
+  const previousTime = previous?.getTime?.() ?? Number.NaN;
+  const newEntryIds = new Set();
   const auth = authState.get();
   const token = await prepareArticleSync({
     full: !previous, syncedAt: syncedAt.toISOString(),
@@ -270,6 +272,8 @@ async function collectSnapshot(baseCheck) {
       const changed = [];
       for (const entry of entries) {
         const timestamp = Date.parse(entry.changed_at);
+        const createdAt = Date.parse(entry.created_at || "");
+        if (Number.isFinite(previousTime) && Number.isFinite(createdAt) && createdAt > previousTime) newEntryIds.add(entry.id);
         const old = entryChanges.get(entry.id);
         if (old) {
           if (Number.isFinite(timestamp) && Number.isFinite(old.timestamp)) {
@@ -323,6 +327,8 @@ async function collectSnapshot(baseCheck) {
     check();
     return {
       token, syncedAt,
+      initialSync: !previous,
+      newEntryCount: newEntryIds.size,
       updatedCount: entryChanges.size,
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
@@ -373,6 +379,8 @@ export function sync(mode = "foreground") {
         return {
           outcome: "committed",
           syncedAt: collected.syncedAt.toISOString(),
+          initialSync: collected.initialSync,
+          newEntryCount: collected.newEntryCount || 0,
           updatedCount: collected.updatedCount || 0,
           unreadCount,
         };

@@ -33,6 +33,8 @@ import io.toolbox.host.catalog.RunningToolsUiState
 import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 internal fun CatalogRunningTools(
@@ -178,18 +180,21 @@ internal fun RunningToolRow(
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             Column(Modifier.weight(1f)) {
                 AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
+                val detailedLiveProgress = session.liveProgress != null
+                val refreshedAt = session.liveUpdatedAt?.let { value ->
+                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(value))
+                }
                 val runtimeStatus = when {
                     stopping -> "正在停止后台会话"
                     !session.statusText.isNullOrBlank() -> session.statusText
-                    !session.livePrimaryText.isNullOrBlank() -> listOfNotNull(
-                        "● 运行中",
-                        session.livePrimaryText,
-                        session.liveSecondaryText?.takeIf(String::isNotBlank),
-                    ).joinToString(" · ")
+                    detailedLiveProgress && refreshedAt != null -> "● 运行中 · $refreshedAt 已刷新"
+                    !session.livePrimaryText.isNullOrBlank() -> "● 运行中 · ${session.livePrimaryText}"
                     else -> "● 运行中"
                 }
-                AppText(text = runtimeStatus,
-                    color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                AppText(text = runtimeStatus, color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                if (!stopping && session.statusText.isNullOrBlank() && !detailedLiveProgress && !session.liveSecondaryText.isNullOrBlank()) {
+                    AppText(text = session.liveSecondaryText, color = colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                }
             }
         }
         ToolBoxRunningStatusButton(

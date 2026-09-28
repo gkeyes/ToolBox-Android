@@ -26,27 +26,40 @@ function formatClock(value) {
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
-async function publishBackgroundStatus(result, tone = "positive") {
-  if (!sessionId || !notifications()?.start) return;
-  const updatedAt = Date.parse(result?.syncedAt || "") || Date.now();
-  const updatedCount = Math.max(0, Number(result?.updatedCount) || 0);
-  const unreadCount = Math.max(0, Number(result?.unreadCount) || 0);
-  const primaryText = updatedCount > 0 ? `${formatClock(updatedAt)} 已同步 · 更新 ${updatedCount} 条` : `${formatClock(updatedAt)} 已同步 · 暂无更新`;
-  const request = {
-    sessionId,
-    title: "NextFlux",
-    primaryText,
-    secondaryText: `未读 ${unreadCount} 条`,
-    shortText: updatedCount > 0 ? `+${updatedCount}` : "已同步",
-    updatedAt,
-    tone,
-  };
+async function publishLiveStatus(request) {
+  if (!sessionId || !notifications()?.start) return false;
   try {
     await notifications().update(request);
   } catch (error) {
-    if (!["NOT_FOUND", "INVALID_SESSION"].includes(error?.code)) throw error;
-    await notifications().start(request);
+    if (!["NOT_FOUND", "INVALID_SESSION"].includes(error?.code)) return false;
+    try { await notifications().start(request); } catch { return false; }
   }
+  return true;
+}
+
+async function publishBackgroundStatus(result) {
+  const updatedAt = Date.parse(result?.syncedAt || "") || Date.now();
+  const newEntryCount = Math.max(0, Number(result?.newEntryCount) || 0);
+  const unreadCount = Math.max(0, Number(result?.unreadCount) || 0);
+  const primaryText = result?.initialSync
+    ? `${formatClock(updatedAt)} 已同步 · 首次完成`
+    : newEntryCount > 0 ? `${formatClock(updatedAt)} 已同步 · 新增 ${newEntryCount} 条` : `${formatClock(updatedAt)} 已同步 · 暂无更新`;
+  return publishLiveStatus({
+    sessionId, title: "NextFlux", primaryText,
+    secondaryText: `未读 ${unreadCount} 条`,
+    shortText: newEntryCount > 0 ? `+${newEntryCount}` : "已同步",
+    updatedAt, tone: "positive",
+  });
+}
+
+async function publishBackgroundFailure(error) {
+  const updatedAt = Date.now();
+  const detail = String(error?.message || "后台同步失败").replace(/\s+/g, " ").trim();
+  return publishLiveStatus({
+    sessionId, title: "NextFlux",
+    primaryText: `${formatClock(updatedAt)} 同步失败 · 将自动重试`,
+    secondaryText: detail.slice(0, 72), shortText: "同步失败", updatedAt, tone: "warning",
+  });
 }
 
 async function readEnabledIntent() {
@@ -135,6 +148,7 @@ async function runBackgroundSync(reason) {
         return false;
       }
       setHealth({ type: "failure", message: error?.message || "后台同步失败" });
+      await publishBackgroundFailure(error);
       return false;
     }
   })().finally(() => { backgroundRun = null; });

@@ -93,6 +93,7 @@ internal data class RuntimeBackgroundSessionUi(
     val livePrimaryText: String? = null,
     val liveSecondaryText: String? = null,
     val liveUpdatedAt: Long? = null,
+    val liveProgress: Int? = null,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -1003,6 +1004,7 @@ internal class RuntimeSessionManager(
                     livePrimaryText = live?.request?.primaryText,
                     liveSecondaryText = live?.request?.secondaryText,
                     liveUpdatedAt = live?.request?.updatedAt ?: live?.receivedAt,
+                    liveProgress = live?.request?.progress,
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
