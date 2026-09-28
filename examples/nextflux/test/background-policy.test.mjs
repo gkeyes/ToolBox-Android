@@ -57,3 +57,31 @@ test("background health keeps a bounded failure signal and clears it after recov
   assert.equal(state.consecutiveFailures, 0);
   assert.equal(state.lastError, null);
 });
+
+
+test("background health distinguishes a deferred sync from a real success", () => {
+  let state = backgroundHealth({}, { type: "enabled" }, 1_000, 1_800_000);
+  state = backgroundHealth(state, { type: "attempt", reason: "timer" }, 2_000, 1_800_000);
+  state = backgroundHealth(state, { type: "deferred", message: "后台同步已让位给前台操作。" }, 3_000, 1_800_000);
+  assert.equal(state.state, "deferred");
+  assert.equal(state.lastSuccessAt, null);
+  assert.equal(state.consecutiveFailures, 0);
+  assert.equal(state.lastError, "后台同步已让位给前台操作。");
+  assert.deepEqual(state.recent.map((item) => item.outcome), ["attempt", "deferred"]);
+
+  state = backgroundHealth(state, { type: "success" }, 4_000, 1_800_000);
+  assert.equal(state.state, "running");
+  assert.equal(state.lastSuccessAt, 4_000);
+  assert.equal(state.lastError, null);
+  assert.deepEqual(state.recent.map((item) => item.outcome), ["attempt", "deferred", "success"]);
+});
+
+test("background health keeps only the latest eight diagnostic events", () => {
+  let state = backgroundHealth({}, { type: "enabled" }, 0, 300_000);
+  for (let i = 1; i <= 12; i += 1) {
+    state = backgroundHealth(state, { type: "attempt", reason: "timer" }, i * 1_000, 300_000);
+  }
+  assert.equal(state.recent.length, 8);
+  assert.equal(state.recent[0].at, 5_000);
+  assert.equal(state.recent.at(-1).at, 12_000);
+});

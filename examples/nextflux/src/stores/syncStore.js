@@ -367,7 +367,7 @@ export function sync(mode = "foreground") {
           commitCheck(false);
           lastSync.set(collected.syncedAt);
         });
-        return;
+        return { outcome: "committed", syncedAt: collected.syncedAt.toISOString() };
       } catch (failure) {
         await abortArticleSync(collected.token).catch(() => {});
         check(false);
@@ -377,7 +377,7 @@ export function sync(mode = "foreground") {
     }
   })();
   currentSync = operation.catch((failure) => {
-    if (failure.code === "SYNC_PREEMPTED") return;
+    if (failure.code === "SYNC_PREEMPTED") throw failure;
     if (failure.code !== "ACCOUNT_CHANGED") {
       error.set(failure);
       toast.error(failure.message || "同步失败，请检查网络权限后重试。");

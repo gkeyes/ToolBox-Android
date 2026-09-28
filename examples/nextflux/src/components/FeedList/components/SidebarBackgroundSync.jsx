@@ -29,7 +29,9 @@ export default function SidebarBackgroundSync() {
         ? t("sidebar.backgroundSync.syncing")
         : health.state === "error"
           ? t("sidebar.backgroundSync.failed")
-          : t("sidebar.backgroundSync.running", { minutes });
+          : health.state === "deferred"
+            ? t("sidebar.backgroundSync.deferred")
+            : t("sidebar.backgroundSync.running", { minutes });
 
   const change = async (selected) => {
     if (changing || selected === active) return;

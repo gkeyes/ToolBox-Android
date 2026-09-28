@@ -94,6 +94,7 @@ export default {
       syncing: "正在同步…",
       running: "运行中 · 每 {{minutes}} 分钟",
       failed: "运行中 · 最近同步失败",
+      deferred: "已让位 · 正在切前台补同步",
     },
     profile: {
       about: "关于",

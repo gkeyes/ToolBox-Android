@@ -1,6 +1,6 @@
 import { atom } from "nanostores";
 import { settingsState } from "../stores/settingsStore.js";
-import { backgroundSync } from "../stores/syncStore.js";
+import { backgroundSync, forceSync } from "../stores/syncStore.js";
 import { toast } from "sonner";
 import { backgroundHealth, backgroundIntervalMs } from "./background-policy.mjs";
 
@@ -79,10 +79,29 @@ async function runBackgroundSync(reason) {
   setHealth({ type: "attempt", reason }, attemptAt);
   backgroundRun = (async () => {
     try {
-      await backgroundSync();
+      const result = await backgroundSync();
+      if (result?.outcome !== "committed") {
+        throw new Error("后台同步未完成写入。");
+      }
       setHealth({ type: "success" });
       return true;
     } catch (error) {
+      if (error?.code === "SYNC_PREEMPTED") {
+        setHealth({ type: "deferred", message: "后台同步已让位给前台操作。" });
+        if (globalThis.document?.visibilityState === "visible") {
+          try {
+            const result = await forceSync();
+            if (result?.outcome === "committed") {
+              setHealth({ type: "success" });
+              return true;
+            }
+          } catch (foregroundError) {
+            setHealth({ type: "failure", message: foregroundError?.message || "前台补同步失败" });
+            return false;
+          }
+        }
+        return false;
+      }
       setHealth({ type: "failure", message: error?.message || "后台同步失败" });
       return false;
     }
