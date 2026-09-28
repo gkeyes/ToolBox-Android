@@ -637,7 +637,9 @@ private fun ToolBoxActionButton(
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                // Keep the visual surface content-sized. The outer Box still expands
+                // when callers pass fillMaxWidth()/weight(), but compact actions such
+                // as the running-task stop control must not consume the whole Row.
                 .heightIn(min = visualHeight)
                 .then(surface)
                 .padding(horizontal = horizontalPadding, vertical = if (compact) 6.dp else 8.dp),
