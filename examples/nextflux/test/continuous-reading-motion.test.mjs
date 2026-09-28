@@ -48,6 +48,11 @@ test("continuous reader uses existing progress and shared-layout primitives", as
   ]);
   assert.ok(reader.includes("ProgressCircle"));
   assert.ok(reader.includes("value={progressValue}"));
+  assert.ok(reader.includes("<ProgressCircle.Track"));
+  assert.ok(reader.includes("<ProgressCircle.TrackCircle"));
+  assert.ok(reader.includes("<ProgressCircle.FillCircle"));
+  assert.ok(reader.includes("syncPersistentChromeInset"));
+  assert.ok(reader.includes('document.querySelector(".action-buttons")'));
   assert.ok(reader.includes("setHandoffArticle(nextUnread)"));
   assert.ok(reader.includes("activeArticle.set(prepared ?? nextUnread)"));
   assert.ok(header.includes("${layoutId}-title"));

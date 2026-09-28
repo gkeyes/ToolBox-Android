@@ -296,7 +296,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     }
 
     const from = continuousPullResistance(rawPullRef.current);
-    const target = window.innerHeight + CONTINUOUS_BRIDGE_HEIGHT;
+    const target = (layerRef.current?.clientHeight || window.innerHeight) + CONTINUOUS_BRIDGE_HEIGHT;
     const initialVelocity = Math.max(110, Math.min(560, velocityRef.current * 165 + 135));
     const surface = surfaceRef.current;
     const navigationPromise = resolvePreparedArticle(nextUnread);
@@ -338,6 +338,16 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const viewport = scrollAreaRef.current;
     if (!viewport) return undefined;
 
+    const syncPersistentChromeInset = () => {
+      const layer = layerRef.current;
+      if (!layer) return;
+      const toolbar = document.querySelector(".action-buttons");
+      const toolbarBottom = toolbar?.getBoundingClientRect?.().bottom ?? 0;
+      layer.style.top = `${Math.max(0, Math.round(toolbarBottom))}px`;
+    };
+
+    syncPersistentChromeInset();
+
     const atBottom = () =>
       viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2;
 
@@ -347,6 +357,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const onTouchStart = (event) => {
       if (transitioningRef.current || galleryActive || event.touches.length !== 1 || blockedTarget(event.target)) return;
       cancelAnimation();
+      syncPersistentChromeInset();
       lastYRef.current = event.touches[0].clientY;
       lastTRef.current = performance.now();
       velocityRef.current = 0;
@@ -387,11 +398,13 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       else springBack();
     };
 
+    globalThis.window?.addEventListener("resize", syncPersistentChromeInset);
     viewport.addEventListener("touchstart", onTouchStart, { passive: true });
     viewport.addEventListener("touchmove", onTouchMove, { passive: false });
     viewport.addEventListener("touchend", finish, { passive: true });
     viewport.addEventListener("touchcancel", finish, { passive: true });
     return () => {
+      globalThis.window?.removeEventListener("resize", syncPersistentChromeInset);
       viewport.removeEventListener("touchstart", onTouchStart);
       viewport.removeEventListener("touchmove", onTouchMove);
       viewport.removeEventListener("touchend", finish);
@@ -417,8 +430,22 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
           <ProgressCircle
             aria-label={t("articleView.continuousReading.pull")}
             value={progressValue}
+            minValue={0}
+            maxValue={100}
+            color={progressValue >= 100 ? "success" : "accent"}
             className="nextflux-continuous-progress-circle"
-          />
+          >
+            <ProgressCircle.Track className="nextflux-continuous-progress-track">
+              <ProgressCircle.TrackCircle
+                className="nextflux-continuous-progress-track-circle"
+                strokeWidth={5}
+              />
+              <ProgressCircle.FillCircle
+                className="nextflux-continuous-progress-fill-circle"
+                strokeWidth={5}
+              />
+            </ProgressCircle.Track>
+          </ProgressCircle>
           <span className="nextflux-continuous-progress-glyph">
             {progressValue >= 100 ? "✓" : "↑"}
           </span>

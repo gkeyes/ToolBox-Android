@@ -175,7 +175,10 @@ div.force-dark-code-theme .shiki span {
 
 .nextflux-continuous-layer {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
   z-index: 49;
   pointer-events: none;
   opacity: 0;
@@ -216,6 +219,20 @@ div.force-dark-code-theme .shiki span {
   width: 48px;
   height: 48px;
   color: var(--accent);
+}
+
+.nextflux-continuous-progress-track {
+  width: 48px;
+  height: 48px;
+}
+
+.nextflux-continuous-progress-track-circle {
+  stroke: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.nextflux-continuous-progress-fill-circle {
+  stroke: currentColor;
+  transition: stroke 160ms ease;
 }
 
 .nextflux-continuous-progress-glyph {
