@@ -96,8 +96,6 @@ class BrowserActivity : ComponentActivity() {
     private var menu by mutableStateOf(false)
     private var clearConfirmation by mutableStateOf(false)
     private var fullAddress by mutableStateOf(false)
-    private var pendingSslHandler: SslErrorHandler? = null
-    private var pendingSslUrl by mutableStateOf<String?>(null)
     private var clearing by mutableStateOf(false)
     private var fullScreenView by mutableStateOf<View?>(null)
     private var fullScreenCallback: WebChromeClient.CustomViewCallback? = null
@@ -137,7 +135,7 @@ class BrowserActivity : ComponentActivity() {
                 domStorageEnabled = true
                 allowFileAccess = false
                 allowContentAccess = false
-                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 // Surface a clear denial through onGeolocationPermissionsShowPrompt.
                 setGeolocationEnabled(true)
                 setSupportZoom(true)
@@ -151,7 +149,7 @@ class BrowserActivity : ComponentActivity() {
                 mediaPlaybackRequiresUserGesture = true
             }
             CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(page, false)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(page, true)
             page.webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                     filters.intercept(view, request)
@@ -203,21 +201,8 @@ class BrowserActivity : ComponentActivity() {
                     }
                 }
 
-                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-                    if (view !== webView) return
-                    if (request.isForMainFrame) unsupported("网站返回 HTTP ${response.statusCode}，可重试或查看网站提示。")
-                }
-
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    if (view !== webView) {
-                        handler.cancel()
-                        return
-                    }
-                    pendingSslHandler?.cancel()
-                    pendingSslHandler = handler
-                    pendingSslUrl = failure.url ?: address
-                    interaction = interaction.pageFinished()
-                    loadProgress = 100
+                    if (view === webView) handler.proceed() else handler.cancel()
                 }
 
                 override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -461,9 +446,6 @@ class BrowserActivity : ComponentActivity() {
     override fun onDestroy() {
         resumed = false
         hideFullScreen()
-        pendingSslHandler?.cancel()
-        pendingSslHandler = null
-        pendingSslUrl = null
         unresponsiveRenderer = null
         webView?.let(::destroyPage)
         super.onDestroy()
@@ -509,67 +491,11 @@ class BrowserActivity : ComponentActivity() {
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
         BrowserFilterSheet(filters, canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing, reload = ::reload)
-        pendingSslUrl?.let { failedUrl ->
-            ToolBoxActionSheet(
-                title = "证书警告",
-                onDismissRequest = {
-                    pendingSslHandler?.cancel()
-                    pendingSslHandler = null
-                    pendingSslUrl = null
-                },
-            ) {
-                ToolBoxText(
-                    "此网站的证书无法验证。继续访问可能存在安全风险。",
-                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textPrimary),
-                )
-                Spacer(Modifier.height(6.dp))
-                ToolBoxText(
-                    failedUrl,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
-                )
-                Spacer(Modifier.height(14.dp))
-                ToolBoxTextButton(
-                    "仍然继续访问",
-                    {
-                        val handler = pendingSslHandler
-                        pendingSslHandler = null
-                        pendingSslUrl = null
-                        handler?.proceed()
-                    },
-                    Modifier.fillMaxWidth(),
-                    outlined = false,
-                )
-                Spacer(Modifier.height(6.dp))
-                ToolBoxSecondaryButton(
-                    "使用系统浏览器",
-                    {
-                        pendingSslHandler?.cancel()
-                        pendingSslHandler = null
-                        pendingSslUrl = null
-                        openSystemBrowser()
-                    },
-                    Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(6.dp))
-                ToolBoxTextButton(
-                    "取消",
-                    {
-                        pendingSslHandler?.cancel()
-                        pendingSslHandler = null
-                        pendingSslUrl = null
-                    },
-                    Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-        }
         if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
-            ToolBoxActionSheetHeader {
-                Spacer(Modifier.height(2.dp))
-            }
             Column(Modifier.fillMaxWidth()) {
+                ToolBoxActionSheetHeader {
+                    Spacer(Modifier.height(2.dp))
+                }
                 BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) {
                     menu = false
                     openSystemBrowser()
@@ -589,8 +515,8 @@ class BrowserActivity : ComponentActivity() {
                     menu = false
                     clearConfirmation = true
                 }
+                Spacer(Modifier.height(2.dp))
             }
-            Spacer(Modifier.height(2.dp))
         }
         if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
             ToolBoxText(
@@ -603,7 +529,7 @@ class BrowserActivity : ComponentActivity() {
             )
             Spacer(Modifier.height(12.dp))
             ToolBoxText(
-                if (Uri.parse(address).scheme == "http") "完整地址 · 当前连接未加密" else "完整地址",
+                "完整地址",
                 style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
             )
             Spacer(Modifier.height(8.dp))
@@ -669,9 +595,8 @@ class BrowserActivity : ComponentActivity() {
         val action = interaction.loadAction(clearing)
         val filterState = filters.snapshot
         val filtering = filterState.active(filters.site)
-        val certificateWarning = pendingSslUrl != null
-        val addressColor = if (unencrypted || certificateWarning || interaction.unresponsive) colors.danger else colors.textPrimary
-        val shieldTint = if (unencrypted || certificateWarning) colors.danger else colors.primary
+        val addressColor = if (interaction.unresponsive) colors.danger else colors.textPrimary
+        val shieldTint = colors.primary
         val filterTint = if (filtering) colors.primary else ToolBoxThemeTokens.disabledContent
 
         Row(
@@ -696,11 +621,7 @@ class BrowserActivity : ComponentActivity() {
                 ) {
                     ToolBoxIcon(
                         ToolBoxIconKey.Shield,
-                        when {
-                            certificateWarning -> "证书无法验证"
-                            unencrypted -> "连接未加密"
-                            else -> "安全连接"
-                        },
+                        "连接状态",
                         modifier = Modifier.size(17.dp),
                         tint = shieldTint,
                     )
