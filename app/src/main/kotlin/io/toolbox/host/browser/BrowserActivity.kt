@@ -32,7 +32,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -647,19 +654,56 @@ class BrowserActivity : ComponentActivity() {
                     )
                 }
                 Box(Modifier.width(1.dp).height(20.dp).background(colors.textSecondary.copy(alpha = 0.10f)))
-                BrowserToolbarButton(
-                    ToolBoxIconKey.Refresh,
-                    when (action) {
+                BrowserRefreshButton(
+                    label = when (action) {
                         BrowserLoadAction.Stop -> "停止加载"
                         BrowserLoadAction.Recover -> "查看网页恢复选项"
                         else -> "重新加载"
                     },
-                    ::performLoadAction,
                     enabled = action != BrowserLoadAction.Disabled,
-                    stop = action == BrowserLoadAction.Stop,
-                    compact = true,
+                    spinning = interaction.loading,
+                    onClick = ::performLoadAction,
                 )
             }
+        }
+    }
+
+    @Composable
+    private fun BrowserRefreshButton(
+        label: String,
+        enabled: Boolean,
+        spinning: Boolean,
+        onClick: () -> Unit,
+    ) {
+        val tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent
+        val interactionSource = remember { MutableInteractionSource() }
+        val transition = rememberInfiniteTransition(label = "browser_refresh_rotation")
+        val rotation by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 720, easing = LinearEasing),
+            ),
+            label = "browser_refresh_rotation_value",
+        )
+        Box(
+            Modifier.size(40.dp)
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            ToolBoxIcon(
+                ToolBoxIconKey.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp).rotate(if (spinning) rotation else 0f),
+                tint = tint,
+            )
         }
     }
 
