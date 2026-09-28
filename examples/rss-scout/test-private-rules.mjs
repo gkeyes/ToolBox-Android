@@ -39,6 +39,10 @@ same(route('https://www.xiaohongshu.com/user/profile/654cf9f4000000000202b698?xs
   'https://rsshub.example/xiaohongshu/user/654cf9f4000000000202b698/notes',
   'https://worker.example/rss/xiaohongshu/user/654cf9f4000000000202b698?xsec_token=YBLFCxbQ-FhvW3KyIF1Fdcf8T3fNIg9IXyoqycDRu71xI%3D&xsec_source=app_share&xhsshare=&shareRedId=ODlDRkY6ODo2NzUyOTgwNjg4OThJOkhP&apptime=1790525803&share_id=67a8531b7b5f4801b84101dbf9590423&share_channel=copy_link'
 ]);
+same(route('https://www.xiaohongshu.com/user/profile/628dcef5000000001000de08?xsec_token=YBGHix4GAdOsgIfP9OHjvFqvgG26QX20A5N9qZjEbnQaA%3D&xsec_source=app_share&xhsshare=&shareRedId=ODlDRkY6ODo2NzUyOTgwNjg4OThJOkhP&apptime=1790565700&share_id=5f2f6a687fd74c03aa8007804a87e630&share_channel=wechat'),[
+  'https://rsshub.example/xiaohongshu/user/628dcef5000000001000de08/notes',
+  'https://worker.example/rss/xiaohongshu/user/628dcef5000000001000de08?xsec_token=YBGHix4GAdOsgIfP9OHjvFqvgG26QX20A5N9qZjEbnQaA%3D&xsec_source=app_share&xhsshare=&shareRedId=ODlDRkY6ODo2NzUyOTgwNjg4OThJOkhP&apptime=1790565700&share_id=5f2f6a687fd74c03aa8007804a87e630&share_channel=wechat'
+]);
 same(route('https://github.com/ReChronoRain/HyperCeiler/actions/workflows/ci_build.yml'),[
   'https://worker.example/rss/github/actions/ReChronoRain/HyperCeiler/ci_build.yml'
 ]);
