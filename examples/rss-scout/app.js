@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.1 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.2 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function(){
   'use strict';
   const C=window.RSSScoutCore, R=window.RSSScoutRules, $=id=>document.getElementById(id);
@@ -411,7 +411,7 @@
   $('clear-url').addEventListener('click',()=>{$('url').value='';$('url').focus();});
   $('export').addEventListener('click',()=>{if(validRecords().some(f=>/[?&](key|code|token|auth|access_token)=/i.test(f.url)))confirmAction('导出含鉴权参数的链接？','OPML 中将保留完整订阅地址，可能包含访问密钥，请妥善保存。','导出 OPML',exportFeeds);else exportFeeds();});
   $('filters').addEventListener('click',event=>{const b=event.target.closest('[data-filter]');if(b){state.filter=b.dataset.filter;render();}});
-  $('copy-log').addEventListener('click',()=>nativeAction(async()=>{if(!state.api)throw new Error('请在 ToolBox 中使用复制功能');const text='RSS Scout 1.4.1\n'+redact($('log').textContent)+'\n规则同步\n'+redact($('rule-log').textContent);await state.api.clipboard.writeText(text);toast('已复制诊断信息（密钥已隐藏）');}));
+  $('copy-log').addEventListener('click',()=>nativeAction(async()=>{if(!state.api)throw new Error('请在 ToolBox 中使用复制功能');const text='RSS Scout 1.4.2\n'+redact($('log').textContent)+'\n规则同步\n'+redact($('rule-log').textContent);await state.api.clipboard.writeText(text);toast('已复制诊断信息（密钥已隐藏）');}));
   async function init(){
     if(!window.ToolBox){$('environment').textContent='浏览器预览未连接原生能力。请将 .tbx 导入 ToolBox 使用。';controls();render();return;}
     try{
