@@ -168,6 +168,7 @@ export default {
       end: "Başka okunmamış makale yok",
       releaseBack: "Geri dönmek için bırakın",
       nextUnread: "Sonraki okunmamış",
+      dockReady: "Sonraki makale için bırakın",
       preview: "Bu makaleyi okumaya devam etmek için bırakın",
     },
   },

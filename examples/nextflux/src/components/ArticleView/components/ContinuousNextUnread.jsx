@@ -3,231 +3,241 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
-import { ProgressCircle } from "@heroui/react";
 import {
   activeArticle,
   filteredArticles,
   imageGalleryActive,
 } from "@/stores/articlesStore.js";
-import { settingsState } from "@/stores/settingsStore.js";
 import { handleMarkRead } from "@/handlers/articleHandlers.js";
 import { getArticleById } from "@/db/storage.js";
-import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx";
+import ArticlePageContent from "@/components/ArticleView/components/ArticlePageContent.jsx";
 import {
-  CONTINUOUS_BRIDGE_HEIGHT,
-  CONTINUOUS_PULL_MAX,
+  CONTINUOUS_MAX_EXTRA,
+  CONTINUOUS_MOTION_SPEED,
+  CONTINUOUS_PAGE_START,
   CONTINUOUS_PULL_TRIGGER,
-  continuousPullResistance,
+  continuousRubberBand,
   findNextUnreadArticle,
-  springFrame,
 } from "@/toolbox/continuous-reading-motion.mjs";
 
-const INTERACTIVE_SELECTOR = "iframe,video,audio,input,textarea,select,[contenteditable='true'],.PhotoView-Slider__BannerWrap";
+const INTERACTIVE_SELECTOR =
+  "iframe,video,audio,input,textarea,select,[contenteditable='true'],.PhotoView-Slider__BannerWrap";
+const RING_RADIUS = 19;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-function previewTextOf(article) {
-  const source = article?.contentText ?? article?.summary ?? article?.content ?? "";
-  return String(source)
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 150);
-}
-
-export default function ContinuousNextUnread({ articleId, scrollAreaRef, surfaceRef, enabled }) {
-  const { t, i18n } = useTranslation();
+export default function ContinuousNextUnread({
+  articleId,
+  scrollAreaRef,
+  surfaceRef,
+  enabled,
+  onTransitionStateChange,
+}) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const articles = useStore(filteredArticles);
   const galleryActive = useStore(imageGalleryActive);
-  const { reduceMotion, maxWidth, fontFamily } = useStore(settingsState);
   const nextUnread = useMemo(
     () => findNextUnreadArticle(articles, articleId),
     [articles, articleId],
   );
 
-  const [progressValue, setProgressValue] = useState(0);
-  const [handoffArticle, setHandoffArticle] = useState(null);
-  const previewArticle = handoffArticle ?? nextUnread;
+  const [preparedArticle, setPreparedArticle] = useState(null);
 
   const layerRef = useRef(null);
-  const bridgeRef = useRef(null);
-  const previewRef = useRef(null);
-  const previewBodyRef = useRef(null);
-  const springBarRef = useRef(null);
-  const bridgeTextRef = useRef(null);
-  const bridgeSubRef = useRef(null);
+  const nextPageRef = useRef(null);
+  const dockRef = useRef(null);
+  const fillRef = useRef(null);
+  const textRef = useRef(null);
+  const washRef = useRef(null);
+  const toastRef = useRef(null);
 
-  const rawPullRef = useRef(0);
+  const rawRef = useRef(0);
   const pullingRef = useRef(false);
-  const transitioningRef = useRef(false);
+  const touchingRef = useRef(false);
+  const transitionLockedRef = useRef(false);
+  const handoffTargetRef = useRef(null);
   const lastYRef = useRef(0);
   const lastTRef = useRef(0);
   const velocityRef = useRef(0);
-  const animationRef = useRef(0);
-  const crossedRef = useRef(false);
+  const springRafRef = useRef(0);
+  const paintRafRef = useRef(0);
+  const needsPaintRef = useRef(false);
   const preparedRef = useRef({ id: null, promise: null });
 
+  const visibleNextArticle =
+    preparedArticle && String(preparedArticle.id) === String(nextUnread?.id)
+      ? preparedArticle
+      : nextUnread;
+
   useEffect(() => {
+    let cancelled = false;
+    setPreparedArticle(null);
+
     if (!nextUnread?.id) {
       preparedRef.current = { id: null, promise: null };
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
+
     const id = String(nextUnread.id);
-    preparedRef.current = {
-      id,
-      promise: getArticleById(id).catch(() => null),
+    const promise = getArticleById(id)
+      .catch(() => null)
+      .then((article) => {
+        if (!cancelled && article) setPreparedArticle(article);
+        return article;
+      });
+
+    preparedRef.current = { id, promise };
+
+    return () => {
+      cancelled = true;
     };
   }, [nextUnread?.id]);
 
-  const cancelAnimation = () => {
-    if (!animationRef.current) return;
-    cancelAnimationFrame(animationRef.current);
-    animationRef.current = 0;
+  const stopSpring = () => {
+    if (!springRafRef.current) return;
+    cancelAnimationFrame(springRafRef.current);
+    springRafRef.current = 0;
   };
 
-  const setCopy = (crossed) => {
-    const text = bridgeTextRef.current;
-    const sub = bridgeSubRef.current;
-    if (!text || !sub) return;
-    if (!previewArticle) {
-      text.textContent = t("articleView.continuousReading.end");
-      sub.textContent = t("articleView.continuousReading.releaseBack");
-      return;
-    }
-    text.textContent = crossed
-      ? t("articleView.continuousReading.release")
-      : t("articleView.continuousReading.pull");
-    sub.textContent = crossed
-      ? t("articleView.continuousReading.crossed")
-      : t("articleView.continuousReading.hint");
+  const setProgress = (progress) => {
+    const clamped = Math.max(0, Math.min(1, progress));
+    const fill = fillRef.current;
+    const dock = dockRef.current;
+    const wash = washRef.current;
+    const text = textRef.current;
+    if (!fill || !dock || !wash || !text) return;
+
+    fill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - clamped));
+    dock.style.opacity = String(Math.min(1, clamped * 1.35));
+    dock.style.transform = `translate3d(-50%,${18 * (1 - clamped)}px,0)`;
+    wash.style.opacity = String(clamped * 0.62);
+
+    const ready = clamped >= 0.999;
+    dock.classList.toggle("ready", ready);
+    text.textContent = !nextUnread
+      ? t("articleView.continuousReading.end")
+      : ready
+        ? t("articleView.continuousReading.dockReady")
+        : t("articleView.continuousReading.nextUnread");
   };
 
-  const applyVisibleOffset = (offset, ratio, crossed = false) => {
-    const bridge = bridgeRef.current;
-    const preview = previewRef.current;
-    const springBar = springBarRef.current;
+  const paint = () => {
     const surface = surfaceRef.current;
+    const nextPage = nextPageRef.current;
     const layer = layerRef.current;
-    if (!bridge || !preview || !springBar || !layer) return;
+    if (!surface || !nextPage || !layer) return;
 
-    layer.style.opacity = offset > 0 ? "1" : "0";
-    bridge.style.transform = `translate3d(0,${-offset}px,0)`;
-    preview.style.transform = `translate3d(0,${-offset}px,0)`;
-    springBar.style.transform = `scaleX(${1 + ratio * 0.42}) scaleY(${1 - ratio * 0.2})`;
-    springBar.style.opacity = crossed ? "0.45" : "0.75";
-    preview.style.boxShadow = `0 -18px 44px rgba(0,0,0,${0.035 + Math.min(1, ratio) * 0.055})`;
-    if (surface) surface.style.transform = `translate3d(0,${-offset * 0.1}px,0)`;
-    setCopy(crossed);
+    const raw = rawRef.current;
+    const progress = Math.min(1, raw / CONTINUOUS_PULL_TRIGGER);
+    const elastic = continuousRubberBand(Math.min(raw, CONTINUOUS_PULL_TRIGGER));
+    const extra = Math.max(0, raw - CONTINUOUS_PAGE_START);
+    const extraRatio = Math.min(1, extra / CONTINUOUS_MAX_EXTRA);
+
+    surface.style.transform = `translate3d(0,${-elastic}px,0)`;
+
+    if (extra > 0 && nextUnread) {
+      const y = layer.clientHeight * (1 - extraRatio);
+      nextPage.style.transform = `translate3d(0,${y}px,0)`;
+    } else {
+      nextPage.style.transform = "translate3d(0,100%,0)";
+    }
+
+    setProgress(progress);
   };
 
-  const applyPull = (rawPull) => {
-    const raw = Math.max(0, Math.min(CONTINUOUS_PULL_MAX, rawPull));
-    rawPullRef.current = raw;
-    const offset = continuousPullResistance(raw);
-    const ratio = Math.min(1, raw / CONTINUOUS_PULL_TRIGGER);
-    const crossed = raw >= CONTINUOUS_PULL_TRIGGER;
-
-    setProgressValue(Math.round(ratio * 100));
-
-    if (crossed && !crossedRef.current) {
-      crossedRef.current = true;
-      globalThis.navigator?.vibrate?.(7);
-    } else if (!crossed) {
-      crossedRef.current = false;
-    }
-    applyVisibleOffset(offset, ratio, crossed);
+  const schedulePaint = () => {
+    needsPaintRef.current = true;
+    if (paintRafRef.current) return;
+    paintRafRef.current = requestAnimationFrame(() => {
+      paintRafRef.current = 0;
+      if (!needsPaintRef.current) return;
+      needsPaintRef.current = false;
+      paint();
+    });
   };
 
-  const clearVisualState = () => {
-    rawPullRef.current = 0;
-    pullingRef.current = false;
-    crossedRef.current = false;
-    setProgressValue(0);
+  const spring = ({ from, to, velocity = 0, stiffness = 240, damping = 32, onUpdate, onDone }) => {
+    stopSpring();
 
-    const layer = layerRef.current;
-    const bridge = bridgeRef.current;
-    const preview = previewRef.current;
-    const previewBody = previewBodyRef.current;
-    const springBar = springBarRef.current;
-    const surface = surfaceRef.current;
-
-    if (layer) {
-      layer.style.opacity = "0";
-      layer.style.transition = "";
-    }
-    if (bridge) {
-      bridge.style.transform = "";
-      bridge.style.opacity = "";
-      bridge.style.transition = "";
-    }
-    if (preview) {
-      preview.style.transform = "";
-      preview.style.boxShadow = "";
-      preview.style.background = "";
-      preview.style.transition = "";
-    }
-    if (previewBody) {
-      previewBody.style.opacity = "";
-      previewBody.style.transform = "";
-      previewBody.style.transition = "";
-    }
-    if (springBar) {
-      springBar.style.transform = "";
-      springBar.style.opacity = "";
-    }
-    if (surface) {
-      surface.style.transform = "";
-      surface.style.opacity = "";
-      surface.style.transition = "";
-    }
-    setCopy(false);
-  };
-
-  const springTo = ({ from, to, velocity = 0, stiffness, damping, onUpdate, onDone }) => {
-    cancelAnimation();
     let x = from;
     let v = velocity;
     let last = performance.now();
 
     const frame = (now) => {
-      const dt = Math.min(0.032, Math.max(0, (now - last) / 1000));
+      let dt = Math.min(0.028, Math.max(0, (now - last) / 1000));
       last = now;
-      const next = springFrame({ x, velocity: v, target: to, dt, stiffness, damping });
-      x = next.x;
-      v = next.velocity;
+      dt *= CONTINUOUS_MOTION_SPEED;
+
+      const acceleration = -stiffness * (x - to) - damping * v;
+      v += acceleration * dt;
+      x += v * dt;
       onUpdate(x, v);
-      if (Math.abs(v) < 0.45 && Math.abs(x - to) < 0.45) {
+
+      if (Math.abs(v) < 0.55 && Math.abs(x - to) < 0.55) {
         onUpdate(to, 0);
-        animationRef.current = 0;
+        springRafRef.current = 0;
         onDone?.();
         return;
       }
-      animationRef.current = requestAnimationFrame(frame);
+      springRafRef.current = requestAnimationFrame(frame);
     };
-    animationRef.current = requestAnimationFrame(frame);
+
+    springRafRef.current = requestAnimationFrame(frame);
   };
 
-  const springBack = () => {
-    const from = continuousPullResistance(rawPullRef.current);
-    rawPullRef.current = 0;
-    crossedRef.current = false;
-    if (reduceMotion) {
-      clearVisualState();
-      return;
-    }
-    const initialVelocity = Math.max(-320, Math.min(320, -velocityRef.current * 120));
-    springTo({
-      from,
+  const clearPullVisuals = () => {
+    rawRef.current = 0;
+    pullingRef.current = false;
+    const surface = surfaceRef.current;
+    const nextPage = nextPageRef.current;
+    const wash = washRef.current;
+
+    if (surface) surface.style.transform = "";
+    if (nextPage) nextPage.style.transform = "translate3d(0,100%,0)";
+    if (wash) wash.style.opacity = "0";
+    setProgress(0);
+  };
+
+  const cancelPull = () => {
+    const startRaw = rawRef.current;
+    rawRef.current = 0;
+
+    const startElastic = continuousRubberBand(
+      Math.min(startRaw, CONTINUOUS_PULL_TRIGGER),
+    );
+    const startExtra = Math.min(
+      1,
+      Math.max(0, startRaw - CONTINUOUS_PAGE_START) / CONTINUOUS_MAX_EXTRA,
+    );
+
+    spring({
+      from: startElastic,
       to: 0,
-      velocity: initialVelocity,
-      stiffness: 390,
-      damping: 38,
-      onUpdate: (x) => {
-        const safe = Math.max(0, x);
-        const ratio = Math.min(1, safe / continuousPullResistance(CONTINUOUS_PULL_TRIGGER));
-        setProgressValue(Math.round(ratio * 100));
-        applyVisibleOffset(safe, ratio, false);
+      velocity: Math.max(-240, Math.min(240, -velocityRef.current * 92)),
+      stiffness: 355,
+      damping: 40,
+      onUpdate: (y) => {
+        const safe = Math.max(0, y);
+        const surface = surfaceRef.current;
+        const nextPage = nextPageRef.current;
+        const layer = layerRef.current;
+
+        if (surface) surface.style.transform = `translate3d(0,${-safe}px,0)`;
+        setProgress(
+          Math.min(
+            1,
+            safe / Math.max(1, continuousRubberBand(CONTINUOUS_PULL_TRIGGER)),
+          ),
+        );
+
+        if (startExtra > 0 && nextPage && layer) {
+          const y2 = layer.clientHeight * (1 - startExtra * Math.min(1, safe / Math.max(1, startElastic)));
+          nextPage.style.transform = `translate3d(0,${y2}px,0)`;
+        }
       },
-      onDone: clearVisualState,
+      onDone: clearPullVisuals,
     });
   };
 
@@ -241,97 +251,94 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     return (await getArticleById(id).catch(() => null)) ?? article;
   };
 
-  const navigatePrepared = async (article) => {
-    if (!article) return;
-    const prepared = await resolvePreparedArticle(article);
-    activeArticle.set(prepared);
-    const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
-    navigate(`${basePath}/article/${article.id}`);
-    if (article.status !== "read") void handleMarkRead(article);
-  };
+  const finishHandoff = () => {
+    if (!transitionLockedRef.current) return;
 
-  const finishSharedHandoff = () => {
-    const bridge = bridgeRef.current;
-    const preview = previewRef.current;
-    const previewBody = previewBodyRef.current;
-
-    if (bridge) {
-      bridge.style.transition = "opacity 180ms cubic-bezier(.4,0,1,1)";
-      bridge.style.opacity = "0";
-    }
-    if (previewBody) {
-      previewBody.style.transition = "opacity 170ms cubic-bezier(.4,0,1,1), transform 220ms cubic-bezier(.2,0,0,1)";
-      previewBody.style.opacity = "0";
-      previewBody.style.transform = "translate3d(0,-6px,0)";
-    }
-    if (preview) {
-      preview.style.transition = "background-color 360ms cubic-bezier(.2,0,0,1), box-shadow 360ms cubic-bezier(.2,0,0,1)";
-      preview.style.background = "transparent";
-      preview.style.boxShadow = "none";
-    }
-
-    setTimeout(() => {
-      clearVisualState();
-      setHandoffArticle(null);
-      transitioningRef.current = false;
-    }, 460);
-  };
-
-  const commitNext = () => {
-    if (!nextUnread || transitioningRef.current) {
-      springBack();
-      return;
-    }
-    transitioningRef.current = true;
-    setHandoffArticle(nextUnread);
-    setProgressValue(100);
-
-    if (reduceMotion) {
-      void navigatePrepared(nextUnread).finally(() => {
-        clearVisualState();
-        setHandoffArticle(null);
-        transitioningRef.current = false;
-      });
-      return;
-    }
-
-    const from = continuousPullResistance(rawPullRef.current);
-    const target = (layerRef.current?.clientHeight || window.innerHeight) + CONTINUOUS_BRIDGE_HEIGHT;
-    const initialVelocity = Math.max(110, Math.min(560, velocityRef.current * 165 + 135));
     const surface = surfaceRef.current;
-    const navigationPromise = resolvePreparedArticle(nextUnread);
+    const nextPage = nextPageRef.current;
+    const wash = washRef.current;
+    const viewport = scrollAreaRef.current;
 
-    springTo({
-      from,
-      to: target,
-      velocity: initialVelocity,
-      stiffness: 190,
-      damping: 32,
-      onUpdate: (x) => {
-        const progress = Math.min(1, Math.max(0, (x - from) / Math.max(1, target - from)));
-        applyVisibleOffset(x, Math.max(0, 1 - progress) * 0.58, true);
-        if (surface) {
-          surface.style.transform = `translate3d(0,${-Math.min(72, x * 0.085)}px,0)`;
-          surface.style.opacity = String(1 - progress * 0.58);
-        }
+    if (surface) surface.style.transform = "";
+    if (viewport) viewport.scrollTop = 0;
+    if (nextPage) nextPage.style.transform = "translate3d(0,100%,0)";
+    if (wash) wash.style.opacity = "0";
+
+    rawRef.current = 0;
+    pullingRef.current = false;
+    transitionLockedRef.current = false;
+    handoffTargetRef.current = null;
+    setProgress(0);
+    onTransitionStateChange?.(false);
+
+    const toast = toastRef.current;
+    if (toast) {
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 650);
+    }
+  };
+
+  const commit = () => {
+    if (!nextUnread || transitionLockedRef.current) {
+      cancelPull();
+      return;
+    }
+
+    const nextPage = nextPageRef.current;
+    const layer = layerRef.current;
+    const surface = surfaceRef.current;
+    if (!nextPage || !layer || !surface) {
+      cancelPull();
+      return;
+    }
+
+    transitionLockedRef.current = true;
+    pullingRef.current = false;
+    handoffTargetRef.current = String(nextUnread.id);
+    onTransitionStateChange?.(true);
+
+    const extra = Math.max(0, rawRef.current - CONTINUOUS_PAGE_START);
+    const ratio = Math.min(1, extra / CONTINUOUS_MAX_EXTRA);
+    const fromY = layer.clientHeight * (1 - ratio);
+    const preparedPromise = resolvePreparedArticle(nextUnread);
+
+    spring({
+      from: fromY,
+      to: 0,
+      velocity: Math.max(
+        -760,
+        Math.min(-150, -velocityRef.current * 220 - 160),
+      ),
+      stiffness: 245,
+      damping: 35,
+      onUpdate: (y) => {
+        nextPage.style.transform = `translate3d(0,${Math.max(0, y)}px,0)`;
+        surface.style.transform = `translate3d(0,${-continuousRubberBand(CONTINUOUS_PULL_TRIGGER)}px,0)`;
       },
       onDone: async () => {
-        const prepared = await navigationPromise;
+        const prepared = await preparedPromise;
         activeArticle.set(prepared ?? nextUnread);
-        const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
+
+        const basePath = (window.location.hash.slice(1).split("?")[0] || "/")
+          .split("/article/")[0];
         navigate(`${basePath}/article/${nextUnread.id}`);
+
         if (nextUnread.status !== "read") void handleMarkRead(nextUnread);
-        if (surface) {
-          surface.style.transition = "transform 360ms cubic-bezier(.2,0,0,1), opacity 260ms cubic-bezier(.2,0,0,1)";
-          requestAnimationFrame(() => {
-            surface.style.transform = "translate3d(0,0,0)";
-            surface.style.opacity = "1";
-          });
-        }
-        requestAnimationFrame(() => requestAnimationFrame(finishSharedHandoff));
       },
     });
   };
+
+  useEffect(() => {
+    if (
+      transitionLockedRef.current &&
+      handoffTargetRef.current &&
+      String(articleId) === handoffTargetRef.current
+    ) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(finishHandoff);
+      });
+    }
+  }, [articleId]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -346,140 +353,182 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       layer.style.top = `${Math.max(0, Math.round(toolbarBottom))}px`;
     };
 
-    syncPersistentChromeInset();
-
     const atBottom = () =>
       viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2;
 
     const blockedTarget = (target) =>
       target instanceof Element && Boolean(target.closest(INTERACTIVE_SELECTOR));
 
+    const consume = (move) => {
+      if (transitionLockedRef.current) return;
+
+      if (move > 0) {
+        if (!pullingRef.current) {
+          if (!atBottom()) return;
+          pullingRef.current = true;
+        }
+        rawRef.current = Math.min(
+          CONTINUOUS_PULL_TRIGGER + CONTINUOUS_MAX_EXTRA,
+          rawRef.current + move * 0.86,
+        );
+      } else if (pullingRef.current) {
+        const down = -move;
+        rawRef.current = Math.max(0, rawRef.current - down);
+        if (rawRef.current <= 0) {
+          pullingRef.current = false;
+          clearPullVisuals();
+        }
+      }
+
+      if (pullingRef.current) schedulePaint();
+    };
+
     const onTouchStart = (event) => {
-      if (transitioningRef.current || galleryActive || event.touches.length !== 1 || blockedTarget(event.target)) return;
-      cancelAnimation();
+      if (
+        transitionLockedRef.current ||
+        galleryActive ||
+        event.touches.length !== 1 ||
+        blockedTarget(event.target)
+      ) {
+        return;
+      }
+
+      stopSpring();
       syncPersistentChromeInset();
+      touchingRef.current = true;
       lastYRef.current = event.touches[0].clientY;
       lastTRef.current = performance.now();
       velocityRef.current = 0;
-      pullingRef.current = false;
-      rawPullRef.current = 0;
     };
 
     const onTouchMove = (event) => {
-      if (transitioningRef.current || galleryActive || event.touches.length !== 1) return;
+      if (
+        !touchingRef.current ||
+        transitionLockedRef.current ||
+        event.touches.length !== 1
+      ) {
+        return;
+      }
+
       const y = event.touches[0].clientY;
       const now = performance.now();
       const move = lastYRef.current - y;
       const dt = Math.max(1, now - lastTRef.current);
+      const instant = move / dt;
+      velocityRef.current = velocityRef.current * 0.58 + instant * 0.42;
+
       lastYRef.current = y;
       lastTRef.current = now;
-      velocityRef.current = move / dt;
 
-      if (!pullingRef.current) {
-        if (!(move > 0 && atBottom())) return;
-        pullingRef.current = true;
-      }
-      if (event.cancelable) event.preventDefault();
+      const wasPulling = pullingRef.current;
+      consume(move);
 
-      const nextRaw = move > 0
-        ? rawPullRef.current + move * 0.82
-        : Math.max(0, rawPullRef.current + move * 0.96);
-      applyPull(nextRaw);
-      if (nextRaw <= 0 && move < 0) {
-        pullingRef.current = false;
-        clearVisualState();
+      if ((wasPulling || pullingRef.current) && event.cancelable) {
+        event.preventDefault();
       }
     };
 
-    const finish = () => {
-      if (!pullingRef.current || transitioningRef.current) return;
-      pullingRef.current = false;
-      if (rawPullRef.current >= CONTINUOUS_PULL_TRIGGER && nextUnread) commitNext();
-      else springBack();
+    const onTouchEnd = () => {
+      if (!touchingRef.current || transitionLockedRef.current) return;
+      touchingRef.current = false;
+
+      if (rawRef.current >= CONTINUOUS_PULL_TRIGGER) commit();
+      else if (rawRef.current > 0) cancelPull();
     };
 
+    const onTouchCancel = () => {
+      touchingRef.current = false;
+      if (rawRef.current > 0 && !transitionLockedRef.current) cancelPull();
+    };
+
+    syncPersistentChromeInset();
     globalThis.window?.addEventListener("resize", syncPersistentChromeInset);
     viewport.addEventListener("touchstart", onTouchStart, { passive: true });
     viewport.addEventListener("touchmove", onTouchMove, { passive: false });
-    viewport.addEventListener("touchend", finish, { passive: true });
-    viewport.addEventListener("touchcancel", finish, { passive: true });
+    viewport.addEventListener("touchend", onTouchEnd, { passive: true });
+    viewport.addEventListener("touchcancel", onTouchCancel, { passive: true });
+
     return () => {
       globalThis.window?.removeEventListener("resize", syncPersistentChromeInset);
       viewport.removeEventListener("touchstart", onTouchStart);
       viewport.removeEventListener("touchmove", onTouchMove);
-      viewport.removeEventListener("touchend", finish);
-      viewport.removeEventListener("touchcancel", finish);
-      cancelAnimation();
-      if (!transitioningRef.current) clearVisualState();
+      viewport.removeEventListener("touchend", onTouchEnd);
+      viewport.removeEventListener("touchcancel", onTouchCancel);
+      stopSpring();
+      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current);
+      if (!transitionLockedRef.current) clearPullVisuals();
     };
-  }, [articleId, enabled, galleryActive, nextUnread?.id, reduceMotion]);
-
-  useEffect(() => {
-    setCopy(false);
-  }, [previewArticle?.id, i18n.language]);
+  }, [enabled, galleryActive, nextUnread?.id]);
 
   if (!enabled || typeof document === "undefined") return null;
 
-  const sharedLayoutId = previewArticle ? `nextflux-article-${previewArticle.id}` : undefined;
-  const previewText = previewTextOf(previewArticle);
-
   return createPortal(
     <div ref={layerRef} className="nextflux-continuous-layer" aria-hidden="true">
-      <div ref={bridgeRef} className="nextflux-continuous-bridge">
-        <div className="nextflux-continuous-progress-wrap">
-          <ProgressCircle
-            aria-label={t("articleView.continuousReading.pull")}
-            value={progressValue}
-            minValue={0}
-            maxValue={100}
-            color={progressValue >= 100 ? "success" : "accent"}
-            className="nextflux-continuous-progress-circle"
+      <section ref={nextPageRef} className="nextflux-continuous-next-page">
+        {visibleNextArticle ? (
+          <ArticlePageContent
+            article={visibleNextArticle}
+            passive
+            className="nextflux-continuous-next-page-inner"
+          />
+        ) : (
+          <div className="nextflux-continuous-next-empty">
+            {t("articleView.continuousReading.end")}
+          </div>
+        )}
+      </section>
+
+      <div ref={washRef} className="nextflux-continuous-bottom-wash" />
+
+      <div ref={dockRef} className="nextflux-continuous-progress-dock">
+        <div className="nextflux-continuous-progress-button">
+          <svg
+            className="nextflux-continuous-progress-svg"
+            viewBox="0 0 48 48"
+            aria-hidden="true"
           >
-            <ProgressCircle.Track className="nextflux-continuous-progress-track">
-              <ProgressCircle.TrackCircle
-                className="nextflux-continuous-progress-track-circle"
-                strokeWidth={5}
+            <circle
+              className="nextflux-continuous-progress-track"
+              cx="24"
+              cy="24"
+              r={RING_RADIUS}
+            />
+            <circle
+              ref={fillRef}
+              className="nextflux-continuous-progress-fill"
+              cx="24"
+              cy="24"
+              r={RING_RADIUS}
+            />
+          </svg>
+
+          <div className="nextflux-continuous-progress-icon" aria-hidden="true">
+            <svg viewBox="0 0 18 18">
+              <g className="nextflux-continuous-arrow-glyph">
+                <path
+                  className="nextflux-continuous-arrow-stem"
+                  d="M9 14.2V4.9"
+                />
+                <path
+                  className="nextflux-continuous-arrow-head"
+                  d="M5.6 8.1L9 4.7l3.4 3.4"
+                />
+              </g>
+              <path
+                className="nextflux-continuous-ready-check"
+                d="M4.4 9.4l2.8 2.8 6.3-6.4"
               />
-              <ProgressCircle.FillCircle
-                className="nextflux-continuous-progress-fill-circle"
-                strokeWidth={5}
-              />
-            </ProgressCircle.Track>
-          </ProgressCircle>
-          <span className="nextflux-continuous-progress-glyph">
-            {progressValue >= 100 ? "✓" : "↑"}
-          </span>
+            </svg>
+          </div>
         </div>
-        <div ref={springBarRef} className="nextflux-continuous-springbar" />
-        <div ref={bridgeTextRef} className="nextflux-continuous-label" />
-        <div ref={bridgeSubRef} className="nextflux-continuous-hint" />
+        <div ref={textRef} className="nextflux-continuous-progress-text">
+          {t("articleView.continuousReading.nextUnread")}
+        </div>
       </div>
 
-      <section ref={previewRef} className="nextflux-continuous-preview">
-        <div
-          className="nextflux-continuous-preview-inner"
-          style={{ maxWidth: `${maxWidth}ch`, fontFamily }}
-        >
-          {previewArticle ? (
-            <>
-              <ArticleHeader
-                article={previewArticle}
-                layoutId={sharedLayoutId}
-                interactive={false}
-                className="nextflux-continuous-shared-header"
-              />
-              <div ref={previewBodyRef} className="nextflux-continuous-preview-body">
-                <div className="nextflux-continuous-rule" />
-                <p>{previewText || t("articleView.continuousReading.preview")}</p>
-              </div>
-            </>
-          ) : (
-            <div ref={previewBodyRef} className="nextflux-continuous-empty">
-              {t("articleView.continuousReading.end")}
-            </div>
-          )}
-        </div>
-      </section>
+      <div ref={toastRef} className="nextflux-continuous-toast">
+        {t("articleView.continuousReading.nextUnread")}
+      </div>
     </div>,
     document.body,
   );

@@ -167,6 +167,7 @@ export default {
       end: "没有更多未读文章",
       releaseBack: "松手返回",
       nextUnread: "下一篇未读",
+      dockReady: "松手进入下一篇",
       preview: "松手后继续阅读这篇文章",
     },
   },

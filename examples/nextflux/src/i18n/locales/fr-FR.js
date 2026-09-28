@@ -170,6 +170,7 @@ export default {
       end: "Aucun autre article non lu",
       releaseBack: "Relâchez pour revenir",
       nextUnread: "Prochain non lu",
+      dockReady: "Relâchez pour l’article suivant",
       preview: "Relâchez pour continuer la lecture",
     },
   },

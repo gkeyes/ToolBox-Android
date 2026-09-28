@@ -168,6 +168,7 @@ export default {
       end: "No more unread articles",
       releaseBack: "Release to return",
       nextUnread: "Next unread",
+      dockReady: "Release for next article",
       preview: "Release to continue reading this article",
     },
   },
