@@ -14,7 +14,7 @@ import { currentThemeMode, themeState } from "@/stores/themeStore.js";
 import { getFontSizeClass, cn } from "@/lib/utils.js";
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
-  { article, passive = false, className },
+  { article, passive = false, readingPaused = false, className },
   ref,
 ) {
   const navigate = useNavigate();
@@ -54,7 +54,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
       />
       <Separator className="my-4" />
 
-      <AISummary articleId={article.id} />
+      <AISummary articleId={article.id} passive={passive} paused={readingPaused} />
 
       {mediaEnclosures.map((enclosure) => (
         <Iframe
@@ -89,6 +89,8 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
           }}
         >
           <ProgressiveArticle
+            preview={passive}
+            paused={readingPaused}
             articleId={article.id}
             html={article.content}
             baseUrl={article.url}

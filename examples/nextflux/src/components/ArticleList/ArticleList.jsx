@@ -18,11 +18,10 @@ import { settingsState } from "@/stores/settingsStore.js";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import Indicator from "@/components/ArticleList/components/Indicator.jsx";
 import { cn } from "@heroui/react";
-import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import { toast } from "sonner";
 
 const ArticleList = () => {
-  const { feedId, categoryId, articleId } = useParams();
+  const { feedId, categoryId } = useParams();
   const $filteredArticles = useStore(filteredArticles);
   const $filter = useStore(filter);
   const $lastSync = useStore(lastSync);
@@ -35,9 +34,6 @@ const ArticleList = () => {
     floatingSidebar,
   } = useStore(settingsState);
   const virtuosoRef = useRef(null);
-  const { isMedium } = useIsMobile();
-  // 判断是否在移动端且正在查看文章详情
-  const isArticleDetailOpen = isMedium && !!articleId;
 
   const lastSyncTime = useRef(null);
   const lastQuery = useRef(null);
@@ -98,8 +94,6 @@ const ArticleList = () => {
         className={cn(
           "w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
           floatingSidebar ? "md:border-r" : "",
-          // iOS 风格动画：移动端查看文章详情时，列表向左移动
-          isArticleDetailOpen && "article-list-shifted",
         )}
       >
         <ArticleListHeader />

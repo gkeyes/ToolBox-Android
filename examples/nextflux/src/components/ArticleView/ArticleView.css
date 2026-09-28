@@ -138,277 +138,51 @@ div.force-dark-code-theme .shiki span {
 }
 
 
-/* Mobile continuous-reading transition.
-   Mirrors the user-approved iOS V4 prototype: real next page, fixed progress dock,
-   rubber-band pull, and page-only spring handoff. */
-.nextflux-continuous-current-surface {
-  will-change: transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.nextflux-article-header {
-  transform: translateZ(0);
-}
-
-.nextflux-article-feed {
-  min-height: 24px;
-}
-
-.nextflux-article-feed-button {
-  color: inherit;
-  font: inherit;
-}
-
-.nextflux-article-title-link {
-  display: inline;
-  color: inherit;
-  font-weight: 600;
-}
-
-.nextflux-article-date {
-  min-height: 20px;
-}
-
+/* Only viewport-sized shells are promoted during motion. The article body
+   keeps normal text rendering and never becomes a full-length GPU texture. */
+.nextflux-article-page { background: var(--background); }
+.nextflux-article-feed { min-height: 24px; }
+.nextflux-article-feed-button { color: inherit; font: inherit; }
+.nextflux-article-title-link { display: inline; color: inherit; font-weight: 600; }
+.nextflux-article-date { min-height: 20px; }
 .nextflux-continuous-layer {
   position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 49;
   pointer-events: none;
   overflow: hidden;
   contain: layout paint style;
-  isolation: isolate;
-  transform: translateZ(0);
 }
-
 .nextflux-continuous-next-page {
   position: absolute;
   inset: 0;
-  z-index: 20;
   overflow: hidden;
   background: var(--background);
-  transform: translate3d(0, 100%, 0);
-  will-change: transform;
-  backface-visibility: hidden;
+  transform: translate3d(0,100%,0);
   contain: layout paint;
-  box-shadow: 0 -16px 42px rgb(0 0 0 / 6%);
+  box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
 }
-
-.nextflux-continuous-next-page-inner {
-  min-height: 100%;
-  will-change: transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeSpeed;
-}
-
-.nextflux-continuous-next-empty {
-  padding: 28px 22px;
-  color: color-mix(in srgb, var(--foreground) 46%, transparent);
-  font-size: 15px;
-}
-
+.nextflux-continuous-layer[data-phase="idle"] .nextflux-continuous-next-page { visibility: hidden; }
+.nextflux-continuous-layer:not([data-phase="idle"]) .nextflux-continuous-next-page { will-change: transform; }
+.nextflux-continuous-next-page-inner { min-height: 100%; }
 .nextflux-continuous-progress-dock {
   position: absolute;
   left: 50%;
-  bottom: calc(26px + env(safe-area-inset-bottom));
-  z-index: 40;
-  transform: translate3d(-50%, 18px, 0);
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
   opacity: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-  contain: paint;
-}
-
-.nextflux-continuous-progress-button {
-  position: relative;
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--background) 78%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  transition:
-    background 180ms ease,
-    box-shadow 180ms ease,
-    transform 180ms ease;
-}
-
-.nextflux-continuous-progress-svg {
-  position: absolute;
-  inset: 0;
-  width: 48px;
-  height: 48px;
-  transform: rotate(-90deg);
-}
-
-.nextflux-continuous-progress-track,
-.nextflux-continuous-progress-fill {
-  fill: none;
-  stroke-width: 3;
-}
-
-.nextflux-continuous-progress-track {
-  stroke: color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
-.nextflux-continuous-progress-fill {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  stroke-dasharray: 119.38;
-  stroke-dashoffset: 119.38;
-}
-
-.nextflux-continuous-progress-icon {
-  position: relative;
-  z-index: 2;
-  width: 18px;
-  height: 18px;
-  color: color-mix(in srgb, var(--foreground) 56%, transparent);
-  transform: scale(.96);
-  transition:
-    transform 180ms ease,
-    color 180ms ease,
-    opacity 180ms ease;
-}
-
-.nextflux-continuous-progress-icon svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-  overflow: visible;
-}
-
-.nextflux-continuous-arrow-stem,
-.nextflux-continuous-arrow-head,
-.nextflux-continuous-ready-check {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.nextflux-continuous-arrow-stem,
-.nextflux-continuous-arrow-head {
-  stroke-width: 1.9;
-}
-
-.nextflux-continuous-ready-check {
-  stroke-width: 2.1;
-  opacity: 0;
-  stroke-dasharray: 20;
-  stroke-dashoffset: 20;
-}
-
-.nextflux-continuous-arrow-glyph {
-  transform-origin: 50% 50%;
-  transition: opacity 160ms ease, transform 180ms ease;
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-arrow-glyph {
-  opacity: 0;
-  transform: translateY(-2px) scale(.84);
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-ready-check {
-  opacity: 1;
-  stroke-dashoffset: 0;
-  transition:
-    stroke-dashoffset 220ms cubic-bezier(.2,.9,.25,1),
-    opacity 120ms ease 50ms;
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-progress-button {
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--accent) 94%, white 6%),
-    color-mix(in srgb, var(--accent) 78%, black 22%)
-  );
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-progress-track,
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-progress-fill {
-  opacity: 0;
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-progress-icon {
-  color: white;
-  transform: scale(1.02);
-}
-
-.nextflux-continuous-progress-text {
-  margin-top: 7px;
-  color: color-mix(in srgb, var(--foreground) 46%, transparent);
-  font-size: 12px;
-  font-weight: 560;
-  white-space: nowrap;
-}
-
-.nextflux-continuous-progress-dock.ready .nextflux-continuous-progress-text {
-  color: color-mix(in srgb, var(--foreground) 50%, transparent);
-}
-
-.nextflux-continuous-bottom-wash {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 150px;
-  z-index: 30;
-  pointer-events: none;
-  opacity: 0;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--background) 95%, transparent),
-    transparent
-  );
-  will-change: opacity;
-  transform: translateZ(0);
-}
-
-.nextflux-continuous-toast {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  z-index: 70;
+  gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  color: white;
-  background: rgb(20 20 22 / 88%);
+  background: var(--background);
+  border: 1px solid color-mix(in srgb,var(--foreground) 10%,transparent);
+  color: color-mix(in srgb,var(--foreground) 60%,transparent);
   font-size: 12px;
-  opacity: 0;
-  transform: translate(-50%, -8px);
-  transition: 220ms ease;
+  white-space: nowrap;
 }
-
-.nextflux-continuous-toast.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nextflux-continuous-progress-button,
-  .nextflux-continuous-progress-icon,
-  .nextflux-continuous-arrow-glyph,
-  .nextflux-continuous-ready-check,
-  .nextflux-continuous-toast {
-    transition: none !important;
-  }
-}
-
-@media (min-width: 768px) {
-  .nextflux-continuous-layer {
-    display: none;
-  }
-}
+.nextflux-continuous-progress-icon { font-size: 17px; line-height: 1; }
+.nextflux-continuous-progress-dock.ready { color: var(--accent); }
+.nextflux-continuous-layer[data-phase="handoff"] .nextflux-continuous-progress-dock { visibility: hidden; }
+@media (min-width: 768px) { .nextflux-continuous-layer { display: none; } }

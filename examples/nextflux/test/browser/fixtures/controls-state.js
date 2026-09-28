@@ -8,6 +8,7 @@ export const hasIntegrations = atom(false);
 export const settingsState = atom({ aiApiKey: "fixture", floatingSidebar: false });
 export const settingsModalOpen = atom(false);
 export const currentThemeMode = atom("light");
+export const themeState = atom({ lightTheme: "default" });
 export const authState = atom({});
 export const feeds = atom([]);
 export const SERVER_URL = "https://miniflux.example.invalid";

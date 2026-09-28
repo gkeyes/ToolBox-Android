@@ -1,11 +1,9 @@
 export const CONTINUOUS_PULL_TRIGGER = 150;
-export const CONTINUOUS_PAGE_START = 150;
 export const CONTINUOUS_MAX_EXTRA = 240;
-export const CONTINUOUS_MOTION_SPEED = 1.25;
 
-export function continuousRubberBand(rawPull) {
-  const x = Math.max(0, Number(rawPull) || 0);
-  return 78 * (1 - Math.exp(-x / 100));
+// Content follows the first pull; the threshold only decides whether to commit.
+export function continuousPageOffset(rawPull, height) {
+  return Math.max(0, height - Math.max(0, Number(rawPull) || 0));
 }
 
 export function findNextUnreadArticle(articles, currentId) {

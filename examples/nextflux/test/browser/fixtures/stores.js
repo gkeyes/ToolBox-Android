@@ -6,4 +6,4 @@ export const isModalOpen = atom(false);
 
 // The dependency scanner can reach this alias before the per-importer hook.
 // Share the same test atom as the toolbar instead of making a second entry store.
-export { activeArticle } from "./controls-state.js";
+export { activeArticle, filteredArticles } from "./controls-state.js";

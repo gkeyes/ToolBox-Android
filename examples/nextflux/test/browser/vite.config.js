@@ -24,9 +24,25 @@ const controlBoundaries = new Set([
   "stores/authStore.js", "stores/feedsStore.js", "toolbox/network.js",
   "api/miniflux", "api/miniflux.js", "api/openai.js",
 ].map((name) => path.join(sourceRoot, name)));
+const navigationComponents = new Set([
+  "components/ArticleView/ArticleView.jsx",
+  "components/ArticleView/components/ContinuousNextUnread.jsx",
+  "components/ArticleView/components/ArticlePageContent.jsx",
+  "components/ArticleView/components/ArticleHeader.jsx",
+  "components/ArticleList/components/EmptyPlaceholder.jsx",
+  "components/ui/FeedIcon.jsx", "hooks/useArticleSwipeBack.js",
+].map((name) => path.join(sourceRoot, name)));
+const navigationBoundaries = new Set([
+  "stores/articlesStore", "stores/articlesStore.js", "stores/modalStore.js",
+  "stores/settingsStore", "stores/settingsStore.js", "stores/themeStore.js",
+  "stores/syncStore.js", "db/storage", "db/storage.js", "handlers/articleHandlers.js",
+].map((name) => path.join(sourceRoot, name)));
 
 export default defineConfig({
   root: fixture,
+  // The navigation fixture uses a different account boundary at its importers.
+  // Scan the original entries together; navigation imports resolve individually.
+  optimizeDeps: { entries: ["index.html", "controls.html", "title-filter.html"] },
   plugins: [
     {
       name: "reading-test-boundaries",
@@ -35,6 +51,15 @@ export default defineConfig({
         // Vite's alias plugin may resolve @ before this hook. Recognize both
         // forms, and scope mocks to the real controls rather than all imports.
         const file = importer?.split("?")[0];
+        if (navigationComponents.has(file)) {
+          const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
+          if (navigationBoundaries.has(resolved) || resolved === path.join(fixture, "stores.js")) {
+            return path.join(fixture, "article-navigation-state.js");
+          }
+          if (resolved === path.join(sourceRoot, "components/ArticleView/components/ActionButtons.jsx")) {
+            return path.join(fixture, "article-navigation-toolbar.jsx");
+          }
+        }
         if (controlComponents.includes(file)) {
           const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
           if (path.dirname(resolved) === path.join(sourceRoot, "components/Settings") &&

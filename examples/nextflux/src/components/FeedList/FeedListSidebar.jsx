@@ -24,7 +24,7 @@ import { getLastSyncTime } from "@/db/storage.js";
 import AddFeedButton from "@/components/FeedList/components/AddFeedButton.jsx";
 import { useTranslation } from "react-i18next";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { isModalOpen } from "@/stores/modalStore";
 
@@ -37,19 +37,13 @@ const FeedListSidebar = () => {
   const { showHiddenFeeds, floatingSidebar } = useStore(settingsState);
   const { setOpenMobile } = useSidebar();
   const { articleId } = useParams();
-  const { isMobile, isMedium } = useIsMobile();
-  const navigate = useNavigate();
-  // 判断是否在移动端且正在查看文章详情
-  const isArticleDetailOpen = isMedium && !!articleId;
-  const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
+  const { isMobile } = useIsMobile();
   useSwipeGesture({
-    threshold: articleId ? 36 : 50,
+    enabled: !articleId && isMobile,
+    threshold: 50,
     onSwipeRight: () => {
       if (!articleId && isMobile && !isModalOpen.get()) {
         setOpenMobile(true);
-      }
-      if (articleId && isMedium) {
-        navigate(basePath || "/");
       }
     },
   });
@@ -65,7 +59,7 @@ const FeedListSidebar = () => {
   return (
     <Sidebar
       variant={floatingSidebar ? "floating" : "sidebar"}
-      className={`sidebar ${isArticleDetailOpen ? "sidebar-shifted" : ""}`}
+      className="sidebar"
     >
       <SidebarHeader className="sidebar-header standalone:pt-safe-or-2">
         <SidebarMenu>

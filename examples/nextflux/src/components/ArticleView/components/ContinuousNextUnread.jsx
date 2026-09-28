@@ -1,557 +1,295 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
-import {
-  activeArticle,
-  filteredArticles,
-  imageGalleryActive,
-} from "@/stores/articlesStore.js";
+import { activeArticle, filteredArticles, imageGalleryActive } from "@/stores/articlesStore.js";
+import { isModalOpen } from "@/stores/modalStore.js";
 import { handleMarkRead } from "@/handlers/articleHandlers.js";
 import { getArticleById } from "@/db/storage.js";
-import ArticlePageContent from "@/components/ArticleView/components/ArticlePageContent.jsx";
-import {
-  CONTINUOUS_MAX_EXTRA,
-  CONTINUOUS_MOTION_SPEED,
-  CONTINUOUS_PAGE_START,
-  CONTINUOUS_PULL_TRIGGER,
-  continuousRubberBand,
-  findNextUnreadArticle,
-} from "@/toolbox/continuous-reading-motion.mjs";
+import ArticlePageContent from "./ArticlePageContent.jsx";
+import { resolveSwipeDirection, shouldExcludeSwipeTarget } from "@/hooks/swipeGesture.js";
+import { animateReadingValue } from "@/toolbox/reading-motion.mjs";
+import { CONTINUOUS_MAX_EXTRA, CONTINUOUS_PULL_TRIGGER, continuousPageOffset, findNextUnreadArticle } from "@/toolbox/continuous-reading-motion.mjs";
 
-const INTERACTIVE_SELECTOR =
-  "iframe,video,audio,input,textarea,select,[contenteditable='true'],.PhotoView-Slider__BannerWrap";
-const RING_RADIUS = 19;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-
-export default function ContinuousNextUnread({
-  articleId,
-  scrollAreaRef,
-  surfaceRef,
-  enabled,
-  onTransitionStateChange,
-}) {
+export default function ContinuousNextUnread({ articleId, scrollAreaRef, surfaceRef, enabled, reduceMotion, onTransitionStateChange }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const articles = useStore(filteredArticles);
-  const galleryActive = useStore(imageGalleryActive);
-  const nextUnread = useMemo(
-    () => findNextUnreadArticle(articles, articleId),
-    [articles, articleId],
-  );
-
+  const nextUnread = useMemo(() => findNextUnreadArticle(articles, articleId), [articles, articleId]);
   const [preparedArticle, setPreparedArticle] = useState(null);
-
+  const [handoffArticle, setHandoffArticle] = useState(null);
   const layerRef = useRef(null);
   const nextPageRef = useRef(null);
   const dockRef = useRef(null);
-  const fillRef = useRef(null);
   const textRef = useRef(null);
-  const washRef = useRef(null);
-  const toastRef = useRef(null);
-
+  const hintStateRef = useRef(null);
   const rawRef = useRef(0);
-  const pullingRef = useRef(false);
-  const touchingRef = useRef(false);
-  const transitionLockedRef = useRef(false);
-  const handoffTargetRef = useRef(null);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const lastYRef = useRef(0);
-  const lastTRef = useRef(0);
-  const gestureDirectionRef = useRef(null);
-  const velocityRef = useRef(0);
-  const springRafRef = useRef(0);
-  const paintRafRef = useRef(0);
-  const needsPaintRef = useRef(false);
+  const heightRef = useRef(0);
+  const gestureRef = useRef(null);
+  const transitionRef = useRef(null);
   const preparedRef = useRef({ id: null, promise: null });
+  const springRef = useRef(null);
+  const fadeRef = useRef(null);
+  const paintRafRef = useRef(0);
+  const latestRef = useRef(null);
 
-  const visibleNextArticle =
-    preparedArticle && String(preparedArticle.id) === String(nextUnread?.id)
-      ? preparedArticle
-      : nextUnread;
+  const visibleNextArticle = handoffArticle ??
+    (String(preparedArticle?.id) === String(nextUnread?.id) ? preparedArticle : nextUnread);
 
   useEffect(() => {
+    if (!enabled || handoffArticle) return;
     let cancelled = false;
     setPreparedArticle(null);
-
     if (!nextUnread?.id) {
       preparedRef.current = { id: null, promise: null };
-      return () => {
-        cancelled = true;
-      };
+      return;
     }
-
     const id = String(nextUnread.id);
-    const promise = getArticleById(id)
-      .catch(() => null)
-      .then((article) => {
-        if (!cancelled && article) setPreparedArticle(article);
-        return article;
-      });
-
+    const promise = getArticleById(id).catch(() => null).then((article) => {
+      if (!cancelled && article) setPreparedArticle(article);
+      return article;
+    });
     preparedRef.current = { id, promise };
+    return () => { cancelled = true; };
+  }, [enabled, nextUnread?.id, handoffArticle]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [nextUnread?.id]);
-
-  const stopSpring = () => {
-    if (!springRafRef.current) return;
-    cancelAnimationFrame(springRafRef.current);
-    springRafRef.current = 0;
+  const cancelPaint = () => {
+    if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current);
+    paintRafRef.current = 0;
   };
-
+  const stopSpring = () => { springRef.current?.(); springRef.current = null; };
   const setProgress = (progress) => {
-    const clamped = Math.max(0, Math.min(1, progress));
-    const fill = fillRef.current;
     const dock = dockRef.current;
-    const wash = washRef.current;
-    const text = textRef.current;
-    if (!fill || !dock || !wash || !text) return;
-
-    fill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - clamped));
-    dock.style.opacity = String(Math.min(1, clamped * 1.35));
-    dock.style.transform = `translate3d(-50%,${18 * (1 - clamped)}px,0)`;
-    wash.style.opacity = String(clamped * 0.62);
-
-    const ready = clamped >= 0.999;
-    dock.classList.toggle("ready", ready);
-    text.textContent = !nextUnread
-      ? t("articleView.continuousReading.end")
-      : ready
-        ? t("articleView.continuousReading.dockReady")
-        : t("articleView.continuousReading.nextUnread");
-  };
-
-  const paint = () => {
-    const surface = surfaceRef.current;
-    const nextPage = nextPageRef.current;
-    const layer = layerRef.current;
-    if (!surface || !nextPage || !layer) return;
-
-    const raw = rawRef.current;
-    const progress = Math.min(1, raw / CONTINUOUS_PULL_TRIGGER);
-    const elastic = continuousRubberBand(Math.min(raw, CONTINUOUS_PULL_TRIGGER));
-    const extra = Math.max(0, raw - CONTINUOUS_PAGE_START);
-    const extraRatio = Math.min(1, extra / CONTINUOUS_MAX_EXTRA);
-
-    surface.style.transform = `translate3d(0,${-elastic}px,0)`;
-
-    if (extra > 0 && nextUnread) {
-      const y = layer.clientHeight * (1 - extraRatio);
-      nextPage.style.transform = `translate3d(0,${y}px,0)`;
-    } else {
-      nextPage.style.transform = "translate3d(0,100%,0)";
+    if (!dock) return;
+    const ready = progress >= 1;
+    const state = !latestRef.current?.nextUnread ? "end" : ready ? "dockReady" : "nextUnread";
+    if (hintStateRef.current !== state) {
+      hintStateRef.current = state;
+      dock.classList.toggle("ready", ready);
+      if (textRef.current) textRef.current.textContent = t(`articleView.continuousReading.${state}`);
     }
-
-    setProgress(progress);
+    dock.style.opacity = String(Math.min(1, progress * 2));
   };
-
+  const paint = () => {
+    const page = nextPageRef.current;
+    if (page) page.style.transform = `translate3d(0,${continuousPageOffset(rawRef.current, heightRef.current)}px,0)`;
+    setProgress(Math.min(1, rawRef.current / CONTINUOUS_PULL_TRIGGER));
+  };
   const schedulePaint = () => {
-    needsPaintRef.current = true;
     if (paintRafRef.current) return;
+    paintRafRef.current = requestAnimationFrame(() => { paintRafRef.current = 0; latestRef.current.paint(); });
+  };
+  const clearVisuals = () => {
+    cancelPaint();
+    rawRef.current = 0;
+    gestureRef.current = null;
+    if (layerRef.current) layerRef.current.dataset.phase = "idle";
+    if (nextPageRef.current) {
+      nextPageRef.current.style.transform = "translate3d(0,100%,0)";
+      nextPageRef.current.style.opacity = "";
+    }
+    setProgress(0);
+    if (!transitionRef.current) onTransitionStateChange?.(false);
+  };
+  const cancelPull = () => {
+    cancelPaint();
+    stopSpring();
+    springRef.current = animateReadingValue({
+      from: rawRef.current, to: 0, reduceMotion,
+      onUpdate: (raw) => { rawRef.current = raw; latestRef.current.paint(); },
+      onDone: clearVisuals,
+    });
+  };
+  const finishHandoff = () => {
+    if (!transitionRef.current) return;
+    transitionRef.current = null;
+    fadeRef.current = null;
+    clearVisuals();
+    setHandoffArticle(null);
+    onTransitionStateChange?.(false);
+  };
+  const abortHandoff = () => {
+    stopSpring();
+    cancelPaint();
+    fadeRef.current?.cancel();
+    fadeRef.current = null;
+    transitionRef.current = null;
+    clearVisuals();
+    setHandoffArticle(null);
+  };
+  const revealActualPage = () => {
+    if (!transitionRef.current || transitionRef.current.revealing) return;
+    transitionRef.current.revealing = true;
+    // Retain this exact target through the real first-screen React commit.
+    // Only the bounded preview fades; no guessed two-frame readiness timeout.
     paintRafRef.current = requestAnimationFrame(() => {
       paintRafRef.current = 0;
-      if (!needsPaintRef.current) return;
-      needsPaintRef.current = false;
-      paint();
+      if (!transitionRef.current) return;
+      if (reduceMotion || !nextPageRef.current?.animate) { finishHandoff(); return; }
+      const fade = nextPageRef.current.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, fill: "forwards" });
+      fadeRef.current = fade;
+      fade.finished.then(() => {
+        if (fadeRef.current === fade) { fade.cancel(); latestRef.current.finishHandoff(); }
+      }).catch(() => {});
     });
   };
-
-  const spring = ({ from, to, velocity = 0, stiffness = 240, damping = 32, onUpdate, onDone }) => {
-    stopSpring();
-
-    let x = from;
-    let v = velocity;
-    let last = performance.now();
-
-    const frame = (now) => {
-      let dt = Math.min(0.028, Math.max(0, (now - last) / 1000));
-      last = now;
-      dt *= CONTINUOUS_MOTION_SPEED;
-
-      const acceleration = -stiffness * (x - to) - damping * v;
-      v += acceleration * dt;
-      x += v * dt;
-      onUpdate(x, v);
-
-      if (Math.abs(v) < 0.55 && Math.abs(x - to) < 0.55) {
-        onUpdate(to, 0);
-        springRafRef.current = 0;
-        onDone?.();
-        return;
-      }
-      springRafRef.current = requestAnimationFrame(frame);
-    };
-
-    springRafRef.current = requestAnimationFrame(frame);
-  };
-
-  const clearPullVisuals = () => {
-    rawRef.current = 0;
-    pullingRef.current = false;
-    const surface = surfaceRef.current;
-    const nextPage = nextPageRef.current;
-    const wash = washRef.current;
-
-    if (surface) surface.style.transform = "";
-    if (nextPage) nextPage.style.transform = "translate3d(0,100%,0)";
-    if (wash) wash.style.opacity = "0";
-    setProgress(0);
-  };
-
-  const cancelPull = () => {
-    const startRaw = rawRef.current;
-    rawRef.current = 0;
-
-    const startElastic = continuousRubberBand(
-      Math.min(startRaw, CONTINUOUS_PULL_TRIGGER),
-    );
-    const startExtra = Math.min(
-      1,
-      Math.max(0, startRaw - CONTINUOUS_PAGE_START) / CONTINUOUS_MAX_EXTRA,
-    );
-
-    spring({
-      from: startElastic,
-      to: 0,
-      velocity: Math.max(-240, Math.min(240, -velocityRef.current * 92)),
-      stiffness: 355,
-      damping: 40,
-      onUpdate: (y) => {
-        const safe = Math.max(0, y);
-        const surface = surfaceRef.current;
-        const nextPage = nextPageRef.current;
-        const layer = layerRef.current;
-
-        if (surface) surface.style.transform = `translate3d(0,${-safe}px,0)`;
-        setProgress(
-          Math.min(
-            1,
-            safe / Math.max(1, continuousRubberBand(CONTINUOUS_PULL_TRIGGER)),
-          ),
-        );
-
-        if (startExtra > 0 && nextPage && layer) {
-          const y2 = layer.clientHeight * (1 - startExtra * Math.min(1, safe / Math.max(1, startElastic)));
-          nextPage.style.transform = `translate3d(0,${y2}px,0)`;
-        }
-      },
-      onDone: clearPullVisuals,
-    });
-  };
-
-  const resolvePreparedArticle = async (article) => {
-    if (!article?.id) return article;
-    const id = String(article.id);
-    if (preparedRef.current.id === id && preparedRef.current.promise) {
-      const prepared = await preparedRef.current.promise;
-      if (prepared) return prepared;
-    }
-    return (await getArticleById(id).catch(() => null)) ?? article;
-  };
-
-  const finishHandoff = () => {
-    if (!transitionLockedRef.current) return;
-
-    const surface = surfaceRef.current;
-    const nextPage = nextPageRef.current;
-    const wash = washRef.current;
-    const viewport = scrollAreaRef.current;
-
-    if (surface) surface.style.transform = "";
-    if (viewport) viewport.scrollTop = 0;
-    if (nextPage) nextPage.style.transform = "translate3d(0,100%,0)";
-    if (wash) wash.style.opacity = "0";
-
-    rawRef.current = 0;
-    pullingRef.current = false;
-    transitionLockedRef.current = false;
-    handoffTargetRef.current = null;
-    setProgress(0);
-    onTransitionStateChange?.(false);
-
-    const toast = toastRef.current;
-    if (toast) {
-      toast.classList.add("show");
-      setTimeout(() => toast.classList.remove("show"), 650);
-    }
-  };
-
   const commit = () => {
-    if (!nextUnread || transitionLockedRef.current) {
-      cancelPull();
-      return;
-    }
-
-    const nextPage = nextPageRef.current;
-    const layer = layerRef.current;
-    const surface = surfaceRef.current;
-    if (!nextPage || !layer || !surface) {
-      cancelPull();
-      return;
-    }
-
-    transitionLockedRef.current = true;
-    pullingRef.current = false;
-    handoffTargetRef.current = String(nextUnread.id);
+    const article = visibleNextArticle;
+    if (!article?.id || transitionRef.current) { cancelPull(); return; }
+    cancelPaint();
+    stopSpring();
+    paint();
+    const target = { id: String(article.id), sourceId: String(articleId), article, revealing: false };
+    transitionRef.current = target;
+    setHandoffArticle(article);
+    layerRef.current.dataset.phase = "handoff";
     onTransitionStateChange?.(true);
-
-    const extra = Math.max(0, rawRef.current - CONTINUOUS_PAGE_START);
-    const ratio = Math.min(1, extra / CONTINUOUS_MAX_EXTRA);
-    const fromY = layer.clientHeight * (1 - ratio);
-    const preparedPromise = resolvePreparedArticle(nextUnread);
-
-    spring({
-      from: fromY,
-      to: 0,
-      velocity: Math.max(
-        -760,
-        Math.min(-150, -velocityRef.current * 220 - 160),
-      ),
-      stiffness: 245,
-      damping: 35,
-      onUpdate: (y) => {
-        nextPage.style.transform = `translate3d(0,${Math.max(0, y)}px,0)`;
-        surface.style.transform = `translate3d(0,${-continuousRubberBand(CONTINUOUS_PULL_TRIGGER)}px,0)`;
-      },
+    const prepared = preparedRef.current.id === target.id ? preparedRef.current.promise : getArticleById(target.id).catch(() => null);
+    springRef.current = animateReadingValue({
+      from: continuousPageOffset(rawRef.current, heightRef.current), to: 0,
+      velocity: -(gestureRef.current?.velocity ?? 0) * 1000, reduceMotion,
+      onUpdate: (y) => { if (nextPageRef.current) nextPageRef.current.style.transform = `translate3d(0,${y}px,0)`; },
       onDone: async () => {
-        const prepared = await preparedPromise;
-        activeArticle.set(prepared ?? nextUnread);
-
-        const basePath = (window.location.hash.slice(1).split("?")[0] || "/")
-          .split("/article/")[0];
-        navigate(`${basePath}/article/${nextUnread.id}`);
-
-        if (nextUnread.status !== "read") void handleMarkRead(nextUnread);
+        const resolved = await prepared;
+        if (transitionRef.current !== target) return;
+        const next = resolved ?? article;
+        activeArticle.set(next);
+        const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
+        navigate(`${basePath === "/" ? "" : basePath}/article/${target.id}`);
+        if (next.status !== "read") void handleMarkRead(next);
       },
     });
   };
 
-  useEffect(() => {
-    if (
-      transitionLockedRef.current &&
-      handoffTargetRef.current &&
-      String(articleId) === handoffTargetRef.current
-    ) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(finishHandoff);
-      });
+  useLayoutEffect(() => {
+    latestRef.current = { nextUnread, paint, clearVisuals, cancelPull, commit, finishHandoff, abortHandoff, revealActualPage };
+  });
+
+  useLayoutEffect(() => {
+    const target = transitionRef.current;
+    if (target && String(articleId) !== target.id && String(articleId) !== target.sourceId) {
+      latestRef.current.abortHandoff();
     }
   }, [articleId]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    const viewport = scrollAreaRef.current;
-    if (!viewport) return undefined;
+    if (!transitionRef.current || String(articleId) !== transitionRef.current.id) return;
+    const checkReady = () => {
+      const root = surfaceRef.current?.querySelector(".article-body");
+      if (root?.dataset.fontArticleId === transitionRef.current?.id && root.dataset.readingReady === "true") {
+        latestRef.current.revealActualPage();
+      }
+    };
+    window.addEventListener("nextflux:article-ready", checkReady);
+    checkReady();
+    return () => window.removeEventListener("nextflux:article-ready", checkReady);
+  }, [articleId, surfaceRef]);
 
-    const syncPersistentChromeInset = () => {
+  useEffect(() => {
+    if (!enabled) return;
+    const viewport = scrollAreaRef.current;
+    if (!viewport) return;
+    let ignoreUntilEnd = false;
+    const syncInset = () => {
       const layer = layerRef.current;
       if (!layer) return;
-      const toolbar = document.querySelector(".action-buttons");
-      const toolbarBottom = toolbar?.getBoundingClientRect?.().bottom ?? 0;
-      layer.style.top = `${Math.max(0, Math.round(toolbarBottom))}px`;
+      const bottom = viewport.querySelector(".action-buttons")?.getBoundingClientRect().bottom ?? 0;
+      layer.style.top = `${Math.max(0, bottom)}px`;
+      heightRef.current = layer.clientHeight;
     };
-
-    const atBottom = () =>
-      viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 2;
-
-    const blockedTarget = (target) =>
-      target instanceof Element && Boolean(target.closest(INTERACTIVE_SELECTOR));
-
-    const consume = (move) => {
-      if (transitionLockedRef.current) return;
-
-      if (move > 0) {
-        if (!pullingRef.current) {
-          if (!atBottom()) return;
-          pullingRef.current = true;
-        }
-        rawRef.current = Math.min(
-          CONTINUOUS_PULL_TRIGGER + CONTINUOUS_MAX_EXTRA,
-          rawRef.current + move * 0.86,
-        );
-      } else if (pullingRef.current) {
-        const down = -move;
-        rawRef.current = Math.max(0, rawRef.current - down);
-        if (rawRef.current <= 0) {
-          pullingRef.current = false;
-          clearPullVisuals();
-        }
-      }
-
-      if (pullingRef.current) schedulePaint();
+    const blocked = (event) => {
+      const selection = document.getSelection();
+      return event.defaultPrevented || isModalOpen.get() || imageGalleryActive.get() ||
+        Boolean(selection?.rangeCount && !selection.isCollapsed);
     };
-
-    const onTouchStart = (event) => {
-      if (
-        transitionLockedRef.current ||
-        galleryActive ||
-        event.touches.length !== 1 ||
-        blockedTarget(event.target)
-      ) {
-        return;
-      }
-
+    const resetGesture = () => {
+      gestureRef.current = null;
+      if (!transitionRef.current && rawRef.current > 0) latestRef.current.cancelPull();
+    };
+    const onStart = (event) => {
+      if (transitionRef.current) return;
+      if (event.touches.length > 1) { ignoreUntilEnd = true; resetGesture(); return; }
+      if (ignoreUntilEnd) return;
+      const motion = viewport.closest(".nextflux-article-page")?.dataset.readingMotion;
+      if (motion && motion !== "continuous") return;
+      if (event.touches.length !== 1 || blocked(event) || shouldExcludeSwipeTarget(event.target)) { resetGesture(); return; }
       stopSpring();
-      syncPersistentChromeInset();
-      touchingRef.current = true;
-      startXRef.current = event.touches[0].clientX;
-      startYRef.current = event.touches[0].clientY;
-      lastYRef.current = event.touches[0].clientY;
-      lastTRef.current = performance.now();
-      gestureDirectionRef.current = null;
-      velocityRef.current = 0;
-    };
-
-    const onTouchMove = (event) => {
-      if (
-        !touchingRef.current ||
-        transitionLockedRef.current ||
-        event.touches.length !== 1
-      ) {
-        return;
-      }
-
+      syncInset(); // Cache geometry once. Moves write transforms only.
       const touch = event.touches[0];
-      const x = touch.clientX;
-      const y = touch.clientY;
+      gestureRef.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY,
+        lastY: touch.clientY, lastT: performance.now(), direction: null, velocity: 0, pulling: rawRef.current > 0 };
+    };
+    const onMove = (event) => {
+      const gesture = gestureRef.current;
+      if (!gesture || transitionRef.current) return;
+      const touch = event.touches[0];
+      if (event.touches.length !== 1 || touch?.identifier !== gesture.id || blocked(event)) {
+        if (event.touches.length > 1) ignoreUntilEnd = true;
+        resetGesture(); return;
+      }
+      gesture.direction ??= resolveSwipeDirection(touch.clientX - gesture.x, touch.clientY - gesture.y);
+      if (gesture.direction === "horizontal") {
+        if (rawRef.current > 0) latestRef.current.clearVisuals();
+        return;
+      }
+      if (gesture.direction !== "vertical") return;
+      if (!event.cancelable) { resetGesture(); return; }
       const now = performance.now();
-      const totalX = x - startXRef.current;
-      const totalY = y - startYRef.current;
-
-      if (gestureDirectionRef.current === null) {
-        if (Math.abs(totalX) < 5 && Math.abs(totalY) < 5) return;
-        gestureDirectionRef.current =
-          Math.abs(totalX) > Math.abs(totalY) * 1.05 ? "horizontal" : "vertical";
+      const move = gesture.lastY - touch.clientY;
+      gesture.velocity = gesture.velocity * 0.58 + (move / Math.max(1, now - gesture.lastT)) * 0.42;
+      gesture.lastY = touch.clientY;
+      gesture.lastT = now;
+      if (!gesture.pulling) {
+        if (move <= 0 || viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 2) return;
+        gesture.pulling = true;
+        layerRef.current.dataset.phase = "pulling";
+        onTransitionStateChange?.(true);
       }
-
-      // Horizontal gestures belong to the global swipe-back recognizer.
-      if (gestureDirectionRef.current === "horizontal") return;
-
-      const move = lastYRef.current - y;
-      const dt = Math.max(1, now - lastTRef.current);
-      const instant = move / dt;
-      velocityRef.current = velocityRef.current * 0.58 + instant * 0.42;
-
-      lastYRef.current = y;
-      lastTRef.current = now;
-
-      const wasPulling = pullingRef.current;
-      consume(move);
-
-      if ((wasPulling || pullingRef.current) && event.cancelable) {
-        event.preventDefault();
+      rawRef.current = Math.max(0, Math.min(CONTINUOUS_PULL_TRIGGER + CONTINUOUS_MAX_EXTRA, rawRef.current + move * 0.86));
+      event.preventDefault();
+      schedulePaint();
+    };
+    const onEnd = (event) => {
+      if (ignoreUntilEnd) {
+        if (!event.touches.length) ignoreUntilEnd = false;
+        resetGesture(); return;
       }
+      const gesture = gestureRef.current;
+      if (!gesture || transitionRef.current) return;
+      const touch = Array.from(event.changedTouches).find((item) => item.identifier === gesture.id);
+      if (event.touches.length || !touch || blocked(event)) { resetGesture(); return; }
+      if (performance.now() - gesture.lastT > 80) gesture.velocity = 0;
+      if (gesture.direction === "vertical" && gesture.pulling && rawRef.current >= CONTINUOUS_PULL_TRIGGER && latestRef.current.nextUnread) latestRef.current.commit();
+      else if (rawRef.current > 0) latestRef.current.cancelPull();
+      gestureRef.current = null;
     };
-
-    const onTouchEnd = () => {
-      if (!touchingRef.current || transitionLockedRef.current) return;
-      touchingRef.current = false;
-      gestureDirectionRef.current = null;
-
-      if (rawRef.current >= CONTINUOUS_PULL_TRIGGER) commit();
-      else if (rawRef.current > 0) cancelPull();
-    };
-
-    const onTouchCancel = () => {
-      touchingRef.current = false;
-      gestureDirectionRef.current = null;
-      if (rawRef.current > 0 && !transitionLockedRef.current) cancelPull();
-    };
-
-    syncPersistentChromeInset();
-    globalThis.window?.addEventListener("resize", syncPersistentChromeInset);
-    viewport.addEventListener("touchstart", onTouchStart, { passive: true });
-    viewport.addEventListener("touchmove", onTouchMove, { passive: false });
-    viewport.addEventListener("touchend", onTouchEnd, { passive: true });
-    viewport.addEventListener("touchcancel", onTouchCancel, { passive: true });
-
+    syncInset();
+    window.addEventListener("resize", syncInset);
+    viewport.addEventListener("touchstart", onStart, { passive: true });
+    viewport.addEventListener("touchmove", onMove, { passive: false });
+    viewport.addEventListener("touchend", onEnd);
+    const onCancel = () => { ignoreUntilEnd = false; resetGesture(); };
+    viewport.addEventListener("touchcancel", onCancel);
     return () => {
-      globalThis.window?.removeEventListener("resize", syncPersistentChromeInset);
-      viewport.removeEventListener("touchstart", onTouchStart);
-      viewport.removeEventListener("touchmove", onTouchMove);
-      viewport.removeEventListener("touchend", onTouchEnd);
-      viewport.removeEventListener("touchcancel", onTouchCancel);
-      stopSpring();
-      if (paintRafRef.current) cancelAnimationFrame(paintRafRef.current);
-      if (!transitionLockedRef.current) clearPullVisuals();
+      window.removeEventListener("resize", syncInset);
+      viewport.removeEventListener("touchstart", onStart);
+      viewport.removeEventListener("touchmove", onMove);
+      viewport.removeEventListener("touchend", onEnd);
+      viewport.removeEventListener("touchcancel", onCancel);
+      abortHandoff();
     };
-  }, [enabled, galleryActive, nextUnread?.id]);
+  }, [enabled, scrollAreaRef]);
 
   if (!enabled || typeof document === "undefined") return null;
-
-  return createPortal(
-    <div ref={layerRef} className="nextflux-continuous-layer" aria-hidden="true">
-      <section ref={nextPageRef} className="nextflux-continuous-next-page">
-        {visibleNextArticle ? (
-          <ArticlePageContent
-            article={visibleNextArticle}
-            passive
-            className="nextflux-continuous-next-page-inner"
-          />
-        ) : (
-          <div className="nextflux-continuous-next-empty">
-            {t("articleView.continuousReading.end")}
-          </div>
-        )}
-      </section>
-
-      <div ref={washRef} className="nextflux-continuous-bottom-wash" />
-
-      <div ref={dockRef} className="nextflux-continuous-progress-dock">
-        <div className="nextflux-continuous-progress-button">
-          <svg
-            className="nextflux-continuous-progress-svg"
-            viewBox="0 0 48 48"
-            aria-hidden="true"
-          >
-            <circle
-              className="nextflux-continuous-progress-track"
-              cx="24"
-              cy="24"
-              r={RING_RADIUS}
-            />
-            <circle
-              ref={fillRef}
-              className="nextflux-continuous-progress-fill"
-              cx="24"
-              cy="24"
-              r={RING_RADIUS}
-            />
-          </svg>
-
-          <div className="nextflux-continuous-progress-icon" aria-hidden="true">
-            <svg viewBox="0 0 18 18">
-              <g className="nextflux-continuous-arrow-glyph">
-                <path
-                  className="nextflux-continuous-arrow-stem"
-                  d="M9 14.2V4.9"
-                />
-                <path
-                  className="nextflux-continuous-arrow-head"
-                  d="M5.6 8.1L9 4.7l3.4 3.4"
-                />
-              </g>
-              <path
-                className="nextflux-continuous-ready-check"
-                d="M4.4 9.4l2.8 2.8 6.3-6.4"
-              />
-            </svg>
-          </div>
-        </div>
-        <div ref={textRef} className="nextflux-continuous-progress-text">
-          {t("articleView.continuousReading.nextUnread")}
-        </div>
-      </div>
-
-      <div ref={toastRef} className="nextflux-continuous-toast">
-        {t("articleView.continuousReading.nextUnread")}
-      </div>
-    </div>,
-    document.body,
-  );
+  return createPortal(<div ref={layerRef} className="nextflux-continuous-layer"
+    data-phase={handoffArticle ? "handoff" : rawRef.current > 0 ? "pulling" : "idle"} aria-hidden="true">
+    <section ref={nextPageRef} className="nextflux-continuous-next-page">
+      {visibleNextArticle && <ArticlePageContent article={visibleNextArticle} passive className="nextflux-continuous-next-page-inner" />}
+    </section>
+    <div ref={dockRef} className="nextflux-continuous-progress-dock">
+      <span className="nextflux-continuous-progress-icon">↑</span>
+      <span ref={textRef}>{t("articleView.continuousReading.nextUnread")}</span>
+    </div>
+  </div>, document.body);
 }

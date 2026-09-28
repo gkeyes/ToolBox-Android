@@ -226,33 +226,12 @@
   }
 }
 
-/* iOS 风格文章列表移动动画 */
-.main-content > div:first-child {
-  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              filter 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform, filter, background-color;
-}
-
-.article-list-shifted {
-  transform: translateX(-100px);
-  background-color: var(--background);
-  filter: brightness(0.7);
-}
-
-
-/* 侧边栏动画 */
+/* The source list stays in place behind the moving article shell. Sidebar
+   layout transitions remain limited to its own width and position changes. */
 .sidebar {
-  transition-property: transform, filter, background-color, left, width;
-  transition-duration: 0.5s, 0.5s, 0.5s, 0.2s, 0.2s;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0, 0, 1, 1), cubic-bezier(0, 0, 1, 1);
-  transform: translateX(0);
-}
-
-.sidebar-shifted.sidebar {
-  transform: translateX(-100px);
-  filter: brightness(0.7);
-  background-color: var(--background);
+  transition-property: left, width;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0, 0, 1, 1);
 }
 
 /* Startup errors retain their existing presentation. */

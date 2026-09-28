@@ -2,14 +2,14 @@ let nextTaskId = 0;
 
 // All DOM work is bounded by both a time budget and an operation cap. Waiting
 // for the next pull until this batch is mounted gives the worker backpressure.
-export function startProgressiveReading({ html, baseUrl, title, apply, onBatch, onDone, onError }, {
+export function startProgressiveReading({ html, baseUrl, title, apply, onBatch, onDone, onError, shouldPause, maxOperations = 48 }, {
   createWorker = () => new Worker(new URL("./worker.js", import.meta.url), { type: "module" }),
   schedule = (callback) => requestAnimationFrame(callback),
   unschedule = (handle) => cancelAnimationFrame(handle),
   now = () => performance.now(),
 } = {}) {
   const id = ++nextTaskId;
-  let worker, frame, cancelled = false, operations = [], cursor = 0, done = false;
+  let worker, frame, cancelled = false, paused = false, operations = [], cursor = 0, done = false;
   const fail = (message) => {
     if (cancelled) return;
     cancel();
@@ -19,15 +19,17 @@ export function startProgressiveReading({ html, baseUrl, title, apply, onBatch, 
     frame = null;
     if (cancelled) return;
     const start = now();
+    const operationLimit = typeof maxOperations === "function" ? maxOperations() : maxOperations;
     let count = 0;
     try {
-      while (cursor < operations.length && count < 64 && (count === 0 || now() - start < 8)) {
+      while (cursor < operations.length && count < operationLimit && (count === 0 || now() - start < 4)) {
         apply(operations[cursor++]);
         count += 1;
       }
       onBatch?.();
-      if (cursor < operations.length) frame = schedule(mount);
-      else if (done) { worker.terminate(); onDone?.(); }
+      if (cursor === operations.length && done) { worker.terminate(); onDone?.(); }
+      else if (shouldPause?.()) paused = true;
+      else if (cursor < operations.length) frame = schedule(mount);
       else { operations = []; cursor = 0; worker.postMessage({ type: "reading:next", id }); }
     } catch { fail(); }
   };
@@ -57,7 +59,11 @@ export function startProgressiveReading({ html, baseUrl, title, apply, onBatch, 
     worker.addEventListener("messageerror", failed);
     worker.postMessage({ type: "reading:start", id, html, baseUrl, title });
   } catch { fail(); }
-  return { id, cancel };
+  return { id, cancel, resume() {
+    if (cancelled || !paused || shouldPause?.()) return;
+    paused = false;
+    frame = schedule(mount);
+  } };
 }
 
 export function createHighlightQueue({
