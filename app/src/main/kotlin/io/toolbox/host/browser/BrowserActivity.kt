@@ -60,6 +60,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxActionSheet
+import io.toolbox.core.ui.component.ToolBoxActionSheetHeader
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
@@ -565,28 +566,31 @@ class BrowserActivity : ComponentActivity() {
             }
         }
         if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-                    .background(colors.surface)
-            ) {
-                BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) { copyAddress(); menu = false }
-                ToolBoxGroupDivider(startPadding = 52.dp, endPadding = 14.dp)
-                BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) { menu = false; openSystemBrowser() }
+            ToolBoxActionSheetHeader {
+                Spacer(Modifier.height(2.dp))
             }
-            Spacer(Modifier.height(10.dp))
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp)
-                    .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-                    .background(colors.softDanger)
-            ) {
-                BrowserMenuAction("清除浏览器网站数据", ToolBoxIconKey.Shield, destructive = true,
-                    enabled = !clearing && !interaction.restarting) {
+            Column(Modifier.fillMaxWidth()) {
+                BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) {
+                    menu = false
+                    openSystemBrowser()
+                }
+                ToolBoxGroupDivider(startPadding = 32.dp, endPadding = 0.dp)
+                BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
+                    copyAddress()
+                    menu = false
+                }
+                ToolBoxGroupDivider(startPadding = 32.dp, endPadding = 0.dp)
+                BrowserMenuAction(
+                    "清除浏览器网站数据",
+                    ToolBoxIconKey.Shield,
+                    destructive = true,
+                    enabled = !clearing && !interaction.restarting,
+                ) {
                     menu = false
                     clearConfirmation = true
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(2.dp))
         }
         if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
             ToolBoxText(
@@ -874,16 +878,35 @@ class BrowserActivity : ComponentActivity() {
             else -> colors.textPrimary
         }
         Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+                .clip(RoundedCornerShape(14.dp))
                 .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ToolBoxIcon(icon, contentDescription = null,
-                tint = if (enabled && !destructive) colors.textSecondary else contentColor)
-            Spacer(Modifier.width(14.dp))
-            ToolBoxText(label, modifier = Modifier.weight(1f),
-                style = ToolBoxThemeTokens.textStyles.body.copy(color = contentColor))
+            ToolBoxIcon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = when {
+                    !enabled -> ToolBoxThemeTokens.disabledContent
+                    destructive -> colors.danger
+                    else -> colors.textSecondary
+                },
+            )
+            Spacer(Modifier.width(12.dp))
+            ToolBoxText(
+                label,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.body.copy(
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = if (destructive && enabled) colors.danger else contentColor,
+                ),
+            )
         }
     }
 
