@@ -35,13 +35,20 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
         toolIcon: Bitmap? = null,
     ): Notification {
         val live = card.presentation.takeIf { card.session.statusText == null }
+        val activityPrimary = card.session.activityPrimaryText?.takeIf(String::isNotBlank)
+        val activitySecondary = card.session.activitySecondaryText?.takeIf(String::isNotBlank)
         val title = live?.request?.title ?: card.session.toolName
         val content = live?.request?.let { request ->
             listOfNotNull(request.primaryText, request.secondaryText?.takeIf(String::isNotBlank)).joinToString(" · ")
-        } ?: card.session.statusText ?: "后台环境运行中，可打开工具或停止当前会话"
-        // An omitted live body means no expanded prose, not a copy of the status line.
-        val body = if (live == null) content else live.request.body?.takeIf(String::isNotBlank)
-        val updatedAt = live?.request?.updatedAt ?: live?.receivedAt ?: card.session.startedAt
+        } ?: card.session.statusText ?: activityPrimary ?: "后台环境运行中，可打开工具或停止当前会话"
+        // Session activity belongs to background.runtime and does not require the optional notifications capability.
+        val body = when {
+            live != null -> live.request.body?.takeIf(String::isNotBlank)
+            card.session.statusText != null -> null
+            else -> activitySecondary
+        }
+        val updatedAt = live?.request?.updatedAt ?: live?.receivedAt
+            ?: card.session.activityUpdatedAt ?: card.session.startedAt
         val accent = live?.request?.accentColor?.let(::parseColor)
             ?: live?.request?.tone?.let(::toneColor)
             ?: DEFAULT_ACCENT
@@ -63,7 +70,7 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
             .addAction(Notification.Action.Builder(null, "停止当前", stopCurrent).build())
             .apply {
                 body?.let { setStyle(Notification.BigTextStyle().bigText(it)) }
-                live?.request?.secondaryText?.takeIf(String::isNotBlank)?.let { setSubText(it) }
+                (live?.request?.secondaryText?.takeIf(String::isNotBlank) ?: activitySecondary)?.let { setSubText(it) }
                 live?.request?.progress?.let { setProgress(100, it, false) }
             }
 
