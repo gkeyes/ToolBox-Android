@@ -178,8 +178,21 @@ internal fun RunningToolRow(
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
             Column(Modifier.weight(1f)) {
                 AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
-                AppText(text = if (stopping) "正在停止后台会话" else "● 运行中",
-                    color = colors.onSoftSuccess, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                val activity = session.activityText?.takeIf(String::isNotBlank)
+                AppText(
+                    text = if (stopping) "正在停止后台会话" else listOfNotNull("● 运行中", activity).joinToString(" · "),
+                    color = colors.onSoftSuccess,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                )
+                if (!stopping) {
+                    session.activityDetail?.takeIf(String::isNotBlank)?.let { detail ->
+                        AppText(
+                            text = detail,
+                            color = colors.textSecondary,
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        )
+                    }
+                }
             }
         }
         ToolBoxRunningStatusButton(
