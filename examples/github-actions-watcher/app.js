@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.3";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.4";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -676,6 +676,7 @@
       state.warning = null;
       state.warningMessage = "";
       await ensureSession();
+      await updateBackgroundStatus();
       await configureTimers();
       await persist(true);
       renderAll();
@@ -836,6 +837,7 @@
       state.warning = "rate_limit";
       state.warningMessage = `额度将在 ${formatClock(state.rateResetAt)} 恢复`;
       state.nextPollAt = state.rateResetAt;
+      await updateBackgroundStatus();
       renderDashboard();
       return;
     }
@@ -913,10 +915,12 @@
       state.rateResetAt = state.rateRemaining === 0 ? state.rateResetAt : null;
       if (detailError) state.warningMessage = `部分构建或任务详情稍后重试：${errorLabel(detailError)}`;
       await bounded(updateLiveNotification(), lease, 5_000);
+      await updateBackgroundStatus();
     } catch (error) {
       if (activePoll !== lease || !state.monitoring) return;
       state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
       state.warningMessage = errorLabel(error);
+      await updateBackgroundStatus();
       if (manual) showToast(errorLabel(error));
     } finally {
       if (activePoll === lease) {
@@ -979,6 +983,45 @@
       accentColor: summary.color,
       tone: summary.tone
     };
+  }
+
+  function backgroundStatusFor(run = chooseDisplayedRun()) {
+    const updatedAt = state.lastPollAt || state.lastAttemptAt || state.watchStartedAt || Date.now();
+    if (state.warning) {
+      return {
+        primaryText: `${formatStatusClock(updatedAt)} 刷新异常 · 将自动重试`,
+        secondaryText: cleanText(state.warningMessage || "GitHub 状态暂时不可用"),
+        updatedAt
+      };
+    }
+    if (!state.lastPollAt) {
+      return { primaryText: "守望已启动 · 等待首次刷新", secondaryText: state.config?.fullName || "", updatedAt };
+    }
+    if (!run) {
+      return { primaryText: `${formatStatusClock(updatedAt)} 已刷新 · 暂无活动构建`, secondaryText: state.config?.fullName || "", updatedAt };
+    }
+    const workflow = configWorkflowName(run);
+    if (run.status === "completed") {
+      return {
+        primaryText: `${formatStatusClock(updatedAt)} 已刷新 · ${workflow} ${resultLabel(run)}`,
+        secondaryText: `#${run.run_number || run.id} · ${run.head_branch || "未知分支"}`,
+        updatedAt
+      };
+    }
+    return {
+      primaryText: `${formatStatusClock(updatedAt)} 已刷新 · 有构建运行中`,
+      secondaryText: `${workflow} · #${run.run_number || run.id}`,
+      updatedAt
+    };
+  }
+
+  async function updateBackgroundStatus() {
+    if (!state.monitoring || !state.sessionId || !toolbox()?.background?.updateStatus) return;
+    try {
+      await bounded(toolbox().background.updateStatus(state.sessionId, backgroundStatusFor()), null, 5_000);
+    } catch (_) {
+      // Background status is host chrome; watcher polling must not fail if an older host lacks it.
+    }
   }
 
   async function updateLiveNotification() {
