@@ -53,7 +53,7 @@ function harness(clock, extraOptions = {}) {
   };
 }
 
-// Keep the slow article-to-list return boundary at 15% of the page width.
+// CI check: keep the slow article-to-list return boundary at 15% of the page width.
 test("article back decision uses distance, recent velocity and explicit reversal", () => {
   assert.equal(shouldFinishArticleSwipe(54, 360, 0), true);
   assert.equal(shouldFinishArticleSwipe(53, 360, 0), false);
