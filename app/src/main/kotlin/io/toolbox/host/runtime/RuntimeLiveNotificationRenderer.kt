@@ -36,12 +36,17 @@ internal class RuntimeLiveNotificationRenderer(context: Context) {
     ): Notification {
         val live = card.presentation.takeIf { card.session.statusText == null }
         val title = live?.request?.title ?: card.session.toolName
+        val activityContent = listOfNotNull(
+            card.session.activityText?.takeIf(String::isNotBlank),
+            card.session.activityDetail?.takeIf(String::isNotBlank),
+        ).joinToString(" · ").takeIf(String::isNotBlank)
         val content = live?.request?.let { request ->
             listOfNotNull(request.primaryText, request.secondaryText?.takeIf(String::isNotBlank)).joinToString(" · ")
-        } ?: card.session.statusText ?: "后台环境运行中，可打开工具或停止当前会话"
+        } ?: card.session.statusText ?: activityContent ?: "后台环境运行中，可打开工具或停止当前会话"
         // An omitted live body means no expanded prose, not a copy of the status line.
         val body = if (live == null) content else live.request.body?.takeIf(String::isNotBlank)
-        val updatedAt = live?.request?.updatedAt ?: live?.receivedAt ?: card.session.startedAt
+        val updatedAt = live?.request?.updatedAt ?: live?.receivedAt
+            ?: card.session.activityUpdatedAt ?: card.session.startedAt
         val accent = live?.request?.accentColor?.let(::parseColor)
             ?: live?.request?.tone?.let(::toneColor)
             ?: DEFAULT_ACCENT
