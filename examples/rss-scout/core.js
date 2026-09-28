@@ -244,7 +244,18 @@
             if (!/^[A-Za-z_]\w*$/.test(key) || !Array.isArray(values)) continue;
             safePrefix[key] = values.map(v => cleanText(v, 20)).filter(Boolean).slice(0, 20);
           }
-          rules.push({host, source, targets:{...targets}, title:cleanText(item.title || payload.name || host, 300), origin:'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix});
+          const queryPassthrough = Object.create(null);
+          if (item.queryPassthrough && typeof item.queryPassthrough === 'object' && !Array.isArray(item.queryPassthrough)) {
+            for (const service of ['rsshub', 'worker']) {
+              const values = item.queryPassthrough[service];
+              if (!Array.isArray(values)) continue;
+              queryPassthrough[service] = values
+                .map(value => String(value || '').trim())
+                .filter(value => /^[A-Za-z_][A-Za-z0-9_]*$/.test(value))
+                .slice(0, 30);
+            }
+          }
+          rules.push({host, source, targets:{...targets}, title:cleanText(item.title || payload.name || host, 300), origin:'private', paramDeny:safeDeny, paramDenyPrefix:safePrefix, queryPassthrough});
         }
       }
     }
@@ -275,7 +286,15 @@
         const chosenBase = service === 'worker' ? workerBase : (hubBase || 'https://rsshub.app');
         if (!chosenBase) continue;
         const path = fillTarget(target, params); if (!path) continue;
-        let url; try { url = urlOf(chosenBase.replace(/\/+$/, '') + path); } catch (_) { continue; }
+        let url; try {
+          const output = new URL(urlOf(chosenBase.replace(/\/+$/, '') + path));
+          const allowedQuery = Array.isArray(rule.queryPassthrough?.[service]) ? rule.queryPassthrough[service] : [];
+          for (const key of allowedQuery) {
+            if (!u.searchParams.has(key)) continue;
+            output.searchParams.set(key, u.searchParams.get(key) ?? '');
+          }
+          url = output.href;
+        } catch (_) { continue; }
         if (new URL(url).origin !== new URL(chosenBase).origin) continue;
         if (!found.has(url)) found.set(url, {
           url,
