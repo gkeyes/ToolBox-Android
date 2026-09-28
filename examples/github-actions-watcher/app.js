@@ -964,6 +964,7 @@
       sessionId: state.sessionId,
       title: cleanText(summary.title),
       primaryText: cleanText(summary.primaryText),
+      secondaryText: state.lastPollAt ? cleanText(`${formatClock(state.lastPollAt)} 已刷新`) : undefined,
       shortText: cleanText(summary.shortText),
       updatedAt: state.lastPollAt || state.watchStartedAt || Date.now(),
       progress: summary.progress,
