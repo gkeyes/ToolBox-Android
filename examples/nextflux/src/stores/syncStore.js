@@ -263,6 +263,7 @@ async function collectSnapshot(baseCheck) {
     account: { serverUrl: auth.serverUrl, userId: String(auth.userId) },
   });
   const entryChanges = new Map();
+  const newEntryIds = new Set();
   let staging = Promise.resolve();
   const addEntries = (entries, priority) => {
     const operation = staging.then(async () => {
@@ -279,6 +280,10 @@ async function collectSnapshot(baseCheck) {
           } else if (priority <= old.priority) continue;
         }
         entryChanges.set(entry.id, { timestamp, priority });
+        if (previous) {
+          const createdAt = Date.parse(entry.created_at);
+          if (Number.isFinite(createdAt) && createdAt > previous.getTime()) newEntryIds.add(entry.id);
+        }
         changed.push(mapEntryToArticle(entry));
       }
       if (changed.length) await stageArticleSync(token, changed);
@@ -325,6 +330,8 @@ async function collectSnapshot(baseCheck) {
       token, syncedAt,
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
+      updatedEntries: entryChanges.size,
+      newEntries: previous ? newEntryIds.size : null,
     };
   } catch (failure) {
     await staging;
@@ -367,7 +374,12 @@ export function sync(mode = "foreground") {
           commitCheck(false);
           lastSync.set(collected.syncedAt);
         });
-        return { outcome: "committed", syncedAt: collected.syncedAt.toISOString() };
+        return {
+          outcome: "committed",
+          syncedAt: collected.syncedAt.toISOString(),
+          updatedEntries: collected.updatedEntries,
+          newEntries: collected.newEntries,
+        };
       } catch (failure) {
         await abortArticleSync(collected.token).catch(() => {});
         check(false);
