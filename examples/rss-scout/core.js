@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.0 — independently implemented, no remote code execution. */
+/* RSS Scout 1.4.1 — independently implemented, no remote code execution. */
 (function (root) {
   'use strict';
   const FEED_TYPES = /^(application\/(rss\+xml|atom\+xml|rdf\+xml|feed\+json)|text\/(rss\+xml|atom\+xml))$/i;
