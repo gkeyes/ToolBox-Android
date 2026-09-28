@@ -94,7 +94,7 @@ export default {
       syncing: "Syncing…",
       running: "Active · every {{minutes}} min",
       failed: "Active · last sync failed",
-      deferred: "Yielded · resuming in foreground",
+      deferred: "Yielded · waiting for foreground work",
     },
     profile: {
       about: "About",

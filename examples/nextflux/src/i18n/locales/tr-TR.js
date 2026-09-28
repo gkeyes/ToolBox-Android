@@ -94,7 +94,7 @@ export default {
       syncing: "Senkronize ediliyor…",
       running: "Etkin · {{minutes}} dk'da bir",
       failed: "Etkin · son senkronizasyon başarısız",
-      deferred: "Devredildi · ön planda yeniden deneniyor",
+      deferred: "Devredildi · ön plan işlemi bekleniyor",
     },
     profile: {
       about: "Hakkında",

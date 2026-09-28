@@ -416,28 +416,17 @@ function resetSyncInterval() {
   if (minutes > 0) syncInterval = setInterval(performSync, minutes * 60 * 1000);
 }
 
-const foregroundIntent = () => requestForegroundPriority();
-const visibilityIntent = () => {
-  if (document.visibilityState === "visible") requestForegroundPriority();
-};
-
 export function startAutoSync() {
   if (typeof window === "undefined") return;
   performSync();
   resetSyncInterval();
   window.addEventListener("beforeunload", stopAutoSync);
-  window.addEventListener("pointerdown", foregroundIntent, true);
-  window.addEventListener("keydown", foregroundIntent, true);
-  document.addEventListener("visibilitychange", visibilityIntent);
 }
 
 export function stopAutoSync() {
   if (syncInterval) clearInterval(syncInterval);
   syncInterval = null;
   globalThis.window?.removeEventListener("beforeunload", stopAutoSync);
-  globalThis.window?.removeEventListener("pointerdown", foregroundIntent, true);
-  globalThis.window?.removeEventListener("keydown", foregroundIntent, true);
-  globalThis.document?.removeEventListener("visibilitychange", visibilityIntent);
 }
 
 async function performSync() {

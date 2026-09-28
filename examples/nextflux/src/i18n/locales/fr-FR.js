@@ -95,7 +95,7 @@ export default {
       syncing: "Synchronisation…",
       running: "Active · toutes les {{minutes}} min",
       failed: "Active · dernière synchronisation échouée",
-      deferred: "Cédée · reprise au premier plan",
+      deferred: "Cédée · attente de l’action au premier plan",
     },
     profile: {
       about: "À propos",
