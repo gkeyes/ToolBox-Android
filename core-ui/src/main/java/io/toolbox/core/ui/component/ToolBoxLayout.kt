@@ -577,41 +577,35 @@ private fun ToolBoxActionButton(
         label = "toolbox-button-scale",
     )
     val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
-    val contentColor = contentColorOverride ?: when (tone) {
+    val containerColor = when (tone) {
         ToolBoxActionTone.Primary -> colors.primary
+        ToolBoxActionTone.Neutral -> colors.surface
+        ToolBoxActionTone.Danger -> colors.danger
+    }
+    val defaultContentColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.onPrimary
         ToolBoxActionTone.Neutral -> colors.textPrimary
-        ToolBoxActionTone.Danger -> colors.onSoftDanger
+        ToolBoxActionTone.Danger -> colors.onDanger
     }
-    val topColor = when (tone) {
-        ToolBoxActionTone.Primary -> colors.surface.copy(alpha = 0.98f)
-        ToolBoxActionTone.Neutral -> colors.surface.copy(alpha = 0.98f)
-        ToolBoxActionTone.Danger -> colors.surface.copy(alpha = 0.98f)
+    val contentColor = contentColorOverride ?: defaultContentColor
+    val shadowColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.primary.copy(alpha = 0.18f)
+        ToolBoxActionTone.Neutral -> colors.textPrimary.copy(alpha = 0.07f)
+        ToolBoxActionTone.Danger -> colors.danger.copy(alpha = 0.18f)
     }
-    val bottomColor = when (tone) {
-        ToolBoxActionTone.Primary -> colors.softPrimary.copy(alpha = if (pressed) 0.86f else 0.68f)
-        ToolBoxActionTone.Neutral -> colors.surfaceMuted.copy(alpha = if (pressed) 0.96f else 0.76f)
-        ToolBoxActionTone.Danger -> colors.softDanger.copy(alpha = if (pressed) 0.90f else 0.66f)
-    }
-    val outlineColor = when (tone) {
-        ToolBoxActionTone.Primary -> colors.primary.copy(alpha = if (pressed) 0.28f else 0.16f)
-        ToolBoxActionTone.Neutral -> colors.textSecondary.copy(alpha = if (pressed) 0.22f else 0.12f)
-        ToolBoxActionTone.Danger -> colors.danger.copy(alpha = if (pressed) 0.28f else 0.16f)
-    }
-    val elevation = if (pressed) 1.dp else 3.dp
-    val visualHeight = if (compact) 36.dp else 40.dp
-    val horizontalPadding = if (compact) 10.dp else 14.dp
+    val visualHeight = if (compact) 36.dp else 44.dp
+    val horizontalPadding = if (compact) 14.dp else 18.dp
     val surface = if (outlined) {
         Modifier
             .shadow(
-                elevation = elevation,
+                elevation = if (pressed) 1.dp else 5.dp,
                 shape = shape,
                 clip = false,
-                ambientColor = contentColor.copy(alpha = 0.07f),
-                spotColor = contentColor.copy(alpha = 0.06f),
+                ambientColor = shadowColor,
+                spotColor = shadowColor,
             )
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(topColor, bottomColor)))
-            .border(1.dp, outlineColor, shape)
+            .background(containerColor)
     } else {
         Modifier
             .clip(shape)
@@ -637,25 +631,19 @@ private fun ToolBoxActionButton(
     ) {
         Row(
             modifier = Modifier
-                // Keep the visual surface content-sized. The outer Box still expands
-                // when callers pass fillMaxWidth()/weight(), but compact actions such
-                // as the running-task stop control must not consume the whole Row.
                 .heightIn(min = visualHeight)
                 .then(surface)
-                .padding(horizontal = horizontalPadding, vertical = if (compact) 6.dp else 8.dp),
+                .padding(horizontal = horizontalPadding, vertical = if (compact) 7.dp else 9.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
-                Box(
-                    Modifier
-                        .size(if (compact) 20.dp else 24.dp)
-                        .clip(RoundedCornerShape(if (compact) 6.dp else 7.dp))
-                        .background(contentColor.copy(alpha = 0.09f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ToolBoxIcon(icon, null, tint = contentColor)
-                }
+                ToolBoxIcon(
+                    icon = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (compact) 18.dp else 20.dp),
+                    tint = contentColor,
+                )
                 Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
             }
             ToolBoxText(
@@ -670,7 +658,6 @@ private fun ToolBoxActionButton(
         }
     }
 }
-
 @Composable
 fun ToolBoxPrimaryButton(
     label: String,
@@ -746,7 +733,6 @@ fun ToolBoxRunningStatusButton(
         modifier = modifier.sizeIn(minWidth = ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
         tone = ToolBoxActionTone.Danger,
-        icon = ToolBoxIconKey.Stop,
         compact = true,
     )
 }

@@ -2,7 +2,6 @@ package io.toolbox.host.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -23,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -509,9 +507,9 @@ private fun PanelShortcut(
         label = "panel-shortcut-scale",
     )
     val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
-    val accent = if (selected) colors.primary else colors.textSecondary
-    val top = colors.surface.copy(alpha = 0.98f)
-    val bottom = if (selected) colors.softPrimary.copy(alpha = 0.74f) else colors.surfaceMuted.copy(alpha = 0.72f)
+    val container = if (selected) colors.primary else colors.surface
+    val content = if (selected) colors.onPrimary else colors.textPrimary
+    val shadow = if (selected) colors.primary.copy(alpha = 0.16f) else colors.textPrimary.copy(alpha = 0.07f)
     Row(
         modifier
             .graphicsLayer {
@@ -520,15 +518,14 @@ private fun PanelShortcut(
                 alpha = if (enabled) 1f else 0.46f
             }
             .shadow(
-                if (pressed) 1.dp else 3.dp,
+                if (pressed) 1.dp else 5.dp,
                 shape,
                 clip = false,
-                ambientColor = accent.copy(alpha = 0.07f),
-                spotColor = accent.copy(alpha = 0.06f),
+                ambientColor = shadow,
+                spotColor = shadow,
             )
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(top, bottom)))
-            .border(1.dp, accent.copy(alpha = if (pressed) 0.24f else 0.13f), shape)
+            .background(container)
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -537,18 +534,19 @@ private fun PanelShortcut(
                 onClick = onClick,
             )
             .semantics { if (busy) stateDescription = "正在保存" }
-            .heightIn(min = 52.dp)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.09f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (busy) ToolBoxBusyIndicator() else ToolBoxIcon(
-                icon, null,
-                tint = if (!enabled) ToolBoxThemeTokens.disabledContent else accent,
+        if (busy) {
+            ToolBoxBusyIndicator()
+        } else {
+            ToolBoxIcon(
+                icon = icon,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = if (enabled) content else ToolBoxThemeTokens.disabledContent,
             )
         }
         ToolBoxText(
@@ -557,13 +555,12 @@ private fun PanelShortcut(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             style = ToolBoxThemeTokens.textStyles.body.copy(
-                color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent,
+                color = if (enabled) content else ToolBoxThemeTokens.disabledContent,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             ),
         )
     }
 }
-
 @Composable
 private fun ToolCheckRow(tool: CatalogTool, selected: Boolean, enabled: Boolean, tag: String, onChecked: (Boolean) -> Unit) {
     PanelCheckRow(tool.name, selected, enabled, Modifier.testTag(tag), icon = {
