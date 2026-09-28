@@ -106,6 +106,7 @@ object ToolBoxApiV1 {
         MethodDescriptor("background.start", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundStartOptions", "BackgroundSessionSummary"),
         MethodDescriptor("background.stop", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundSessionIdRequest", "void"),
         MethodDescriptor("background.status", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundSessionIdRequest", "BackgroundSessionSummary | null"),
+        MethodDescriptor("background.updateActivity", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundActivityRequest", "void"),
         MethodDescriptor("background.list", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "void", "TaskSummary[]"),
         MethodDescriptor("background.listSessions", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "void", "BackgroundSessionSummary[]"),
         MethodDescriptor("background.getResult", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "TaskIdRequest", "TaskRunResult | null"),
