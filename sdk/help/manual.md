@@ -384,6 +384,7 @@ export type ToolBoxMethodName =
   | "background.status"
   | "background.list"
   | "background.listSessions"
+  | "background.updateStatus"
   | "background.getResult"
   | "background.cancel"
   | "background.setTimer"
@@ -589,6 +590,15 @@ export interface BackgroundSessionSummary {
   readonly restoreAfterReboot: boolean;
 }
 
+export interface BackgroundStatusUpdate {
+  /** Compact latest-result line shown by the host's running-task surfaces. Omit to clear the stored status. */
+  readonly primaryText?: string;
+  /** Optional secondary result/detail line. */
+  readonly secondaryText?: string;
+  /** Epoch milliseconds for the result; host time is used when omitted. */
+  readonly updatedAt?: number;
+}
+
 export interface BackgroundRestoreEvent {
   readonly reason: "process" | "reboot";
   readonly restoredAt: number;
@@ -704,6 +714,7 @@ export interface ToolBoxApi {
     status(sessionId: string): Promise<BackgroundSessionSummary | null>;
     list(): Promise<TaskSummary[]>;
     listSessions(): Promise<BackgroundSessionSummary[]>;
+    updateStatus(sessionId: string, status?: BackgroundStatusUpdate): Promise<void>;
     getResult(taskId: string): Promise<TaskRunResult | null>;
     cancel(taskId: string): Promise<void>;
     setTimer(key: string, intervalMs: number): Promise<void>;
