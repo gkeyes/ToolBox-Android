@@ -43,11 +43,12 @@ const FeedListSidebar = () => {
   const isArticleDetailOpen = isMedium && !!articleId;
   const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
   useSwipeGesture({
+    threshold: articleId ? 36 : 50,
     onSwipeRight: () => {
       if (!articleId && isMobile && !isModalOpen.get()) {
         setOpenMobile(true);
       }
-      if (articleId && isMobile) {
+      if (articleId && isMedium) {
         navigate(basePath || "/");
       }
     },

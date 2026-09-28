@@ -37,12 +37,12 @@ function harness() {
   };
 }
 
-test("jitter stays undecided until 8 px; diagonal movement favors scrolling", () => {
-  assert.equal(resolveSwipeDirection(7, -7), null);
-  assert.equal(resolveSwipeDirection(8, 0), "horizontal");
-  assert.equal(resolveSwipeDirection(9, 8), "vertical");
-  assert.equal(resolveSwipeDirection(12, 10), "vertical");
-  assert.equal(resolveSwipeDirection(13, 10), "horizontal");
+test("jitter stays undecided until 5 px; slight right diagonals lock horizontal sooner", () => {
+  assert.equal(resolveSwipeDirection(4, -4), null);
+  assert.equal(resolveSwipeDirection(5, 0), "horizontal");
+  assert.equal(resolveSwipeDirection(5, 5), "vertical");
+  assert.equal(resolveSwipeDirection(6, 5), "horizontal");
+  assert.equal(resolveSwipeDirection(11, 10), "horizontal");
 });
 
 test("zero coordinates work and the direction-lock event itself stops scrolling", () => {
@@ -206,4 +206,15 @@ test("current callback and threshold apply without listener rebinding; teardown 
   h.end(90, 0);
   assert.equal(currentCalls, 1);
   assert.equal(h.gestureRef.current, null);
+});
+
+test("article-style 36px threshold completes a deliberate right swipe", () => {
+  const h = harness();
+  let calls = 0;
+  h.setOptions({ threshold: 36, onSwipeRight: () => { calls += 1; } });
+  h.start(10, 20);
+  assert.equal(h.move(18, 21).defaultPrevented, true);
+  h.end(48, 22);
+  assert.equal(calls, 1);
+  h.detach();
 });

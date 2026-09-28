@@ -85,22 +85,21 @@ const ArticleView = () => {
           )}
           initial={
             articleId
-              ? { opacity: 1, x: "100vw" }
-              : { opacity: 0, x: 0, scale: 0.8 }
+              ? { opacity: 0.995, x: "16vw" }
+              : { opacity: 0, x: 0, scale: 0.98 }
           }
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={
             !articleId && isMedium
               ? false
               : articleId
-                ? { opacity: 1, x: "100vw", scale: 1 }
-                : { opacity: 0, x: 0, scale: 0.8 }
+                ? { opacity: 0.995, x: "16vw", scale: 1 }
+                : { opacity: 0, x: 0, scale: 0.98 }
           }
           transition={{
-            duration: 0.5,
-            type: "spring",
-            bounce: 0,
-            ease: "easeInOut",
+            type: "tween",
+            duration: 0.28,
+            ease: [0.22, 1, 0.36, 1],
           }}
         >
           {!isArticleVisible ? (

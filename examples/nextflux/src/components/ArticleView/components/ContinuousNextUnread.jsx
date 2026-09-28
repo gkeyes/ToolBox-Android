@@ -56,8 +56,11 @@ export default function ContinuousNextUnread({
   const touchingRef = useRef(false);
   const transitionLockedRef = useRef(false);
   const handoffTargetRef = useRef(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
   const lastYRef = useRef(0);
   const lastTRef = useRef(0);
+  const gestureDirectionRef = useRef(null);
   const velocityRef = useRef(0);
   const springRafRef = useRef(0);
   const paintRafRef = useRef(0);
@@ -396,8 +399,11 @@ export default function ContinuousNextUnread({
       stopSpring();
       syncPersistentChromeInset();
       touchingRef.current = true;
+      startXRef.current = event.touches[0].clientX;
+      startYRef.current = event.touches[0].clientY;
       lastYRef.current = event.touches[0].clientY;
       lastTRef.current = performance.now();
+      gestureDirectionRef.current = null;
       velocityRef.current = 0;
     };
 
@@ -410,8 +416,22 @@ export default function ContinuousNextUnread({
         return;
       }
 
-      const y = event.touches[0].clientY;
+      const touch = event.touches[0];
+      const x = touch.clientX;
+      const y = touch.clientY;
       const now = performance.now();
+      const totalX = x - startXRef.current;
+      const totalY = y - startYRef.current;
+
+      if (gestureDirectionRef.current === null) {
+        if (Math.abs(totalX) < 5 && Math.abs(totalY) < 5) return;
+        gestureDirectionRef.current =
+          Math.abs(totalX) > Math.abs(totalY) * 1.05 ? "horizontal" : "vertical";
+      }
+
+      // Horizontal gestures belong to the global swipe-back recognizer.
+      if (gestureDirectionRef.current === "horizontal") return;
+
       const move = lastYRef.current - y;
       const dt = Math.max(1, now - lastTRef.current);
       const instant = move / dt;
@@ -431,6 +451,7 @@ export default function ContinuousNextUnread({
     const onTouchEnd = () => {
       if (!touchingRef.current || transitionLockedRef.current) return;
       touchingRef.current = false;
+      gestureDirectionRef.current = null;
 
       if (rawRef.current >= CONTINUOUS_PULL_TRIGGER) commit();
       else if (rawRef.current > 0) cancelPull();
@@ -438,6 +459,7 @@ export default function ContinuousNextUnread({
 
     const onTouchCancel = () => {
       touchingRef.current = false;
+      gestureDirectionRef.current = null;
       if (rawRef.current > 0 && !transitionLockedRef.current) cancelPull();
     };
 

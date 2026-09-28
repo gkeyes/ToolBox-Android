@@ -6,8 +6,8 @@ const EXCLUDED_SELECTOR = [
 ].join(",");
 
 export function resolveSwipeDirection(deltaX, deltaY) {
-  if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return null;
-  return Math.abs(deltaX) > Math.abs(deltaY) * 1.2 ? "horizontal" : "vertical";
+  if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return null;
+  return Math.abs(deltaX) > Math.abs(deltaY) * 1.05 ? "horizontal" : "vertical";
 }
 
 export function shouldExcludeSwipeTarget(target) {

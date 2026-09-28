@@ -49,6 +49,8 @@ test("continuous reader pre-renders a real next page and uses the polished SVG p
   assert.ok(reader.includes("continuousRubberBand"));
   assert.ok(reader.includes("CONTINUOUS_MOTION_SPEED"));
   assert.ok(reader.includes("rawRef.current + move * 0.86"));
+  assert.ok(reader.includes('gestureDirectionRef.current === "horizontal"'));
+  assert.ok(reader.includes('Math.abs(totalX) > Math.abs(totalY) * 1.05'));
   assert.ok(reader.includes('document.querySelector(".action-buttons")'));
   assert.ok(reader.includes("activeArticle.set(prepared ?? nextUnread)"));
   assert.ok(page.includes("<ProgressiveArticle"));
@@ -56,4 +58,6 @@ test("continuous reader pre-renders a real next page and uses the polished SVG p
   assert.ok(!header.includes("layoutId"));
   assert.ok(view.includes("onTransitionStateChange={setContinuousHandoff}"));
   assert.ok(view.includes("continuousHandoff || reduceMotion"));
+  assert.ok(view.includes('type: "tween"'));
+  assert.ok(!view.includes('type: "spring",\n            bounce: 0'));
 });
