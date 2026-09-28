@@ -90,6 +90,9 @@ internal data class RuntimeBackgroundSessionUi(
     val startedAt: Long,
     val notificationId: Int,
     val statusText: String? = null,
+    val livePrimaryText: String? = null,
+    val liveSecondaryText: String? = null,
+    val liveUpdatedAt: Long? = null,
 )
 
 internal data class RuntimeForegroundDetachPlan(
@@ -151,6 +154,7 @@ internal class RuntimeSessionManager(
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
     private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
+        updateSessionProjection()
         refreshForegroundService()
     }
     private var recovered = false
@@ -988,6 +992,7 @@ internal class RuntimeSessionManager(
         val hostNames = hosts.mapValues { it.value.runtime.toolName }
         return sessionsByTool.flatMap { (toolId, sessions) ->
             sessions.values.map { record ->
+                val live = liveNotifications.snapshot().firstOrNull { it.request.sessionId == record.sessionId }
                 RuntimeBackgroundSessionUi(
                     sessionId = record.sessionId,
                     toolId = toolId,
@@ -995,6 +1000,9 @@ internal class RuntimeSessionManager(
                     startedAt = record.startedAt,
                     notificationId = record.notificationId,
                     statusText = recoveryStatus[toolId],
+                    livePrimaryText = live?.request?.primaryText,
+                    liveSecondaryText = live?.request?.secondaryText,
+                    liveUpdatedAt = live?.request?.updatedAt ?: live?.receivedAt,
                 )
             }
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
