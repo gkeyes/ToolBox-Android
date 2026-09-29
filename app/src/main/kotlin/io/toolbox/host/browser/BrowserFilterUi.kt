@@ -255,13 +255,6 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
                     modifier = Modifier.fillMaxWidth(),
                     enabled = canPick && state.active(site),
                 )
-                ToolBoxText(
-                    "直接点选页面元素并隐藏",
-                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                    ),
-                )
             }
         }
     }
