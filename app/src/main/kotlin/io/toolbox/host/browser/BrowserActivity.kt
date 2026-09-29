@@ -118,6 +118,7 @@ class BrowserActivity : ComponentActivity() {
     private var browserTouchLastY: Float? = null
     private var browserTouchDownPx = 0f
     private var browserTouchUpPx = 0f
+    private var browserChromeGestureCommitted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -335,6 +336,7 @@ class BrowserActivity : ComponentActivity() {
         browserTouchLastY = null
         browserTouchDownPx = 0f
         browserTouchUpPx = 0f
+        browserChromeGestureCommitted = false
     }
 
     private fun showBrowserChrome() {
@@ -365,15 +367,18 @@ class BrowserActivity : ComponentActivity() {
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                browserTouchLastY = event.y
+                browserTouchLastY = event.rawY
                 browserTouchDownPx = 0f
                 browserTouchUpPx = 0f
+                browserChromeGestureCommitted = false
             }
 
             MotionEvent.ACTION_MOVE -> {
-                val previousY = browserTouchLastY ?: event.y
-                val delta = previousY - event.y
-                browserTouchLastY = event.y
+                val previousY = browserTouchLastY ?: event.rawY
+                val delta = previousY - event.rawY
+                browserTouchLastY = event.rawY
+
+                if (browserChromeGestureCommitted) return
 
                 when {
                     delta > 0f -> {
@@ -384,7 +389,7 @@ class BrowserActivity : ComponentActivity() {
                             browserTouchDownPx >= hideThreshold
                         ) {
                             browserChromeHidden = true
-                            browserTouchDownPx = 0f
+                            browserChromeGestureCommitted = true
                         }
                     }
 
@@ -393,7 +398,7 @@ class BrowserActivity : ComponentActivity() {
                         browserTouchDownPx = 0f
                         if (browserChromeHidden && browserTouchUpPx >= showThreshold) {
                             browserChromeHidden = false
-                            browserTouchUpPx = 0f
+                            browserChromeGestureCommitted = true
                         }
                     }
                 }
