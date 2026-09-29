@@ -31,6 +31,7 @@ const ArticleView = () => {
   const lastArticleRef = useRef(null);
   const wasOpenRef = useRef(false);
   const shellMovingRef = useRef(false);
+  const shellMotionCancelRef = useRef(null);
   const $activeArticle = useStore(activeArticle);
   const revisionKeys = useMemo(() => [String(articleId)], [articleId]);
   const revisions = useStore(articleContentRevision, { keys: revisionKeys });
@@ -60,6 +61,8 @@ const ArticleView = () => {
     wasOpenRef.current = isOpen;
     if (!page) return;
     if (!isMedium) {
+      shellMotionCancelRef.current?.();
+      shellMotionCancelRef.current = null;
       shellMovingRef.current = false;
       page.style.transform = "";
       page.style.willChange = "";
@@ -84,10 +87,13 @@ const ArticleView = () => {
     shellMovingRef.current = true;
     page.dataset.readingMotion = isOpen ? "entrance" : "release";
     page.style.willChange = "transform";
+    let completed = false;
     const cancel = animateReadingValue({
       from, to: isOpen ? 0 : width, reduceMotion,
       onUpdate: (x) => { page.style.transform = `translate3d(${x}px,0,0)`; },
       onDone: () => {
+        completed = true;
+        shellMotionCancelRef.current = null;
         shellMovingRef.current = false;
         page.style.willChange = "";
         delete page.dataset.readingMotion;
@@ -96,15 +102,29 @@ const ArticleView = () => {
         setPageMoving(false);
       },
     });
-    return cancel;
+    if (!completed) shellMotionCancelRef.current = cancel;
+    return () => {
+      if (shellMotionCancelRef.current === cancel) shellMotionCancelRef.current = null;
+      cancel();
+    };
   }, [isOpen, isMedium, reduceMotion]);
 
   const handleBack = useCallback(() => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
     navigate(basePath || "/");
   }, [navigate]);
-  useArticleSwipeBack({ pageRef, enabled: isMedium && isOpen && isArticleVisible && !pageMoving && !continuousHandoff,
-    onBack: handleBack, reduceMotion });
+  const handleTakeoverEntrance = useCallback(() => {
+    const page = pageRef.current;
+    if (!page || page.dataset.readingMotion !== "entrance") return false;
+    shellMotionCancelRef.current?.();
+    shellMotionCancelRef.current = null;
+    shellMovingRef.current = false;
+    page.style.willChange = "";
+    setPageMoving(false);
+    return true;
+  }, []);
+  useArticleSwipeBack({ pageRef, enabled: isMedium && isOpen && isArticleVisible && !continuousHandoff,
+    onBack: handleBack, onTakeoverEntrance: handleTakeoverEntrance, reduceMotion });
   const handleContinuousState = useCallback((active) => {
     setContinuousHandoff(active);
     const page = pageRef.current;

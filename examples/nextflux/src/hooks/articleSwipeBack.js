@@ -8,6 +8,17 @@ export function shouldFinishArticleSwipe(distance, width, velocity) {
   return distance >= width * 0.15 || (distance >= 24 && velocity >= 600);
 }
 
+function translateX(value) {
+  if (!value || value === "none") return 0;
+  const translate = value.match(/^translate3d\(\s*(-?\d+(?:\.\d+)?)px\s*,\s*0(?:px)?\s*,\s*0(?:px)?\s*\)$/);
+  if (translate) return Number(translate[1]);
+  const matrix = value.match(/^matrix(3d)?\(([^)]+)\)$/);
+  if (!matrix) return null;
+  const entries = matrix[2].split(",").map(Number);
+  if (entries.some((entry) => !Number.isFinite(entry))) return null;
+  return matrix[1] ? entries[12] : entries[4];
+}
+
 function isRestingTransform(value) {
   if (!value || value === "none") return true;
   if (/^translate(?:3d|Z)\(\s*0(?:px)?(?:\s*,\s*0(?:px)?){0,2}\s*\)$/.test(value)) return true;
@@ -27,6 +38,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
   let phase = "idle";
   let width = 0;
   let offset = 0;
+  let startOffset = 0;
   let saved = null;
   let ownedStyles = null;
   let cancelMotion = null;
@@ -73,6 +85,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
       ownedStyles = null;
     }
     offset = 0;
+    startOffset = 0;
     phase = "idle";
     setActive(false);
   };
@@ -148,20 +161,28 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     getOptions: () => ({
       enabled: () => {
         if (disposed || (phase !== "idle" && phase !== "tracking")) return false;
-        if (phase === "idle" && page.dataset.readingMotion) return false;
+        const marker = page.dataset.readingMotion;
+        if (phase === "idle" && marker && marker !== "entrance") return false;
         return enabled();
       },
       onStart: ({ deltaX }) => {
         if (deltaX <= 0) return false;
+        const takingEntrance = page.dataset.readingMotion === "entrance";
+        const takeoverEntrance = getOptions().onTakeoverEntrance;
+        if (takingEntrance && (typeof takeoverEntrance !== "function" || takeoverEntrance() === false)) return false;
         const transform = page.style.transform || view?.getComputedStyle?.(page)?.transform;
-        if (!isRestingTransform(transform)) return false;
+        if (!takingEntrance && !isRestingTransform(transform)) return false;
+        const inheritedOffset = takingEntrance ? translateX(transform) : 0;
+        if (takingEntrance && inheritedOffset === null) return false;
         width = currentWidth();
         if (!width) return false;
+        startOffset = Math.min(width, Math.max(0, inheritedOffset || 0));
+        offset = startOffset;
         saved = {
-          transform: page.style.transform,
+          transform: takingEntrance ? "" : page.style.transform,
           transition: page.style.transition,
-          willChange: page.style.willChange,
-          readingMotion: page.dataset.readingMotion,
+          willChange: takingEntrance ? "" : page.style.willChange,
+          readingMotion: takingEntrance ? undefined : page.dataset.readingMotion,
         };
         page.style.transition = "none";
         page.style.willChange = "transform";
@@ -174,10 +195,10 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
         phase = "tracking";
         setActive(true);
       },
-      onMove: ({ deltaX }) => setOffset(Math.min(width, Math.max(0, deltaX))),
+      onMove: ({ deltaX }) => setOffset(Math.min(width, Math.max(0, startOffset + deltaX))),
       onEnd: ({ deltaX, velocityX }) => {
         if (cancelOnResize()) return;
-        setOffset(Math.min(width, Math.max(0, deltaX)));
+        setOffset(Math.min(width, Math.max(0, startOffset + deltaX)));
         settle(shouldFinishArticleSwipe(offset, width, velocityX), velocityX);
       },
       onCancel: () => settle(false),
