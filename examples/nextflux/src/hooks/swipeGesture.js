@@ -7,7 +7,7 @@ const EXCLUDED_SELECTOR = [
 ].join(",");
 
 export const SWIPE_DIRECTION_LOCK = 8;
-export const SWIPE_HORIZONTAL_RATIO = 1.5;
+export const SWIPE_HORIZONTAL_RATIO = 1.25;
 const VELOCITY_WINDOW_MS = 80;
 
 export function resolveSwipeDirection(deltaX, deltaY) {
