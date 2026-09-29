@@ -109,7 +109,6 @@ object ToolBoxApiV1 {
         MethodDescriptor("background.updateActivity", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundActivityRequest", "void"),
         MethodDescriptor("background.list", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "void", "TaskSummary[]"),
         MethodDescriptor("background.listSessions", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "void", "BackgroundSessionSummary[]"),
-        MethodDescriptor("background.updateStatus", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundStatusUpdate", "void"),
         MethodDescriptor("background.getResult", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "TaskIdRequest", "TaskRunResult | null"),
         MethodDescriptor("background.cancel", ContractPhase.M2, ToolBoxCapabilityId.BACKGROUND_TASKS, "TaskIdRequest", "void"),
         MethodDescriptor("background.setTimer", ContractPhase.M3, ToolBoxCapabilityId.BACKGROUND_RUNTIME, "BackgroundTimerRequest", "void"),

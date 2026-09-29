@@ -26,15 +26,9 @@ function formatClock(value) {
 }
 
 async function publishTaskStatus(primaryText, secondaryText, updatedAt = Date.now()) {
-  if (!sessionId) return false;
+  if (!sessionId || typeof api()?.updateActivity !== "function") return false;
   try {
-    if (typeof api()?.updateActivity === "function") {
-      await api().updateActivity({ sessionId, text: primaryText, detail: secondaryText, updatedAt });
-    } else if (typeof api()?.updateStatus === "function") {
-      await api().updateStatus(sessionId, { primaryText, secondaryText, updatedAt });
-    } else {
-      return false;
-    }
+    await api().updateActivity({ sessionId, text: primaryText, detail: secondaryText, updatedAt });
     return true;
   } catch {
     return false;

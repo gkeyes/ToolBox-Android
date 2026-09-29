@@ -334,18 +334,7 @@ interface RuntimeContinuousBackgroundHandler {
     suspend fun stop(sessionId: String): Boolean
     suspend fun status(sessionId: String): RuntimeBackgroundSessionSummary?
     suspend fun list(): List<RuntimeBackgroundSessionSummary>
-    suspend fun updateStatus(
-        sessionId: String,
-        primaryText: String?,
-        secondaryText: String?,
-        updatedAt: Long?,
-    ) = Unit
-    suspend fun updateActivity(request: RuntimeBackgroundActivityRequest) = updateStatus(
-        sessionId = request.sessionId,
-        primaryText = request.text,
-        secondaryText = request.detail,
-        updatedAt = request.updatedAt,
-    )
+    suspend fun updateActivity(request: RuntimeBackgroundActivityRequest)
     suspend fun setTimer(key: String, intervalMillis: Long)
     suspend fun cancelTimer(key: String): Boolean
 }
@@ -794,19 +783,6 @@ class RuntimeRpcDispatcher(
             RpcValue.ArrayValue(
                 requireHandler(m2Handlers.continuousBackground).list().map { session -> session.toRpcValue() },
             )
-        }
-        "background.updateStatus" -> {
-            params.requireOnly("sessionId", "primaryText", "secondaryText", "updatedAt")
-            val primaryText = params.optionalString("primaryText", 120)?.trim()?.takeIf(String::isNotEmpty)
-            val secondaryText = params.optionalString("secondaryText", 160)?.trim()?.takeIf(String::isNotEmpty)
-            require(primaryText != null || secondaryText == null)
-            requireHandler(m2Handlers.continuousBackground).updateStatus(
-                sessionId = params.requiredSessionId(),
-                primaryText = primaryText,
-                secondaryText = secondaryText,
-                updatedAt = params.optionalLong("updatedAt", 0, MAX_SAFE_INTEGER),
-            )
-            RpcValue.Null
         }
         "background.updateActivity" -> {
             requireHandler(m2Handlers.continuousBackground).updateActivity(params.toBackgroundActivityRequest())

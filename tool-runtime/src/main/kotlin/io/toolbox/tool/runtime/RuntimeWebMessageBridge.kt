@@ -447,7 +447,6 @@ class RuntimeBridgeSession internal constructor(
                   updateActivity: request => call('background.updateActivity', request),
                   list: () => call('background.list'),
                   listSessions: () => call('background.listSessions'),
-                  updateStatus: (sessionId, status = {}) => call('background.updateStatus', { sessionId, ...status }),
                   getResult: taskId => call('background.getResult', { taskId }),
                   cancel: taskId => call('background.cancel', { taskId }),
                   setTimer: (key, intervalMs) => call('background.setTimer', { key, intervalMs }),

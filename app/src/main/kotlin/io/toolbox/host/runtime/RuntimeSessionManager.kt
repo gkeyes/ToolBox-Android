@@ -30,6 +30,7 @@ import io.toolbox.tool.runtime.RuntimeAlarmHandler
 import io.toolbox.tool.runtime.RuntimeAlarmSummary
 import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeContinuousBackgroundHandler
+import io.toolbox.tool.runtime.RuntimeBackgroundActivityRequest
 import io.toolbox.tool.runtime.RuntimeBackgroundSessionSummary
 import io.toolbox.tool.runtime.RuntimeBackgroundStartOptions
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
@@ -755,31 +756,26 @@ internal class RuntimeSessionManager(
             sessionsByTool[toolId].orEmpty().values.map(StoredRuntimeSession::toRuntimeSummary)
         }
 
-        override suspend fun updateStatus(
-            sessionId: String,
-            primaryText: String?,
-            secondaryText: String?,
-            updatedAt: Long?,
-        ) = withContext(Dispatchers.Main.immediate) {
-            ensureCurrentRuntime(toolId, versionCode)
-            val current = sessionsByTool[toolId]?.get(sessionId)
-                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background session was not found")
-            val cleared = primaryText == null
-            val updated = current.copy(
-                activityPrimaryText = primaryText,
-                activitySecondaryText = if (cleared) null else secondaryText,
-                activityUpdatedAt = if (cleared) null else (updatedAt ?: nowMillis()),
-            )
-            sessionsByTool.getValue(toolId)[sessionId] = updated
-            try {
-                persistSessions(toolId)
-            } catch (failure: Exception) {
-                sessionsByTool.getValue(toolId)[sessionId] = current
-                throw failure
+        override suspend fun updateActivity(request: RuntimeBackgroundActivityRequest) =
+            withContext(Dispatchers.Main.immediate) {
+                ensureCurrentRuntime(toolId, versionCode)
+                val current = sessionsByTool[toolId]?.get(request.sessionId)
+                    ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "后台运行会话不存在")
+                val updated = current.copy(
+                    activityPrimaryText = request.text,
+                    activitySecondaryText = request.detail?.takeIf(String::isNotBlank),
+                    activityUpdatedAt = request.updatedAt ?: nowMillis(),
+                )
+                sessionsByTool.getValue(toolId)[request.sessionId] = updated
+                try {
+                    persistSessions(toolId)
+                } catch (failure: Exception) {
+                    sessionsByTool.getValue(toolId)[request.sessionId] = current
+                    throw failure
+                }
+                updateSessionProjection()
+                refreshForegroundService()
             }
-            updateSessionProjection()
-            refreshForegroundService()
-        }
 
         override suspend fun setTimer(key: String, intervalMillis: Long) = withContext(Dispatchers.Main.immediate) {
             ensureCurrentRuntime(toolId, versionCode)
