@@ -425,6 +425,39 @@
   }
 }
 
+
+/* Shared mobile sheet behavior: HeroUI keeps dialog semantics/focus handling;
+   the handle adds Vaul-style direct drag and velocity dismissal. */
+.nextflux-mobile-sheet {
+  border-start-start-radius: 24px;
+  border-start-end-radius: 24px;
+  translate: 0 0;
+  will-change: auto;
+}
+.nextflux-sheet-handle-zone {
+  min-block-size: 28px;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  cursor: grab;
+}
+.nextflux-sheet-handle-zone:active { cursor: grabbing; }
+
+@supports (view-transition-name: none) {
+  html[data-nextflux-view-transition="article"]::view-transition-old(root),
+  html[data-nextflux-view-transition="article"]::view-transition-new(root) {
+    animation: none;
+  }
+  ::view-transition-group(nextflux-article-title) {
+    animation-duration: 260ms;
+    animation-timing-function: cubic-bezier(.2,.8,.2,1);
+  }
+  ::view-transition-old(nextflux-article-title),
+  ::view-transition-new(nextflux-article-title) {
+    mix-blend-mode: normal;
+  }
+}
+
 /* Size controls by their component role, never by their accessible name. */
 .nextflux-toolbar-button,
 .nextflux-close-button {
