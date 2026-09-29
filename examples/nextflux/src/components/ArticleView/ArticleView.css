@@ -140,7 +140,31 @@ div.force-dark-code-theme .shiki span {
 
 /* Only viewport-sized shells are promoted during motion. The article body
    keeps normal text rendering and never becomes a full-length GPU texture. */
-.nextflux-article-page { background: var(--background); }
+.nextflux-article-page {
+  background: var(--background);
+  box-shadow: var(--nextflux-article-depth-shadow, none);
+}
+.nextflux-article-list-page {
+  transform-origin: 50% 50%;
+  will-change: auto;
+}
+.nextflux-article-list-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: rgb(0 0 0);
+  opacity: var(--nextflux-list-dim, 0);
+}
+@media (min-width: 768px) {
+  .nextflux-article-page { --nextflux-article-depth-shadow: none !important; }
+  .nextflux-article-list-page {
+    transform: none !important;
+    --nextflux-list-dim: 0 !important;
+    will-change: auto !important;
+  }
+}
 .nextflux-article-feed { min-height: 24px; }
 .nextflux-article-feed-button { color: inherit; font: inherit; }
 .nextflux-article-title-link { display: inline; color: inherit; font-weight: 600; }
