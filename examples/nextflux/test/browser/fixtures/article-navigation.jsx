@@ -28,6 +28,7 @@ function Fixture() {
     <section data-testid="list" className="nextflux-article-list-page w-full shrink-0 md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh relative" style={{ background: "var(--background)" }}>
       {rows.map((row) => <button key={row.id} style={{ display: "block", minHeight: 64 }} onClick={() => navigate(`/article/${row.id}`)}>打开文章 {row.id}</button>)}
       <output data-testid="route">{location.pathname}</output>
+      <div className="nextflux-list-transition-cover" aria-hidden="true" />
     </section>
     <ArticleView />
   </main>;
