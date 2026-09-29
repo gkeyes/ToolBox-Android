@@ -427,7 +427,7 @@ class RuntimeBridgeSession internal constructor(
                   writeText: text => call('clipboard.writeText', { text }),
                   readText: () => call('clipboard.readText')
                 },
-                network: { authorizeDomain: domain => call('network.authorizeDomain', { domain }), listDomains: () => call('network.listDomains'), request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
+                network: { request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
                 notifications: {
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
                   update: (id, title, body) => call('notifications.update', { id, title, body }),

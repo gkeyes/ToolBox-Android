@@ -2,7 +2,6 @@ import axios from "axios";
 import { authState, logout } from "../stores/authStore.js";
 import { toast } from "sonner";
 import { SERVER_URL, basicAuth, toolboxAxiosAdapter } from "../toolbox/network.js";
-import { waitForRateLimit } from "../toolbox/rate-limit.js";
 import { adaptivePageRequest, nextEntryCursor, SYNC_PAGE_SIZE, SYNC_MIN_PAGE_SIZE } from "../toolbox/sync-pagination.mjs";
 import { createNetworkPriorityGate } from "../toolbox/foreground-gate.mjs";
 
@@ -76,8 +75,7 @@ function checkAuthGeneration(generation) {
   }
 }
 
-// Every caller, including ordinary fetches without a supplied check, stays
-// bound to the credentials with which it started during an admission wait.
+// Keep each request bound to the credentials active when it started.
 function operationCheck(check) {
   const generation = authGeneration;
   const current = async () => {
@@ -89,29 +87,19 @@ function operationCheck(check) {
   return current;
 }
 
-async function withAdmissionRetry(operation, check) {
+async function runNetworkOperation(operation, check) {
   const generation = authGeneration;
   const current = operationCheck(check);
   const isBackground = current.networkPriority === "background";
   const releaseForeground = isBackground ? null : networkPriority.beginForeground();
   try {
-    while (true) {
-      await current();
-      if (isBackground) await networkPriority.waitForForeground(current);
-      // Optional mutation hooks distinguish a sent toggle from one the host
-      // rejected before execution. Waiting checks never mark a batch as sent.
-      if (await check?.beforeRequest?.() === false) throw cancelled();
-      checkAuthGeneration(generation);
-      try {
-        const result = await operation();
-        checkAuthGeneration(generation);
-        return result;
-      } catch (error) {
-        if (error?.code !== "RATE_LIMITED" || error?.response) throw error;
-        await check?.onRateLimited?.(error);
-        if (!await waitForRateLimit(error, current)) throw cancelled();
-      }
-    }
+    await current();
+    if (isBackground) await networkPriority.waitForForeground(current);
+    if (await check?.beforeRequest?.() === false) throw cancelled();
+    checkAuthGeneration(generation);
+    const result = await operation();
+    checkAuthGeneration(generation);
+    return result;
   } finally {
     releaseForeground?.();
   }
@@ -120,7 +108,7 @@ async function withAdmissionRetry(operation, check) {
 // 获取所有订阅源
 export const getFeeds = async (check) => {
   try {
-    const response = await withAdmissionRetry(() => apiClient.get("/v1/feeds"), check);
+    const response = await runNetworkOperation(() => apiClient.get("/v1/feeds"), check);
     return response.data;
   } catch (error) {
     console.error("获取订阅源失败:", error);
@@ -132,14 +120,14 @@ export const getFeeds = async (check) => {
 export const getFeed = async (feedId, check) => {
   const id = Number(feedId);
   if (!Number.isSafeInteger(id) || id <= 0) throw new Error("订阅编号无效。");
-  const response = await withAdmissionRetry(() => apiClient.get(`/v1/feeds/${id}`), check);
+  const response = await runNetworkOperation(() => apiClient.get(`/v1/feeds/${id}`), check);
   return response.data;
 };
 
 // 获取指定订阅源的文章
 export const getFeedEntries = async (feedId, params = {}, check) => {
   try {
-    const response = await withAdmissionRetry(() => apiClient.get("/v1/feeds/" + feedId + "/entries", {
+    const response = await runNetworkOperation(() => apiClient.get("/v1/feeds/" + feedId + "/entries", {
       params: { direction: "desc", limit: 50, ...params },
     }), check);
     return response.data.entries;
@@ -150,8 +138,8 @@ export const getFeedEntries = async (feedId, params = {}, check) => {
 };
 
 export const updateEntriesStatus = async (entryIds, status, check) => {
-  await withAdmissionRetry(() => {
-    // A retry check may remove IDs superseded by a later manual intent.
+  await runNetworkOperation(() => {
+    // The request check may remove IDs superseded by a later manual intent.
     if (!entryIds.length) throw cancelled();
     return apiClient.put("/v1/entries", { entry_ids: [...entryIds], status });
   }, check);
@@ -174,7 +162,7 @@ export const updateEntryStatus = async (entry, check) => {
 // 更新文章星标状态
 export const updateEntryStarred = async (entry, check) => {
   try {
-    await withAdmissionRetry(() => apiClient.put(`/v1/entries/${entry.id}/bookmark`), check);
+    await runNetworkOperation(() => apiClient.put(`/v1/entries/${entry.id}/bookmark`), check);
   } catch (error) {
     console.error("更新文章星标状态失败:", error);
     throw error;
@@ -201,7 +189,7 @@ async function fetchEntryPage(endpoint, filters, cursor, requestedSize, check) {
     request: async (pageSize) => {
       const params = { ...baseFilters, limit: pageSize };
       if (cursor > 0) params[cursorParam] = cursor;
-      const { data } = await withAdmissionRetry(() => apiClient.get(endpoint, { params }), current);
+      const { data } = await runNetworkOperation(() => apiClient.get(endpoint, { params }), current);
       await current();
       if (!Array.isArray(data.entries)) throw new Error("服务器返回的文章列表无效。");
       return data;
@@ -286,7 +274,7 @@ export const markAllAsRead = async (type, id = null, check) => {
 
     // 如果是用户级别的标记已读，先获取用户信息
     if (type === "all") {
-      const response = await withAdmissionRetry(() => apiClient.get("/v1/me"), current);
+      const response = await runNetworkOperation(() => apiClient.get("/v1/me"), current);
       const userId = response.data.id;
       endpoint = `/v1/users/${userId}/mark-all-as-read`;
     } else if (type === "feed" && id) {
@@ -296,7 +284,7 @@ export const markAllAsRead = async (type, id = null, check) => {
     }
 
     await current();
-    await withAdmissionRetry(() => apiClient.put(endpoint), check);
+    await runNetworkOperation(() => apiClient.put(endpoint), check);
   } catch (error) {
     console.error("标记全部已读失败:", error);
     throw error;
@@ -397,7 +385,7 @@ export const updateCategory = async (categoryId, title) => {
 // 获取所有分类
 export const getCategories = async (check) => {
   try {
-    const response = await withAdmissionRetry(() => apiClient.get("/v1/categories"), check);
+    const response = await runNetworkOperation(() => apiClient.get("/v1/categories"), check);
     return response.data;
   } catch (error) {
     console.error("获取分类列表失败:", error);

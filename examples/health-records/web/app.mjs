@@ -24,15 +24,13 @@ function errorText(error) {
   if (error instanceof HealthError) return error.message;
   const code = error?.code;
   if (["PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED", "NOT_DECLARED"].includes(code)) return "权限未开启，请在 ToolBox 的本工具权限页开启对应的存储、文件或网络权限后重试";
-  if (code === "USER_GESTURE_REQUIRED") return "操作等待过久，请重新点击按钮再试";
-  if (code === "RATE_LIMITED") return "操作较频繁，请稍后再试；原数据未改变";
   if (code === "QUOTA_EXCEEDED") return "当前可用内存或存储空间不足，请释放资源后重试；原数据仍保留";
   if (["CANCELLED", "SESSION_ENDED"].includes(code)) return "操作已取消";
   if (code === "NETWORK_BLOCKED") return "网络被宿主安全策略阻止，请确认网络权限；仅支持所选 Gemini 或 MiniMax 的官方域名";
   if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(code)) return "联网等待超时，尚未得到完整结果。连接失败或服务主动断开可能提前结束，请检查网络后重试";
   if (code === "NETWORK_UNAVAILABLE") return "连接或读取响应失败，尚未得到完整结果。请检查网络、代理连接或服务可用性后重试";
   if (code === "INTERNAL_ERROR") return "ToolBox 宿主内部处理失败，请返回工具列表后重新打开，再尝试整理；原始记录未修改";
-  if (code === "UNSUPPORTED") return "当前环境不支持这项操作，请在带流式网络支持的 ToolBox 0.6.1 或更新版本中使用";
+  if (code === "UNSUPPORTED") return "当前运行环境不支持这项操作，请检查 ToolBox 和 WebView 环境";
   return "操作未完成，请重试；原数据仍保留";
 }
 
@@ -526,7 +524,7 @@ async function runAi(mode, snapshot, revision, payload, historyState = null) {
   } catch (e) {
     if (isCurrent()) {
       progress.dispose();
-      const publicCodes = ["UNSUPPORTED", "INVALID_REQUEST", "INVALID_SESSION", "WRONG_ORIGIN", "NOT_MAIN_FRAME", "NOT_DECLARED", "PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED", "USER_GESTURE_REQUIRED", "BUSY", "RATE_LIMITED", "QUOTA_EXCEEDED", "CANCELLED", "SESSION_ENDED", "NOT_FOUND", "DUPLICATE_TASK", "NETWORK_BLOCKED", "NETWORK_UNAVAILABLE", "NETWORK_TIMEOUT", "INTERNAL_ERROR"];
+      const publicCodes = ["UNSUPPORTED", "INVALID_REQUEST", "INVALID_SESSION", "WRONG_ORIGIN", "NOT_MAIN_FRAME", "NOT_DECLARED", "PERMISSION_DENIED", "SYSTEM_PERMISSION_DENIED", "BUSY", "QUOTA_EXCEEDED", "CANCELLED", "SESSION_ENDED", "NOT_FOUND", "DUPLICATE_TASK", "NETWORK_BLOCKED", "NETWORK_UNAVAILABLE", "NETWORK_TIMEOUT", "INTERNAL_ERROR"];
       const code = e instanceof HealthError ? e.code : publicCodes.includes(e?.code) ? e.code : "UNEXPECTED_ERROR";
       const remaining = historyState?.reports.filter(report => !report).length;
       showDialog("未能完成整理", [h("p", { class: "notice warning" }, errorText(e)),

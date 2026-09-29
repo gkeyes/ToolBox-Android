@@ -37,7 +37,7 @@
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
         let decoder; try { decoder = new TextDecoder(charset(response.headers, bytes)); } catch (_) { decoder = new TextDecoder('utf-8'); }
         const finalUrl = C.header(response.headers, 'x-toolbox-final-url');
-        if (!finalUrl) throw new Error('宿主未返回最终响应网址；请使用包含当前网络接口的 ToolBox 0.7.8 构建');
+        if (!finalUrl) throw new Error('宿主未返回最终响应网址，无法安全处理响应');
         return {status:response.status, headers:response.headers, url:C.urlOf(finalUrl), text:decoder.decode(bytes)};
       } finally {
         if (!complete) { try { await this.api.network.cancelStream(response.streamId); } catch (_) {} }

@@ -167,11 +167,11 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 需要前台交互的剪贴板、分享、浏览器、文件选择、相机、快捷方式和震动，由当前可见且有窗口焦点的工具发起。授权后没有触屏倒计时或每分钟调用额度。系统文件选择器、相机、分享及桌面确认仍由 Android 处理。
 
-网络通过 ToolBox 原生 HTTPS 接口，不依赖域名白名单；TLS 验证和跨源重定向凭据剥离继续生效。旧 allowDomains/allowUserDomains/allowRedirects 只供旧包兼容。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
+网络通过 ToolBox 原生 HTTPS 接口访问；TLS 验证和跨源重定向凭据剥离继续生效。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
 
 ### 数据与资源
 
-不设置统一的包大小、解压大小、笔记条数或持续任务时长额度。宿主在分配和写入前检查当前进程可用堆与目标磁盘空间，安装仍保持事务与回滚。调用方明确填写的网络请求预算继续生效；旧 limits 字段仅兼容解析，不再施加额度。新工具不必填写 limits 或 network 预算。
+不设置统一的包大小、解压大小、笔记条数或持续任务时长额度。宿主在分配和写入前检查当前进程可用堆与目标磁盘空间，安装仍保持事务与回滚。调用方明确填写的网络请求预算继续生效；工具不必填写 network 预算。
 
 大网络响应使用 openStream/readStream 逐块消费，处理完一块再读取下一块；每块长度只是传输单位，不是总数据上限。openStream 支持 AbortSignal。EOF、取消、撤权和运行环境结束释放连接。
 
@@ -314,11 +314,11 @@ background.enqueue/schedulePeriodic 是委托原生系统的 httpGet/notify 任�
 
 ### 错误处理
 
-宿主 0.8.4 起，关闭后台运行或清理权限失败时，相关页面提供对应重试；已关闭的权限不会因重试而重新开启。主动取消安装会在清理完成后显示中性结果。成功提示会遵循系统无障碍建议延长停留时间，失败提示保留供处理。
+关闭后台运行或清理权限失败时，相关页面提供对应重试；已关闭的权限不会因重试而重新开启。主动取消安装会在清理完成后显示中性结果。成功提示会遵循系统无障碍建议延长停留时间，失败提示保留供处理。
 
 等待 ready 后调用接口，并捕获包含 code、message 的错误。NOT_DECLARED 表示缺少清单声明；PERMISSION_DENIED 表示工具开关关闭；SYSTEM_PERMISSION_DENIED 表示系统权限未满足。SESSION_ENDED/INVALID_SESSION 需要重新取得运行环境，不能复用旧 token 或 sessionId。
 
-QUOTA_EXCEEDED 表示实际资源不足或调用方预算无法满足；BUSY 表示同一个资源已有冲突操作。NETWORK_TIMEOUT/NETWORK_UNAVAILABLE 应显示网络错误；不能把失败当成功，也不应无限立即重试。旧宿主可能返回 USER_GESTURE_REQUIRED/RATE_LIMITED；可选 retryAfterMs 仅是重试提示。不要把 Token、文件正文或私人数据写入日志。
+QUOTA_EXCEEDED 表示实际资源不足或调用方预算无法满足；BUSY 表示同一个资源已有冲突操作。NETWORK_TIMEOUT/NETWORK_UNAVAILABLE 应显示网络错误；不能把失败当成功，也不应无限立即重试。不要把 Token、文件正文或私人数据写入日志。
 
 ## API
 
@@ -365,8 +365,6 @@ export type ToolBoxMethodName =
   | "device.getBasicInfo"
   | "haptics.perform"
   | "clipboard.writeText"
-  | "network.authorizeDomain"
-  | "network.listDomains"
   | "network.request"
   | "network.openStream"
   | "network.readStream"
@@ -413,9 +411,7 @@ export type ToolBoxErrorCode =
   | "NOT_DECLARED"
   | "PERMISSION_DENIED"
   | "SYSTEM_PERMISSION_DENIED"
-  | "USER_GESTURE_REQUIRED"
   | "BUSY"
-  | "RATE_LIMITED"
   | "QUOTA_EXCEEDED"
   | "CANCELLED"
   | "SESSION_ENDED"
@@ -437,8 +433,6 @@ export interface StorageApplyRequest {
 export interface ToolBoxApiError {
   code: ToolBoxErrorCode;
   message: string;
-  /** Optional non-negative safe integer milliseconds (at most Number.MAX_SAFE_INTEGER) remaining in the rate-limit window. A pacing hint; recheck permissions and context before retrying. Older hosts and other errors may omit it. */
-  retryAfterMs?: number;
 }
 
 export interface ReadyResult {
@@ -469,7 +463,7 @@ export interface NetworkRequest {
   readonly body?: string | JsonValue | Uint8Array;
   /** Optional non-negative caller-selected deadline in milliseconds; 0 disables the deadline. Omitted requests use the manifest setting, otherwise no host deadline. The HTTP client uses a signed 32-bit millisecond representation. */
   readonly timeoutMs?: number;
-  /** Positive safe integer cumulative budget (up to Number.MAX_SAFE_INTEGER; values above 2147483647 require host 0.8.0+). Omitted uses manifest; no manifest budget means no extra cumulative limit. Full responses remain constrained by shared memory and array/string capacity. */
+  /** Positive safe integer cumulative budget (up to Number.MAX_SAFE_INTEGER). Omitted uses manifest; no manifest budget means no extra cumulative limit. Full responses remain constrained by shared memory and array/string capacity. */
   readonly maxResponseBytes?: number;
 }
 
@@ -509,7 +503,7 @@ export interface LiveNotificationRequest {
   readonly sessionId: string;
   readonly title: string;
   readonly primaryText: string;
-  /** Optional supplementary text; omit together with body for a title-first minimal live card (host 0.7.5+). */
+  /** Optional supplementary text; omit together with body for a title-first minimal live card. */
   readonly secondaryText?: string;
   /** Optional expanded prose. Host 0.7.5+ does not repeat primaryText when this is omitted. */
   readonly body?: string;
@@ -658,7 +652,7 @@ export interface ToolBoxApi {
   crypto: {
     sha256(value: string | Uint8Array): Promise<Sha256Result>;
   };
-  /** Since host 0.6.5, persisted storage has no per-tool capacity quota; available device space applies. Legacy limits.storageBytes is ignored. Writes remain atomic. */
+  /** The host checks current storage availability before writes and keeps each mutation atomic. */
   storage: {
     get(key: string): Promise<JsonValue | null>;
     /** Reads keys from one snapshot, preserving order and duplicates. Missing keys return null; actual memory and any explicit caller budget apply. */
@@ -687,10 +681,6 @@ export interface ToolBoxApi {
     readText(): Promise<string>;
   };
   network: {
-    /** @deprecated Compatibility check: returns true when the network capability is declared and granted. No domain prompt or destination allowlist is used. */
-    authorizeDomain(domain: string): Promise<boolean>;
-    /** @deprecated Returns an empty list. Network access is controlled by the network permission, not a domain list. */
-    listDomains(): Promise<string[]>;
     request(request: NetworkRequest): Promise<NetworkResponse>;
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
     readStream(streamId: string, options?: NetworkStreamReadOptions): Promise<NetworkStreamChunk>;
@@ -728,7 +718,7 @@ export interface ToolBoxApi {
     text(text: string): Promise<void>;
   };
   browser: {
-    /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser (host 0.7.8+). Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. Uploads, downloads and website device permissions are unsupported; the menu offers an explicit system-browser fallback. */
+    /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser. Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. Uploads, downloads and website device permissions are unsupported; the menu offers an explicit system-browser fallback. */
     open(url: string): Promise<void>;
   };
   files: {

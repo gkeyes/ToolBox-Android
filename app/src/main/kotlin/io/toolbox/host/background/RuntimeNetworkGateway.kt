@@ -1,6 +1,6 @@
 package io.toolbox.host.background
 
-import io.toolbox.host.runtime.NetworkDomainInvalidation
+import io.toolbox.host.runtime.NetworkStreamCancellation
 import io.toolbox.tool.packagekit.InstalledManifestNetwork
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding
@@ -20,7 +20,7 @@ internal class RuntimeNetworkGateway(
     private val toolId: String? = null,
 ) : RuntimeNetworkHandler {
     private val streams = RuntimeNetworkStreams()
-    init { toolId?.let { NetworkDomainInvalidation.register(it, this, streams::clear) } }
+    init { toolId?.let { NetworkStreamCancellation.register(it, this, streams::clear) } }
 
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
         val limit = request.maxResponseBytes ?: policy?.maxResponseBytes
@@ -70,7 +70,7 @@ internal class RuntimeNetworkGateway(
     override fun cancelStreams() = streams.clear()
 
     override fun close() {
-        toolId?.let { NetworkDomainInvalidation.unregister(it, this) }
+        toolId?.let { NetworkStreamCancellation.unregister(it, this) }
         streams.close()
     }
 

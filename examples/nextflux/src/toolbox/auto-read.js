@@ -41,23 +41,12 @@ export function createAutoReadQueue({
       const ids = sending.map((entry) => entry.id);
       const requestCheck = () => {
         check();
-        // Admission throttling may leave a request unsent while the user
-        // changes its intent. Mutate the original array before a retry builds
-        // its payload, retaining only entries still owned by this batch.
         ids.splice(0, ids.length, ...sending.filter(isCurrent).map((entry) => entry.id));
         return ids.length > 0;
       };
       requestCheck.beforeRequest = () => {
         if (!requestCheck()) return false;
         for (const entry of sending.filter(isCurrent)) entry.phase = "sent";
-      };
-      requestCheck.onRateLimited = () => {
-        for (const entry of sending.filter(isCurrent)) {
-          // A manual action may arrive while native admission is pending. If
-          // it was rejected, that automatic request was never sent after all.
-          if (entry.cancelAfterRejection) finish(entry);
-          else entry.phase = "queued";
-        }
       };
       await send(ids, requestCheck);
       await save(ids.map((id) => ({ id, status: "read" })), check);
@@ -86,8 +75,7 @@ export function createAutoReadQueue({
     },
     cancelUnsent(value) {
       const entry = entries.get(Number(value));
-      if (entry?.phase === "sent") entry.cancelAfterRejection = true;
-      else if (entry) finish(entry);
+      if (entry && entry.phase !== "sent") finish(entry);
       if (!pending.size) clearTimer();
     },
     cancelAll(failure) {

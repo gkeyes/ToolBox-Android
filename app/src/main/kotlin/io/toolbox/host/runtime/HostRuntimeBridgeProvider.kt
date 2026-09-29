@@ -75,7 +75,6 @@ internal class HostRuntimeBridgeProvider(
     private val grantState = RepositoryRuntimeGrantStateSource(repositories.catalog, repositories.grants)
     private val systemPermissions = AndroidRuntimeSystemPermissionChecker(applicationContext)
     private val keyValues = repositories.keyValues
-    private val networkGrants = repositories.grants
     private val installedManifests = HostInstalledManifestReader(applicationContext.filesDir, repositories.catalog)
 
     override fun create(runtime: PreparedToolRuntime): RuntimeBridgeConfiguration {
@@ -102,22 +101,8 @@ internal class HostRuntimeBridgeProvider(
                 }
             },
         )
-        val networkDomains = HostNetworkDomainHandler {
-            val current = (installedManifests.read(runtime.toolId) as? HostInstalledManifestResult.Found)?.manifest
-            val grant = networkGrants.observeGrants(runtime.toolId).first().firstOrNull { it.capability == "network" }
-            if (current?.versionCode != runtime.versionCode ||
-                current.permissions.none { it.capability == "network" } || grant?.granted != true) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本、网络声明或权限已变更。")
-            }
-            grant.updatedAt
-        }
         val m3Handlers = foregroundHandlers.copy(
             locationWatch = continuity.locationWatch,
-            networkDomains = networkDomains,
-            sessionCleanup = RuntimeSessionCleanupHandler {
-                networkDomains.close()
-                foregroundHandlers.sessionCleanup?.close()
-            },
         )
         val authorization = DefaultRuntimeAuthorizationPolicy(
             state = grantState,

@@ -19,7 +19,6 @@ function serializeError(error, depth = 0) {
     message: typeof error?.message === "string" ? error.message : String(error ?? "未知错误"),
   };
   if (typeof error?.code === "string") result.code = error.code;
-  if (Number.isInteger(error?.retryAfterMs) && error.retryAfterMs >= 0) result.retryAfterMs = error.retryAfterMs;
   if (error?.cause !== undefined && depth < 4) {
     const cause = error.cause;
     result.cause = cause !== null && typeof cause === "object"
@@ -34,7 +33,6 @@ function restoreError(value, depth = 0) {
   const error = new Error(typeof value?.message === "string" ? value.message : "阅读缓存操作失败，请重试。");
   if (typeof value?.name === "string") error.name = value.name;
   if (typeof value?.code === "string") error.code = value.code;
-  if (Number.isInteger(value?.retryAfterMs) && value.retryAfterMs >= 0) error.retryAfterMs = value.retryAfterMs;
   if (value?.cause !== undefined && depth < 4) {
     error.cause = value.cause !== null && typeof value.cause === "object"
       ? restoreError(value.cause, depth + 1) : value.cause;
@@ -83,7 +81,7 @@ export function createWorkerArticleCache(storage) {
         throw failure("INVALID_REQUEST", "阅读缓存存储请求无效，请重新打开工具后重试。");
       }
       if (typeof storage?.[message.method] !== "function") {
-        throw failure("UNSUPPORTED", "当前 ToolBox 不支持所需的缓存存储接口，请更新 ToolBox 后重试。");
+        throw failure("UNSUPPORTED", "当前运行环境不支持所需的缓存存储接口，无法启动阅读缓存。");
       }
       // Forward bounded engine requests without keeping a window-side cache.
       const value = await storage[message.method](...message.args);

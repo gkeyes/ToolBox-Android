@@ -19,7 +19,7 @@ export function basicAuth(username, password) {
   return "Basic " + btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 }
 
-function transportError(code, retryAfterMs) {
+function transportError(code) {
   const messages = {
     PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
     NOT_DECLARED: "此版本未声明所需的网络权限。",
@@ -27,14 +27,10 @@ function transportError(code, retryAfterMs) {
     NETWORK_TIMEOUT: "服务器响应超时，请稍后重试。",
     NETWORK_UNAVAILABLE: "无法连接服务器，请检查网络后重试。",
     QUOTA_EXCEEDED: "响应内容过大，请减少同步数量后重试。",
-    RATE_LIMITED: "请求过于频繁，请稍后重试。",
     CANCELLED: "请求已取消。",
   };
   const error = new Error(messages[code] || "网络请求失败，请稍后重试。");
   error.code = Object.hasOwn(messages, code) ? code : "NETWORK_UNAVAILABLE";
-  if (error.code === "RATE_LIMITED" && Number.isInteger(retryAfterMs) && retryAfterMs >= 0) {
-    error.retryAfterMs = retryAfterMs;
-  }
   return error;
 }
 
@@ -54,7 +50,7 @@ export async function request(value, options = {}) {
     response = await network.request(payload);
   } catch (error) {
     // Never propagate native errors or Axios configs containing credentials/bodies.
-    throw transportError(error?.code, error?.retryAfterMs);
+    throw transportError(error?.code);
   }
   if (options.signal?.aborted) throw transportError("CANCELLED");
   return response;

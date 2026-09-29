@@ -1,4 +1,4 @@
-/** ToolBox 0.8+ subset. No Android bridge is exposed to provider pages. */
+/** ToolBox API subset. No Android bridge is exposed to provider pages. */
 export interface Host {
   ready(): Promise<{hostVersion: string}>;
   storage: {
@@ -22,7 +22,7 @@ export async function initializeHost() {
   const api = host();
   if (api) {
     await api.ready();
-    if (!api.network?.openStream || !api.storage?.secure) throw new Error('请更新 ToolBox，并开启存储、安全存储和网络权限。');
+    if (!api.network?.openStream || !api.storage?.secure) throw new Error('当前运行环境缺少模型连接所需的网络流式接口或安全存储能力。');
   }
 }
 export function permissionMessage(error: unknown): string {

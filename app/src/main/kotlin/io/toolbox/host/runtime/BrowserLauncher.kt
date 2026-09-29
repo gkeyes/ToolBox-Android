@@ -36,7 +36,7 @@ internal suspend fun launchBrowserUrl(
     try {
         startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "内置浏览器不可用，请更新 ToolBox 后重试。")
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "内置浏览器无法启动，请重试或使用系统浏览器。")
     } catch (_: SecurityException) {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统阻止了内置浏览器启动，请重试。")
     }

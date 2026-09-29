@@ -4,7 +4,7 @@ const messages = {
   CANCELLED: "媒体加载已取消。",
   PERMISSION_DENIED: "请在小工具权限中开启网络访问。",
   NOT_DECLARED: "此版本未声明网络权限。",
-  UNSUPPORTED: "当前宿主不支持媒体分块传输，请升级 ToolBox。",
+  UNSUPPORTED: "当前运行环境不支持媒体分块传输。",
   NETWORK_UNAVAILABLE: "媒体加载失败，请检查网络后重试。",
   NETWORK_TIMEOUT: "媒体加载超时，请重试。",
   INVALID_MEDIA: "媒体内容无效。",

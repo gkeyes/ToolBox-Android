@@ -10,7 +10,7 @@ export function runFileWorker(operation, payload) {
       finish();
       if (data.error) reject(new HealthError(data.error.message, data.error.code)); else resolve(data.result);
     };
-    worker.onerror = (event) => { event.preventDefault(); finish(); reject(new HealthError("文件处理组件无法启动，请使用 ToolBox 0.3.3 或更新版本", "WORKER_ERROR")); };
+    worker.onerror = (event) => { event.preventDefault(); finish(); reject(new HealthError("文件处理组件无法启动，请检查运行环境", "WORKER_ERROR")); };
     const transfers = payload.bytes instanceof ArrayBuffer ? [payload.bytes] : [];
     worker.postMessage({ id: 1, operation, ...payload }, transfers);
   });

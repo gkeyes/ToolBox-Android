@@ -1,4 +1,3 @@
-import { waitForRateLimit } from "./rate-limit.js";
 import { deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
 
@@ -53,7 +52,7 @@ async function bodyDigest(value) {
 
 export function createArticleCache(storage, options = {}) {
   if (!storage?.getMany || !storage?.apply || !storage?.keys) {
-    throw fail("请更新 ToolBox 后重新打开 NextFlux。", "UNSUPPORTED");
+    throw fail("当前运行环境不支持阅读缓存所需的批量存储接口。", "UNSUPPORTED");
   }
   let snapshot = { root: emptyRoot(), maps: emptyMaps(), nodes: new Map(), refs: new Set() };
   let loaded = null;
@@ -92,18 +91,11 @@ export function createArticleCache(storage, options = {}) {
   };
 
   async function native(method, args, expectedEpoch = epoch, intent = () => true) {
-    while (true) {
-      checkEpoch(expectedEpoch);
-      if (!intent()) return;
-      try { const result = await storage[method](...args); checkEpoch(expectedEpoch); return result; }
-      catch (error) {
-        checkEpoch(expectedEpoch);
-        if (error?.code !== "RATE_LIMITED") throw error;
-        // Only native admission rejection is replayable. GC rechecks every key
-        // after waiting; account invalidation cancels reads and writes promptly.
-        if (!await waitForRateLimit(error, () => { checkEpoch(expectedEpoch); return intent(); }, options.rateLimit)) return;
-      }
-    }
+    checkEpoch(expectedEpoch);
+    if (!intent()) return;
+    const result = await storage[method](...args);
+    checkEpoch(expectedEpoch);
+    return result;
   }
 
   async function readMany(keys, expectedEpoch = epoch) {

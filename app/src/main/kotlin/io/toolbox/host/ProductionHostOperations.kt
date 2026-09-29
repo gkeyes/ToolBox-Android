@@ -28,7 +28,7 @@ import io.toolbox.host.background.ToolNetworkProxy
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.runtime.RuntimeForegroundService
-import io.toolbox.host.runtime.UserNetworkDomainStore
+import io.toolbox.host.runtime.NetworkRevocationCleanup
 import io.toolbox.host.runtime.awaitRuntimeStandardStorageIdle
 import io.toolbox.host.runtime.clearRuntimeSecureStorage
 import io.toolbox.host.runtime.withRuntimeStorageQuiescent
@@ -230,7 +230,7 @@ internal class ProductionHostPackageOperations(
         if (removeShortcut) ForegroundCapabilityBroker.clearToolShortcut(application, toolId)
         when (
             runtimeDataCleaner.clearThenRun(toolId) {
-                UserNetworkDomainStore(repositories.keyValues).clear(toolId)
+                NetworkRevocationCleanup(repositories.keyValues).clear(toolId)
                 check(clearRuntimeSecureStorage(toolId, repositories.keyValues))
             }
         ) {
@@ -283,7 +283,7 @@ internal class ProductionHostBackgroundOperations(
     HostRuntimeM2HandlerFactory {
     private val applicationContext = context.applicationContext
     private val network = ToolNetworkProxy()
-    private val domainStore = UserNetworkDomainStore(repositories.keyValues)
+    private val networkRevocationCleanup = NetworkRevocationCleanup(repositories.keyValues)
     private val networkCatalog = repositories.catalog
     private val networkGrants = repositories.grants
     private val notifications = AndroidNotificationGateway(applicationContext)
@@ -334,7 +334,7 @@ internal class ProductionHostBackgroundOperations(
         if (capability == "storage.secure") {
             check(clearRuntimeSecureStorage(toolId, repositories.keyValues)) { "Secure storage cleanup failed" }
         }
-        if (capability == "network") domainStore.clear(toolId)
+        if (capability == "network") networkRevocationCleanup.clear(toolId)
         delegate.onCapabilityDisabled(toolId, capability)
         runtimeSessions?.onCapabilityDisabled(toolId, capability)
     }

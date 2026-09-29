@@ -213,7 +213,6 @@
       return "宿主系统权限未开启，请在后台保障或系统设置中授权。";
     }
     if (error?.code === "NETWORK_BLOCKED") return "行情地址被网络策略阻止。";
-    if (error?.code === "RATE_LIMITED") return "请求过于频繁，请稍后重试。";
     const message = typeof error?.message === "string" ? error.message.trim() : "";
     return message || fallback;
   }
@@ -659,7 +658,7 @@
   async function boot() {
     render();
     if (!toolbox()?.ready) {
-      setStatus("请在 ToolBox 0.3.2 或更高版本中运行。", "error");
+      setStatus("ToolBox 宿主 API 不可用。", "error");
       $("runtime-caption").textContent = "宿主 API 不可用";
       return;
     }

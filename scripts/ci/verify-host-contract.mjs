@@ -30,6 +30,36 @@ const bridge = { postMessage(encoded) {
 const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
 assert.deepEqual([...source.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
+const runtimeRpc = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt');
+for (const retired of ['network.authorizeDomain', 'network.listDomains', 'allowDomains', 'allowUserDomains', 'allowRedirects', 'storageBytes', 'maxBridgePayloadBytes', 'USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
+  assert(!api.includes(retired), `API descriptor retains retired contract: ${retired}`);
+  assert(!manual.includes(retired), `SDK manual retains retired contract: ${retired}`);
+  assert(!source.includes(retired), `Web bridge retains retired contract: ${retired}`);
+  assert(!runtimeRpc.includes(retired), `RPC dispatcher retains retired contract: ${retired}`);
+  assert(!read('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt').includes(retired), `Manifest parser retains retired field: ${retired}`);
+  assert(!read('schema/manifest.schema.json').includes(retired), `Manifest schema retains retired field: ${retired}`);
+}
+for (const clientPath of [
+  'examples/nextflux/src/api/miniflux.js',
+  'examples/nextflux/src/toolbox/cache.js',
+  'examples/nextflux/src/toolbox/cache-worker.js',
+  'examples/nextflux/src/toolbox/cache-client.js',
+  'examples/nextflux/src/toolbox/actions.js',
+  'examples/nextflux/src/toolbox/network.js',
+  'examples/nextflux/src/toolbox/title-filter/title-filter-api.mjs',
+  'examples/health-records/web/app.mjs',
+  'examples/health-records/web/io.mjs',
+  'examples/rss-scout/app.js',
+  'examples/rss-scout/network.js',
+  'examples/stock-monitor/app.js',
+  'examples/github-actions-watcher/app.js',
+  'examples/notification-lab/app.js',
+]) {
+  const client = read(clientPath);
+  for (const retired of ['USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
+    assert(!client.includes(retired), `${clientPath} retains retired host error: ${retired}`);
+  }
+}
 await context.ToolBox.clipboard.writeText('');
 assert.equal(sent.at(-1).params.text, '');
 await context.ToolBox.share.text('line\nnext');
