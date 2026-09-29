@@ -110,7 +110,7 @@ function ProgressiveArticle({ articleId, html, baseUrl, title, shownOriginal, pr
       domRef.current?.navigateAnchor(anchor.getAttribute("data-reading-local-anchor"));
     }} />
     {portals}
-    {state.error ? <div role="alert" className="text-sm text-danger"><p>{state.error}</p><button type="button" className="min-h-12 px-4 text-accent" onClick={() => setAttempt((value) => value + 1)}>重新准备正文</button></div> : !state.complete && !preview && <p role="status" className="text-sm text-muted">正在准备正文…</p>}
+    {state.error ? <div role="alert" className="text-sm text-danger"><p>{state.error}</p><button type="button" className="min-h-12 px-4 text-accent" onClick={() => setAttempt((value) => value + 1)}>重新准备正文</button></div> : !state.complete && !preview && !state.ready && <p role="status" className="text-sm text-muted">正在准备正文…</p>}
   </>;
 }
 
