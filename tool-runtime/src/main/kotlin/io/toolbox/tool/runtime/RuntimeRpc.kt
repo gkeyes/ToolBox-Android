@@ -322,6 +322,13 @@ data class RuntimeBackgroundSessionSummary(
     val restoreAfterReboot: Boolean,
 )
 
+data class RuntimeBackgroundActivityRequest(
+    val sessionId: String,
+    val text: String,
+    val detail: String?,
+    val updatedAt: Long?,
+)
+
 interface RuntimeContinuousBackgroundHandler {
     suspend fun start(options: RuntimeBackgroundStartOptions): RuntimeBackgroundSessionSummary
     suspend fun stop(sessionId: String): Boolean
@@ -333,6 +340,12 @@ interface RuntimeContinuousBackgroundHandler {
         secondaryText: String?,
         updatedAt: Long?,
     ) = Unit
+    suspend fun updateActivity(request: RuntimeBackgroundActivityRequest) = updateStatus(
+        sessionId = request.sessionId,
+        primaryText = request.text,
+        secondaryText = request.detail,
+        updatedAt = request.updatedAt,
+    )
     suspend fun setTimer(key: String, intervalMillis: Long)
     suspend fun cancelTimer(key: String): Boolean
 }
@@ -793,6 +806,10 @@ class RuntimeRpcDispatcher(
                 secondaryText = secondaryText,
                 updatedAt = params.optionalLong("updatedAt", 0, MAX_SAFE_INTEGER),
             )
+            RpcValue.Null
+        }
+        "background.updateActivity" -> {
+            requireHandler(m2Handlers.continuousBackground).updateActivity(params.toBackgroundActivityRequest())
             RpcValue.Null
         }
         "background.getResult" -> {
@@ -1373,6 +1390,16 @@ class RuntimeRpcDispatcher(
 
     private fun RpcValue.ObjectValue.optionalDisplayText(name: String): String? =
         value[name]?.let { requiredText(name).also { text -> require(text.none { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' }) } }
+
+    private fun RpcValue.ObjectValue.toBackgroundActivityRequest(): RuntimeBackgroundActivityRequest {
+        requireOnly("sessionId", "text", "detail", "updatedAt")
+        return RuntimeBackgroundActivityRequest(
+            sessionId = requiredSessionId(),
+            text = requiredDisplayText("text"),
+            detail = optionalDisplayText("detail"),
+            updatedAt = optionalLong("updatedAt", 0, MAX_SAFE_INTEGER),
+        )
+    }
 
     private fun RpcValue.ObjectValue.toBackgroundTaskSpec(periodic: Boolean): RuntimeBackgroundTaskSpec {
         val allowed = if (periodic) {

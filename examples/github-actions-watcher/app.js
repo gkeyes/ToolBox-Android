@@ -1016,9 +1016,20 @@
   }
 
   async function updateBackgroundStatus() {
-    if (!state.monitoring || !state.sessionId || !toolbox()?.background?.updateStatus) return;
+    if (!state.monitoring || !state.sessionId) return;
     try {
-      await bounded(toolbox().background.updateStatus(state.sessionId, backgroundStatusFor()), null, 5_000);
+      const background = toolbox()?.background;
+      const status = backgroundStatusFor();
+      if (typeof background?.updateActivity === "function") {
+        await bounded(background.updateActivity({
+          sessionId: state.sessionId,
+          text: status.primaryText,
+          detail: status.secondaryText,
+          updatedAt: status.updatedAt,
+        }), null, 5_000);
+      } else if (typeof background?.updateStatus === "function") {
+        await bounded(background.updateStatus(state.sessionId, status), null, 5_000);
+      }
     } catch (_) {
       // Background status is host chrome; watcher polling must not fail if an older host lacks it.
     }

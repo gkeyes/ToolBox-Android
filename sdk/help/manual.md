@@ -382,6 +382,7 @@ export type ToolBoxMethodName =
   | "background.start"
   | "background.stop"
   | "background.status"
+  | "background.updateActivity"
   | "background.list"
   | "background.listSessions"
   | "background.updateStatus"
@@ -590,6 +591,16 @@ export interface BackgroundSessionSummary {
   readonly restoreAfterReboot: boolean;
 }
 
+export interface BackgroundActivityRequest {
+  readonly sessionId: string;
+  /** Short latest-state summary shown on the ToolBox home screen and foreground notification. */
+  readonly text: string;
+  /** Optional supporting detail; keep it concise because Android may truncate notification text. */
+  readonly detail?: string;
+  /** Timestamp represented by this summary; defaults to the host receive time. */
+  readonly updatedAt?: number;
+}
+
 export interface BackgroundStatusUpdate {
   /** Compact latest-result line shown by the host's running-task surfaces. Omit to clear the stored status. */
   readonly primaryText?: string;
@@ -712,6 +723,8 @@ export interface ToolBoxApi {
     start(options?: BackgroundStartOptions): Promise<BackgroundSessionSummary>;
     stop(sessionId: string): Promise<void>;
     status(sessionId: string): Promise<BackgroundSessionSummary | null>;
+    /** Host 0.8.19+: updates the durable latest-state summary without creating a separate notification. */
+    updateActivity(request: BackgroundActivityRequest): Promise<void>;
     list(): Promise<TaskSummary[]>;
     listSessions(): Promise<BackgroundSessionSummary[]>;
     updateStatus(sessionId: string, status?: BackgroundStatusUpdate): Promise<void>;
