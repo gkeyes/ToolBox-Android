@@ -31,6 +31,7 @@ import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.ui.HostBootstrapScreen
 import io.toolbox.host.ui.LocalToolIconLoader
+import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        applyHyperOsGestureNavigationImmersion()
         foregroundCapabilityBroker = ForegroundCapabilityBroker.attach(this)
         shortcutIntent.value = intent
 
@@ -154,6 +156,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        applyHyperOsGestureNavigationImmersion()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -194,6 +201,7 @@ class MainActivity : ComponentActivity() {
                 SystemBarStyle.dark(transparent)
             }
             enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            applyHyperOsGestureNavigationImmersion()
         }
     }
 }
