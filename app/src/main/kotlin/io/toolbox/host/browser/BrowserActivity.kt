@@ -32,6 +32,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -107,6 +113,9 @@ class BrowserActivity : ComponentActivity() {
     private var clearing by mutableStateOf(false)
     private var fullScreenView by mutableStateOf<View?>(null)
     private var fullScreenCallback: WebChromeClient.CustomViewCallback? = null
+    private var browserChromeHidden by mutableStateOf(false)
+    private var browserScrollDownPx = 0
+    private var browserScrollUpPx = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -182,6 +191,7 @@ class BrowserActivity : ComponentActivity() {
                     error = null
                     loadProgress = 0
                     interaction = interaction.pageStarted()
+                    showBrowserChrome()
                     updateNavigation(view)
                 }
 
@@ -280,6 +290,9 @@ class BrowserActivity : ComponentActivity() {
                     interaction = interaction.rendererResponsive()
                 }
             })
+            page.setOnScrollChangeListener { view, _, scrollY, _, oldScrollY ->
+                if (view === webView) updateBrowserChromeForScroll(scrollY, oldScrollY)
+            }
             page.setDownloadListener { _, _, _, _, _ ->
                 if (page === webView) unsupported("内置浏览器暂不支持下载，可从菜单选择系统浏览器。")
             }
@@ -297,6 +310,55 @@ class BrowserActivity : ComponentActivity() {
             webView?.let(::destroyPage)
             interaction = BrowserInteractionState()
             error = "Android System WebView 不可用，请启用或更新系统 WebView 后重试。"
+        }
+    }
+
+    private fun browserChromeLocked(): Boolean {
+        val imeVisible = ViewCompat.getRootWindowInsets(window.decorView)
+            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        return imeVisible || fullScreenView != null || menu || fullAddress || clearConfirmation ||
+            filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
+    }
+
+    private fun showBrowserChrome() {
+        browserChromeHidden = false
+        browserScrollDownPx = 0
+        browserScrollUpPx = 0
+    }
+
+    private fun updateBrowserChromeForScroll(scrollY: Int, oldScrollY: Int) {
+        if (browserChromeLocked()) {
+            showBrowserChrome()
+            return
+        }
+        val density = resources.displayMetrics.density
+        val hideThreshold = (24f * density).toInt().coerceAtLeast(1)
+        val showThreshold = (11f * density).toInt().coerceAtLeast(1)
+        val topThreshold = (8f * density).toInt().coerceAtLeast(1)
+
+        if (scrollY <= topThreshold) {
+            showBrowserChrome()
+            return
+        }
+
+        val delta = scrollY - oldScrollY
+        when {
+            delta > 0 -> {
+                browserScrollDownPx += delta
+                browserScrollUpPx = 0
+                if (!browserChromeHidden && browserScrollDownPx >= hideThreshold) {
+                    browserChromeHidden = true
+                    browserScrollDownPx = 0
+                }
+            }
+            delta < 0 -> {
+                browserScrollUpPx += -delta
+                browserScrollDownPx = 0
+                if (browserChromeHidden && browserScrollUpPx >= showThreshold) {
+                    browserChromeHidden = false
+                    browserScrollUpPx = 0
+                }
+            }
         }
     }
 
@@ -471,13 +533,41 @@ class BrowserActivity : ComponentActivity() {
                 isAppearanceLightNavigationBars = lightSystemBars
             }
         }
+        val chromeLocked = fullScreenView != null || menu || fullAddress || clearConfirmation ||
+            filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
+        LaunchedEffect(chromeLocked) {
+            if (chromeLocked) showBrowserChrome()
+        }
+        val chromeVisible = !browserChromeHidden || chromeLocked
+        val chromeMotion = tween<Int>(durationMillis = 220, easing = CubicBezierEasing(0.2f, 0.75f, 0.2f, 1f))
+
         Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding().imePadding()) {
             Column(Modifier.fillMaxSize()) {
-                BrowserToolbar()
-                Box(Modifier.fillMaxWidth().height(2.dp)) {
-                    if (interaction.loading && loadProgress in 0..99) {
-                        Box(Modifier.fillMaxWidth((loadProgress / 100f).coerceAtLeast(0.02f))
-                            .fillMaxHeight().background(colors.primary))
+                AnimatedVisibility(
+                    visible = chromeVisible,
+                    enter = expandVertically(
+                        expandFrom = Alignment.Top,
+                        animationSpec = chromeMotion,
+                    ) + slideInVertically(
+                        animationSpec = chromeMotion,
+                        initialOffsetY = { -it },
+                    ),
+                    exit = shrinkVertically(
+                        shrinkTowards = Alignment.Top,
+                        animationSpec = chromeMotion,
+                    ) + slideOutVertically(
+                        animationSpec = chromeMotion,
+                        targetOffsetY = { -it },
+                    ),
+                ) {
+                    Column {
+                        BrowserToolbar()
+                        Box(Modifier.fillMaxWidth().height(2.dp)) {
+                            if (interaction.loading && loadProgress in 0..99) {
+                                Box(Modifier.fillMaxWidth((loadProgress / 100f).coerceAtLeast(0.02f))
+                                    .fillMaxHeight().background(colors.primary))
+                            }
+                        }
                     }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -495,8 +585,28 @@ class BrowserActivity : ComponentActivity() {
                         }
                     }
                 }
-                BrowserFilterControls(filters, resumed)
-                if (fullScreenView == null) BrowserBottomBar()
+                AnimatedVisibility(
+                    visible = chromeVisible,
+                    enter = expandVertically(
+                        expandFrom = Alignment.Bottom,
+                        animationSpec = chromeMotion,
+                    ) + slideInVertically(
+                        animationSpec = chromeMotion,
+                        initialOffsetY = { it },
+                    ),
+                    exit = shrinkVertically(
+                        shrinkTowards = Alignment.Bottom,
+                        animationSpec = chromeMotion,
+                    ) + slideOutVertically(
+                        animationSpec = chromeMotion,
+                        targetOffsetY = { it },
+                    ),
+                ) {
+                    Column {
+                        BrowserFilterControls(filters, resumed)
+                        if (fullScreenView == null) BrowserBottomBar()
+                    }
+                }
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
