@@ -1,4 +1,5 @@
-import { cn, Button, Modal, Drawer, ScrollShadow } from "@heroui/react";
+import { cn, Button, Modal, ScrollShadow } from "@heroui/react";
+import MobileSheet from "@/components/ui/MobileSheet.jsx";
 import { useState } from "react";
 import { settingsModalOpen } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
@@ -123,73 +124,53 @@ function ContentArea({ activeTab, showTitle = false }) {
   );
 }
 
-// 移动端设置界面 - 使用 Drawer
+// 移动端设置界面 - 共享手势 Sheet
 function MobileSettings() {
   const isOpen = useStore(settingsModalOpen);
   const [activeTab, setActiveTab] = useState(null);
   const { t } = useTranslation();
 
-  const handleSelectMenu = (id) => {
-    setActiveTab(id);
-  };
-
-  const handleBack = () => {
-    setActiveTab(null);
-  };
-
+  const handleSelectMenu = (id) => setActiveTab(id);
+  const handleBack = () => setActiveTab(null);
   const handleClose = (value) => {
     settingsModalOpen.set(value);
-    if (!value) {
-      setActiveTab(null);
-    }
+    if (!value) setActiveTab(null);
   };
-
-  // 计算当前显示的页面
   const currentPage = activeTab === null ? "menu" : "content";
+  const currentTitle = activeTab === null
+    ? t("common.settings")
+    : t(menuItems.find((item) => item.id === activeTab)?.translationKey || "");
 
   return (
-    <Drawer>
-      <Button className="hidden" />
-      <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={isOpen} onOpenChange={handleClose}>
-        <Drawer.Content>
-          <Drawer.Dialog className="nextflux-modal-surface h-[85vh] p-0">
-            <Drawer.Handle className="p-1" />
-            <Drawer.CloseTrigger className="nextflux-close-button" aria-label={t("common.close")} />
-            <Drawer.Header className="nextflux-close-header px-4 py-1 flex flex-row items-center gap-2">
-              {activeTab !== null && (
-                <Button
-                  isIconOnly
-                  size="sm"
-                  variant="tertiary"
-                  onPress={handleBack}
-                  className="size-6"
-                >
-                  <ArrowLeft className="size-4 text-muted" />
-                </Button>
-              )}
-              <h3 className="text-base font-medium">
-                {activeTab === null
-                  ? t("common.settings")
-                  : t(
-                      menuItems.find((item) => item.id === activeTab)
-                        ?.translationKey || "",
-                    )}
-              </h3>
-            </Drawer.Header>
-            <Drawer.Body className="m-0 p-0 overflow-hidden">
-              <div className="t-settings-slide h-full" data-active={currentPage}>
-                <div className="t-page" data-page-id="menu">
-                  <MenuList onSelect={handleSelectMenu} />
-                </div>
-                <div className="t-page" data-page-id="content">
-                  <ContentArea activeTab={activeTab} />
-                </div>
-              </div>
-            </Drawer.Body>
-          </Drawer.Dialog>
-        </Drawer.Content>
-      </Drawer.Backdrop>
-    </Drawer>
+    <MobileSheet
+      open={isOpen}
+      onOpenChange={handleClose}
+      title={currentTitle}
+      closeLabel={t("common.close")}
+      dialogClassName="h-[85vh]"
+      bodyClassName="overflow-hidden"
+      headerStart={activeTab !== null ? (
+        <Button
+          isIconOnly
+          size="sm"
+          variant="tertiary"
+          onPress={handleBack}
+          className="size-8 min-w-8"
+          aria-label={t("common.back", { defaultValue: "Back" })}
+        >
+          <ArrowLeft className="size-4 text-muted" />
+        </Button>
+      ) : null}
+    >
+      <div className="t-settings-slide h-full" data-active={currentPage}>
+        <div className="t-page" data-page-id="menu">
+          <MenuList onSelect={handleSelectMenu} />
+        </div>
+        <div className="t-page" data-page-id="content">
+          <ContentArea activeTab={activeTab} />
+        </div>
+      </div>
+    </MobileSheet>
   );
 }
 
