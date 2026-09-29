@@ -259,6 +259,8 @@ test("pending article image does not block swipe-back", async ({ page }) => {
   await page.getByRole("button", { name: "打开文章 1" }).click();
   await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 1");
   await expect(page.locator(".article-scroll-area").getByRole("status")).toContainText("图片加载中");
+  await expect(page.locator(".nextflux-article-page")).not.toHaveAttribute("data-reading-motion", "entrance");
+  await expect(page.locator(".article-scroll-area").getByRole("status")).toContainText("图片加载中");
   await touch(page, "touchstart", 60, 250);
   await touch(page, "touchmove", 140, 252);
   await touch(page, "touchend", 140, 252);
