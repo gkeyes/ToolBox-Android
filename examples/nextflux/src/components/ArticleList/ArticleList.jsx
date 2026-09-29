@@ -106,6 +106,7 @@ const ArticleList = () => {
           }}
         />
         <ArticleListFooter />
+        <div className="nextflux-list-transition-cover" aria-hidden="true" />
       </div>
       <ArticleView />
     </div>
