@@ -128,6 +128,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
       width,
       velocity,
       reduceMotion: Boolean(getOptions().reduceMotion),
+      shouldApply: () => ownsMotion(),
       onDone: () => {
         if (disposed || id !== motionId) return;
         cancelMotion = null;
