@@ -162,6 +162,7 @@ test("mobile sheet keeps a small drag and dismisses a deliberate downward drag",
   let dialog = page.getByRole("dialog");
   const handle = dialog.locator(".nextflux-sheet-handle-zone");
   await expect(handle).toBeVisible();
+  const restingTop = (await dialog.boundingBox()).y;
 
   let box = await handle.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -169,7 +170,18 @@ test("mobile sheet keeps a small drag and dismisses a deliberate downward drag",
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 36, { steps: 3 });
   await page.mouse.up();
   await expect(dialog).toBeVisible();
-  await expect.poll(() => dialog.evaluate((element) => getComputedStyle(element).translate)).toMatch(/^(none|0px|0px 0px)$/);
+  await expect.poll(async () => {
+    const geometry = await dialog.boundingBox();
+    const owned = await dialog.evaluate((element) => ({
+      translate: element.style.translate,
+      willChange: element.style.willChange,
+    }));
+    return {
+      settled: Math.abs(geometry.y - restingTop) < 1,
+      translate: owned.translate,
+      willChange: owned.willChange,
+    };
+  }).toEqual({ settled: true, translate: "", willChange: "" });
 
   box = await handle.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
