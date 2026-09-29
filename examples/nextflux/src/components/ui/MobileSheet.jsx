@@ -9,15 +9,26 @@ function animateTranslate(element, from, to, duration, onDone) {
     onDone?.();
     return;
   }
+
+  // Direct drag owns the inline translate. Once the finger releases, clear
+  // that ownership and let a temporary compositor animation bridge from the
+  // exact drag distance to the target. No fill is retained after completion,
+  // so HeroUI can resume its own settled geometry without a stale subpixel.
+  element.style.translate = "";
   const animation = element.animate(
     [{ translate: `0 ${from}px` }, { translate: `0 ${to}px` }],
-    { duration, easing: SHEET_EASING, fill: "both" },
+    { duration, easing: SHEET_EASING, fill: "none" },
   );
-  animation.finished.then(() => {
-    animation.cancel();
+  let finished = false;
+  animation.onfinish = () => {
+    if (finished) return;
+    finished = true;
     element.style.translate = "";
     onDone?.();
-  }).catch(() => {});
+  };
+  animation.oncancel = () => {
+    element.style.translate = "";
+  };
 }
 
 export default function MobileSheet({
