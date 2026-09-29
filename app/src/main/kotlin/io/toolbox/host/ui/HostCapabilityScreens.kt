@@ -72,11 +72,13 @@ internal fun RuntimeShellScreen(
     }
 
     RuntimeExitConfirmation(onConfirm = onBack, toolName = toolName)
+    val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background)
             .testTag(HostTestTags.RuntimeShell),
+        immersiveNavigationBar = immersiveNavigationBar,
     ) {
         Box(
             modifier = Modifier
@@ -157,6 +159,7 @@ internal fun RuntimeShellPreviewContent(toolName: String?) {
         modifier = Modifier
             .fillMaxSize()
             .background(ToolBoxThemeTokens.colors.background),
+        immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current),
     ) {
         RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
     }
