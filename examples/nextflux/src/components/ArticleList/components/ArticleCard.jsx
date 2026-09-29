@@ -16,6 +16,8 @@ import { feeds } from "@/stores/feedsStore";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
 import { useTranslation } from "react-i18next";
 import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
+import { useIsMobile } from "@/hooks/use-mobile.jsx";
+import { navigateWithSharedArticleTitle } from "@/motion/sharedElement.mjs";
 
 export default function ArticleCard({ article }) {
   const { t } = useTranslation();
@@ -23,6 +25,7 @@ export default function ArticleCard({ article }) {
   const { articleId } = useParams();
   const cardRef = useRef(null);
   const $feeds = useStore(feeds);
+  const { isMedium } = useIsMobile();
   const {
     markAsReadOnScroll,
     cardImageSize,
@@ -30,6 +33,7 @@ export default function ArticleCard({ article }) {
     showReadingTime,
     textPreviewLines,
     titleLines,
+    reduceMotion,
   } = useStore(settingsState);
   const hasBeenVisible = useRef(false);
   const [contextMenu, setContextMenu] = useState({
@@ -90,7 +94,13 @@ export default function ArticleCard({ article }) {
       basePath === "/"
         ? `/article/${article.id}`
         : `${basePath}/article/${article.id}`;
-    navigate(toUrl);
+    navigateWithSharedArticleTitle({
+      articleId: article.id,
+      to: toUrl,
+      navigate,
+      source: cardRef.current?.querySelector(".card-title"),
+      enabled: !isMedium && !reduceMotion,
+    });
     if (article.status !== "read") {
       await handleMarkRead(article);
     }
@@ -159,6 +169,7 @@ export default function ArticleCard({ article }) {
             <div className="card-content-body flex gap-2">
               <div className="flex flex-col gap-1 flex-1">
                 <h3
+                  data-shared-article-title={article.id}
                   className={cn(
                     "card-title text-base font-semibold text-wrap break-words",
                     article.status === "read"
