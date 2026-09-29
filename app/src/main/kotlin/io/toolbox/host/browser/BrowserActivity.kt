@@ -539,7 +539,7 @@ class BrowserActivity : ComponentActivity() {
             if (chromeLocked) showBrowserChrome()
         }
         val chromeVisible = !browserChromeHidden || chromeLocked
-        val chromeMotion = tween<Int>(durationMillis = 220, easing = CubicBezierEasing(0.2f, 0.75f, 0.2f, 1f))
+        val chromeEasing = CubicBezierEasing(0.2f, 0.75f, 0.2f, 1f)
 
         Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding().imePadding()) {
             Column(Modifier.fillMaxSize()) {
@@ -547,16 +547,16 @@ class BrowserActivity : ComponentActivity() {
                     visible = chromeVisible,
                     enter = expandVertically(
                         expandFrom = Alignment.Top,
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                     ) + slideInVertically(
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                         initialOffsetY = { -it },
                     ),
                     exit = shrinkVertically(
                         shrinkTowards = Alignment.Top,
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                     ) + slideOutVertically(
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                         targetOffsetY = { -it },
                     ),
                 ) {
@@ -589,16 +589,16 @@ class BrowserActivity : ComponentActivity() {
                     visible = chromeVisible,
                     enter = expandVertically(
                         expandFrom = Alignment.Bottom,
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                     ) + slideInVertically(
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                         initialOffsetY = { it },
                     ),
                     exit = shrinkVertically(
                         shrinkTowards = Alignment.Bottom,
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                     ) + slideOutVertically(
-                        animationSpec = chromeMotion,
+                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
                         targetOffsetY = { it },
                     ),
                 ) {
