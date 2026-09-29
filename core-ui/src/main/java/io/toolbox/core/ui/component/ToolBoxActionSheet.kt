@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -48,6 +49,7 @@ fun ToolBoxActionSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     onBackRequest: () -> Unit = onDismissRequest,
+    containerColor: Color? = null,
     content: @Composable () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -134,7 +136,7 @@ fun ToolBoxActionSheet(
                     modifier.widthIn(max = 560.dp).fillMaxWidth()
                         .offset { IntOffset(0, dragOffset.roundToInt()) }
                         .clip(shape)
-                        .background(if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.surface)
+                        .background(containerColor ?: if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.surface)
                         .then(if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape) else Modifier)
                         .pointerInput(Unit) { detectTapGestures { /* Consume taps on the sheet, not its scrim. */ } }
                         .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
