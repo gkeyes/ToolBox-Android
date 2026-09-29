@@ -119,16 +119,17 @@ fun ToolBoxAppScaffold(
 @Composable
 fun ToolBoxRuntimeScaffold(
     modifier: Modifier = Modifier,
+    immersiveNavigationBar: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    var insets = WindowInsets.statusBars.union(WindowInsets.displayCutout)
+    if (!immersiveNavigationBar) {
+        insets = insets.union(WindowInsets.navigationBars)
+    }
     Box(
         modifier = modifier
             .background(ToolBoxThemeTokens.colors.background)
-            .windowInsetsPadding(
-                WindowInsets.statusBars
-                    .union(WindowInsets.navigationBars)
-                    .union(WindowInsets.displayCutout),
-            ),
+            .windowInsetsPadding(insets),
         content = content,
     )
 }
