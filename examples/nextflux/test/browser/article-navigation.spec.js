@@ -287,6 +287,40 @@ test("desktop reading uses the normal article layout without a mobile overlay", 
   expect(errors).toEqual([]);
 });
 
+test("article swipe-back drives an iOS-style background parallax and subtle depth shadow", async ({ page }) => {
+  await openArticle(page);
+  const resting = await page.getByTestId("list").evaluate((element) => ({
+    x: new DOMMatrix(getComputedStyle(element).transform).m41,
+    dim: Number(getComputedStyle(element, "::after").opacity),
+  }));
+  expect(resting.x).toBeLessThan(-70);
+  expect(resting.dim).toBeGreaterThan(0.015);
+  expect(resting.dim).toBeLessThan(0.04);
+
+  await touch(page, "touchstart", 60, 250);
+  await touch(page, "touchmove", 180, 252);
+  const during = await page.evaluate(() => {
+    const list = document.querySelector("[data-testid=list]");
+    const shell = document.querySelector(".nextflux-article-page");
+    return {
+      listX: new DOMMatrix(getComputedStyle(list).transform).m41,
+      dim: Number(getComputedStyle(list, "::after").opacity),
+      shadow: getComputedStyle(shell).boxShadow,
+      articleX: shell.getBoundingClientRect().left,
+    };
+  });
+  expect(during.articleX).toBeGreaterThan(100);
+  expect(during.listX).toBeGreaterThan(resting.x);
+  expect(during.listX).toBeLessThan(0);
+  expect(during.dim).toBeLessThan(resting.dim);
+  expect(during.shadow).not.toBe("none");
+
+  await touch(page, "touchend", 180, 252);
+  await expect(page.getByTestId("route")).toHaveText("/");
+  await expect.poll(() => page.getByTestId("list").evaluate((element) =>
+    new DOMMatrix(getComputedStyle(element).transform).m41)).toBeCloseTo(0, 0);
+});
+
 test("right-swipe tracks the finger and a short paused release cancels", async ({ page }) => {
   await openArticle(page);
   await touch(page, "touchstart", 60, 250);

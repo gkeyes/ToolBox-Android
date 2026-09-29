@@ -92,7 +92,7 @@ const ArticleList = () => {
     <div className="main-content flex">
       <div
         className={cn(
-          "w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
+          "nextflux-article-list-page w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
           floatingSidebar ? "md:border-r" : "",
         )}
       >

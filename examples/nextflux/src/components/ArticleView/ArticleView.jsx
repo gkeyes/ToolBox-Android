@@ -17,6 +17,7 @@ import { getArticleById } from "@/db/storage";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useArticleSwipeBack } from "@/hooks/useArticleSwipeBack.js";
 import { animateReadingValue } from "@/toolbox/reading-motion.mjs";
+import { applyArticleDepth, clearArticleDepth } from "@/hooks/articleDepth.js";
 import { createArticleScrollReset, startArticleRead } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 
@@ -66,6 +67,7 @@ const ArticleView = () => {
       shellMovingRef.current = false;
       page.style.transform = "";
       page.style.willChange = "";
+      clearArticleDepth(page);
       delete page.dataset.readingMotion;
       setPageShown(isOpen);
       setPageMoving(false);
@@ -77,6 +79,7 @@ const ArticleView = () => {
     // A toolbar/system return uses the same response from the current position.
     const from = isOpen && !wasOpen ? width : new DOMMatrix(getComputedStyle(page).transform).m41;
     if (!isOpen && from >= width - 1) {
+      clearArticleDepth(page);
       shellMovingRef.current = false;
       setPageShown(false);
       setPageMoving(false);
@@ -90,15 +93,23 @@ const ArticleView = () => {
     let completed = false;
     const cancel = animateReadingValue({
       from, to: isOpen ? 0 : width, reduceMotion,
-      onUpdate: (x) => { page.style.transform = `translate3d(${x}px,0,0)`; },
+      onUpdate: (x) => {
+        page.style.transform = `translate3d(${x}px,0,0)`;
+        applyArticleDepth(page, x, width);
+      },
       onDone: () => {
         completed = true;
         shellMotionCancelRef.current = null;
         shellMovingRef.current = false;
         page.style.willChange = "";
         delete page.dataset.readingMotion;
-        if (isOpen) page.style.transform = "";
-        else setPageShown(false);
+        if (isOpen) {
+          page.style.transform = "";
+          applyArticleDepth(page, 0, width);
+        } else {
+          clearArticleDepth(page);
+          setPageShown(false);
+        }
         setPageMoving(false);
       },
     });
