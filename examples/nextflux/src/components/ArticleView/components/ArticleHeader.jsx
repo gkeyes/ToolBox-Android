@@ -5,6 +5,7 @@ import { generateReadableDate } from "@/lib/format.js";
 import { safeContentUrl } from "@/toolbox/content.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { cn } from "@/lib/utils.js";
+import { sharedArticleTitleProps } from "@/motion/sharedElement.mjs";
 
 function feedIdOf(article) {
   return article?.feed?.id ?? article?.feedId ?? article?.feed_id ?? null;
@@ -29,6 +30,7 @@ export default function ArticleHeader({
   const title = article.titleText ?? article.title ?? "";
   const safeUrl = safeContentUrl(article.url);
   const alignCenter = titleAlignType === "center";
+  const sharedTitle = sharedArticleTitleProps(article.id);
 
   return (
     <header
@@ -59,9 +61,10 @@ export default function ArticleHeader({
       </div>
 
       <h1
+        {...sharedTitle}
         data-font-block=""
         className="article-title my-2 leading-tight"
-        style={{ fontSize: `${titleFontSize * fontSize}px` }}
+        style={{ fontSize: `${titleFontSize * fontSize}px`, ...(sharedTitle.style || {}) }}
       >
         {interactive && safeUrl ? (
           <a
