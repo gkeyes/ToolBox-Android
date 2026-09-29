@@ -72,7 +72,7 @@ fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
 }
 
 @Composable
-fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reload: () -> Unit) {
+fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
     if (!filters.sheet) return
     var screen by remember { mutableStateOf("home") }
     var editing by remember { mutableStateOf<BrowserFilterRule?>(null) }
@@ -94,7 +94,12 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
             else -> filters.sheet = false
         }
     }
-    ToolBoxActionSheet(title = "广告过滤", onDismissRequest = { filters.sheet = false }, onBackRequest = closeOrBack) {
+    ToolBoxActionSheet(
+        title = "广告过滤",
+        onDismissRequest = { filters.sheet = false },
+        onBackRequest = closeOrBack,
+        containerColor = ToolBoxThemeTokens.colors.background,
+    ) {
         Column(Modifier.heightIn(max = 620.dp)) {
             ToolBoxActionSheetHeader {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -113,59 +118,54 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                         ToolBoxSecondaryButton("取消", { resetConfirm = false }, Modifier.fillMaxWidth())
                     }
                     screen == "home" -> {
-                        ToolBoxText(
-                            site.ifEmpty { "当前页面不支持过滤" },
-                            Modifier.padding(horizontal = 6.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-                        )
-
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                                .background(ToolBoxThemeTokens.colors.primary.copy(alpha = 0.08f))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(ToolBoxThemeTokens.colors.surface)
                         ) {
                             ToolBoxSwitchSettingRow(
-                                if (state.enabled) "过滤已开启" else "过滤已关闭",
+                                "广告过滤总开关",
                                 state.enabled,
                                 { value -> filters.change { it.copy(enabled = value) } },
-                                summary = if (state.enabled) "本页已拦截 $blocked 次请求" else "广告过滤当前暂停",
+                                summary = if (state.enabled) "已开启 · 本页已拦截 $blocked 次请求" else "已关闭",
                             )
                         }
 
                         FilterSectionLabel("当前网站")
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                                .background(ToolBoxThemeTokens.colors.surfaceMuted)
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(ToolBoxThemeTokens.colors.surface)
                         ) {
                             ToolBoxSwitchSettingRow(
                                 "对此网站启用",
                                 site !in state.exceptions,
                                 { enabled ->
-                                    filters.change { it.copy(exceptions = if (enabled) it.exceptions - site else it.exceptions + site) }
+                                    filters.change {
+                                        it.copy(exceptions = if (enabled) it.exceptions - site else it.exceptions + site)
+                                    }
                                 },
-                                summary = if (site.isEmpty()) "当前页面不可用" else "仅影响 $site",
+                                summary = if (site.isEmpty()) "当前页面不可用" else "仅影响当前网站",
                                 enabled = state.enabled && site.isNotEmpty(),
-                            )
-                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
-                            ToolBoxSettingRow(
-                                "选择广告位",
-                                summary = "直接点选页面元素并隐藏",
-                                onClick = filters::startPicker,
-                                enabled = canPick && state.active(site),
                             )
                         }
 
                         FilterSectionLabel("规则与拦截")
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                                .background(ToolBoxThemeTokens.colors.surfaceMuted)
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(ToolBoxThemeTokens.colors.surface)
                         ) {
-                            ToolBoxSettingRow("此网站的规则", summary = "${siteRules.size} 条 · 点选与手动规则", onClick = { screen = "site" })
-                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
-                            ToolBoxSettingRow("全部规则", summary = "${state.rules.size} 条 · 按网站管理", onClick = { screen = "all" })
-                            ToolBoxGroupDivider(startPadding = 16.dp, endPadding = 16.dp)
+                            ToolBoxSettingRow(
+                                "此网站的规则",
+                                summary = "${siteRules.size} 条 · 点选与手动规则",
+                                onClick = { screen = "site" },
+                            )
+                            ToolBoxSettingRow(
+                                "全部规则",
+                                summary = "${state.rules.size} 条 · 按网站管理",
+                                onClick = { screen = "all" },
+                            )
                             ToolBoxSwitchSettingRow(
                                 "基础广告请求拦截",
                                 state.builtIn,
@@ -174,13 +174,6 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                                 enabled = state.enabled,
                             )
                         }
-
-                        ToolBoxSecondaryButton("刷新网页", { filters.sheet = false; reload() }, Modifier.fillMaxWidth())
-                        ToolBoxText(
-                            "点选用于隐藏页面元素；网络规则用于阻止资源加载。网络规则变更后刷新页面生效。",
-                            Modifier.padding(horizontal = 6.dp),
-                            style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
-                        )
                     }
                     else -> {
                         ToolBoxTextButton("添加规则", { editing = BrowserFilterRule(site = site, value = "") }, Modifier.fillMaxWidth(), outlined = false)
@@ -249,6 +242,21 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, reloa
                     if (filters.canUndo) ToolBoxTextButton("撤销上次操作", filters::undoLast, outlined = false)
                 }
                 Spacer(Modifier.height(8.dp))
+            }
+            if (screen == "home" && editing == null && !resetConfirm) {
+                ToolBoxPrimaryButton(
+                    label = "选择广告位",
+                    onClick = filters::startPicker,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = canPick && state.active(site),
+                )
+                ToolBoxText(
+                    "直接点选页面元素并隐藏",
+                    Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    ),
+                )
             }
         }
     }
