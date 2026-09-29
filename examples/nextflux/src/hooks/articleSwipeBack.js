@@ -168,7 +168,8 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
       onStart: ({ deltaX }) => {
         if (deltaX <= 0) return false;
         const takingEntrance = page.dataset.readingMotion === "entrance";
-        if (takingEntrance && getOptions().onTakeoverEntrance?.() === false) return false;
+        const takeoverEntrance = getOptions().onTakeoverEntrance;
+        if (takingEntrance && (typeof takeoverEntrance !== "function" || takeoverEntrance() === false)) return false;
         const transform = page.style.transform || view?.getComputedStyle?.(page)?.transform;
         if (!takingEntrance && !isRestingTransform(transform)) return false;
         const inheritedOffset = takingEntrance ? translateX(transform) : 0;
