@@ -80,6 +80,7 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.browserViewIntent
+import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -114,6 +115,7 @@ class BrowserActivity : ComponentActivity() {
             return
         }
         enableEdgeToEdge()
+        applyHyperOsGestureNavigationImmersion()
         createPage(savedInstanceState?.getBundle("page"))
         val appearance = BrowserAppearance.fromIntent(intent)
         setContent {
@@ -445,6 +447,7 @@ class BrowserActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyHyperOsGestureNavigationImmersion()
         webView?.onResume()
         filters.refresh()
         resumed = true
