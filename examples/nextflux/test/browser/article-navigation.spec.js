@@ -207,6 +207,30 @@ test("navigating to another article while its predecessor is loading clears the 
   expect(errors).toEqual([]);
 });
 
+test("article entry stays offscreen until the first reading screen is ready", async ({ page }) => {
+  await installReadingMessageHold(page);
+  await page.goto("/article-navigation.html#/");
+  await page.evaluate(() => {
+    window.holdReadingMessages = true;
+    document.querySelector("[data-testid=list] button").click();
+  });
+  await expect(page.getByTestId("route")).toHaveText("/article/1");
+  await expect(page.locator(".nextflux-article-page")).toHaveAttribute("data-reading-motion", "preparing");
+  const prepared = await page.locator(".nextflux-article-page").evaluate((element) => ({
+    left: element.getBoundingClientRect().left,
+    width: element.getBoundingClientRect().width,
+  }));
+  expect(prepared.left).toBeGreaterThanOrEqual(prepared.width - 1);
+
+  await releaseReadingMessages(page);
+  await expect(page.locator(".article-scroll-area .article-body")).toHaveAttribute("data-reading-ready", "true");
+  await expect.poll(() => page.locator(".nextflux-article-page").evaluate((element) => ({
+    left: element.getBoundingClientRect().left,
+    motion: element.dataset.readingMotion,
+  }))).toEqual({ left: 0, motion: undefined });
+  await expect(page.locator(".article-scroll-area [role=status]")).toHaveCount(0);
+});
+
 test("enabling reduced motion during entry finishes and releases the article shell", async ({ page }) => {
   await page.goto("/article-navigation.html#/");
   const interrupted = await page.evaluate(() => {
