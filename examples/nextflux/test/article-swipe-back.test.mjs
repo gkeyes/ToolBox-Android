@@ -92,6 +92,40 @@ test("right drag follows the full shell and slow short release restores its orig
   });
 });
 
+test("an entrance can hand off to swipe-back without a jump or stuck motion", () => {
+  for (const [entranceOffset, expectBack] of [[30, false], [120, true]]) {
+    withAnimationClock((clock) => {
+      const h = harness(clock);
+      let takeovers = 0;
+      h.page.style.transform = `translate3d(${entranceOffset}px,0,0)`;
+      h.page.style.willChange = "transform";
+      h.page.dataset.readingMotion = "entrance";
+      h.setOptions({
+        onTakeoverEntrance: () => {
+          takeovers += 1;
+          h.page.style.willChange = "";
+          return true;
+        },
+      });
+      h.start();
+      h.move(55, 100, { timeStamp: 20 });
+      assert.equal(takeovers, 1);
+      assert.equal(h.offset(), entranceOffset + 15);
+      assert.equal(h.page.dataset.readingMotion, "swipe");
+      h.end(55, 100, { timeStamp: 200 });
+      clock.settle();
+      assert.equal(h.backs(), expectBack ? 1 : 0);
+      assert.equal(h.offset(), expectBack ? 360 : 0);
+      if (!expectBack) {
+        assert.equal(h.page.style.transform, "");
+        assert.equal(h.page.style.willChange, "");
+        assert.equal(h.page.dataset.readingMotion, undefined);
+      }
+      h.detach();
+    });
+  }
+});
+
 test("a fast short swipe navigates only after the shell is completely offscreen", () => {
   withAnimationClock((clock) => {
     const h = harness(clock);
