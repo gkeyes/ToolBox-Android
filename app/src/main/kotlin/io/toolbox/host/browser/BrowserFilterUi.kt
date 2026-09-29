@@ -127,6 +127,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
                                 "广告过滤总开关",
                                 state.enabled,
                                 { value -> filters.change { it.copy(enabled = value) } },
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = if (state.enabled) "已开启 · 本页已拦截 $blocked 次请求" else "已关闭",
                             )
                         }
@@ -145,6 +146,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
                                         it.copy(exceptions = if (enabled) it.exceptions - site else it.exceptions + site)
                                     }
                                 },
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = if (site.isEmpty()) "当前页面不可用" else "仅影响当前网站",
                                 enabled = state.enabled && site.isNotEmpty(),
                             )
@@ -158,11 +160,13 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
                         ) {
                             ToolBoxSettingRow(
                                 "此网站的规则",
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = "${siteRules.size} 条 · 点选与手动规则",
                                 onClick = { screen = "site" },
                             )
                             ToolBoxSettingRow(
                                 "全部规则",
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = "${state.rules.size} 条 · 按网站管理",
                                 onClick = { screen = "all" },
                             )
@@ -170,6 +174,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
                                 "基础广告请求拦截",
                                 state.builtIn,
                                 { value -> filters.change { it.copy(builtIn = value) } },
+                                modifier = Modifier.padding(horizontal = 12.dp),
                                 summary = "阻止常见广告资源主机",
                                 enabled = state.enabled,
                             )
