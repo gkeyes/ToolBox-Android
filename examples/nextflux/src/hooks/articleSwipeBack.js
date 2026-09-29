@@ -5,7 +5,7 @@ const SYSTEM_EDGE_PX = 24;
 
 export function shouldFinishArticleSwipe(distance, width, velocity) {
   if (distance <= 0 || width <= 0 || velocity < -120) return false;
-  return distance >= width * 0.15 || (distance >= 24 && velocity >= 600);
+  return distance >= width * 0.10 || (distance >= 24 && velocity >= 600);
 }
 
 function translateX(value) {
