@@ -154,6 +154,7 @@ internal class RuntimeSessionManager(
     private val mutableNotificationSnapshots = MutableStateFlow(
         RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false),
     )
+    private var hostActivityResumed = false
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
@@ -182,6 +183,12 @@ internal class RuntimeSessionManager(
         }
     }
 
+    fun setHostActivityResumed(resumed: Boolean) {
+        if (hostActivityResumed == resumed) return
+        hostActivityResumed = resumed
+        hosts.values.forEach(::updateWebViewPlayback)
+    }
+
     private fun applyRuntimeTheme() {
         val dark = currentTheme.runtimeDarkTheme(RuntimeWebViewTheme.isSystemDark(configuration))
         hosts.values.forEach { RuntimeWebViewTheme.apply(it.webView, dark, configuration) }
@@ -203,6 +210,7 @@ internal class RuntimeSessionManager(
                 visibleTools += toolId
                 hosts[toolId]?.let { host ->
                     host.state = RuntimeHostState.ATTACHED
+                    updateWebViewPlayback(host)
                     stateFlow(toolId).value = host.toUiState()
                 }
                 ensureRuntime(toolId, restoreReason = null)
@@ -234,7 +242,10 @@ internal class RuntimeSessionManager(
             if (plan.destroyHost) {
                 destroyHost(toolId)
             } else {
-                hosts[toolId]?.state = RuntimeHostState.BACKGROUND_DETACHED
+                hosts[toolId]?.let { host ->
+                    host.state = RuntimeHostState.BACKGROUND_DETACHED
+                    updateWebViewPlayback(host)
+                }
             }
             if (plan.refreshNotification) refreshForegroundService()
         }
@@ -519,8 +530,21 @@ internal class RuntimeSessionManager(
                                     toolId in visibleTools -> RuntimeHostState.ATTACHED
                                     else -> RuntimeHostState.BACKGROUND_DETACHED
                                 },
+                                playback = RuntimeWebViewPlayback(
+                                    pause = {
+                                        HostTrace.bestEffortSection("runtime.webview.pause") {
+                                            result.webView.onPause()
+                                        }
+                                    },
+                                    resume = {
+                                        HostTrace.bestEffortSection("runtime.webview.resume") {
+                                            result.webView.onResume()
+                                        }
+                                    },
+                                ),
                             )
                             hosts[toolId] = host
+                            updateWebViewPlayback(host)
                             updateSessionProjection()
                             stateFlow(toolId).value = host.toUiState()
                         }
@@ -549,6 +573,7 @@ internal class RuntimeSessionManager(
             recoveryStatus.remove(toolId)
             current.mainEntryLoaded = true
             current.state = if (toolId in visibleTools) RuntimeHostState.ATTACHED else RuntimeHostState.BACKGROUND_DETACHED
+            updateWebViewPlayback(current)
             stateFlow(toolId).value = current.toUiState()
             restoreReason?.let { reason -> current.emitRestore(reason) }
             updateSessionProjection()
@@ -639,6 +664,10 @@ internal class RuntimeSessionManager(
             HostTrace.bestEffortSection("runtime.release") { HardenedRuntimeWebView.release(host.webView) }
         }
         stateFlow(toolId).value = RuntimeUiState.Loading
+    }
+
+    private fun updateWebViewPlayback(host: RuntimeHost) {
+        host.playback.setResumed(host.state == RuntimeHostState.ATTACHED && hostActivityResumed)
     }
 
     private fun stateFlow(toolId: String): MutableStateFlow<RuntimeUiState> =
@@ -1226,6 +1255,7 @@ internal class RuntimeSessionManager(
         val webView: WebView,
         var mainEntryLoaded: Boolean,
         var state: RuntimeHostState,
+        val playback: RuntimeWebViewPlayback,
     ) {
         val versionCode: Int get() = runtime.versionCode
         fun toUiState() = RuntimeUiState.Ready(runtime, webView, mainEntryLoaded)

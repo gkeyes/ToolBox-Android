@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.ThemeMode
@@ -29,6 +30,7 @@ import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.navigation.ToolBoxNavigation
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
+import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.ui.HostBootstrapScreen
 import io.toolbox.host.ui.LocalToolIconLoader
 import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
@@ -39,6 +41,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     private val shortcutIntent = MutableStateFlow<Intent?>(null)
     private var foregroundCapabilityBroker: ForegroundCapabilityBroker? = null
+    private var runtimeSessions: RuntimeSessionManager? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +72,8 @@ class MainActivity : ComponentActivity() {
                 }
                 is HostBootstrapState.Ready -> {
                     LaunchedEffect(state.dependencies) {
+                        runtimeSessions = state.dependencies.runtimeSessions
+                        runtimeSessions?.setHostActivityResumed(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                         withFrameNanos { }
                         dependenciesViewModel.onHostFirstFrame()
                         state.dependencies.runtimeSessions.recover("process")
@@ -158,7 +163,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        runtimeSessions?.setHostActivityResumed(true)
         applyHyperOsGestureNavigationImmersion()
+    }
+
+    override fun onPause() {
+        runtimeSessions?.setHostActivityResumed(false)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -168,6 +179,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        runtimeSessions?.setHostActivityResumed(false)
+        runtimeSessions = null
         foregroundCapabilityBroker?.close()
         foregroundCapabilityBroker = null
         super.onDestroy()

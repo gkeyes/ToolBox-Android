@@ -28,6 +28,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal fun runtimeForegroundServiceTypes(usesLocation: Boolean): Int =
+    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+        if (usesLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+
 internal class RuntimeForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val commands = Mutex()
@@ -44,9 +48,7 @@ internal class RuntimeForegroundService : Service() {
         override fun promote(card: RuntimeNotificationCard, usesLocation: Boolean) {
             val notification = build(card)
             if (Build.VERSION.SDK_INT >= 34) {
-                val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                    if (usesLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
-                startForeground(card.notificationId, notification, types)
+                startForeground(card.notificationId, notification, runtimeForegroundServiceTypes(usesLocation))
             } else {
                 startForeground(card.notificationId, notification)
             }
