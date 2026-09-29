@@ -53,13 +53,13 @@ function harness(clock, extraOptions = {}) {
   };
 }
 
-// Keep the slow article-to-list return boundary at 15% of the page width.
+// Keep the slow article-to-list return boundary at 10% of the page width.
 test("article back decision uses distance, recent velocity and explicit reversal", () => {
-  assert.equal(shouldFinishArticleSwipe(54, 360, 0), true);
-  assert.equal(shouldFinishArticleSwipe(53, 360, 0), false);
+  assert.equal(shouldFinishArticleSwipe(36, 360, 0), true);
+  assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
   assert.equal(shouldFinishArticleSwipe(50, 360, 700), true);
   assert.equal(shouldFinishArticleSwipe(20, 360, 1500), false);
-  assert.equal(shouldFinishArticleSwipe(50, 360, 0), false);
+  assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
   assert.equal(shouldFinishArticleSwipe(200, 360, -500), false);
   assert.equal(shouldFinishArticleSwipe(0, 360, 1500), false);
 });
@@ -72,14 +72,14 @@ test("right drag follows the full shell and slow short release restores its orig
     h.start();
     assert.equal(h.move(45).defaultPrevented, false);
     assert.deepEqual(h.active, []);
-    assert.equal(h.move(80, 100, { timeStamp: 100 }).defaultPrevented, true);
-    assert.equal(h.offset(), 40);
+    assert.equal(h.move(70, 100, { timeStamp: 100 }).defaultPrevented, true);
+    assert.equal(h.offset(), 30);
     assert.equal(h.page.dataset.readingMotion, "swipe");
     assert.deepEqual(h.active, [true]);
-    h.end(80, 100, { timeStamp: 200 });
+    h.end(70, 100, { timeStamp: 200 });
     assert.equal(h.backs(), 0);
     clock.step(16);
-    assert.ok(h.offset() < 40 && h.offset() > 0);
+    assert.ok(h.offset() < 30 && h.offset() > 0);
     clock.settle();
     assert.equal(h.offset(), 0);
     assert.equal(h.page.style.transform, "");
@@ -93,7 +93,7 @@ test("right drag follows the full shell and slow short release restores its orig
 });
 
 test("an entrance can hand off to swipe-back without a jump or stuck motion", () => {
-  for (const [entranceOffset, expectBack] of [[30, false], [120, true]]) {
+  for (const [entranceOffset, expectBack] of [[15, false], [120, true]]) {
     withAnimationClock((clock) => {
       const h = harness(clock);
       let takeovers = 0;
@@ -255,8 +255,8 @@ test("holding a short flick before release expires velocity and cancels back", (
   withAnimationClock((clock) => {
     const h = harness(clock);
     h.start();
-    h.move(90, 100, { timeStamp: 20 });
-    h.end(90, 100, { timeStamp: 200 });
+    h.move(70, 100, { timeStamp: 20 });
+    h.end(70, 100, { timeStamp: 200 });
     clock.settle();
     assert.equal(h.backs(), 0);
     assert.equal(h.offset(), 0);
