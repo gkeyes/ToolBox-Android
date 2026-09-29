@@ -39,13 +39,13 @@ function harness() {
   };
 }
 
-test("8 px direction lock requires a clearly horizontal 1.5-to-1 movement", () => {
+test("8 px direction lock accepts a clearly horizontal 1.25-to-1 movement", () => {
   assert.equal(resolveSwipeDirection(7, -7), null);
   assert.equal(resolveSwipeDirection(8, 0), "horizontal");
   assert.equal(resolveSwipeDirection(8, 8), "vertical");
-  assert.equal(resolveSwipeDirection(8, 6), "vertical");
-  assert.equal(resolveSwipeDirection(15, 10), "vertical");
-  assert.equal(resolveSwipeDirection(16, 10), "horizontal");
+  assert.equal(resolveSwipeDirection(10, 8), "vertical");
+  assert.equal(resolveSwipeDirection(11, 8), "horizontal");
+  assert.equal(resolveSwipeDirection(15, 10), "horizontal");
 });
 
 test("zero coordinates work and the direction-lock event itself stops scrolling", () => {
