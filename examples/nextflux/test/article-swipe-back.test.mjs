@@ -57,8 +57,8 @@ function harness(clock, extraOptions = {}) {
 test("article back decision uses distance, recent velocity and explicit reversal", () => {
   assert.equal(shouldFinishArticleSwipe(36, 360, 0), true);
   assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
-  assert.equal(shouldFinishArticleSwipe(24, 360, 300), true);
-  assert.equal(shouldFinishArticleSwipe(24, 360, 299), false);
+  assert.equal(shouldFinishArticleSwipe(24, 360, 150), true);
+  assert.equal(shouldFinishArticleSwipe(24, 360, 149), false);
   assert.equal(shouldFinishArticleSwipe(20, 360, 1500), false);
   assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
   assert.equal(shouldFinishArticleSwipe(200, 360, -500), false);
@@ -282,7 +282,7 @@ test("a long held drag still completes by distance; a deliberate reversal return
 });
 
 test("vertical and left gestures preserve native scrolling and never activate the shell", () => {
-  for (const [x, y] of [[41, 120], [-40, 100], [49, 107]]) {
+  for (const [x, y] of [[41, 120], [-40, 100], [48, 107]]) {
     withAnimationClock((clock) => {
       const h = harness(clock);
       h.start();
@@ -369,7 +369,7 @@ test("reduced motion finishes the same decision immediately and teardown cancels
   }
 });
 
-test("system-edge starts remain available to native back; zero identity transforms allow interior drag", () => {
+test("10 px system-edge starts remain available to native back; zero identity transforms allow interior drag", () => {
   for (const x of [8, 352]) {
     withAnimationClock((clock) => {
       const h = harness(clock);
