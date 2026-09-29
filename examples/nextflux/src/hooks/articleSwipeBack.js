@@ -234,7 +234,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     page.removeEventListener("touchstart", stopReleaseTouch);
     page.removeEventListener("click", stopSwipeClick, true);
     view?.removeEventListener?.("resize", cancelOnResize);
-    clearNavigationVisual(page);
     restore();
+    clearNavigationVisual(page);
   };
 }
