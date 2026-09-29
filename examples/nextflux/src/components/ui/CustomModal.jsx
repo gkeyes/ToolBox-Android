@@ -1,5 +1,7 @@
 import { useIsMobile } from "@/hooks/use-mobile.jsx";
-import { Drawer, Modal, cn, Button } from "@heroui/react";
+import { Modal, cn, Button } from "@heroui/react";
+import { useTranslation } from "react-i18next";
+import MobileSheet from "@/components/ui/MobileSheet.jsx";
 
 export default function CustomModal({
   open,
@@ -10,30 +12,23 @@ export default function CustomModal({
   footer,
 }) {
   const { isMedium } = useIsMobile();
+  const { t } = useTranslation();
+
   if (isMedium) {
     return (
-      <Drawer>
-        <Button className="hidden" />
-        <Drawer.Backdrop className="nextflux-modal-backdrop" isOpen={open} onOpenChange={onOpenChange}>
-          <Drawer.Content>
-            <Drawer.Dialog className={cn("nextflux-modal-surface p-0", fixedHeight && "h-4/5")}>
-              <Drawer.Handle className="p-1" />
-              <Drawer.CloseTrigger className="nextflux-close-button" />
-              <Drawer.Header className="nextflux-close-header px-4 pt-1 pb-4">
-                <Drawer.Heading>{title}</Drawer.Heading>
-              </Drawer.Header>
-              <Drawer.Body className="nextflux-modal-body m-0 p-0">{children}</Drawer.Body>
-              {footer && (
-                <Drawer.Footer className="nextflux-modal-footer p-4 m-0">
-                  {footer}
-                </Drawer.Footer>
-              )}
-            </Drawer.Dialog>
-          </Drawer.Content>
-        </Drawer.Backdrop>
-      </Drawer>
+      <MobileSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        title={title}
+        closeLabel={t("common.close")}
+        fixedHeight={fixedHeight}
+        footer={footer}
+      >
+        {children}
+      </MobileSheet>
     );
   }
+
   return (
     <Modal>
       <Button className="hidden" />
