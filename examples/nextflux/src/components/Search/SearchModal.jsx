@@ -17,9 +17,13 @@ import { useTranslation } from "react-i18next";
 import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
 import debounce from "lodash/debounce.js";
+import { useIsMobile } from "@/hooks/use-mobile.jsx";
+import MobileSheet from "@/components/ui/MobileSheet.jsx";
+
 export default function SearchModal() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { isMedium } = useIsMobile();
   const isOpen = useStore(searchDialogOpen);
   const $searchResults = useStore(searchResults);
   const $feedSearchResults = useStore(feedSearchResults);
@@ -40,34 +44,18 @@ export default function SearchModal() {
     }
     let ignore = false;
     searching.set(true);
-
-    const handleSearch = debounce(
-      async () => {
-        searchType === "articles"
-          ? searchResults.set([])
-          : feedSearchResults.set([]);
-        try {
-          const res =
-            searchType === "articles"
-              ? await search(keyword)
-              : await searchFeeds(keyword);
-
-          if (ignore) {
-            return;
-          }
-
-          searchType === "articles"
-            ? searchResults.set(res)
-            : feedSearchResults.set(res);
-        } catch {
-          if (!ignore) console.error("搜索失败");
-        } finally {
-          if (!ignore) searching.set(false);
-        }
-      },
-      500,
-      { leading: false, trailing: true },
-    );
+    const handleSearch = debounce(async () => {
+      searchType === "articles" ? searchResults.set([]) : feedSearchResults.set([]);
+      try {
+        const res = searchType === "articles" ? await search(keyword) : await searchFeeds(keyword);
+        if (ignore) return;
+        searchType === "articles" ? searchResults.set(res) : feedSearchResults.set(res);
+      } catch {
+        if (!ignore) console.error("搜索失败");
+      } finally {
+        if (!ignore) searching.set(false);
+      }
+    }, 500, { leading: false, trailing: true });
     handleSearch();
     return () => {
       ignore = true;
@@ -75,13 +63,10 @@ export default function SearchModal() {
     };
   }, [isOpen, keyword, searchType, showHiddenFeeds, isComposing]);
 
-  // 处理选择结果
   const handleSelect = (item) => {
     if (searchType === "articles") {
       navigate(`/article/${item.id}`);
-      if (item.status !== "read") {
-        handleMarkStatus(item);
-      }
+      if (item.status !== "read") handleMarkStatus(item);
     } else {
       navigate(`/feed/${item.id}`);
     }
@@ -90,7 +75,6 @@ export default function SearchModal() {
     setKeyword("");
   };
 
-  // 打开时加载缓存，关闭时清空搜索
   useEffect(() => {
     if (!isOpen) {
       setKeyword("");
@@ -99,6 +83,79 @@ export default function SearchModal() {
       setSearchType("articles");
     }
   }, [isOpen, searchType]);
+
+  const input = (
+    <InputGroup className="bg-transparent shadow-none ring-0 ring-transparent">
+      <InputGroup.Prefix>
+        <SearchIcon className="size-5 text-muted opacity-60 stroke-3" />
+      </InputGroup.Prefix>
+      <InputGroup.Input
+        ref={inputRef}
+        autoFocus
+        className="text-lg"
+        placeholder={searchType === "articles"
+          ? t("search.searchArticlesPlaceholder")
+          : t("search.searchFeedsPlaceholder")}
+        value={keyword}
+        onChange={(event) => setKeyword(event.target.value)}
+        onCompositionStart={() => setIsComposing(true)}
+        onCompositionEnd={() => setIsComposing(false)}
+      />
+    </InputGroup>
+  );
+
+  const results = (
+    <SearchResults
+      results={searchType === "articles" ? $searchResults : $feedSearchResults}
+      keyword={keyword}
+      onSelect={handleSelect}
+      type={searchType}
+      isComposing={isComposing}
+    />
+  );
+
+  const tabs = (
+    <Tabs
+      selectedKey={searchType}
+      onSelectionChange={(key) => {
+        setSearchType(key);
+        inputRef.current?.focus();
+      }}
+    >
+      <Tabs.ListContainer>
+        <Tabs.List
+          aria-label="searchType"
+          className="w-fit *:h-6 *:w-fit *:px-3 *:text-sm *:font-normal p-px gap-0"
+        >
+          <Tabs.Tab id="articles">
+            {t("common.article")}
+            <Tabs.Indicator />
+          </Tabs.Tab>
+          <Tabs.Tab id="feeds">
+            {t("common.feed")}
+            <Tabs.Indicator />
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs.ListContainer>
+    </Tabs>
+  );
+
+  if (isMedium) {
+    return (
+      <MobileSheet
+        open={isOpen}
+        onOpenChange={(open) => searchDialogOpen.set(open)}
+        title={t("common.search", { defaultValue: "搜索" })}
+        closeLabel={t("common.close")}
+        dialogClassName="h-[82vh]"
+        bodyClassName="overflow-hidden flex flex-col"
+      >
+        <div className="p-2 border-b shrink-0">{input}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{results}</div>
+        <div className="p-2 border-t bg-background shrink-0">{tabs}</div>
+      </MobileSheet>
+    );
+  }
 
   return (
     <Modal>
@@ -111,84 +168,18 @@ export default function SearchModal() {
       >
         <Modal.Container scroll="inside" size="lg">
           <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0">
-            <Modal.Header className="p-2 border-b">
-              <InputGroup className="bg-transparent shadow-none ring-0 ring-transparent">
-                <InputGroup.Prefix>
-                  <SearchIcon className="size-5 text-muted opacity-60 stroke-3" />
-                </InputGroup.Prefix>
-                <InputGroup.Input
-                  ref={inputRef}
-                  autoFocus
-                  className="text-lg"
-                  placeholder={
-                    searchType === "articles"
-                      ? t("search.searchArticlesPlaceholder")
-                      : t("search.searchFeedsPlaceholder")
-                  }
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  onCompositionStart={() => setIsComposing(true)}
-                  onCompositionEnd={() => setIsComposing(false)}
-                />
-              </InputGroup>
-            </Modal.Header>
-            <Modal.Body className="nextflux-modal-body p-0 m-0">
-              <SearchResults
-                results={
-                  searchType === "articles"
-                    ? $searchResults
-                    : $feedSearchResults
-                }
-                keyword={keyword}
-                onSelect={handleSelect}
-                type={searchType}
-                isComposing={isComposing}
-              />
-            </Modal.Body>
+            <Modal.Header className="p-2 border-b">{input}</Modal.Header>
+            <Modal.Body className="nextflux-modal-body p-0 m-0">{results}</Modal.Body>
             <Modal.Footer className="p-0 m-0">
               <div className="w-full p-2 border-t bg-background flex items-center justify-between">
-                <Tabs
-                  selectedKey={searchType}
-                  onSelectionChange={(key) => {
-                    setSearchType(key);
-                    if (inputRef.current) {
-                      inputRef.current.focus();
-                    }
-                  }}
-                >
-                  <Tabs.ListContainer>
-                    <Tabs.List
-                      aria-label="searchType"
-                      className="w-fit *:h-6 *:w-fit *:px-3 *:text-sm *:font-normal p-px gap-0"
-                    >
-                      <Tabs.Tab id="articles">
-                        {t("common.article")}
-                        <Tabs.Indicator />
-                      </Tabs.Tab>
-                      <Tabs.Tab id="feeds">
-                        {t("common.feed")}
-                        <Tabs.Indicator />
-                      </Tabs.Tab>
-                    </Tabs.List>
-                  </Tabs.ListContainer>
-                </Tabs>
+                {tabs}
                 <div className="hidden md:flex items-center gap-1 px-1">
-                  <Kbd>
-                    <Kbd.Abbr keyValue="up" />
-                  </Kbd>
-                  <Kbd>
-                    <Kbd.Abbr keyValue="down" />
-                  </Kbd>
-                  <span className="text-xs text-muted font-semibold">
-                    {t("search.toggleItem")}
-                  </span>
+                  <Kbd><Kbd.Abbr keyValue="up" /></Kbd>
+                  <Kbd><Kbd.Abbr keyValue="down" /></Kbd>
+                  <span className="text-xs text-muted font-semibold">{t("search.toggleItem")}</span>
                   <Separator orientation="vertical" className="h-5 mx-1" />
-                  <Kbd>
-                    <Kbd.Abbr keyValue="enter" />
-                  </Kbd>
-                  <span className="text-xs text-muted font-semibold">
-                    {t("search.open")}
-                  </span>
+                  <Kbd><Kbd.Abbr keyValue="enter" /></Kbd>
+                  <span className="text-xs text-muted font-semibold">{t("search.open")}</span>
                 </div>
               </div>
             </Modal.Footer>

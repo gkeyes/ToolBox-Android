@@ -138,32 +138,53 @@ div.force-dark-code-theme .shiki span {
 }
 
 
-/* Only viewport-sized shells are promoted during motion. The article body
-   keeps normal text rendering and never becomes a full-length GPU texture. */
+/* Navigation motion follows the same compositor-first structure used by
+   mature mobile-web stacks: moving pages use transform, while depth effects
+   are separate opacity layers. Article text never becomes a full-page shadow. */
 .nextflux-article-page {
   background: var(--background);
-  box-shadow: var(--nextflux-article-depth-shadow, none);
+  backface-visibility: hidden;
 }
 .nextflux-article-list-page {
   transform-origin: 50% 50%;
-  will-change: auto;
+  backface-visibility: hidden;
 }
-.nextflux-article-list-page::after {
-  content: "";
+.nextflux-list-transition-cover {
   position: absolute;
   inset: 0;
   z-index: 60;
   pointer-events: none;
   background: rgb(0 0 0);
-  opacity: var(--nextflux-list-dim, 0);
+  opacity: 0;
+  will-change: opacity;
+}
+.nextflux-transition-effect {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: -28px;
+  inline-size: 28px;
+  z-index: 19;
+  pointer-events: none;
+  transform: translate3d(0,0,0);
+  will-change: transform;
+}
+.nextflux-transition-shadow {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  will-change: opacity;
+  background: linear-gradient(
+    90deg,
+    rgb(0 0 0 / 0) 0%,
+    rgb(0 0 0 / 0.012) 28%,
+    rgb(0 0 0 / 0.035) 62%,
+    rgb(0 0 0 / 0.075) 100%
+  );
 }
 @media (min-width: 768px) {
-  .nextflux-article-page { --nextflux-article-depth-shadow: none !important; }
-  .nextflux-article-list-page {
-    transform: none !important;
-    --nextflux-list-dim: 0 !important;
-    will-change: auto !important;
-  }
+  .nextflux-transition-effect { display: none !important; }
+  .nextflux-article-list-page { transform: none !important; }
+  .nextflux-list-transition-cover { opacity: 0 !important; }
 }
 .nextflux-article-feed { min-height: 24px; }
 .nextflux-article-feed-button { color: inherit; font: inherit; }

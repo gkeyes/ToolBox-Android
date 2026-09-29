@@ -154,3 +154,39 @@ test("keyboard focus remains visible and Escape still dismisses a modal", async 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+
+test("mobile sheet keeps a small drag and dismisses a deliberate downward drag", async ({ page }) => {
+  await open(page, 393);
+  await page.getByRole("button", { name: "Open modal", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  const handle = dialog.locator(".nextflux-sheet-handle-zone");
+  await expect(handle).toBeVisible();
+  const restingTop = (await dialog.boundingBox()).y;
+
+  let box = await handle.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 36, { steps: 3 });
+  await page.mouse.up();
+  await expect(dialog).toBeVisible();
+  await expect.poll(async () => {
+    const geometry = await dialog.boundingBox();
+    const owned = await dialog.evaluate((element) => ({
+      translate: element.style.translate,
+      willChange: element.style.willChange,
+    }));
+    return {
+      settled: Math.abs(geometry.y - restingTop) < 1,
+      translate: owned.translate,
+      willChange: owned.willChange,
+    };
+  }).toEqual({ settled: true, translate: "", willChange: "" });
+
+  box = await handle.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 240, { steps: 4 });
+  await page.mouse.up();
+  await expect(dialog).toHaveCount(0);
+});

@@ -16,8 +16,17 @@ import { cn } from "@/lib/utils.js";
 import { getArticleById } from "@/db/storage";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useArticleSwipeBack } from "@/hooks/useArticleSwipeBack.js";
-import { animateReadingEntrance, animateReadingValue } from "@/toolbox/reading-motion.mjs";
-import { applyArticleDepth, clearArticleDepth } from "@/hooks/articleDepth.js";
+import {
+  NAVIGATION_STATES,
+  animateNavigationPush,
+  animateNavigationSettle,
+  applyNavigationVisual,
+  clearNavigationVisual,
+  createNavigationTransitionMachine,
+  deferAfterPaint,
+  prepareNavigationPush,
+  restNavigationVisual,
+} from "@/motion/navigationTransition.mjs";
 import { createArticleScrollReset, startArticleRead } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 
@@ -34,6 +43,17 @@ const ArticleView = () => {
   const wasOpenRef = useRef(false);
   const shellMovingRef = useRef(false);
   const shellMotionCancelRef = useRef(null);
+  const deferredResumeCancelRef = useRef(null);
+  const navigationMachineRef = useRef(null);
+  if (!navigationMachineRef.current) {
+    navigationMachineRef.current = createNavigationTransitionMachine({
+      onChange: (state) => {
+        const page = pageRef.current;
+        if (page) page.dataset.navigationState = state;
+      },
+    });
+  }
+
   const $activeArticle = useStore(activeArticle);
   const revisionKeys = useMemo(() => [String(articleId)], [articleId]);
   const revisions = useStore(articleContentRevision, { keys: revisionKeys });
@@ -44,14 +64,29 @@ const ArticleView = () => {
   const { isMedium } = useIsMobile();
   const displayedArticle = String($activeArticle?.id) === articleId ? $activeArticle : null;
   if (displayedArticle) lastArticleRef.current = displayedArticle;
-  // Store publication and Router's transition may commit separately. Keep the
-  // current surface mounted under the frozen preview until the target route
-  // catches up; otherwise this one-frame gap destroys the handoff controller.
   const presentedArticle = displayedArticle ??
     (continuousHandoff || (!articleId && pageShown) ? lastArticleRef.current : null);
   const isArticleVisible = Boolean(presentedArticle) && !error;
   const resetScroll = useMemo(() => createArticleScrollReset(), []);
   const isOpen = Boolean(articleId);
+
+  const setNavigationState = useCallback((next, force = false) => {
+    const machine = navigationMachineRef.current;
+    if (!machine.transition(next) && force) machine.reset(next);
+  }, []);
+
+  const cancelDeferredResume = useCallback(() => {
+    deferredResumeCancelRef.current?.();
+    deferredResumeCancelRef.current = null;
+  }, []);
+
+  const resumeReadingAfterPaint = useCallback(() => {
+    cancelDeferredResume();
+    deferredResumeCancelRef.current = deferAfterPaint(() => {
+      deferredResumeCancelRef.current = null;
+      if (navigationMachineRef.current.state === NAVIGATION_STATES.IDLE) setReadingPaused(false);
+    }, 2);
+  }, [cancelDeferredResume]);
 
   useLayoutEffect(() => {
     resetScroll(scrollAreaRef.current, displayedArticle?.id ?? null);
@@ -59,44 +94,43 @@ const ArticleView = () => {
 
   const startEntrance = useCallback(() => {
     const page = pageRef.current;
-    if (!page || !isMedium || !isOpen || page.dataset.readingMotion !== "preparing") return false;
+    const machine = navigationMachineRef.current;
+    if (!page || !isMedium || !isOpen || machine.state !== NAVIGATION_STATES.PREPARING) return false;
     const width = page.clientWidth || window.innerWidth;
     if (!width) return false;
     const from = new DOMMatrix(getComputedStyle(page).transform).m41 || width;
+
     shellMotionCancelRef.current?.();
     shellMotionCancelRef.current = null;
+    cancelDeferredResume();
+    setNavigationState(NAVIGATION_STATES.ENTERING, true);
     shellMovingRef.current = true;
     setPageShown(true);
     setPageMoving(true);
     setReadingPaused(true);
     page.dataset.readingMotion = "entrance";
     page.style.willChange = "transform";
+
     let completed = false;
-    const cancel = animateReadingEntrance({
+    const cancel = animateNavigationPush(page, {
       from,
-      to: 0,
+      width,
       reduceMotion,
-      onUpdate: (x) => {
-        if (page.dataset.readingMotion !== "entrance") return;
-        page.style.transform = `translate3d(${x}px,0,0)`;
-        applyArticleDepth(page, x, width);
-      },
       onDone: () => {
         if (page.dataset.readingMotion !== "entrance") return;
         completed = true;
         shellMotionCancelRef.current = null;
         shellMovingRef.current = false;
-        page.style.transform = "";
-        page.style.willChange = "";
-        applyArticleDepth(page, 0, width);
         delete page.dataset.readingMotion;
+        setNavigationState(NAVIGATION_STATES.IDLE, true);
         setPageMoving(false);
-        setReadingPaused(false);
+        deferAfterPaint(() => { if (pageRef.current === page) page.style.willChange = ""; }, 1);
+        resumeReadingAfterPaint();
       },
     });
     if (!completed) shellMotionCancelRef.current = cancel;
     return true;
-  }, [isMedium, isOpen, reduceMotion]);
+  }, [cancelDeferredResume, isMedium, isOpen, reduceMotion, resumeReadingAfterPaint, setNavigationState]);
 
   useLayoutEffect(() => {
     const page = pageRef.current;
@@ -107,11 +141,13 @@ const ArticleView = () => {
     if (!isMedium) {
       shellMotionCancelRef.current?.();
       shellMotionCancelRef.current = null;
+      cancelDeferredResume();
       shellMovingRef.current = false;
       page.style.transform = "";
       page.style.willChange = "";
-      clearArticleDepth(page);
+      clearNavigationVisual(page);
       delete page.dataset.readingMotion;
+      navigationMachineRef.current.reset(NAVIGATION_STATES.IDLE);
       setPageShown(isOpen);
       setPageMoving(false);
       setReadingPaused(false);
@@ -121,34 +157,38 @@ const ArticleView = () => {
     if (isOpen && !wasOpen) {
       shellMotionCancelRef.current?.();
       shellMotionCancelRef.current = null;
+      cancelDeferredResume();
       shellMovingRef.current = false;
       const width = page.clientWidth || window.innerWidth;
       setPageShown(true);
       setPageMoving(true);
       setReadingPaused(false);
+      setNavigationState(NAVIGATION_STATES.PREPARING, true);
       page.dataset.readingMotion = "preparing";
       page.style.willChange = "transform";
-      page.style.transform = `translate3d(${width}px,0,0)`;
-      applyArticleDepth(page, width, width);
+      prepareNavigationPush(page, width);
       return;
     }
 
     if (!isOpen && wasOpen) {
       shellMotionCancelRef.current?.();
       shellMotionCancelRef.current = null;
+      cancelDeferredResume();
       const width = page.clientWidth || window.innerWidth;
       const from = new DOMMatrix(getComputedStyle(page).transform).m41;
       if (from >= width - 1) {
-        clearArticleDepth(page);
-        page.style.transform = "";
+        clearNavigationVisual(page);
         page.style.willChange = "";
         delete page.dataset.readingMotion;
+        navigationMachineRef.current.reset(NAVIGATION_STATES.IDLE);
         shellMovingRef.current = false;
         setPageShown(false);
         setPageMoving(false);
         setReadingPaused(false);
         return;
       }
+
+      setNavigationState(NAVIGATION_STATES.EXITING, true);
       setPageShown(true);
       setPageMoving(true);
       setReadingPaused(true);
@@ -156,24 +196,20 @@ const ArticleView = () => {
       page.dataset.readingMotion = "release";
       page.style.willChange = "transform";
       let completed = false;
-      const cancel = animateReadingValue({
+      const cancel = animateNavigationSettle(page, {
         from,
         to: width,
+        width,
         reduceMotion,
-        onUpdate: (x) => {
-          if (page.dataset.readingMotion !== "release") return;
-          page.style.transform = `translate3d(${x}px,0,0)`;
-          applyArticleDepth(page, x, width);
-        },
         onDone: () => {
           if (page.dataset.readingMotion !== "release") return;
           completed = true;
           shellMotionCancelRef.current = null;
           shellMovingRef.current = false;
-          clearArticleDepth(page);
-          page.style.transform = "";
+          clearNavigationVisual(page);
           page.style.willChange = "";
           delete page.dataset.readingMotion;
+          navigationMachineRef.current.reset(NAVIGATION_STATES.IDLE);
           setPageShown(false);
           setPageMoving(false);
           setReadingPaused(false);
@@ -181,7 +217,7 @@ const ArticleView = () => {
       });
       if (!completed) shellMotionCancelRef.current = cancel;
     }
-  }, [isOpen, isMedium, reduceMotion]);
+  }, [cancelDeferredResume, isOpen, isMedium, reduceMotion, setNavigationState]);
 
   useEffect(() => {
     if (!isMedium || !isOpen) return;
@@ -210,15 +246,15 @@ const ArticleView = () => {
   useEffect(() => {
     if (!reduceMotion) return;
     const page = pageRef.current;
-    if (!page || page.dataset.readingMotion !== "entrance") return;
-    const width = page.clientWidth || window.innerWidth;
+    if (!page || navigationMachineRef.current.state !== NAVIGATION_STATES.ENTERING) return;
     shellMotionCancelRef.current?.();
     shellMotionCancelRef.current = null;
     shellMovingRef.current = false;
-    page.style.transform = "";
+    const width = page.clientWidth || window.innerWidth;
+    restNavigationVisual(page, width);
     page.style.willChange = "";
-    applyArticleDepth(page, 0, width);
     delete page.dataset.readingMotion;
+    navigationMachineRef.current.reset(NAVIGATION_STATES.IDLE);
     setPageMoving(false);
     setReadingPaused(false);
   }, [reduceMotion]);
@@ -231,18 +267,26 @@ const ArticleView = () => {
   const handleTakeoverEntrance = useCallback(() => {
     const page = pageRef.current;
     if (!page || page.dataset.readingMotion !== "entrance") return false;
+    const width = page.clientWidth || window.innerWidth;
+    const current = new DOMMatrix(getComputedStyle(page).transform).m41;
     shellMotionCancelRef.current?.();
     shellMotionCancelRef.current = null;
+    applyNavigationVisual(page, current, width);
     shellMovingRef.current = false;
-    page.style.willChange = "";
+    setNavigationState(NAVIGATION_STATES.INTERACTIVE_POP, true);
     setPageMoving(false);
-    setReadingPaused(false);
+    setReadingPaused(true);
     return true;
-  }, []);
+  }, [setNavigationState]);
 
   const handleSwipeActive = useCallback((active) => {
-    setReadingPaused(active);
-  }, []);
+    if (active) {
+      cancelDeferredResume();
+      setReadingPaused(true);
+      return;
+    }
+    if (navigationMachineRef.current.state === NAVIGATION_STATES.IDLE) resumeReadingAfterPaint();
+  }, [cancelDeferredResume, resumeReadingAfterPaint]);
 
   useArticleSwipeBack({
     pageRef,
@@ -250,6 +294,7 @@ const ArticleView = () => {
     onBack: handleBack,
     onTakeoverEntrance: handleTakeoverEntrance,
     onActiveChange: handleSwipeActive,
+    transitionMachine: navigationMachineRef.current,
     reduceMotion,
   });
 
@@ -278,34 +323,43 @@ const ArticleView = () => {
     return () => request.cancel();
   }, [articleId, contentRevision]);
 
-  useEffect(() => () => { imageGalleryActive.set(false); }, [articleId]);
+  useEffect(() => () => {
+    cancelDeferredResume();
+    shellMotionCancelRef.current?.();
+    imageGalleryActive.set(false);
+  }, [articleId, cancelDeferredResume]);
 
-  return <div ref={pageRef} className={cn(
-    "nextflux-article-page min-w-0 flex-1 p-0 h-dvh fixed md:static inset-0 z-20 overflow-hidden",
-    !isOpen && !pageShown ? "hidden md:block" : "",
-    floatingSidebar ? "" : "md:pr-2 md:py-2",
-  )}>
-    {!isArticleVisible ? <EmptyPlaceholder /> : <ScrollShadow ref={scrollAreaRef} isEnabled={false} className={cn(
-      "article-scroll-area h-full bg-background md:bg-transparent relative",
-      floatingSidebar ? "md:bg-transparent" : "md:bg-overlay md:shadow-custom md:rounded-2xl",
+  return <>
+    <div className="nextflux-transition-effect" aria-hidden="true">
+      <div className="nextflux-transition-shadow" />
+    </div>
+    <div ref={pageRef} className={cn(
+      "nextflux-article-page min-w-0 flex-1 p-0 h-dvh fixed md:static inset-0 z-20 overflow-hidden",
+      !isOpen && !pageShown ? "hidden md:block" : "",
+      floatingSidebar ? "" : "md:pr-2 md:py-2",
     )}>
-      <ActionButtons />
-      <ArticlePageContent
-        ref={articleSurfaceRef}
-        article={presentedArticle}
-        readingPaused={readingPaused}
-        className="nextflux-continuous-current-surface"
-      />
-      <ContinuousNextUnread
-        articleId={articleId}
-        scrollAreaRef={scrollAreaRef}
-        surfaceRef={articleSurfaceRef}
-        enabled={isMedium && isOpen && isArticleVisible && !pageMoving}
-        reduceMotion={reduceMotion}
-        onTransitionStateChange={handleContinuousState}
-      />
-    </ScrollShadow>}
-  </div>;
+      {!isArticleVisible ? <EmptyPlaceholder /> : <ScrollShadow ref={scrollAreaRef} isEnabled={false} className={cn(
+        "article-scroll-area h-full bg-background md:bg-transparent relative",
+        floatingSidebar ? "md:bg-transparent" : "md:bg-overlay md:shadow-custom md:rounded-2xl",
+      )}>
+        <ActionButtons />
+        <ArticlePageContent
+          ref={articleSurfaceRef}
+          article={presentedArticle}
+          readingPaused={readingPaused}
+          className="nextflux-continuous-current-surface"
+        />
+        <ContinuousNextUnread
+          articleId={articleId}
+          scrollAreaRef={scrollAreaRef}
+          surfaceRef={articleSurfaceRef}
+          enabled={isMedium && isOpen && isArticleVisible && !pageMoving}
+          reduceMotion={reduceMotion}
+          onTransitionStateChange={handleContinuousState}
+        />
+      </ScrollShadow>}
+    </div>
+  </>;
 };
 
 export default memo(ArticleView);
