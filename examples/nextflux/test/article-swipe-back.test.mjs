@@ -61,7 +61,8 @@ test("article back decision uses distance, recent velocity and explicit reversal
   assert.equal(shouldFinishArticleSwipe(24, 360, 149), false);
   assert.equal(shouldFinishArticleSwipe(20, 360, 1500), false);
   assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
-  assert.equal(shouldFinishArticleSwipe(200, 360, -500), false);
+  assert.equal(shouldFinishArticleSwipe(200, 360, -500), true);
+  assert.equal(shouldFinishArticleSwipe(35, 360, -500), false);
   assert.equal(shouldFinishArticleSwipe(0, 360, 1500), false);
 });
 
@@ -265,17 +266,17 @@ test("holding a short flick before release expires velocity and cancels back", (
   });
 });
 
-test("a long held drag still completes by distance; a deliberate reversal returns to the article", () => {
-  for (const reverse of [false, true]) {
+test("a held drag wins by final distance; reversal cancels only after returning below 10%", () => {
+  for (const [endX, expectBack] of [[240, true], [180, true], [70, false]]) {
     withAnimationClock((clock) => {
       const h = harness(clock);
       h.start();
       h.move(240, 100, { timeStamp: 20 });
-      if (reverse) h.move(180, 100, { timeStamp: 40 });
-      h.end(reverse ? 180 : 240, 100, { timeStamp: reverse ? 50 : 200 });
+      if (endX !== 240) h.move(endX, 100, { timeStamp: 40 });
+      h.end(endX, 100, { timeStamp: endX === 240 ? 200 : 50 });
       clock.settle();
-      assert.equal(h.backs(), reverse ? 0 : 1);
-      assert.equal(h.offset(), reverse ? 0 : 360);
+      assert.equal(h.backs(), expectBack ? 1 : 0);
+      assert.equal(h.offset(), expectBack ? 360 : 0);
       h.detach();
     });
   }
