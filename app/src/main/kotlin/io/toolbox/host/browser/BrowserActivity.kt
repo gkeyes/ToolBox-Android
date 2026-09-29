@@ -513,12 +513,10 @@ class BrowserActivity : ComponentActivity() {
                     menu = false
                     openSystemBrowser()
                 }
-                ToolBoxGroupDivider(startPadding = 32.dp, endPadding = 0.dp)
                 BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
                     copyAddress()
                     menu = false
                 }
-                ToolBoxGroupDivider(startPadding = 32.dp, endPadding = 0.dp)
                 BrowserMenuAction(
                     "清除浏览器网站数据",
                     ToolBoxIconKey.Shield,
