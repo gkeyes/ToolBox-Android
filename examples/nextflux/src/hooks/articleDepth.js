@@ -27,9 +27,10 @@ export function articleDepthState(offset, width) {
   const backgroundProgress = easeOutCubic(progress);
   const reveal = clamp01(progress / 0.045);
   const fade = 1 - progress * 0.30;
+  const rawListX = -0.23 * safeWidth * (1 - backgroundProgress);
   return {
     progress,
-    listX: -0.23 * safeWidth * (1 - backgroundProgress),
+    listX: Math.abs(rawListX) < 1e-9 ? 0 : rawListX,
     dim: 0.025 * (1 - backgroundProgress),
     edgeAlpha: 0.045 * reveal * fade,
     seamAlpha: 0.045 * reveal * 0.90,
