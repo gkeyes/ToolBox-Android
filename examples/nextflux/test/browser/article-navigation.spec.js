@@ -251,6 +251,34 @@ test("narrow-screen reduced-motion reading still switches and returns correctly"
   expect(errors).toEqual([]);
 });
 
+test("right-swipe can interrupt article entrance and return immediately", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/article-navigation.html#/");
+  await expect(page).toHaveTitle("NextFlux article navigation");
+  const entrance = await page.evaluate(() => new Promise((resolve) => {
+    document.querySelector("[data-testid=list] button").click();
+    const started = performance.now();
+    const frame = () => {
+      const shell = document.querySelector(".nextflux-article-page");
+      const viewport = document.querySelector(".article-scroll-area");
+      if (shell?.dataset.readingMotion === "entrance" && viewport) {
+        resolve({ left: shell.getBoundingClientRect().left });
+      } else if (performance.now() - started > 2000) resolve(null);
+      else requestAnimationFrame(frame);
+    };
+    frame();
+  }));
+  expect(entrance).not.toBeNull();
+  expect(entrance.left).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise(requestAnimationFrame));
+  await touch(page, "touchstart", 60, 250);
+  await touch(page, "touchmove", 140, 252);
+  await touch(page, "touchend", 140, 252);
+  await expect(page.getByTestId("route")).toHaveText("/");
+  expect(errors).toEqual([]);
+});
+
 test("desktop reading uses the normal article layout without a mobile overlay", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   const errors = await openArticle(page);
