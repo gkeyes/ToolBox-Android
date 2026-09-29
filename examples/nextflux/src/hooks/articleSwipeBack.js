@@ -101,6 +101,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     gestureRef.current = null;
     cancelMotion?.();
     cancelMotion = null;
+    clearArticleDepth(page);
     restore();
   };
 
