@@ -529,32 +529,134 @@ class BrowserActivity : ComponentActivity() {
                 Spacer(Modifier.height(2.dp))
             }
         }
-        if (fullAddress) ToolBoxModalDialog(onDismissRequest = { fullAddress = false }) {
-            ToolBoxText(
-                title.ifBlank { "网页地址" },
-                modifier = Modifier.semantics { heading() },
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                style = ToolBoxThemeTokens.textStyles.title.copy(
-                    color = colors.textPrimary, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
-                ),
-            )
-            Spacer(Modifier.height(12.dp))
-            ToolBoxText(
-                "完整地址",
-                style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
-            )
-            Spacer(Modifier.height(8.dp))
-            androidx.compose.foundation.text.selection.SelectionContainer {
-                ToolBoxText(address, modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
-                    .verticalScroll(rememberScrollState()),
-                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary))
+        if (fullAddress) {
+            val uri = remember(address) { Uri.parse(address) }
+            val host = uri.host.orEmpty().ifBlank { "网页地址" }
+            val connectionLabel = when (uri.scheme?.lowercase()) {
+                "https" -> "HTTPS 页面"
+                "http" -> "HTTP 页面"
+                else -> "网页地址"
             }
-            Spacer(Modifier.height(16.dp))
-            ToolBoxTextButton("复制链接", ::copyAddress, Modifier.fillMaxWidth().testTag("browser_copy_address"), outlined = false)
-            Spacer(Modifier.height(8.dp))
-            ToolBoxTextButton("使用系统浏览器", ::openSystemBrowser, Modifier.fillMaxWidth(), outlined = false)
-            Spacer(Modifier.height(8.dp))
-            ToolBoxSecondaryButton("关闭", { fullAddress = false }, modifier = Modifier.fillMaxWidth())
+            ToolBoxActionSheet(
+                title = "网页地址",
+                onDismissRequest = { fullAddress = false },
+                containerColor = colors.background,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    ToolBoxActionSheetHeader {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier.size(36.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.softPrimary),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ToolBoxIcon(
+                                    ToolBoxIconKey.Shield,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = colors.primary,
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                ToolBoxText(
+                                    host,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = ToolBoxThemeTokens.textStyles.title.copy(
+                                        color = colors.textPrimary,
+                                        fontSize = 18.sp,
+                                        lineHeight = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    ),
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                ToolBoxText(
+                                    connectionLabel,
+                                    maxLines = 1,
+                                    style = ToolBoxThemeTokens.textStyles.label.copy(
+                                        color = colors.textSecondary,
+                                    ),
+                                )
+                            }
+                            Box(
+                                Modifier.size(36.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(colors.surfaceMuted)
+                                    .clickable(
+                                        role = Role.Button,
+                                        onClickLabel = "关闭地址详情",
+                                        onClick = { fullAddress = false },
+                                    )
+                                    .semantics { contentDescription = "关闭地址详情" },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ToolBoxIcon(
+                                    ToolBoxIconKey.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = colors.textSecondary,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(colors.surface)
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                    ) {
+                        ToolBoxText(
+                            "完整地址",
+                            style = ToolBoxThemeTokens.textStyles.label.copy(
+                                color = colors.textSecondary,
+                            ),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            ToolBoxText(
+                                address,
+                                modifier = Modifier.fillMaxWidth()
+                                    .heightIn(max = 150.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                style = ToolBoxThemeTokens.textStyles.body.copy(
+                                    color = colors.textSecondary,
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                ),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        BrowserAddressSheetAction(
+                            label = "复制链接",
+                            icon = ToolBoxIconKey.Clipboard,
+                            highlighted = true,
+                            modifier = Modifier.weight(1f).testTag("browser_copy_address"),
+                            onClick = ::copyAddress,
+                        )
+                        BrowserAddressSheetAction(
+                            label = "使用系统浏览器",
+                            icon = ToolBoxIconKey.Globe,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            fullAddress = false
+                            openSystemBrowser()
+                        }
+                    }
+                }
+            }
         }
         if (clearConfirmation) ToolBoxModalDialog(onDismissRequest = { if (!clearing) clearConfirmation = false }) {
             ToolBoxText(
@@ -669,6 +771,46 @@ class BrowserActivity : ComponentActivity() {
                     onClick = ::performLoadAction,
                 )
             }
+        }
+    }
+
+    @Composable
+    private fun BrowserAddressSheetAction(
+        label: String,
+        icon: ToolBoxIconKey,
+        modifier: Modifier = Modifier,
+        highlighted: Boolean = false,
+        onClick: () -> Unit,
+    ) {
+        val colors = ToolBoxThemeTokens.colors
+        val background = if (highlighted) colors.softPrimary else colors.surface
+        val tint = if (highlighted) colors.primary else colors.textPrimary
+        Row(
+            modifier
+                .height(52.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(background)
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            ToolBoxIcon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+                tint = tint,
+            )
+            Spacer(Modifier.width(7.dp))
+            ToolBoxText(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.body.copy(
+                    color = tint,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
         }
     }
 
