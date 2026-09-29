@@ -52,3 +52,77 @@ export function animateReadingValue({ from, to, velocity = 0, onUpdate, onDone, 
   if (!cancelled) frame = requestAnimationFrame(tick);
   return cancel;
 }
+
+
+export const READING_ENTRANCE = Object.freeze({
+  duration: 340,
+  x1: 0.32,
+  y1: 0.72,
+  x2: 0,
+  y2: 1,
+});
+
+function bezierCoordinate(t, a1, a2) {
+  const inverse = 1 - t;
+  return 3 * inverse * inverse * t * a1 + 3 * inverse * t * t * a2 + t * t * t;
+}
+
+export function readingEntranceEase(progress) {
+  const target = Math.max(0, Math.min(1, Number(progress) || 0));
+  if (target === 0 || target === 1) return target;
+  let low = 0;
+  let high = 1;
+  let parameter = target;
+  for (let index = 0; index < 14; index += 1) {
+    const x = bezierCoordinate(parameter, READING_ENTRANCE.x1, READING_ENTRANCE.x2);
+    if (x < target) low = parameter;
+    else high = parameter;
+    parameter = (low + high) / 2;
+  }
+  return bezierCoordinate(parameter, READING_ENTRANCE.y1, READING_ENTRANCE.y2);
+}
+
+export function animateReadingEntrance({
+  from,
+  to,
+  onUpdate,
+  onDone,
+  reduceMotion = false,
+  duration = READING_ENTRANCE.duration,
+}) {
+  const start = Number.isFinite(from) ? from : 0;
+  const target = Number.isFinite(to) ? to : start;
+  const distance = target - start;
+  const total = Math.max(1, Number(duration) || READING_ENTRANCE.duration);
+  let cancelled = false;
+  let frame = null;
+
+  const cancel = () => {
+    cancelled = true;
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+  };
+  if (reduceMotion || distance === 0) {
+    onUpdate?.(target);
+    onDone?.();
+    return cancel;
+  }
+
+  const startedAt = performance.now();
+  onUpdate?.(start);
+  const tick = (now) => {
+    if (cancelled) return;
+    const elapsed = Math.max(0, now - startedAt);
+    if (elapsed >= total) {
+      frame = null;
+      onUpdate?.(target);
+      if (!cancelled) onDone?.();
+      return;
+    }
+    const progress = readingEntranceEase(elapsed / total);
+    onUpdate?.(start + distance * progress);
+    if (!cancelled) frame = requestAnimationFrame(tick);
+  };
+  if (!cancelled) frame = requestAnimationFrame(tick);
+  return cancel;
+}
