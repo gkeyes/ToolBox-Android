@@ -235,7 +235,11 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     page.removeEventListener("touchstart", stopReleaseTouch);
     page.removeEventListener("click", stopSwipeClick, true);
     view?.removeEventListener?.("resize", cancelOnResize);
+    const clearOwnedVisual = ownsMotion() || !page.dataset.readingMotion;
     restore();
-    clearNavigationVisual(page);
+    // A parent entrance/release/continuous transition may already own both the
+    // page transform and the shared depth layers. Never erase those on passive
+    // hook cleanup; only clear visuals that still belong to this controller.
+    if (clearOwnedVisual) clearNavigationVisual(page);
   };
 }
