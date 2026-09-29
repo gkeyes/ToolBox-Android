@@ -193,6 +193,7 @@ export function animateNavigationSettle(page, {
   width,
   velocity = 0,
   reduceMotion = false,
+  shouldApply = () => true,
   onDone,
 } = {}) {
   const safeWidth = Math.max(0, Number(width) || page?.clientWidth || 0);
@@ -201,10 +202,14 @@ export function animateNavigationSettle(page, {
     to,
     velocity,
     reduceMotion,
-    onUpdate: (value) => applyNavigationVisual(page, value, safeWidth),
+    onUpdate: (value) => {
+      if (shouldApply()) applyNavigationVisual(page, value, safeWidth);
+    },
     onDone: () => {
-      if (to <= 0) restNavigationVisual(page, safeWidth);
-      else applyNavigationVisual(page, safeWidth, safeWidth);
+      if (shouldApply()) {
+        if (to <= 0) restNavigationVisual(page, safeWidth);
+        else applyNavigationVisual(page, safeWidth, safeWidth);
+      }
       onDone?.();
     },
   });
