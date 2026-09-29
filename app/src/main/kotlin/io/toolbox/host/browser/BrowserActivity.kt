@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -114,8 +115,9 @@ class BrowserActivity : ComponentActivity() {
     private var fullScreenView by mutableStateOf<View?>(null)
     private var fullScreenCallback: WebChromeClient.CustomViewCallback? = null
     private var browserChromeHidden by mutableStateOf(false)
-    private var browserScrollDownPx = 0
-    private var browserScrollUpPx = 0
+    private var browserTouchLastY: Float? = null
+    private var browserTouchDownPx = 0f
+    private var browserTouchUpPx = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -290,8 +292,14 @@ class BrowserActivity : ComponentActivity() {
                     interaction = interaction.rendererResponsive()
                 }
             })
-            page.setOnScrollChangeListener { view, _, scrollY, _, oldScrollY ->
-                if (view === webView) updateBrowserChromeForScroll(scrollY, oldScrollY)
+            page.setOnTouchListener { view, event ->
+                if (view === webView) updateBrowserChromeForTouch(page, event)
+                false
+            }
+            page.setOnScrollChangeListener { view, _, scrollY, _, _ ->
+                if (view === webView && scrollY <= browserChromeTopThresholdPx()) {
+                    showBrowserChrome()
+                }
             }
             page.setDownloadListener { _, _, _, _, _ ->
                 if (page === webView) unsupported("内置浏览器暂不支持下载，可从菜单选择系统浏览器。")
@@ -320,45 +328,79 @@ class BrowserActivity : ComponentActivity() {
             filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
     }
 
-    private fun showBrowserChrome() {
-        browserChromeHidden = false
-        browserScrollDownPx = 0
-        browserScrollUpPx = 0
+    private fun browserChromeTopThresholdPx(): Int =
+        (8f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+
+    private fun resetBrowserChromeGesture() {
+        browserTouchLastY = null
+        browserTouchDownPx = 0f
+        browserTouchUpPx = 0f
     }
 
-    private fun updateBrowserChromeForScroll(scrollY: Int, oldScrollY: Int) {
+    private fun showBrowserChrome() {
+        browserChromeHidden = false
+        browserTouchDownPx = 0f
+        browserTouchUpPx = 0f
+    }
+
+    private fun updateBrowserChromeForTouch(page: WebView, event: MotionEvent) {
         if (browserChromeLocked()) {
             showBrowserChrome()
+            resetBrowserChromeGesture()
             return
         }
-        val density = resources.displayMetrics.density
-        val hideThreshold = (24f * density).toInt().coerceAtLeast(1)
-        val showThreshold = (11f * density).toInt().coerceAtLeast(1)
-        val topThreshold = (8f * density).toInt().coerceAtLeast(1)
 
-        if (scrollY <= topThreshold) {
+        if (page.scrollY <= browserChromeTopThresholdPx()) {
             showBrowserChrome()
+        }
+
+        if (event.pointerCount > 1) {
+            resetBrowserChromeGesture()
             return
         }
 
-        val delta = scrollY - oldScrollY
-        when {
-            delta > 0 -> {
-                browserScrollDownPx += delta
-                browserScrollUpPx = 0
-                if (!browserChromeHidden && browserScrollDownPx >= hideThreshold) {
-                    browserChromeHidden = true
-                    browserScrollDownPx = 0
+        val density = resources.displayMetrics.density
+        val hideThreshold = 24f * density
+        val showThreshold = 11f * density
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                browserTouchLastY = event.y
+                browserTouchDownPx = 0f
+                browserTouchUpPx = 0f
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val previousY = browserTouchLastY ?: event.y
+                val delta = previousY - event.y
+                browserTouchLastY = event.y
+
+                when {
+                    delta > 0f -> {
+                        browserTouchDownPx += delta
+                        browserTouchUpPx = 0f
+                        if (!browserChromeHidden &&
+                            page.scrollY > browserChromeTopThresholdPx() &&
+                            browserTouchDownPx >= hideThreshold
+                        ) {
+                            browserChromeHidden = true
+                            browserTouchDownPx = 0f
+                        }
+                    }
+
+                    delta < 0f -> {
+                        browserTouchUpPx += -delta
+                        browserTouchDownPx = 0f
+                        if (browserChromeHidden && browserTouchUpPx >= showThreshold) {
+                            browserChromeHidden = false
+                            browserTouchUpPx = 0f
+                        }
+                    }
                 }
             }
-            delta < 0 -> {
-                browserScrollUpPx += -delta
-                browserScrollDownPx = 0
-                if (browserChromeHidden && browserScrollUpPx >= showThreshold) {
-                    browserChromeHidden = false
-                    browserScrollUpPx = 0
-                }
-            }
+
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> resetBrowserChromeGesture()
         }
     }
 
