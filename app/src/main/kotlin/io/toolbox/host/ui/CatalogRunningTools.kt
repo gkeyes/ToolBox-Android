@@ -147,6 +147,58 @@ internal fun RunningToolsStopDialog(state: RunningToolsUiState, onCancelStop: ()
     }
 }
 
+private data class RunningToolStatusLines(
+    val primary: String,
+    val secondary: String? = null,
+)
+
+private fun runningToolStatusLines(
+    session: RuntimeBackgroundSessionUi,
+    stopping: Boolean,
+): RunningToolStatusLines {
+    if (stopping) return RunningToolStatusLines("正在停止后台会话")
+
+    session.statusText?.takeIf(String::isNotBlank)?.let { text ->
+        val parts = text.split(" · ")
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+        return if (parts.size > 2) {
+            RunningToolStatusLines(
+                primary = parts.take(2).joinToString(" · "),
+                secondary = parts.drop(2).joinToString(" · "),
+            )
+        } else {
+            RunningToolStatusLines(text.trim())
+        }
+    }
+
+    session.activityPrimaryText?.takeIf(String::isNotBlank)?.let { primary ->
+        return RunningToolStatusLines(
+            primary = primary,
+            secondary = session.activitySecondaryText?.takeIf(String::isNotBlank),
+        )
+    }
+
+    val detailedLiveProgress = session.liveProgress != null
+    val refreshedAt = session.liveUpdatedAt?.let { value ->
+        DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(value))
+    }
+    if (detailedLiveProgress && refreshedAt != null) {
+        return RunningToolStatusLines("$refreshedAt 已刷新")
+    }
+
+    session.livePrimaryText?.takeIf(String::isNotBlank)?.let { primary ->
+        return RunningToolStatusLines(
+            primary = primary,
+            secondary = session.liveSecondaryText?.takeIf {
+                !detailedLiveProgress && it.isNotBlank()
+            },
+        )
+    }
+
+    return RunningToolStatusLines("运行中")
+}
+
 @Composable
 internal fun RunningToolRow(
     session: RuntimeBackgroundSessionUi,
@@ -178,32 +230,30 @@ internal fun RunningToolRow(
                 size = ToolBoxThemeTokens.sizes.compactToolGlyph,
             )
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-            Column(Modifier.weight(1f)) {
-                AppText(text = session.toolName, textStyle = ToolBoxThemeTokens.textStyles.title)
-                val detailedLiveProgress = session.liveProgress != null
-                val refreshedAt = session.liveUpdatedAt?.let { value ->
-                    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(value))
-                }
-                val runtimeStatus = when {
-                    stopping -> "正在停止后台会话"
-                    !session.statusText.isNullOrBlank() -> session.statusText
-                    !session.activityPrimaryText.isNullOrBlank() -> listOfNotNull(
-                        session.activityPrimaryText,
-                        session.activitySecondaryText?.takeIf(String::isNotBlank),
-                    ).joinToString(" · ")
-                    detailedLiveProgress && refreshedAt != null -> "$refreshedAt 已刷新"
-                    !session.livePrimaryText.isNullOrBlank() -> listOfNotNull(
-                        session.livePrimaryText,
-                        session.liveSecondaryText?.takeIf { !detailedLiveProgress && it.isNotBlank() },
-                    ).joinToString(" · ")
-                    else -> "运行中"
-                }
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 AppText(
-                    text = if (stopping) runtimeStatus else "● $runtimeStatus",
+                    text = session.toolName,
+                    textStyle = ToolBoxThemeTokens.textStyles.title,
+                    maxLines = 1,
+                )
+                val status = runningToolStatusLines(session, stopping)
+                AppText(
+                    text = if (stopping) status.primary else "● ${status.primary}",
                     color = if (stopping) colors.textSecondary else colors.onSoftSuccess,
                     textStyle = ToolBoxThemeTokens.textStyles.metadata,
                     maxLines = 1,
                 )
+                status.secondary?.let { secondary ->
+                    AppText(
+                        text = secondary,
+                        color = colors.textSecondary,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        maxLines = 1,
+                    )
+                }
             }
         }
         ToolBoxRunningStatusButton(
