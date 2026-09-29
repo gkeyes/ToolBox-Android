@@ -335,7 +335,7 @@
   async function boot() {
     render();
     if (!toolbox()?.ready) {
-      $("host-caption").textContent = "需要 ToolBox 0.3.2 或更高版本";
+      $("host-caption").textContent = "ToolBox 宿主 API 不可用";
       $("runtime-state").textContent = "宿主不可用";
       $("runtime-state").dataset.state = "error";
       return;

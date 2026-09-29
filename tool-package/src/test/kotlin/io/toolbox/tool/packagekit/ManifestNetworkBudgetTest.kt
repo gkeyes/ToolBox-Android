@@ -26,6 +26,21 @@ class ManifestNetworkBudgetTest {
         }
     }
 
+    @Test
+    fun removedCompatibilityFieldsAreRejected() {
+        val base = manifest(null).toString(Charsets.UTF_8)
+        val removedFields = listOf(
+            base.replace("\"network\":{}", "\"network\":{\"allowDomains\":[]}"),
+            base.replace("\"network\":{}", "\"network\":{\"allowUserDomains\":true}"),
+            base.replace("\"network\":{}", "\"network\":{\"allowRedirects\":true}"),
+            base.replace("\"network\":{}", "\"limits\":{\"storageBytes\":1}"),
+            base.replace("\"network\":{}", "\"limits\":{\"maxBridgePayloadBytes\":1}"),
+        )
+        removedFields.forEach { bytes ->
+            assertTrue(runCatching { ManifestValidator.parse(bytes.toByteArray()) }.exceptionOrNull() is JsonFormatException)
+        }
+    }
+
     private fun manifest(budget: String?) = """{
         "schemaVersion":1,"id":"com.example.budget","name":"Budget","version":"1.0.0","versionCode":1,
         "entry":"index.html","apiVersion":"1.0","minHostVersion":"0.7.8","permissions":[],"securityProfile":"strict",

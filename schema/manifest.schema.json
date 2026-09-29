@@ -57,7 +57,7 @@
     },
     "apiVersion": {
       "const": "1.0",
-      "description": "ToolBox JS API compatibility level."
+      "description": "Current ToolBox JS API contract."
     },
     "minHostVersion": {
       "type": "string",
@@ -389,31 +389,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "allowDomains": {
-          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
-          "deprecated": true,
-          "type": "array",
-          "minItems": 0,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 253,
-            "pattern": "^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$"
-          }
-        },
-        "allowUserDomains": {
-          "type": "boolean",
-          "default": false,
-          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
-          "deprecated": true
-        },
-        "allowRedirects": {
-          "description": "Deprecated compatibility field; ignored for destination approval on ToolBox 0.6.4 and newer.",
-          "deprecated": true,
-          "type": "boolean",
-          "default": true
-        },
         "maxResponseBytes": {
           "type": "integer",
           "minimum": 1,
@@ -462,24 +437,6 @@
         "showHostToolbar": {
           "type": "boolean",
           "default": true
-        }
-      }
-    },
-    "limits": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "storageBytes": {
-          "type": "integer",
-          "minimum": 0,
-          "deprecated": true,
-          "description": "Legacy declaration accepted for compatibility. ToolBox 0.6.5 and newer do not impose a persisted storage capacity quota."
-        },
-        "maxBridgePayloadBytes": {
-          "type": "integer",
-          "minimum": 0,
-          "deprecated": true,
-          "description": "Legacy non-negative declaration accepted for compatibility and ignored. Bridge admission checks current available process heap."
         }
       }
     }

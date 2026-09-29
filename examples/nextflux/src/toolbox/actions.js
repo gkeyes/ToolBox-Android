@@ -3,9 +3,7 @@ import { toast } from "sonner";
 function message(error, permission) {
   return error?.code === "PERMISSION_DENIED"
     ? `请在小工具权限中开启${permission}后重试。`
-    : error?.code === "USER_GESTURE_REQUIRED"
-      ? "请点击按钮后重试。"
-      : "操作未完成，请重试。";
+    : "操作未完成，请重试。";
 }
 export async function copyText(text) {
   try {
@@ -30,12 +28,10 @@ export async function shareText(text) {
 function browserErrorMessage(error) {
   switch (error?.code) {
     case "PERMISSION_DENIED": return "请在小工具权限中开启应用内浏览器后重试。";
-    case "USER_GESTURE_REQUIRED": return "请点击链接或“应用内打开”后重试。";
     case "UNSUPPORTED":
-    case "NOT_FOUND": return "应用内浏览器不可用，请将 ToolBox 升级至 0.7.8 或更新版本后重试。";
+    case "NOT_FOUND": return "应用内浏览器不可用，请重试或复制链接。";
     case "INVALID_SESSION":
     case "SESSION_ENDED": return "当前阅读会话已结束，请重新打开 NextFlux 后重试。";
-    case "RATE_LIMITED": return "打开链接过于频繁，请稍后重试。";
     case "INVALID_REQUEST": return "此链接无法在应用内浏览器中打开，请检查链接地址。";
     case "SYSTEM_PERMISSION_DENIED": return "应用内浏览器无法启动，请重新打开 NextFlux 后重试。";
     default: return "应用内浏览器未能打开，请重试或复制链接。";
@@ -45,10 +41,6 @@ function browserErrorMessage(error) {
 export async function openInBrowser(value) {
   const url = parseLink(value);
   if (!url) return false;
-  if (!window.ToolBox?.browser?.open) {
-    toast.error("请先将 ToolBox 升级至 0.7.8 或更新版本，再打开链接。");
-    return false;
-  }
   try {
     await window.ToolBox.browser.open(url.href);
     return true;

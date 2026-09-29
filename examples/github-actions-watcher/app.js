@@ -1016,7 +1016,7 @@
   }
 
   async function updateBackgroundStatus() {
-    if (!state.monitoring || !state.sessionId || typeof toolbox()?.background?.updateActivity !== "function") return;
+    if (!state.monitoring || !state.sessionId) return;
     try {
       const background = toolbox()?.background;
       const status = backgroundStatusFor();
@@ -1027,7 +1027,7 @@
         updatedAt: status.updatedAt,
       }), null, 5_000);
     } catch (_) {
-      // Background status is host chrome; watcher polling must not fail if an older host lacks it.
+      // Host activity reporting is best effort; polling remains independent.
     }
   }
 
@@ -1195,7 +1195,6 @@
     const id = String(run?.id || "");
     const url = /^\d+$/.test(id) ? `${base}/runs/${id}` : base;
     try {
-      if (!toolbox()?.browser?.open) throw new Error("当前宿主不支持打开链接");
       await toolbox().browser.open(url);
     } catch (error) {
       showToast(error?.code === "PERMISSION_DENIED" || error?.code === "NOT_DECLARED"
@@ -1481,7 +1480,7 @@
   async function boot() {
     renderAll();
     if (!toolbox()?.ready || !model) {
-      $("host-caption").textContent = "需要 ToolBox 0.3.5 或更高版本";
+      $("host-caption").textContent = "ToolBox 宿主 API 不可用";
       renderRuntimeChip();
       return;
     }

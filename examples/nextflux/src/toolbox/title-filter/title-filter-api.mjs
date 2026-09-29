@@ -42,12 +42,11 @@ export function createTitleFilterApi({ feedId, authState, auth, serverUrl, isCur
       const messages = {
         PERMISSION_DENIED: "请在 ToolBox 的小工具权限中开启网络访问。",
         NOT_DECLARED: "当前小工具没有网络权限。",
-        RATE_LIMITED: "请求过于频繁，请稍后重试。",
         NETWORK_TIMEOUT: method === "PUT" ? "保存响应超时，结果尚未确认。请重新载入核对，不要连续提交。" : "读取超时，请重试。",
         NETWORK_UNAVAILABLE: "网络连接失败，请检查网络后重试。",
         CANCELLED: "请求已取消，请重新打开。",
       };
-      const refusedBeforeSend = ["PERMISSION_DENIED", "NOT_DECLARED", "RATE_LIMITED"].includes(error?.code);
+      const refusedBeforeSend = ["PERMISSION_DENIED", "NOT_DECLARED"].includes(error?.code);
       const uncertain = method === "PUT" && !refusedBeforeSend;
       throw filterError(uncertain ? "UNCONFIRMED" : "NETWORK_ERROR", uncertain ? "保存响应未确认，请重新载入核对，不要连续提交。" : messages[error?.code] || "网络请求未完成，请稍后重试。");
     } finally { clearTimeout(timer); }

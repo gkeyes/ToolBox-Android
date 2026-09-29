@@ -34,8 +34,6 @@ data class RuntimeSessionIdentity(
 data class RuntimeInboundContext(
     val sourceOrigin: String,
     val isMainFrame: Boolean,
-    /** Legacy call context, ignored: authorization does not expire with touch age. */
-    val recentTouchAgeMillis: Long? = null,
 )
 
 data class RuntimeRpcRequest(
@@ -58,9 +56,7 @@ enum class RuntimeRpcErrorCode {
     NOT_DECLARED,
     PERMISSION_DENIED,
     SYSTEM_PERMISSION_DENIED,
-    USER_GESTURE_REQUIRED,
     BUSY,
-    RATE_LIMITED,
     QUOTA_EXCEEDED,
     CANCELLED,
     SESSION_ENDED,
@@ -75,19 +71,11 @@ enum class RuntimeRpcErrorCode {
 data class RuntimeRpcError(
     val code: RuntimeRpcErrorCode,
     val message: String,
-    val retryAfterMs: Long? = null,
-) {
-    init { requireValidRetryAfterMs(retryAfterMs) }
-}
-
-internal fun requireValidRetryAfterMs(value: Long?) {
-    require(value == null || value in 0..9_007_199_254_740_991L)
-}
+)
 
 internal fun RuntimeRpcError.toRpcValue(): RpcValue.ObjectValue = RpcValue.ObjectValue(buildMap {
     put("code", RpcValue.StringValue(code.name))
     put("message", RpcValue.StringValue(message))
-    retryAfterMs?.let { put("retryAfterMs", RpcValue.Number(it.toDouble())) }
 })
 
 sealed interface RuntimeRpcResponse {
@@ -102,9 +90,7 @@ sealed interface RuntimeRpcResponse {
 
 sealed interface RuntimePolicyDecision {
     data object Allowed : RuntimePolicyDecision
-    data class Denied(val code: RuntimeRpcErrorCode, val message: String, val retryAfterMs: Long? = null) : RuntimePolicyDecision {
-        init { requireValidRetryAfterMs(retryAfterMs) }
-    }
+    data class Denied(val code: RuntimeRpcErrorCode, val message: String) : RuntimePolicyDecision
 }
 
 interface RuntimeAuthorizationPolicy {
@@ -121,10 +107,7 @@ interface RuntimeAuthorizationPolicy {
 class RuntimeHandlerException(
     val errorCode: RuntimeRpcErrorCode,
     override val message: String,
-    val retryAfterMs: Long? = null,
-) : Exception(message) {
-    init { requireValidRetryAfterMs(retryAfterMs) }
-}
+) : Exception(message)
 
 fun interface RuntimeToastHandler {
     suspend fun show(message: String)
@@ -287,10 +270,7 @@ data class RuntimeBackgroundTaskSummary(
 data class RuntimeBackgroundTaskError(
     val code: RuntimeRpcErrorCode,
     val message: String,
-    val retryAfterMs: Long? = null,
-) {
-    init { requireValidRetryAfterMs(retryAfterMs) }
-}
+)
 
 data class RuntimeBackgroundTaskRunResult(
     val taskId: String,
@@ -421,11 +401,6 @@ interface RuntimeLocationWatchHandler {
     suspend fun clearWatch(watchId: String): Boolean
 }
 
-interface RuntimeNetworkDomainHandler {
-    suspend fun authorizeDomain(domain: String): Boolean
-    suspend fun listDomains(): List<String>
-}
-
 data class RuntimeM3Handlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
@@ -436,7 +411,6 @@ data class RuntimeM3Handlers(
     val location: RuntimeLocationHandler? = null,
     val locationWatch: RuntimeLocationWatchHandler? = null,
     val sessionCleanup: RuntimeSessionCleanupHandler? = null,
-    val networkDomains: RuntimeNetworkDomainHandler? = null,
 )
 
 class RuntimeRpcDispatcher(
@@ -456,8 +430,8 @@ class RuntimeRpcDispatcher(
         get() = (ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
 
     suspend fun dispatch(request: RuntimeRpcRequest, inbound: RuntimeInboundContext): RuntimeRpcResponse {
-        fun failure(code: RuntimeRpcErrorCode, message: String, retryAfterMs: Long? = null) =
-            RuntimeRpcResponse.Failure(request.id, RuntimeRpcError(code, message, retryAfterMs))
+        fun failure(code: RuntimeRpcErrorCode, message: String) =
+            RuntimeRpcResponse.Failure(request.id, RuntimeRpcError(code, message))
 
         if (!isSafeRuntimeRequestId(request.id)) {
             return RuntimeRpcResponse.Failure(
@@ -498,7 +472,7 @@ class RuntimeRpcDispatcher(
                 method.capability
             }
         } catch (failure: RuntimeHandlerException) {
-            return failure(failure.errorCode, failure.message, failure.retryAfterMs)
+            return failure(failure.errorCode, failure.message)
         } catch (_: IllegalArgumentException) {
             return failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
         }
@@ -519,7 +493,7 @@ class RuntimeRpcDispatcher(
         }
         when (val decision = authorization.admit(identity, method, request.encodedBytes)) {
             RuntimePolicyDecision.Allowed -> Unit
-            is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message, decision.retryAfterMs)
+            is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message)
         }
         if (!authorization.isCurrent(identity)) {
             m2Handlers.network?.cancelStreams()
@@ -555,7 +529,7 @@ class RuntimeRpcDispatcher(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: RuntimeHandlerException) {
-            failure(failure.errorCode, failure.message, failure.retryAfterMs)
+            failure(failure.errorCode, failure.message)
         } catch (_: IllegalArgumentException) {
             failure(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid parameters for ${method.name}")
         } catch (error: Exception) {
@@ -638,15 +612,6 @@ class RuntimeRpcDispatcher(
         "clipboard.writeText" -> {
             requireHandler(handlers.clipboardWrite).writeText(params.requiredText("text", maxResponseBytes))
             RpcValue.Null
-        }
-        "network.authorizeDomain" -> {
-            params.requireOnly("domain")
-            val handler = requireHandler(m3Handlers.networkDomains)
-            RpcValue.Bool(handler.authorizeDomain(params.requiredString("domain", 253)))
-        }
-        "network.listDomains" -> {
-            params.requireOnly()
-            RpcValue.ArrayValue(requireHandler(m3Handlers.networkDomains).listDomains().map(RpcValue::StringValue))
         }
         "network.request" -> {
             val response = requireHandler(m2Handlers.network).request(params.toNetworkRequest())
@@ -1073,7 +1038,7 @@ class RuntimeRpcDispatcher(
             error?.let {
                 put(
                     "error",
-                    RuntimeRpcError(it.code, it.message, it.retryAfterMs).toRpcValue(),
+                    RuntimeRpcError(it.code, it.message).toRpcValue(),
                 )
             }
         })

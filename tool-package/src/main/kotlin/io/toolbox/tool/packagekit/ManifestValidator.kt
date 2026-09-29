@@ -4,7 +4,6 @@ internal object ManifestValidator {
     private val idPattern = Regex("^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$")
     private val versionPattern = Regex("^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
     private val apiPattern = Regex("^1\\.0$")
-    private val domainPattern = Regex("^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
     private val allowedPermissions = setOf(
         "storage", "storage.secure", "clipboard.write", "clipboard.read", "share", "browser",
         "files.open", "files.save", "network", "device.basic", "haptics", "notifications",
@@ -46,7 +45,6 @@ internal object ManifestValidator {
             statusBarStyle = ManifestStatusBarStyle.AUTO,
             showHostToolbar = true,
         )
-        root["limits"]?.let(::validateLegacyLimits)
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -86,22 +84,10 @@ internal object ManifestValidator {
 
     private fun parseNetwork(value: JsonValue): ManifestNetwork {
         val network = value.asObject("network")
-        network.requireOnly("network", setOf("allowDomains", "allowRedirects", "maxResponseBytes", "timeoutMs", "allowUserDomains"))
-        val domains = network["allowDomains"]?.asArray("network.allowDomains")?.mapIndexed { index, item ->
-            val domain = item.asString("network.allowDomains[$index]")
-            if (domain.length !in 1..253 || !domainPattern.matches(domain)) {
-                throw JsonFormatException("Invalid network domain: $domain")
-            }
-            domain
-        }.orEmpty()
-        if (domains.toSet().size != domains.size) {
-            throw JsonFormatException("network.allowDomains must contain unique domains")
-        }
+        network.requireOnly("network", setOf("maxResponseBytes", "timeoutMs"))
         val timeoutMs = network["timeoutMs"]?.let {
             requireIntValue(it, "network.timeoutMs", 0, Int.MAX_VALUE)
         } ?: 0
-        network["allowUserDomains"]?.asBoolean("network.allowUserDomains")
-        network["allowRedirects"]?.asBoolean("network.allowRedirects")
         return ManifestNetwork(
             maxResponseBytes = network["maxResponseBytes"]?.let {
                 val number = (it as? JsonValue.NumberValue)?.value
@@ -153,19 +139,6 @@ internal object ManifestValidator {
             statusBarStyle = statusBarStyle,
             showHostToolbar = ui["showHostToolbar"]?.asBoolean("ui.showHostToolbar") ?: true,
         )
-    }
-
-    private fun validateLegacyLimits(value: JsonValue) {
-        val limits = value.asObject("limits")
-        limits.requireOnly("limits", setOf("storageBytes", "maxBridgePayloadBytes"))
-        // Retain legacy JSON shape compatibility without retaining inactive quotas.
-        limits.forEach { (name, value) ->
-            val number = (value as? JsonValue.NumberValue)?.value
-                ?: throw JsonFormatException("limits.$name must be an integer")
-            if (number.signum() < 0 || number.stripTrailingZeros().scale() > 0) {
-                throw JsonFormatException("limits.$name must be a non-negative integer")
-            }
-        }
     }
 
     private fun validateRelativePath(path: String, htmlOnly: Boolean): String {
@@ -221,7 +194,7 @@ internal object ManifestValidator {
     private val TOP_LEVEL_FIELDS = setOf(
         "schemaVersion", "id", "name", "shortName", "description", "version", "versionCode",
         "entry", "icon", "apiVersion", "minHostVersion", "categories", "permissions", "network",
-        "securityProfile", "ui", "limits",
+        "securityProfile", "ui",
     )
     private val PATH_CHARACTERS = Regex("^[A-Za-z0-9._/-]+$")
 }
