@@ -57,7 +57,8 @@ function harness(clock, extraOptions = {}) {
 test("article back decision uses distance, recent velocity and explicit reversal", () => {
   assert.equal(shouldFinishArticleSwipe(36, 360, 0), true);
   assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
-  assert.equal(shouldFinishArticleSwipe(50, 360, 700), true);
+  assert.equal(shouldFinishArticleSwipe(24, 360, 300), true);
+  assert.equal(shouldFinishArticleSwipe(24, 360, 299), false);
   assert.equal(shouldFinishArticleSwipe(20, 360, 1500), false);
   assert.equal(shouldFinishArticleSwipe(35, 360, 0), false);
   assert.equal(shouldFinishArticleSwipe(200, 360, -500), false);
