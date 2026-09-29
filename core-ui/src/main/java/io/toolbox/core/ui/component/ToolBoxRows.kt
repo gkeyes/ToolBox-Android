@@ -141,7 +141,7 @@ fun ToolBoxSettingRow(
         label = "setting row press",
     )
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 64.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 72.dp)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -205,7 +205,13 @@ fun ToolBoxSwitchSettingRow(
         startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
+            .heightIn(
+                min = if (summary.isNullOrBlank()) {
+                    maxOf(sizes.denseRow, sizes.touchTarget)
+                } else {
+                    72.dp
+                },
+            )
             .semantics {
                 role = Role.Switch
                 toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
