@@ -18,6 +18,7 @@ window.navigationFixture = {
   setModal: (value) => isModalOpen.set(value),
   setGallery: (value) => imageGalleryActive.set(value),
   setSummary: (id, value) => aiSummaries.set({ ...aiSummaries.get(), [id]: value }),
+  setArticleContent: (id, content) => { const row = rows.find((item) => item.id === id); if (row) row.content = content; },
   reset: () => { activeArticle.set(null); filteredArticles.set(rows); },
 };
 
