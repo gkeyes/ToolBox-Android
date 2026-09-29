@@ -1,11 +1,11 @@
 import { attachSwipeGesture } from "./swipeGesture.js";
 import { animateReadingValue } from "../toolbox/reading-motion.mjs";
 
-const SYSTEM_EDGE_PX = 24;
+const SYSTEM_EDGE_PX = 10;
 
 export function shouldFinishArticleSwipe(distance, width, velocity) {
   if (distance <= 0 || width <= 0 || velocity < -120) return false;
-  return distance >= width * 0.10 || (distance >= 24 && velocity >= 300);
+  return distance >= width * 0.10 || (distance >= 24 && velocity >= 150);
 }
 
 function translateX(value) {
