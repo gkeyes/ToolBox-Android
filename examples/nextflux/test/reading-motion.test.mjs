@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { animateReadingValue, READING_SPRING } from "../src/toolbox/reading-motion.mjs";
+import { animateReadingEntrance, animateReadingValue, readingEntranceEase, READING_ENTRANCE, READING_SPRING } from "../src/toolbox/reading-motion.mjs";
 import { withAnimationClock } from "./helpers/animation-clock.mjs";
 
 test("reading release uses one critically damped spring and settles without overshoot", () => {
@@ -82,4 +82,34 @@ test("reduced motion and zero-distance values finish exactly once without schedu
       assert.equal(clock.pending(), 0);
     });
   }
+});
+
+
+test("article entrance uses a fixed non-bouncy navigation curve", () => {
+  assert.equal(READING_ENTRANCE.duration, 340);
+  assert.equal(readingEntranceEase(0), 0);
+  assert.equal(readingEntranceEase(1), 1);
+  assert.ok(readingEntranceEase(0.25) > 0.25);
+  assert.ok(readingEntranceEase(0.5) > readingEntranceEase(0.25));
+
+  withAnimationClock((clock) => {
+    const updates = [];
+    let done = 0;
+    animateReadingEntrance({
+      from: 400,
+      to: 0,
+      onUpdate: (value) => updates.push(value),
+      onDone: () => { done += 1; },
+    });
+    clock.step(170);
+    assert.ok(updates.at(-1) < 200);
+    assert.ok(updates.at(-1) > 0);
+    clock.step(170);
+    assert.equal(updates.at(-1), 0);
+    assert.equal(done, 1);
+    for (let index = 1; index < updates.length; index += 1) {
+      assert.ok(updates[index] <= updates[index - 1]);
+      assert.ok(updates[index] >= 0);
+    }
+  });
 });
