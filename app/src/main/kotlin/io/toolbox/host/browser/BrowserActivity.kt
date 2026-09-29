@@ -500,7 +500,10 @@ class BrowserActivity : ComponentActivity() {
             }
             fullScreenView?.let { view -> AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) }
         }
-        BrowserFilterSheet(filters, canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing, reload = ::reload)
+        BrowserFilterSheet(
+            filters,
+            canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing,
+        )
         if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
             Column(Modifier.fillMaxWidth()) {
                 ToolBoxActionSheetHeader {
