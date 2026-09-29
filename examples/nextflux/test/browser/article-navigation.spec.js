@@ -251,6 +251,20 @@ test("narrow-screen reduced-motion reading still switches and returns correctly"
   expect(errors).toEqual([]);
 });
 
+test("pending article image does not block swipe-back", async ({ page }) => {
+  await page.goto("/article-navigation.html#/");
+  await page.waitForFunction(() => Boolean(window.navigationFixture));
+  await page.evaluate(() => window.navigationFixture.setArticleContent(1,
+    '<p>图片前正文。</p><img src="https://reader.example.invalid/proxy/image?signature=pending-nav" alt="pending"><p>图片后正文。</p>'));
+  await page.getByRole("button", { name: "打开文章 1" }).click();
+  await expect(page.locator(".article-scroll-area .article-title")).toHaveText("文章 1");
+  await expect(page.locator(".article-scroll-area").getByRole("status")).toContainText("图片加载中");
+  await touch(page, "touchstart", 60, 250);
+  await touch(page, "touchmove", 140, 252);
+  await touch(page, "touchend", 140, 252);
+  await expect(page.getByTestId("route")).toHaveText("/");
+});
+
 test("desktop reading uses the normal article layout without a mobile overlay", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   const errors = await openArticle(page);
