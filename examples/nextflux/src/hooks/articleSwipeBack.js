@@ -1,5 +1,6 @@
 import { attachSwipeGesture } from "./swipeGesture.js";
 import { animateReadingValue } from "../toolbox/reading-motion.mjs";
+import { applyArticleDepth, clearArticleDepth } from "./articleDepth.js";
 
 const SYSTEM_EDGE_PX = 10;
 
@@ -60,6 +61,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
   const setOffset = (value) => {
     offset = value;
     page.style.transform = `translate3d(${value}px, 0, 0)`;
+    applyArticleDepth(page, value, width || currentWidth());
     if (ownedStyles) ownedStyles.transform = page.style.transform;
   };
   const setActive = (value) => {
@@ -229,6 +231,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     page.removeEventListener("touchstart", stopReleaseTouch);
     page.removeEventListener("click", stopSwipeClick, true);
     view?.removeEventListener?.("resize", cancelOnResize);
+    clearArticleDepth(page);
     restore();
   };
 }
