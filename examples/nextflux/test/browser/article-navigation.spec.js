@@ -311,11 +311,37 @@ test("desktop reading uses the normal article layout without a mobile overlay", 
   expect(errors).toEqual([]);
 });
 
-test("article swipe-back drives an iOS-style background parallax and subtle depth shadow", async ({ page }) => {
+test("article push uses compositor animations and a dedicated navigation state", async ({ page }) => {
+  await page.goto("/article-navigation.html#/");
+  const sample = await page.evaluate(() => new Promise((resolve) => {
+    document.querySelector("[data-testid=list] button").click();
+    const started = performance.now();
+    const frame = () => {
+      const shell = document.querySelector(".nextflux-article-page");
+      const list = document.querySelector("[data-testid=list]");
+      if (shell?.dataset.navigationState === "entering") {
+        resolve({
+          shellAnimations: shell.getAnimations().length,
+          listAnimations: list.getAnimations().length,
+          boxShadow: getComputedStyle(shell).boxShadow,
+        });
+      } else if (performance.now() - started > 2500) resolve(null);
+      else requestAnimationFrame(frame);
+    };
+    frame();
+  }));
+  expect(sample).not.toBeNull();
+  expect(sample.shellAnimations).toBeGreaterThan(0);
+  expect(sample.listAnimations).toBeGreaterThan(0);
+  expect(sample.boxShadow).toBe("none");
+  await expect.poll(() => page.locator(".nextflux-article-page").getAttribute("data-navigation-state")).toBe("idle");
+});
+
+test("article swipe-back drives list parallax, cover opacity and a compositor shadow layer", async ({ page }) => {
   await openArticle(page);
   const resting = await page.getByTestId("list").evaluate((element) => ({
     x: new DOMMatrix(getComputedStyle(element).transform).m41,
-    dim: Number(getComputedStyle(element, "::after").opacity),
+    dim: Number(getComputedStyle(element.querySelector(".nextflux-list-transition-cover")).opacity),
   }));
   expect(resting.x).toBeLessThan(-70);
   expect(resting.dim).toBeGreaterThan(0.015);
@@ -328,8 +354,9 @@ test("article swipe-back drives an iOS-style background parallax and subtle dept
     const shell = document.querySelector(".nextflux-article-page");
     return {
       listX: new DOMMatrix(getComputedStyle(list).transform).m41,
-      dim: Number(getComputedStyle(list, "::after").opacity),
-      shadow: getComputedStyle(shell).boxShadow,
+      dim: Number(getComputedStyle(list.querySelector(".nextflux-list-transition-cover")).opacity),
+      shadowOpacity: Number(getComputedStyle(document.querySelector(".nextflux-transition-shadow")).opacity),
+      boxShadow: getComputedStyle(shell).boxShadow,
       articleX: shell.getBoundingClientRect().left,
     };
   });
@@ -337,7 +364,8 @@ test("article swipe-back drives an iOS-style background parallax and subtle dept
   expect(during.listX).toBeGreaterThan(resting.x);
   expect(during.listX).toBeLessThan(0);
   expect(during.dim).toBeLessThan(resting.dim);
-  expect(during.shadow).not.toBe("none");
+  expect(during.shadowOpacity).toBeGreaterThan(0.2);
+  expect(during.boxShadow).toBe("none");
 
   await touch(page, "touchend", 180, 252);
   await expect(page.getByTestId("route")).toHaveText("/");
