@@ -1,6 +1,11 @@
 import { attachSwipeGesture } from "./swipeGesture.js";
-import { animateReadingValue } from "../toolbox/reading-motion.mjs";
-import { applyArticleDepth, clearArticleDepth } from "./articleDepth.js";
+import {
+  NAVIGATION_STATES,
+  animateNavigationSettle,
+  applyNavigationVisual,
+  clearNavigationVisual,
+  restNavigationVisual,
+} from "../motion/navigationTransition.mjs";
 
 const SYSTEM_EDGE_PX = 10;
 
@@ -32,8 +37,6 @@ function isRestingTransform(value) {
   return entries.length === identity.length && entries.every((entry, index) => entry === identity[index]);
 }
 
-// The DOM controller is also the behavior-test seam. The React hook only keeps
-// current options and app blockers; no frame-level value enters React state.
 export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => false }) {
   const document = page.ownerDocument;
   const view = document.defaultView;
@@ -50,6 +53,12 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
   let active = false;
   let suppressClickUntil = 0;
 
+  const machine = () => getOptions().transitionMachine;
+  const moveState = (next) => {
+    const controller = machine();
+    if (!controller) return;
+    if (!controller.transition(next)) controller.reset(next);
+  };
   const enabled = () => {
     const value = getOptions().enabled;
     return typeof value === "function" ? value() : value !== false;
@@ -58,10 +67,10 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     const selection = document.getSelection?.();
     return !enabled() || isBlocked() || Boolean(selection?.rangeCount && !selection.isCollapsed);
   };
+  const currentWidth = () => Math.max(0, page.clientWidth || view?.innerWidth || 0);
   const setOffset = (value) => {
     offset = value;
-    page.style.transform = `translate3d(${value}px, 0, 0)`;
-    applyArticleDepth(page, value, width || currentWidth());
+    applyNavigationVisual(page, value, width || currentWidth());
     if (ownedStyles) ownedStyles.transform = page.style.transform;
   };
   const setActive = (value) => {
@@ -70,14 +79,12 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     getOptions().onActiveChange?.(value);
   };
   const restore = () => {
+    const marker = page.dataset.readingMotion;
+    const ownsMarker = marker === "swipe" || marker === "swipe-release";
+    if (ownsMarker) restNavigationVisual(page, width || currentWidth());
     if (saved) {
-      const marker = page.dataset.readingMotion;
-      const ownsMarker = marker === "swipe" || marker === "swipe-release";
-      // The parent may have started entrance/exit before this passive cleanup.
-      // Never restore its new styles. A cleared marker can still leave our
-      // promotion/transition behind; restore only values we last wrote.
       if (ownsMarker || !marker) {
-        for (const property of ["transform", "transition", "willChange"]) {
+        for (const property of ["transition", "willChange"]) {
           if (page.style[property] === ownedStyles?.[property]) page.style[property] = saved[property];
         }
       }
@@ -91,17 +98,16 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     offset = 0;
     startOffset = 0;
     phase = "idle";
+    if (machine()?.state !== NAVIGATION_STATES.EXITING) moveState(NAVIGATION_STATES.IDLE);
     setActive(false);
   };
   const ownsMotion = () => page.dataset.readingMotion === "swipe" || page.dataset.readingMotion === "swipe-release";
-  const currentWidth = () => Math.max(0, page.clientWidth || view?.innerWidth || 0);
   const widthChanged = () => Math.abs(currentWidth() - width) > 0.5;
   const stopOwnedMotion = () => {
     motionId += 1;
     gestureRef.current = null;
     cancelMotion?.();
     cancelMotion = null;
-    clearArticleDepth(page);
     restore();
   };
 
@@ -113,20 +119,15 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     cancelMotion = null;
     const id = ++motionId;
     phase = "settling";
+    moveState(NAVIGATION_STATES.SETTLING_POP);
     page.dataset.readingMotion = "swipe-release";
     suppressClickUntil = performance.now() + 250;
-    const cancel = animateReadingValue({
+    const cancel = animateNavigationSettle(page, {
       from: offset,
       to: complete ? width : 0,
+      width,
       velocity,
       reduceMotion: Boolean(getOptions().reduceMotion),
-      onUpdate: (value) => {
-        if (disposed || id !== motionId) return;
-        if (!ownsMotion()) { stopOwnedMotion(); return; }
-        setOffset(value);
-        // A modal/gallery opened after release must still prevent navigation.
-        if (complete && unavailable()) settle(false);
-      },
       onDone: () => {
         if (disposed || id !== motionId) return;
         cancelMotion = null;
@@ -136,7 +137,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
           settle(false);
         } else if (complete) {
           phase = "complete";
-          // Keep the exiting shell offscreen until the route has changed.
+          moveState(NAVIGATION_STATES.EXITING);
           getOptions().onBack?.();
           setActive(false);
         } else {
@@ -184,7 +185,6 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
         startOffset = Math.min(width, Math.max(0, inheritedOffset || 0));
         offset = startOffset;
         saved = {
-          transform: takingEntrance ? "" : page.style.transform,
           transition: page.style.transition,
           willChange: takingEntrance ? "" : page.style.willChange,
           readingMotion: takingEntrance ? undefined : page.dataset.readingMotion,
@@ -198,6 +198,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
         };
         page.dataset.readingMotion = "swipe";
         phase = "tracking";
+        moveState(NAVIGATION_STATES.INTERACTIVE_POP);
         setActive(true);
       },
       onMove: ({ deltaX }) => setOffset(Math.min(width, Math.max(0, startOffset + deltaX))),
@@ -209,6 +210,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
       onCancel: () => settle(false),
     }),
   });
+
   const stopReleaseTouch = (event) => {
     cancelOnResize();
     if ((phase === "settling" || phase === "complete") && event.cancelable) event.preventDefault();
@@ -232,7 +234,7 @@ export function attachArticleSwipeBack(page, { getOptions, isBlocked = () => fal
     page.removeEventListener("touchstart", stopReleaseTouch);
     page.removeEventListener("click", stopSwipeClick, true);
     view?.removeEventListener?.("resize", cancelOnResize);
-    clearArticleDepth(page);
+    clearNavigationVisual(page);
     restore();
   };
 }
