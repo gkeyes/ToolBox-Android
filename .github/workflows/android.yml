@@ -97,8 +97,7 @@ jobs:
                   app/src/main/AndroidManifest.xml|app/src/main/kotlin/io/toolbox/host/browser/*|\
                   app/src/test/kotlin/io/toolbox/host/browser/*|app/src/androidTest/kotlin/io/toolbox/host/browser/*|\
                   app/src/main/assets/browser/*|tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeBrowserUrl.kt|\
-                  scripts/tests/browser-*|.github/workflows/android.yml|\
-                  .github/workflows/browser-legacy-webview.yml|.github/workflows/browser-media-webview.yml)
+                  scripts/tests/browser-*|.github/workflows/android.yml)
                     run_ui=true
                     reason='Browser source, assets, tests, or CI changed; running the full emulator suite.'
                     break
@@ -237,11 +236,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' }}
         with:
           name: apk-${{ github.sha }}
           path: app/build/outputs/apk/
-          if-no-files-found: error
+          if-no-files-found: warn
 
   delivery:
     name: Package stable signed release
