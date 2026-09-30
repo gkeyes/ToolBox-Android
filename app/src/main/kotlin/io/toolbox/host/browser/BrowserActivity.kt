@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.util.Base64
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -100,6 +101,9 @@ import kotlinx.coroutines.launch
  * Local content-filter scripts only manipulate the current webpage DOM. */
 class BrowserActivity : ComponentActivity() {
     private val filters by lazy { BrowserFilterController(this) }
+    private val mediaDiagnosticsScript by lazy {
+        applicationContext.assets.open("browser/media-diagnostics.js").bufferedReader().use { it.readText() }
+    }
     private var webView by mutableStateOf<WebView?>(null)
     private var address by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -111,6 +115,12 @@ class BrowserActivity : ComponentActivity() {
     private var canForward by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
     private var menu by mutableStateOf(false)
+    private var mediaDiagnosticsSheet by mutableStateOf(false)
+    private var mediaDiagnosticsRunning by mutableStateOf(false)
+    private var mediaDiagnosticsReport by mutableStateOf("尚未运行媒体诊断。")
+    private var mediaDiagnosticsCapture = false
+    private var mediaDiagnosticsEpoch = 0
+    private val mediaDiagnosticEvents = ArrayDeque<String>()
     private var userAgentSheet by mutableStateOf(false)
     private var userAgentMode by mutableStateOf(BrowserUserAgentMode.ChromeMobile)
     private val browserPreferences by lazy { getSharedPreferences(BROWSER_PREFERENCES, MODE_PRIVATE) }
@@ -206,6 +216,9 @@ class BrowserActivity : ComponentActivity() {
                     error = null
                     loadProgress = 0
                     interaction = interaction.pageStarted()
+                    if (mediaDiagnosticsCapture) {
+                        mediaDiagnosticsReport = "正在重新加载网页并捕获媒体错误…"
+                    }
                     showBrowserChrome()
                     updateNavigation(view)
                 }
@@ -217,6 +230,13 @@ class BrowserActivity : ComponentActivity() {
                     updateNavigation(view)
                     filters.applyToPage()
                     flushCookies()
+                    if (mediaDiagnosticsCapture) {
+                        val epoch = mediaDiagnosticsEpoch
+                        view.postDelayed(
+                            { collectMediaDiagnostics(view, epoch) },
+                            MEDIA_DIAGNOSTIC_SETTLE_MS,
+                        )
+                    }
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -228,11 +248,32 @@ class BrowserActivity : ComponentActivity() {
 
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
                     if (view !== webView) return
+                    if (mediaDiagnosticsCapture && !request.isForMainFrame) {
+                        BrowserMediaDiagnostics.networkEvent(
+                            label = "加载失败",
+                            url = request.url.toString(),
+                            detail = "code=${failure.errorCode} ${failure.description}",
+                        )?.let(::recordMediaDiagnosticEvent)
+                    }
                     if (request.isForMainFrame && !interaction.stoppedByUser) {
                         error = "网页加载失败，请检查网络后重试。"
                         interaction = interaction.pageFinished()
                         loadProgress = 100
                     }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    errorResponse: WebResourceResponse,
+                ) {
+                    if (view !== webView || !mediaDiagnosticsCapture || request.isForMainFrame) return
+                    BrowserMediaDiagnostics.networkEvent(
+                        label = "HTTP ${errorResponse.statusCode}",
+                        url = request.url.toString(),
+                        detail = errorResponse.reasonPhrase.orEmpty(),
+                        mimeType = errorResponse.mimeType,
+                    )?.let(::recordMediaDiagnosticEvent)
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
@@ -263,7 +304,17 @@ class BrowserActivity : ComponentActivity() {
             }
             page.webChromeClient = object : WebChromeClient() {
                 // Websites may log form values or response bodies; never forward these to Logcat.
-                override fun onConsoleMessage(message: ConsoleMessage): Boolean = true
+                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                    if (page === webView && mediaDiagnosticsCapture) {
+                        BrowserMediaDiagnostics.consoleEvent(
+                            level = message.messageLevel().name,
+                            message = message.message(),
+                            source = message.sourceId(),
+                            line = message.lineNumber(),
+                        )?.let(::recordMediaDiagnosticEvent)
+                    }
+                    return true
+                }
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
                     if (view !== webView || interaction.stoppedByUser) return
                     loadProgress = newProgress.coerceIn(0, 100)
@@ -349,8 +400,9 @@ class BrowserActivity : ComponentActivity() {
     private fun browserChromeLocked(): Boolean {
         val imeVisible = ViewCompat.getRootWindowInsets(window.decorView)
             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-        return imeVisible || fullScreenView != null || menu || userAgentSheet || fullAddress || clearConfirmation ||
-            filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
+        return imeVisible || fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
+            fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
+            interaction.showRecoveryPrompt || error != null
     }
 
     private fun browserChromeTopThresholdPx(): Int =
@@ -495,6 +547,59 @@ class BrowserActivity : ComponentActivity() {
         error = null
         interaction = BrowserInteractionState()
         createPage()
+    }
+
+    private fun recordMediaDiagnosticEvent(event: String) {
+        while (mediaDiagnosticEvents.size >= MAX_MEDIA_DIAGNOSTIC_EVENTS) {
+            mediaDiagnosticEvents.removeFirst()
+        }
+        mediaDiagnosticEvents.addLast(event)
+    }
+
+    private fun startMediaDiagnostics() {
+        if (clearing || interaction.restarting || interaction.unresponsive) return
+        mediaDiagnosticsSheet = true
+        mediaDiagnosticsRunning = true
+        mediaDiagnosticsCapture = true
+        mediaDiagnosticsEpoch++
+        mediaDiagnosticEvents.clear()
+        mediaDiagnosticsReport = "正在重新加载网页并捕获媒体错误…"
+        filters.stopPicker()
+        error = null
+        loadProgress = 0
+        interaction = interaction.pageStarted()
+        val page = webView
+        if (page == null) createPage() else page.reload()
+    }
+
+    private fun collectMediaDiagnostics(page: WebView, epoch: Int) {
+        if (!mediaDiagnosticsCapture || epoch != mediaDiagnosticsEpoch || page !== webView) return
+        mediaDiagnosticsCapture = false
+        val expression = "($mediaDiagnosticsScript)()"
+        page.evaluateJavascript(expression) { raw ->
+            if (epoch != mediaDiagnosticsEpoch || page !== webView) return@evaluateJavascript
+            val encoded = raw?.trim()?.removeSurrounding("\"").orEmpty()
+            val domReport = runCatching {
+                String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+            }.getOrElse { "DOM 诊断脚本没有返回有效结果：${it.javaClass.simpleName}" }
+            val provider = WebView.getCurrentWebViewPackage()
+            mediaDiagnosticsReport = BrowserMediaDiagnostics.buildReport(
+                domReport = domReport,
+                events = mediaDiagnosticEvents.toList(),
+                webViewProvider = listOfNotNull(provider?.packageName, provider?.versionName).joinToString(" "),
+                userAgentMode = userAgentMode.shortLabel,
+                mixedContentMode = page.settings.mixedContentMode,
+            )
+            mediaDiagnosticsRunning = false
+        }
+    }
+
+    private fun copyMediaDiagnostics() {
+        getSystemService(ClipboardManager::class.java)
+            .setPrimaryClip(ClipData.newPlainText("ToolBox 媒体诊断", mediaDiagnosticsReport))
+        if (android.os.Build.VERSION.SDK_INT < 33) {
+            Toast.makeText(this, "诊断报告已复制", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun validUrl(url: String): String? = try { validateRuntimeBrowserUrl(url) } catch (_: IllegalArgumentException) { null }
@@ -652,6 +757,7 @@ class BrowserActivity : ComponentActivity() {
 
     override fun onDestroy() {
         resumed = false
+        mediaDiagnosticsCapture = false
         hideFullScreen()
         unresponsiveRenderer = null
         webView?.let(::destroyPage)
@@ -668,8 +774,9 @@ class BrowserActivity : ComponentActivity() {
                 isAppearanceLightNavigationBars = lightSystemBars
             }
         }
-        val chromeLocked = fullScreenView != null || menu || userAgentSheet || fullAddress || clearConfirmation ||
-            filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
+        val chromeLocked = fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
+            fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
+            interaction.showRecoveryPrompt || error != null
         LaunchedEffect(chromeLocked) {
             if (chromeLocked) showBrowserChrome()
         }
@@ -770,6 +877,14 @@ class BrowserActivity : ComponentActivity() {
                     userAgentSheet = true
                 }
                 BrowserMenuAction(
+                    "媒体诊断",
+                    ToolBoxIconKey.Code,
+                    enabled = webView != null && !clearing && !interaction.restarting && !interaction.unresponsive,
+                ) {
+                    menu = false
+                    startMediaDiagnostics()
+                }
+                BrowserMenuAction(
                     "清除浏览器网站数据",
                     ToolBoxIconKey.Shield,
                     destructive = true,
@@ -779,6 +894,79 @@ class BrowserActivity : ComponentActivity() {
                     clearConfirmation = true
                 }
                 Spacer(Modifier.height(2.dp))
+            }
+        }
+        if (mediaDiagnosticsSheet) {
+            ToolBoxActionSheet(
+                title = "媒体诊断",
+                onDismissRequest = { mediaDiagnosticsSheet = false },
+                containerColor = colors.background,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    ToolBoxActionSheetHeader {
+                        Column(Modifier.fillMaxWidth()) {
+                            ToolBoxText(
+                                if (mediaDiagnosticsRunning) "正在诊断…" else "诊断结果",
+                                style = ToolBoxThemeTokens.textStyles.title.copy(
+                                    color = colors.textPrimary,
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            ToolBoxText(
+                                "只记录播放器能力、媒体相关资源错误和 DOM 状态；不会记录网页正文、Cookie 或请求参数。",
+                                style = ToolBoxThemeTokens.textStyles.body.copy(
+                                    color = colors.textSecondary,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                            )
+                        }
+                    }
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(colors.surface)
+                            .padding(12.dp),
+                    ) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            ToolBoxText(
+                                mediaDiagnosticsReport,
+                                modifier = Modifier.fillMaxWidth()
+                                    .heightIn(min = 140.dp, max = 360.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                                    color = colors.textSecondary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp,
+                                ),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        BrowserAddressSheetAction(
+                            label = if (mediaDiagnosticsRunning) "诊断中…" else "重新诊断",
+                            icon = ToolBoxIconKey.Refresh,
+                            highlighted = true,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            if (!mediaDiagnosticsRunning) startMediaDiagnostics()
+                        }
+                        BrowserAddressSheetAction(
+                            label = "复制报告",
+                            icon = ToolBoxIconKey.Clipboard,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            copyMediaDiagnostics()
+                        }
+                    }
+                }
             }
         }
         if (userAgentSheet) {
@@ -983,7 +1171,8 @@ class BrowserActivity : ComponentActivity() {
             )
         }
         // Avoid stacked dialogs and background-window prompts; a recovery callback removes this immediately.
-        if (interaction.showRecoveryPrompt && resumed && !menu && !userAgentSheet && !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
+        if (interaction.showRecoveryPrompt && resumed && !menu && !mediaDiagnosticsSheet && !userAgentSheet &&
+            !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
             ToolBoxModalDialog(onDismissRequest = { interaction = interaction.keepWaiting() }) {
                 ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
                     style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
@@ -1393,6 +1582,8 @@ class BrowserActivity : ComponentActivity() {
     private companion object {
         const val BROWSER_PREFERENCES = "browser_settings"
         const val USER_AGENT_MODE_KEY = "user_agent_mode"
+        const val MEDIA_DIAGNOSTIC_SETTLE_MS = 2500L
+        const val MAX_MEDIA_DIAGNOSTIC_EVENTS = 30
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
