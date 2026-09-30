@@ -149,7 +149,8 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 | --- | --- |
 | NextFlux | [run 36766560998](https://github.com/gkeyes/ToolBox-Android/actions/runs/36766560998)，提交 `064a6da358ff515cae4d545e9b1978ca3b089775`：9 个定向 Node 文件共 85 项通过；4 个浏览器文件共 81 项通过（导航 21、控件 15、媒体 27、阅读 18），0 失败 / 跳过 / flaky；Vite 构建和 TBX 打包通过。后续提交未改变 NextFlux 源码或其构建 / 测试输入，复用本次证据 |
 | WebView 调试编译策略 | [run 36768325226](https://github.com/gkeyes/ToolBox-Android/actions/runs/36768325226)，提交 `f0bd291f0b2373fd2cd1551476c2fde6389ecc8e`：API 35 Google Play `user` 镜像、实际 WebView `124.0.6367.219`；Debug 与非 debuggable Verification 各 12 个不同场景全部通过，0 失败 / 跳过。下载的两份 XML 各恰好 12 项；不是用开发系统的强制调试行为代替正式系统策略 |
+| 宿主共享调用链 | [run 36768320423](https://github.com/gkeyes/ToolBox-Android/actions/runs/36768320423)，同一提交、attempt 1：8 个定向 JVM 类共 42 项全部通过；7 个 Android 筛选项共实际执行 9 项全部通过，0 失败 / 跳过。API 36 / Android 16、实际 WebView `133.0.6943.137`；覆盖媒体 GET / HEAD / Range / 416 与实际音视频时钟 / 解码帧、拖动、阻塞 body 在刷新 / 销毁后的释放，真实 Room 导航后最终非空写入、未解析队列写入、控制准入、事件 / 回复隔离、专用 Profile 重建及后台设置。SDK 合同 / 媒体行为、lint、Debug / Release 构建和相关测试 APK 编译同样通过；已核对下载的 XML 与每个筛选项非零执行证据 |
 
 实际 NextFlux TBX SHA-256 为 `bc91f9b17390382ed699819b4140b56794a0886f844a8f952bd9c1721221b675`。包内 252 个文件逐项符合 integrity，manifest 为 1.0.35 / 56、minHostVersion 0.8.29；notice 的 lockfile 哈希 `349892af091cfda30ad1d677581456ebdf3873e6bb3af11f33a9619ae1943b28` 与当前 lock 文件一致，包含 hls.js 1.7.3。
 
-合并后的宿主共享链路检查正在 GitHub 执行，不复跑全局测试；结果及最终签名产物完成后补入。
+上述检查只覆盖本次改动与直接调用方；没有重跑全局测试。整合后的原证书签名交付及初始主页冷启动，在默认分支合并后另行执行并补入实际产物证据。
