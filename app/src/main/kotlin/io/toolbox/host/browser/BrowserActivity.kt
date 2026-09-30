@@ -224,6 +224,10 @@ class BrowserActivity : ComponentActivity() {
                     updateNavigation(view)
                     filters.applyToPage()
                     applyMediaLayoutCompatibility(view)
+                    view.postDelayed(
+                        { if (view === webView) applyMediaLayoutCompatibility(view) },
+                        MEDIA_LAYOUT_COMPAT_RETRY_MS,
+                    )
                     flushCookies()
                     if (mediaDiagnosticsCapture) {
                         val epoch = mediaDiagnosticsEpoch
@@ -1618,6 +1622,7 @@ class BrowserActivity : ComponentActivity() {
         const val BROWSER_PREFERENCES = "browser_settings"
         const val USER_AGENT_MODE_KEY = "user_agent_mode"
         const val MEDIA_DIAGNOSTIC_SETTLE_MS = 2500L
+        const val MEDIA_LAYOUT_COMPAT_RETRY_MS = 1500L
         const val MAX_MEDIA_DIAGNOSTIC_EVENTS = 30
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
