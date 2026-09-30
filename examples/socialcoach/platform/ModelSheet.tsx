@@ -8,7 +8,7 @@ import {flushStorage} from './storage';
 import {endpoint,abortRequests} from './network';
 
 const input='min-w-0 w-full h-12 px-3 rounded-xl bg-card border border-line text-[15px]';
-export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void;forced?:boolean}) {
+export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void}) {
   const lang=useLang(); const c=useByok();
   const [draft,setDraft]=useState<ByokConfig>(c);
   const [busy,setBusy]=useState(false), [note,setNote]=useState('');

@@ -659,7 +659,7 @@ private fun ToolBoxActionButton(
 
     MiuixButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = if (compact) 40.dp else ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
         cornerRadius = if (compact) 14.dp else MiuixButtonDefaults.CornerRadius,
         minWidth = if (compact) 48.dp else MiuixButtonDefaults.MinWidth,

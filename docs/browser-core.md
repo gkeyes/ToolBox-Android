@@ -1,4 +1,4 @@
-# Browser core (0.8.26)
+# Browser core
 
 Ordinary browsing uses Android System WebView. Tool runtimes and their capability/network
 boundaries are separate and unchanged. A webpage never receives the tool-native RPC bridge.

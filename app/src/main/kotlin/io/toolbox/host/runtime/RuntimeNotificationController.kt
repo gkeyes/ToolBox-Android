@@ -80,6 +80,5 @@ internal class RuntimeNotificationIds {
 
     companion object {
         const val FIRST_ID = 0x550000
-        const val LEGACY_RUNTIME_ID = 0x544258
     }
 }

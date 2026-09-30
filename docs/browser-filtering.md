@@ -1,4 +1,4 @@
-# Browser filtering (0.8.14)
+# Browser filtering
 
 Browser menu → 广告过滤 provides a global switch, an exact-host site exception,
 page element picking, per-site/all-site custom rule management, and a small
@@ -44,10 +44,11 @@ global switch disable both custom rules and the built-in baseline.
 selector construction using a DOM test double, not a rendering engine.
 `./gradlew :app:testDebugUnitTest --tests 'io.toolbox.host.browser.*'` covers
 host boundaries, exemptions, switches, input validation and navigation state.
-Android CI runs these with the existing host suite, then builds the optimized
-release using the original signing identity. Emulator checks retain the
-repository's explicit opt-in policy; these checks do not establish real-device
-WebView or visual-layout validation.
+Android CI runs these with the existing host suite and compiles an optimized
+release. On the default branch, it separately builds a release with the original
+signing identity. Browser-related changes in a PR or push also trigger the full
+Android emulator suite; manual runs can enable it explicitly. Emulator checks
+do not establish real-device WebView or visual-layout validation.
 
 Before broad use, check a real webpage's banner, fixed footer and iframe:
 select, preview, cancel, save, reload, disable, re-enable and undo; then verify

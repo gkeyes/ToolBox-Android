@@ -1,6 +1,5 @@
 import {abortRequests} from "@platform/network";
 "use client";
-import { FeedbackButton } from "@/components/Feedback";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -13,8 +12,6 @@ import { hint as hintApi, parseRoleplay, roleplayStream } from "@/lib/client-api
 import { lastSpoken, npcsOf, silenceStreak } from "@/lib/session-utils";
 import { goalOutcome, supportedClosure } from "@/lib/practice-policy";
 import { uid } from "@/lib/format";
-import { track } from "@/lib/analytics/track";
-import { byokConfig } from "@/lib/byok";
 import type { ChatMessage, Session } from "@/lib/types";
 import type { Character } from "@/data/corpus/types";
 import type { Lang } from "@/data/taxonomy";
@@ -164,26 +161,11 @@ export function Chat({ session }: { session: Session }) {
   }, [busy, endOpen, clockOpen, voiceNotice]);
 
   const finish = useCallback(
-    (objectiveDone: boolean[], outcome: "success" | "partial" | "failure", by: "engine" | "cap" | "silence" | "user", noteText?: string) => {
+    (objectiveDone: boolean[], outcome: "success" | "partial" | "failure", noteText?: string) => {
       const endedAt = Date.now();
       updateSession(session.id, { objectiveDone, outcome, outcomeNote: noteText, status: "ended", endedAt });
-      const live = useApp.getState().sessions.find((x) => x.id === session.id) ?? session;
-      track({
-        name: "session_end",
-        ts: endedAt,
-        session: session.id,
-        scenario: sc.custom ? "custom" : sc.id,
-        outcome,
-        turns: live.messages.filter((m) => m.role === "learner").length,
-        silences: live.messages.filter((m) => m.role === "event" && m.kind === "silence").length,
-        duration_s: Math.max(0, Math.round((endedAt - live.startedAt) / 1000)),
-        ended_by: by,
-        hints: live.messages.filter((m) => m.role === "coach" && m.kind === "hint").length,
-        revealed_turn: live.revealedAtTurn,
-        byok: !!byokConfig(),
-      });
     },
-    [session, sc, updateSession],
+    [session, updateSession],
   );
 
   /**
@@ -243,9 +225,8 @@ export function Chat({ session }: { session: Session }) {
           const outcome = goalOutcome(done);
           if (closure) updateSession(session.id, { closure });
           setEnding(true);
-          const by = silence >= 2 ? "silence" : closure ? "engine" : "cap";
           // brief pause so the last line can be read
-          endTimer.current = setTimeout(() => { if(alive.current) finish(done, outcome, by, meta?.note); }, 1400);
+          endTimer.current = setTimeout(() => { if(alive.current) finish(done, outcome, meta?.note); }, 1400);
         } else {
           updateSession(session.id, { objectiveDone: done });
         }
@@ -409,7 +390,7 @@ export function Chat({ session }: { session: Session }) {
 
   const endEarly = () => {
     const n = session.objectiveDone.filter(Boolean).length;
-    finish(session.objectiveDone, n === session.objectiveDone.length ? "success" : n > 0 ? "partial" : "failure", "user");
+    finish(session.objectiveDone, n === session.objectiveDone.length ? "success" : n > 0 ? "partial" : "failure");
   };
 
   const retry = () => {

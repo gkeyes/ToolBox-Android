@@ -12,7 +12,6 @@ import { DEFAULT_PATIENCE, useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
 import { schedule } from "@/lib/client-api";
 import { historyFor, npcsOf } from "@/lib/session-utils";
-import { track } from "@/lib/analytics/track";
 import type { Session } from "@/lib/types";
 import { contextById } from "@/data/taxonomy";
 import { learnerSeed } from "@/data/avatars";
@@ -28,15 +27,6 @@ export function Briefing({ session }: { session: Session }) {
   const [attempt, setAttempt] = useState(0);
   const sc = session.scenario;
   const adapting = !session.adaptation;
-  const shownAt = useRef(0);
-
-  // The briefing is where the model is waited on; count who arrives here so
-  // the gap to `session_start` is the drop-off during that wait.
-  useEffect(() => {
-    shownAt.current = Date.now();
-    track({ name: "briefing_view", ts: shownAt.current, session: session.id, scenario: sc.custom ? "custom" : sc.id, origin: session.origin });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
 
   useEffect(() => {
     if (!adapting || !profile || inflight.current) return;
@@ -59,7 +49,6 @@ export function Briefing({ session }: { session: Session }) {
   const enter = () => {
     const startedAt = Date.now();
     updateSession(session.id, { status: "active", startedAt, timed });
-    track({ name: "session_start", ts: startedAt, session: session.id, scenario: sc.custom ? "custom" : sc.id, origin: session.origin, context: sc.context, difficulty: sc.difficulty, timed, wait_s: shownAt.current ? Math.max(0, Math.round((startedAt - shownAt.current) / 1000)) : 0 });
   };
 
   return (

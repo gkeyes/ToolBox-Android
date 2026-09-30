@@ -1,5 +1,9 @@
 package io.toolbox.host.background
 
+import io.toolbox.tool.runtime.RuntimeHandlerException
+import io.toolbox.tool.runtime.RuntimeNetworkMethod
+import io.toolbox.tool.runtime.RuntimeNetworkRequest
+import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CountDownLatch
@@ -174,6 +178,31 @@ class NetworkResourceAdmissionTest {
         assertEquals(NetworkExecution.RetryableFailure("NETWORK_TIMEOUT"), result)
         assertEquals(0, resources.waitingCount)
         assertEquals(0L, resources.reservedBytes)
+    }
+
+    @Test
+    fun runtimeGatewayFullRequestTimeoutReleasesQueuedAdmission() = runBlocking {
+        val resources = NetworkResources(availableHeap = { 0 })
+        val proxy = ToolNetworkProxy(
+            ToolNetworkTransport { _, _ -> error("Request must remain queued") },
+            resources = resources,
+        )
+        val gateway = RuntimeNetworkGateway(proxy, null)
+        try {
+            val failure = withTimeout(2_000) {
+                runCatching {
+                    gateway.request(RuntimeNetworkRequest(
+                        "https://example.test", RuntimeNetworkMethod.GET, timeoutMillis = 20,
+                    ))
+                }.exceptionOrNull()
+            }
+            assertTrue(failure is RuntimeHandlerException)
+            assertEquals(RuntimeRpcErrorCode.NETWORK_TIMEOUT, (failure as RuntimeHandlerException).errorCode)
+            assertEquals(0, resources.waitingCount)
+            assertEquals(0L, resources.reservedBytes)
+        } finally {
+            gateway.close()
+        }
     }
 
     @Test

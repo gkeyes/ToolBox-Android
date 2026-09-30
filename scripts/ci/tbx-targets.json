@@ -6,9 +6,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/examples/background-task-demo.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
@@ -45,9 +45,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/github-actions-watcher/github-actions-watcher-v{version}.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
@@ -112,9 +112,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/examples/notification-lab.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
@@ -131,9 +131,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/examples/position-calculator.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
@@ -150,9 +150,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/examples/quick-notes.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
@@ -201,9 +201,9 @@
     ],
     "package": [
       "bash",
-      "package.sh"
+      "package.sh",
+      "{output}"
     ],
-    "built_path": "build/examples/stock-monitor.tbx",
     "expected_files": [
       "manifest.json",
       "index.html",
