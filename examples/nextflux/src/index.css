@@ -490,6 +490,44 @@
   block-size: 100%;
   margin: 0;
 }
+
+/* Reader toolbar semantic groups: AI | native | system. Grouped-toolbar CI marker. */
+.nextflux-toolbar-groups {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0;
+}
+.nextflux-toolbar-group {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.nextflux-toolbar-separator {
+  position: relative;
+  inline-size: 8px;
+  block-size: 34px;
+  flex: 0 0 8px;
+}
+.nextflux-toolbar-separator::before {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 50%;
+  inline-size: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgb(127 127 127 / 0.2) 20%,
+    rgb(127 127 127 / 0.2) 80%,
+    transparent 100%
+  );
+  transform: translateX(-50%);
+}
 /* Reserve the absolute close trigger's space, including when titles wrap. */
 .nextflux-close-header {
   min-block-size: calc(48px + 1rem);
@@ -506,14 +544,16 @@
 @media (max-width: 640px) {
   .nextflux-compact-touch-target, .profile-button button { min-height: 44px; }
 
-  /* Reader toolbar: keep every article action visible on one row.
-     48px is retained vertically; horizontal occupancy adapts to the viewport.
-     The formula reserves 48px for Close + 16px page padding and fits up to
-     nine article actions without overlap. */
+  /* Keep all reader actions on one line. Two 6px separators divide
+     AI | native | system while the full 48px vertical target is retained. */
+  .action-buttons .nextflux-toolbar-separator {
+    inline-size: 6px;
+    flex-basis: 6px;
+  }
   .action-buttons .nextflux-toolbar-button {
-    inline-size: calc((100vw - 64px) / 9);
-    min-inline-size: calc((100vw - 64px) / 9);
-    max-inline-size: calc((100vw - 64px) / 9);
-    flex-basis: calc((100vw - 64px) / 9);
+    inline-size: calc((100vw - 76px) / 9);
+    min-inline-size: calc((100vw - 76px) / 9);
+    max-inline-size: calc((100vw - 76px) / 9);
+    flex-basis: calc((100vw - 76px) / 9);
   }
 }

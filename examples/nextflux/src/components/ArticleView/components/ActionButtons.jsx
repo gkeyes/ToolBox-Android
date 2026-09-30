@@ -208,142 +208,153 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
         </div>
-        <div className="ml-auto flex min-w-0 flex-1 flex-nowrap items-center justify-between gap-0">
-          <ArticleTitleFilterButton />
-          <FullTextAdaptButton />
-          <ArticleSpeechButton article={$activeArticle} />
-          <Tooltip delay={0}>
-            <Button
-              className="nextflux-toolbar-button"
-              aria-label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
-              onPress={() => handleMarkStatus($activeArticle)}
-              variant="ghost"
-              isIconOnly
-              size="sm"
-            >
-              {$activeArticle?.status === "unread" ? (
-                <CircleDot className="size-4 text-muted p-0.5 fill-current" />
-              ) : (
-                <Circle className="size-4 text-muted p-0.5" />
-              )}
-            </Button>
-            <Tooltip.Content showArrow>
-              <Tooltip.Arrow />
-              {$activeArticle?.status === "read"
-                ? t("common.unread")
-                : t("common.read")}
-            </Tooltip.Content>
-          </Tooltip>
-          <Tooltip delay={0}>
-            <Button
-              className="nextflux-toolbar-button"
-              aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
-              ref={buttonRef}
-              variant="ghost"
-              isIconOnly
-              size="sm"
-              onPress={() => {
-                $activeArticle?.starred === 0 && Confetti(buttonRef);
-                handleToggleStar($activeArticle);
-              }}
-            >
-              <Star
-                className={`size-4 text-muted ${$activeArticle?.starred === 1 ? "fill-current" : ""}`}
-              />
-            </Button>
-            <Tooltip.Content showArrow>
-              <Tooltip.Arrow />
-              {$activeArticle?.starred === 1
-                ? t("common.unstar")
-                : t("common.star")}
-            </Tooltip.Content>
-          </Tooltip>
-          {$hasIntegrations && (
+        <div className="nextflux-toolbar-groups ml-auto min-w-0 flex-1">
+          <div className="nextflux-toolbar-group nextflux-toolbar-group-ai" aria-label="AI 功能">
+            <ArticleSpeechButton article={$activeArticle} />
+            {aiApiKey && (
+              <Tooltip delay={0}>
+                <Button
+                  className="nextflux-toolbar-button"
+                  onPress={handleAISummarize}
+                  variant="ghost"
+                  isIconOnly
+                  size="sm"
+                  aria-label={currentSummaryState?.loading ? "停止 AI 摘要" : "AI 摘要"}
+                >
+                  {currentSummaryState?.loading ? (
+                    <Spinner color="current" size="sm" />
+                  ) : (
+                    <Sparkles
+                      className={`size-4 ${currentSummaryState?.summary ? "text-accent" : "text-muted"}`}
+                    />
+                  )}
+                </Button>
+                <Tooltip.Content showArrow>
+                  <Tooltip.Arrow />
+                  {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
+                </Tooltip.Content>
+              </Tooltip>
+            )}
+          </div>
+
+          <span className="nextflux-toolbar-separator" aria-hidden="true" />
+
+          <div className="nextflux-toolbar-group nextflux-toolbar-group-native" aria-label="默认功能">
             <Tooltip delay={0}>
               <Button
                 className="nextflux-toolbar-button"
-                aria-label={t("articleView.saveToThirdParty")}
+                aria-label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
+                onPress={() => handleMarkStatus($activeArticle)}
                 variant="ghost"
                 isIconOnly
                 size="sm"
-                onPress={handleSaveToThirdParty}
-                isPending={saveLoading}
               >
-                {saveLoading ? (
-                  <Spinner color="current" size="sm" />
+                {$activeArticle?.status === "unread" ? (
+                  <CircleDot className="size-4 text-muted p-0.5 fill-current" />
                 ) : (
-                  <CloudUpload className="size-4 text-muted" />
+                  <Circle className="size-4 text-muted p-0.5" />
                 )}
               </Button>
               <Tooltip.Content showArrow>
                 <Tooltip.Arrow />
-                {t("articleView.saveToThirdParty")}
+                {$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
               </Tooltip.Content>
             </Tooltip>
-          )}
-          {aiApiKey && (
+
             <Tooltip delay={0}>
               <Button
                 className="nextflux-toolbar-button"
-                onPress={handleAISummarize}
+                aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
+                ref={buttonRef}
                 variant="ghost"
                 isIconOnly
                 size="sm"
-                aria-label={currentSummaryState?.loading ? "停止 AI 摘要" : "AI 摘要"}
+                onPress={() => {
+                  $activeArticle?.starred === 0 && Confetti(buttonRef);
+                  handleToggleStar($activeArticle);
+                }}
               >
-                {currentSummaryState?.loading ? (
+                <Star className={`size-4 text-muted ${$activeArticle?.starred === 1 ? "fill-current" : ""}`} />
+              </Button>
+              <Tooltip.Content showArrow>
+                <Tooltip.Arrow />
+                {$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
+              </Tooltip.Content>
+            </Tooltip>
+
+            <Tooltip delay={0}>
+              <Button
+                className="nextflux-toolbar-button"
+                aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
+                onPress={() => handleToggleContent($activeArticle)}
+                variant="ghost"
+                isIconOnly
+                size="sm"
+                isPending={fetchLoading}
+              >
+                {fetchLoading ? (
                   <Spinner color="current" size="sm" />
                 ) : (
-                  <Sparkles
-                    className={`size-4 ${currentSummaryState?.summary ? "text-accent" : "text-muted"}`}
+                  <FileText
+                    className={cn(
+                      "size-4",
+                      $activeArticle?.shownOriginal ? "text-accent" : "text-muted",
+                    )}
                   />
                 )}
               </Button>
               <Tooltip.Content showArrow>
                 <Tooltip.Arrow />
-                {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
+                {$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
               </Tooltip.Content>
             </Tooltip>
-          )}
-          <Tooltip delay={0}>
-            <Button
-              className="nextflux-toolbar-button"
-              aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
-              onPress={() => handleToggleContent($activeArticle)}
-              variant="ghost"
-              isIconOnly
-              size="sm"
-              isPending={fetchLoading}
-            >
-              {fetchLoading ? (
-                <Spinner color="current" size="sm" />
-              ) : (
-                <FileText
-                  className={cn(
-                    "size-4",
-                    $activeArticle?.shownOriginal
-                      ? "text-accent"
-                      : "text-muted",
+          </div>
+
+          <span className="nextflux-toolbar-separator" aria-hidden="true" />
+
+          <div className="nextflux-toolbar-group nextflux-toolbar-group-system" aria-label="系统功能">
+            <ArticleTitleFilterButton />
+            <FullTextAdaptButton />
+            {$hasIntegrations && (
+              <Tooltip delay={0}>
+                <Button
+                  className="nextflux-toolbar-button"
+                  aria-label={t("articleView.saveToThirdParty")}
+                  variant="ghost"
+                  isIconOnly
+                  size="sm"
+                  onPress={handleSaveToThirdParty}
+                  isPending={saveLoading}
+                >
+                  {saveLoading ? (
+                    <Spinner color="current" size="sm" />
+                  ) : (
+                    <CloudUpload className="size-4 text-muted" />
                   )}
-                />
-              )}
-            </Button>
-            <Tooltip.Content showArrow>
-              <Tooltip.Arrow />
-              {$activeArticle?.shownOriginal
-                ? t("articleView.showSummary")
-                : t("articleView.getFullText")}
-            </Tooltip.Content>
-          </Tooltip>
-          <Tooltip delay={0}>
-            <Button className="nextflux-toolbar-button" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
-              <Share className="size-4 text-muted" />
-            </Button>
-            <Tooltip.Content showArrow>
-              <Tooltip.Arrow />
-              {t("common.share")}
-            </Tooltip.Content>
-          </Tooltip>
+                </Button>
+                <Tooltip.Content showArrow>
+                  <Tooltip.Arrow />
+                  {t("articleView.saveToThirdParty")}
+                </Tooltip.Content>
+              </Tooltip>
+            )}
+            <Tooltip delay={0}>
+              <Button
+                className="nextflux-toolbar-button"
+                aria-label={t("common.share")}
+                variant="ghost"
+                isIconOnly
+                size="sm"
+                onPress={handleShare}
+              >
+                <Share className="size-4 text-muted" />
+              </Button>
+              <Tooltip.Content showArrow>
+                <Tooltip.Arrow />
+                {t("common.share")}
+              </Tooltip.Content>
+            </Tooltip>
+          </div>
         </div>
       </div>
       <ArticleSpeechBar article={$activeArticle} />
