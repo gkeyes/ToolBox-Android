@@ -37,7 +37,7 @@ const defaultValue = {
   speechApiKey: "",
   speechRegion: "global",
   speechModel: "speech-2.8-turbo",
-  speechVoiceId: "male-qn-qingse",
+  speechVoiceId: "presenter_male",
   speechPlaybackRate: 1,
   speechReadTitle: true,
   speechPrefetch: true,
