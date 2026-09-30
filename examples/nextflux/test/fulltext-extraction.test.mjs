@@ -17,6 +17,7 @@ test("fulltext loader falls back to Miniflux when source extraction fails",async
     fetchSource:async()=>{throw new Error("blocked");},
   });
   assert.equal(result.source,"miniflux");
+  assert.equal(result.baseUrl,"https://example.test/post");
   assert.match(result.content,/Miniflux/);
 });
 

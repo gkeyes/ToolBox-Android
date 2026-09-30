@@ -42,7 +42,7 @@ export default defineConfig({
   root: fixture,
   // The navigation fixture uses a different account boundary at its importers.
   // Scan the original entries together; navigation imports resolve individually.
-  optimizeDeps: { entries: ["index.html", "controls.html", "title-filter.html"] },
+  optimizeDeps: { entries: ["index.html", "controls.html", "title-filter.html", "media-compat.html"] },
   plugins: [
     {
       name: "reading-test-boundaries",

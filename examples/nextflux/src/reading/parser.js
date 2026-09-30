@@ -7,7 +7,7 @@ import { createNormalizationPlan, hasSentenceTerminal, normalizeParagraphLeading
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
 const BATCH_TEXT = 16 * 1024;
-const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/proxy/") ? "https://miniflux.xiaochen.win/" : base);
+const mediaUrl = (source, base) => safeContentUrl(source, /^\/(?:proxy\/|media\/v1\/)/.test(source || "") ? "https://miniflux.xiaochen.win/" : base);
 const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(text);
 
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is
@@ -98,6 +98,9 @@ export function createReadingParser(html, baseUrl) {
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
+      entry.picture = parent.picture;
+      if (tag === "picture") { entry.picture = []; return; }
+      if (tag === "source" && entry.picture) { entry.picture.push(attributes); return; }
       if (parent.code) {
         if (tag === "code") {
           const attrs = cleanAttributes(tag, attributes, baseUrl);
@@ -116,7 +119,7 @@ export function createReadingParser(html, baseUrl) {
       if (!ALLOWED_TAGS.has(tag)) return;
       entry.id = nextId++;
       entry.depth += 1;
-      const attrs = cleanAttributes(tag, attributes, baseUrl);
+      const attrs = cleanAttributes(tag, attributes, baseUrl, entry.picture);
       entry.attrs = attrs;
       recordChild(parent, entry);
       if (tag === "img") {

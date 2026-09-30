@@ -1,4 +1,5 @@
 import { SERVER_URL } from "./network.js";
+import { MEDIA_HEADER_BYTES, isGenericBinaryMime, mediaMimeCandidates } from "./mediaMime.js";
 
 const messages = {
   CANCELLED: "媒体加载已取消。",
@@ -66,8 +67,11 @@ export function createMediaTransport({
       signal?.addEventListener("abort", abort, { once: true });
       verify();
       if (response.status < 200 || response.status >= 300) throw failure("NETWORK_UNAVAILABLE");
-      const type = Object.entries(response.headers || {}).find(([key]) => key.toLowerCase() === "content-type")?.[1]?.split(";")[0]?.trim()?.toLowerCase();
-      if (!type || !mime.test(type)) throw failure("INVALID_MIME");
+      let type = Object.entries(response.headers || {}).find(([key]) => key.toLowerCase() === "content-type")?.[1]?.split(";")[0]?.trim()?.toLowerCase();
+      const needsSignature = !type || isGenericBinaryMime(type);
+      if (!needsSignature && !mime.test(type)) throw failure("INVALID_MIME");
+      let header = needsSignature ? new Uint8Array(MEDIA_HEADER_BYTES) : null;
+      let headerBytes = 0;
       while (true) {
         verify();
         const chunk = await api.readStream(streamId);
@@ -75,7 +79,16 @@ export function createMediaTransport({
         if (!(chunk.data instanceof Uint8Array) || typeof chunk.done !== "boolean") throw failure("INVALID_MEDIA");
         const bytes = chunk.data.byteLength;
         if (bytes) chunks.push(chunk.data);
-        if (chunk.done) { completed = true; break; }
+        if (chunk.done) completed = true;
+        if (header) {
+          const count = Math.min(bytes, MEDIA_HEADER_BYTES - headerBytes);
+          header.set(chunk.data.subarray(0, count), headerBytes);
+          headerBytes += count;
+          type = mediaMimeCandidates(header.subarray(0, headerBytes)).find(candidate => mime.test(candidate));
+          if (type) header = null;
+          else if (headerBytes === MEDIA_HEADER_BYTES || chunk.done) throw failure("INVALID_MIME");
+        }
+        if (chunk.done) break;
       }
       if (!chunks.length) throw failure("INVALID_MEDIA");
       const blob = new Blob(chunks, { type });

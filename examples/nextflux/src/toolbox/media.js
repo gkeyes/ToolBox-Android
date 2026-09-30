@@ -36,13 +36,17 @@ export function acquireImage(value, allowLocal = false) {
 }
 
 export function useSafeImage(src, allowLocal = false, keepAlive = false) {
+  // Compare the candidate identities, rather than the array allocated by a
+  // portal render. The cache still shares each actual URL across all viewers.
+  const sourceKey = JSON.stringify([...new Set((Array.isArray(src) ? src : [src]).filter((value) => typeof value === "string" && value))].slice(0, 32));
   const containerRef = useRef(null);
   const leaseRef = useRef(null);
+  const decodeErrorRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState({ source: null, url: null, error: null });
+  const [state, setState] = useState({ key: null, source: null, url: null, error: null });
   // Opening a gallery retains mounted images, without fetching unseen images.
-  const active = visible || (keepAlive && leaseRef.current?.source === src);
+  const active = visible || (keepAlive && leaseRef.current?.key === sourceKey);
   useEffect(() => {
     const element = containerRef.current;
     if (!element || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
@@ -51,30 +55,68 @@ export function useSafeImage(src, allowLocal = false, keepAlive = false) {
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (!active || !src) return;
+    const sources = JSON.parse(sourceKey);
+    if (!active || !sources.length) return;
     let mounted = true;
-    let handle;
-    try {
-      handle = acquireImage(src, allowLocal);
-      leaseRef.current = { source: src, handle };
-      setState({ source: src, url: handle.url, error: null });
-      handle.promise.then(
-        (url) => mounted && setState({ source: src, url, error: null }),
-        (error) => mounted && setState({ source: src, url: null, error: error.message }),
-      );
-    } catch (error) { setState({ source: src, url: null, error: error.message }); }
+    const epoch = mediaEpoch;
+    let current = null, cursor = 0;
+    const release = () => {
+      if (leaseRef.current === current) leaseRef.current = null;
+      current?.handle.release();
+      current = null;
+    };
+    const advance = async (failure = null) => {
+      release();
+      while (mounted && epoch === mediaEpoch && cursor < sources.length) {
+        const source = sources[cursor++];
+        let request;
+        try {
+          request = { key: sourceKey, source, handle: acquireImage(source, allowLocal) };
+          current = request;
+          leaseRef.current = request;
+          request.url = request.handle.url;
+          setState({ key: sourceKey, source, url: request.url, error: null });
+          const url = await request.handle.promise;
+          if (!mounted || current !== request) return;
+          request.url = url;
+          setState({ key: sourceKey, source, url, error: null });
+          return;
+        } catch (error) {
+          if (!mounted || (request && current !== request)) return;
+          failure = error;
+          release();
+          // Account teardown invalidates pending leases. It must not start a
+          // new candidate under the next account's cache generation.
+          if (error.code === "CANCELLED" || error.code === "ACCOUNT_CHANGED") break;
+        }
+      }
+      if (mounted) setState({ key: sourceKey, source: null, url: null, error: failure?.message || "没有可安全显示的图片地址。" });
+    };
+    const onDecodeError = (url) => {
+      if (!mounted || epoch !== mediaEpoch || !url || current?.url !== url) return;
+      current.handle.invalidate?.();
+      void advance(new Error("图片解码失败，暂时无法显示。"));
+    };
+    decodeErrorRef.current = onDecodeError;
+    void advance();
     return () => {
       mounted = false;
-      if (leaseRef.current?.handle === handle) leaseRef.current = null;
-      handle?.release();
+      if (decodeErrorRef.current === onDecodeError) decodeErrorRef.current = null;
+      release();
     };
-  }, [src, active, allowLocal, attempt]);
+  }, [sourceKey, active, allowLocal, attempt]);
   const retry = useCallback(() => {
     leaseRef.current?.handle.invalidate?.();
-    setState({ source: src, url: null, error: null });
+    setState({ key: sourceKey, source: null, url: null, error: null });
     setAttempt((value) => value + 1);
-  }, [src]);
-  return { containerRef, retry, url: active && state.source === src && (!state.url?.startsWith("blob:") || images.hasBlob(state.url)) ? state.url : null, error: state.source === src ? state.error : null };
+  }, [sourceKey]);
+  const onError = useCallback((url) => decodeErrorRef.current?.(url), []);
+  return {
+    containerRef, retry, onError,
+    source: state.key === sourceKey ? state.source : null,
+    url: active && state.key === sourceKey && (!state.url?.startsWith("blob:") || images.hasBlob(state.url)) ? state.url : null,
+    error: state.key === sourceKey ? state.error : null,
+  };
 }
 
 const activeMedia = new Set();

@@ -15,7 +15,10 @@ test("sanitizer preserves dimensions without admitting styles, handlers or activ
   assert.deepEqual(cleanAttributes("img", {
     src: "https://images.example/a.png?a=1&b=2", width: "640", height: "480",
     style: "position:fixed", onload: "alert(1)", srcset: "https://elsewhere.example/evil.png 2x",
-  }), { "data-image-source": "https://images.example/a.png?a=1&b=2", width: "640", height: "480" });
+  }), {
+    "data-image-source": "https://images.example/a.png?a=1&b=2", width: "640", height: "480",
+    "data-image-candidates": JSON.stringify(["https://images.example/a.png?a=1&b=2", "https://elsewhere.example/evil.png"]),
+  });
   assert.deepEqual(cleanAttributes("img", { width: "20px", height: "-1", src: "javascript:alert(1)" }), {});
   assert.deepEqual(cleanAttributes("div", { width: "10", height: "20" }), {});
 });
@@ -28,7 +31,10 @@ test("sanitizer promotes lazy and srcset image sources without activating unsafe
   }, base), { "data-image-source": "https://news.example/media/full.jpg" });
   assert.deepEqual(cleanAttributes("img", {
     srcset: "/media/small.jpg 320w, /media/large.jpg 1280w",
-  }, base), { "data-image-source": "https://news.example/media/large.jpg" });
+  }, base), {
+    "data-image-source": "https://news.example/media/large.jpg",
+    "data-image-candidates": JSON.stringify(["https://news.example/media/large.jpg", "https://news.example/media/small.jpg"]),
+  });
   assert.deepEqual(cleanAttributes("img", {
     src: "https://news.example/fallback.jpg", "data-src": "javascript:alert(1)",
   }, base), { "data-image-source": "https://news.example/fallback.jpg" });

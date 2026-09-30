@@ -93,7 +93,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             paused={readingPaused}
             articleId={article.id}
             html={article.content}
-            baseUrl={article.url}
+            baseUrl={article.shownOriginal && article.fullTextBaseUrl || article.url}
             title={article.titleText ?? article.title}
             shownOriginal={Boolean(article.shownOriginal)}
           />
