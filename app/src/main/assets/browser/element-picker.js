@@ -112,6 +112,12 @@
         window.visualViewport?.removeEventListener('resize', schedulePaint); window.visualViewport?.removeEventListener('scroll', schedulePaint);
         if (frame) cancelAnimationFrame(frame); frame = 0;
     }
+    function destroy() {
+        stop();
+        permanent.remove();
+        temporary.remove();
+        try { delete window[key]; } catch (_) { window[key] = undefined; }
+    }
     function state() {
         if (target && !target.isConnected) { temporary.textContent = ''; target = null; draft = ''; matches = 0; preview = false; warning = '页面内容已变化，请重新选择。'; paint(); }
         return { active, selector: draft, count: matches, warning, preview, canShrink: depth > 0, canExpand: depth + 1 < chain.length };
@@ -129,7 +135,7 @@
         if (!check.valid || !check.count) { warning = check.message || '请先选择要隐藏的区域。'; return state(); }
         preview = !preview; temporary.textContent = preview ? `:is(${draft}):not(html):not(body){display:none!important;}` : ''; paint(); return state();
     }
-    window[key] = { apply, start, stop, state, adjust, edit, inspect, preview: showPreview };
+    window[key] = { apply, start, stop, destroy, state, adjust, edit, inspect, preview: showPreview };
     apply(selectors);
     return true;
 })

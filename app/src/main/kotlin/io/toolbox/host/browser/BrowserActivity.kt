@@ -170,27 +170,10 @@ class BrowserActivity : ComponentActivity() {
             webView = page
             filters.attach(page, address)
             page.settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                allowFileAccess = false
-                allowContentAccess = false
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                // Surface a clear denial through onGeolocationPermissionsShowPrompt.
-                setGeolocationEnabled(true)
-                setSupportZoom(true)
-                builtInZoomControls = true
-                displayZoomControls = false
-                useWideViewPort = true
-                loadWithOverviewMode = true
-                // User-activated target=_blank links use this view; unsolicited windows stay disabled.
-                setSupportMultipleWindows(false)
-                javaScriptCanOpenWindowsAutomatically = false
-                // This is a general-purpose browser surface: let modern players initialize/start
-                // media without requiring a second WebView-level gesture. Sites can still expose
-                // their own autoplay controls, and hardware capture remains blocked below.
-                mediaPlaybackRequiresUserGesture = false
+                BrowserCompatibilityPolicy.apply(this)
                 applyUserAgent(this)
             }
+            BrowserCompatibilityPolicy.applyCompat(page.settings)
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(page, true)
             page.webViewClient = object : WebViewClient() {
@@ -277,7 +260,14 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    if (view === webView) handler.proceed() else handler.cancel()
+                    handler.cancel()
+                    if (view === webView && mediaDiagnosticsCapture) {
+                        BrowserMediaDiagnostics.networkEvent(
+                            label = "TLS 拒绝",
+                            url = failure.url.orEmpty(),
+                            detail = "primaryError=${failure.primaryError}",
+                        )?.let(::recordMediaDiagnosticEvent)
+                    }
                 }
 
                 override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -349,11 +339,17 @@ class BrowserActivity : ComponentActivity() {
                     return true
                 }
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-                    if (page !== webView || fullScreenView != null) { callback.onCustomViewHidden(); return }
+                    if (page !== webView || fullScreenView != null) {
+                        callback.onCustomViewHidden()
+                        return
+                    }
                     fullScreenCallback = callback
                     fullScreenView = view
+                    setFullscreenSystemBars(hidden = true)
                 }
-                override fun onHideCustomView() { if (page === webView) hideFullScreen() }
+                override fun onHideCustomView() {
+                    if (page === webView) hideFullScreen()
+                }
             }
             // minSdk is 33. Use the system callback, not polling or a script injected into every page.
             page.setWebViewRenderProcessClient(mainExecutor, object : WebViewRenderProcessClient() {
@@ -665,10 +661,28 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun hideFullScreen() {
+        val hadFullScreen = fullScreenView != null
         (fullScreenView?.parent as? ViewGroup)?.removeView(fullScreenView)
         fullScreenView = null
         fullScreenCallback?.onCustomViewHidden()
         fullScreenCallback = null
+        if (hadFullScreen && !isFinishing && !isDestroyed) {
+            setFullscreenSystemBars(hidden = false)
+            applyHyperOsGestureNavigationImmersion()
+        }
+    }
+
+    private fun setFullscreenSystemBars(hidden: Boolean) {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (hidden) hide(WindowInsetsCompat.Type.systemBars())
+            else show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && fullScreenView != null) setFullscreenSystemBars(hidden = true)
     }
 
     private fun destroyPage(page: WebView) {
@@ -783,8 +797,8 @@ class BrowserActivity : ComponentActivity() {
         val chromeVisible = !browserChromeHidden || chromeLocked
         val chromeEasing = CubicBezierEasing(0.2f, 0.75f, 0.2f, 1f)
 
-        Box(Modifier.fillMaxSize().background(colors.background).safeDrawingPadding().imePadding()) {
-            Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(colors.background)) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 AnimatedVisibility(
                     visible = chromeVisible,
                     enter = expandVertically(

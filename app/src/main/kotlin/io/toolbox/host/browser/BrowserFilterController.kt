@@ -26,6 +26,7 @@ class BrowserFilterController(context: Context) {
     private var generation = 0
     private var pickerEpoch = 0
     private var pollPending = false
+    private var filterEngineInstalled = false
     var saving by mutableStateOf(false)
         private set
     private var key = newKey()
@@ -57,6 +58,7 @@ class BrowserFilterController(context: Context) {
         pickerEpoch++
         pollPending = false
         key = newKey()
+        filterEngineInstalled = false
         site = BrowserFilterValidation.urlHost(url).orEmpty()
         requestPage = RequestPage(site)
         picker = PickerState()
@@ -76,6 +78,7 @@ class BrowserFilterController(context: Context) {
         pickerEpoch++
         pollPending = false
         picker = PickerState()
+        filterEngineInstalled = false
         page = null
         generation++
         requestPage = RequestPage("")
@@ -94,28 +97,52 @@ class BrowserFilterController(context: Context) {
     fun intercept(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (page !== view) return null
         val current = requestPage
+        if (!engine.active(current.host)) return null
         if (!engine.blocks(current.host, request.url.toString(), request.isForMainFrame)) return null
         current.blocked.incrementAndGet()
         return WebResourceResponse("text/plain", "UTF-8", 200, "OK", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
     }
 
-    fun applyToPage(after: ((Boolean) -> Unit)? = null) {
+    fun applyToPage(forceInstall: Boolean = false, after: ((Boolean) -> Unit)? = null) {
         val view = page ?: run { after?.invoke(false); return }
         val expected = generation
         val host = site
-        if (host.isEmpty() || BrowserFilterValidation.urlHost(view.url.orEmpty()) != host) { after?.invoke(false); return }
-        val values = JSONArray(snapshot.selectors(host)).toString()
+        if (host.isEmpty() || BrowserFilterValidation.urlHost(view.url.orEmpty()) != host) {
+            after?.invoke(false)
+            return
+        }
+
+        val selectors = snapshot.selectors(host)
+        if (!forceInstall && selectors.isEmpty()) {
+            if (!filterEngineInstalled) {
+                after?.invoke(true)
+                return
+            }
+            view.evaluateJavascript(
+                "(() => { const engine = window[${JSONObject.quote(key)}]; if (engine?.destroy) engine.destroy(); return true; })()",
+            ) {
+                if (page === view && generation == expected) filterEngineInstalled = false
+                after?.invoke(page === view && generation == expected)
+            }
+            return
+        }
+
+        val values = JSONArray(selectors).toString()
         view.evaluateJavascript("($script)(${JSONObject.quote(key)},$values,${JSONObject.quote(host)})") { value ->
-            after?.invoke(page === view && generation == expected && value == "true")
+            val applied = page === view && generation == expected && value == "true"
+            if (applied) filterEngineInstalled = true
+            after?.invoke(applied)
         }
     }
-
     fun startPicker() {
         if (!snapshot.active(site)) return
         sheet = false
         notice = null
         val epoch = ++pickerEpoch
-        applyToPage { applied -> if (applied && epoch == pickerEpoch) command("start") else notice = "当前页面暂不能点选，请加载完成后重试。" }
+        applyToPage(forceInstall = true) { applied ->
+            if (applied && epoch == pickerEpoch) command("start")
+            else notice = "当前页面暂不能点选，请加载完成后重试。"
+        }
     }
 
     fun stopPicker() {
