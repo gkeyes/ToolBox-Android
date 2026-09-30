@@ -169,6 +169,18 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 网络通过 ToolBox 原生 HTTPS 接口访问；TLS 验证和跨源重定向凭据剥离继续生效。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
 
+### 页面状态与关闭保存（0.8.28 起）
+
+使用 runtime 接口的工具声明 minHostVersion=0.8.28。注入 SDK 自动复用一次 ready 握手；onStateChanged 立即回放已知最新快照。同一 generation 只处理递增 revision。foreground 由宿主页面挂载及 Activity 恢复状态计算；展示任务只在 foreground && !closing 时运行。授权的后台任务继续按原频率执行。
+
+registerFlushHandler 用于确实销毁或主动重载之前保存：停止生产新工作，等待在途流取消／清理，提交最后状态并 await 保存。存储继续使用声明、实时授权、版本检查和命名空间锁。关闭期存储因普通预算拥塞而得到 BUSY 时，SDK 在本轮关闭仍有效期间安排 50ms 后重试，不增加专用大数据额度。确认保存后封住新普通请求，等待已准入写入及其响应完成，再释放旧运行环境；取消关闭会失效旧确认。
+
+正常返回或重载在 2 秒后提示仍在保存，可继续等待、取消或明确放弃保存后退出／重载。保存失败保留页面。外部停止后台会话取消生产者，最多等待总计 2 秒后结束，并记录未获确认的保存。有后台会话仅离开页面只发布 foreground=false；停止后台会话时若页面仍可见则保留 WebView。替换包、撤权释放、清数据与 renderer 崩溃沿用立即失效和既有清理屏障。重载释放旧 WebView／桥接，再建立新 generation。
+
+事件按 FIFO 经单一发送任务分批，每批最多 32 条或累计 2ms；单条处理不能抢占。原生每会话逻辑 charge 上限 1MiB／4096 条，原生全局账面上限 8MiB（不预分配），另检查实际可用 Java 堆。charge 为 2×JSON 字符数+128，属于账面计量。SDK 接收后累计 32 条立即安排 ACK，否则安排 50ms 合并确认；执行可因事件循环延迟，不会超时自动释放未确认额度。
+
+每 WebView 的 JS 未订阅事件独立限 1MiB／4096 条，原始字符串按 32 条／2ms 在新 task 重放。该空间不受原生全局 8MiB 覆盖，renderer 和 native 内存另计。容量耗尽时派发 toolbox:runtime.error，晚订阅抛出 EVENT_BACKLOG_OVERFLOW 并附带 event/droppedCount；即时 DOM 事件仍交付，禁止伪装成无丢失。runtime.ackEvents／runtime.flushComplete 是 SDK 内部控制方法，仍经过原点、主框架、nonce、工具版本和 generation 检查，不供工具直接调用。
+
 ### 数据与资源
 
 不设置统一的包大小、解压大小、笔记条数或持续任务时长额度。宿主在分配和写入前检查当前进程可用堆与目标磁盘空间，安装仍保持事务与回滚。调用方明确填写的网络请求预算继续生效；工具不必填写 network 预算。
@@ -350,6 +362,9 @@ export type ToolBoxCapability =
 
 export type ToolBoxMethodName =
   | "ready"
+  | "runtime.getState"
+  | "runtime.ackEvents"
+  | "runtime.flushComplete"
   | "ui.toast"
   | "crypto.sha256"
   | "storage.get"
@@ -420,7 +435,8 @@ export type ToolBoxErrorCode =
   | "NETWORK_BLOCKED"
   | "NETWORK_UNAVAILABLE"
   | "NETWORK_TIMEOUT"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "EVENT_BACKLOG_OVERFLOW";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -435,11 +451,19 @@ export interface ToolBoxApiError {
   message: string;
 }
 
+export interface RuntimePresentationState {
+  readonly generation: string;
+  readonly revision: number;
+  readonly foreground: boolean;
+  readonly closing: boolean;
+}
+
 export interface ReadyResult {
   apiVersion: "1.0";
   hostVersion: string;
   toolId: string;
   generation: string;
+  runtimeState: RuntimePresentationState;
 }
 
 export interface Sha256Result {
@@ -646,6 +670,13 @@ export interface AlarmEvent extends AlarmSummary {
 
 export interface ToolBoxApi {
   ready(): Promise<ReadyResult>;
+  runtime: {
+    getState(): Promise<RuntimePresentationState>;
+    /** Replays the latest snapshot and accepts only increasing revisions in this generation. */
+    onStateChanged(listener: (state: RuntimePresentationState) => void): () => void;
+    /** Stop producers, wait for their cleanup, then await the final durable save. */
+    registerFlushHandler(handler: () => void | Promise<void>): () => void;
+  };
   ui: {
     toast(message: string): Promise<void>;
   };

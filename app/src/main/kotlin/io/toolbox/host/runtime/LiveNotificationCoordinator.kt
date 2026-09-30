@@ -43,6 +43,8 @@ internal class LiveNotificationCoordinator(
     private var pendingRefresh: Job? = null
 
     fun start(toolId: String, toolName: String, request: RuntimeLiveNotificationRequest) {
+        val existing = presentations[request.sessionId]
+        if (request.updatedAt != null && existing?.toolId == toolId && existing.toolName == toolName && existing.request == request) return
         val receivedAt = nowMillis()
         sequence = maxOf(sequence + 1L, receivedAt)
         presentations[request.sessionId] = RuntimeLiveNotificationUi(

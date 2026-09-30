@@ -420,6 +420,7 @@ class RuntimeRpcDispatcher(
     private val handlers: RuntimeM1Handlers,
     private val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     private val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    private val lifecycle: RuntimeLifecycleHandler? = null,
     private val foregroundInteractionGuard: suspend () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
     },
@@ -465,6 +466,7 @@ class RuntimeRpcDispatcher(
             return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Method is not available in this host milestone")
         }
         val capability = try {
+            lifecycle?.checkMethodAvailable(method.name)
             if (method.name == "files.read") {
                 requireHandler(m3Handlers.files).capabilityFor(
                     request.params.requiredIdentifier("token"),
@@ -527,6 +529,7 @@ class RuntimeRpcDispatcher(
                     return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
                 }
             }
+            lifecycle?.checkMethodAvailable(method.name)
             var preparedEncoding: EncodedRuntimeResponse? = null
             val result = invoke(method.name, request.params, request.id, retained) { preparedEncoding = it }
             RuntimeRpcResponse.Success(request.id, result, release).also {
@@ -565,8 +568,23 @@ class RuntimeRpcDispatcher(
                 "hostVersion" to RpcValue.StringValue(identity.hostVersion),
                 "toolId" to RpcValue.StringValue(identity.toolId),
                 "generation" to RpcValue.StringValue(identity.generation),
+                "runtimeState" to (lifecycle?.stateValue() ?: RpcValue.Null),
             ),
         )
+        "runtime.getState" -> requireHandler(lifecycle).stateValue()
+        "runtime.ackEvents" -> {
+            params.requireOnly("sequence")
+            requireHandler(lifecycle).acknowledgeEvents(params.requiredLong("sequence", 0, MAX_SAFE_INTEGER))
+            RpcValue.Null
+        }
+        "runtime.flushComplete" -> {
+            params.requireOnly("closeToken", "saved")
+            requireHandler(lifecycle).completeFlush(
+                params.requiredString("closeToken", 64),
+                params.optionalBoolean("saved") ?: throw IllegalArgumentException("saved"),
+            )
+            RpcValue.Null
+        }
         "ui.toast" -> {
             requireHandler(handlers.toast).show(params.requiredString("message", maxResponseBytes))
             RpcValue.Null

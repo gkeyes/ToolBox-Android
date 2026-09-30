@@ -11,14 +11,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /** Reserve one UTF-16 working copy for parsing, including requests waiting on a dispatcher. */
-internal class RuntimeRequestBudget {
+internal class RuntimeRequestBudget(private val maxBytes: Long = Long.MAX_VALUE) {
     private var requests = 0
     private var bytes = 0L
 
     @Synchronized
     fun acquire(retainedBytes: Int): Boolean {
         require(retainedBytes >= 0)
-        if (requests == Int.MAX_VALUE || retainedBytes > ResourceCapacity.availableHeapBytes() - bytes) return false
+        if (requests == Int.MAX_VALUE || retainedBytes > minOf(maxBytes, ResourceCapacity.availableHeapBytes()) - bytes) return false
         requests += 1
         bytes += retainedBytes
         return true
@@ -77,3 +77,35 @@ internal fun runtimeRejectedRequestId(encoded: String): String =
     requestIdPrefix.find(encoded)?.groupValues?.get(1).orEmpty()
 
 private val requestIdPrefix = Regex("""^\s*\{\s*"id"\s*:\s*"([A-Za-z0-9-]+)"\s*[,}]""")
+
+/** Bounded top-level method classification; decoding and authorization still happen after admission. */
+internal fun runtimeControlMethod(encoded: String): Boolean {
+    if (encoded.length > 2048) return false
+    var depth = 0
+    var index = 0
+    while (index < encoded.length) {
+        when (encoded[index]) {
+            '{', '[' -> depth++
+            '}', ']' -> depth--
+            '"' -> {
+                val start = ++index
+                while (index < encoded.length && encoded[index] != '"') {
+                    if (encoded[index] == '\\') index++
+                    index++
+                }
+                if (index >= encoded.length) return false
+                if (depth == 1 && encoded.substring(start, index) == "method") {
+                    var next = index + 1
+                    while (next < encoded.length && encoded[next].isWhitespace()) next++
+                    if (next >= encoded.length || encoded[next++] != ':') return false
+                    while (next < encoded.length && encoded[next].isWhitespace()) next++
+                    if (next >= encoded.length || encoded[next++] != '"') return false
+                    val end = encoded.indexOf('"', next)
+                    return end >= next && encoded.substring(next, end) in RuntimePresentationCoordinator.CONTROL_METHODS
+                }
+            }
+        }
+        index++
+    }
+    return false
+}

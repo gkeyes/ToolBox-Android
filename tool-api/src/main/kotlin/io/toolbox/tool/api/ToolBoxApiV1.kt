@@ -73,6 +73,9 @@ object ToolBoxApiV1 {
 
     val methods: List<MethodDescriptor> = listOf(
         MethodDescriptor("ready", ContractPhase.M1, null, "void", "ReadyResult"),
+        MethodDescriptor("runtime.getState", ContractPhase.M1, null, "void", "RuntimePresentationState"),
+        MethodDescriptor("runtime.ackEvents", ContractPhase.M1, null, "RuntimeEventAck", "void"),
+        MethodDescriptor("runtime.flushComplete", ContractPhase.M1, null, "RuntimeFlushResult", "void"),
         MethodDescriptor("ui.toast", ContractPhase.M1, null, "ToastRequest", "void"),
         MethodDescriptor("crypto.sha256", ContractPhase.M1, null, "Sha256Request", "Sha256Result"),
         MethodDescriptor("storage.get", ContractPhase.M1, ToolBoxCapabilityId.STORAGE, "StorageKeyRequest", "JsonValue | null"),

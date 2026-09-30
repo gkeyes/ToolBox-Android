@@ -12,6 +12,7 @@ import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.ServiceWorkerClient
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -43,10 +44,22 @@ sealed interface RuntimeWebViewCreationResult {
 object HardenedRuntimeWebView {
     private val hardeningLock = Any()
     private var debuggingDisabled = false
-    private var serviceWorkersHardened = false
+    private var defaultServiceWorkersHardened = false
+    private val hardenedProfiles = hashSetOf<String>()
 
     fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
         RuntimeBridgeLifecycle.emitEvent(webView, name, payload)
+
+    fun setRuntimeForeground(webView: WebView, foreground: Boolean) = RuntimeBridgeLifecycle.setForeground(webView, foreground)
+
+    suspend fun flushBeforeClose(webView: WebView, timeoutMillis: Long? = null): Boolean =
+        RuntimeBridgeLifecycle.flushBeforeClose(webView, timeoutMillis)
+
+    fun cancelClose(webView: WebView) = RuntimeBridgeLifecycle.cancelClose(webView)
+    fun isClosing(webView: WebView): Boolean = RuntimeBridgeLifecycle.isClosing(webView)
+    suspend fun awaitOpenForEvents(webView: WebView): Boolean = RuntimeBridgeLifecycle.awaitOpenForEvents(webView)
+
+    internal fun forgetProfile(profileName: String) { synchronized(hardeningLock) { hardenedProfiles.remove(profileName) } }
 
     fun release(webView: WebView) {
         (webView.webViewClient as? RuntimeWebViewClient)?.endFirstMainFrameTrace()
@@ -57,11 +70,6 @@ object HardenedRuntimeWebView {
     fun loadEntry(webView: WebView, runtime: PreparedToolRuntime) {
         RuntimeJavaScriptDialogs.dismiss(webView)
         webView.loadUrl(runtime.entryUrl)
-    }
-
-    fun reload(webView: WebView) {
-        RuntimeJavaScriptDialogs.dismiss(webView)
-        webView.reload()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -115,13 +123,14 @@ object HardenedRuntimeWebView {
                 )
             }
             hardenSettings(createdWebView, creationPermit.isolationMode)
-            hardenServiceWorkersOnce()
             if (creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE) {
                 val profile = requireNotNull(ProfileStore.getInstance().getProfile(runtime.profileName)) {
                     "The dedicated WebView profile is unavailable"
                 }
+                if (serviceWorkerBasic) hardenProfileServiceWorkers(runtime.profileName, profile.serviceWorkerController)
                 disableCookies(createdWebView, profile.cookieManager)
             } else {
+                hardenDefaultServiceWorkersOnce()
                 val cookieManager = CookieManager.getInstance()
                 disableCookies(createdWebView, cookieManager)
                 check(cookieManager.getCookie(runtime.origin).isNullOrEmpty()) {
@@ -198,10 +207,10 @@ object HardenedRuntimeWebView {
         }
     }
 
-    private fun hardenServiceWorkersOnce() = synchronized(hardeningLock) {
-        if (serviceWorkersHardened) return@synchronized
+    private fun hardenDefaultServiceWorkersOnce() = synchronized(hardeningLock) {
+        if (defaultServiceWorkersHardened) return@synchronized
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) {
-            serviceWorkersHardened = true
+            defaultServiceWorkersHardened = true
             return@synchronized
         }
         val controller = ServiceWorkerControllerCompat.getInstance()
@@ -226,7 +235,25 @@ object HardenedRuntimeWebView {
                 },
             )
         }
-        serviceWorkersHardened = true
+        defaultServiceWorkersHardened = true
+    }
+
+    private fun hardenProfileServiceWorkers(
+        profileName: String,
+        controller: android.webkit.ServiceWorkerController,
+    ) = synchronized(hardeningLock) {
+        if (profileName in hardenedProfiles) return@synchronized
+        // MULTI_PROFILE supplies this profile's platform controller, not the default controller.
+        controller.serviceWorkerWebSettings.apply {
+            blockNetworkLoads = true
+            allowContentAccess = false
+            allowFileAccess = false
+            cacheMode = WebSettings.LOAD_NO_CACHE
+        }
+        controller.setServiceWorkerClient(object : ServiceWorkerClient() {
+            override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse = RuntimePolicy.blockedResponse()
+        })
+        hardenedProfiles.add(profileName)
     }
 
     private const val STATELESS_API_HARDENING_SCRIPT = """

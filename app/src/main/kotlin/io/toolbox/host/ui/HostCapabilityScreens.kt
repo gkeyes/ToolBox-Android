@@ -41,6 +41,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -65,13 +67,38 @@ internal fun RuntimeShellScreen(
     toolName: String?,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val closeState by viewModel.closeState.collectAsStateWithLifecycle()
+    val exitRevision by viewModel.exitRevision.collectAsStateWithLifecycle()
 
     LaunchedEffect(state) {
         if (state is RuntimeUiState.Error) onPresentationReady()
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
 
-    RuntimeExitConfirmation(onConfirm = onBack, toolName = toolName)
+    key(exitRevision) {
+        RuntimeExitConfirmation(onConfirm = { viewModel.requestExit(onBack) }, toolName = toolName)
+    }
+    closeState?.let { saving ->
+        var waiting by remember(saving.reloading, exitRevision) { mutableStateOf(false) }
+        ToolBoxModalDialog(onDismissRequest = viewModel::cancelClose) {
+            Column(Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.two)) {
+                AppText(
+                    saving.error ?: if (waiting) "正在等待保存完成" else if (saving.slow) "仍在保存" else "正在保存",
+                    textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+                )
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
+                AppText(if (saving.error != null) "页面已保留。" else "保存完成后会自动${if (saving.reloading) "重载" else "退出"}。")
+                if (saving.error == null) ToolBoxBusyIndicator()
+                if (saving.error != null) ToolBoxPrimaryButton("重试保存", viewModel::retryClose)
+                if (saving.slow && !waiting && saving.error == null) ToolBoxTextButton("继续等待", { waiting = true })
+                ToolBoxTextButton(if (saving.reloading) "取消重载" else "取消退出", viewModel::cancelClose)
+                if (saving.slow || saving.error != null) ToolBoxDestructiveButton(
+                    if (saving.reloading) "放弃保存并重载" else "放弃保存并退出",
+                    viewModel::discardAndClose,
+                )
+            }
+        }
+    }
     val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
     ToolBoxRuntimeScaffold(
         modifier = Modifier
