@@ -340,8 +340,8 @@ internal class HostBackupService(
         require(data["pinnedOrder"] == null || J.int(data["pinnedOrder"]) >= 0)
         data["categoryId"]?.let(J::string)
     }
-    private suspend fun activeTasks(tools: List<InstalledTool>): Set<String> = tools.flatMap { repositories.backgroundTasks.observeTasks(it.metadata.id).first() }
-        .filter { it.state == TaskState.QUEUED || it.state == TaskState.RUNNING }.map { it.taskId }.toSet()
+    private suspend fun activeTasks(tools: List<InstalledTool>): Set<String> = tools.flatMap { repositories.backgroundTasks.observeActiveTasks(it.metadata.id).first() }
+        .map { it.taskId }.toSet()
     private fun dataFiles(folder: File, kind: String): List<File> = File(folder, "data/$kind").takeIf(File::isDirectory)?.listFiles()?.sortedBy { it.name }.orEmpty().also { list -> check(list.all { it.isFile && it.extension == "json" }) }
 
     companion object {

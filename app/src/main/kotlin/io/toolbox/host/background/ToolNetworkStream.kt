@@ -3,6 +3,8 @@ package io.toolbox.host.background
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Response
@@ -28,6 +30,9 @@ internal class ToolNetworkStreamControl {
     private var response: Response? = null
     private var reservation: AutoCloseable? = null
     private var cancellationCode: String? = null
+    private val cancellationSignal = CompletableDeferred<String>()
+
+    val cancellation: Deferred<String> get() = cancellationSignal
 
     fun requireActive() = synchronized(lock) {
         cancellationCode?.let { throw ToolNetworkFailure(it, retryable = it == "NETWORK_TIMEOUT") }
@@ -55,10 +60,14 @@ internal class ToolNetworkStreamControl {
     }
 
     fun cancel(code: String = "CANCELLED") {
-        val resources = synchronized(lock) {
-            if (cancellationCode == null) cancellationCode = code
-            Triple(call, response, reservation).also { call = null; response = null; reservation = null }
+        val (resources, signal) = synchronized(lock) {
+            val newSignal = if (cancellationCode == null) code else null
+            if (cancellationCode == null) {
+                cancellationCode = code
+            }
+            Triple(call, response, reservation).also { call = null; response = null; reservation = null } to newSignal
         }
+        signal?.let(cancellationSignal::complete)
         // Socket cancellation is synchronous and interrupts blocked reads; close may block, so runs on IO.
         resources.first?.cancel()
         resources.second?.closeOnIo()

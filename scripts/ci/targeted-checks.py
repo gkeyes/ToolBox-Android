@@ -36,8 +36,19 @@ BROWSER_NODE = {
 }
 BACKGROUND_ANDROID = {"io.toolbox.host.background.WorkerLifecycleInstrumentationTest"}
 MIGRATION_ANDROID = {"io.toolbox.host.background.BackgroundTaskMigrationTest"}
+BUNDLED_EXAMPLES = {"position-calculator", "quick-notes", "background-task-demo", "notification-lab"}
+RUNTIME_STORAGE_ANDROID = {
+    "io.toolbox.host.runtime.RuntimeStorageFlushInstrumentationTest#nonemptyFinalWriteWaitsForRoomThenSealRejectsAndCancelAllowsNewWrite",
+}
+RUNTIME_ADMISSION_ANDROID = {
+    "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeAdmissionInstrumentationTest#busyOrdinaryAdmissionRetriesTheSameNonemptyFinalWriteWhileControlsRemainAvailable",
+}
+RUNTIME_SAVE_DIALOG_ANDROID = {
+    "io.toolbox.host.ui.RuntimeSaveDialogBehaviorTest#miuixCloseChoicesAndCallbacks",
+    "io.toolbox.host.ui.RuntimeSaveDialogBehaviorTest#liquidGlassCloseChoicesAndCallbacks",
+}
 UNIT_RE = re.compile(r"^(app|core-data|tool-package|tool-runtime)=([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?:#([A-Za-z_]\w*))?$")
-ANDROID_RE = re.compile(r"^io\.toolbox\.host\.[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?:#[A-Za-z_]\w*)?$")
+ANDROID_RE = re.compile(r"^(?:(app|tool-runtime)=)?(io\.toolbox\.[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:#([A-Za-z_]\w*))?$")
 NODE_RE = re.compile(r"^scripts/tests/browser-[A-Za-z0-9-]+\.test\.cjs$")
 
 
@@ -55,10 +66,13 @@ def validate(values, pattern, label):
 def classify(paths):
     unit, android, node, unknown = set(), set(), set(), []
     for path in paths:
-        if path.startswith("examples/") or path == ".github/workflows/tbx.yml":
-            # Standalone tools are checked by TBX CI; bundled examples still enter the APK build.
+        if (path.startswith("examples/") or path == ".github/workflows/tbx.yml"
+                or path == "README.md" or path.startswith("docs/")
+                or path.startswith("core-data/schemas/")
+                or path in {"scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}):
+            # These inputs are checked by TBX CI or do not change Android behavior.
             continue
-        if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py"}:
+        if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/run-android-behavior.sh"}:
             node.add("scripts/tests/browser-picker.test.cjs")
             android |= BROWSER_ANDROID
         elif path.startswith("app/src/main/kotlin/io/toolbox/host/background/") or path.startswith("app/src/test/kotlin/io/toolbox/host/background/"):
@@ -68,9 +82,9 @@ def classify(paths):
                 android |= MIGRATION_ANDROID
         elif path.startswith("app/src/androidTest/kotlin/io/toolbox/host/background/"):
             android.add("io.toolbox.host.background." + Path(path).stem)
-        elif path.startswith("core-data/src/main/kotlin/io/toolbox/core/data/") and Path(path).name in {
+        elif path == "core-data/build.gradle.kts" or (path.startswith("core-data/src/main/kotlin/io/toolbox/core/data/") and Path(path).name in {
             "CoreDataFactory.kt", "Repositories.kt", "Daos.kt", "Entities.kt", "RoomRepositories.kt", "ToolBoxDatabase.kt", "ToolBoxMigrations.kt",
-        }:
+        }):
             unit |= BACKGROUND_UNIT
             android |= MIGRATION_ANDROID
         elif path in {
@@ -93,11 +107,70 @@ def classify(paths):
         elif path == "app/src/main/kotlin/io/toolbox/host/runtime/RuntimeForegroundService.kt":
             android |= BACKGROUND_ANDROID
             unit |= BACKGROUND_UNIT
+        elif path.startswith("app/src/main/kotlin/io/toolbox/host/runtime/"):
+            unit |= {
+                "app=io.toolbox.host.runtime.RuntimeNotificationControllerTest",
+                "app=io.toolbox.host.HostRootStateTest",
+            }
+            android |= BACKGROUND_ANDROID
+            android |= RUNTIME_STORAGE_ANDROID
+        elif path.startswith("app/src/androidTest/kotlin/io/toolbox/host/runtime/"):
+            if Path(path).stem == "RuntimeStorageFlushInstrumentationTest":
+                android |= RUNTIME_STORAGE_ANDROID
+            else:
+                android.add(path.removeprefix("app/src/androidTest/kotlin/").removesuffix(".kt").replace("/", "."))
+        elif path.startswith("app/src/main/kotlin/io/toolbox/host/ui/"):
+            unit.add("app=io.toolbox.host.HostRootStateTest")
+            android.add("io.toolbox.host.SecondaryPageBehaviorTest")
+            if Path(path).name == "HostCapabilityScreens.kt":
+                android |= RUNTIME_SAVE_DIALOG_ANDROID
+        elif path == "app/src/androidTest/kotlin/io/toolbox/host/ui/RuntimeSaveDialogBehaviorTest.kt":
+            android |= RUNTIME_SAVE_DIALOG_ANDROID
+        elif path == "app/build.gradle.kts":
+            unit |= NETWORK_UNIT | BACKGROUND_UNIT
+            android |= MIGRATION_ANDROID
+        elif path in {"scripts/ci/verify-host-contract.mjs", "sdk/help/manual.md"}:
+            unit.add("tool-runtime=io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest")
+            android.add("tool-runtime=io.toolbox.tool.runtime.WasmRuntimeInstrumentationTest")
+        elif path.startswith("app/src/test/kotlin/io/toolbox/host/") and Path(path).stem.endswith("Test"):
+            unit.add("app=" + path.removeprefix("app/src/test/kotlin/").removesuffix(".kt").replace("/", "."))
+        elif path.startswith("app/src/androidTest/kotlin/io/toolbox/host/") and Path(path).stem.endswith("Test"):
+            android.add(path.removeprefix("app/src/androidTest/kotlin/").removesuffix(".kt").replace("/", "."))
+        elif path.startswith("core-data/src/test/kotlin/") and Path(path).stem.endswith("Test"):
+            unit.add("core-data=" + path.removeprefix("core-data/src/test/kotlin/").removesuffix(".kt").replace("/", "."))
+        elif path.startswith("tool-package/src/test/kotlin/") and Path(path).stem.endswith("Test"):
+            unit.add("tool-package=" + path.removeprefix("tool-package/src/test/kotlin/").removesuffix(".kt").replace("/", "."))
         elif path.startswith("tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/") or path.startswith("tool-runtime/src/test/kotlin/io/toolbox/tool/runtime/"):
             unit |= {
                 "tool-runtime=io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest",
                 "tool-runtime=io.toolbox.tool.runtime.RuntimeNetworkBudgetTest",
+                "tool-runtime=io.toolbox.tool.runtime.RuntimePresentationCoordinatorTest",
+                "tool-runtime=io.toolbox.tool.runtime.RuntimeEventBufferTest",
+                "tool-runtime=io.toolbox.tool.runtime.RuntimeAuthorizationStageTest",
             }
+            android |= {
+                "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#readyOnceEarlyEventsStateRevisionsCloseAndNewGeneration",
+                "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#dedicatedProfileServiceWorkerHardeningIsRestoredAfterDeleteAndRecreate",
+            }
+            android |= RUNTIME_ADMISSION_ANDROID
+        elif path.startswith("tool-runtime/src/androidTest/kotlin/io/toolbox/tool/runtime/"):
+            test_name = Path(path).stem
+            if test_name == "RuntimeBridgeLifecycleInstrumentationTest":
+                android |= {
+                    "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#readyOnceEarlyEventsStateRevisionsCloseAndNewGeneration",
+                    "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#dedicatedProfileServiceWorkerHardeningIsRestoredAfterDeleteAndRecreate",
+                }
+            elif test_name == "RuntimeBridgeAdmissionInstrumentationTest":
+                android |= RUNTIME_ADMISSION_ANDROID
+            else:
+                android.add("tool-runtime=io.toolbox.tool.runtime." + (test_name if test_name.endswith("Test") else "WasmRuntimeInstrumentationTest"))
+        elif path.startswith("tool-api/src/main/kotlin/io/toolbox/tool/api/"):
+            unit |= {
+                "tool-runtime=io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest",
+                "tool-runtime=io.toolbox.tool.runtime.RuntimeAuthorizationStageTest",
+            }
+            android.add("tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#readyOnceEarlyEventsStateRevisionsCloseAndNewGeneration")
+            android |= RUNTIME_ADMISSION_ANDROID
         elif path == "tool-package/src/test/kotlin/io/toolbox/tool/packagekit/fixtures/InMemoryCoreData.kt":
             unit |= {
                 "tool-package=io.toolbox.tool.packagekit.lifecycle.PackageImportCancellationTest",
@@ -121,33 +194,69 @@ def plan():
     requested = os.environ.get("VALIDATION_SCOPE", "full") if manual else "full"
     unit = validate(items(os.environ.get("UNIT_TEST_FILTER", "")), UNIT_RE, "unit class#method")
     android = validate(items(os.environ.get("ANDROID_TEST_FILTER", "")), ANDROID_RE, "Android class#method")
+    android_groups(",".join(android))
     node = validate(items(os.environ.get("NODE_TEST_PATH", "")), NODE_RE, "Node test path")
     if manual:
         if android:
             requested = "targeted"
+        if requested != "targeted" and (unit or node):
+            raise ValueError("Choose targeted validation when selecting unit or Node test filters")
         if requested == "targeted" and not (unit or android or node):
             raise ValueError("Targeted dispatch needs at least one test filter")
         if requested == "targeted" and os.environ.get("RUN_ANDROID_UI") == "true" and not android:
             raise ValueError("Targeted emulator runs need an Android class#method filter")
+        if requested == "targeted" and os.environ.get("REUSE_VERIFIED_RUN"):
+            raise ValueError("Targeted checks cannot reuse a prior full verification run")
         scope = requested
         unknown = []
     else:
-        try:
-            selected_unit, selected_android, selected_node, unknown = classify(changed_paths())
-            if not unknown and (selected_unit or selected_android or selected_node):
-                scope = "targeted"
-                unit, android, node = sorted(selected_unit), sorted(selected_android), sorted(selected_node)
-            else:
-                scope = "full"
-        except (ValueError, subprocess.CalledProcessError) as error:
-            scope, unknown = "full", [str(error)]
+        paths = changed_paths()
+        selected_unit, selected_android, selected_node, unknown = classify(paths)
+        if unknown:
+            raise ValueError("Missing targeted check mapping for: " + ", ".join(sorted(unknown)))
+        if not (selected_unit or selected_android or selected_node):
+            bundled = [path for path in paths if path.startswith("examples/")
+                       and path.split("/", 2)[1] in BUNDLED_EXAMPLES]
+            if bundled:
+                raise ValueError("Bundled APK inputs need a focused build check: " + ", ".join(sorted(bundled)))
+            scope = "docs_only"
+        else:
+            scope = "targeted"
+        unit, android, node = sorted(selected_unit), sorted(selected_android), sorted(selected_node)
     outputs = {"scope": scope, "unit": ",".join(unit), "android": ",".join(android), "node": ",".join(node)}
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         output.writelines(f"{key}={value}\n" for key, value in outputs.items())
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
         summary.write(f"Android check scope: `{scope}`. Unit: {len(unit)}, Android: {len(android)}, Node: {len(node)}.\n")
-        if unknown:
-            summary.write("No targeted mapping for: " + ", ".join(sorted(unknown)) + ". Running full checks.\n")
+
+
+def android_groups(filters):
+    grouped = {}
+    for value in validate(items(filters), ANDROID_RE, "Android module=class#method"):
+        match = ANDROID_RE.fullmatch(value)
+        module, classname, method = match.groups()
+        module = module or "app"
+        if not classname.startswith("io.toolbox.host." if module == "app" else "io.toolbox.tool.runtime."):
+            raise ValueError(f"Android test class does not belong to {module}: {classname}")
+        grouped.setdefault(module, []).append((classname, method))
+    return grouped
+
+
+def android_compile(filters):
+    modules = android_groups(filters)
+    if not modules:
+        raise ValueError("No Android test filter selected")
+    subprocess.run(["./gradlew", "--no-daemon", *(f":{module}:compileDebugAndroidTestKotlin" for module in modules)], check=True)
+
+
+def android_run(filters):
+    modules = android_groups(filters)
+    if not modules:
+        raise ValueError("No Android test filter selected")
+    for module, selected in modules.items():
+        classes = ",".join(name + ("#" + method if method else "") for name, method in selected)
+        subprocess.run(["./gradlew", "--no-daemon", f":{module}:connectedDebugAndroidTest",
+                        f"-Pandroid.testInstrumentationRunnerArguments.class={classes}"], check=True)
 
 
 def run_unit(filters):
@@ -186,17 +295,18 @@ def testcases(folder):
 
 
 def android_results(filters):
-    cases = testcases(Path("app/build/outputs/androidTest-results/connected"))
-    for value in validate(items(filters), ANDROID_RE, "Android class#method"):
-        classname, _, method = value.partition("#")
-        if not any(case.get("classname") == classname and (not method or case.get("name") == method) for case in cases):
-            raise ValueError(f"No executed Android test matched {value}")
+    for module, selected in android_groups(filters).items():
+        cases = testcases(Path(module) / "build/outputs/androidTest-results/connected")
+        for classname, method in selected:
+            if not any(case.get("classname") == classname and (not method or case.get("name") == method) for case in cases):
+                raise ValueError(f"No executed Android test matched {module}={classname}{'#' + method if method else ''}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["plan", "unit", "node", "android-results"])
+    parser.add_argument("action", choices=["plan", "unit", "node", "android-compile", "android-run", "android-results"])
     parser.add_argument("--filters", default="")
     args = parser.parse_args()
     {"plan": plan, "unit": lambda: run_unit(args.filters), "node": lambda: run_node(args.filters),
+     "android-compile": lambda: android_compile(args.filters), "android-run": lambda: android_run(args.filters),
      "android-results": lambda: android_results(args.filters)}[args.action]()

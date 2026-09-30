@@ -78,16 +78,15 @@ internal class RuntimeNetworkGateway(
         validateNetworkAccess()
         val responseLimit = request.maxResponseBytes ?: policy?.maxResponseBytes
         val timeout = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS
-        val requestId = "request-${java.util.UUID.randomUUID()}"
-        // The proxy owns the full-response deadline; retain the stream registry only for revocation.
-        val control = streams.reserve(requestId, 0)
+        // The proxy owns the deadline. Track the active call for revocation without retiring an internal ID.
+        val control = streams.registerRequest()
         val result = try {
             proxy.requestWithControl(ToolNetworkRequest(
                 request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,
                 request.body, request.bodyIsJson, timeout, responseLimit,
                 resourceOwner = toolId ?: "foreground",
             ), control)
-        } finally { streams.release(requestId, control) }
+        } finally { streams.releaseRequest(control) }
         return when (result) {
             is NetworkExecution.Success -> RuntimeNetworkResponse(
                 status = result.statusCode,

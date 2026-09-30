@@ -159,7 +159,10 @@ private class RecordingBackground : HostBackgroundOperations {
     var attempts = 0
     var stop: suspend () -> Unit = {}
     override suspend fun cancelAll(toolIds: Collection<String>) { attempts++; stop() }
-    override fun observeTasks(toolId: String): Flow<List<BackgroundTask>> = error("not used")
+    override fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>> = error("not used")
+    override fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> = error("not used")
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> = error("not used")
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage = error("not used")
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = error("not used")
     override suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult = error("not used")
     override suspend fun cancelTool(toolId: String) = error("not used")

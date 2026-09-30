@@ -358,6 +358,24 @@ internal class RoomBackgroundTaskRepository(
     override fun observeTasks(toolId: String): Flow<List<BackgroundTask>> =
         database.backgroundTasks().observeForTool(toolId).map { rows -> rows.map(BackgroundTaskEntity::toDomain) }
 
+    override fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>> =
+        database.backgroundTasks().observeActiveForTool(toolId).map { rows -> rows.map(BackgroundTaskEntity::toDomain) }
+
+    override fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> =
+        database.backgroundTasks().observeRecentHistory(toolId).map(::historyPage)
+
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> =
+        database.backgroundTasks().observeHistoryThrough(toolId, createdAt, taskId)
+            .map { rows -> rows.map(BackgroundTaskEntity::toDomain) }
+
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage =
+        historyPage(database.backgroundTasks().historyBefore(toolId, createdAt, taskId))
+
+    private fun historyPage(rows: List<BackgroundTaskEntity>) = io.toolbox.core.data.BackgroundTaskHistoryPage(
+        tasks = rows.take(50).map(BackgroundTaskEntity::toDomain),
+        hasMore = rows.size > 50,
+    )
+
     override fun observeResult(taskId: String): Flow<TaskRunResult?> =
         database.taskResults().observe(taskId).map { it?.toDomain() }
 

@@ -76,7 +76,10 @@ internal interface HostPackageOperations {
 }
 
 internal interface HostBackgroundOperations {
-    fun observeTasks(toolId: String): Flow<List<BackgroundTask>>
+    fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>>
+    fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage>
+    fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>>
+    suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage
     fun observeResult(taskId: String): Flow<TaskRunResult?>
     suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult
     suspend fun cancelTool(toolId: String)

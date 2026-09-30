@@ -43,6 +43,18 @@ class BackgroundTaskCoordinator(
     override fun tasks(toolId: String): Flow<List<BackgroundTask>> =
         repositories.backgroundTasks.observeTasks(toolId)
 
+    fun activeTasks(toolId: String): Flow<List<BackgroundTask>> =
+        repositories.backgroundTasks.observeActiveTasks(toolId)
+
+    fun recentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> =
+        repositories.backgroundTasks.observeRecentHistory(toolId)
+
+    fun historyThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> =
+        repositories.backgroundTasks.observeHistoryThrough(toolId, createdAt, taskId)
+
+    suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage =
+        repositories.backgroundTasks.historyBefore(toolId, createdAt, taskId)
+
     override fun result(taskId: String): Flow<TaskRunResult?> =
         repositories.backgroundTasks.observeResult(taskId)
 
@@ -119,9 +131,8 @@ class BackgroundTaskCoordinator(
 
     private suspend fun reconcileScheduledTasks(toolIds: Collection<String>) {
         toolIds.forEach { toolId ->
-            val tasks = repositories.backgroundTasks.observeTasks(toolId).first()
+            val tasks = repositories.backgroundTasks.observeActiveTasks(toolId).first()
             tasks.forEach { task ->
-                if (task.state !in setOf(TaskState.QUEUED, TaskState.RUNNING)) return@forEach
                 val existing = withContext(Dispatchers.IO) {
                     workManager.getWorkInfosForUniqueWork(workName(task.taskId)).get()
                 }
@@ -256,8 +267,8 @@ class BackgroundTaskCoordinator(
     }
 
     private suspend fun cancelOperations(toolId: String, operation: BackgroundOperation) {
-        val tasks = repositories.backgroundTasks.observeTasks(toolId).first()
-            .filter { it.operation == operation && !it.isFinished }
+        val tasks = repositories.backgroundTasks.observeActiveTasks(toolId).first()
+            .filter { it.operation == operation }
         completeBackgroundCancellation(*tasks.map { task -> suspend {
             if (cancellation.cancel(toolId, task.taskId) is BackgroundCancellationResult.Failed) {
                 throw BackgroundCancellationException()

@@ -304,7 +304,15 @@ internal class ProductionHostBackgroundOperations(
         runtimeSessions = sessions
     }
 
-    override fun observeTasks(toolId: String) = delegate.observeTasks(toolId)
+    override fun observeActiveTasks(toolId: String) = delegate.observeActiveTasks(toolId)
+
+    override fun observeRecentHistory(toolId: String) = delegate.observeRecentHistory(toolId)
+
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String) =
+        delegate.observeHistoryThrough(toolId, createdAt, taskId)
+
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String) =
+        delegate.historyBefore(toolId, createdAt, taskId)
 
     override fun observeResult(taskId: String) = delegate.observeResult(taskId)
 

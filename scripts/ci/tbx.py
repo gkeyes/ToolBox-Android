@@ -9,6 +9,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
 import tempfile
 import zipfile
 
@@ -16,7 +17,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "scripts/ci/tbx-targets.json"
 SHARED_PATHS = (
-    ".github/workflows/tbx.yml", "scripts/ci/*",
+    ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
     "scripts/package-tool.py", "scripts/package-examples.sh", "sdk/*",
     "tool-api/*", "tool-package/*", "tool-runtime/*", "core-*/*",
     "app/build.gradle.kts", "app/src/main/kotlin/io/toolbox/host/runtime/*",
@@ -24,6 +25,25 @@ SHARED_PATHS = (
     "gradle.properties", "build.gradle.kts", "settings.gradle.kts",
 )
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
+TEST_FILES = {
+    "nextflux": {
+        "unit": {"test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs", "test/foreground-gate.test.mjs", "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs"},
+        "browser": {"test/browser/reading.spec.js", "test/browser/article-navigation.spec.js"},
+    },
+    "socialcoach": {
+        "unit": {"test/platform.test.ts", "test/minimax.test.ts"},
+        "browser": {"test/browser.spec.ts"},
+    },
+    "github-actions-watcher": {
+        "unit": {"scripts/tests/watcher-reliability.test.cjs"},
+        "browser": {"examples/github-actions-watcher/tests/layout.py"},
+    },
+}
+
+
+def available_tests(name, kind):
+    return {path for path in TEST_FILES[name][kind]
+            if (ROOT / path if path.startswith(("scripts/", "examples/")) else ROOT / "examples" / name / path).is_file()}
 
 
 def targets():
@@ -37,7 +57,8 @@ def select_targets(registry, selection, changed=()):
         if any(fnmatchcase(path, pattern) for path in changed for pattern in SHARED_PATHS):
             return sorted(registry)
         return sorted(name for name in registry
-                      if any(path.startswith(f"examples/{name}/") for path in changed))
+                      if any(path.startswith(f"examples/{name}/") for path in changed)
+                      or (name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed))
     requested = selection.split(",")
     requested = [name.strip() for name in requested]
     unknown = [name for name in requested if name not in registry]
@@ -99,16 +120,69 @@ def append_values(environment_file, values):
                 handle.write(f"{key}={value}\n")
 
 
-def plan(selection):
+def selected_tests(name, changed, requested_filter, full):
+    result = {"full_tests": full, "unit_test_filter": "", "browser_test_filter": "", "watcher_reliability": False, "watcher_layout": False}
+    if full or name not in TEST_FILES:
+        return result
+    unit_files, browser_files = available_tests(name, "unit"), available_tests(name, "browser")
+    allowed = unit_files | browser_files
+    if requested_filter:
+        requested = {value.strip() for value in requested_filter.split(",") if value.strip()}
+        selected = requested & allowed
+    else:
+        local = [path for path in changed if path.startswith(f"examples/{name}/")]
+        shared = any(fnmatchcase(path, pattern) for path in changed for pattern in SHARED_PATHS)
+        selected = set()
+        for path in local:
+            relative = path.removeprefix(f"examples/{name}/")
+            full_path = path if name == "github-actions-watcher" else relative
+            if full_path in allowed:
+                selected.add(full_path)
+            elif relative in {"manifest.json", "package.json", "package-lock.json", "README.md", "package.sh"}:
+                continue
+            elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")):
+                selected |= allowed
+            elif name == "socialcoach" and (relative.startswith("platform/") or relative.startswith("src/")):
+                selected |= allowed
+            elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:
+                selected |= allowed
+            else:
+                raise ValueError(f"No TBX test mapping for {path}")
+        if shared:
+            selected |= allowed
+        if name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed:
+            selected.add("scripts/tests/watcher-reliability.test.cjs")
+    if name == "github-actions-watcher":
+        result["watcher_reliability"] = "scripts/tests/watcher-reliability.test.cjs" in selected
+        result["watcher_layout"] = "examples/github-actions-watcher/tests/layout.py" in selected
+    else:
+        result["unit_test_filter"] = ",".join(sorted(selected & unit_files))
+        result["browser_test_filter"] = ",".join(sorted(selected & browser_files))
+    return result
+
+
+def plan(selection, validation_scope="full", test_filter=""):
     registry = targets()
     changed = ()
     if selection == "changed":
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
         changed = git_changes(event, os.environ["GITHUB_EVENT_NAME"])
     selected = select_targets(registry, selection, changed)
+    if validation_scope not in {"full", "targeted"}:
+        raise ValueError("Unknown TBX validation scope")
+    if test_filter and validation_scope != "targeted":
+        raise ValueError("Choose targeted validation when selecting a test path")
+    if validation_scope == "targeted" and selection != "changed" and not test_filter:
+        raise ValueError("Targeted TBX dispatch needs a test path")
     for name in selected:
         metadata(name, registry[name])
-    matrix = {"include": [{"tool": name, "npm": registry[name].get("npm", False)} for name in selected]}
+    matrix = {"include": [
+        {"tool": name, "npm": registry[name].get("npm", False), **selected_tests(name, changed, test_filter,
+            full=selection != "changed" and validation_scope == "full")}
+        for name in selected
+    ]}
+    if test_filter and not any(row["unit_test_filter"] or row["browser_test_filter"] or row["watcher_reliability"] or row["watcher_layout"] for row in matrix["include"]):
+        raise ValueError("Selected TBX test path does not belong to a selected tool")
     append_values(os.environ.get("GITHUB_OUTPUT"), {
         "matrix": json.dumps(matrix, separators=(",", ":")), "count": len(selected),
     })
@@ -120,6 +194,35 @@ def plan(selection):
 
 def execute(command, source):
     subprocess.run(command, cwd=source, check=True)
+
+
+def run_selected_tests(name, test_filter, browser=False):
+    if name not in TEST_FILES:
+        raise ValueError(f"No registered tests for {name}")
+    selected = [value.strip() for value in test_filter.split(",") if value.strip()]
+    allowed = available_tests(name, "browser" if browser else "unit")
+    if not selected or any(value not in allowed for value in selected):
+        raise ValueError(f"Invalid selected {'browser' if browser else 'unit'} tests for {name}")
+    if browser:
+        source = ROOT / "examples" / name / ("test/browser" if name == "nextflux" else "")
+        paths = [Path(value).name if name == "nextflux" else value for value in selected]
+        for path in paths:
+            listing = subprocess.run(["npx", "playwright", "test", "--list", path], cwd=source, text=True, capture_output=True, check=True)
+            print(listing.stdout, end="")
+            count = re.search(r"Total: (\d+) tests?", listing.stdout)
+            if not count or int(count[1]) == 0:
+                raise ValueError(f"No Playwright tests matched {path}")
+        execute(["npx", "playwright", "test", *paths], source)
+    else:
+        source = ROOT if name == "github-actions-watcher" else ROOT / "examples" / name
+        for path in selected:
+            command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test", path]
+            completed = subprocess.run(command, cwd=source, text=True, capture_output=True, check=True)
+            sys.stdout.write(completed.stdout)
+            sys.stderr.write(completed.stderr)
+            count = re.findall(r"^# tests (\d+)\s*$", completed.stdout, re.MULTILINE)
+            if not count or int(count[-1]) == 0:
+                raise ValueError(f"No Node tests executed for {name}: {path}")
 
 
 def matched_files(source, patterns):
@@ -186,12 +289,16 @@ def build(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("plan", "build"))
+    parser.add_argument("command", choices=("plan", "build", "test-unit", "test-browser"))
     parser.add_argument("--tool", default="all")
+    parser.add_argument("--validation-scope", default="full")
+    parser.add_argument("--test-filter", default="")
     args = parser.parse_args()
     try:
         if args.command == "plan":
-            plan(args.tool)
+            plan(args.tool, args.validation_scope, args.test_filter)
+        elif args.command.startswith("test-"):
+            run_selected_tests(args.tool, args.test_filter, browser=args.command == "test-browser")
         else:
             for name in select_targets(targets(), args.tool):
                 build(name)

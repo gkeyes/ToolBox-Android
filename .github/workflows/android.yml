@@ -5,6 +5,9 @@ on:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
       - "**"
+      - "!README.md"
+      - "!docs/**"
+      - "!core-data/schemas/**"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -14,13 +17,19 @@ on:
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
       - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/targeted-checks.py"
+      - "scripts/ci/reuse-host-verification.py"
       - "scripts/ci/run-android-behavior.sh"
       - "scripts/ci/release-startup-smoke.py"
       - "scripts/tests/test_release_startup.py"
+      - "scripts/tests/test_reuse_host_verification.py"
   pull_request:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
       - "**"
+      - "!README.md"
+      - "!docs/**"
+      - "!core-data/schemas/**"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -30,9 +39,12 @@ on:
       - "!scripts/ci/**"
       - "scripts/ci/verify_release.py"
       - "scripts/ci/verify-host-contract.mjs"
+      - "scripts/ci/targeted-checks.py"
+      - "scripts/ci/reuse-host-verification.py"
       - "scripts/ci/run-android-behavior.sh"
       - "scripts/ci/release-startup-smoke.py"
       - "scripts/tests/test_release_startup.py"
+      - "scripts/tests/test_reuse_host_verification.py"
   workflow_dispatch:
     inputs:
       run_android_ui_tests:
@@ -49,7 +61,7 @@ on:
         type: string
         required: false
       android_test_filter:
-        description: "For targeted runs: host instrumentation class#method, comma separated"
+        description: "For targeted runs: app or tool-runtime=class#method, comma separated; bare class means app"
         type: string
         required: false
       node_test_path:
@@ -94,6 +106,7 @@ jobs:
           ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
           NODE_TEST_PATH: ${{ inputs.node_test_path || '' }}
           RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
+          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run || '' }}
         run: python3 scripts/ci/targeted-checks.py plan
       - name: Apply selected Android test filter
         run: echo "TARGET_ANDROID_TEST=${{ steps.targeted.outputs.android }}" >> "$GITHUB_ENV"
@@ -101,47 +114,22 @@ jobs:
         id: android_ui
         env:
           RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           run_ui=false
           reason=''
           if [ -n "$TARGET_ANDROID_TEST" ]; then
-            test_filter_pattern='^io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?(,io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?)*$'
-            [[ "$TARGET_ANDROID_TEST" =~ $test_filter_pattern ]] || { echo 'Invalid host test class#method list' >&2; exit 1; }
             run_ui=true
             reason="Only the requested test will run: $TARGET_ANDROID_TEST"
           elif [ "$RUN_ANDROID_UI" = true ]; then
             run_ui=true
             reason='Manual Android emulator request.'
-          elif [ "$EVENT_NAME" = pull_request ] || [ "$EVENT_NAME" = push ]; then
-            changed_paths="$RUNNER_TEMP/android-changed-paths"
-            if [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] ||
-              ! git diff --name-only -z --no-renames "$BASE_SHA" "$HEAD_SHA" > "$changed_paths"; then
-              run_ui=true
-              reason='Browser change scope could not be determined; running the full emulator suite.'
-            else
-              while IFS= read -r -d '' path; do
-                case "$path" in
-                  app/src/main/AndroidManifest.xml|app/src/main/kotlin/io/toolbox/host/browser/*|\
-                  app/src/test/kotlin/io/toolbox/host/browser/*|app/src/androidTest/kotlin/io/toolbox/host/browser/*|\
-                  app/src/main/assets/browser/*|tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeBrowserUrl.kt|\
-                  scripts/tests/browser-*|.github/workflows/android.yml)
-                    run_ui=true
-                    reason='Browser source, assets, tests, or CI changed; running the full emulator suite.'
-                    break
-                    ;;
-                esac
-              done < "$changed_paths"
-            fi
           fi
           echo "enabled=$run_ui" >> "$GITHUB_OUTPUT"
           if [ "$run_ui" = true ]; then
             printf '## Android emulator checks: ENABLED\n%s\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
           else
             printf '%s\n' '## Android emulator checks: NOT RUN' \
-              'No browser-related files changed and no manual emulator run was requested.' \
+              'No Android test filter or manual emulator run was requested.' \
               'Neither Android behavior nor signed-startup checks ran; no full-device validation is claimed.' \
               'Manual workflow runs can explicitly enable run_android_ui_tests.' >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -154,7 +142,11 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ '${{ steps.targeted.outputs.scope }}' = targeted ]; then
-            printf '%s\n' 'scope=current_run' 'checks=targeted' >> "$GITHUB_OUTPUT"
+            printf '%s\n' 'scope=current_run' 'checks=targeted' \
+              "source_run=$GITHUB_RUN_ID" "base_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          elif [ '${{ steps.targeted.outputs.scope }}' = docs_only ]; then
+            printf '%s\n' 'scope=docs_only' 'checks=docs_only' \
+              "source_run=$GITHUB_RUN_ID" "base_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           else
             python3 scripts/ci/reuse-host-verification.py
           fi
@@ -180,7 +172,7 @@ jobs:
           NODE_TEST_PATH: ${{ steps.targeted.outputs.node }}
         run: python3 scripts/ci/targeted-checks.py node --filters "$NODE_TEST_PATH"
       - name: Verify release evidence and baseline reuse guards
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' || steps.baseline.outputs.scope == 'reused_unchanged_host' }}
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
           if [ '${{ steps.baseline.outputs.scope }}' = current_run ]; then
@@ -196,26 +188,51 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Generate actual Room v1 schema from the fixed installed baseline
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
+        run: |
+          set -euo pipefail
+          baseline_dir="$RUNNER_TEMP/toolbox-room-v1"
+          mkdir -p "$baseline_dir"
+          git archive 06cd8ec7899f139f974c4c72b565af59a3f91118 | tar -x -C "$baseline_dir"
+          python3 - "$baseline_dir" <<'PY'
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+          database = root / 'core-data/src/main/kotlin/io/toolbox/core/data/db/ToolBoxDatabase.kt'
+          source = database.read_text()
+          assert 'exportSchema = false' in source and 'version = 1' in source
+          database.write_text(source.replace('exportSchema = false', 'exportSchema = true'))
+          gradle = root / 'core-data/build.gradle.kts'
+          source = gradle.read_text()
+          marker = 'arg("room.generateKotlin", "true")'
+          assert marker in source
+          gradle.write_text(source.replace(marker, marker + '\n    arg("room.schemaLocation", "$projectDir/schemas")'))
+          PY
+          (cd "$baseline_dir" && ./gradlew --no-daemon :core-data:kspDebugKotlin)
+          schema="$baseline_dir/core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/1.json"
+          test -s "$schema"
+          mkdir -p app/src/androidTest/assets/room-v1
+          cp "$schema" app/src/androidTest/assets/room-v1/1.json
       - name: Lint the complete Android app
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: ./gradlew --no-daemon :app:lint
       - name: Verify API contract, embedded SDK, and security entry points
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: ${{ env.TARGET_ANDROID_TEST != '' && 'Compile APK for the selected test' || (steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs')) }}
+      - name: ${{ steps.baseline.outputs.checks == 'targeted' && 'Build debug and release APKs for selected checks' || (steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs')) }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         env:
           VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
           SKIP_ANDROID_UI: ${{ steps.android_ui.outputs.enabled == 'false' }}
         run: |
           if [ "$VALIDATION_SCOPE" = targeted ]; then
-            if [ "$SKIP_ANDROID_UI" = true ]; then
-              ./gradlew --no-daemon :app:assembleDebug
-            else
-              ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
+            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+            if [ "$SKIP_ANDROID_UI" != true ]; then
+              python3 scripts/ci/targeted-checks.py android-compile --filters "$TARGET_ANDROID_TEST"
             fi
           elif [ "$SKIP_ANDROID_UI" = true ]; then
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
@@ -301,6 +318,16 @@ jobs:
             build/wasm-emulator/
           if-no-files-found: error
           retention-days: 14
+      - name: Retain Room migration schemas
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: room-schemas-${{ github.sha }}
+          path: |
+            app/src/androidTest/assets/room-v1/1.json
+            core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/2.json
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && steps.baseline.outputs.scope == 'current_run' }}
         with:
@@ -311,8 +338,8 @@ jobs:
   delivery:
     name: Package stable signed release
     needs: verify
-    # PRs never receive the signing key; manual feature-branch runs only build.
-    if: ${{ github.event_name != 'pull_request' && inputs.android_test_filter == '' && needs.verify.outputs.verification_checks == 'full' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    # PRs never receive the signing key; the verified default branch can deliver a targeted build.
+    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.verify.outputs.verification_scope == 'current_run' && (needs.verify.outputs.verification_checks == 'full' || needs.verify.outputs.verification_checks == 'targeted') }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d

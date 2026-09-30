@@ -157,6 +157,7 @@ private class CancellationRepository(vararg initial: BackgroundTask) : Backgroun
     override fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>> =
         flowOf(tasks.values.filter { it.toolId == toolId && it.state in setOf(TaskState.QUEUED, TaskState.RUNNING) })
     override fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> = error("not used")
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> = error("not used")
     override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage = error("not used")
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = error("not used")
     override suspend fun getTask(taskId: String): DataResult<BackgroundTask?> =

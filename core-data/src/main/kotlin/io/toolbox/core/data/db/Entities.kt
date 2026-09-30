@@ -114,7 +114,11 @@ internal data class InstallTransactionEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("toolId"), Index(value = ["toolId", "key"]), Index("state")],
+    indices = [
+        Index(value = ["toolId", "key"]),
+        Index(value = ["toolId", "state"]),
+        Index(value = ["toolId", "createdAt", "taskId"], orders = [Index.Order.ASC, Index.Order.DESC, Index.Order.ASC]),
+    ],
 )
 internal data class BackgroundTaskEntity(
     @androidx.room.PrimaryKey val taskId: String,

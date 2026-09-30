@@ -9,9 +9,10 @@ import subprocess
 
 
 EVIDENCE_FILES = set()
-NON_HOST_FILES = {"README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}
+NON_HOST_FILES = {"README.md", ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}
 BUNDLED_EXAMPLES = {"position-calculator", "quick-notes", "background-task-demo", "notification-lab"}
 FULL_CHECKS = {
+    "Lint the complete Android app",
     "Verify API contract, embedded SDK, and security entry points",
     "Verify Wasm binary packaging",
     "Build APKs and behavioral test APKs",
@@ -19,6 +20,7 @@ FULL_CHECKS = {
     "Verify catalog, backup, execution identity, dialogs and Wasm on Android",
 }
 PERFORMANCE_CHECKS = {
+    "Lint the complete Android app",
     "Verify API contract, embedded SDK, and security entry points",
     "Compile performance test APK",
     "Verify performance unit regressions",
@@ -56,7 +58,9 @@ def validate_changed_files(paths):
 
     # Only four examples enter the APK. Standalone TBX inputs and their build
     # registry are validated separately; all Android/SDK/build inputs remain guarded.
-    unexpected = {path for path in paths if path not in EVIDENCE_FILES | NON_HOST_FILES and not standalone_example(path)}
+    unexpected = {path for path in paths if path not in EVIDENCE_FILES | NON_HOST_FILES
+                  and not path.startswith(("docs/", "core-data/schemas/"))
+                  and not standalone_example(path)}
     if unexpected:
         raise ValueError("Host inputs changed; run affected host checks instead of reusing this baseline: " + ", ".join(sorted(unexpected)))
 

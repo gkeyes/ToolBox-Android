@@ -7,7 +7,9 @@ on:
     paths:
       - "examples/**"
       - ".github/workflows/tbx.yml"
-      - "scripts/ci/**"
+      - "scripts/ci/tbx.py"
+      - "scripts/ci/tbx-targets.json"
+      - "scripts/tests/watcher-reliability.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -28,7 +30,9 @@ on:
     paths:
       - "examples/**"
       - ".github/workflows/tbx.yml"
-      - "scripts/ci/**"
+      - "scripts/ci/tbx.py"
+      - "scripts/ci/tbx-targets.json"
+      - "scripts/tests/watcher-reliability.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -51,6 +55,15 @@ on:
         type: string
         required: true
         default: all
+      validation_scope:
+        description: "Run all registered tests or one selected test path"
+        type: choice
+        options: [full, targeted]
+        default: full
+      test_filter:
+        description: "For targeted runs: comma-separated test paths relative to the tool; watcher accepts scripts/tests/watcher-reliability.test.cjs"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -73,7 +86,9 @@ jobs:
       - id: targets
         env:
           TBX_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.tool || 'changed' }}
-        run: python3 scripts/ci/tbx.py plan --tool "$TBX_SELECTION"
+          TBX_VALIDATION_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.validation_scope || 'targeted' }}
+          TBX_TEST_FILTER: ${{ inputs.test_filter || '' }}
+        run: python3 scripts/ci/tbx.py plan --tool "$TBX_SELECTION" --validation-scope "$TBX_VALIDATION_SCOPE" --test-filter "$TBX_TEST_FILTER"
   package:
     name: TBX · ${{ matrix.tool }}
     needs: select
@@ -93,44 +108,58 @@ jobs:
         working-directory: examples/${{ matrix.tool }}
         run: npm ci --ignore-scripts
       - name: Watcher reliability regressions
-        if: ${{ matrix.tool == 'github-actions-watcher' }}
+        if: ${{ matrix.tool == 'github-actions-watcher' && matrix.full_tests }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
+      - name: Watcher selected reliability cases
+        if: ${{ matrix.tool == 'github-actions-watcher' && !matrix.full_tests && matrix.watcher_reliability }}
+        run: python3 scripts/ci/tbx.py test-unit --tool github-actions-watcher --test-filter scripts/tests/watcher-reliability.test.cjs
       - name: Prepare watcher layout browser checks
-        if: ${{ matrix.tool == 'github-actions-watcher' }}
+        if: ${{ matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
         run: |
           python3 -m venv "$RUNNER_TEMP/watcher-layout-venv"
           "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m pip install --disable-pip-version-check playwright==1.58.0
           "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m playwright install --with-deps --only-shell chromium
       - name: Verify watcher layout and details interactions
-        if: ${{ matrix.tool == 'github-actions-watcher' }}
+        if: ${{ matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
         run: '"$RUNNER_TEMP/watcher-layout-venv/bin/python" examples/github-actions-watcher/tests/layout.py'
       - name: Save watcher layout evidence
-        if: ${{ always() && matrix.tool == 'github-actions-watcher' }}
+        if: ${{ always() && matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: watcher-layout-${{ github.sha }}
           path: build/watcher-layout/
           if-no-files-found: warn
       - name: SocialCoach unit and corpus regressions
-        if: ${{ matrix.tool == 'socialcoach' }}
+        if: ${{ matrix.tool == 'socialcoach' && matrix.full_tests }}
         working-directory: examples/socialcoach
         run: npm test
       - name: NextFlux reading unit tests
-        if: ${{ matrix.tool == 'nextflux' }}
+        if: ${{ matrix.tool == 'nextflux' && matrix.full_tests }}
         working-directory: examples/nextflux
         run: npm test
+      - name: Verify selected tool unit cases
+        if: ${{ !matrix.full_tests && matrix.unit_test_filter != '' }}
+        env:
+          TBX_TOOL: ${{ matrix.tool }}
+          TBX_TEST_FILTER: ${{ matrix.unit_test_filter }}
+        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter "$TBX_TEST_FILTER"
       - name: Prepare NextFlux browser checks
-        if: ${{ matrix.tool == 'nextflux' }}
+        if: ${{ matrix.tool == 'nextflux' && (matrix.full_tests || matrix.browser_test_filter != '') }}
         working-directory: examples/nextflux/test/browser
         run: |
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
       - name: NextFlux reading browser checks
-        if: ${{ matrix.tool == 'nextflux' }}
+        if: ${{ matrix.tool == 'nextflux' && matrix.full_tests }}
         working-directory: examples/nextflux/test/browser
         run: npm test
+      - name: NextFlux selected browser cases
+        if: ${{ matrix.tool == 'nextflux' && !matrix.full_tests && matrix.browser_test_filter != '' }}
+        env:
+          TBX_TEST_FILTER: ${{ matrix.browser_test_filter }}
+        run: python3 scripts/ci/tbx.py test-browser --tool nextflux --test-filter "$TBX_TEST_FILTER"
       - name: Save NextFlux reading test results
-        if: ${{ always() && matrix.tool == 'nextflux' }}
+        if: ${{ always() && matrix.tool == 'nextflux' && (matrix.full_tests || matrix.browser_test_filter != '') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: nextflux-reading-checks-${{ github.sha }}
@@ -141,15 +170,20 @@ jobs:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py build --tool "$TBX_TOOL"
       - name: Prepare SocialCoach browser checks
-        if: ${{ matrix.tool == 'socialcoach' }}
+        if: ${{ matrix.tool == 'socialcoach' && (matrix.full_tests || matrix.browser_test_filter != '') }}
         working-directory: examples/socialcoach
         run: npx playwright install --with-deps chromium
       - name: Verify SocialCoach mobile and desktop interactions
-        if: ${{ matrix.tool == 'socialcoach' }}
+        if: ${{ matrix.tool == 'socialcoach' && matrix.full_tests }}
         working-directory: examples/socialcoach
         run: npm run test:browser
+      - name: Verify selected SocialCoach browser cases
+        if: ${{ matrix.tool == 'socialcoach' && !matrix.full_tests && matrix.browser_test_filter != '' }}
+        env:
+          TBX_TEST_FILTER: ${{ matrix.browser_test_filter }}
+        run: python3 scripts/ci/tbx.py test-browser --tool socialcoach --test-filter "$TBX_TEST_FILTER"
       - name: Save SocialCoach browser results
-        if: ${{ always() && matrix.tool == 'socialcoach' }}
+        if: ${{ always() && matrix.tool == 'socialcoach' && (matrix.full_tests || matrix.browser_test_filter != '') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: socialcoach-browser-${{ github.sha }}

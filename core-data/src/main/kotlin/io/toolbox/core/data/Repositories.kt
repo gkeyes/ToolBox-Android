@@ -64,6 +64,10 @@ interface InstallTransactionRepository {
 
 interface BackgroundTaskRepository {
     fun observeTasks(toolId: String): Flow<List<BackgroundTask>>
+    fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>>
+    fun observeRecentHistory(toolId: String): Flow<BackgroundTaskHistoryPage>
+    fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>>
+    suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): BackgroundTaskHistoryPage
     fun observeResult(taskId: String): Flow<TaskRunResult?>
     suspend fun getTask(taskId: String): DataResult<BackgroundTask?>
     suspend fun create(task: BackgroundTask): DataResult<Unit>
@@ -89,6 +93,8 @@ interface BackgroundTaskRepository {
     suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int>
     suspend fun deleteForTool(toolId: String): DataResult<Unit>
 }
+
+data class BackgroundTaskHistoryPage(val tasks: List<BackgroundTask>, val hasMore: Boolean)
 
 interface HostSettingsRepository {
     val settings: Flow<HostSettings>

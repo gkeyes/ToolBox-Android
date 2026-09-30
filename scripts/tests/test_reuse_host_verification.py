@@ -57,10 +57,17 @@ class ReuseHostVerificationTest(unittest.TestCase):
         jobs[0]["name"] = "Verify selected Android test"
         with self.assertRaises(ValueError):
             reuse.validate_prior_run(run, jobs, "owner/host", "main")
+        jobs[0]["name"] = "Build APK and verify host behavior"
+        jobs[0]["steps"] = [{"name": "Verify selected unit cases", "conclusion": "success"},
+                            {"name": "Verify selected browser Node cases", "conclusion": "success"},
+                            {"name": "Confirm selected Android cases actually ran", "conclusion": "success"}]
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run, jobs, "owner/host", "main")
 
-    def test_standalone_tbx_changes_do_not_change_host_inputs(self):
+    def test_docs_generated_schemas_and_standalone_tbx_inputs_do_not_change_host_behavior(self):
         reuse.validate_changed_files([
-            "README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
+            "README.md", "docs/runtime-performance.md", "core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/2.json",
+            ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
             "examples/nextflux/src/reading/normalize.mjs",
             "examples/socialcoach/manifest.json",
         ])
@@ -77,6 +84,6 @@ class ReuseHostVerificationTest(unittest.TestCase):
                 reuse.validate_prior_run(run, changed, "owner/host", "main")
 
     def test_any_application_build_resource_or_behavior_test_change_requires_fresh_checks(self):
-        for changed in (".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/run-android-behavior.sh", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
+        for changed in (".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 reuse.validate_changed_files([changed])
