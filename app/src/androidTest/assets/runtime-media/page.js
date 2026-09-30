@@ -93,6 +93,25 @@ async function initialize() {
     contentRange: partial.headers.get('content-range'),
     bytes: Array.from(new Uint8Array(await partial.arrayBuffer())),
   };
+  const totalLength = Number(report.range.contentRange?.split('/')[1]);
+  if (!Number.isSafeInteger(totalLength) || totalLength <= 32) {
+    throw new Error('Invalid range probe response ' + JSON.stringify(report.range));
+  }
+  const probe = async (range, method = 'GET') => {
+    const response = await fetch(videoSession.url, { method, headers: { Range: range } });
+    return {
+      status: response.status,
+      contentRange: response.headers.get('content-range'),
+      contentLength: response.headers.get('content-length'),
+      bodyLength: (await response.arrayBuffer()).byteLength,
+    };
+  };
+  stage('range-head-pending');
+  report.headRange = await probe('bytes=8-31', 'HEAD');
+  stage('range-suffix-pending');
+  report.suffixRange = await probe('bytes=-32');
+  stage('range-unsatisfiable-pending');
+  report.unsatisfiableRange = await probe('bytes=' + totalLength + '-');
   stage('ready');
   document.querySelectorAll('button').forEach(button => button.disabled = false);
 }

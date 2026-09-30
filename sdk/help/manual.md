@@ -175,7 +175,7 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 大网络响应使用 openStream/readStream 逐块消费，处理完一块再读取下一块；每块长度只是传输单位，不是总数据上限。openStream 支持 AbortSignal。EOF、取消、撤权和运行环境结束释放连接。
 
-audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将返回的临时同源 `url` 赋给播放器。宿主按播放器请求读取 HTTPS 源，支持 Range 和快进，无需先把完整媒体下载到 JS 内存。`kind` 只接受 `audio` 或 `video`，可以省略；源 URL 不得含用户名或密码。会话仅供当前工具运行环境使用。
+audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将返回的临时同源 `url` 赋给播放器。宿主按播放器请求读取 HTTPS 源，无需先把完整媒体下载到 JS 内存。音视频编码由当前 WebView 支持情况决定；按字节快进依赖源站正确返回 Range/206，忽略 Range 的源站不保证快进。`kind` 只接受 `audio` 或 `video`，可以省略；源 URL 不得含用户名或密码。会话仅供当前工具运行环境使用。
 
 播放器停止、切换媒体或组件卸载时调用 `network.closeMedia(sessionId)`。已经取消的 AbortSignal 不会打开会话；等待打开期间取消会立即以 `CANCELLED` 拒绝，并清理迟到的会话。打开后取消、页面离开、导航、撤权和运行环境结束也会释放媒体连接。关闭会话在 network 权限撤销后仍可调用。
 

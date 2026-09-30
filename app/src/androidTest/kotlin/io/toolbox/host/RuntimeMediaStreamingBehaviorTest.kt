@@ -92,7 +92,25 @@ class RuntimeMediaStreamingBehaviorTest {
         assertEquals(24, actualBytes.length())
         transport.videoBytes.copyOfRange(8, 32).forEachIndexed { index, byte -> assertEquals(byte.toInt() and 255, actualBytes.getInt(index)) }
         assertTrue(transport.requests.toString(), transport.requests.any { it.header("Range") == "bytes=8-31" })
-        // page.js only probes bytes 8-31. A range into the distant moov atom is requested by the actual player.
+        val headRange = ready.getJSONObject("headRange")
+        assertEquals(206, headRange.getInt("status"))
+        assertEquals("bytes 8-31/${transport.videoLength}", headRange.getString("contentRange"))
+        assertEquals("24", headRange.getString("contentLength"))
+        assertEquals(0, headRange.getInt("bodyLength"))
+        val suffixRange = ready.getJSONObject("suffixRange")
+        assertEquals(206, suffixRange.getInt("status"))
+        assertEquals("bytes ${transport.videoLength - 32}-${transport.videoLength - 1}/${transport.videoLength}", suffixRange.getString("contentRange"))
+        assertEquals("32", suffixRange.getString("contentLength"))
+        assertEquals(32, suffixRange.getInt("bodyLength"))
+        val unsatisfiableRange = ready.getJSONObject("unsatisfiableRange")
+        assertEquals(416, unsatisfiableRange.getInt("status"))
+        assertEquals("bytes */${transport.videoLength}", unsatisfiableRange.getString("contentRange"))
+        assertEquals("0", unsatisfiableRange.getString("contentLength"))
+        assertEquals(0, unsatisfiableRange.getInt("bodyLength"))
+        assertTrue(transport.requests.toString(), transport.requests.any { it.method == "HEAD" && it.header("Range") == "bytes=8-31" })
+        assertTrue(transport.requests.toString(), transport.requests.any { it.method == "GET" && it.header("Range") == "bytes=-32" })
+        assertTrue(transport.requests.toString(), transport.requests.any { it.method == "GET" && it.header("Range") == "bytes=${transport.videoLength}-" })
+        // RecordingSource excludes the explicit suffix probe, so only the player's nonzero moov reads count.
         assertTrue("The player did not fetch the distant moov atom: ${transport.diagnostics()}", transport.tailRanges.get() > 0)
         assertTrue("No moov bytes were read from a nonzero player range: ${transport.diagnostics()}", transport.tailRangeBytes.get() > 0)
 
@@ -177,7 +195,7 @@ class RuntimeMediaStreamingBehaviorTest {
         fun create() {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             val filesRoot = instrumentation.targetContext.filesDir.toPath().toAbsolutePath().normalize()
-            val toolId = "com.example.media." + UUID.randomUUID().toString().replace("-", "")
+            val toolId = "com.example.media.t" + UUID.randomUUID().toString().replace("-", "")
             toolRoot = filesRoot.resolve("miniapps/$toolId")
             val bundleRoot = filesRoot.resolve(RuntimeIdentity.expectedBundleLocator(toolId, 1))
             Files.createDirectories(bundleRoot)
@@ -387,27 +405,34 @@ class RuntimeMediaStreamingBehaviorTest {
                 "/audio.mp3" -> MediaData(audioBytes)
                 else -> MediaData(videoBytes)
             }
-            val range = request.header("Range")?.let { Regex("bytes=([0-9]*)-([0-9]*)").matchEntire(it) ?: error("Unexpected range: $it") }
+            val rangeHeader = request.header("Range")
+            val range = rangeHeader?.let { Regex("bytes=([0-9]*)-([0-9]*)").matchEntire(it) ?: error("Unexpected range: $it") }
             val rawStart = range?.groupValues?.get(1)?.takeIf(String::isNotEmpty)?.toInt()
             val rawEnd = range?.groupValues?.get(2)?.takeIf(String::isNotEmpty)?.toInt()
             val start = rawStart ?: if (rawEnd != null) (data.length - rawEnd).coerceAtLeast(0) else 0
             val end = if (rawStart == null && rawEnd != null) data.length - 1 else (rawEnd ?: data.length - 1).coerceAtMost(data.length - 1)
-            require(start in 0 until data.length && end in start until data.length)
-            val source = RecordingSource(data, start, end, request.url.encodedPath == "/holding.mp4", blockedReads, tailRanges, tailRangeBytes)
+            val unsatisfiable = start !in 0 until data.length || end !in start until data.length
+            val responseLength = if (unsatisfiable) 0 else end - start + 1
+            val emptyBody = unsatisfiable || request.method == "HEAD"
+            val source = RecordingSource(data, if (emptyBody) 0 else start, if (emptyBody) -1 else end,
+                request.url.encodedPath == "/holding.mp4", blockedReads, tailRanges, tailRangeBytes,
+                recordPlayerTail = request.method == "GET" && rangeHeader != "bytes=-32")
             sources += source
             requests += request
             val mime = (if (audio) "audio/mpeg" else "video/mp4").toMediaType()
             val body = object : ResponseBody() {
                 private val buffered = source.buffer()
                 override fun contentType(): MediaType = mime
-                override fun contentLength(): Long = (end - start + 1).toLong()
+                override fun contentLength(): Long = responseLength.toLong()
                 override fun source(): BufferedSource = buffered
             }
             return Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
-                .code(if (range == null) 200 else 206).message(if (range == null) "OK" else "Partial Content")
-                .header("Content-Type", mime.toString()).header("Content-Length", (end - start + 1).toString())
+                .code(if (unsatisfiable) 416 else if (range == null) 200 else 206)
+                .message(if (unsatisfiable) "Range Not Satisfiable" else if (range == null) "OK" else "Partial Content")
+                .header("Content-Type", mime.toString()).header("Content-Length", responseLength.toString())
                 .header("Accept-Ranges", "bytes").apply {
-                    if (range != null) header("Content-Range", "bytes $start-$end/${data.length}")
+                    if (unsatisfiable) header("Content-Range", "bytes */${data.length}")
+                    else if (range != null) header("Content-Range", "bytes $start-$end/${data.length}")
                 }.body(body).build()
         }
 
@@ -466,7 +491,7 @@ class RuntimeMediaStreamingBehaviorTest {
 
     private class RecordingSource(private val bytes: MediaData, private val start: Int, private val end: Int,
         private val holdTail: Boolean, private val blockedReads: AtomicInteger, private val tailRanges: AtomicInteger,
-        private val tailRangeBytes: AtomicInteger) : Source {
+        private val tailRangeBytes: AtomicInteger, private val recordPlayerTail: Boolean) : Source {
         val closed = AtomicBoolean()
         private val entered = AtomicBoolean()
         private val tailCounted = AtomicBoolean()
@@ -487,7 +512,7 @@ class RuntimeMediaStreamingBehaviorTest {
             // A real tail range can overtake this gradual initial download; no multi-megabyte buffer is allocated.
             if (!holdTail && bytes.tailOffset > 1024 * 1024 && start + offset in 1663 until bytes.tailOffset) SystemClock.sleep(5)
             bytes.write(sink, start + offset, count)
-            if (bytes.tailOffset > 1024 * 1024 && start > 0 && start + offset + count > bytes.tailOffset) {
+            if (recordPlayerTail && bytes.tailOffset > 1024 * 1024 && start > 0 && start + offset + count > bytes.tailOffset) {
                 tailRangeBytes.addAndGet(minOf(count, start + offset + count - bytes.tailOffset))
                 if (tailCounted.compareAndSet(false, true)) tailRanges.incrementAndGet()
             }
