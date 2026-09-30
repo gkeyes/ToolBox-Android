@@ -8,6 +8,7 @@ plugins {
 }
 
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
+val verifyWebViewDebugging = providers.gradleProperty("toolbox.verifyWebViewDebugging").orNull == "true"
 
 val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
 val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
@@ -23,6 +24,9 @@ val stableSigningValueCount =
 
 check(stableSigningValueCount == 0 || stableSigningValueCount == 4) {
     "Stable APK signing requires store file, store password, key alias and key password together."
+}
+check(!verifyWebViewDebugging || stableSigningValueCount == 0) {
+    "WebView verification must use the temporary test signing key, without stable signing credentials."
 }
 
 val packageBundledExamples by tasks.registering(Exec::class) {
@@ -42,6 +46,7 @@ val packageBundledExamples by tasks.registering(Exec::class) {
 android {
     namespace = "io.toolbox.host"
     compileSdk = 37
+    if (verifyWebViewDebugging) testBuildType = "verification"
 
     defaultConfig {
         applicationId = "io.toolbox.host"
@@ -78,6 +83,14 @@ android {
             )
         }
 
+        if (verifyWebViewDebugging) {
+            create("verification") {
+                initWith(getByName("debug"))
+                isDebuggable = false
+                signingConfig = signingConfigs.getByName("debug")
+                matchingFallbacks.add("debug")
+            }
+        }
     }
 
     compileOptions {

@@ -1,32 +1,34 @@
 package io.toolbox.tool.runtime
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.os.Build
 import android.webkit.WebView
 import androidx.annotation.UiThread
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
-/** Main-process debugging is opt-in for this process only; call on the main thread. */
+data class RuntimeWebViewDebuggingStatus(
+    val enabledByBuild: Boolean,
+    val forcedByPlatform: Boolean = false,
+) {
+    val enabled: Boolean get() = enabledByBuild || forcedByPlatform
+}
+
+/** Debugging follows the embedding APK's compiled flag; there is no runtime override. */
 object RuntimeWebViewDebugging {
-    private val state = RuntimeWebViewDebuggingState(WebView::setWebContentsDebuggingEnabled)
-
-    val enabled: StateFlow<Boolean> get() = state.enabled
-
-    @UiThread
-    fun setEnabled(enabled: Boolean) = state.setEnabled(enabled)
+    fun status(context: Context): RuntimeWebViewDebuggingStatus = runtimeWebViewDebuggingStatus(
+        debuggableApp = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+        buildType = Build.TYPE,
+    )
 
     @UiThread
-    internal fun applyCurrentSetting() = state.applyCurrentSetting()
-}
-
-internal class RuntimeWebViewDebuggingState(private val apply: (Boolean) -> Unit) {
-    private val current = MutableStateFlow(false)
-    val enabled: StateFlow<Boolean> = current.asStateFlow()
-
-    fun setEnabled(enabled: Boolean) {
-        apply(enabled)
-        current.value = enabled
+    internal fun applyBuildSetting(context: Context) {
+        // A developer OS may force debugging despite false; never enable a release APK here.
+        WebView.setWebContentsDebuggingEnabled(status(context).enabledByBuild)
     }
-
-    fun applyCurrentSetting() = apply(current.value)
 }
+
+internal fun runtimeWebViewDebuggingStatus(debuggableApp: Boolean, buildType: String) =
+    RuntimeWebViewDebuggingStatus(
+        enabledByBuild = debuggableApp,
+        forcedByPlatform = !debuggableApp && (buildType == "userdebug" || buildType == "eng"),
+    )

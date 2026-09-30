@@ -4,21 +4,18 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.webkit.WebView
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.SecurityProfile
 import io.toolbox.core.ui.theme.ToolBoxTheme
@@ -50,7 +47,6 @@ import java.nio.file.Files
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -64,11 +60,12 @@ class DeveloperWebViewDebuggingBehaviorTest(
 ) {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun helpToggleControlsExistingAndNewRuntimeDebugging() {
+    @Test fun compiledModeIsFixedForExistingAndNewRuntimeDebugging() {
+        val status = RuntimeWebViewDebugging.status(compose.activity)
+        assertEquals(BuildConfig.DEBUG, status.enabledByBuild)
         val root = File(compose.activity.filesDir, "debug-toggle-${UUID.randomUUID()}")
         val views = mutableListOf<WebView>()
         try {
-            compose.runOnIdle { RuntimeWebViewDebugging.setEnabled(false) }
             views += createRuntime(root, "existing")
             compose.activity.setContent {
                 ToolBoxTheme(mode = mode, style = style) {
@@ -76,67 +73,72 @@ class DeveloperWebViewDebuggingBehaviorTest(
                 }
             }
             val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
-            toggle.assertIsDisplayed().assertIsOff()
-            awaitDebugEndpoint(false)
-
-            toggle.performClick().assertIsOn()
-            assertTrue(RuntimeWebViewDebugging.enabled.value)
-            awaitDebugEndpoint(true)
+            toggle.assertIsDisplayed().assertIsNotEnabled()
+            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
+            awaitDebugEndpoint(status.enabled)
+            toggle.performTouchInput { click() }
+            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
             views += createRuntime(root, "new")
-            assertTrue(RuntimeWebViewDebugging.enabled.value)
-            awaitDebugEndpoint(true)
+            assertEquals(status, RuntimeWebViewDebugging.status(compose.activity))
+            awaitDebugEndpoint(status.enabled)
 
             compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
             compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
-            toggle.assertIsDisplayed().performClick().assertIsOff()
-            assertFalse(RuntimeWebViewDebugging.enabled.value)
-            awaitDebugEndpoint(false)
+            toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
+            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
+            compose.onNodeWithText(
+                when {
+                    status.forcedByPlatform -> "当前系统强制开启接口；应用内不可切换。"
+                    status.enabledByBuild -> "调试版：编译时开启，应用内无法关闭。"
+                    else -> "正式版：编译时关闭，应用内无法开启。"
+                },
+            ).assertIsDisplayed()
+            awaitDebugEndpoint(status.enabled)
         } finally {
             compose.runOnIdle {
-                RuntimeWebViewDebugging.setEnabled(false)
                 views.forEach(HardenedRuntimeWebView::release)
             }
             root.deleteRecursively()
         }
     }
 
-    @Test fun manualLoadingAndFailureLeaveTheToggleUsableAndExposeChangeErrors() {
+    @Test fun manualLoadingAndFailureKeepTheCompiledStateVisibleAndLocked() {
         val load = mutableStateOf<HelpLoadState>(HelpLoadState.Loading)
-        val failed = mutableStateOf(false)
-        val changes = mutableListOf<Boolean>()
         var retries = 0
-        try {
-            compose.runOnIdle { RuntimeWebViewDebugging.setEnabled(false) }
-            compose.activity.setContent {
-                val enabled by RuntimeWebViewDebugging.enabled.collectAsStateWithLifecycle()
-                ToolBoxTheme(mode = mode, style = style) {
-                    DeveloperHelpPage(
-                        state = load.value, onBack = {}, onInstallExamples = {},
-                        onRetry = { retries++ },
-                        webViewDebuggingEnabled = enabled,
-                        onWebViewDebuggingChange = {
-                            changes += it
-                            if (!failed.value) RuntimeWebViewDebugging.setEnabled(it)
-                        },
-                        webViewDebuggingError = failed.value,
-                    )
-                }
+        compose.activity.setContent {
+            ToolBoxTheme(mode = mode, style = style) {
+                DeveloperHelpPage(
+                    state = load.value, onBack = {}, onInstallExamples = {},
+                    onRetry = { retries++ },
+                    webViewDebuggingEnabled = BuildConfig.DEBUG,
+                )
             }
-            val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
-            compose.onNodeWithText("正在读取离线手册…").assertIsDisplayed()
-            toggle.assertIsOff().performClick().assertIsOn()
-            compose.runOnIdle { load.value = HelpLoadState.Failed; failed.value = true }
-            toggle.performClick().assertIsOn()
-            compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebuggingError)
-                .assertIsDisplayed()
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
-            compose.onNodeWithText("重新读取").performClick()
-            compose.runOnIdle { assertEquals(1, retries); failed.value = false }
-            toggle.performClick().assertIsOff()
-            assertEquals(listOf(true, false, false), changes)
-        } finally {
-            compose.runOnIdle { RuntimeWebViewDebugging.setEnabled(false) }
         }
+        val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
+        compose.onNodeWithText("正在读取离线手册…").assertIsDisplayed()
+        toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
+        if (BuildConfig.DEBUG) toggle.assertIsOn() else toggle.assertIsOff()
+        compose.runOnIdle { load.value = HelpLoadState.Failed }
+        toggle.assertIsNotEnabled().performTouchInput { click() }
+        if (BuildConfig.DEBUG) toggle.assertIsOn() else toggle.assertIsOff()
+        compose.onNodeWithText("重新读取").performClick()
+        compose.runOnIdle { assertEquals(1, retries) }
+    }
+
+    @Test fun forcedPlatformDebuggingShowsItsActualStateAndCannotBeToggled() {
+        compose.activity.setContent {
+            ToolBoxTheme(mode = mode, style = style) {
+                DeveloperHelpPage(
+                    state = HelpLoadState.Loading, onBack = {}, onInstallExamples = {}, onRetry = {},
+                    webViewDebuggingEnabled = true, webViewDebuggingForced = true,
+                )
+            }
+        }
+        compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
+            .assertIsDisplayed().assertIsOn().assertIsNotEnabled().performTouchInput { click() }
+            .assertIsOn()
+        compose.onNodeWithText("当前系统强制开启接口；应用内不可切换。")
+            .assertIsDisplayed()
     }
 
     private fun createRuntime(root: File, suffix: String): WebView {

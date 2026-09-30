@@ -28,14 +28,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxDisclosureRow
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
@@ -62,7 +61,6 @@ internal object DeveloperHelpTestTags {
     const val List = "developer_help_list"
     const val CopyAll = "developer_help_copy_all"
     const val WebViewDebugging = "developer_help_webview_debugging"
-    const val WebViewDebuggingError = "developer_help_webview_debugging_error"
     fun chapter(id: String) = "developer_help_chapter_" + id
     fun article(id: String) = "developer_help_article_" + id
 }
@@ -74,8 +72,7 @@ internal fun DeveloperHelpScreen(
     onReady: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
-    val webViewDebuggingEnabled by RuntimeWebViewDebugging.enabled.collectAsStateWithLifecycle()
-    var webViewDebuggingError by remember { mutableStateOf(false) }
+    val webViewDebugging = remember(context) { RuntimeWebViewDebugging.status(context) }
     var loadAttempt by remember { mutableStateOf(0) }
     val state by produceState<HelpLoadState>(HelpLoadState.Loading, context, loadAttempt) {
         value = HelpLoadState.Loading
@@ -99,16 +96,8 @@ internal fun DeveloperHelpScreen(
         onBack = onBack,
         onInstallExamples = onInstallExamples,
         onRetry = { loadAttempt += 1 },
-        webViewDebuggingEnabled = webViewDebuggingEnabled,
-        onWebViewDebuggingChange = { enabled ->
-            webViewDebuggingError = try {
-                RuntimeWebViewDebugging.setEnabled(enabled)
-                false
-            } catch (_: RuntimeException) {
-                true
-            }
-        },
-        webViewDebuggingError = webViewDebuggingError,
+        webViewDebuggingEnabled = webViewDebugging.enabled,
+        webViewDebuggingForced = webViewDebugging.forcedByPlatform,
     )
 }
 
@@ -119,8 +108,7 @@ internal fun DeveloperHelpPage(
     onInstallExamples: () -> Unit,
     onRetry: () -> Unit,
     webViewDebuggingEnabled: Boolean = false,
-    onWebViewDebuggingChange: (Boolean) -> Unit = {},
-    webViewDebuggingError: Boolean = false,
+    webViewDebuggingForced: Boolean = false,
 ) {
     DetailScreen(
         title = "开发帮助",
@@ -142,20 +130,16 @@ internal fun DeveloperHelpPage(
                 ToolBoxGroupedSurface {
                     ToolBoxSwitchSettingRow(
                         title = "小工具 WebView 调试",
-                        summary = "允许已授权的电脑检查小工具页面；重启 ToolBox 后自动关闭。",
+                        summary = when {
+                            webViewDebuggingForced -> "当前系统强制开启接口；应用内不可切换。"
+                            webViewDebuggingEnabled -> "调试版：编译时开启，应用内无法关闭。"
+                            else -> "正式版：编译时关闭，应用内无法开启。"
+                        },
                         icon = ToolBoxIconKey.Code,
                         checked = webViewDebuggingEnabled,
-                        onCheckedChange = onWebViewDebuggingChange,
+                        onCheckedChange = {},
+                        enabled = false,
                         modifier = Modifier.testTag(DeveloperHelpTestTags.WebViewDebugging),
-                    )
-                }
-                if (webViewDebuggingError) {
-                    AppText(
-                        "无法切换 WebView 调试，请重试。",
-                        modifier = Modifier
-                            .testTag(DeveloperHelpTestTags.WebViewDebuggingError)
-                            .semantics { liveRegion = LiveRegionMode.Polite },
-                        color = ToolBoxThemeTokens.colors.danger,
                     )
                 }
                 if (webViewDebuggingEnabled) {
