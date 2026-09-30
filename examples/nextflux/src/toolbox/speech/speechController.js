@@ -190,9 +190,21 @@ async function ensureSegment(owner, index) {
   return promise;
 }
 
+function pruneCache(owner, centerIndex) {
+  const keep = new Set([centerIndex - 1, centerIndex, centerIndex + 1]);
+  for (const [index, item] of owner.cache.entries()) {
+    if (keep.has(index)) continue;
+    try { URL.revokeObjectURL(item.url); } catch { /* already released */ }
+    owner.cache.delete(index);
+  }
+  patchSpeechState({ generatedCount: owner.cache.size });
+}
+
 function prefetch(owner, index) {
   if (!sameSession(owner) || owner.settings.speechPrefetch === false || index >= owner.segments.length) return;
-  ensureSegment(owner, index).catch(() => {});
+  ensureSegment(owner, index).then(() => {
+    if (sameSession(owner)) pruneCache(owner, currentIndex);
+  }).catch(() => {});
 }
 
 async function loadIndex(owner, index, { autoplay = true, position = 0 } = {}) {
@@ -231,6 +243,7 @@ async function loadIndex(owner, index, { autoplay = true, position = 0 } = {}) {
     if (player.readyState >= 1) setPosition();
     else player.addEventListener("loadedmetadata", setPosition, { once: true });
   }
+  pruneCache(owner, index);
   prefetch(owner, index + 1);
   if (!autoplay) return true;
   try {
@@ -302,15 +315,13 @@ async function advance() {
 }
 
 export async function nextSegment() {
-  if (!session) return false;
-  const next = Math.min(session.segments.length - 1, currentIndex + 1);
-  return loadIndex(session, next, { autoplay: speechState.get().phase === "playing" });
+  if (!session || currentIndex >= session.segments.length - 1) return false;
+  return loadIndex(session, currentIndex + 1, { autoplay: speechState.get().phase === "playing" });
 }
 
 export async function previousSegment() {
-  if (!session) return false;
-  const previous = Math.max(0, currentIndex - 1);
-  return loadIndex(session, previous, { autoplay: speechState.get().phase === "playing" });
+  if (!session || currentIndex <= 0) return false;
+  return loadIndex(session, currentIndex - 1, { autoplay: speechState.get().phase === "playing" });
 }
 
 export function seekTo(seconds) {
