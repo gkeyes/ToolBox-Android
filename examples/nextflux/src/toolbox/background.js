@@ -1,10 +1,12 @@
 import { atom } from "nanostores";
 import { settingsState } from "../stores/settingsStore.js";
-import { backgroundSync } from "../stores/syncStore.js";
+import { claimAutoSync } from "../stores/syncStore.js";
 import { toast } from "sonner";
 import { backgroundHealth, backgroundIntervalMs } from "./background-policy.mjs";
+import { continuousSync, nativeTimerEffective } from "./background-state.js";
+import { runtimeForeground, runtimeClosing } from "./foreground.js";
 
-export const continuousSync = atom(false);
+export { continuousSync };
 export const backgroundSyncHealth = atom(backgroundHealth());
 const TIMER_KEY = "nextflux.sync";
 const STATE_KEY = "nextflux.background-sync.v1";
@@ -13,6 +15,16 @@ let sessionId = null;
 let initialized = false;
 let backgroundRun = null;
 let observedInterval = null;
+let timerWrite = Promise.resolve();
+let timerRevision = 0;
+let healthWrite = Promise.resolve();
+const eventWork = new Set();
+
+function trackWork(work) {
+  eventWork.add(work);
+  void work.finally(() => eventWork.delete(work)).catch(() => {});
+  return work;
+}
 
 function toolbox() { return globalThis.window?.ToolBox; }
 function api() { return toolbox()?.background; }
@@ -74,7 +86,8 @@ async function restoreHealth() {
 function setHealth(event, now = Date.now()) {
   const next = backgroundHealth(backgroundSyncHealth.get(), event, now, intervalMs());
   backgroundSyncHealth.set(next);
-  storage()?.set?.(HEALTH_KEY, next).catch(() => {});
+  healthWrite = healthWrite.catch(() => {}).then(() => storage()?.set?.(HEALTH_KEY, next));
+  void healthWrite.catch(() => {});
   return next;
 }
 
@@ -100,19 +113,42 @@ async function ensureSession() {
 async function refreshTimer() {
   if (!sessionId) return null;
   const interval = intervalMs();
-  await api().setTimer(TIMER_KEY, interval);
-  if (continuousSync.get()) setHealth({ type: "enabled" });
+  const revision = ++timerRevision;
+  nativeTimerEffective.set(false);
+  const write = timerWrite.catch(() => {}).then(async () => {
+    if (revision !== timerRevision) return null;
+    await api().setTimer(TIMER_KEY, interval);
+    if (revision === timerRevision) nativeTimerEffective.set(true);
+    return interval;
+  });
+  timerWrite = write;
+  await write;
   return interval;
 }
 
+async function verifyNativeSession() {
+  if (!continuousSync.get() || !sessionId) { nativeTimerEffective.set(false); return false; }
+  try {
+    const current = await api().status(sessionId);
+    if (!current) { sessionId = null; nativeTimerEffective.set(false); return false; }
+    return true;
+  } catch {
+    nativeTimerEffective.set(false);
+    return false;
+  }
+}
+
 async function runBackgroundSync(reason) {
-  if (!continuousSync.get()) return false;
+  if (!continuousSync.get() || runtimeClosing.get()) return false;
   if (backgroundRun) return backgroundRun;
+  const scheduled = claimAutoSync();
+  if (!scheduled) return false;
   const attemptAt = Date.now();
   setHealth({ type: "attempt", reason }, attemptAt);
   backgroundRun = (async () => {
     try {
-      const result = await backgroundSync();
+      const result = await scheduled;
+      if (runtimeClosing.get()) return false;
       if (result?.outcome !== "committed") {
         throw new Error("后台同步未完成写入。");
       }
@@ -120,6 +156,7 @@ async function runBackgroundSync(reason) {
       await publishBackgroundStatus(result);
       return true;
     } catch (error) {
+      if (runtimeClosing.get()) return false;
       if (error?.code === "SYNC_PREEMPTED") {
         setHealth({ type: "deferred", message: "后台同步已让位给明确的前台操作。" });
         return false;
@@ -138,56 +175,81 @@ async function restoreContinuousSync() {
   if (!enabled) {
     sessionId = null;
     continuousSync.set(false);
+    nativeTimerEffective.set(false);
     setHealth({ type: "stopped" });
     return false;
   }
-  await ensureSession();
   continuousSync.set(true);
+  await ensureSession();
   await refreshTimer();
   setHealth({ type: "enabled" });
   return true;
 }
 
-export async function initializeBackground() {
+async function initializeBackgroundWork() {
   if (!api()) return;
   if (!initialized) {
     initialized = true;
     api().onTimer((event) => {
-      if (event.key === TIMER_KEY && continuousSync.get()) void runBackgroundSync("timer");
+      if (event.key !== TIMER_KEY || !continuousSync.get() || runtimeClosing.get()) return;
+      const work = verifyNativeSession().then((valid) => {
+        if (valid && !runtimeClosing.get()) { nativeTimerEffective.set(true); return runBackgroundSync("timer"); }
+        return false;
+      });
+      trackWork(work);
     });
-    api().onRestore(async () => {
-      try {
-        if (await restoreContinuousSync()) await runBackgroundSync("restore");
-      } catch {
-        sessionId = null;
-        continuousSync.set(false);
-        setHealth({ type: "stopped" });
-      }
+    api().onRestore(() => {
+      if (runtimeClosing.get()) return;
+      const work = (async () => {
+        try {
+          if (await restoreContinuousSync() && !runtimeClosing.get()) await runBackgroundSync("restore");
+        } catch {
+          sessionId = null;
+          nativeTimerEffective.set(false);
+          if (!runtimeClosing.get()) setHealth({ type: "failure", message: "后台定时器恢复失败，前台同步会继续。" });
+        }
+      })();
+      trackWork(work);
     });
     settingsState.listen((value) => {
       const nextInterval = String(value?.syncInterval ?? "");
       if (nextInterval === observedInterval) return;
       observedInterval = nextInterval;
-      if (!continuousSync.get()) return;
-      refreshTimer().catch(() => toast.error("后台同步间隔未更新，请重新开启后台同步。"));
+      if (!continuousSync.get() || runtimeClosing.get()) return;
+      const work = refreshTimer().catch(() => {
+        nativeTimerEffective.set(false);
+        toast.error("后台同步间隔未更新，前台同步会继续。请重新开启后台同步。");
+      });
+      trackWork(work);
+    });
+    runtimeForeground.listen((visible) => {
+      if (visible && continuousSync.get() && !runtimeClosing.get()) trackWork(verifyNativeSession());
     });
   }
   try {
     await restoreContinuousSync();
   } catch {
     sessionId = null;
-    continuousSync.set(false);
-    setHealth({ type: "stopped" });
+    nativeTimerEffective.set(false);
+    if (!runtimeClosing.get()) setHealth({ type: "failure", message: "后台定时器未恢复，前台同步会继续。" });
   }
 }
 
-export async function startContinuousSync() {
+export function initializeBackground() {
+  return trackWork(initializeBackgroundWork());
+}
+
+export function startContinuousSync() {
+  return trackWork(startContinuousSyncWork());
+}
+
+async function startContinuousSyncWork() {
   if (!api()) throw new Error("当前 ToolBox 不支持后台同步。");
   try {
     await ensureSession();
-    continuousSync.set(true);
     await refreshTimer();
     await writeEnabledIntent(true);
+    continuousSync.set(true);
     setHealth({ type: "enabled" });
     await runBackgroundSync("start");
   } catch {
@@ -199,30 +261,45 @@ export async function startContinuousSync() {
       sessionId = null;
     }
     continuousSync.set(false);
+    nativeTimerEffective.set(false);
     setHealth({ type: "stopped" });
     throw new Error("未能开启后台同步，请开启小工具的后台运行权限和宿主后台保障。");
   }
 }
 
-export async function stopContinuousSync() {
+export function stopContinuousSync() {
+  return trackWork(stopContinuousSyncWork());
+}
+
+async function stopContinuousSyncWork() {
   if (!api()) return;
   await writeEnabledIntent(false);
+  continuousSync.set(false);
+  nativeTimerEffective.set(false);
+  timerRevision += 1;
+  await timerWrite.catch(() => {});
+  let cleanupError = null;
   try {
     await api().cancelTimer(TIMER_KEY);
   } catch (error) {
-    if (error?.code !== "NOT_FOUND") throw error;
+    if (error?.code !== "NOT_FOUND") cleanupError = error;
   }
   const sessions = sessionId ? [{ sessionId }] : await api().listSessions().catch(() => []);
   for (const session of sessions) {
     try {
       await api().stop(session.sessionId);
     } catch (error) {
-      if (error?.code !== "NOT_FOUND") throw error;
+      if (error?.code !== "NOT_FOUND" && !cleanupError) cleanupError = error;
     }
   }
   sessionId = null;
-  continuousSync.set(false);
   setHealth({ type: "stopped" });
+  if (cleanupError) throw cleanupError;
+}
+
+export async function flushBackgroundWork() {
+  await Promise.allSettled([timerWrite, backgroundRun, ...eventWork]);
+  await healthWrite;
 }
 
 export { runBackgroundSync };

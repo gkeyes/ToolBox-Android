@@ -2,7 +2,8 @@ import {appStorage} from "@platform/storage";
 import {draftStorage} from "@platform/storage";
 "use client";
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { recordWork } from "@platform/perf";
 import type { ContextId, Lang, SkillId } from "@/data/taxonomy";
 import type { Scenario } from "@/data/corpus/types";
 import type { ChatMessage, Profile, Proficiency, Reflection, Report, Session } from "@/lib/types";
@@ -77,7 +78,7 @@ interface AppState {
   pruneSessions: () => void;
   updateSession: (id: string, patch: Partial<Session> | ((s: Session) => Partial<Session>)) => void;
   appendMessage: (id: string, m: ChatMessage) => void;
-  updateLastNpc: (id: string, text: string, characterId: string, messageId: string) => void;
+  updateNpcUtterances: (id: string, utterances: { id: string; text: string; characterId: string }[], patch?: (session: Session) => Partial<Session>) => void;
   applyReport: (id: string, report: Report) => void;
   addReflection: (id: string, r: Reflection) => void;
   updateReflection: (id: string, idx: number, patch: Partial<Reflection>) => void;
@@ -111,6 +112,21 @@ const initial = {
   settings: { tts: false, telemetry: false },
 };
 
+const measuredStorage = {
+  async getItem(key: string) {
+    const raw = await appStorage.getItem(key);
+    return raw === null ? null : JSON.parse(raw);
+  },
+  setItem(key: string, value: unknown) {
+    const started = performance.now();
+    const raw = JSON.stringify(value);
+    if (raw === undefined) throw new Error('练习记录无法序列化。');
+    recordWork('serialize', raw.length * 2, performance.now() - started);
+    appStorage.setItem(key, raw);
+  },
+  removeItem: appStorage.removeItem,
+};
+
 export const useApp = create<AppState>()(
   persist(
     (set) => ({
@@ -140,15 +156,17 @@ export const useApp = create<AppState>()(
         })),
       appendMessage: (id, m) =>
         set((s) => ({ sessions: s.sessions.map((x) => (x.id === id && !x.messages.some((y) => y.id === m.id) ? { ...x, messages: [...x.messages, m] } : x)) })),
-      updateLastNpc: (id, text, characterId, messageId) =>
+      updateNpcUtterances: (id, utterances, patch) =>
         set((s) => ({
           sessions: s.sessions.map((x) => {
             if (x.id !== id) return x;
             const msgs = [...x.messages];
-            const i = msgs.findIndex((m) => m.id === messageId);
-            if (i === -1) msgs.push({ id: messageId, role: "npc", characterId, text, ts: Date.now() });
-            else msgs[i] = { ...msgs[i], text, characterId };
-            return { ...x, messages: msgs };
+            for (const { id: messageId, text, characterId } of utterances) {
+              const i = msgs.findIndex((m) => m.id === messageId);
+              if (i === -1) msgs.push({ id: messageId, role: "npc", characterId, text, ts: Date.now() });
+              else msgs[i] = { ...msgs[i], text, characterId };
+            }
+            return { ...x, ...(patch?.(x) ?? {}), messages: msgs };
           }),
         })),
       applyReport: (id, report) =>
@@ -191,7 +209,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "socialcoach.v1",
-      storage: createJSONStorage(() => appStorage),
+      storage: measuredStorage,
       skipHydration: true,
       partialize: (s) => ({
         profile: s.profile,

@@ -77,7 +77,6 @@ export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled,
   // reads as stage 0 / not ready without a reset that has to race the render.
   const [st, setSt] = useState<{ key: string | null; stage: ClockStage }>({ key: null, stage: 0 });
   const [readyFor, setReadyFor] = useState<string | null>(null);
-  const [hidden, setHidden] = useState(false);
   // Switching the mode off and on again for the same line is a fresh clock:
   // forget the stage that was showing, in the same render, before it can flash.
   const [seenEnabled, setSeenEnabled] = useState(enabled);
@@ -87,12 +86,6 @@ export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled,
   }
   const stage: ClockStage = st.key === turnKey ? st.stage : 0;
   const ready = readyFor === turnKey && turnKey !== null;
-
-  useEffect(() => {
-    const sync = () => setHidden(document.visibilityState === "hidden");
-    document.addEventListener("visibilitychange", sync);
-    return () => document.removeEventListener("visibilitychange", sync);
-  }, []);
 
   // A new line, or the mode switching on: the bank empties and the line is whole again.
   useEffect(() => {
@@ -120,7 +113,7 @@ export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled,
     return () => clearTimeout(timer);
   }, [enabled, armed, turnKey, readyFor, waitForSpeech]);
 
-  const running = enabled && armed && ready && !paused && !hidden && stage < 3;
+  const running = enabled && armed && ready && !paused && stage < 3;
 
   // The clock itself. Only transform is touched per frame; React hears about
   // stage changes, not about time.

@@ -1,7 +1,17 @@
 import { host, permissionMessage } from './bridge';
 
 const active = new Set<AbortController>();
+const settling = new Set<Promise<unknown>>();
 export const abortRequests = () => { for (const c of active) c.abort(); };
+export function trackAbortableTask<T>(task: Promise<T>): Promise<T> {
+  settling.add(task);
+  void task.finally(() => settling.delete(task)).catch(() => {});
+  return task;
+}
+export async function abortAndSettleRequests(): Promise<void> {
+  abortRequests();
+  await Promise.allSettled([...settling]);
+}
 export function abortError() { return new DOMException('请求已取消', 'AbortError'); }
 
 /** Validate before attaching credentials. HTTPS only; never accept credentials/query/fragment in a base URL. */

@@ -2,10 +2,24 @@ import "./index.css";
 import "./compact-controls.css";
 import { initializePreferences } from "./toolbox/preferences.js";
 import { installLinkHandling } from "./toolbox/actions.js";
+import { runtimeForeground, runtimeClosing } from "./toolbox/foreground.js";
+import { flushPreferences } from "./toolbox/preferences.js";
+import { flushSyncWork } from "./stores/syncStore.js";
+import { flushBackgroundWork } from "./toolbox/background.js";
 
 async function boot() {
   if (!window.ToolBox) throw new Error("请在 ToolBox 中导入并打开此小工具。");
   await window.ToolBox.ready();
+  window.ToolBox.runtime.onStateChanged((snapshot) => {
+    runtimeClosing.set(snapshot.closing);
+    runtimeForeground.set(snapshot.foreground && !snapshot.closing);
+  });
+  window.ToolBox.runtime.registerFlushHandler(async () => {
+    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork()]);
+    await flushPreferences();
+    const failure = work.find((result) => result.status === "rejected");
+    if (failure) throw failure.reason;
+  });
   await initializePreferences();
   const { restoreAuth, authState } = await import("./stores/authStore.js");
   await restoreAuth();

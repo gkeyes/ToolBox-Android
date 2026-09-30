@@ -4,7 +4,7 @@
 
 ## 使用
 
-在 ToolBox 0.8.0 或更新版本导入 `socialcoach-v1.0.5.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
+在 ToolBox 0.8.28 或更新版本导入 `socialcoach-v1.0.6.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
 
 支持 OpenAI Chat Completions 兼容接口及 Anthropic Messages；Gemini 可使用其 OpenAI 兼容端点。兼容服务的 Base URL 填到 `/v1` 等基路径，不要包含 `/chat/completions`。推理模型可选择 `max_completion_tokens`。首版不提供共享 API、不内置密钥、不部署服务器。
 
@@ -31,7 +31,7 @@
 
 修正手机首页「今日推荐」卡片的封面排版：原先封面只有 144px 高，但标签层按 160px 以上的封面留白设计，导致「今日推荐 / 场景」标签与人物角色行几乎贴在一起；标签还从稿纸竖线左侧起排，与正文基线不一致。现在手机封面调整到 176px，并将标签左缘与人物、引语统一到稿纸正文列，保留至少 10px 的垂直呼吸空间。桌面布局和其他场景封面不受影响。
 
-## ToolBox 能力提示（1.0.4）
+## ToolBox 能力提示（1.0.6）
 
 当前运行环境缺少模型连接能力时会提示具体缺失项。
 
@@ -60,7 +60,7 @@ npm ci --ignore-scripts
 npm test
 npm run build
 npm run test:browser
-bash package.sh ../../build/socialcoach-v1.0.5.tbx
+bash package.sh ../../build/socialcoach-v1.0.6.tbx
 ```
 
 浏览器集成测试使用明确标记的模拟 ToolBox/模型响应，仅验证协议与界面交互，不代表真实模型效果或 Android 真机验证。未使用任何用户密钥进行测试。

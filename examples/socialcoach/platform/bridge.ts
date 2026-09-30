@@ -1,6 +1,11 @@
 /** ToolBox API subset. No Android bridge is exposed to provider pages. */
 export interface Host {
   ready(): Promise<{hostVersion: string}>;
+  runtime: {
+    getState(): Promise<{generation: number; revision: number; foreground: boolean; closing: boolean}>;
+    onStateChanged(callback: (state: {generation: number; revision: number; foreground: boolean; closing: boolean}) => void): () => void;
+    registerFlushHandler(handler: () => Promise<void>): () => void;
+  };
   storage: {
     get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; remove(key: string): Promise<void>;
     secure: {get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; remove(key: string): Promise<void>};

@@ -11,6 +11,7 @@ import Iframe from "@/components/ArticleView/components/Iframe.jsx";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
+import { runtimeForeground } from "@/toolbox/foreground.js";
 import { getFontSizeClass, cn } from "@/lib/utils.js";
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
@@ -27,6 +28,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
   } = useStore(settingsState);
   const { lightTheme } = useStore(themeState);
   const currentMode = useStore(currentThemeMode);
+  const foreground = useStore(runtimeForeground);
 
   const mediaEnclosures = useMemo(
     () => article?.enclosures?.filter((enclosure) => /^(audio|video)\//.test(enclosure.mime_type || "")) || [],
@@ -54,7 +56,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
       />
       <Separator className="my-4" />
 
-      <AISummary articleId={article.id} passive={passive} paused={readingPaused} />
+      <AISummary articleId={article.id} passive={passive} paused={readingPaused || !foreground} />
 
       {mediaEnclosures.map((enclosure) => (
         <Iframe
@@ -90,7 +92,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         >
           <ProgressiveArticle
             preview={passive}
-            paused={readingPaused}
+            paused={readingPaused || !foreground}
             articleId={article.id}
             html={article.content}
             baseUrl={article.url}
