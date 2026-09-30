@@ -36,8 +36,9 @@ class NewSmthLiveWebViewDiagnosticTest {
         println("NEWSMTH_AB current=$current")
         println("NEWSMTH_AB currentWebViewUa=$currentWebViewUa")
 
-        assertTrue("legacy result empty", legacy.optInt("htmlLength") > 0 || legacy.optBoolean("sslError"))
-        assertTrue("current result empty", current.optInt("htmlLength") > 0 || current.optBoolean("sslError"))
+        assertTrue("legacy challenge missing: $legacy", legacy.optBoolean("challenge"))
+        assertTrue("current strict-SSL challenge missing: $current", current.optBoolean("challenge"))
+        assertTrue("current WebView-UA challenge missing: $currentWebViewUa", currentWebViewUa.optBoolean("challenge"))
     }
 
     private fun load(label: String, userAgent: String, proceedSsl: Boolean): JSONObject {
