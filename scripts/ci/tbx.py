@@ -174,7 +174,7 @@ def build(name):
     filename = f"{name}-v{manifest['version']}.tbx"
     with tempfile.TemporaryDirectory(dir=directory) as temporary:
         output = Path(temporary) / filename
-        substitutions = {"output": str(output), "version": manifest["version"]}
+        substitutions = {"output": str(output)}
         execute([argument.format(**substitutions) for argument in config["package"]], source)
         digest = check_package(output, manifest, config)
         delivery = directory / "delivery"
