@@ -26,7 +26,7 @@ Activity / 原生页面 → RuntimePresentationCoordinator
 | JS 订阅前积压 | 每个文档独立 1 MiB / 4096 条 | 保存编码后的消息，按序号放入一个 Map；注册监听后回放 | 与原生预算独立，不增加跨层 credit 协议 |
 | 投递、回放批次 | 最多 32 个，或检查工作达到 2 ms | 原生 Main Handler / JS `setTimeout(0)` 开下一任务；JS 预算按检查次数计算 | 2 ms 是软目标，单个用户回调和平台调度仍可能更长 |
 | 收件 ACK | 32 条即发，否则 50 ms 单次定时 | 累计确认序号，独立控制预算；BUSY 后 50 ms 再试 | 收件而非业务处理确认；空闲时没有 ACK 周期定时器 |
-| 控制请求 | 会话 4 KiB，进程共享 64 KiB | ready、getState、ackEvents、flushComplete 走小型预算；仍解析并验证身份 | 控制通道不会被大请求队列挤满；不允许借此发大数据 |
+| 控制请求 | 会话 4 KiB，进程共享 64 KiB | ready、getState、ackEvents、flushComplete、closeMedia 走小型预算；仍解析并验证身份 | 控制通道不会被大请求队列挤满；不允许借此发大数据 |
 
 原生 FIFO 始终使用同一 event pump，ready 前后不会形成两条投递链。JS 未订阅事件保持序号；超过本地上限会发出 `toolbox:runtime.error`，该事件后续订阅明确抛出 `EVENT_BACKLOG_OVERFLOW`。原生 timer 积压触发原有有限恢复；位置积压停止受影响 watch 并呈现原因。ACK 失败不会当作已确认而释放原生预算。
 
@@ -107,7 +107,6 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 | 宿主已有定向单元证据 | [run 36747288250](https://github.com/gkeyes/ToolBox-Android/actions/runs/36747288250)，提交 `de3067a0ff8222a125e5a70c20a9471dd58dfcf8`：app 68 项执行，67 通过、1 失败、0 跳过；失败为通知测试的异步等待，保留原断言并改为等待测试调度器完成。SDK、lint、debug / release 和测试 APK 编译通过；后续模块与 Android 场景尚未执行 |
 | 宿主补充单元证据 | [run 36749624183](https://github.com/gkeyes/ToolBox-Android/actions/runs/36749624183)，提交 `c84b11a0da00ade0d150788d14e4905b76eb8677`：只执行修正后的通知方法及首次执行的 tool-package 2 类、tool-runtime 5 类，共 31 项通过、0 失败、0 跳过。结合前次未受修改影响的 67 项，累计 98 个不同定向单元用例通过；没有重跑那 67 项 |
 | 宿主 Android 首次运行 | 同一 run 实际执行 app 26 项，25 通过、1 失败、0 跳过。最终非空 Room 写入、封口拒绝晚写、取消后恢复写入、两种关闭弹窗、Worker、备份及选中浏览器场景通过。迁移测试读取无索引表时错误要求必填 indices 字段，已改为读取 Room 的可选数组；保留全部记录 / 索引 / 分页断言。tool-runtime 场景因前一步失败尚未开始 |
-
 | 宿主迁移及运行时首次执行 | [run 36754104266](https://github.com/gkeyes/ToolBox-Android/actions/runs/36754104266)，提交 `3bd78e9335a84e4915d6a76c53db66770b896c34`：使用旧版实际 `SUCCEEDED` / `STRICT` 枚举创建迁移夹具后，真实迁移方法 1 / 1 通过。tool-runtime 实际执行 8 项，6 通过、1 失败、1 跳过；通过的为两种 JavaScript dialog、非空最终写入 BUSY / 控制准入、3 个 Wasm 场景。生命周期夹具的随机 ID 末段可能以数字开头，第二次加载被真实 ID 校验拒绝，已修为字母前缀。Profile 在该 API 35 镜像的 WebView 124.0.6367.219 上缺少所需能力，跳过不计通过 |
 | 宿主剩余定向场景 | [run 36758324823](https://github.com/gkeyes/ToolBox-Android/actions/runs/36758324823)，提交 `652dee8779f700525ce619091c2ee67ace95c5fa`：只选择生命周期、专用 Profile 删除后重建，以及同样修正 ID 的真实 Room 最终写入方法，共 3 项。API 36 镜像实际 WebView 为 `com.google.android.webview 133.0.6943.137`；3 / 3 通过、0 失败、0 跳过。专用 Profile 创建、删除 / 重建和自身 ServiceWorker 设置由真实平台执行。选择证据记录每个方法恰好执行 1 次。结合此前输入未变的通过项，累计 34 个不同定向 Android 用例通过 |
 
@@ -115,11 +114,11 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 ## 7. 与媒体任务 PR #54 的整合要求
 
-用户询问的任务 `01a0f244-a463-79e2-a0fd-69f38f68090c` 对应 [媒体 PR #54](https://github.com/gkeyes/ToolBox-Android/pull/54)。它补全 NextFlux 图片 / 音视频媒体通道；本 PR #56 收敛运行时调度、后台展示与持久化。两者可以整合，整合工作仍需独立执行和验证。
+用户询问的任务 `01a0f244-a463-79e2-a0fd-69f38f68090c` 对应 [媒体 PR #54](https://github.com/gkeyes/ToolBox-Android/pull/54)。它补全 NextFlux 图片 / 音视频媒体通道；性能 PR #56 收敛运行时调度、后台展示与持久化。以下记录整合前识别的冲突及其处理依据，实际整合见第 8 节。
 
 只读合并检查以共同基线 `06cd8ec7899f139f974c4c72b565af59a3f91118`、本 PR 提交 `652dee8779f700525ce619091c2ee67ace95c5fa` 和媒体提交 `d96b9fbec1d9b5908305eb3defeb481649c6da96` 为准：16 个共同修改文件，7 个文本冲突。冲突为 NextFlux 的 manifest、package / lock、notice，以及 `HardenedRuntimeWebView`、`RuntimeRpc`、`RuntimeWebMessageBridge`。检查没有修改工作树、合并 PR 或操作另一任务。
 
-运行时基础已先合入；按用户后续授权，媒体与调试状态正在接入当前主调用链。具体整合点：
+运行时基础先合入；按用户后续授权，媒体与调试状态接入当前主调用链。具体整合点：
 
 1. **网络所有权与清理。** 保留本次 complete 请求的 active controller 登记 / 释放，不能退回仅登记公开 stream 的实现。媒体的 `openStream` / 资源所有权加入同一取消路径；保留媒体任务的 `clear` / `close` 和撤权取消。锁内收集资源，锁外取消；关闭、撤权、刷新都必须释放资源。
 2. **RPC 关闭协议。** `network.openMedia` 属于普通准入，挂起工作后仍检验版本 / 权限。`network.closeMedia` 为资源清理加入 closing 允许的方法及控制准入，撤权后仍可清理已有资源；身份、声明、当前 generation 和控制体积检查继续生效。媒体方法接入本次授权前后检查和保存截止点，不能创建第二套关闭逻辑。
@@ -140,4 +139,17 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 删除只验证全局取消所有普通 Job 的 `RuntimeMediaNavigationJobsTest`：该行为会丢失已准入写入，已经由选择性取消、真实 WebView 未解析队列与真实 Room 导航写入回归替代。原生保存封口不因导航重置；停止后台会话属于已准入持久化工作，关闭期允许其结束，封口仍拒绝新普通工作。
 
-当前组合版本为宿主 0.8.29 / 62、NextFlux 1.0.35 / 56（最低宿主 0.8.29），package / lock / notice 同步。前台暂停只作用于正文分批渲染和摘要，不卸载用户已经启动的音视频。隐藏订阅入口、图片缓存升级、HLS 与直接媒体功能保留。合并后的共享链路、专项调试双变体及 NextFlux 直接相关检查待云端完成，不复跑全局测试；通过证据与最终签名产物在此补入。
+当前组合版本为宿主 0.8.29 / 62、NextFlux 1.0.35 / 56（最低宿主 0.8.29），package / lock / notice 同步。前台暂停只作用于正文分批渲染和摘要，不卸载用户已经启动的音视频。隐藏订阅入口、图片缓存升级、HLS 与直接媒体功能保留。
+
+整合后的首次云端检查发现一份完全相同的 `resetForNavigation(WebView)` 声明重复保留，已删除第二份；没有改变导航实现。媒体 SDK 测试的两处断言按 `openMedia` / `closeMedia` 方法计数，避免把性能侧自动 ready 计为媒体请求。`pagehide` 测试验证两个清理请求、两个 abort listener 解除、pending open 拒绝及销毁后迟到回复不能复活调用；原生导航清空媒体 registry、取消挂起 open 与阻塞 body 由原生回归验证。存活文档内的 abort 仍要求迟到成功结果再次 close。
+
+### 合并后的专项证据
+
+| 范围 | 实际结果 |
+| --- | --- |
+| NextFlux | [run 36766560998](https://github.com/gkeyes/ToolBox-Android/actions/runs/36766560998)，提交 `064a6da358ff515cae4d545e9b1978ca3b089775`：9 个定向 Node 文件共 85 项通过；4 个浏览器文件共 81 项通过（导航 21、控件 15、媒体 27、阅读 18），0 失败 / 跳过 / flaky；Vite 构建和 TBX 打包通过。后续提交未改变 NextFlux 源码或其构建 / 测试输入，复用本次证据 |
+| WebView 调试编译策略 | [run 36768325226](https://github.com/gkeyes/ToolBox-Android/actions/runs/36768325226)，提交 `f0bd291f0b2373fd2cd1551476c2fde6389ecc8e`：API 35 Google Play `user` 镜像、实际 WebView `124.0.6367.219`；Debug 与非 debuggable Verification 各 12 个不同场景全部通过，0 失败 / 跳过。下载的两份 XML 各恰好 12 项；不是用开发系统的强制调试行为代替正式系统策略 |
+
+实际 NextFlux TBX SHA-256 为 `bc91f9b17390382ed699819b4140b56794a0886f844a8f952bd9c1721221b675`。包内 252 个文件逐项符合 integrity，manifest 为 1.0.35 / 56、minHostVersion 0.8.29；notice 的 lockfile 哈希 `349892af091cfda30ad1d677581456ebdf3873e6bb3af11f33a9619ae1943b28` 与当前 lock 文件一致，包含 hls.js 1.7.3。
+
+合并后的宿主共享链路检查正在 GitHub 执行，不复跑全局测试；结果及最终签名产物完成后补入。
