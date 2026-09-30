@@ -41,22 +41,20 @@ class DefaultRuntimeAuthorizationPolicy(
     override suspend fun isGranted(
         identity: RuntimeSessionIdentity,
         capability: ToolBoxCapabilityId,
-    ): Boolean = isCurrent(identity) && state.isGranted(identity.toolId, capability)
+    ): Boolean = state.isGranted(identity.toolId, capability)
 
     override suspend fun hasSystemPermissions(
         identity: RuntimeSessionIdentity,
         permissions: Set<String>,
-    ): Boolean = isCurrent(identity) && systemPermissions.hasAll(permissions)
+    ): Boolean = systemPermissions.hasAll(permissions)
 
     override suspend fun admit(
         identity: RuntimeSessionIdentity,
         method: MethodDescriptor,
         encodedBytes: Int,
     ): RuntimePolicyDecision {
-        if (!isCurrent(identity)) {
-            return RuntimePolicyDecision.Denied(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
-        }
         // Grants authorize use; admission protects retained message resources only.
+        // The dispatcher checks the current version before and after this suspend point.
         // Completed calls never consume a rolling per-minute allowance.
         return quota.admit(identity, method, encodedBytes)
     }

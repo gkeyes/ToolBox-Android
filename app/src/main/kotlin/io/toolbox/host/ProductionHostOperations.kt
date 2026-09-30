@@ -304,7 +304,15 @@ internal class ProductionHostBackgroundOperations(
         runtimeSessions = sessions
     }
 
-    override fun observeTasks(toolId: String) = delegate.observeTasks(toolId)
+    override fun observeActiveTasks(toolId: String) = delegate.observeActiveTasks(toolId)
+
+    override fun observeRecentHistory(toolId: String) = delegate.observeRecentHistory(toolId)
+
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String) =
+        delegate.observeHistoryThrough(toolId, createdAt, taskId)
+
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String) =
+        delegate.historyBefore(toolId, createdAt, taskId)
 
     override fun observeResult(taskId: String) = delegate.observeResult(taskId)
 
@@ -355,7 +363,7 @@ internal class ProductionHostBackgroundOperations(
         ),
         notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) {
-                when (val result = notifications.post(runtime.toolId, notificationId, title, body)) {
+                when (val result = notifications.postOrUpdate(runtime.toolId, notificationId, title, body)) {
                     io.toolbox.host.background.NotificationResult.Posted -> Unit
                     is io.toolbox.host.background.NotificationResult.Rejected -> throw RuntimeHandlerException(
                         result.errorCode.toRuntimeErrorCode(),

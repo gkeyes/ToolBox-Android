@@ -254,6 +254,8 @@
   let pauseMessage = "";
   let shouldResumeAfterEndDialog = false;
   let toastTimer = null;
+  let runtimeForeground = false;
+  let completionPending = null;
 
   function getPersistentStorage() {
     try {
@@ -455,7 +457,7 @@
   }
 
   function handlePhaseCue(phase) {
-    if (!["prepare", "contract", "relax"].includes(phase)) return;
+    if (!runtimeForeground || !["prepare", "contract", "relax"].includes(phase)) return;
     audioFeedback.cue(phase);
     vibrate(phase);
   }
@@ -586,7 +588,7 @@
   }
 
   function renderTraining(state) {
-    if (!state.config || currentScreen !== "training") return;
+    if (!runtimeForeground || !state.config || currentScreen !== "training") return;
     const isPaused = state.status === "paused";
     const phase = isPaused ? "paused" : state.phase;
     const phaseMeta = PHASE_META[phase] || PHASE_META.prepare;
@@ -618,7 +620,7 @@
   }
 
   function ensureAnimationFrame() {
-    if (frameId !== null || engine.status !== "running") return;
+    if (!runtimeForeground || frameId !== null || engine.status !== "running") return;
     frameId = window.requestAnimationFrame(onAnimationFrame);
   }
 
@@ -635,7 +637,7 @@
   }
 
   async function requestWakeLock() {
-    if (!preferences.keepAwake || engine.status !== "running" || !("wakeLock" in navigator)) return;
+    if (!runtimeForeground || !preferences.keepAwake || engine.status !== "running" || !("wakeLock" in navigator)) return;
     try {
       if (wakeLockSentinel) await wakeLockSentinel.release();
       wakeLockSentinel = await navigator.wakeLock.request("screen");
@@ -657,6 +659,7 @@
   }
 
   function startSession() {
+    completionPending = null;
     currentSession = getConfig();
     pauseMessage = "";
     audioFeedback.voiceFailed = false;
@@ -668,17 +671,17 @@
     ensureAnimationFrame();
   }
 
-  function pauseSession(message = "训练已暂停") {
+  function pauseSession(message = "训练已暂停", paint = true) {
     const state = engine.pause();
     if (state.status !== "paused") return;
     pauseMessage = message;
     cancelAnimationFrameLoop();
     releaseWakeLock();
-    renderTraining(state);
+    if (paint) renderTraining(state);
   }
 
   function resumeSession() {
-    if (engine.status !== "paused") return;
+    if (!runtimeForeground || engine.status !== "paused") return;
     pauseMessage = "";
     const state = engine.resume();
     renderTraining(state);
@@ -689,8 +692,6 @@
   function finishSession(state) {
     cancelAnimationFrameLoop();
     releaseWakeLock();
-    audioFeedback.cue("complete");
-    vibrate("complete");
 
     const entry = {
       completedAt: new Date().toISOString(),
@@ -700,6 +701,19 @@
     };
     history = [entry, ...history];
     persistHistory();
+    if (!runtimeForeground) {
+      completionPending = state;
+      return;
+    }
+    showCompletion(state, true);
+  }
+
+  function showCompletion(state, cue) {
+    completionPending = null;
+    if (cue) {
+      audioFeedback.cue("complete");
+      vibrate("complete");
+    }
     renderHistory();
 
     $("complete-mode").textContent = currentSession.label;
@@ -709,6 +723,7 @@
   }
 
   function abandonSession() {
+    completionPending = null;
     cancelAnimationFrameLoop();
     releaseWakeLock();
     navigator.vibrate?.(0);
@@ -841,15 +856,29 @@
     showToast("训练记录已清空");
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden && engine.status === "running") {
-      pauseSession("页面离开时已自动暂停，请手动继续");
-    }
-  });
-
-  window.addEventListener("pagehide", () => {
-    if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续");
-    releaseWakeLock();
+  window.ToolBox.ready().then(() => {
+    window.ToolBox.runtime.onStateChanged((snapshot) => {
+      runtimeForeground = snapshot.foreground && !snapshot.closing;
+      if (!runtimeForeground) {
+        if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
+        cancelAnimationFrameLoop();
+        releaseWakeLock();
+      } else if (currentScreen === "training") {
+        if (completionPending) { showCompletion(completionPending, false); return; }
+        renderTraining(engine.tick());
+        if (engine.status === "running") {
+          requestWakeLock();
+          ensureAnimationFrame();
+        }
+      }
+    });
+    window.ToolBox.runtime.registerFlushHandler(async () => {
+      if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
+      cancelAnimationFrameLoop();
+      await releaseWakeLock();
+      persistPreferences();
+      persistHistory();
+    });
   });
 
   reducedMotion.addEventListener?.("change", () => renderTraining(engine.snapshot()));

@@ -12,12 +12,19 @@ async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{wi
     const saved=(name:string,initial:unknown)=>{const text=localStorage.getItem(name);return text?JSON.parse(text):initial;};
     const ordinary=saved('test.native.ordinary',withProfile?{'socialcoach.v1':JSON.stringify({state:{profile,proficiency:{},sessions:[],customScenarios:[],bookmarks:[],practiceDays:[],settings:{tts:false,telemetry:false,theme:'light'},todayDate:null,todaySessionId:null,patternInsight:null},version:0})}:{});
     const secure=saved('test.native.secure',withKey?{'socialcoach.llm.v1':JSON.stringify({state:{enabled:true,provider:'openai',baseUrl:minimax?'https://api.minimax.io/v1':'https://mock.invalid/v1',apiKey:key,fastModel:minimax?'MiniMax-M3':'mock-chat',smartModel:minimax?'MiniMax-M3':'mock-assess',tokenParam:'max_tokens'},version:0})}:{});
-    w.__testHost={ordinary,secure,calls:[],cancelled:0,exports:[],hold:false,onlyReasoning:false,leaks:[]};
+    w.__testHost={ordinary,secure,calls:[],cancelled:0,exports:[],hold:false,onlyReasoning:false,finishReply:false,endedWrites:[],leaks:[]};
     if(minimax)new MutationObserver(records=>{for(const r of records){for(const n of Array.from(r.addedNodes)){if(/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(n.textContent||''))w.__testHost.leaks.push('added-node');}if(r.type==='characterData'&&/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(r.target.textContent||''))w.__testHost.leaks.push('text-change');}}).observe(document,{subtree:true,childList:true,characterData:true});
-    const storage=(data:any,name:string)=>({get:async(k:string)=>data[k]??null,set:async(k:string,v:unknown)=>{data[k]=v;localStorage.setItem(name,JSON.stringify(data));},remove:async(k:string)=>{delete data[k];localStorage.setItem(name,JSON.stringify(data));}});
+    const storage=(data:any,name:string)=>({get:async(k:string)=>data[k]??null,set:async(k:string,v:unknown)=>{
+      if(name==='test.native.ordinary'&&k==='socialcoach.v1'&&typeof v==='string'&&JSON.parse(v).state.sessions[0]?.status==='ended')w.__testHost.endedWrites.push(JSON.parse(v));
+      data[k]=v;localStorage.setItem(name,JSON.stringify(data));
+    },remove:async(k:string)=>{delete data[k];localStorage.setItem(name,JSON.stringify(data));}});
     const streams=new Map<string,{bytes:Uint8Array;offset:number;hold:boolean}>();let seq=0;
     const report={ratings:[{skill:scene.skills[0],level:2,evidence:learnerLine,reason:'测试夹具：提出了时间承诺。'}],outcome:'partial',verdictEvidence:learnerLine,verdict:'测试复盘：表达了明确时间。',summary:'测试夹具，仅验证界面和引用校验。',strengths:[{skill:scene.skills[0],evidence:learnerLine,behavior:'明确时间'}],weaknesses:[],alternatives:[{original:learnerLine,better:'我会在明天下午三点前反馈，也想先确认缺少的信息。',why:'把承诺和具体请求结合。'}],knowledge:{theoryIds:[],caseIds:[],whyThis:''},reflectionQuestions:['下一次准备怎样开口？'],nextStep:'再试一次。',deltas:{[scene.skills[0]]:0.2}};
-    w.ToolBox={ready:async()=>({hostVersion:'1.0.0'}),storage:{...storage(ordinary,'test.native.ordinary'),secure:storage(secure,'test.native.secure')},
+    w.ToolBox={ready:async()=>({hostVersion:'0.8.28'}),runtime:{
+      getState:async()=>({generation:1,revision:1,foreground:true,closing:false}),
+      onStateChanged:(callback:(state:any)=>void)=>{callback({generation:1,revision:1,foreground:true,closing:false});return ()=>{};},
+      registerFlushHandler:(handler:()=>Promise<void>)=>{w.__testHost.flush=handler;return ()=>{};}
+    },storage:{...storage(ordinary,'test.native.ordinary'),secure:storage(secure,'test.native.secure')},
       network:{openStream:async(req:any,{signal}:any={})=>{
         if(signal?.aborted)throw new DOMException('cancel','AbortError');
         w.__testHost.calls.push({url:req.url,method:req.method,body:req.body?JSON.parse(req.body):null});
@@ -25,7 +32,8 @@ async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{wi
         if(prompt.includes('Produce the adaptation JSON.'))text=JSON.stringify({learnerCharacterId:'you',briefing:'测试准备：先承认反馈延迟，再讨论具体安排。',objectives:scene.objectives.map((o:any)=>o.zh),focus:'明确表达，听取对方。'});
         else if(prompt.includes('Produce the assessment JSON.'))text=JSON.stringify(report);
         else if(prompt.includes('Give the hint.'))text='先表达感受，再提出一个具体的沟通时间。';
-        else if(body.stream)text='@@meta\n'+JSON.stringify({objectives:[false,false,true],ended:false,stance:35,revealed:false})+'\n@@jason\n'+npcLine;
+        else if(body.stream)text='@@meta\n'+JSON.stringify({objectives:[false,false,true],ended:w.__testHost.finishReply,stance:35,revealed:false,
+          ...(w.__testHost.finishReply?{closure:{kind:'agreement',learnerQuote:learnerLine,npcQuote:npcLine.slice(0,8)}}:{})})+'\n@@jason\n'+npcLine;
         const models=req.url.endsWith('/models');
         const sse=body.stream&&!models;
         const hidden='<think>PRIVATE_MINIMAX_TRACE {\"verdict\":\"错误草稿\"}</think>';
@@ -52,6 +60,23 @@ test('offline corpus browsing, filtering and hash navigation work without a mode
 test('full API key typing, model list selection, save and modal Back',async({page})=>{await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();await page.getByLabel('API Key',{exact:true}).pressSequentially(key,{delay:2});await expect(page.getByLabel('API Key',{exact:true})).toHaveValue(key);await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');await page.getByRole('button',{name:'读取模型',exact:true}).click();await expect(page.getByText(/已读取 2 个模型/)).toBeVisible();await page.getByRole('button',{name:'从模型列表选择',exact:true}).first().click();await page.getByRole('button',{name:'mock-chat',exact:true}).click();await page.getByRole('button',{name:'两个用途使用同一模型',exact:true}).click();await page.getByRole('button',{name:'测试并保存',exact:true}).click();await expect(page.getByText('两个模型均已验证，配置已保存。',{exact:true})).toBeVisible();await screenshot(page,'model-settings');await page.evaluate(()=>history.back());await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page).toHaveURL(/#\/settings$/);expect(await page.evaluate(()=>(window as any).__testHost.ordinary['socialcoach.v1'].includes('mock-test-key'))).toBe(false);expect(errors).toEqual([]);});
 
 test('scene preparation -> streamed dialogue -> grounded report -> backup and reopen',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();await screenshot(page,'conversation');await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'review');const hash=new URL(page.url()).hash;await page.reload();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(hash);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'导出'}).first().click();const exported=await page.evaluate(()=>(window as any).__testHost.exports[0]);expect(exported.content).not.toContain(key);expect(JSON.parse(exported.content).sessions[0].report.scoringVersion).toBe(2);expect(errors).toEqual([]);});
+
+test('automatic ending saves the final line and ended state before close flush',async({page})=>{
+  await setup(page);
+  await startScene(page);
+  await page.evaluate(()=>{(window as unknown as {__testHost:{finishReply:boolean}}).__testHost.finishReply=true;});
+  await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);
+  await page.getByRole('button',{name:'发送',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as unknown as {__testHost:{endedWrites:unknown[]}}).__testHost.endedWrites.length)).toBeGreaterThan(0);
+  const finalWrite=await page.evaluate(async()=>{
+    const host=(window as unknown as {__testHost:{endedWrites:Array<{state:{sessions:Array<{status:string;endedAt?:number;messages:Array<{role:string;text:string}>}>}}>;flush:()=>Promise<void>}}).__testHost;
+    await host.flush();
+    return host.endedWrites[0].state.sessions[0];
+  });
+  expect(finalWrite.status).toBe('ended');
+  expect(finalWrite.endedAt).toBeGreaterThan(0);
+  expect(finalWrite.messages.some((message)=>message.role==='npc'&&message.text===npcLine)).toBe(true);
+});
 
 test('cancel and edit-resend release the stream and retain one learner message',async({page})=>{
   await setup(page);

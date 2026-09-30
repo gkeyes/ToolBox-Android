@@ -41,13 +41,16 @@ function harness(request) {
   const window = { ToolBox: toolbox, GitHubWatcherModel: model, GitHubWatcherReliability: reliability, addEventListener() {} };
   const context = vm.createContext({ window, document, URL, Intl, Date, console, setTimeout, clearTimeout, setInterval, clearInterval });
   let source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-  const end = '  startForegroundClock();\n  bootPromise = boot();';
+  const end = '  bootPromise = boot();';
   assert.ok(source.includes(end));
   source = source.replace(end, `
     renderDashboard = function () {};
+    let clockPaints = 0;
+    renderDashboardClock = function () { clockPaints += 1; };
     renderAll = function () {};
     showToast = function () {};
-    window.testApi = { state, pollGitHub, retireWork, processTerminalResults, liveRequestFor,
+    window.testApi = { state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
+      setForeground: (value) => { runtimeForeground = value; }, clockPaints: () => clockPaints,
       expire: () => activePoll?.invalidate(reliability.timeoutError()),
       pendingPages: () => discoveryQueue.length };
   `);
@@ -79,6 +82,33 @@ test('poll scheduling subtracts work duration and respects rate-reset time', () 
   assert.equal(reliability.nextDelay(1_000, 15_000, 9_000), 7_000);
   assert.equal(reliability.nextDelay(1_000, 15_000, 30_000), 1_000);
   assert.equal(reliability.nextDelay(1_000, 15_000, 30_000, 90_000), 60_000);
+});
+
+test('foreground seconds only repaint clocks and never poll, notify or persist', async () => {
+  const h = harness();
+  try {
+    h.setForeground(true);
+    await h.clockTick(false);
+    await h.clockTick(false);
+    assert.equal(h.clockPaints(), 2);
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.posts.length, 0);
+    assert.equal(h.lives.length, 0);
+    assert.equal(h.timers.length, 0);
+  } finally { h.close(); }
+});
+
+test('terminal jobs are not fetched again after their final steps are synchronized', async () => {
+  const h = harness();
+  const finished = run(17, 'completed');
+  const key = model.runKey(finished);
+  h.state.runs = [finished];
+  h.state.jobsByRun[key] = [{ id: 1, status: 'completed', steps: [{ status: 'completed' }] }];
+  h.state.terminalStates[key] = { posted: true, jobsSynced: true, holdUntil: Date.now() + 120_000 };
+  try {
+    await h.pollGitHub(false);
+    assert.equal(h.calls.filter((call) => call.url.includes('/jobs?')).length, 0);
+  } finally { h.close(); }
 });
 
 test('discovery omission cannot drop an active run and stale pages cannot undo completion', () => {

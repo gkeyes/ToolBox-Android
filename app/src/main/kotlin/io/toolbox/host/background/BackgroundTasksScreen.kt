@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
+import io.toolbox.core.data.BackgroundTaskHistoryPage
 import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
@@ -48,8 +49,15 @@ import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
+
+private data class HistoryBoundary(val createdAt: Long, val taskId: String)
+private data class LoadedHistory(val boundary: HistoryBoundary, val tasks: List<BackgroundTask>)
 
 @Composable
 internal fun BackgroundTasksScreen(
@@ -59,21 +67,42 @@ internal fun BackgroundTasksScreen(
     onBack: () -> Unit,
     onReady: () -> Unit = {},
 ) {
-    var tasksLoaded by remember(toolId, operations) { mutableStateOf(false) }
-    val tasksFlow = remember(toolId, operations) {
-        operations.observeTasks(toolId).onEach { tasksLoaded = true }
+    var activeLoaded by remember(toolId, operations) { mutableStateOf(false) }
+    var historyLoaded by remember(toolId, operations) { mutableStateOf(false) }
+    val activeFlow = remember(toolId, operations) {
+        operations.observeActiveTasks(toolId).onEach { activeLoaded = true }
     }
-    val tasks by tasksFlow.collectAsStateWithLifecycle(emptyList())
+    val historyFlow = remember(toolId, operations) {
+        operations.observeRecentHistory(toolId).onEach { historyLoaded = true }
+    }
+    val active by activeFlow.collectAsStateWithLifecycle(emptyList())
+    val recentHistory by historyFlow.collectAsStateWithLifecycle(BackgroundTaskHistoryPage(emptyList(), false))
+    var olderHistory by remember(toolId, operations) { mutableStateOf(emptyList<BackgroundTask>()) }
+    var loadedBoundary by remember(toolId, operations) { mutableStateOf<HistoryBoundary?>(null) }
+    var moreBeyondBoundary by remember(toolId, operations) { mutableStateOf(false) }
+    var loadingHistory by remember(toolId, operations) { mutableStateOf(false) }
+    var historyError by remember(toolId, operations) { mutableStateOf<String?>(null) }
+    val loadedFlow: Flow<LoadedHistory?> = remember(toolId, operations, loadedBoundary) {
+        loadedBoundary?.let { boundary ->
+            operations.observeHistoryThrough(toolId, boundary.createdAt, boundary.taskId)
+                .map { LoadedHistory(boundary, it) }
+        } ?: flowOf(null)
+    }
+    val loadedHistory by loadedFlow.collectAsStateWithLifecycle(null)
+    val visibleHistory = if (loadedHistory?.boundary == loadedBoundary && loadedBoundary != null) {
+        loadedHistory?.tasks.orEmpty()
+    } else (recentHistory.tasks + olderHistory).distinctBy(BackgroundTask::taskId)
+    val hasMoreHistory = if (loadedBoundary == null) recentHistory.hasMore else moreBeyondBoundary
     val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
-    val page = backgroundTasksPageModel(toolId, tasks, sessions)
+    val page = backgroundTasksPageModel(toolId, (active + visibleHistory).distinctBy(BackgroundTask::taskId), sessions)
     val scope = rememberCoroutineScope()
     val actions = remember(toolId, operations, runtimeSessions, scope) {
         BackgroundTaskActions(scope, { operations.cancel(toolId, it) }, runtimeSessions::stopSession)
     }
     val actionState by actions.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(tasksLoaded) {
-        if (tasksLoaded) onReady()
+    LaunchedEffect(activeLoaded, historyLoaded) {
+        if (activeLoaded && historyLoaded) onReady()
     }
 
     BackgroundTasksContent(
@@ -90,6 +119,28 @@ internal fun BackgroundTasksScreen(
         onStopSession = { actions.stop(it.sessionId) },
         onCancelTask = { actions.cancel(it.taskId) },
         onRetry = if (actionState.retry != null) actions::retry else null,
+        canLoadMoreHistory = hasMoreHistory,
+        loadingHistory = loadingHistory,
+        historyError = historyError,
+        onLoadMoreHistory = {
+            val cursor = loadedBoundary ?: recentHistory.tasks.lastOrNull()?.let { HistoryBoundary(it.createdAt, it.taskId) }
+            if (cursor != null && hasMoreHistory && !loadingHistory) {
+                loadingHistory = true
+                historyError = null
+                scope.launch {
+                    try {
+                        val next = operations.historyBefore(toolId, cursor.createdAt, cursor.taskId)
+                        olderHistory = (olderHistory + next.tasks).distinctBy(BackgroundTask::taskId)
+                        next.tasks.lastOrNull()?.let { loadedBoundary = HistoryBoundary(it.createdAt, it.taskId) }
+                        moreBeyondBoundary = next.hasMore
+                    } catch (_: Exception) {
+                        historyError = "读取历史任务失败，请重试。"
+                    } finally {
+                        loadingHistory = false
+                    }
+                }
+            }
+        },
     )
 }
 
@@ -104,6 +155,10 @@ internal fun BackgroundTasksContent(
     onStopSession: (RuntimeBackgroundSessionUi) -> Unit,
     onCancelTask: (BackgroundTask) -> Unit,
     onRetry: (() -> Unit)? = null,
+    canLoadMoreHistory: Boolean = false,
+    loadingHistory: Boolean = false,
+    historyError: String? = null,
+    onLoadMoreHistory: () -> Unit = {},
 ) {
     DetailScreen(title = "后台任务", onBack = onBack) { chromePadding ->
         LazyColumn(
@@ -186,6 +241,16 @@ internal fun BackgroundTasksContent(
                                 canCancel = cancellingTaskId == null,
                                 onCancel = { onCancelTask(task) },
                             )
+                        }
+                    }
+                    if (canLoadMoreHistory) {
+                        item("more-history") {
+                            ToolBoxTextButton(
+                                label = if (loadingHistory) "正在加载…" else "加载更多历史任务",
+                                onClick = onLoadMoreHistory,
+                                enabled = !loadingHistory,
+                            )
+                            historyError?.let { AppText(it, color = ToolBoxThemeTokens.colors.textSecondary) }
                         }
                     }
                 }

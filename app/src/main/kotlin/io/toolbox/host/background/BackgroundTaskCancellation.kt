@@ -58,7 +58,7 @@ internal class BackgroundTaskCancellation(
     private val cancelScheduledWork: suspend (BackgroundTask) -> Unit,
 ) {
     suspend fun cancelStoredTasks(toolId: String) {
-        val tasks = repository.observeTasks(toolId).first().filterNot { it.isFinished }
+        val tasks = repository.observeActiveTasks(toolId).first()
         completeBackgroundCancellation(*tasks.map { task -> suspend {
             if (cancelStoredTask(task) is BackgroundCancellationResult.Failed) {
                 throw BackgroundCancellationException()

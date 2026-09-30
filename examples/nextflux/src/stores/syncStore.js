@@ -9,6 +9,9 @@ import {
 import { settingsState } from "./settingsStore.js";
 import { authState } from "./authStore.js";
 import { runPrioritizedArticleSync } from "../toolbox/sync-priority.mjs";
+import { runtimeForeground } from "../toolbox/foreground.js";
+import { nativeTimerEffective } from "../toolbox/background-state.js";
+import { createAutoSyncDeadline } from "../toolbox/auto-sync-deadline.mjs";
 
 export const isOnline = atom(navigator.onLine);
 export const isSyncing = atom(false);
@@ -16,6 +19,10 @@ export const syncProgress = atom("");
 export const lastSync = atom(null);
 export const error = atom(null);
 let syncInterval = null;
+let autoSyncActive = false;
+let stopForegroundListener = null;
+let stopNativeListener = null;
+const autoDeadline = createAutoSyncDeadline();
 let accountEpoch = 0;
 const pendingManual = [];
 const pendingAutomatic = [];
@@ -105,6 +112,7 @@ export function runAccountOperation(task, { requireOnline = true, priority = "ma
 
 export function cancelAccountOperations() {
   accountEpoch += 1;
+  autoDeadline.reset();
   for (const listener of accountInvalidators) listener();
   recoveries.length = 0;
   for (const item of [...pendingManual.splice(0), ...pendingAutomatic.splice(0)]) item.reject(cancellation());
@@ -405,39 +413,79 @@ export function sync(mode = "foreground") {
     backgroundPreemptRequested = false;
     isSyncing.set(false);
     syncProgress.set("");
+    resetSyncInterval();
   });
   return currentSync;
 }
 
 function resetSyncInterval() {
-  if (syncInterval) clearInterval(syncInterval);
+  if (syncInterval) clearTimeout(syncInterval);
   syncInterval = null;
+  if (!autoSyncActive || !runtimeForeground.get() || nativeTimerEffective.get() || !authState.get().userId) return;
   const minutes = parseInt(settingsState.get().syncInterval, 10);
-  if (minutes > 0) syncInterval = setInterval(performSync, minutes * 60 * 1000);
+  if (!(minutes > 0)) return;
+  if (!isOnline.get()) {
+    syncInterval = setTimeout(performSync, minutes * 60 * 1000);
+    return;
+  }
+  if (isSyncing.get()) return;
+  const interval = minutes * 60 * 1000;
+  const lastSuccess = getLastSyncTime()?.getTime() || 0;
+  const due = autoDeadline.dueAt(interval, lastSuccess);
+  syncInterval = setTimeout(performSync, Math.max(0, due - Date.now()));
+}
+
+export function claimAutoSync() {
+  if (!isOnline.get() || !authState.get().userId || isSyncing.get()) return null;
+  const minutes = parseInt(settingsState.get().syncInterval, 10);
+  if (!(minutes > 0)) return null;
+  const interval = minutes * 60 * 1000;
+  const lastSuccess = getLastSyncTime()?.getTime() || 0;
+  if (!autoDeadline.claim({ now: Date.now(), intervalMs: interval, lastSuccessAt: lastSuccess, epoch: accountEpoch })) return null;
+  return sync("background");
 }
 
 export function startAutoSync() {
   if (typeof window === "undefined") return;
-  performSync();
-  resetSyncInterval();
-  window.addEventListener("beforeunload", stopAutoSync);
+  if (!autoSyncActive) {
+    autoSyncActive = true;
+    stopForegroundListener = runtimeForeground.listen(() => {
+      if (runtimeForeground.get()) void performSync();
+      else resetSyncInterval();
+    });
+    stopNativeListener = nativeTimerEffective.listen(() => {
+      if (!nativeTimerEffective.get()) void performSync();
+      else resetSyncInterval();
+    });
+    window.addEventListener("beforeunload", stopAutoSync);
+  }
+  void performSync();
 }
 
 export function stopAutoSync() {
-  if (syncInterval) clearInterval(syncInterval);
+  autoSyncActive = false;
+  if (syncInterval) clearTimeout(syncInterval);
   syncInterval = null;
+  stopForegroundListener?.();
+  stopNativeListener?.();
+  stopForegroundListener = null;
+  stopNativeListener = null;
   globalThis.window?.removeEventListener("beforeunload", stopAutoSync);
 }
 
 async function performSync() {
-  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-  if (!isOnline.get() || isSyncing.get() || !authState.get().userId) return;
-  const minutes = parseInt(settingsState.get().syncInterval, 10);
-  if (!(minutes > 0)) return;
-  const previous = getLastSyncTime();
-  if (!previous || Date.now() - previous.getTime() > minutes * 60 * 1000) {
-    try { await sync("background"); } catch { /* sync already reports a user-visible error */ }
+  if (!autoSyncActive || !runtimeForeground.get() || nativeTimerEffective.get()) { resetSyncInterval(); return; }
+  const scheduled = claimAutoSync();
+  if (scheduled) try { await scheduled; } catch { /* sync already reports a user-visible error */ }
+  resetSyncInterval();
+}
+
+export async function flushSyncWork() {
+  while (activeOperation || currentSync || pendingManual.length || pendingAutomatic.length || pumpScheduled) {
+    await Promise.allSettled([activeOperation, currentSync, iconQueue]);
+    await new Promise((resolve) => queueMicrotask(resolve));
   }
+  await iconQueue;
 }
 
 export const forceSync = () => sync("foreground");

@@ -21,8 +21,7 @@ prepare_visible_emulator() {
 prepare_visible_emulator app || exit 1
 if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = targeted ]; then
   test -n "${TOOLBOX_ANDROID_TEST_FILTER:-}" || exit 2
-  ./gradlew --no-daemon :app:connectedDebugAndroidTest \
-    "-Pandroid.testInstrumentationRunnerArguments.class=$TOOLBOX_ANDROID_TEST_FILTER"
+  python3 scripts/ci/targeted-checks.py android-run --filters "$TOOLBOX_ANDROID_TEST_FILTER"
   exit "$?"
 fi
 if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = performance ]; then

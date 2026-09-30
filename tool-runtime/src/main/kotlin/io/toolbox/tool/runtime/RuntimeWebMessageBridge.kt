@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 fun interface RuntimeBridgeProvider {
@@ -53,6 +54,7 @@ class RuntimeBridgeSession internal constructor(
     private val browserLaunchGuard: () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
     },
+    ordinaryBudget: RuntimeRequestBudget = RuntimeRequestBudget(),
 ) {
     // A JSON message is decoded as UTF-16. This is current allocation capacity,
     // not the obsolete per-tool manifest quota.
@@ -62,8 +64,21 @@ class RuntimeBridgeSession internal constructor(
     private val eventReady = AtomicBoolean(false)
     private val inFlightIds = ConcurrentHashMap.newKeySet<String>()
     private val eventProxy = AtomicReference<JavaScriptReplyProxy?>(null)
-    private val pendingEvents = ArrayDeque<String>()
-    private val jobs = RuntimeSessionJobs()
+    private val events = RuntimeEventBuffer()
+    private val presentation = RuntimePresentationCoordinator(identity.generation, android.os.SystemClock::elapsedRealtime)
+    private val pendingState = AtomicReference<String?>(null)
+    private val drainScheduled = AtomicBoolean(false)
+    private val controls = RuntimeSessionJobs(
+        localBudget = RuntimeRequestBudget(4 * 1024),
+        globalBudget = controlBudget,
+    )
+    private val lifecycle = object : RuntimeLifecycleHandler {
+        override fun stateValue() = presentation.stateValue()
+        override fun checkMethodAvailable(method: String) = presentation.checkMethodAvailable(method)
+        override fun acknowledgeEvents(sequence: Long) = events.acknowledge(sequence)
+        override fun completeFlush(token: String, saved: Boolean) = presentation.completeFlush(token, saved)
+    }
+    private val jobs = RuntimeSessionJobs(localBudget = ordinaryBudget)
     private var attachedView = WeakReference<WebView>(null)
     // A recovered/background runtime may never have a window. View.post queues
     // work until attachment; native replies and events must target the UI looper.
@@ -74,6 +89,7 @@ class RuntimeBridgeSession internal constructor(
         handlers = handlers,
         m2Handlers = m2Handlers,
         m3Handlers = m3Handlers,
+        lifecycle = lifecycle,
         browserLaunchGuard = { browserLaunchGuard(); requireForegroundSession() },
         foregroundInteractionGuard = { withContext(Dispatchers.Main.immediate) { requireForegroundSession() } },
     )
@@ -123,8 +139,16 @@ class RuntimeBridgeSession internal constructor(
             return
         }
         val exactSourceOrigin = sourceOrigin.toString()
-        val admitted = jobs.launch(retainedBytes = (encoded.length.toLong() * Char.SIZE_BYTES).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
-            if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) {
+        val jobOwner = if (runtimeControlMethod(encoded)) controls else jobs
+        val countsAsWrite = AtomicBoolean(jobOwner === jobs)
+        if (countsAsWrite.get() && !presentation.admitOrdinaryRequest()) {
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.SESSION_ENDED, "The final save has completed"))
+            return
+        }
+        fun releaseWrite() { if (countsAsWrite.compareAndSet(true, false)) presentation.releaseOrdinaryRequest() }
+        val admitted = jobOwner.launch(retainedBytes = (encoded.length.toLong() * Char.SIZE_BYTES).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
+            val utf8 = encoded.toByteArray(Charsets.UTF_8)
+            if (utf8.size > maxPayloadBytes) {
                 replyAndAwaitDelivery(
                     webView,
                     replyProxy,
@@ -133,7 +157,7 @@ class RuntimeBridgeSession internal constructor(
                 return@launch
             }
             val request = try {
-                RuntimeRpcJson.decodeRequest(encoded)
+                RuntimeRpcJson.decodeRequest(utf8)
             } catch (_: Exception) {
                 replyAndAwaitDelivery(
                     webView,
@@ -142,6 +166,7 @@ class RuntimeBridgeSession internal constructor(
                 )
                 return@launch
             }
+            if (request.method !in RuntimePresentationCoordinator.WRITE_METHODS) releaseWrite()
             if (!inFlightIds.add(request.id)) {
                 replyAndAwaitDelivery(
                     webView,
@@ -159,7 +184,8 @@ class RuntimeBridgeSession internal constructor(
                 if (request.method == "ready" && response is RuntimeRpcResponse.Success) {
                     eventProxy.set(replyProxy)
                     eventReady.set(true)
-                    flushPendingEvents(webView, replyProxy)
+                    queuePresentation(webView)
+                    scheduleDrain(webView)
                 }
             } catch (_: CancellationException) {
             } finally {
@@ -167,60 +193,104 @@ class RuntimeBridgeSession internal constructor(
             }
         }
         if (admitted == null) {
+            releaseWrite()
             reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Insufficient memory for pending ToolBox requests"))
-        }
+        } else admitted.invokeOnCompletion { releaseWrite() }
     }
 
     internal fun close(webView: WebView) {
         if (!active.compareAndSet(true, false)) return
         attachedView.clear()
         jobs.close()
+        controls.close()
+        presentation.release()
+        events.close()
+        pendingState.set(null)
         runCatching { network?.close() }
         runCatching { sessionCleanup?.close() }
         inFlightIds.clear()
         eventReady.set(false)
         eventProxy.set(null)
-        synchronized(pendingEvents) { pendingEvents.clear() }
+
         runCatching { WebViewCompat.removeWebMessageListener(webView, BRIDGE_OBJECT) }
+    }
+
+    internal fun isClosing(): Boolean = presentation.state().closing
+
+    internal suspend fun awaitOpenForEvents(): Boolean {
+        presentation.awaitOpenForEvents()
+        return active.get()
+    }
+
+    internal fun setForeground(webView: WebView, foreground: Boolean) {
+        if (active.get() && presentation.setForeground(foreground)) queuePresentation(webView)
+    }
+
+    internal suspend fun flushBeforeClose(webView: WebView, timeoutMillis: Long?): Boolean {
+        if (!active.get()) return false
+        val ticket = presentation.beginClose(timeoutMillis)
+        network?.cancelStreams()
+        queuePresentation(webView)
+        suspend fun drain(): Boolean {
+            if (!ticket.result.await()) return false
+            presentation.awaitWrites()
+            return active.get() && presentation.isCurrent(ticket)
+        }
+        val remaining = ticket.deadline?.let { (it - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0) }
+        val limit = listOfNotNull(remaining, timeoutMillis).minOrNull() ?: return drain()
+        return withTimeoutOrNull(limit) { drain() } == true
+    }
+
+    internal fun cancelClose(webView: WebView) {
+        presentation.cancelClose()
+        if (active.get()) queuePresentation(webView)
+    }
+
+    private fun queuePresentation(webView: WebView) {
+        pendingState.set(RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+            "type" to RpcValue.StringValue("runtimeState"),
+            "data" to presentation.stateValue(),
+        ))))
+        scheduleDrain(webView)
     }
 
     internal fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean {
         if (!active.get() || !EVENT_NAME.matches(name)) return false
-        val encoded = RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
-            "type" to RpcValue.StringValue("event"),
-            "event" to RpcValue.StringValue(name),
-            "generation" to RpcValue.StringValue(identity.generation),
-            "timestamp" to RpcValue.Number(System.currentTimeMillis().toDouble()),
-            "data" to payload,
-        )))
-        if (encoded.toByteArray(Charsets.UTF_8).size > maxPayloadBytes) return false
-        val proxy = eventProxy.get()
-        if (!eventReady.get() || proxy == null) {
-            synchronized(pendingEvents) {
-                if (encoded.length.toLong() * Char.SIZE_BYTES > ResourceCapacity.availableHeapBytes()) return false
-                pendingEvents.addLast(encoded)
-            }
-            return true
+        val admitted = events.offer { sequence ->
+            RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+                "type" to RpcValue.StringValue("event"),
+                "event" to RpcValue.StringValue(name),
+                "generation" to RpcValue.StringValue(identity.generation),
+                "sequence" to RpcValue.Number(sequence.toDouble()),
+                "timestamp" to RpcValue.Number(System.currentTimeMillis().toDouble()),
+                "data" to payload,
+            )))
         }
-        mainHandler.post {
-            if (active.get() && attachedView.get() === webView && eventReady.get() && eventProxy.get() === proxy) {
-                runCatching { proxy.postMessage(encoded) }
-            }
-        }
-        return true
+        if (admitted) scheduleDrain(webView)
+        return admitted
     }
 
-    private fun flushPendingEvents(webView: WebView, proxy: JavaScriptReplyProxy) {
-        val queued = synchronized(pendingEvents) {
-            buildList {
-                while (pendingEvents.isNotEmpty()) add(pendingEvents.removeFirst())
+    private fun scheduleDrain(webView: WebView) {
+        if (!active.get() || !eventReady.get() || !drainScheduled.compareAndSet(false, true)) return
+        if (!mainHandler.post {
+            try {
+                val proxy = eventProxy.get()
+                if (!active.get() || attachedView.get() !== webView || !eventReady.get() || proxy == null) return@post
+                pendingState.getAndSet(null)?.let { proxy.postMessage(it) }
+                val started = System.nanoTime()
+                var count = 0
+                while (count < RuntimeEventBuffer.BATCH_SIZE && System.nanoTime() - started < RuntimeEventBuffer.BATCH_NANOS) {
+                    val event = events.poll() ?: break
+                    proxy.postMessage(event.encoded)
+                    count++
+                }
+            } catch (_: RuntimeException) {
+                events.close()
+            } finally {
+                drainScheduled.set(false)
+                if (events.hasPending() || pendingState.get() != null) scheduleDrain(webView)
             }
-        }
-        if (queued.isEmpty()) return
-        mainHandler.post {
-            if (!active.get() || attachedView.get() !== webView || !eventReady.get() || eventProxy.get() !== proxy) return@post
-            queued.forEach { encoded -> runCatching { proxy.postMessage(encoded) } }
-        }
+        }) drainScheduled.set(false)
     }
 
     private suspend fun replyAndAwaitDelivery(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
@@ -285,23 +355,138 @@ class RuntimeBridgeSession internal constructor(
               const nativeBridge = globalThis.$BRIDGE_OBJECT;
               const pending = new Map();
               const listeners = new Map();
+              // Native unacknowledged events and this per-document backlog have separate budgets.
               const earlyEvents = new Map();
+              const queuedNames = new Map();
+              const lostEvents = new Map();
+              const stateListeners = new Map();
+              const flushHandlers = new Set();
+              const writeMethods = new Set(['storage.apply', 'storage.set', 'storage.remove', 'storage.clear', 'storage.secure.set', 'storage.secure.remove']);
               let sequence = 0;
+              let runtimeState = null;
+              let readyPromise = null;
+              let closeToken = null;
+              let handledCloseToken = null;
+              let flushFinishedToken = null;
+              let disposed = false;
+              let earlyBytes = 0;
+              let replayIterator = null;
+              let replayScheduled = false;
+              let restartReplay = false;
+              let receivedSequence = 0;
+              let acknowledgedSequence = 0;
+              let ackTimer = null;
+              let ackBackoff = false;
+              let ackInFlight = false;
+              let ackFailed = false;
+              const runtimeError = (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra });
+              const reportError = error => {
+                try { globalThis.dispatchEvent(new CustomEvent('toolbox:runtime.error', { detail: error })); } catch (_) {}
+              };
+              const dispatchEventPayload = (name, payload) => {
+                const callbacks = listeners.get(name);
+                callbacks?.forEach(callback => { try { callback(payload); } catch (_) {} });
+              };
+              const scheduleReplay = () => {
+                if (disposed || replayScheduled) return;
+                replayScheduled = true;
+                setTimeout(replayEvents, 0);
+              };
+              const replayEvents = () => {
+                replayScheduled = false;
+                if (disposed) return;
+                if (!replayIterator || restartReplay) {
+                  replayIterator = earlyEvents.entries();
+                  restartReplay = false;
+                }
+                const started = performance.now();
+                let inspected = 0;
+                while (inspected < 32 && performance.now() - started < 2) {
+                  const next = replayIterator.next();
+                  if (next.done) { replayIterator = null; break; }
+                  inspected++;
+                  const [id, entry] = next.value;
+                  if (!listeners.get(entry.name)?.size) continue;
+                  earlyEvents.delete(id);
+                  earlyBytes -= entry.charge;
+                  const remaining = queuedNames.get(entry.name) - 1;
+                  remaining ? queuedNames.set(entry.name, remaining) : queuedNames.delete(entry.name);
+                  const payload = JSON.parse(entry.encoded).data;
+                  dispatchEventPayload(entry.name, payload);
+                }
+                if (replayIterator || restartReplay) scheduleReplay();
+              };
+              const retainEvent = (encoded, response) => {
+                const charge = encoded.length * 2 + 128;
+                if (earlyEvents.size >= 4096 || charge > 1024 * 1024 - earlyBytes) {
+                  const droppedCount = (lostEvents.get(response.event) || 0) + 1;
+                  lostEvents.set(response.event, droppedCount);
+                  reportError(runtimeError('EVENT_BACKLOG_OVERFLOW', 'Unsubscribed tool events exceeded the backlog budget', { event: response.event, droppedCount }));
+                  return;
+                }
+                earlyEvents.set(response.sequence, { name: response.event, encoded, charge });
+                earlyBytes += charge;
+                queuedNames.set(response.event, (queuedNames.get(response.event) || 0) + 1);
+                if (listeners.get(response.event)?.size) scheduleReplay();
+              };
+              const acknowledgeEvents = () => {
+                if (ackTimer !== null) { clearTimeout(ackTimer); ackTimer = null; }
+                ackBackoff = false;
+                if (disposed || ackFailed || ackInFlight || receivedSequence <= acknowledgedSequence) return;
+                const upTo = receivedSequence;
+                ackInFlight = true;
+                call('runtime.ackEvents', { sequence: upTo }).then(() => {
+                  acknowledgedSequence = upTo;
+                }).catch(error => {
+                  if (error.code === 'BUSY') {
+                    ackBackoff = true;
+                    ackTimer = setTimeout(acknowledgeEvents, 50);
+                  }
+                  else { ackFailed = true; reportError(error); }
+                }).finally(() => {
+                  ackInFlight = false;
+                  arrangeAck();
+                });
+              };
+              const arrangeAck = () => {
+                if (disposed || ackFailed || ackInFlight || ackBackoff || receivedSequence <= acknowledgedSequence) return;
+                if (receivedSequence - acknowledgedSequence >= 32) acknowledgeEvents();
+                else if (ackTimer === null) ackTimer = setTimeout(acknowledgeEvents, 50);
+              };
+              const replayState = listener => {
+                if (!runtimeState || !stateListeners.has(listener) || stateListeners.get(listener) >= runtimeState.revision) return;
+                stateListeners.set(listener, runtimeState.revision);
+                try { listener(runtimeState); } catch (_) {}
+              };
+              const receiveState = state => {
+                if (!state || state.generation !== $generation || !Number.isSafeInteger(state.revision) ||
+                    state.revision < 0 || typeof state.foreground !== 'boolean' || typeof state.closing !== 'boolean' ||
+                    (runtimeState && state.revision <= runtimeState.revision)) return;
+                runtimeState = Object.freeze({ generation: state.generation, revision: state.revision, foreground: state.foreground, closing: state.closing });
+                closeToken = state.closing ? state.closeToken : null;
+                stateListeners.forEach((_, listener) => replayState(listener));
+                if (!state.closing || typeof closeToken !== 'string' || closeToken === handledCloseToken) return;
+                const ticket = closeToken;
+                handledCloseToken = ticket;
+                for (const streamId of streams.keys()) cancelStream(streamId).catch(() => undefined);
+                Promise.allSettled([...flushHandlers].map(handler => Promise.resolve().then(handler))).then(results => {
+                  const saved = results.every(result => result.status === 'fulfilled');
+                  if (disposed || closeToken !== ticket) return;
+                  flushFinishedToken = ticket;
+                  return call('runtime.flushComplete', { closeToken: ticket, saved });
+                }).catch(error => { if (error.code !== 'CANCELLED' && error.code !== 'INVALID_SESSION') reportError(error); });
+              };
               nativeBridge.onmessage = event => {
                 let response;
                 try { response = JSON.parse(event.data); } catch (_) { return; }
+                if (response.type === 'runtimeState') { receiveState(response.data); return; }
                 if (response.type === 'event' && typeof response.event === 'string') {
-                  const callbacks = listeners.get(response.event);
-                  if (callbacks && callbacks.size > 0) {
-                    callbacks.forEach(callback => {
-                      try { callback(response.data); } catch (_) {}
-                    });
-                  } else {
-                    let queue = earlyEvents.get(response.event);
-                    if (!queue) earlyEvents.set(response.event, queue = []);
-                    queue.push(response.data);
-                  }
+                  if (response.generation !== $generation || !Number.isSafeInteger(response.sequence) || response.sequence <= receivedSequence) return;
+                  receivedSequence = response.sequence;
+                  if (listeners.get(response.event)?.size && earlyEvents.size === 0) dispatchEventPayload(response.event, response.data);
+                  else retainEvent(event.data, response);
                   try { globalThis.dispatchEvent(new CustomEvent(`toolbox:${'$'}{response.event}`, { detail: response.data })); } catch (_) {}
+                  arrangeAck();
                   return;
                 }
                 const waiter = pending.get(response.id);
@@ -315,19 +500,43 @@ class RuntimeBridgeSession internal constructor(
                     typeof value === 'bigint' || (typeof value === 'number' && !Number.isFinite(value))) throw invalidStorageMutation();
                 return value;
               };
-              const call = (method, params = {}) => new Promise((resolve, reject) => {
+              const call = (method, params = {}) => {
+                if (disposed) return Promise.reject(runtimeError('SESSION_ENDED', 'The tool document has ended'));
+                const isWrite = writeMethods.has(method);
+                const ticket = isWrite || method === 'runtime.flushComplete' ? closeToken : null;
+                if (isWrite && ticket && flushFinishedToken === ticket) return Promise.reject(runtimeError('SESSION_ENDED', 'The final save has completed'));
                 const id = `${'$'}{Date.now().toString(36)}-${'$'}{(++sequence).toString(36)}`;
-                pending.set(id, { resolve, reject });
+                let encoded;
                 try {
-                  nativeBridge.postMessage(JSON.stringify({
-                    id, method, params, nonce: $nonce, toolId: $toolId,
+                  encoded = JSON.stringify({ id, method, params, nonce: $nonce, toolId: $toolId,
                     versionCode: ${identity.versionCode}, generation: $generation
-                  }, method === 'storage.apply' ? storageJson : undefined));
-                } catch (error) {
-                  pending.delete(id);
-                  reject(error);
-                }
-              });
+                  }, method === 'storage.apply' ? storageJson : undefined);
+                } catch (error) { return Promise.reject(error); }
+                const attempt = () => new Promise((resolve, reject) => {
+                  if (disposed || (ticket && closeToken !== ticket)) { reject(runtimeError('CANCELLED', 'The close request was cancelled')); return; }
+                  pending.set(id, { resolve, reject });
+                  try { nativeBridge.postMessage(encoded); } catch (error) { pending.delete(id); reject(error); }
+                }).catch(error => {
+                  // Retry final writes/acknowledgement while this close is current; keep native budgets unchanged.
+                  if (ticket && closeToken === ticket && error.code === 'BUSY') return new Promise(resolve => setTimeout(resolve, 50)).then(attempt);
+                  throw error;
+                });
+                return attempt();
+              };
+              const ensureReady = () => {
+                if (!readyPromise) readyPromise = call('ready').then(result => {
+                  receiveState(result.runtimeState);
+                  return { ...result, runtimeState };
+                }).catch(error => { readyPromise = null; throw error; });
+                return readyPromise;
+              };
+              const subscribeState = listener => {
+                if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+                stateListeners.set(listener, -1);
+                queueMicrotask(() => replayState(listener));
+                ensureReady().catch(reportError);
+                return () => stateListeners.delete(listener);
+              };
               const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
               const networkRequest = request => {
                 if (request?.maxResponseBytes !== undefined &&
@@ -390,20 +599,26 @@ class RuntimeBridgeSession internal constructor(
               };
               const subscribe = (name, listener) => {
                 if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+                if (lostEvents.has(name)) throw runtimeError('EVENT_BACKLOG_OVERFLOW', 'Some early events were lost', { event: name, droppedCount: lostEvents.get(name) });
                 let callbacks = listeners.get(name);
                 if (!callbacks) listeners.set(name, callbacks = new Set());
                 callbacks.add(listener);
-                const queued = earlyEvents.get(name);
-                if (queued) {
-                  earlyEvents.delete(name);
-                  queueMicrotask(() => queued.forEach(payload => {
-                    try { listener(payload); } catch (_) {}
-                  }));
-                }
-                return () => callbacks.delete(listener);
+                if (queuedNames.has(name)) { restartReplay = true; scheduleReplay(); }
+                ensureReady().catch(reportError);
+                return () => { callbacks.delete(listener); if (!callbacks.size) listeners.delete(name); };
               };
               const api = {
-                ready: () => call('ready'),
+                ready: ensureReady,
+                runtime: {
+                  getState: () => call('runtime.getState').then(state => { receiveState(state); return runtimeState; }),
+                  onStateChanged: subscribeState,
+                  registerFlushHandler: handler => {
+                    if (typeof handler !== 'function') throw new TypeError('handler must be a function');
+                    flushHandlers.add(handler);
+                    ensureReady().catch(reportError);
+                    return () => flushHandlers.delete(handler);
+                  }
+                },
                 ui: { toast: message => call('ui.toast', { message }) },
                 crypto: { sha256: value => call('crypto.sha256', { value: bytes(value) }) },
                 storage: {
@@ -483,11 +698,22 @@ class RuntimeBridgeSession internal constructor(
                 }
               };
               Object.defineProperty(globalThis, 'ToolBox', { value: Object.freeze(api), configurable: false, writable: false });
+              globalThis.addEventListener('pagehide', () => {
+                disposed = true;
+                if (ackTimer !== null) clearTimeout(ackTimer);
+                earlyEvents.clear(); queuedNames.clear(); lostEvents.clear();
+                listeners.clear(); stateListeners.clear(); flushHandlers.clear();
+                earlyBytes = 0;
+                pending.forEach(waiter => waiter.reject(runtimeError('SESSION_ENDED', 'The tool document has ended')));
+                pending.clear();
+              });
+              queueMicrotask(() => ensureReady().catch(reportError));
             })();
         """.trimIndent()
     }
 
     private companion object {
+        val controlBudget = RuntimeRequestBudget(64 * 1024)
         const val BRIDGE_OBJECT = "__toolboxNative"
         val EVENT_NAME = Regex("^[a-z][a-zA-Z0-9.]+$")
     }
@@ -532,12 +758,24 @@ internal object RuntimeBridgeLifecycle {
 
     fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
         sessions[webView]?.emitEvent(webView, name, payload) == true
+
+    fun setForeground(webView: WebView, foreground: Boolean) {
+        sessions[webView]?.setForeground(webView, foreground)
+    }
+
+    suspend fun flushBeforeClose(webView: WebView, timeoutMillis: Long?): Boolean = sessions[webView]?.flushBeforeClose(webView, timeoutMillis) == true
+
+    fun cancelClose(webView: WebView) { sessions[webView]?.cancelClose(webView) }
+    fun isClosing(webView: WebView): Boolean = sessions[webView]?.isClosing() == true
+    suspend fun awaitOpenForEvents(webView: WebView): Boolean = sessions[webView]?.awaitOpenForEvents() == true
 }
 
 object RuntimeRpcJson {
     fun encodeValue(value: RpcValue): String = buildString { appendJson(value) }
 
-    fun parseValue(encoded: String): RpcValue {
+    fun parseValue(encoded: String): RpcValue = parseValue(encoded.toByteArray(Charsets.UTF_8))
+
+    fun parseValue(encoded: ByteArray): RpcValue {
         val pending = ArrayDeque<Pair<Any, RpcValue>>()
         fun allocate(source: Any?): RpcValue = when (source) {
             null -> RpcValue.Null
@@ -548,7 +786,7 @@ object RuntimeRpcJson {
             is List<*> -> RpcValue.ArrayValue(mutableListOf()).also { pending.addLast(source to it) }
             else -> throw IllegalArgumentException("json")
         }
-        val result = allocate(io.toolbox.tool.packagekit.backup.BackupJson.parse(encoded.toByteArray(Charsets.UTF_8)))
+        val result = allocate(io.toolbox.tool.packagekit.backup.BackupJson.parse(encoded))
         while (pending.isNotEmpty()) {
             val (source, target) = pending.removeLast()
             when (target) {
@@ -566,7 +804,9 @@ object RuntimeRpcJson {
         return result
     }
 
-    fun decodeRequest(encoded: String): RuntimeRpcRequest {
+    fun decodeRequest(encoded: String): RuntimeRpcRequest = decodeRequest(encoded.toByteArray(Charsets.UTF_8))
+
+    fun decodeRequest(encoded: ByteArray): RuntimeRpcRequest {
         val root = (parseValue(encoded) as? RpcValue.ObjectValue)?.value ?: throw IllegalArgumentException("request")
         val allowedKeys = setOf("id", "method", "nonce", "toolId", "versionCode", "generation", "params")
         require(root.keys.all { it in allowedKeys })
@@ -583,7 +823,7 @@ object RuntimeRpcJson {
             generation = string("generation"),
             params = (root["params"] ?: RpcValue.ObjectValue(emptyMap())) as? RpcValue.ObjectValue
                 ?: throw IllegalArgumentException("params"),
-            encodedBytes = encoded.toByteArray(Charsets.UTF_8).size,
+            encodedBytes = encoded.size,
         )
     }
 
@@ -660,7 +900,7 @@ internal fun createRuntimeBridgeSession(
     runtime: PreparedToolRuntime,
     configuration: RuntimeBridgeConfiguration,
 ): RuntimeBridgeSession {
-    val generation = configuration.generation.ifBlank { "${runtime.toolId}:${runtime.versionCode}" }
+    val generation = configuration.generation.ifBlank { java.util.UUID.randomUUID().toString() }
     val nonceBytes = ByteArray(32).also(SecureRandom()::nextBytes)
     val identity = RuntimeSessionIdentity(
         toolId = runtime.toolId,

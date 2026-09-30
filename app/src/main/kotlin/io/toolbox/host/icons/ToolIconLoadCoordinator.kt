@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.withPermit
 
 /** Overlapping requests share work; every later request still validates the catalog. */
 internal class ToolIconLoadCoordinator<T>(
-    parallelDecodes: Int = Runtime.getRuntime().availableProcessors().coerceAtLeast(1),
+    parallelDecodes: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 2),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private class Entry(val mutex: Mutex = Mutex(), var users: Int = 0)

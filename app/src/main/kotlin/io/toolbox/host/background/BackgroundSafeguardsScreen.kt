@@ -82,7 +82,10 @@ internal fun BackgroundSafeguardsScreen(
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refreshGeneration += 1
+            if (event == Lifecycle.Event.ON_RESUME) {
+                AndroidNotificationGateway.invalidateMiuiSupportCache()
+                refreshGeneration += 1
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

@@ -72,7 +72,7 @@ fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
 }
 
 @Composable
-fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
+fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resumed: Boolean) {
     if (!filters.sheet) return
     var screen by remember { mutableStateOf("home") }
     var editing by remember { mutableStateOf<BrowserFilterRule?>(null) }
@@ -82,7 +82,9 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean) {
         mutableStateOf(if (screen == "all" && filters.site.isNotBlank()) setOf(filters.site) else emptySet())
     }
     var expandedRules by remember(screen) { mutableStateOf(emptySet<String>()) }
-    LaunchedEffect(Unit) { while (true) { blocked = filters.blockedCount; delay(500) } }
+    LaunchedEffect(resumed) {
+        if (resumed) while (true) { blocked = filters.blockedCount; delay(500) }
+    }
     val state = filters.snapshot
     val site = filters.site
     val siteRules = state.rules.filter { it.site == site }

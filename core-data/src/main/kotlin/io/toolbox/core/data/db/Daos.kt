@@ -141,6 +141,18 @@ internal interface BackgroundTaskDao {
     @Query("SELECT * FROM background_tasks WHERE toolId = :toolId ORDER BY createdAt DESC, taskId")
     fun observeForTool(toolId: String): Flow<List<BackgroundTaskEntity>>
 
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId AND state IN ('QUEUED', 'RUNNING') ORDER BY createdAt DESC, taskId ASC")
+    fun observeActiveForTool(toolId: String): Flow<List<BackgroundTaskEntity>>
+
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId AND state IN ('COMPLETED', 'CANCELLED') ORDER BY createdAt DESC, taskId ASC LIMIT 51")
+    fun observeRecentHistory(toolId: String): Flow<List<BackgroundTaskEntity>>
+
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId AND state IN ('COMPLETED', 'CANCELLED') AND (createdAt < :createdAt OR (createdAt = :createdAt AND taskId > :taskId)) ORDER BY createdAt DESC, taskId ASC LIMIT 51")
+    suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): List<BackgroundTaskEntity>
+
+    @Query("SELECT * FROM background_tasks WHERE toolId = :toolId AND state IN ('COMPLETED', 'CANCELLED') AND (createdAt > :createdAt OR (createdAt = :createdAt AND taskId <= :taskId)) ORDER BY createdAt DESC, taskId ASC")
+    fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTaskEntity>>
+
     @Query("SELECT * FROM background_tasks WHERE taskId = :taskId")
     suspend fun get(taskId: String): BackgroundTaskEntity?
 

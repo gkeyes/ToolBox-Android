@@ -34,6 +34,17 @@ class BrowserFilterRulesTest {
         assertFalse(state.copy(rules = listOf(rule.copy(enabled = false))).blocks("news.example", "https://ads.example/", false))
     }
 
+    @Test fun indexedNetworkRulesKeepIdnNormalizationAndExceptionBehavior() {
+        val rule = BrowserFilterValidation.normalize(BrowserFilterRule(
+            site = "中国.example", value = "广告.example", kind = BrowserFilterKind.NetworkHost,
+        ))!!
+        val state = BrowserFilterSnapshot(builtIn = false, rules = listOf(rule))
+        assertTrue(state.blocks(rule.site, "https://cdn.${rule.value}/banner", false))
+        assertFalse(state.blocks(rule.site, "https://not${rule.value}/banner", false))
+        assertFalse(state.blocks(rule.site, "https://cdn.${rule.value}/banner", true))
+        assertFalse(state.copy(exceptions = setOf(rule.site)).blocks(rule.site, "https://cdn.${rule.value}/banner", false))
+    }
+
     @Test fun cosmeticRulesAreScopedAndDisablingDefaultListKeepsCustomRules() {
         val rule = BrowserFilterRule(site = "news.example", value = ".banner")
         val state = BrowserFilterSnapshot(builtIn = false, rules = listOf(rule, rule.copy(id = "off", value = ".off", enabled = false)))

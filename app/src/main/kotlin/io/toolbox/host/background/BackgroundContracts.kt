@@ -119,9 +119,13 @@ class RepositoryBackgroundAuthorization(
 }
 
 interface BackgroundNotificationGateway {
-    suspend fun post(toolId: String, notificationId: String, title: String, body: String): NotificationResult
+    suspend fun prepare(toolId: String, notificationId: String, title: String, body: String): BackgroundPreparedNotification
     suspend fun cancel(toolId: String, notificationId: String)
     suspend fun cancelTool(toolId: String)
+}
+
+fun interface BackgroundPreparedNotification {
+    suspend fun post(): NotificationResult
 }
 
 sealed interface NotificationResult {

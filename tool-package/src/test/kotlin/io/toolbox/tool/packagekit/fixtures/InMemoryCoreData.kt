@@ -27,6 +27,7 @@ import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.core.data.ToolKvValue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -345,6 +346,28 @@ private class InMemoryBackgroundTaskRepository(
         tasks.values.filter { it.toolId == toolId }
             .sortedWith(compareByDescending<BackgroundTask> { it.createdAt }.thenBy { it.taskId })
     }
+
+    override fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>> =
+        observeTasks(toolId).map { tasks -> tasks.filter { it.state in setOf(TaskState.QUEUED, TaskState.RUNNING) } }
+
+    override fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> =
+        observeTasks(toolId).map { tasks -> historyPage(tasks.filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }) }
+
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> =
+        observeTasks(toolId).map { tasks -> tasks.filter { task ->
+            task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) &&
+                (task.createdAt > createdAt || (task.createdAt == createdAt && task.taskId <= taskId))
+        } }
+
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage =
+        historyPage(observeTasks(toolId).first().filter { task ->
+            task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) &&
+                (task.createdAt < createdAt || (task.createdAt == createdAt && task.taskId > taskId))
+        })
+
+    private fun historyPage(tasks: List<BackgroundTask>) = io.toolbox.core.data.BackgroundTaskHistoryPage(
+        tasks.take(50), tasks.size > 50,
+    )
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = state.results.map { it[taskId] }
 

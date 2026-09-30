@@ -24,6 +24,11 @@ data class BrowserFilterSnapshot(
     val exceptions: Set<String> = emptySet(),
     val rules: List<BrowserFilterRule> = emptyList(),
 ) {
+    private val networkHostsBySite: Map<String, Set<String>> = rules.asSequence()
+        .filter { it.enabled && it.kind == BrowserFilterKind.NetworkHost }
+        .groupBy(BrowserFilterRule::site, BrowserFilterRule::value)
+        .mapValues { (_, hosts) -> hosts.toSet() }
+
     fun active(site: String) = site.isNotEmpty() && enabled && site !in exceptions
     fun selectors(site: String): List<String> = if (!active(site)) emptyList() else
         rules.filter { it.enabled && it.site == site && it.kind == BrowserFilterKind.Cosmetic }.map { it.value }
@@ -31,16 +36,23 @@ data class BrowserFilterSnapshot(
     fun blocks(site: String, requestUrl: String, mainFrame: Boolean): Boolean {
         if (mainFrame || !active(site)) return false
         val host = BrowserFilterValidation.urlHost(requestUrl) ?: return false
-        if (builtIn && BUILT_IN_HOSTS.any { matchesHost(host, it) }) return true
-        return rules.any {
-            it.enabled && it.site == site && it.kind == BrowserFilterKind.NetworkHost && matchesHost(host, it.value)
-        }
+        return (builtIn && containsHostOrParent(BUILT_IN_HOSTS, host)) ||
+            containsHostOrParent(networkHostsBySite[site].orEmpty(), host)
     }
 
     companion object {
         // Deliberately small first-party-maintained baseline, not an EasyList compatibility claim.
         private val BUILT_IN_HOSTS = setOf("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com")
-        fun matchesHost(host: String, blocked: String) = host == blocked || host.endsWith(".$blocked")
+
+        private fun containsHostOrParent(blocked: Set<String>, host: String): Boolean {
+            if (host in blocked) return true
+            var dot = host.indexOf('.')
+            while (dot >= 0) {
+                if (host.substring(dot + 1) in blocked) return true
+                dot = host.indexOf('.', dot + 1)
+            }
+            return false
+        }
     }
 }
 

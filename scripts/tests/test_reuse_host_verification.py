@@ -57,11 +57,63 @@ class ReuseHostVerificationTest(unittest.TestCase):
         jobs[0]["name"] = "Verify selected Android test"
         with self.assertRaises(ValueError):
             reuse.validate_prior_run(run, jobs, "owner/host", "main")
+        jobs[0]["name"] = "Build APK and verify host behavior"
+        jobs[0]["steps"] = [{"name": "Verify selected unit cases", "conclusion": "success"},
+                            {"name": "Verify selected browser Node cases", "conclusion": "success"},
+                            {"name": "Confirm selected Android cases actually ran", "conclusion": "success"}]
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run, jobs, "owner/host", "main")
 
-    def test_standalone_tbx_and_ci_orchestration_changes_do_not_change_host_inputs(self):
+    def targeted_fixture(self):
+        run, jobs = self.fixture()
+        run.update(id=417, run_attempt=2, event="pull_request", head_branch="focused-runtime")
+        filters = {
+            "unit": ["tool-runtime=io.toolbox.tool.runtime.RuntimeAuthorizationStageTest"],
+            "android": ["tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeAdmissionInstrumentationTest#busyOrdinaryAdmissionRetriesTheSameNonemptyFinalWriteWhileControlsRemainAvailable"],
+            "node": [],
+        }
+        evidence = {
+            "scope": "targeted", "run_id": 417, "attempt": 2, "head_sha": "a" * 40,
+            "filters": filters,
+            "executed": {"unit": {filters["unit"][0]: 4}, "android": {filters["android"][0]: 1}, "node": {}},
+        }
+        jobs[0]["steps"] = [{"name": name, "conclusion": "success"} for name in (
+            reuse.TARGETED_CHECKS | {reuse.TARGETED_STEPS["unit"], reuse.TARGETED_STEPS["android"]})]
+        return run, jobs, evidence
+
+    def test_exact_successful_targeted_attempt_retains_its_scope_and_filters(self):
+        run, jobs, evidence = self.targeted_fixture()
+        self.assertEqual(("a" * 40, "targeted"),
+                         reuse.validate_prior_run(run, jobs, "owner/host", "main", evidence))
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run, jobs, "owner/host", "main")
+
+    def test_targeted_reuse_rejects_wrong_attempt_commit_filters_or_missing_steps(self):
+        run, jobs, evidence = self.targeted_fixture()
+        for key, value in (("run_id", 418), ("attempt", 1), ("head_sha", "b" * 40)):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                reuse.validate_prior_run(run, jobs, "owner/host", "main", evidence | {key: value})
+        for kind in ("unit", "android"):
+            changed = copy.deepcopy(evidence)
+            changed["executed"][kind][changed["filters"][kind][0]] = 0
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                reuse.validate_prior_run(run, jobs, "owner/host", "main", changed)
+        changed = copy.deepcopy(evidence)
+        changed["filters"]["android"] = []
+        changed["executed"]["android"] = {}
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run, jobs, "owner/host", "main", changed)
+        for step in jobs[0]["steps"]:
+            changed_jobs = copy.deepcopy(jobs)
+            next(item for item in changed_jobs[0]["steps"] if item["name"] == step["name"])["conclusion"] = "skipped"
+            with self.subTest(step=step["name"]), self.assertRaises(ValueError):
+                reuse.validate_prior_run(run, changed_jobs, "owner/host", "main", evidence)
+
+    def test_docs_generated_schemas_and_standalone_tbx_inputs_do_not_change_host_behavior(self):
         reuse.validate_changed_files([
-            "README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
-            "scripts/ci/run-android-behavior.sh", "examples/nextflux/src/reading/normalize.mjs",
+            "README.md", "docs/runtime-performance.md", "core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/2.json",
+            ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
+            "examples/nextflux/src/reading/normalize.mjs",
             "examples/socialcoach/manifest.json",
         ])
 
@@ -77,8 +129,6 @@ class ReuseHostVerificationTest(unittest.TestCase):
                 reuse.validate_prior_run(run, changed, "owner/host", "main")
 
     def test_any_application_build_resource_or_behavior_test_change_requires_fresh_checks(self):
-        evidence = ["scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py"]
-        reuse.validate_changed_files(evidence)
-        for changed in ("app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
+        for changed in (".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
-                reuse.validate_changed_files(evidence + [changed])
+                reuse.validate_changed_files([changed])

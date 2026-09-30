@@ -3,7 +3,7 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.4";
+  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.8";
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -27,6 +27,7 @@
   let clockSessionId = null;
   let bootPromise = null;
   let resumeInFlight = null;
+  let restorePending = false;
   const terminalPosts = new Map();
   const unavailableRuns = new Map();
 
@@ -94,6 +95,22 @@
   const toolbox = () => window.ToolBox;
   let toastTimer = null;
   let foregroundClock = null;
+  let runtimeForeground = false;
+  let runtimeClosing = false;
+  let pollCompletion = null;
+  const backgroundClockWork = new Set();
+  const userActions = new Set();
+  let dirtyRevision = 0;
+  let savedRevision = 0;
+  let writeInFlight = null;
+  let liveSignature = null;
+  let loadingView = { visible: false, title: "", detail: "" };
+  function trackUserAction(run) {
+    if (runtimeClosing) return;
+    const work = Promise.resolve().then(run);
+    userActions.add(work);
+    void work.finally(() => userActions.delete(work)).catch(() => {});
+  }
   // Presentation-only preferences never change background tracking or timing keys.
   const viewState = { selectedRunKey: null, detailsRunKey: null, jobsSignature: null, activeSignature: null, recentSignature: null, historyExpanded: false };
 
@@ -132,6 +149,7 @@
   }
 
   function showToast(message) {
+    if (!runtimeForeground) return;
     const node = $("toast");
     node.textContent = cleanText(message);
     node.hidden = false;
@@ -140,6 +158,8 @@
   }
 
   function setLoading(visible, title, detail) {
+    loadingView = { visible, title: title || loadingView.title, detail: detail || loadingView.detail };
+    if (!runtimeForeground) return;
     $("loading-overlay").hidden = !visible;
     if (title) $("loading-title").textContent = title;
     if (detail) $("loading-detail").textContent = detail;
@@ -147,6 +167,7 @@
 
   function setBusy(value) {
     state.busy = value;
+    if (!runtimeForeground) return;
     document.querySelectorAll("button").forEach((button) => {
       button.disabled = value || button.dataset.forceDisabled === "true";
     });
@@ -236,10 +257,8 @@
     return [...unique.values()];
   }
 
-  async function persist(required = false) {
-    if (!state.ready) return;
-    try {
-      await toolbox().storage.set(STORAGE_KEY, {
+  function persistableState() {
+    return {
         repository: state.repository,
         workflows: state.workflows,
         branches: state.branches,
@@ -261,7 +280,27 @@
         nextPollAt: state.nextPollAt,
         rateRemaining: state.rateRemaining,
         rateResetAt: state.rateResetAt
-      });
+    };
+  }
+
+  async function persist(required = false) {
+    if (!state.ready) return;
+    dirtyRevision += 1;
+    try {
+      while (savedRevision < dirtyRevision) {
+        if (!writeInFlight) {
+          const work = (async () => {
+            while (savedRevision < dirtyRevision) {
+              const revision = dirtyRevision;
+              await toolbox().storage.set(STORAGE_KEY, persistableState());
+              savedRevision = revision;
+            }
+          })();
+          writeInFlight = work;
+          void work.finally(() => { if (writeInFlight === work) writeInFlight = null; }).catch(() => {});
+        }
+        await writeInFlight;
+      }
     } catch (error) {
       if (required) throw error;
       state.warningMessage = `状态保存失败：${errorLabel(error)}`;
@@ -589,14 +628,14 @@
   }
 
   async function configureTimers(lease) {
-    if (!state.monitoring) return;
+    if (!state.monitoring || runtimeClosing) return;
     lease?.assert();
     const started = state.pollStartedAt || Date.now();
     const delay = reliability.nextDelay(started, currentPollInterval(), Date.now(),
       state.rateRemaining === 0 ? state.rateResetAt || 0 : 0);
     await bounded(toolbox().background.setTimer(POLL_TIMER, delay), lease, 5_000);
     lease?.assert();
-    if (!state.monitoring) return;
+    if (!state.monitoring || runtimeClosing) return;
     state.nextPollAt = Date.now() + delay;
     // The independent native clock is also a watchdog. Do not reset it every poll.
     if (clockSessionId !== state.sessionId) {
@@ -670,6 +709,7 @@
       state.runs = model.selectedRuns(state.discoveryRuns, workflowIds, branchMode, branch);
       state.lastPollAt = null;
       state.monitoring = true;
+      liveSignature = null;
       state.watchStartedAt = Date.now();
       state.trackedRunKeys = state.discoveryRuns.filter(isActiveRun).map(model.runKey);
       state.terminalStates = {};
@@ -680,10 +720,12 @@
       await configureTimers();
       await persist(true);
       renderAll();
+      startForegroundClock();
       await pollGitHub(true);
     } catch (error) {
       await releaseRuntimeResources();
       state.monitoring = false;
+      stopForegroundClock();
       state.sessionId = null;
       state.liveActive = false;
       showToast(`启动失败：${errorLabel(error)}`);
@@ -739,7 +781,7 @@
     return state.timingModels[key];
   }
 
-  function calculateEstimate(run, now = Date.now()) {
+  function calculateEstimate(run, now = Date.now(), saveProgress = true) {
     // A ticking notification is not a new GitHub response. Freeze estimates once stale.
     if (state.lastPollAt && now - state.lastPollAt > Math.max(45_000, currentPollInterval() * 2)) now = state.lastPollAt;
     const key = model.runKey(run);
@@ -747,7 +789,7 @@
     const jobs = finalJobsPending(run) ? [] : state.jobsByRun[key] || [];
     const previous = state.progressByRun[key] || 0;
     const estimate = model.estimateRunProgress(run, jobs, timing, now, previous);
-    state.progressByRun[key] = estimate.progress;
+    if (saveProgress) state.progressByRun[key] = estimate.progress;
     return estimate;
   }
 
@@ -828,7 +870,7 @@
   }
 
   async function pollGitHub(manual) {
-    if (!state.monitoring) return;
+    if (!state.monitoring || runtimeClosing) return;
     if (state.pollInFlight) {
       if (activePoll && !activePoll.remaining()) activePoll.invalidate(reliability.timeoutError());
       return;
@@ -842,6 +884,9 @@
       return;
     }
     const lease = new reliability.Lease(POLL_DEADLINE_MS);
+    let finishPoll;
+    const completion = new Promise((resolve) => { finishPoll = resolve; });
+    pollCompletion = completion;
     activePoll = lease;
     state.pollInFlight = true;
     state.lastAttemptAt = state.pollStartedAt = Date.now();
@@ -905,7 +950,8 @@
       await bounded(processTerminalResults(), lease, 5_000);
       const primary = chooseDisplayedRun();
       const jobs = [...new Map([primary, ...batch, ...state.runs.filter(isActiveRun)].filter(Boolean)
-        .map((run) => [run.id, state.runs.find((current) => current.id === run.id) || run])).values()].slice(0, state.hasToken ? 6 : 1);
+        .map((run) => [run.id, state.runs.find((current) => current.id === run.id) || run])).values()]
+        .filter((run) => isActiveRun(run) || finalJobsPending(run)).slice(0, state.hasToken ? 6 : 1);
       for (const run of jobs) {
         if (lease.remaining() < 5_000) break;
         try { await fetchJobs(run, lease); }
@@ -917,35 +963,40 @@
       await bounded(updateLiveNotification(), lease, 5_000);
       await updateBackgroundStatus();
     } catch (error) {
-      if (activePoll !== lease || !state.monitoring) return;
+      if (activePoll !== lease || !state.monitoring || runtimeClosing) return;
       state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
       state.warningMessage = errorLabel(error);
       await updateBackgroundStatus();
       if (manual) showToast(errorLabel(error));
     } finally {
-      if (activePoll === lease) {
-        // Retire before cleanup; cleanup is bounded separately and cannot mutate a new run.
-        lease.invalidate();
-        const cleanup = new reliability.Lease(8_000);
-        try {
-          if (state.monitoring) await configureTimers(cleanup);
-        } catch (error) {
-          if (activePoll === lease && state.monitoring) {
-            state.nextPollAt = Date.now() + currentPollInterval();
-            state.warningMessage = `定时器安排失败，将由后台时钟重试：${errorLabel(error)}`;
-          }
-        } finally {
-          cleanup.invalidate();
-          if (activePoll === lease) {
-            activePoll = null;
-            state.pollInFlight = false;
-            state.pollStartedAt = null;
-            // Storage/notification errors must never retain the polling lock.
-            bounded(persist(), null, 5_000).catch(() => {});
-            renderDashboard();
-            if (state.monitoring) learnTimingLater();
+      try {
+        if (activePoll === lease) {
+          // Retire before cleanup; cleanup is bounded separately and cannot mutate a new run.
+          lease.invalidate();
+          const cleanup = new reliability.Lease(8_000);
+          try {
+            if (state.monitoring) await configureTimers(cleanup);
+          } catch (error) {
+            if (activePoll === lease && state.monitoring && !runtimeClosing) {
+              state.nextPollAt = Date.now() + currentPollInterval();
+              state.warningMessage = `定时器安排失败，将由后台时钟重试：${errorLabel(error)}`;
+            }
+          } finally {
+            cleanup.invalidate();
+            if (activePoll === lease) {
+              activePoll = null;
+              state.pollInFlight = false;
+              state.pollStartedAt = null;
+              // Storage/notification errors must never retain the polling lock.
+              bounded(persist(), null, 5_000).catch(() => {});
+              renderDashboard();
+              if (state.monitoring && !runtimeClosing) learnTimingLater();
+            }
           }
         }
+      } finally {
+        finishPoll();
+        if (pollCompletion === completion) pollCompletion = null;
       }
     }
   }
@@ -1016,7 +1067,7 @@
   }
 
   async function updateBackgroundStatus() {
-    if (!state.monitoring || !state.sessionId) return;
+    if (runtimeClosing || !state.monitoring || !state.sessionId) return;
     try {
       const background = toolbox()?.background;
       const status = backgroundStatusFor();
@@ -1032,13 +1083,15 @@
   }
 
   async function updateLiveNotification() {
-    if (!state.monitoring || !state.sessionId || state.liveInFlight) return;
+    if (runtimeClosing || !state.monitoring || !state.sessionId || state.liveInFlight) return;
     const run = chooseDisplayedRun();
     state.liveInFlight = true;
     const ownerGeneration = generation;
-    const current = () => ownerGeneration === generation && state.monitoring;
+    const current = () => ownerGeneration === generation && state.monitoring && !runtimeClosing;
     try {
       const request = liveRequestFor(run);
+      const signature = JSON.stringify(request);
+      if (state.liveActive && signature === liveSignature) return;
       if (state.liveActive) {
         try {
           await bounded(toolbox().notifications.live.update(request), null, 5_000);
@@ -1053,6 +1106,7 @@
       if (current()) {
         state.liveActive = true;
         state.lastNotificationAt = Date.now();
+        liveSignature = signature;
       }
     } catch (error) {
       if (current()) state.warningMessage = `实时展示失败：${errorLabel(error)}`;
@@ -1064,10 +1118,10 @@
   async function processTerminalResults() {
     // A clock callback may resume after stop while awaiting a live-notification RPC.
     // Do not begin a result-notification side effect for a stopped generation.
-    if (!state.monitoring) return;
+    if (runtimeClosing || !state.monitoring) return;
     const ownerGeneration = generation;
     for (const run of watchedRuns()) {
-      if (ownerGeneration !== generation || !state.monitoring) return;
+      if (ownerGeneration !== generation || !state.monitoring || runtimeClosing) return;
       const key = model.runKey(run);
       const terminal = state.terminalStates[key];
       if (!terminal || terminal.posted || terminalPosts.has(key)) continue;
@@ -1090,13 +1144,18 @@
   }
 
   async function clockTick(background) {
-    if (!state.monitoring) return;
+    if (runtimeClosing || !state.monitoring) return;
+    if (!background) {
+      if (runtimeForeground) renderDashboardClock();
+      return;
+    }
     if (activePoll && !activePoll.remaining()) activePoll.invalidate(reliability.timeoutError());
     if (!state.pollInFlight && (!state.nextPollAt || state.nextPollAt <= Date.now())) pollGitHub(false);
 
-    for (const run of state.runs.filter(isActiveRun)) calculateEstimate(run);
+    const active = state.runs.filter(isActiveRun);
+    for (const run of active) calculateEstimate(run);
     renderDashboard();
-    if (background) {
+    if (active.length || Object.values(state.terminalStates).some((terminal) => !terminal.posted)) {
       await updateLiveNotification();
       await processTerminalResults();
       await bounded(persist(), null, 5_000).catch(() => {});
@@ -1106,6 +1165,7 @@
   async function stopWatching() {
     if (state.busy || !state.monitoring) return;
     state.monitoring = false;
+    stopForegroundClock();
     retireWork();
     setBusy(true);
     setLoading(true, "停止守望", "正在清理后台时钟和实时展示");
@@ -1392,6 +1452,12 @@
     $("run-branch").textContent = run?.head_branch || (state.config?.branchMode === "all" ? "全部分支" : state.config?.branch || "--");
     $("run-sha").textContent = run?.head_sha || "--";
     $("meta-run").textContent = run ? `#${run.run_number || run.id} · 第 ${run.run_attempt || 1} 次尝试` : "--";
+    renderHeroProgress(run, estimate);
+  }
+
+  function renderHeroProgress(run, estimate) {
+    const terminal = run?.status === "completed";
+    const presentation = model.statePresentation(run);
     const progress = estimate?.progress || 0;
     $("progress-fill").style.width = `${progress}%`;
     $("progress-ring").setAttribute("aria-valuenow", String(progress));
@@ -1413,7 +1479,7 @@
   }
 
   function renderDashboard() {
-    if (!state.monitoring) return;
+    if (!runtimeForeground || !state.monitoring) return;
     renderRuntimeChip();
     const run = displayedRun();
     renderHero(run);
@@ -1421,6 +1487,17 @@
     renderActiveRuns(run);
     renderJobs(run);
     renderRecentRuns();
+    renderPollClock();
+  }
+
+  function renderDashboardClock() {
+    if (!runtimeForeground || !state.monitoring) return;
+    const run = displayedRun();
+    renderHeroProgress(run, run ? calculateEstimate(run, Date.now(), false) : null);
+    renderPollClock();
+  }
+
+  function renderPollClock() {
     const interval = currentPollInterval();
     const tokenLabel = state.hasToken ? "认证" : "匿名";
     const rate = Number.isFinite(state.rateRemaining) ? ` · 剩余额度 ${state.rateRemaining}` : "";
@@ -1463,9 +1540,12 @@
   }
 
   function renderAll() {
+    if (!runtimeForeground) return;
     renderRuntimeChip();
     renderSetup();
     if (state.monitoring) renderDashboard();
+    setBusy(state.busy);
+    setLoading(loadingView.visible, loadingView.title, loadingView.detail);
   }
 
   async function reconcileSession() {
@@ -1487,6 +1567,25 @@
     try {
       const ready = await toolbox().ready();
       state.ready = true;
+      toolbox().runtime.onStateChanged((snapshot) => {
+        runtimeClosing = snapshot.closing;
+        runtimeForeground = snapshot.foreground && !snapshot.closing;
+        if (runtimeForeground) {
+          renderAll();
+          if (state.monitoring) startForegroundClock();
+        } else {
+          stopForegroundClock();
+          if (runtimeClosing) {
+            activePoll?.invalidate();
+            timingWork?.invalidate();
+          }
+        }
+        if (!runtimeClosing && restorePending) resumeRestore();
+      });
+      toolbox().runtime.registerFlushHandler(async () => {
+        await Promise.allSettled([bootPromise, pollCompletion, resumeInFlight, ...backgroundClockWork, ...userActions]);
+        await persist(true);
+      });
       $("host-caption").textContent = `ToolBox ${ready.hostVersion} · API ${ready.apiVersion}`;
       const saved = await toolbox().storage.get(STORAGE_KEY);
       restoreObject(saved);
@@ -1504,11 +1603,11 @@
     renderAll();
   }
 
-  $("load-repository").addEventListener("click", readRepository);
+  $("load-repository").addEventListener("click", () => trackUserAction(readRepository));
   $("repo-input").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") readRepository();
+    if (event.key === "Enter") trackUserAction(readRepository);
   });
-  $("save-token").addEventListener("click", async () => {
+  $("save-token").addEventListener("click", () => trackUserAction(async () => {
     if (!state.ready || state.busy) return;
     setBusy(true);
     try {
@@ -1519,8 +1618,8 @@
     } finally {
       setBusy(false);
     }
-  });
-  $("clear-token").addEventListener("click", async () => {
+  }));
+  $("clear-token").addEventListener("click", () => trackUserAction(async () => {
     if (!state.ready || state.busy) return;
     setBusy(true);
     try {
@@ -1539,7 +1638,7 @@
     } finally {
       setBusy(false);
     }
-  });
+  }));
   $("change-repository").addEventListener("click", () => {
     state.repository = null;
     state.workflows = [];
@@ -1579,9 +1678,9 @@
     if (!$("branch-picker").contains(event.target)) setBranchPickerOpen(false);
   });
   $("branch-manual").addEventListener("input", updateStartButton);
-  $("start-watching").addEventListener("click", startWatching);
-  $("refresh-now").addEventListener("click", () => pollGitHub(true));
-  $("stop-watching").addEventListener("click", stopWatching);
+  $("start-watching").addEventListener("click", () => trackUserAction(startWatching));
+  $("refresh-now").addEventListener("click", () => trackUserAction(() => pollGitHub(true)));
+  $("stop-watching").addEventListener("click", () => trackUserAction(stopWatching));
   $("open-github").addEventListener("click", () => openGitHub());
   $("raw-names").addEventListener("change", () => renderJobs(displayedRun()));
   $("toggle-history").addEventListener("click", () => {
@@ -1591,29 +1690,46 @@
 
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {
-      if (event.key === POLL_TIMER) pollGitHub(false);
-      if (event.key === CLOCK_TIMER) clockTick(true);
+      if (runtimeClosing) return;
+      if (event.key === POLL_TIMER) void pollGitHub(false);
+      if (event.key === CLOCK_TIMER) {
+        const work = clockTick(true);
+        backgroundClockWork.add(work);
+        void work.finally(() => backgroundClockWork.delete(work)).catch(() => {});
+      }
     });
   }
-  if (toolbox()?.background?.onRestore) {
-    toolbox().background.onRestore(() => {
-      if (resumeInFlight) return;
+  function resumeRestore() {
+      if (runtimeClosing || resumeInFlight || !restorePending) return;
+      restorePending = false;
       resumeInFlight = (async () => {
         await bootPromise;
         if (!state.ready || !state.monitoring) return;
+        if (runtimeClosing) { restorePending = true; return; }
         if (state.pollInFlight) return;
         clockSessionId = null;
         await bounded(reconcileSession(), null, 10_000);
+        if (runtimeClosing) { restorePending = true; return; }
         await pollGitHub(false);
       })().catch((error) => {
+        if (runtimeClosing) restorePending = true;
         state.warning = "offline";
         state.warningMessage = `恢复后同步失败：${errorLabel(error)}`;
         renderAll();
-      }).finally(() => { resumeInFlight = null; });
+      }).finally(() => {
+        resumeInFlight = null;
+        if (restorePending && !runtimeClosing) resumeRestore();
+      });
+  }
+  if (toolbox()?.background?.onRestore) {
+    toolbox().background.onRestore(() => {
+      restorePending = true;
+      resumeRestore();
     });
   }
 
   function startForegroundClock() {
+    if (!runtimeForeground || !state.monitoring) return;
     clockTick(false);
     if (!foregroundClock) foregroundClock = setInterval(() => clockTick(false), 1000);
   }
@@ -1624,12 +1740,5 @@
     foregroundClock = null;
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stopForegroundClock();
-    else startForegroundClock();
-  });
-  window.addEventListener("pagehide", stopForegroundClock);
-  window.addEventListener("pageshow", startForegroundClock);
-  startForegroundClock();
   bootPromise = boot();
 })();

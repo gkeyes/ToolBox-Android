@@ -348,6 +348,7 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
         return try {
             val store = ProfileStore.getInstance()
             val present = profileName in store.allProfileNames
+            HardenedRuntimeWebView.forgetProfile(profileName)
             when {
                 !present -> PhysicalDeleteResult.Absent
                 store.deleteProfile(profileName) -> PhysicalDeleteResult.Deleted

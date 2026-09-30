@@ -1,4 +1,5 @@
 import {host, permissionMessage} from './bridge';
+import {recordWork} from './perf';
 
 // Ordinary data and credentials never share a storage namespace or backup.
 const pending = new Map<string,{key:string; value:string|null; secure:boolean}>();
@@ -18,7 +19,9 @@ async function drain() {
       const api = host();
       if (api) {
         const target = item.secure ? api.storage.secure : api.storage;
+        const started = performance.now();
         if (item.value === null) await target.remove(item.key); else await target.set(item.key,item.value);
+        recordWork('hostWrite', (item.value?.length ?? 0) * 2, performance.now() - started);
       } else if (item.secure) {
         // Browser preview: secrets are deliberately memory-only.
         if (item.value === null) memoryKeys.delete(item.key); else memoryKeys.set(item.key,item.value);
@@ -73,7 +76,3 @@ export const draftStorage={
   removeItem(key:string){delete drafts[key];saveDrafts();},
   keys:()=>Object.keys(drafts),
 };
-if(typeof window!=='undefined') {
-  window.addEventListener('pagehide',()=>{void flushStorage().catch(()=>{});});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushStorage().catch(()=>{});});
-}

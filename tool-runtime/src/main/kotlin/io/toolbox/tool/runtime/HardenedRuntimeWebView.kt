@@ -12,6 +12,7 @@ import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.ServiceWorkerClient
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -27,6 +28,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import java.net.URI
 
 data class RuntimeWebViewCallbacks(
     val onMainEntryLoaded: () -> Unit,
@@ -40,8 +42,24 @@ sealed interface RuntimeWebViewCreationResult {
 }
 
 object HardenedRuntimeWebView {
+    private val hardeningLock = Any()
+    private var debuggingDisabled = false
+    private var defaultServiceWorkersHardened = false
+    private val hardenedProfiles = hashSetOf<String>()
+
     fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
         RuntimeBridgeLifecycle.emitEvent(webView, name, payload)
+
+    fun setRuntimeForeground(webView: WebView, foreground: Boolean) = RuntimeBridgeLifecycle.setForeground(webView, foreground)
+
+    suspend fun flushBeforeClose(webView: WebView, timeoutMillis: Long? = null): Boolean =
+        RuntimeBridgeLifecycle.flushBeforeClose(webView, timeoutMillis)
+
+    fun cancelClose(webView: WebView) = RuntimeBridgeLifecycle.cancelClose(webView)
+    fun isClosing(webView: WebView): Boolean = RuntimeBridgeLifecycle.isClosing(webView)
+    suspend fun awaitOpenForEvents(webView: WebView): Boolean = RuntimeBridgeLifecycle.awaitOpenForEvents(webView)
+
+    internal fun forgetProfile(profileName: String) { synchronized(hardeningLock) { hardenedProfiles.remove(profileName) } }
 
     fun release(webView: WebView) {
         (webView.webViewClient as? RuntimeWebViewClient)?.endFirstMainFrameTrace()
@@ -52,11 +70,6 @@ object HardenedRuntimeWebView {
     fun loadEntry(webView: WebView, runtime: PreparedToolRuntime) {
         RuntimeJavaScriptDialogs.dismiss(webView)
         webView.loadUrl(runtime.entryUrl)
-    }
-
-    fun reload(webView: WebView) {
-        RuntimeJavaScriptDialogs.dismiss(webView)
-        webView.reload()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -86,7 +99,7 @@ object HardenedRuntimeWebView {
         var webView: WebView? = null
         var runtimeClient: RuntimeWebViewClient? = null
         try {
-            WebView.setWebContentsDebuggingEnabled(false)
+            disableDebuggingOnce()
             val createdWebView = RuntimeWindowWebView(context)
             webView = createdWebView
             val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
@@ -110,13 +123,14 @@ object HardenedRuntimeWebView {
                 )
             }
             hardenSettings(createdWebView, creationPermit.isolationMode)
-            hardenServiceWorkers()
             if (creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE) {
                 val profile = requireNotNull(ProfileStore.getInstance().getProfile(runtime.profileName)) {
                     "The dedicated WebView profile is unavailable"
                 }
+                if (serviceWorkerBasic) hardenProfileServiceWorkers(runtime.profileName, profile.serviceWorkerController)
                 disableCookies(createdWebView, profile.cookieManager)
             } else {
+                hardenDefaultServiceWorkersOnce()
                 val cookieManager = CookieManager.getInstance()
                 disableCookies(createdWebView, cookieManager)
                 check(cookieManager.getCookie(runtime.origin).isNullOrEmpty()) {
@@ -186,8 +200,19 @@ object HardenedRuntimeWebView {
         cookieManager.setAcceptThirdPartyCookies(webView, false)
     }
 
-    private fun hardenServiceWorkers() {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) return
+    private fun disableDebuggingOnce() = synchronized(hardeningLock) {
+        if (!debuggingDisabled) {
+            WebView.setWebContentsDebuggingEnabled(false)
+            debuggingDisabled = true
+        }
+    }
+
+    private fun hardenDefaultServiceWorkersOnce() = synchronized(hardeningLock) {
+        if (defaultServiceWorkersHardened) return@synchronized
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) {
+            defaultServiceWorkersHardened = true
+            return@synchronized
+        }
         val controller = ServiceWorkerControllerCompat.getInstance()
         val settings = controller.serviceWorkerWebSettings
         if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BLOCK_NETWORK_LOADS)) {
@@ -210,6 +235,25 @@ object HardenedRuntimeWebView {
                 },
             )
         }
+        defaultServiceWorkersHardened = true
+    }
+
+    private fun hardenProfileServiceWorkers(
+        profileName: String,
+        controller: android.webkit.ServiceWorkerController,
+    ) = synchronized(hardeningLock) {
+        if (profileName in hardenedProfiles) return@synchronized
+        // MULTI_PROFILE supplies this profile's platform controller, not the default controller.
+        controller.serviceWorkerWebSettings.apply {
+            blockNetworkLoads = true
+            allowContentAccess = false
+            allowFileAccess = false
+            cacheMode = WebSettings.LOAD_NO_CACHE
+        }
+        controller.setServiceWorkerClient(object : ServiceWorkerClient() {
+            override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse = RuntimePolicy.blockedResponse()
+        })
+        hardenedProfiles.add(profileName)
     }
 
     private const val STATELESS_API_HARDENING_SCRIPT = """
@@ -295,6 +339,7 @@ private class RuntimeWebViewClient(
     private val callbacks: RuntimeWebViewCallbacks,
     private val requireStatelessSentinel: Boolean,
 ) : WebViewClient() {
+    private val expectedOrigin = URI(runtime.origin)
     private var mainFrameTerminal = false
     private var sentinelCheckPending = false
     private var rendererGone = false
@@ -314,18 +359,18 @@ private class RuntimeWebViewClient(
     }
 
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
-        if (!RuntimeIdentity.isExactLocalUrl(request.url.toString(), runtime.origin)) {
+        if (!RuntimeIdentity.isExactLocalUrl(request.url.toString(), expectedOrigin)) {
             return RuntimePolicy.blockedResponse()
         }
         return assetLoader.shouldInterceptRequest(request.url) ?: RuntimePolicy.blockedResponse(404, "Not Found")
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-        !RuntimeIdentity.isExactLocalUrl(request.url.toString(), runtime.origin)
+        !RuntimeIdentity.isExactLocalUrl(request.url.toString(), expectedOrigin)
 
     @Deprecated("WebView compatibility callback")
     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-        !RuntimeIdentity.isExactLocalUrl(url, runtime.origin)
+        !RuntimeIdentity.isExactLocalUrl(url, expectedOrigin)
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
         RuntimeJavaScriptDialogs.dismiss(view)

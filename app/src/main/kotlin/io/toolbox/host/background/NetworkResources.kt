@@ -3,8 +3,14 @@ package io.toolbox.host.background
 import io.toolbox.core.data.ResourceCapacity
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 
 /** Process-wide reservations, shared by foreground streams and delegated background HTTP. */
 internal class NetworkResources(
@@ -15,6 +21,8 @@ internal class NetworkResources(
     private val lock = Any()
     private val waiting = linkedMapOf<String, ArrayDeque<Waiting>>()
     private var reserved = 0L
+    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var probeJob: Job? = null
 
     internal val reservedBytes: Long get() = synchronized(lock) { reserved }
     internal val waitingCount: Int get() = synchronized(lock) { waiting.values.sumOf { it.size } }
@@ -25,25 +33,26 @@ internal class NetworkResources(
         synchronized(lock) {
             waiting.getOrPut(owner) { ArrayDeque() }.addLast(entry)
             drain()
+            if (waiting.isNotEmpty()) startProbe()
         }
         var delivered = false
         try {
-            while (true) {
-                control.requireActive()
-                withTimeoutOrNull(50) { entry.result.await() }?.let { lease ->
-                    control.requireActive()
-                    delivered = true
-                    return lease
-                }
-                // Memory pressure can change without another network operation releasing a reservation.
-                synchronized(lock) { drain() }
+            control.requireActive()
+            val lease = select<Reservation> {
+                entry.result.onAwait { it }
+                control.cancellation.onAwait { code -> throw ToolNetworkFailure(code, code == "NETWORK_TIMEOUT") }
             }
+            control.requireActive()
+            delivered = true
+            return lease
         } finally {
-            synchronized(lock) {
+            val unclaimed = synchronized(lock) {
                 waiting[owner]?.let { queue -> queue.remove(entry); if (queue.isEmpty()) waiting.remove(owner) }
-                if (!delivered) entry.granted?.close()
+                val reservation = if (delivered) null else entry.granted
                 drain()
+                reservation
             }
+            unclaimed?.close()
         }
     }
 
@@ -68,19 +77,48 @@ internal class NetworkResources(
         return Reservation(bytes, rawBytes)
     }
 
-    // Round-robin among owners with queued work. This is scheduling fairness, not a per-tool quota.
+    // A single probe wakes all waiting owners when heap availability changes without a release.
+    private fun startProbe() {
+        if (probeJob?.isActive == true) return
+        val job = probeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                while (true) {
+                    delay(50)
+                    if (!synchronized(lock) { drain(); waiting.isNotEmpty() }) break
+                }
+            } finally {
+                synchronized(lock) {
+                    if (probeJob === coroutineContext[Job]) {
+                        probeJob = null
+                        if (waiting.isNotEmpty()) startProbe()
+                    }
+                }
+            }
+        }
+        probeJob = job
+        job.start()
+    }
+
+    // Scan owner heads for a fitting request; each owner's queue remains FIFO.
     private fun drain() {
+        if (waiting.isEmpty()) {
+            probeJob?.cancel()
+            return
+        }
+        var capacity = available()
         while (waiting.isNotEmpty()) {
-            val (owner, queue) = waiting.entries.first()
+            val next = waiting.entries.firstOrNull { it.value.first().bytes <= capacity } ?: return
+            val (owner, queue) = next
             val head = queue.first()
-            if (head.bytes > available()) return
             queue.removeFirst()
             waiting.remove(owner)
             if (queue.isNotEmpty()) waiting[owner] = queue
             val reservation = reserve(head.bytes, 0)
+            capacity -= head.bytes
             head.granted = reservation
             head.result.complete(reservation)
         }
+        probeJob?.cancel()
     }
 
     inner class Reservation internal constructor(private val bytes: Long, val rawBytes: Int) : AutoCloseable {

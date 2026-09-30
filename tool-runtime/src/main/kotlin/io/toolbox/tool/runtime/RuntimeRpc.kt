@@ -94,6 +94,7 @@ sealed interface RuntimePolicyDecision {
 }
 
 interface RuntimeAuthorizationPolicy {
+    /** Each read checks one fact; the dispatcher repeats the stage after suspend points. */
     suspend fun isCurrent(identity: RuntimeSessionIdentity): Boolean
     suspend fun isGranted(identity: RuntimeSessionIdentity, capability: ToolBoxCapabilityId): Boolean
     suspend fun hasSystemPermissions(identity: RuntimeSessionIdentity, permissions: Set<String>): Boolean
@@ -419,6 +420,7 @@ class RuntimeRpcDispatcher(
     private val handlers: RuntimeM1Handlers,
     private val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
     private val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    private val lifecycle: RuntimeLifecycleHandler? = null,
     private val foregroundInteractionGuard: suspend () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
     },
@@ -464,6 +466,7 @@ class RuntimeRpcDispatcher(
             return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Method is not available in this host milestone")
         }
         val capability = try {
+            lifecycle?.checkMethodAvailable(method.name)
             if (method.name == "files.read") {
                 requireHandler(m3Handlers.files).capabilityFor(
                     request.params.requiredIdentifier("token"),
@@ -495,21 +498,6 @@ class RuntimeRpcDispatcher(
             RuntimePolicyDecision.Allowed -> Unit
             is RuntimePolicyDecision.Denied -> return failure(decision.code, decision.message)
         }
-        if (!authorization.isCurrent(identity)) {
-            m2Handlers.network?.cancelStreams()
-            return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
-        }
-        if (capability != null) {
-            val descriptor = ToolBoxApiV1.capability(capability)
-            if (!authorization.isGranted(identity, capability)) {
-                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
-                return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability was disabled before execution")
-            }
-            if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
-                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
-                return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Android permission changed before execution")
-            }
-        }
         val retained = mutableListOf<() -> Unit>()
         val released = java.util.concurrent.atomic.AtomicBoolean()
         val release = { if (released.compareAndSet(false, true)) retained.forEach { it() }; Unit }
@@ -520,6 +508,28 @@ class RuntimeRpcDispatcher(
             if (capability in FOREGROUND_INTERACTION_CAPABILITIES && method.name != "files.read") {
                 foregroundInteractionGuard()
             }
+            // Read a fresh authorization stage after admission and the foreground dispatch.
+            // The final version read also detects replacement during grant repository IO.
+            if (!authorization.isCurrent(identity)) {
+                m2Handlers.network?.cancelStreams()
+                return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
+            }
+            if (capability != null) {
+                val descriptor = ToolBoxApiV1.capability(capability)
+                if (!authorization.isGranted(identity, capability)) {
+                    if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                    return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability was disabled before execution")
+                }
+                if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
+                    if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                    return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Android permission changed before execution")
+                }
+                if (!authorization.isCurrent(identity)) {
+                    m2Handlers.network?.cancelStreams()
+                    return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
+                }
+            }
+            lifecycle?.checkMethodAvailable(method.name)
             var preparedEncoding: EncodedRuntimeResponse? = null
             val result = invoke(method.name, request.params, request.id, retained) { preparedEncoding = it }
             RuntimeRpcResponse.Success(request.id, result, release).also {
@@ -558,8 +568,23 @@ class RuntimeRpcDispatcher(
                 "hostVersion" to RpcValue.StringValue(identity.hostVersion),
                 "toolId" to RpcValue.StringValue(identity.toolId),
                 "generation" to RpcValue.StringValue(identity.generation),
+                "runtimeState" to (lifecycle?.stateValue() ?: RpcValue.Null),
             ),
         )
+        "runtime.getState" -> requireHandler(lifecycle).stateValue()
+        "runtime.ackEvents" -> {
+            params.requireOnly("sequence")
+            requireHandler(lifecycle).acknowledgeEvents(params.requiredLong("sequence", 0, MAX_SAFE_INTEGER))
+            RpcValue.Null
+        }
+        "runtime.flushComplete" -> {
+            params.requireOnly("closeToken", "saved")
+            requireHandler(lifecycle).completeFlush(
+                params.requiredString("closeToken", 64),
+                params.optionalBoolean("saved") ?: throw IllegalArgumentException("saved"),
+            )
+            RpcValue.Null
+        }
         "ui.toast" -> {
             requireHandler(handlers.toast).show(params.requiredString("message", maxResponseBytes))
             RpcValue.Null
@@ -804,6 +829,9 @@ class RuntimeRpcDispatcher(
                 if (!authorization.isGranted(identity, ToolBoxCapabilityId.BROWSER)) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Browser permission was disabled before launch")
                 }
+                if (!authorization.isCurrent(identity)) {
+                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
+                }
                 // Runs after suspending authorization reads, on the launcher's Main dispatcher.
                 browserLaunchGuard()
             }
@@ -915,6 +943,7 @@ class RuntimeRpcDispatcher(
             !authorization.isCurrent(identity) -> RuntimeRpcErrorCode.INVALID_SESSION
             !authorization.isGranted(identity, ToolBoxCapabilityId.NETWORK) -> RuntimeRpcErrorCode.PERMISSION_DENIED
             !authorization.hasSystemPermissions(identity, ToolBoxApiV1.capability(ToolBoxCapabilityId.NETWORK).systemPermissions) -> RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED
+            !authorization.isCurrent(identity) -> RuntimeRpcErrorCode.INVALID_SESSION
             else -> return
         }
         m2Handlers.network?.cancelStreams()

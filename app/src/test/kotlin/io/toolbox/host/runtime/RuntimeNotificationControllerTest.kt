@@ -1,12 +1,27 @@
 package io.toolbox.host.runtime
 
 import android.content.pm.ServiceInfo
+import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
+import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeNotificationControllerTest {
+    private val emptySnapshot = RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false)
+    private val activeSnapshot = RuntimeForegroundNotificationSnapshot(
+        listOf(RuntimeBackgroundSessionUi("session-1", "com.example.tool", "Example", 1L, 42)),
+        emptyList(),
+        usesLocation = false,
+    )
+
     @Test
     fun foregroundServiceUsesLocationTypeOnlyWhenSnapshotRequiresIt() {
         assertEquals(
@@ -40,6 +55,96 @@ class RuntimeNotificationControllerTest {
         assertEquals(1, sink.stopForegroundCalls)
         assertEquals(listOf(42), sink.cancelledIds)
     }
+
+    @Test
+    fun newSessionDuringSupportQueryReplacesTheOldEmptySnapshot() = runBlocking {
+        val state = MutableStateFlow(emptySnapshot)
+        val entered = CompletableDeferred<Unit>()
+        val finishQuery = CompletableDeferred<Unit>()
+        val presented = mutableListOf<RuntimeForegroundNotificationSnapshot>()
+        var stops = 0
+        val collector = async {
+            presentCurrentRuntimeNotificationSnapshot(
+                refreshSupport = { entered.complete(Unit); finishQuery.await() },
+                currentSnapshot = { state.value },
+                present = { presented += it },
+                stopIfEmpty = { stops++ },
+            )
+        }
+        entered.await()
+        state.value = activeSnapshot
+        finishQuery.complete(Unit)
+        collector.await()
+        assertEquals(listOf(activeSnapshot), presented)
+        assertEquals(0, stops)
+    }
+
+    @Test
+    fun stopRechecksThePublishedSnapshotAfterPresentation() = runBlocking {
+        val state = MutableStateFlow(emptySnapshot)
+        var stops = 0
+        presentCurrentRuntimeNotificationSnapshot(
+            refreshSupport = {},
+            currentSnapshot = { state.value },
+            present = { state.value = activeSnapshot },
+            stopIfEmpty = { stops++ },
+        )
+        assertEquals(0, stops)
+
+        state.value = emptySnapshot
+        presentCurrentRuntimeNotificationSnapshot(
+            refreshSupport = {},
+            currentSnapshot = { state.value },
+            present = {},
+            stopIfEmpty = { stops++ },
+        )
+        assertEquals(1, stops)
+    }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun identicalExplicitTimeSkipsRefreshButOmittedTimeGetsFreshReceipt() = runTest {
+        var now = 1_000L
+        var refreshes = 0
+        val coordinator = LiveNotificationCoordinator(this, { now }, { refreshes++ })
+        val explicit = liveRequest(updatedAt = 123L)
+        coordinator.start("com.example.tool", "Example", explicit)
+        val first = coordinator.snapshot().single()
+        advanceUntilIdle()
+        assertEquals(1, refreshes)
+
+        now = 2_000L
+        coordinator.update("com.example.tool", "Example", explicit)
+        advanceUntilIdle()
+        assertEquals(first, coordinator.snapshot().single())
+        assertEquals(1, refreshes)
+
+        val omitted = liveRequest(updatedAt = null)
+        coordinator.update("com.example.tool", "Example", omitted)
+        val second = coordinator.snapshot().single()
+        assertEquals(2_000L, second.receivedAt)
+        advanceUntilIdle()
+        assertEquals(2, refreshes)
+
+        now = 3_000L
+        coordinator.update("com.example.tool", "Example", omitted)
+        assertEquals(3_000L, coordinator.snapshot().single().receivedAt)
+        advanceUntilIdle()
+        assertEquals(3, refreshes)
+    }
+
+    private fun liveRequest(updatedAt: Long?) = RuntimeLiveNotificationRequest(
+        sessionId = "session-1",
+        title = "Example",
+        primaryText = "Running",
+        secondaryText = null,
+        body = null,
+        shortText = null,
+        updatedAt = updatedAt,
+        progress = null,
+        accentColor = null,
+        tone = RuntimeLiveNotificationTone.NEUTRAL,
+    )
 
     private class RecordingSink : RuntimeNotificationSink {
         var stopForegroundCalls = 0

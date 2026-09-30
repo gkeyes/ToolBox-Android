@@ -3,8 +3,9 @@ import type {LLM} from '@/lib/llm-core';
 import type {ScheduleInput,ScheduleOutput,AssessInput,RehearseInput,TurnInput,ReflectInput,PatternInput} from '@/lib/tasks/types';
 import {byokConfig,openModelSheet} from '@/lib/byok';
 import {makeByokLLM} from '../../platform/llm';
-import {requestScope,abortError} from '../../platform/network';
+import {requestScope,abortError,trackAbortableTask} from '../../platform/network';
 import {parsePartialJSON} from '@/lib/partial-json';
+import {recordWork} from '../../platform/perf';
 import {runSchedule} from '@/lib/tasks/schedule';
 import {runRehearse} from '@/lib/tasks/rehearse';
 import {runHint} from '@/lib/tasks/hint';
@@ -17,7 +18,8 @@ export class ApiError extends Error {
   constructor(message:string,public readonly status:number,public readonly kind:'http'|'network'|'stream'){super(message);}
 }
 export type ScheduleResult=ScheduleOutput;
-async function task<T>(run:(llm:LLM,fast:string,smart:string)=>Promise<T>,signal?:AbortSignal):Promise<T>{
+function task<T>(run:(llm:LLM,fast:string,smart:string)=>Promise<T>,signal?:AbortSignal):Promise<T>{
+  return trackAbortableTask((async()=>{
   const c=byokConfig();
   if(!c){openModelSheet();throw new ApiError('请先配置模型 API，再开始 AI 练习。',401,'http');}
   const scope=requestScope(signal);
@@ -27,6 +29,7 @@ async function task<T>(run:(llm:LLM,fast:string,smart:string)=>Promise<T>,signal
     if(scope.signal.aborted)throw abortError();
     return result;
   }finally{scope.dispose();}
+  })());
 }
 export const schedule=(body:ScheduleInput,signal?:AbortSignal)=>task((llm,fast)=>runSchedule(body,llm,fast),signal);
 export const hint=(body:TurnInput)=>task((llm,fast)=>runHint(body,llm,fast));
@@ -49,6 +52,7 @@ export interface ParsedTurn {
 }
 
 export function parseRoleplay(raw: string, validIds: string[]): ParsedTurn {
+  const started = performance.now();
   const out: ParsedTurn = { utterances: [], meta: null, error: null };
   const lines = raw.split("\n");
   let cur: { characterId: string; text: string } | null = null;
@@ -129,5 +133,6 @@ export function parseRoleplay(raw: string, validIds: string[]): ParsedTurn {
       out.meta = null; // still streaming
     }
   }
+  recordWork('parse', raw.length * 2, performance.now() - started);
   return out;
 }

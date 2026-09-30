@@ -12,6 +12,7 @@ import io.toolbox.core.data.db.RoomInstallTransactionRepository
 import io.toolbox.core.data.db.RoomPermissionGrantRepository
 import io.toolbox.core.data.db.RoomToolKvRepository
 import io.toolbox.core.data.db.ToolBoxDatabase
+import io.toolbox.core.data.db.ToolBoxMigrations
 import io.toolbox.core.data.settings.DataStoreHostSettingsRepository
 import io.toolbox.core.data.settings.ProcessLifetimeHostSettingsDataStores
 
@@ -51,7 +52,9 @@ object CoreDataFactory {
             file = settingsFile,
             defaultThemeStyle = if (hasExistingHostData) ThemeStyle.MIUIX else ThemeStyle.LIQUID_GLASS,
         )
-        val database = Room.databaseBuilder(appContext, ToolBoxDatabase::class.java, databaseName).build()
+        val database = Room.databaseBuilder(appContext, ToolBoxDatabase::class.java, databaseName)
+            .addMigrations(ToolBoxMigrations.ONE_TO_TWO)
+            .build()
         return CoreDataStores(
             repositories = CoreDataRepositories(
                 catalog = RoomCatalogRepository(database),

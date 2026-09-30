@@ -11,6 +11,7 @@ import java.io.IOException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Protocol
@@ -25,6 +26,72 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NetworkResourceAdmissionTest {
+    @Test
+    fun completeRequestsLeaveNoRetiredStreamIdsAndClearRevokesActiveCalls() {
+        val streams = RuntimeNetworkStreams()
+        repeat(1_000) { streams.releaseRequest(streams.registerRequest()) }
+        assertEquals(0, streams.activeRequestCount)
+        assertEquals(0, streams.retiredStreamCount)
+        val active = streams.registerRequest()
+        streams.clear()
+        assertEquals(0, streams.activeRequestCount)
+        assertEquals("CANCELLED", (runCatching { active.requireActive() }.exceptionOrNull() as ToolNetworkFailure).code)
+        streams.close()
+    }
+
+    @Test
+    fun requestRegistrationRacingWithCloseCannotLeaveAnActiveCall() = runBlocking {
+        val streams = RuntimeNetworkStreams()
+        val controls = java.util.Collections.synchronizedList(mutableListOf<ToolNetworkStreamControl>())
+        val registration = async(Dispatchers.Default) {
+            repeat(1_000) {
+                runCatching { streams.registerRequest() }.getOrNull()?.let(controls::add)
+            }
+        }
+        streams.close()
+        registration.await()
+        assertEquals(0, streams.activeRequestCount)
+        controls.forEach { control ->
+            assertEquals("CANCELLED", (runCatching { control.requireActive() }.exceptionOrNull() as ToolNetworkFailure).code)
+        }
+    }
+
+    @Test
+    fun oneSharedProbeServesWaitingOwnersAndStopsWhenQueueEmpties() = runBlocking {
+        val probes = AtomicInteger()
+        val resources = NetworkResources(availableHeap = { probes.incrementAndGet(); 0 })
+        val controls = List(40) { ToolNetworkStreamControl() }
+        val waiters = controls.mapIndexed { index, control ->
+            async { runCatching { resources.admit("owner-$index", 100, control) } }
+        }
+        withTimeout(2_000) { while (resources.waitingCount != controls.size) delay(1) }
+        val before = probes.get()
+        delay(250)
+        assertTrue("one 50 ms timer should probe all waiters", probes.get() - before <= 8)
+        controls.forEach { it.cancel() }
+        waiters.forEach { assertTrue(withTimeout(2_000) { it.await() }.isFailure) }
+        assertEquals(0, resources.waitingCount)
+        val after = probes.get()
+        delay(120)
+        assertEquals(after, probes.get())
+    }
+
+    @Test
+    fun fittingOwnerBypassesOversizedHeadWithoutOvertakingItsOwnQueue() = runBlocking {
+        val heap = AtomicLong(0)
+        val resources = NetworkResources(availableHeap = heap::get)
+        val largeControl = ToolNetworkStreamControl()
+        val large = async { runCatching { resources.admit("large", 120, largeControl) } }
+        val small = async { resources.admit("small", 80, ToolNetworkStreamControl()) }
+        withTimeout(2_000) { while (resources.waitingCount != 2) delay(1) }
+        heap.set(200)
+        withTimeout(2_000) { small.await() }.close()
+        assertFalse(large.isCompleted)
+        largeControl.cancel()
+        assertTrue(withTimeout(2_000) { large.await() }.isFailure)
+        assertEquals(0L, resources.reservedBytes)
+    }
+
     @Test
     fun lowResourceQueueIsCancellableAndRoundRobinOwnersMakeProgress() = runBlocking {
         val heap = AtomicLong(0)

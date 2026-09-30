@@ -36,6 +36,7 @@ class ToolRuntimeSecurityBoundaryTest {
         val other = RuntimeIdentity.origin("com.example.beta")
         assertNotEquals(origin, other)
         assertTrue(RuntimeIdentity.isExactLocalUrl(origin + "module.wasm", origin))
+        assertTrue(RuntimeIdentity.isExactLocalUrl(origin + "module.wasm", java.net.URI(origin)))
         listOf(
             other + "module.wasm",
             origin.replace("https://", "http://") + "module.wasm",
@@ -44,6 +45,9 @@ class ToolRuntimeSecurityBoundaryTest {
             "https://example.com/module.wasm",
             "file:///tmp/module.wasm",
             "content://com.example.provider/module.wasm",
-        ).forEach { assertFalse("Must reject $it", RuntimeIdentity.isExactLocalUrl(it, origin)) }
+        ).forEach {
+            assertFalse("Must reject $it", RuntimeIdentity.isExactLocalUrl(it, origin))
+            assertFalse("Preparsed origin must reject $it", RuntimeIdentity.isExactLocalUrl(it, java.net.URI(origin)))
+        }
     }
 }

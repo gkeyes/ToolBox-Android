@@ -2,7 +2,7 @@ import { initializeBackground } from "@/toolbox/background.js";
 import { Outlet } from "react-router-dom";
 import "./App.css";
 import "m3-ripple/ripple.css";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar.jsx";
 import FeedListSidebar from "@/components/FeedList/FeedListSidebar.jsx";
 import { authState } from "@/stores/authStore.js";
@@ -18,15 +18,24 @@ import FontLoader from "@/components/FontLoader.jsx";
 
 function App() {
   const { syncInterval } = useStore(settingsState);
-  useEffect(() => { initializeBackground(); }, []);
+  const [backgroundReady, setBackgroundReady] = useState(false);
   useEffect(() => {
+    let mounted = true;
+    initializeBackground().then(
+      () => { if (mounted) setBackgroundReady(true); },
+      () => { if (mounted) setBackgroundReady(true); },
+    );
+    return () => { mounted = false; };
+  }, []);
+  useEffect(() => {
+    if (!backgroundReady) return;
     // 检查认证状态并启动自动同步
     const auth = authState.get();
     if (auth.username) {
       startAutoSync();
       return stopAutoSync;
     }
-  }, [syncInterval]);
+  }, [syncInterval, backgroundReady]);
   // 检查第三方集成状态
   useEffect(() => {
     checkIntegrations();

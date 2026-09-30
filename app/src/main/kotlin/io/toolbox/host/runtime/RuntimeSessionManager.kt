@@ -160,7 +160,6 @@ internal class RuntimeSessionManager(
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
     private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
     private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
-        updateSessionProjection()
         refreshForegroundService()
     }
     private var recovered = false
@@ -187,6 +186,7 @@ internal class RuntimeSessionManager(
     fun setHostActivityResumed(resumed: Boolean) {
         if (hostActivityResumed == resumed) return
         hostActivityResumed = resumed
+        if (resumed) AndroidNotificationGateway.invalidateMiuiSupportCache()
         hosts.values.forEach(::updateWebViewPlayback)
     }
 
@@ -210,6 +210,7 @@ internal class RuntimeSessionManager(
             HostTrace.bestEffortAsyncSection("runtime.attach") {
                 visibleTools += toolId
                 hosts[toolId]?.let { host ->
+                    HardenedRuntimeWebView.cancelClose(host.webView)
                     host.state = RuntimeHostState.ATTACHED
                     updateWebViewPlayback(host)
                     stateFlow(toolId).value = host.toUiState()
@@ -230,8 +231,23 @@ internal class RuntimeSessionManager(
         }
     }
 
-    fun reload(toolId: String) {
-        scope.launch { hosts[toolId]?.webView?.let(HardenedRuntimeWebView::reload) ?: retry(toolId) }
+    suspend fun prepareForegroundClose(toolId: String, reloading: Boolean): Boolean = withContext(Dispatchers.Main.immediate) {
+        if (!reloading && !sessionsByTool[toolId].isNullOrEmpty()) return@withContext true
+        val host = hosts[toolId] ?: return@withContext true
+        val saved = HardenedRuntimeWebView.flushBeforeClose(host.webView)
+        if (!saved && hosts[toolId] === host) HardenedRuntimeWebView.cancelClose(host.webView)
+        saved && hosts[toolId] === host
+    }
+
+    fun cancelForegroundClose(toolId: String) { hosts[toolId]?.webView?.let(HardenedRuntimeWebView::cancelClose) }
+
+    fun discardForegroundRuntime(toolId: String) { destroyHost(toolId) }
+
+    suspend fun reloadSaved(toolId: String) = withContext(Dispatchers.Main.immediate) {
+        timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
+        clearAllWatches(toolId)
+        destroyHost(toolId)
+        ensureRuntime(toolId, if (sessionsByTool[toolId].isNullOrEmpty()) null else RESTORE_REASON_PROCESS)
     }
 
     fun detachForeground(toolId: String) {
@@ -241,7 +257,11 @@ internal class RuntimeSessionManager(
             clearForegroundOnlyWatches(toolId)
             val plan = runtimeForegroundDetachPlan(!sessionsByTool[toolId].isNullOrEmpty())
             if (plan.destroyHost) {
-                destroyHost(toolId)
+                // Normally the route was retained until saving finished. A forced route removal
+                // still gets one bounded drain, with no extra deadline layered onto an old ticket.
+                val host = hosts[toolId]
+                if (host != null) HardenedRuntimeWebView.flushBeforeClose(host.webView, 2_000)
+                if (hosts[toolId] === host && toolId !in visibleTools) destroyHost(toolId)
             } else {
                 hosts[toolId]?.let { host ->
                     host.state = RuntimeHostState.BACKGROUND_DETACHED
@@ -409,11 +429,12 @@ internal class RuntimeSessionManager(
     }
 
     fun foregroundNotificationSnapshot(): RuntimeForegroundNotificationSnapshot {
-        val activeSessions = sessionProjection()
+        val presentations = liveNotifications.snapshot()
+        val activeSessions = sessionProjection(presentations)
         val activeIds = activeSessions.mapTo(hashSetOf(), RuntimeBackgroundSessionUi::sessionId)
         return RuntimeForegroundNotificationSnapshot(
             sessions = activeSessions,
-            presentations = liveNotifications.snapshot().filter { it.request.sessionId in activeIds },
+            presentations = presentations.filter { it.request.sessionId in activeIds },
             usesLocation = hasBackgroundLocationWatch(),
         )
     }
@@ -572,13 +593,12 @@ internal class RuntimeSessionManager(
             updateWebViewPlayback(current)
             stateFlow(toolId).value = current.toUiState()
             restoreReason?.let { reason -> current.emitRestore(reason) }
-            updateSessionProjection()
             refreshForegroundService()
         }
     }
 
     private fun RuntimeHost.emitRestore(reason: String) {
-        HardenedRuntimeWebView.emitEvent(
+        val emitted = HardenedRuntimeWebView.emitEvent(
             webView,
             EVENT_BACKGROUND_RESTORE,
             RpcValue.ObjectValue(
@@ -588,6 +608,7 @@ internal class RuntimeSessionManager(
                 ),
             ),
         )
+        if (!emitted) onRuntimeFailed(runtime.toolId, runtime, "EVENT_BACKLOG_OVERFLOW", "后台恢复事件无法交付，请重试。")
     }
 
     private fun onRuntimeFailed(toolId: String, runtime: PreparedToolRuntime, code: String, message: String) {
@@ -638,7 +659,6 @@ internal class RuntimeSessionManager(
             onRecovering = { attempt ->
                 recoveryStatus[toolId] = "后台环境中断，正在恢复（$attempt/3）"
                 liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
-                updateSessionProjection()
                 refreshForegroundService()
             },
             onInterrupted = {
@@ -648,7 +668,6 @@ internal class RuntimeSessionManager(
                 recoveryStatus[toolId] = "后台已中断，请打开工具重试或停止会话"
                 stateFlow(toolId).value = RuntimeUiState.Error("BACKGROUND_INTERRUPTED", recoveryStatus.getValue(toolId))
                 liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
-                updateSessionProjection()
                 refreshForegroundService()
             },
         )
@@ -663,7 +682,9 @@ internal class RuntimeSessionManager(
     }
 
     private fun updateWebViewPlayback(host: RuntimeHost) {
-        host.playback.setResumed(host.state == RuntimeHostState.ATTACHED && hostActivityResumed)
+        val foreground = host.state == RuntimeHostState.ATTACHED && hostActivityResumed
+        HardenedRuntimeWebView.setRuntimeForeground(host.webView, foreground)
+        host.playback.setResumed(foreground)
     }
 
     private fun stateFlow(toolId: String): MutableStateFlow<RuntimeUiState> =
@@ -722,7 +743,6 @@ internal class RuntimeSessionManager(
                     sessionsByTool[toolId]?.remove(record.sessionId)
                     notificationIds.release(record.sessionId)
                     persistSessions(toolId)
-                    updateSessionProjection()
                     refreshForegroundService()
                     throw RuntimeHandlerException(
                         RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED,
@@ -730,7 +750,6 @@ internal class RuntimeSessionManager(
                     )
                 }
                 scheduleReminder(record)
-                updateSessionProjection()
                 refreshForegroundService()
                 record.toRuntimeSummary()
             }
@@ -761,6 +780,7 @@ internal class RuntimeSessionManager(
                     activitySecondaryText = request.detail?.takeIf(String::isNotBlank),
                     activityUpdatedAt = request.updatedAt ?: nowMillis(),
                 )
+                if (updated == current) return@withContext
                 sessionsByTool.getValue(toolId)[request.sessionId] = updated
                 try {
                     persistSessions(toolId)
@@ -768,7 +788,6 @@ internal class RuntimeSessionManager(
                     sessionsByTool.getValue(toolId)[request.sessionId] = current
                     throw failure
                 }
-                updateSessionProjection()
                 refreshForegroundService()
             }
 
@@ -788,7 +807,8 @@ internal class RuntimeSessionManager(
                         requestBackgroundRecovery(toolId, expectedVersion)
                         continue
                     }
-                    HardenedRuntimeWebView.emitEvent(
+                    if (!HardenedRuntimeWebView.awaitOpenForEvents(host.webView)) continue
+                    val emitted = HardenedRuntimeWebView.emitEvent(
                         host.webView,
                         EVENT_BACKGROUND_TIMER,
                         RpcValue.ObjectValue(
@@ -798,6 +818,10 @@ internal class RuntimeSessionManager(
                             ),
                         ),
                     )
+                    if (!emitted) {
+                        onRuntimeFailed(toolId, host.runtime, "EVENT_BACKLOG_OVERFLOW", "后台事件积压，正在按既有规则恢复。")
+                        break
+                    }
                 }
             }
         }
@@ -935,15 +959,25 @@ internal class RuntimeSessionManager(
         cancelReminder(removed.sessionId)
         liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
-            recovery.cancel(toolId)?.join()
+            val cancelledRecovery = recovery.cancel(toolId)
             recoveryStatus.remove(toolId)
             timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
             clearBackgroundWatches(toolId)
             cancelRuntimeNotifications(listOf(sessionId))
-            if (toolId !in visibleTools) destroyHost(toolId)
+            if (toolId !in visibleTools) {
+                val closingHost = hosts[toolId]
+                if (closingHost != null) scope.launch {
+                    val saved = HardenedRuntimeWebView.flushBeforeClose(closingHost.webView, 2_000)
+                    if (hosts[toolId] === closingHost && toolId !in visibleTools && sessionsByTool[toolId].isNullOrEmpty()) {
+                        if (!saved) android.util.Log.w("RuntimeSave", "Background tool stopped without a completed save: $toolId")
+                        destroyHost(toolId)
+                    } else if (hosts[toolId] === closingHost) HardenedRuntimeWebView.cancelClose(closingHost.webView)
+                }
+            }
+            // Start the close deadline before waiting for a cancelled recovery job to finish.
+            cancelledRecovery?.join()
         }
         persistSessions(toolId)
-        updateSessionProjection()
         refreshForegroundService()
         return true
     }
@@ -972,6 +1006,7 @@ internal class RuntimeSessionManager(
         ) {
             throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统通知未开启")
         }
+        AndroidNotificationGateway.invalidateMiuiSupportCache()
         return AndroidNotificationGateway(appContext).liveSupport()
     }
 
@@ -992,7 +1027,8 @@ internal class RuntimeSessionManager(
 
     private fun emitLocation(toolId: String, watchId: String, location: Location) {
         val host = hosts[toolId] ?: return
-        HardenedRuntimeWebView.emitEvent(
+        if (HardenedRuntimeWebView.isClosing(host.webView)) return
+        val emitted = HardenedRuntimeWebView.emitEvent(
             host.webView,
             EVENT_LOCATION_CHANGED,
             RpcValue.ObjectValue(
@@ -1005,6 +1041,11 @@ internal class RuntimeSessionManager(
                 ),
             ),
         )
+        if (!emitted) {
+            watchesByTool[toolId]?.remove(watchId)?.let { locationManager?.removeUpdates(it.listener) }
+            recoveryStatus[toolId] = "定位事件积压，已停止该监听，请重新开启。"
+            refreshForegroundService()
+        }
     }
 
     private fun chooseProvider(manager: LocationManager, precise: Boolean): String? {
@@ -1038,11 +1079,12 @@ internal class RuntimeSessionManager(
         mutableSessions.value = sessionProjection()
     }
 
-    private fun sessionProjection(): List<RuntimeBackgroundSessionUi> {
+    private fun sessionProjection(presentations: List<RuntimeLiveNotificationUi> = liveNotifications.snapshot()): List<RuntimeBackgroundSessionUi> {
         val hostNames = hosts.mapValues { it.value.runtime.toolName }
+        val liveBySession = presentations.associateBy { it.request.sessionId }
         return sessionsByTool.flatMap { (toolId, sessions) ->
             sessions.values.map { record ->
-                val live = liveNotifications.snapshot().firstOrNull { it.request.sessionId == record.sessionId }
+                val live = liveBySession[record.sessionId]
                 RuntimeBackgroundSessionUi(
                     sessionId = record.sessionId,
                     toolId = toolId,
@@ -1237,7 +1279,9 @@ internal class RuntimeSessionManager(
     }.getOrDefault(emptyList())
 
     private fun refreshForegroundService() {
-        mutableNotificationSnapshots.value = foregroundNotificationSnapshot()
+        val snapshot = foregroundNotificationSnapshot()
+        mutableSessions.value = snapshot.sessions
+        mutableNotificationSnapshots.value = snapshot
     }
 
     private data class RuntimeHost(

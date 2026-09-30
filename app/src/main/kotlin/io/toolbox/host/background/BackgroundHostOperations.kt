@@ -9,7 +9,15 @@ import kotlinx.coroutines.flow.Flow
 internal class BackgroundHostOperations(
     private val coordinator: BackgroundTaskCoordinator,
 ) : HostBackgroundOperations, HostPermissionSideEffects {
-    override fun observeTasks(toolId: String): Flow<List<BackgroundTask>> = coordinator.tasks(toolId)
+    override fun observeActiveTasks(toolId: String): Flow<List<BackgroundTask>> = coordinator.activeTasks(toolId)
+
+    override fun observeRecentHistory(toolId: String): Flow<io.toolbox.core.data.BackgroundTaskHistoryPage> = coordinator.recentHistory(toolId)
+
+    override fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>> =
+        coordinator.historyThrough(toolId, createdAt, taskId)
+
+    override suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage =
+        coordinator.historyBefore(toolId, createdAt, taskId)
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = coordinator.result(taskId)
 

@@ -6,7 +6,7 @@ import {useByok} from '@/lib/byok';
 import {initializeHost,host,permissionMessage} from './bridge';
 import {initializeDrafts,storageFailure,flushStorage} from './storage';
 import {usePathname} from './navigation';
-import {abortRequests} from './network';
+import {initializeRuntime} from './runtime';
 import '@/app/globals.css';
 import './tbx.css';
 
@@ -50,11 +50,11 @@ function installExternalLinks(){
       event.preventDefault();void host()!.browser.open(href).catch(e=>window.alert(permissionMessage(e)));
     }
   });
-  window.addEventListener('pagehide',abortRequests);
 }
 async function boot(){
   try{
     await initializeHost();
+    initializeRuntime();
     await Promise.all([useApp.persist.rehydrate(),useByok.persist.rehydrate(),initializeDrafts()]);
     if(storageFailure())throw storageFailure();
     useApp.setState({hydrated:true});useByok.setState({hydrated:true});

@@ -13,8 +13,8 @@ from playwright.sync_api import expect, sync_playwright
 
 SOURCE = Path(__file__).resolve().parents[1]
 OUTPUT = SOURCE.parents[1] / "build/watcher-layout"
-ENTRY = "  startForegroundClock();\n  bootPromise = boot();\n})();"
-TEST_ENTRY = "  window.__watcherLayout = {state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName};\n})();"
+ENTRY = "  bootPromise = boot();\n})();"
+TEST_ENTRY = "  runtimeForeground = true;\n  window.__watcherLayout = {state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName};\n})();"
 ASSETS = {"index.html", "style.css", "github-model.js", "reliability.js", "app.js", "icon.png"}
 CASES = [(width, 100, "light") for width in (280, 320, 360, 393, 420, 480, 699, 700, 820, 1280)]
 CASES += [(320, 150, "light"), (393, 150, "dark"), (700, 150, "dark"), (393, 100, "dark")]

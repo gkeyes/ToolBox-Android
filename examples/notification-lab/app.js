@@ -4,6 +4,7 @@
   const STANDARD_ID = "notification-lab-standard";
   const TIMER_KEY = "notification-lab-live";
   const STORAGE_KEY = "notification-lab-state";
+  const MAX_EVENTS = 200;
   const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/g;
 
   const state = {
@@ -16,11 +17,23 @@
     busy: false,
     standardResult: "未测试",
     liveResult: null,
-    events: []
+    events: new Array(MAX_EVENTS),
+    eventCount: 0,
+    eventNext: 0
   };
 
   let toastTimer = null;
   let updateInFlight = false;
+  let liveUpdateWork = null;
+  let actionWork = null;
+  let restoreWork = null;
+  let bootWork = null;
+  let writeChain = Promise.resolve();
+  const userActions = new Set();
+  let restorePending = false;
+  let restoreReason = "unknown";
+  let runtimeForeground = false;
+  let runtimeClosing = false;
 
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
@@ -104,6 +117,7 @@
   }
 
   function showToast(message) {
+    if (!runtimeForeground) return;
     const node = $("toast");
     node.textContent = message;
     node.hidden = false;
@@ -112,8 +126,15 @@
   }
 
   function appendEvent(message, kind = "neutral") {
-    state.events.unshift({ time: clock(), message: cleanText(message, 280), kind });
-    renderLog();
+    const event = { time: clock(), message: cleanText(message, 280), kind };
+    state.events[state.eventNext] = event;
+    state.eventNext = (state.eventNext + 1) % MAX_EVENTS;
+    state.eventCount = Math.min(MAX_EVENTS, state.eventCount + 1);
+    if (!runtimeForeground) return;
+    const list = $("event-log");
+    list.querySelector(".empty-log")?.remove();
+    list.prepend(logItem(event));
+    if (list.children.length > MAX_EVENTS) list.lastElementChild.remove();
   }
 
   function errorLabel(error) {
@@ -122,17 +143,21 @@
     return `${code}: ${message}`;
   }
 
-  async function persist() {
-    try {
-      await toolbox().storage.set(STORAGE_KEY, {
+  async function persist(required = false) {
+    const snapshot = {
         preset: state.preset,
         tick: state.tick,
         intervalMs: state.intervalMs,
         live: state.live,
         auto: state.auto
-      });
+      };
+    const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
+    writeChain = work;
+    try {
+      await work;
     } catch (error) {
       appendEvent(`状态保存失败 · ${errorLabel(error)}`, "error");
+      if (required) throw error;
     }
   }
 
@@ -142,6 +167,7 @@
   }
 
   function renderReceipts() {
+    if (!runtimeForeground) return;
     $("standard-result").textContent = state.standardResult;
     const result = state.liveResult;
     $("android-result").textContent = result?.androidLive || "未测试";
@@ -151,31 +177,37 @@
       : "未测试";
   }
 
+  function logItem(event) {
+    const item = document.createElement("li");
+    item.dataset.kind = event.kind;
+    const time = document.createElement("span");
+    time.className = "event-time";
+    time.textContent = event.time;
+    const message = document.createElement("span");
+    message.className = "event-message";
+    message.textContent = event.message;
+    item.append(time, message);
+    return item;
+  }
+
   function renderLog() {
+    if (!runtimeForeground) return;
     const list = $("event-log");
     list.replaceChildren();
-    if (!state.events.length) {
+    if (!state.eventCount) {
       const empty = document.createElement("li");
       empty.className = "empty-log";
       empty.textContent = "尚无调用记录。";
       list.append(empty);
       return;
     }
-    state.events.forEach((event) => {
-      const item = document.createElement("li");
-      item.dataset.kind = event.kind;
-      const time = document.createElement("span");
-      time.className = "event-time";
-      time.textContent = event.time;
-      const message = document.createElement("span");
-      message.className = "event-message";
-      message.textContent = event.message;
-      item.append(time, message);
-      list.append(item);
-    });
+    for (let offset = 1; offset <= state.eventCount; offset += 1) {
+      list.append(logItem(state.events[(state.eventNext - offset + MAX_EVENTS) % MAX_EVENTS]));
+    }
   }
 
   function render() {
+    if (!runtimeForeground) return;
     const sample = sampleFor();
     $("sample-title").textContent = sample.title;
     $("sample-primary").textContent = sample.primaryText;
@@ -201,14 +233,13 @@
       }
     });
     renderReceipts();
-    renderLog();
   }
 
   async function runAction(label, action) {
-    if (state.busy) return null;
+    if (state.busy || runtimeClosing) return null;
     state.busy = true;
     render();
-    try {
+    const work = (async () => { try {
       const result = await action();
       appendEvent(`${label}成功`, "success");
       return result;
@@ -219,7 +250,10 @@
     } finally {
       state.busy = false;
       render();
-    }
+    } })();
+    actionWork = work;
+    try { return await work; }
+    finally { if (actionWork === work) actionWork = null; }
   }
 
   async function ensureSession() {
@@ -253,9 +287,10 @@
   }
 
   async function updateLive() {
-    if (updateInFlight) return null;
+    if (runtimeClosing) return null;
+    if (updateInFlight) return liveUpdateWork;
     updateInFlight = true;
-    try {
+    const work = (async () => { try {
       state.tick += 1;
       const result = await toolbox().notifications.live.update(liveRequest());
       applyLiveResult(result);
@@ -264,7 +299,10 @@
     } finally {
       updateInFlight = false;
       render();
-    }
+    } })();
+    liveUpdateWork = work;
+    try { return await work; }
+    finally { if (liveUpdateWork === work) liveUpdateWork = null; }
   }
 
   async function setAuto(enabled) {
@@ -342,6 +380,19 @@
     }
     try {
       const ready = await toolbox().ready();
+      toolbox().runtime.onStateChanged((snapshot) => {
+        runtimeClosing = snapshot.closing;
+        runtimeForeground = snapshot.foreground && !snapshot.closing;
+        if (runtimeForeground) {
+          render();
+          renderLog();
+        }
+        if (!runtimeClosing && restorePending) resumeRestore();
+      });
+      toolbox().runtime.registerFlushHandler(async () => {
+        await Promise.allSettled([bootWork, actionWork, liveUpdateWork, restoreWork, ...userActions]);
+        await persist(true);
+      });
       $("host-caption").textContent = `ToolBox ${ready.hostVersion} · API ${ready.apiVersion}`;
       await loadPersisted();
       await reconcileSession();
@@ -359,13 +410,18 @@
       persist();
     });
   });
-  $("interval").addEventListener("change", async (event) => {
-    state.intervalMs = Number(event.target.value);
-    if (state.auto) {
-      await runAction("更新后台间隔", () => toolbox().background.setTimer(TIMER_KEY, state.intervalMs));
-    }
-    await persist();
-    render();
+  $("interval").addEventListener("change", (event) => {
+    if (runtimeClosing) return;
+    const work = (async () => {
+      state.intervalMs = Number(event.target.value);
+      if (state.auto) {
+        await runAction("更新后台间隔", () => toolbox().background.setTimer(TIMER_KEY, state.intervalMs));
+      }
+      await persist();
+      render();
+    })();
+    userActions.add(work);
+    void work.finally(() => userActions.delete(work)).catch(() => {});
   });
   $("standard-post").addEventListener("click", () => runAction("发布普通通知", () => publishStandard(false)));
   $("standard-update").addEventListener("click", () => runAction("更新普通通知", () => publishStandard(true)));
@@ -383,13 +439,15 @@
   $("stop-background").addEventListener("click", () => runAction("停止后台环境", stopBackground));
   $("refresh-session").addEventListener("click", () => runAction("同步后台会话", reconcileSession));
   $("clear-log").addEventListener("click", () => {
-    state.events = [];
+    state.events = new Array(MAX_EVENTS);
+    state.eventCount = 0;
+    state.eventNext = 0;
     renderLog();
   });
 
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {
-      if (event?.key !== TIMER_KEY || !state.auto || !state.live) return;
+      if (runtimeClosing || event?.key !== TIMER_KEY || !state.auto || !state.live) return;
       updateLive()
         .then((result) => {
           if (result) appendEvent(`后台自动更新 #${state.tick}`, "success");
@@ -398,18 +456,33 @@
     });
   }
 
-  if (toolbox()?.background?.onRestore) {
-    toolbox().background.onRestore(async (event) => {
-      try {
+  function resumeRestore() {
+      if (runtimeClosing || restoreWork || !restorePending) return;
+      restorePending = false;
+      const work = (async () => { try {
         await loadPersisted();
+        if (runtimeClosing) { restorePending = true; return; }
         await reconcileSession();
-        appendEvent(`后台恢复 · ${event?.reason || "unknown"}`, "success");
+        appendEvent(`后台恢复 · ${restoreReason}`, "success");
       } catch (error) {
+        if (runtimeClosing) restorePending = true;
         appendEvent(`后台恢复失败 · ${errorLabel(error)}`, "error");
       }
       render();
+      })();
+      restoreWork = work;
+      void work.finally(() => {
+        if (restoreWork === work) restoreWork = null;
+        if (restorePending && !runtimeClosing) resumeRestore();
+      }).catch(() => {});
+  }
+  if (toolbox()?.background?.onRestore) {
+    toolbox().background.onRestore((event) => {
+      restorePending = true;
+      restoreReason = event?.reason || "unknown";
+      resumeRestore();
     });
   }
 
-  boot();
+  bootWork = boot();
 })();

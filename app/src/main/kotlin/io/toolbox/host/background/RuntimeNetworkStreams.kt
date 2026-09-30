@@ -16,9 +16,14 @@ internal class RuntimeNetworkStreams(
     private data class Entry(val control: ToolNetworkStreamControl, var stream: ToolNetworkStream? = null, var expiry: Job? = null)
     private val lock = Any()
     private val entries = mutableMapOf<String, Entry>()
+    // Complete requests have no caller-visible stream ID. Keep only active controls for revocation.
+    private val requests = mutableSetOf<ToolNetworkStreamControl>()
     private val cancelledBeforeOpen = mutableSetOf<String>()
     private val retired = linkedSetOf<String>()
     private var active = true
+
+    internal val activeRequestCount: Int get() = synchronized(lock) { requests.size }
+    internal val retiredStreamCount: Int get() = synchronized(lock) { retired.size }
 
     fun reserve(streamId: String, timeoutMillis: Long): ToolNetworkStreamControl = synchronized(lock) {
         if (!active) throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "网络流会话已结束。")
@@ -86,13 +91,23 @@ internal class RuntimeNetworkStreams(
         controls.forEach { it.cancel() }
     }
 
+    fun registerRequest(): ToolNetworkStreamControl = synchronized(lock) {
+        if (!active) throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "网络流会话已结束。")
+        ToolNetworkStreamControl().also(requests::add)
+    }
+
+    fun releaseRequest(control: ToolNetworkStreamControl) {
+        synchronized(lock) { requests.remove(control) }
+        control.cancel()
+    }
+
     fun close() {
         val controls = synchronized(lock) {
             active = false
             scope.cancel()
             cancelledBeforeOpen.clear()
             retired.clear()
-            entries.values.map(Entry::control).also { entries.clear() }
+            (entries.values.map(Entry::control) + requests).also { entries.clear(); requests.clear() }
         }
         controls.forEach { it.cancel() }
     }
@@ -101,7 +116,7 @@ internal class RuntimeNetworkStreams(
         val controls = synchronized(lock) {
             entries.keys.forEach(::retire)
             entries.values.forEach { it.expiry?.cancel() }
-            entries.values.map(Entry::control).also { entries.clear() }
+            (entries.values.map(Entry::control) + requests).also { entries.clear(); requests.clear() }
         }
         controls.forEach { it.cancel() }
     }

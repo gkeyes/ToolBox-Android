@@ -12,6 +12,7 @@ import io.toolbox.core.data.TaskState
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
@@ -66,7 +67,7 @@ class ToolBoxBackgroundWorker(
             if (policy == null || !policy.matches(task) || !policy.permits(task.operation)) {
                 return@run cancel(task, dependencies, "BACKGROUND_NOT_ALLOWED", attempt)
             }
-            when (val execution = execute(task, dependencies)) {
+            when (val execution = execute(task, dependencies, policy)) {
                 is TaskExecution.Succeeded -> try {
                     finish(task, dependencies, RunOutcome.SUCCEEDED, execution.payloadJson, null, attempt)
                 } finally { execution.release() }
@@ -131,17 +132,13 @@ class ToolBoxBackgroundWorker(
     private suspend fun execute(
         task: BackgroundTask,
         dependencies: BackgroundWorkerDependencies,
+        policy: BackgroundExecutionPolicy,
     ): TaskExecution {
         if (!isCurrentExecution(task, dependencies)) return TaskExecution.Cancelled("CANCELLED")
         val spec = try {
             json.decodeFromString<StoredBackgroundSpec>(task.specJson)
         } catch (_: SerializationException) {
             return TaskExecution.TerminalFailure("INVALID_TASK_SPEC")
-        }
-        val policy = dependencies.authorization.policyFor(task.toolId, task.versionCode)
-            ?: return TaskExecution.Cancelled("BACKGROUND_NOT_ALLOWED")
-        if (!policy.matches(task) || !policy.permits(task.operation)) {
-            return TaskExecution.Cancelled("BACKGROUND_NOT_ALLOWED")
         }
         return when (task.operation) {
             BackgroundOperation.HTTP_GET -> {
@@ -176,12 +173,16 @@ class ToolBoxBackgroundWorker(
                 if (!isValidNotification(notificationId, title)) {
                     return TaskExecution.TerminalFailure("INVALID_NOTIFICATION")
                 }
-                when (val posted = BackgroundExecutionLimiter.lockTool(task.toolId) {
-                    if (!isCurrentExecution(task, dependencies)) return@lockTool NotificationResult.Rejected("CANCELLED")
-                    dependencies.notifications.post(task.toolId, notificationId, title, body)
-                }) {
-                    NotificationResult.Posted -> TaskExecution.Succeeded("{\"posted\":true}")
-                    is NotificationResult.Rejected -> TaskExecution.TerminalFailure(posted.errorCode)
+                val prepared = dependencies.notifications.prepare(task.toolId, notificationId, title, body)
+                BackgroundExecutionLimiter.lockTool(task.toolId) {
+                    if (!isCurrentExecution(task, dependencies)) return@lockTool TaskExecution.Cancelled("CANCELLED")
+                    if (!isNotificationAuthorizationCurrent(task, dependencies)) {
+                        return@lockTool TaskExecution.Cancelled("BACKGROUND_NOT_ALLOWED")
+                    }
+                    when (val posted = prepared.post()) {
+                        NotificationResult.Posted -> TaskExecution.Succeeded("{\"posted\":true}")
+                        is NotificationResult.Rejected -> TaskExecution.TerminalFailure(posted.errorCode)
+                    }
                 }
             }
         }
@@ -253,6 +254,19 @@ class ToolBoxBackgroundWorker(
         val current = (dependencies.repositories.backgroundTasks.getTask(task.taskId) as? DataResult.Success)?.value
         return current?.state == TaskState.RUNNING && current.versionCode == task.versionCode &&
             current.executionToken == task.executionToken
+    }
+
+    private suspend fun isNotificationAuthorizationCurrent(
+        task: BackgroundTask,
+        dependencies: BackgroundWorkerDependencies,
+    ): Boolean {
+        if (dependencies.repositories.catalog.observeTool(task.toolId).first()?.currentVersion?.versionCode != task.versionCode) {
+            return false
+        }
+        val grants = dependencies.repositories.grants.observeGrants(task.toolId).first()
+            .associate { it.capability to it.granted }
+        if (grants["background.tasks"] != true || grants["notifications"] != true) return false
+        return dependencies.repositories.settings.settings.first().backgroundEnabled
     }
 
     private fun BackgroundExecutionPolicy.matches(task: BackgroundTask): Boolean =

@@ -14,10 +14,27 @@
   let tokenValue = "";
   let editingId = null;
   let refreshPromise = null;
+  let bootWork = null;
+  let restoreWork = null;
+  let restorePending = false;
+  let monitorWork = null;
   let monitorAction = null;
   let toastTimer = null;
   let ready = false;
   let liveAvailable = true;
+  let runtimeForeground = false;
+  let runtimeClosing = false;
+  let statusMessage = "";
+  let statusTone = "neutral";
+  const dirtyItems = new Set();
+  let paintTimer = null;
+  let writeChain = Promise.resolve();
+  const userActions = new Set();
+
+  function trackUserAction(work) {
+    userActions.add(work);
+    void work.finally(() => userActions.delete(work)).catch(() => {});
+  }
 
   function createInitialState() {
     return {
@@ -90,8 +107,11 @@
     };
   }
 
-  async function persist() {
-    await toolbox().storage.set(STORAGE_KEY, persistedState());
+  function persist() {
+    const snapshot = persistedState();
+    const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
+    writeChain = work;
+    return work;
   }
 
   function sourceLabel(provider) {
@@ -193,11 +213,15 @@
   }
 
   function setStatus(message, tone = "neutral") {
+    statusMessage = message;
+    statusTone = tone;
+    if (!runtimeForeground) return;
     $("status").textContent = message;
     $("status-dot").dataset.tone = tone;
   }
 
   function showToast(message) {
+    if (!runtimeForeground) return;
     const node = $("toast");
     node.textContent = message;
     node.hidden = false;
@@ -217,13 +241,7 @@
     return message || fallback;
   }
 
-  function render() {
-    const list = $("watchlist");
-    list.replaceChildren();
-    $("watch-count").textContent = `${state.items.length} 只`;
-    $("empty").hidden = state.items.length > 0;
-
-    state.items.forEach((item) => {
+  function quoteFragment(item) {
       const fragment = $("quote-template").content.cloneNode(true);
       const root = fragment.querySelector(".quote-row");
       root.dataset.id = item.id;
@@ -260,9 +278,13 @@
       const itemError = fragment.querySelector(".quote-error");
       itemError.hidden = !item.error;
       itemError.textContent = item.error || "";
-      list.append(fragment);
-    });
+      return fragment;
+  }
 
+  function renderSummary() {
+    if (!runtimeForeground) return;
+    $("watch-count").textContent = `${state.items.length} 只`;
+    $("empty").hidden = state.items.length > 0;
     $("monitor-state").dataset.active = String(state.monitoring);
     $("monitor-state").lastChild.textContent = state.monitoring ? "监控中" : "未监控";
     $("toggle-monitor").dataset.active = String(state.monitoring);
@@ -273,6 +295,35 @@
     $("last-refresh").textContent = state.lastRefreshAt ? formatTime(state.lastRefreshAt).replace("更新于 ", "数据更新：") : "尚未更新";
     const providers = [...new Set(state.items.map((item) => sourceLabel(item.provider)))];
     $("provider-summary").textContent = `数据源：${providers.length ? providers.join(" / ") : "未设置"}`;
+  }
+
+  function render() {
+    if (!runtimeForeground) return;
+    clearTimeout(paintTimer);
+    paintTimer = null;
+    dirtyItems.clear();
+    const list = $("watchlist");
+    list.replaceChildren(...state.items.map(quoteFragment));
+    renderSummary();
+    setStatus(statusMessage, statusTone);
+    $("refresh").setAttribute("aria-busy", String(Boolean(refreshPromise)));
+  }
+
+  function paintDirtyItems() {
+    paintTimer = null;
+    if (!runtimeForeground) return;
+    for (const id of dirtyItems) {
+      const item = state.items.find((candidate) => candidate.id === id);
+      const node = [...$("watchlist").children].find((candidate) => candidate.dataset.id === id);
+      if (!item || !node) { render(); return; }
+      node.replaceWith(quoteFragment(item));
+    }
+    dirtyItems.clear();
+  }
+
+  function queueItemPaint(id) {
+    dirtyItems.add(id);
+    if (runtimeForeground && !paintTimer) paintTimer = setTimeout(paintDirtyItems, 100);
   }
 
   function tencentCode(symbol) {
@@ -375,6 +426,7 @@
   }
 
   async function evaluateAlerts(item) {
+    if (runtimeClosing) return;
     if (item.upper !== null) {
       const active = item.price >= item.upper;
       if (active && !item.aboveLatched) item.aboveLatched = await deliverAlert(item, "above", item.upper);
@@ -382,6 +434,7 @@
     } else {
       item.aboveLatched = false;
     }
+    if (runtimeClosing) return;
     if (item.lower !== null) {
       const active = item.price <= item.lower;
       if (active && !item.belowLatched) item.belowLatched = await deliverAlert(item, "below", item.lower);
@@ -392,6 +445,7 @@
   }
 
   async function refreshAll(options = {}) {
+    if (runtimeClosing) return;
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       const enabled = state.items.filter((item) => item.enabled);
@@ -402,13 +456,15 @@
         );
         return;
       }
-      $("refresh").setAttribute("aria-busy", "true");
+      if (runtimeForeground) $("refresh").setAttribute("aria-busy", "true");
       setStatus(`正在更新 ${enabled.length} 只股票…`);
       let successCount = 0;
       for (const item of enabled) {
+        if (runtimeClosing) break;
         item.error = null;
         try {
           const quote = await fetchQuote(item);
+          if (runtimeClosing) break;
           item.name = quote.name || item.name;
           item.price = quote.price;
           item.previousClose = quote.previousClose;
@@ -421,13 +477,19 @@
           successCount += 1;
           await evaluateAlerts(item);
         } catch (error) {
-          item.error = errorMessage(error, "行情更新失败，请稍后重试。");
+          if (!runtimeClosing) item.error = errorMessage(error, "行情更新失败，请稍后重试。");
         }
-        render();
+        if (runtimeClosing) break;
+        queueItemPaint(item.id);
+      }
+      if (runtimeClosing) {
+        await persist();
+        return;
       }
       state.lastRefreshAt = Date.now();
       try { await persist(); }
       catch (error) { setStatus(errorMessage(error, "行情已更新，但状态保存失败。"), "warning"); return; }
+      if (runtimeClosing) return;
       const liveUpdated = await publishLiveState();
       const failedCount = enabled.length - successCount;
       if (!liveUpdated) setStatus("行情已更新；实时展示失败，后台监控仍继续。", "warning");
@@ -437,8 +499,10 @@
       if (options.announce && successCount > 0) showToast("行情已刷新");
     })().finally(() => {
       refreshPromise = null;
-      $("refresh").removeAttribute("aria-busy");
-      render();
+      if (runtimeForeground) {
+        $("refresh").removeAttribute("aria-busy");
+        renderSummary();
+      }
     });
     return refreshPromise;
   }
@@ -664,6 +728,21 @@
     }
     try {
       const host = await toolbox().ready();
+      toolbox().runtime.onStateChanged((snapshot) => {
+        runtimeClosing = snapshot.closing;
+        runtimeForeground = snapshot.foreground && !snapshot.closing;
+        if (runtimeForeground) render();
+        else {
+          clearTimeout(paintTimer);
+          paintTimer = null;
+        }
+        if (!runtimeClosing && restorePending) resumeRestore();
+      });
+      toolbox().runtime.registerFlushHandler(async () => {
+        await Promise.allSettled([bootWork, restoreWork, monitorWork, ...userActions]);
+        await refreshPromise?.catch(() => {});
+        await persist();
+      });
       ready = true;
       $("runtime-caption").textContent = `ToolBox ${host.hostVersion} · API ${host.apiVersion}`;
       state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
@@ -684,6 +763,7 @@
       }
       render();
       setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
+      if (runtimeClosing) return;
       if (state.monitoring) await publishLiveState("start");
       await refreshAll();
     } catch (error) {
@@ -694,42 +774,63 @@
 
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {
-      if (event?.key === TIMER_KEY) refreshAll({ background: true }).catch(() => {});
+      if (!runtimeClosing && event?.key === TIMER_KEY) refreshAll({ background: true }).catch(() => {});
     });
   }
-  if (toolbox()?.background?.onRestore) {
-    toolbox().background.onRestore(async () => {
-      try {
+  function resumeRestore() {
+    if (runtimeClosing || restoreWork || !restorePending) return;
+    restorePending = false;
+    const work = (async () => { try {
+        await bootWork;
+        if (runtimeClosing) { restorePending = true; return; }
         state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
         const savedToken = await toolbox().storage.secure.get(TOKEN_KEY);
         tokenValue = typeof savedToken === "string" ? savedToken : "";
         tokenPresent = Boolean(tokenValue);
+        if (runtimeClosing) { restorePending = true; return; }
         await reconcileMonitoring();
+        if (runtimeClosing) { restorePending = true; return; }
         render();
         if (state.monitoring) await publishLiveState("start");
         await refreshAll({ background: true });
       } catch (error) {
+        if (runtimeClosing) restorePending = true;
         setStatus(errorMessage(error, "后台环境恢复失败。"), "error");
-      }
+      } })();
+    restoreWork = work;
+    void work.finally(() => {
+      if (restoreWork === work) restoreWork = null;
+      if (restorePending && !runtimeClosing) resumeRestore();
+    }).catch(() => {});
+  }
+  if (toolbox()?.background?.onRestore) {
+    toolbox().background.onRestore(() => {
+      restorePending = true;
+      resumeRestore();
     });
   }
 
   $("refresh").addEventListener("click", () => refreshAll({ announce: true }));
   $("add-stock").addEventListener("click", () => openEditor());
-  $("toggle-monitor").addEventListener("click", async () => {
-    if (monitorAction) return;
+  $("toggle-monitor").addEventListener("click", () => {
+    if (monitorAction || runtimeClosing) return;
     if (!ready) { showToast("ToolBox 尚未连接"); return; }
     monitorAction = state.monitoring ? "stop" : "start";
     render();
-    let started = false;
-    try {
-      if (monitorAction === "stop") await stopMonitoring();
-      else started = await startMonitoring();
-    } finally {
-      monitorAction = null;
-      render();
-    }
-    if (started) await refreshAll();
+    const work = (async () => {
+      let started = false;
+      try {
+        if (monitorAction === "stop") await stopMonitoring();
+        else started = await startMonitoring();
+      } finally {
+        monitorAction = null;
+        render();
+      }
+      if (started && !runtimeClosing) await refreshAll();
+    })();
+    monitorWork = work;
+    void work.catch((error) => setStatus(errorMessage(error, "监控操作失败。"), "error"))
+      .finally(() => { if (monitorWork === work) monitorWork = null; });
   });
   $("watchlist").addEventListener("click", (event) => {
     const trigger = event.target.closest(".quote-summary, .edit-button");
@@ -738,15 +839,18 @@
     const item = state.items.find((candidate) => candidate.id === root?.dataset.id);
     if (item) openEditor(item);
   });
-  $("watchlist").addEventListener("change", changeItemEnabled);
+  $("watchlist").addEventListener("change", (event) => { if (!runtimeClosing) trackUserAction(changeItemEnabled(event)); });
   $("stock-form").addEventListener("change", (event) => {
     if (event.target.name === "provider") updateProviderFields();
   });
-  $("stock-form").addEventListener("submit", saveEditor);
+  $("stock-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!runtimeClosing) trackUserAction(saveEditor(event));
+  });
   $("cancel-editor").addEventListener("click", closeEditor);
-  $("delete-stock").addEventListener("click", deleteEditingStock);
-  $("clear-token").addEventListener("click", clearToken);
+  $("delete-stock").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(deleteEditingStock()); });
+  $("clear-token").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(clearToken()); });
   $("editor").addEventListener("cancel", (event) => { event.preventDefault(); closeEditor(); });
 
-  boot();
+  bootWork = boot();
 })();
