@@ -101,6 +101,8 @@ jobs:
         run: node --test scripts/tests/browser-picker.test.cjs
       - name: Verify browser media layout recovery regressions
         run: node --test scripts/tests/browser-media-layout.test.cjs
+      - name: Verify browser media layout in real Chromium
+        run: node --test scripts/tests/browser-media-layout-chromium.test.cjs
       - name: Verify watcher polling and stopped-session regressions
         run: node --test scripts/tests/watcher-reliability.test.cjs
       - name: Verify release evidence and baseline reuse guards
