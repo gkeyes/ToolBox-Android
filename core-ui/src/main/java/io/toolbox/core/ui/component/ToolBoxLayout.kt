@@ -655,6 +655,7 @@ private fun ToolBoxActionButton(
     } else {
         baseColors.copy(contentColor = contentColorOverride)
     }
+    val displayedContentColor = if (enabled) contentColor else buttonColors.disabledContentColor
 
     MiuixButton(
         onClick = onClick,
@@ -674,14 +675,14 @@ private fun ToolBoxActionButton(
                 icon = icon,
                 contentDescription = null,
                 modifier = Modifier.size(if (compact) 18.dp else 20.dp),
-                tint = contentColor,
+                tint = displayedContentColor,
             )
             Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         }
         ToolBoxText(
             text = label,
             style = (if (compact) ToolBoxThemeTokens.textStyles.metadata else ToolBoxThemeTokens.textStyles.body).copy(
-                color = contentColor,
+                color = displayedContentColor,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
