@@ -29,6 +29,7 @@ import {
 } from "@/motion/navigationTransition.mjs";
 import { createArticleScrollReset, startArticleRead } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
+import { speechController } from "@/toolbox/speech/speechController.js";
 
 const ArticleView = () => {
   const { articleId } = useParams();
@@ -327,6 +328,7 @@ const ArticleView = () => {
     cancelDeferredResume();
     shellMotionCancelRef.current?.();
     imageGalleryActive.set(false);
+    speechController.stop();
   }, [articleId, cancelDeferredResume]);
 
   return <>
