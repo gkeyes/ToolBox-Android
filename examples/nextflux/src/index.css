@@ -491,7 +491,7 @@
   margin: 0;
 }
 
-/* Reader toolbar semantic groups: AI | native | system. */
+/* Reader toolbar semantic groups: AI | native | system. Grouped-toolbar CI marker. */
 .nextflux-toolbar-groups {
   display: flex;
   min-inline-size: 0;
