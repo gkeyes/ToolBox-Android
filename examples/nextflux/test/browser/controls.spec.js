@@ -59,7 +59,13 @@ async function bounds(page) {
   }));
   for (let i = 0; i < items.length; i++) {
     const a = items[i];
-    expect(a.width).toBe(48); expect(a.height).toBe(48);
+    expect(a.height).toBe(48);
+    if (page.viewportSize().width <= 640) {
+      expect(a.width).toBeGreaterThanOrEqual(28);
+      expect(a.width).toBeLessThanOrEqual(48);
+    } else {
+      expect(a.width).toBe(48);
+    }
     expect(a.x).toBeGreaterThanOrEqual(0);
     expect(a.x + a.width).toBeLessThanOrEqual(page.viewportSize().width + 1);
     for (const b of items.slice(i + 1)) {
@@ -86,7 +92,7 @@ for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393,
   });
 }
 
-test("all optional controls wrap without clipping and loading does not grow the bar", async ({ page }) => {
+test("all optional controls fit one row without clipping and loading does not grow the bar", async ({ page }) => {
   await open(page, 320);
   await page.evaluate(() => window.controlsFixture.setIntegrations(true));
   await bounds(page);
