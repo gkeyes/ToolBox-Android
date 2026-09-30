@@ -167,7 +167,10 @@ class BrowserActivity : ComponentActivity() {
                 // User-activated target=_blank links use this view; unsolicited windows stay disabled.
                 setSupportMultipleWindows(false)
                 javaScriptCanOpenWindowsAutomatically = false
-                mediaPlaybackRequiresUserGesture = true
+                // This is a general-purpose browser surface: let modern players initialize/start
+                // media without requiring a second WebView-level gesture. Sites can still expose
+                // their own autoplay controls, and hardware capture remains blocked below.
+                mediaPlaybackRequiresUserGesture = false
             }
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(page, true)
@@ -261,8 +264,20 @@ class BrowserActivity : ComponentActivity() {
                     if (view === webView) title = newTitle.orEmpty()
                 }
                 override fun onPermissionRequest(request: PermissionRequest) {
-                    request.deny()
-                    if (page === webView) unsupported("内置浏览器不提供摄像头或麦克风权限，可从菜单选择系统浏览器。")
+                    if (page !== webView) {
+                        request.deny()
+                        return
+                    }
+
+                    val granted = BrowserMediaPolicy.grantedResources(
+                        originScheme = request.origin.scheme,
+                        requested = request.resources,
+                    )
+                    if (granted.isEmpty()) request.deny() else request.grant(granted)
+
+                    if (BrowserMediaPolicy.requestsCapture(request.resources)) {
+                        unsupported("内置浏览器仍不提供摄像头或麦克风权限；网页视频播放不受此限制。")
+                    }
                 }
                 override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
                     callback.invoke(origin, false, false)
