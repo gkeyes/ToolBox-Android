@@ -8,11 +8,12 @@ test("speech text normalization keeps paragraph boundaries", () => {
 });
 
 test("speech splitter follows sentence boundaries for long articles", () => {
-  const text = "第一句。第二句很长一些，用于验证切分。第三句！第四句？";
-  const chunks = splitSpeechText(text, { targetChars: 16, maxChars: 24 });
+  const sentence = "这是用于验证自然句边界的文章内容，每一句都应该完整保留并按需要切分。";
+  const text = Array.from({ length: 12 }, (_, index) => `${index + 1}。${sentence}`).join("");
+  const chunks = splitSpeechText(text, { targetChars: 120, maxChars: 160 });
   assert.ok(chunks.length >= 2);
   assert.equal(chunks.join(" ").replaceAll(" ", ""), text);
-  assert.ok(chunks.every((item) => item.length <= 24));
+  assert.ok(chunks.every((item) => item.length <= 160));
 });
 
 test("speech splitter hard-splits oversized sentences", () => {
