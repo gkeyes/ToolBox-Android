@@ -1,4 +1,4 @@
-import { Button, Spinner, Tooltip } from "@heroui/react";
+import { Button, Slider, Spinner, Tooltip } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import { AudioLines, Pause, Play, RotateCcw, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
@@ -108,17 +108,21 @@ export function ArticleSpeechBar({ article }) {
           <span className="truncate">{status}</span>
           {!busy && state.phase !== "error" && <span className="shrink-0 tabular-nums">{formatTime(state.currentTime)} / {formatTime(state.duration)}</span>}
         </div>
-        <input
+        <Slider
           aria-label="朗读进度"
-          type="range"
-          min="0"
-          max={canSeek ? state.duration : 1}
-          step="0.1"
-          value={canSeek ? Math.min(state.currentTime, state.duration) : 0}
-          disabled={!canSeek || busy || state.phase === "error"}
-          onChange={(event) => speechController.seekTo(Number(event.target.value))}
-          className="block h-4 w-full accent-current disabled:opacity-30"
-        />
+          value={[canSeek ? Math.min(state.currentTime, state.duration) : 0]}
+          minValue={0}
+          maxValue={canSeek ? state.duration : 1}
+          step={0.1}
+          isDisabled={!canSeek || busy || state.phase === "error"}
+          onChange={(value) => speechController.seekTo(Number(value[0]))}
+          className="w-full"
+        >
+          <Slider.Track className="h-1.5">
+            <Slider.Fill />
+            <Slider.Thumb className="bg-transparent after:rounded-full" />
+          </Slider.Track>
+        </Slider>
       </div>
 
       <Button size="sm" variant="ghost" className="h-8 min-w-12 px-2 text-xs text-muted" aria-label="切换播放速度" onPress={cycleRate}>
