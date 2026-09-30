@@ -2,12 +2,13 @@ import { Parser } from "htmlparser2";
 import { cleanAttributes, safeContentUrl } from "../toolbox/content.js";
 import { ALLOWED_TAGS, BLOCK_TAGS, DROP_CONTENT } from "./schema.mjs";
 import { analyzeArticle } from "./analyze.mjs";
+import { mediaSourceCandidates } from "./media-sources.mjs";
 import { createNormalizationPlan, hasSentenceTerminal, normalizeParagraphLeadingText, paragraphPresentation, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
 const BATCH_TEXT = 16 * 1024;
-const mediaUrl = (source, base) => safeContentUrl(source, source?.startsWith("/proxy/") ? "https://miniflux.xiaochen.win/" : base);
+const mediaUrl = (source, base) => safeContentUrl(source, /^\/(?:proxy\/|media\/v1\/)/.test(source || "") ? "https://miniflux.xiaochen.win/" : base);
 const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(text);
 
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is
@@ -96,8 +97,11 @@ export function createReadingParser(html, baseUrl) {
       const parent = stack.at(-1);
       const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, linkTextLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentenceTerminal: false };
       stack.push(entry);
-      if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
+      if (parent.ownsMedia && ["audio", "video"].includes(parent.media.kind) && tag === "source") parent.media.rawSources.push(attributes);
       if (entry.blocked) return;
+      entry.picture = parent.picture;
+      if (tag === "picture") { entry.picture = []; return; }
+      if (tag === "source" && entry.picture) { entry.picture.push(attributes); return; }
       if (parent.code) {
         if (tag === "code") {
           const attrs = cleanAttributes(tag, attributes, baseUrl);
@@ -108,7 +112,7 @@ export function createReadingParser(html, baseUrl) {
       }
       if (["iframe", "audio", "video"].includes(tag)) {
         entry.blocked = true;
-        entry.media = { id: nextId++, parent: parent.id, kind: tag, url: mediaUrl(attributes.src, baseUrl) };
+        entry.media = { id: nextId++, parent: parent.id, kind: tag, url: mediaUrl(attributes.src, baseUrl), attributes, rawSources: [] };
         entry.ownsMedia = true;
         for (const ancestor of stack) ancestor.hasMedia = true;
         return;
@@ -116,7 +120,7 @@ export function createReadingParser(html, baseUrl) {
       if (!ALLOWED_TAGS.has(tag)) return;
       entry.id = nextId++;
       entry.depth += 1;
-      const attrs = cleanAttributes(tag, attributes, baseUrl);
+      const attrs = cleanAttributes(tag, attributes, baseUrl, entry.picture);
       entry.attrs = attrs;
       recordChild(parent, entry);
       if (tag === "img") {
@@ -191,7 +195,14 @@ export function createReadingParser(html, baseUrl) {
       finishChildRecord(entry);
       semanticizeChildren(entry);
       if (entry.code && !entry.ownsCode && /^(p|div|h[1-6])$/.test(entry.tag) && !entry.blocked) appendCode(entry.code, "\n");
-      if (entry.ownsMedia) emit({ type: "media", ...entry.media });
+      if (entry.ownsMedia) {
+        const { attributes, rawSources, ...media } = entry.media;
+        if (["audio", "video"].includes(media.kind)) {
+          media.sources = mediaSourceCandidates(attributes, rawSources, baseUrl);
+          media.url = media.sources[0]?.url || null;
+        }
+        emit({ type: "media", ...media });
+      }
       if (entry.ownsCode) emit({ type: "code", id: entry.id, code: entry.code.parts.join(""), language: entry.code.language });
       if (entry.linkWithImage) emit({ type: "imageLink", parent: entry.id, id: nextId++, href: entry.attrs.href });
       const presentation = paragraphPresentation({

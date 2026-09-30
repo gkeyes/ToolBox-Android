@@ -115,11 +115,11 @@ internal class RuntimePresentationCoordinator(
 
     companion object {
         const val CLOSE_TIMEOUT_MILLIS = 2_000L
-        val CONTROL_METHODS = setOf("ready", "runtime.getState", "runtime.ackEvents", "runtime.flushComplete")
+        val CONTROL_METHODS = setOf("ready", "runtime.getState", "runtime.ackEvents", "runtime.flushComplete", "network.closeMedia")
         private val CLOSE_METHODS = CONTROL_METHODS + setOf(
             "network.cancelStream", "storage.get", "storage.getMany", "storage.apply", "storage.set",
             "storage.remove", "storage.keys", "storage.clear", "storage.secure.get", "storage.secure.set",
-            "storage.secure.remove",
+            "storage.secure.remove", "background.stop",
         )
         val WRITE_METHODS = setOf(
             "storage.apply", "storage.set", "storage.remove", "storage.clear",

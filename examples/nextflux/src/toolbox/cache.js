@@ -1,4 +1,4 @@
-import { deriveArticleMetadata } from "./cache-metadata.js";
+import { currentArticleMetadata, deriveArticleMetadata } from "./cache-metadata.js";
 import { decodeCacheValue, loadLegacyCache, LEGACY_PREFIX, LEGACY_MANIFEST_KEY } from "./cache-legacy.js";
 
 // The production caller runs this engine in cache-worker.js. No DOM, body
@@ -472,8 +472,8 @@ export function createArticleCache(storage, options = {}) {
     checkStage(stage);
     const bodyRef = previous?.bodyDigest === hash ? previous.bodyRef : await writeDocument(stage, body, true);
     const { content, enclosures, feed, originalContent, bodyRef: ignoredRef, ...metadata } = article;
-    const derived = previous?.bodyDigest === hash && previous.title === article.title && previous.url === article.url
-      ? { titleText: previous.titleText, previewText: previous.previewText, coverUrl: previous.coverUrl }
+    const derived = currentArticleMetadata(previous) && previous.bodyDigest === hash && previous.title === article.title && previous.url === article.url
+      ? { titleText: previous.titleText, previewText: previous.previewText, coverUrl: previous.coverUrl, coverSources: previous.coverSources, metadataVersion: previous.metadataVersion }
       : deriveMetadata(article);
     return { ...metadata, ...derived, bodyRef, bodyDigest: hash };
   }
@@ -538,6 +538,31 @@ export function createArticleCache(storage, options = {}) {
   const metaValue = () => clone({ version: 3, revision: snapshot.root.revision,
     lastSyncTime: snapshot.root.lastSyncTime, account: snapshot.root.account });
   async function readSnapshot() { const expectedEpoch = epoch; await initialize(); checkEpoch(expectedEpoch); return snapshot; }
+
+  // Old list rows retained only src. Upgrade the requested rows in the Worker,
+  // in bounded batches, using their existing bodies without fetching the feed
+  // or discarding read/star state. Subsequent page reads remain metadata-only.
+  async function ensureArticleMetadata(ids) {
+    if (ids.every((id) => !snapshot.maps.articles.has(id) || currentArticleMetadata(snapshot.maps.articles.get(id)))) return;
+    return enqueue(async () => {
+      await initialize();
+      await settleCommit();
+      for (let offset = 0; offset < ids.length; offset += 32) {
+        const rows = ids.slice(offset, offset + 32).map((id) => snapshot.maps.articles.get(id)).filter((row) => row && !currentArticleMetadata(row));
+        if (!rows.length) continue;
+        const stage = newStage({ background: true });
+        try {
+          const bodies = await readDocuments(rows.map((row) => row.bodyRef), stage.epoch);
+          const changes = new Map(rows.map((row, index) => {
+            const body = bodies[index];
+            if (!record(body) || typeof body.content !== "string" || !Array.isArray(body.enclosures)) throw invalid();
+            return [row.id, { ...row, ...deriveMetadata({ ...row, ...body }) }];
+          }));
+          await commit(stage, snapshot.maps, { articleChanges: changes });
+        } finally { releaseStage(stage); }
+      }
+    });
+  }
   async function selectSnapshot(select) {
     const expectedEpoch = epoch;
     await initialize();
@@ -939,14 +964,24 @@ export function createArticleCache(storage, options = {}) {
       return selectSnapshot((current) => clone(current.maps[table].get(Number(id)) ?? null));
     },
     updateCatalog,
-    readMetadata: (id) => selectSnapshot((current) => publicRow(current.maps.articles.get(Number(id)))),
+    async readMetadata(id) {
+      const expectedEpoch = epoch;
+      await initialize();
+      await ensureArticleMetadata([Number(id)]);
+      checkEpoch(expectedEpoch);
+      return publicRow(snapshot.maps.articles.get(Number(id)));
+    },
     async selectIds(query) {
       const wanted = criteria(query);
       return selectSnapshot((current) => [...selectedRows(current, wanted)].filter((row) => matches(row, wanted)).map((row) => row.id));
     },
     async selectMetadata(query) {
+      const expectedEpoch = epoch;
       const wanted = criteria(query);
-      return selectSnapshot((current) => [...selectedRows(current, wanted)].filter((row) => matches(row, wanted)).map(publicRow));
+      const ids = await selectSnapshot((current) => [...selectedRows(current, wanted)].filter((row) => matches(row, wanted)).map((row) => row.id));
+      await ensureArticleMetadata(ids);
+      checkEpoch(expectedEpoch);
+      return ids.map((id) => publicRow(snapshot.maps.articles.get(id))).filter(Boolean);
     },
     counts: (feedIds) => selectSnapshot((current) => countValue(current, feedIds)),
     async readArticle(id) {
@@ -996,6 +1031,8 @@ export function createArticleCache(storage, options = {}) {
       if (!Number.isSafeInteger(page) || page < 1) throw invalid();
       const offset = (page - 1) * query.pageSize;
       const ids = query.ids.slice(offset, offset + query.pageSize);
+      await ensureArticleMetadata(ids);
+      checkEpoch(query.epoch);
       return { items: ids.map((id) => publicRow(snapshot.maps.articles.get(id))).filter(Boolean), total: query.ids.length,
         hasMore: offset + ids.length < query.ids.length, revision: snapshot.root.revision };
     },

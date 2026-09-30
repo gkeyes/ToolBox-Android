@@ -199,6 +199,12 @@ registerFlushHandler 用于确实销毁或主动重载之前保存：停止生�
 
 大网络响应使用 openStream/readStream 逐块消费，处理完一块再读取下一块；每块长度只是传输单位，不是总数据上限。openStream 支持 AbortSignal。EOF、取消、撤权和运行环境结束释放连接。
 
+audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将返回的临时同源 `url` 赋给播放器。宿主按播放器请求读取 HTTPS 源，无需先把完整媒体下载到 JS 内存。音视频编码由当前 WebView 支持情况决定；按字节快进依赖源站正确返回 Range/206，忽略 Range 的源站不保证快进。`kind` 只接受 `audio` 或 `video`，可以省略；源 URL 不得含用户名或密码。会话仅供当前工具运行环境使用。
+
+临时媒体地址还受 Android WebView 输入流接口限制：响应长度需能由 Content-Length 或 Content-Range 确定，并能在其 32 位长度接口内准确交付当前范围。无法确定长度或无法表示当前范围的请求会失败；工具应提供备用媒体源或原文入口。HLS 分片可通过 openStream/readStream 加载，不依赖该输入流接口。
+
+播放器停止、切换媒体或组件卸载时调用 `network.closeMedia(sessionId)`。已经取消的 AbortSignal 不会打开会话；等待打开期间取消会立即以 `CANCELLED` 拒绝，并清理迟到的会话。打开后取消、页面离开、导航、撤权和运行环境结束也会释放媒体连接。关闭会话在 network 权限撤销后仍可调用。
+
 网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误。网络可改用 openStream 分块；files.read 暂无文件分块接口，应选择可放入内存的文件，或由工具自行提供分页数据。
 
 安装支持 ZIP32 和 ZIP64；复制、目录扫描、解压、哈希及暂存复制均分块处理，依据目标卷可用空间、当前可用堆和系统内存压力检查资源，暂存占用也计入。高压缩比本身不会导致拒绝；CRC、中央目录、本地头、数据描述符及实际输出须一致。integrity.json 流式逐项核对文件集合和原始字节哈希；重复键、路径碰撞或篡改会失败，签名仍针对完整性文件原始字节验证。
@@ -396,6 +402,8 @@ export type ToolBoxMethodName =
   | "network.openStream"
   | "network.readStream"
   | "network.cancelStream"
+  | "network.openMedia"
+  | "network.closeMedia"
   | "notifications.post"
   | "notifications.update"
   | "notifications.cancel"
@@ -531,6 +539,23 @@ export interface NetworkStreamChunk {
   readonly data: Uint8Array;
   readonly done: boolean;
   readonly receivedBytes: number;
+}
+
+export interface NetworkMediaRequest {
+  /** HTTPS source without URL user information. */
+  readonly url: string;
+  readonly kind?: "audio" | "video";
+}
+
+export interface NetworkMediaOptions {
+  /** Immediately rejects a pending open and closes an opened or late session. */
+  readonly signal?: AbortSignal;
+}
+
+export interface NetworkMediaSession {
+  readonly sessionId: string;
+  /** Temporary same-origin player URL owned by this runtime. */
+  readonly url: string;
 }
 
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
@@ -728,6 +753,9 @@ export interface ToolBoxApi {
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
     readStream(streamId: string, options?: NetworkStreamReadOptions): Promise<NetworkStreamChunk>;
     cancelStream(streamId: string): Promise<void>;
+    openMedia(request: NetworkMediaRequest, options?: NetworkMediaOptions): Promise<NetworkMediaSession>;
+    /** Also callable after the tool's network grant is revoked. */
+    closeMedia(sessionId: string): Promise<void>;
   };
   notifications: {
     /** Text admission uses current available process heap; Android controls display truncation and IPC capacity. */

@@ -16,11 +16,16 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
@@ -55,14 +60,18 @@ class RuntimeBridgeSession internal constructor(
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
     },
     ordinaryBudget: RuntimeRequestBudget = RuntimeRequestBudget(),
+    ordinaryDispatcher: CoroutineDispatcher? = null,
 ) {
     // A JSON message is decoded as UTF-16. This is current allocation capacity,
     // not the obsolete per-tool manifest quota.
     private val maxPayloadBytes: Int
         get() = (ResourceCapacity.availableHeapBytes() / Char.SIZE_BYTES).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
     private val active = AtomicBoolean(true)
+    private val navigationEpoch = AtomicLong()
     private val eventReady = AtomicBoolean(false)
-    private val inFlightIds = ConcurrentHashMap.newKeySet<String>()
+    private val inFlightIds = ConcurrentHashMap.newKeySet<Pair<Long, String>>()
+    private val nonWriteJobs = ConcurrentHashMap<Job, Long>()
+    private val pendingDeliveries = ConcurrentHashMap.newKeySet<ReplyDelivery>()
     private val eventProxy = AtomicReference<JavaScriptReplyProxy?>(null)
     private val events = RuntimeEventBuffer()
     private val presentation = RuntimePresentationCoordinator(identity.generation, android.os.SystemClock::elapsedRealtime)
@@ -78,7 +87,8 @@ class RuntimeBridgeSession internal constructor(
         override fun acknowledgeEvents(sequence: Long) = events.acknowledge(sequence)
         override fun completeFlush(token: String, saved: Boolean) = presentation.completeFlush(token, saved)
     }
-    private val jobs = RuntimeSessionJobs(localBudget = ordinaryBudget)
+    private val jobs = if (ordinaryDispatcher == null) RuntimeSessionJobs(localBudget = ordinaryBudget)
+        else RuntimeSessionJobs(dispatcher = ordinaryDispatcher, localBudget = ordinaryBudget)
     private var attachedView = WeakReference<WebView>(null)
     // A recovered/background runtime may never have a window. View.post queues
     // work until attachment; native replies and events must target the UI looper.
@@ -95,6 +105,16 @@ class RuntimeBridgeSession internal constructor(
     )
     private val sessionCleanup = m3Handlers.sessionCleanup
     private val network = m2Handlers.network
+
+    private class ReplyDelivery(val epoch: Long, encoded: String, completed: () -> Unit) {
+        private val message = AtomicReference<String?>(encoded)
+        private val completion = AtomicReference<(() -> Unit)?>(completed)
+        fun encoded(): String? = message.get()
+        fun finish() {
+            message.set(null)
+            completion.getAndSet(null)?.invoke()
+        }
+    }
 
     internal fun attach(webView: WebView) {
         check(active.get())
@@ -134,15 +154,16 @@ class RuntimeBridgeSession internal constructor(
     ) {
         if (!active.get()) return
         val encoded = message.data ?: return
+        val epoch = navigationEpoch.get()
         if (encoded.length > maxPayloadBytes) {
-            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"))
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"), epoch)
             return
         }
         val exactSourceOrigin = sourceOrigin.toString()
         val jobOwner = if (runtimeControlMethod(encoded)) controls else jobs
         val countsAsWrite = AtomicBoolean(jobOwner === jobs)
         if (countsAsWrite.get() && !presentation.admitOrdinaryRequest()) {
-            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.SESSION_ENDED, "The final save has completed"))
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.SESSION_ENDED, "The final save has completed"), epoch)
             return
         }
         fun releaseWrite() { if (countsAsWrite.compareAndSet(true, false)) presentation.releaseOrdinaryRequest() }
@@ -153,6 +174,7 @@ class RuntimeBridgeSession internal constructor(
                     webView,
                     replyProxy,
                     invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.QUOTA_EXCEEDED, "Bridge payload is too large"),
+                    epoch,
                 )
                 return@launch
             }
@@ -163,15 +185,28 @@ class RuntimeBridgeSession internal constructor(
                     webView,
                     replyProxy,
                     invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.INVALID_REQUEST, "Malformed ToolBox request"),
+                    epoch,
                 )
                 return@launch
             }
+            val survivesNavigation = request.method in RuntimePresentationCoordinator.WRITE_METHODS ||
+                request.method == "runtime.flushComplete" || request.method == "network.closeMedia"
+            val currentJob = currentCoroutineContext().job
             if (request.method !in RuntimePresentationCoordinator.WRITE_METHODS) releaseWrite()
-            if (!inFlightIds.add(request.id)) {
+            if (!survivesNavigation) {
+                synchronized(navigationEpoch) {
+                    if (!active.get() || navigationEpoch.get() != epoch) return@launch
+                    nonWriteJobs[currentJob] = epoch
+                }
+            }
+            val requestKey = epoch to request.id
+            if (!inFlightIds.add(requestKey)) {
+                nonWriteJobs.remove(currentJob)
                 replyAndAwaitDelivery(
                     webView,
                     replyProxy,
                     invalidRequest(request.id, RuntimeRpcErrorCode.BUSY, "Request id is already active"),
+                    epoch,
                 )
                 return@launch
             }
@@ -179,28 +214,57 @@ class RuntimeBridgeSession internal constructor(
                 val response = dispatcher.dispatch(
                     request,
                     RuntimeInboundContext(exactSourceOrigin, isMainFrame),
+                    beforeInvoke = { method ->
+                        if (method !in RuntimePresentationCoordinator.WRITE_METHODS &&
+                            method != "runtime.flushComplete" && method != "network.closeMedia" &&
+                            navigationEpoch.get() != epoch
+                        ) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "The tool document navigated")
+                    },
                 )
-                replyAndAwaitDelivery(webView, replyProxy, response)
+                replyAndAwaitDelivery(webView, replyProxy, response, epoch)
                 if (request.method == "ready" && response is RuntimeRpcResponse.Success) {
-                    eventProxy.set(replyProxy)
-                    eventReady.set(true)
-                    queuePresentation(webView)
-                    scheduleDrain(webView)
+                    val current = synchronized(navigationEpoch) {
+                        if (active.get() && navigationEpoch.get() == epoch) {
+                            eventProxy.set(replyProxy)
+                            eventReady.set(true)
+                            true
+                        } else false
+                    }
+                    if (current) queuePresentation(webView)
                 }
             } catch (_: CancellationException) {
             } finally {
-                inFlightIds.remove(request.id)
+                inFlightIds.remove(requestKey)
+                nonWriteJobs.remove(currentJob)
             }
         }
         if (admitted == null) {
             releaseWrite()
-            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Insufficient memory for pending ToolBox requests"))
+            reply(webView, replyProxy, invalidRequest(runtimeRejectedRequestId(encoded), RuntimeRpcErrorCode.BUSY, "Insufficient memory for pending ToolBox requests"), epoch)
         } else admitted.invokeOnCompletion { releaseWrite() }
+    }
+
+    internal fun resetForNavigation() {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        if (!active.get()) return
+        val oldJobs = synchronized(navigationEpoch) {
+            val nextEpoch = navigationEpoch.incrementAndGet()
+            eventReady.set(false)
+            eventProxy.set(null)
+            pendingState.set(null)
+            events.resetForNavigation()
+            nonWriteJobs.filterValues { it < nextEpoch }.keys.toList()
+        }
+        oldJobs.forEach { it.cancel(CancellationException("ToolBox document navigated")) }
+        val currentEpoch = navigationEpoch.get()
+        pendingDeliveries.filter { it.epoch < currentEpoch }.forEach(ReplyDelivery::finish)
+        runCatching { network?.cancelStreams() }
     }
 
     internal fun close(webView: WebView) {
         if (!active.compareAndSet(true, false)) return
         attachedView.clear()
+        pendingDeliveries.toList().forEach(ReplyDelivery::finish)
         jobs.close()
         controls.close()
         presentation.release()
@@ -209,6 +273,7 @@ class RuntimeBridgeSession internal constructor(
         runCatching { network?.close() }
         runCatching { sessionCleanup?.close() }
         inFlightIds.clear()
+        nonWriteJobs.clear()
         eventReady.set(false)
         eventProxy.set(null)
 
@@ -247,24 +312,29 @@ class RuntimeBridgeSession internal constructor(
     }
 
     private fun queuePresentation(webView: WebView) {
-        pendingState.set(RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
-            "type" to RpcValue.StringValue("runtimeState"),
-            "data" to presentation.stateValue(),
-        ))))
+        synchronized(navigationEpoch) {
+            pendingState.set(RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+                "type" to RpcValue.StringValue("runtimeState"),
+                "data" to presentation.stateValue(),
+            ))))
+        }
         scheduleDrain(webView)
     }
 
     internal fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean {
         if (!active.get() || !EVENT_NAME.matches(name)) return false
-        val admitted = events.offer { sequence ->
-            RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
-                "type" to RpcValue.StringValue("event"),
-                "event" to RpcValue.StringValue(name),
-                "generation" to RpcValue.StringValue(identity.generation),
-                "sequence" to RpcValue.Number(sequence.toDouble()),
-                "timestamp" to RpcValue.Number(System.currentTimeMillis().toDouble()),
-                "data" to payload,
-            )))
+        val admitted = synchronized(navigationEpoch) {
+            if (!active.get()) return false
+            events.offer { sequence ->
+                RuntimeRpcJson.encodeValue(RpcValue.ObjectValue(mapOf(
+                    "type" to RpcValue.StringValue("event"),
+                    "event" to RpcValue.StringValue(name),
+                    "generation" to RpcValue.StringValue(identity.generation),
+                    "sequence" to RpcValue.Number(sequence.toDouble()),
+                    "timestamp" to RpcValue.Number(System.currentTimeMillis().toDouble()),
+                    "data" to payload,
+                )))
+            }
         }
         if (admitted) scheduleDrain(webView)
         return admitted
@@ -272,14 +342,16 @@ class RuntimeBridgeSession internal constructor(
 
     private fun scheduleDrain(webView: WebView) {
         if (!active.get() || !eventReady.get() || !drainScheduled.compareAndSet(false, true)) return
+        val epoch = navigationEpoch.get()
         if (!mainHandler.post {
             try {
                 val proxy = eventProxy.get()
-                if (!active.get() || attachedView.get() !== webView || !eventReady.get() || proxy == null) return@post
+                if (!active.get() || navigationEpoch.get() != epoch || attachedView.get() !== webView || !eventReady.get() || proxy == null) return@post
                 pendingState.getAndSet(null)?.let { proxy.postMessage(it) }
                 val started = System.nanoTime()
                 var count = 0
                 while (count < RuntimeEventBuffer.BATCH_SIZE && System.nanoTime() - started < RuntimeEventBuffer.BATCH_NANOS) {
+                    if (navigationEpoch.get() != epoch) break
                     val event = events.poll() ?: break
                     proxy.postMessage(event.encoded)
                     count++
@@ -293,18 +365,32 @@ class RuntimeBridgeSession internal constructor(
         }) drainScheduled.set(false)
     }
 
-    private suspend fun replyAndAwaitDelivery(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse) {
-        val delivered = CompletableDeferred<Unit>()
-        try {
-            reply(webView, proxy, response) {
-                (response as? RuntimeRpcResponse.Success)?.release?.invoke()
-                delivered.complete(Unit)
-            }
+    private suspend fun replyAndAwaitDelivery(webView: WebView, proxy: JavaScriptReplyProxy, response: RuntimeRpcResponse, epoch: Long) {
+        if (!active.get() || navigationEpoch.get() != epoch) {
+            (response as? RuntimeRpcResponse.Success)?.release?.invoke()
+            return
+        }
+        val encoded = try {
+            encodeReply(response)
         } catch (error: Throwable) {
             (response as? RuntimeRpcResponse.Success)?.release?.invoke()
             throw error
         }
-        // Cancellation may stop waiting, but the posted Runnable retains its reservation until delivery.
+        val delivered = CompletableDeferred<Unit>()
+        lateinit var lease: ReplyDelivery
+        lease = ReplyDelivery(epoch, encoded) {
+            pendingDeliveries.remove(lease)
+            (response as? RuntimeRpcResponse.Success)?.release?.invoke()
+            delivered.complete(Unit)
+        }
+        pendingDeliveries.add(lease)
+        try {
+            postReply(webView, proxy, lease::encoded, epoch, lease::finish)
+        } catch (error: Throwable) {
+            lease.finish()
+            throw error
+        }
+        // Navigation releases old response reservations even when their main-looper delivery is still queued.
         delivered.await()
     }
 
@@ -312,14 +398,16 @@ class RuntimeBridgeSession internal constructor(
         webView: WebView,
         proxy: JavaScriptReplyProxy,
         response: RuntimeRpcResponse,
-        onDelivered: () -> Unit = {},
+        epoch: Long,
     ) {
-        if (!active.get()) {
-            onDelivered()
-            return
-        }
+        if (!active.get() || navigationEpoch.get() != epoch) return
+        val encoded = encodeReply(response)
+        postReply(webView, proxy, { encoded }, epoch) {}
+    }
+
+    private fun encodeReply(response: RuntimeRpcResponse): String {
         val candidate = RuntimeRpcJson.prepareResponse(response)
-        val encoded = enforceRuntimeResponseLimit(candidate, maxPayloadBytes) {
+        return enforceRuntimeResponseLimit(candidate, maxPayloadBytes) {
             RuntimeRpcJson.encodeResponse(
                 RuntimeRpcResponse.Failure(
                     response.id,
@@ -330,9 +418,24 @@ class RuntimeBridgeSession internal constructor(
                 ),
             )
         }
+    }
+
+    private fun postReply(
+        webView: WebView,
+        proxy: JavaScriptReplyProxy,
+        encoded: () -> String?,
+        epoch: Long,
+        onDelivered: () -> Unit,
+    ) {
+        if (!active.get() || navigationEpoch.get() != epoch) {
+            onDelivered()
+            return
+        }
         val deliver = Runnable {
             try {
-                if (active.get() && attachedView.get() === webView) runCatching { proxy.postMessage(encoded) }
+                if (active.get() && navigationEpoch.get() == epoch && attachedView.get() === webView) {
+                    encoded()?.let { runCatching { proxy.postMessage(it) } }
+                }
             } finally {
                 onDelivered()
             }
@@ -469,6 +572,7 @@ class RuntimeBridgeSession internal constructor(
                 const ticket = closeToken;
                 handledCloseToken = ticket;
                 for (const streamId of streams.keys()) cancelStream(streamId).catch(() => undefined);
+                for (const sessionId of mediaSessions.keys()) closeMedia(sessionId).catch(() => undefined);
                 Promise.allSettled([...flushHandlers].map(handler => Promise.resolve().then(handler))).then(results => {
                   const saved = results.every(result => result.status === 'fulfilled');
                   if (disposed || closeToken !== ticket) return;
@@ -597,6 +701,62 @@ class RuntimeBridgeSession internal constructor(
                   throw error;
                 }
               };
+              const mediaSessions = new Map();
+              const mediaCancelled = () => Object.assign(new Error('Network media cancelled'), { code: 'CANCELLED' });
+              const forgetMedia = sessionId => {
+                const state = mediaSessions.get(sessionId);
+                if (state) state.signal?.removeEventListener('abort', state.abort);
+                mediaSessions.delete(sessionId);
+              };
+              const closeMedia = sessionId => {
+                const state = mediaSessions.get(sessionId);
+                if (state) {
+                  state.cancelled = true;
+                  state.reject?.(mediaCancelled());
+                  state.reject = undefined;
+                }
+                forgetMedia(sessionId);
+                return call('network.closeMedia', { sessionId }).then(() => undefined);
+              };
+              globalThis.addEventListener('pagehide', () => {
+                for (const sessionId of mediaSessions.keys()) closeMedia(sessionId).catch(() => undefined);
+              });
+              const openMedia = async (request, options = {}) => {
+                const signal = options.signal;
+                if (signal?.aborted) throw mediaCancelled();
+                const sessionId = 'media-' + Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+                const params = { sessionId, url: request?.url, ...(request?.kind === undefined ? {} : { kind: request.kind }) };
+                const state = { signal, cancelled: false, reject: undefined, abort: () => closeMedia(sessionId).catch(() => undefined) };
+                return new Promise((resolve, reject) => {
+                  state.reject = reject;
+                  mediaSessions.set(sessionId, state);
+                  try {
+                    signal?.addEventListener('abort', state.abort, { once: true });
+                    if (signal?.aborted) {
+                      forgetMedia(sessionId);
+                      state.reject = undefined;
+                      reject(mediaCancelled());
+                      return;
+                    }
+                    call('network.openMedia', params).then(opened => {
+                      state.reject = undefined;
+                      if (state.cancelled) {
+                        closeMedia(sessionId).catch(() => undefined);
+                        return;
+                      }
+                      resolve(opened);
+                    }, error => {
+                      state.reject = undefined;
+                      forgetMedia(sessionId);
+                      reject(state.cancelled ? mediaCancelled() : error);
+                    });
+                  } catch (error) {
+                    state.reject = undefined;
+                    forgetMedia(sessionId);
+                    reject(error);
+                  }
+                });
+              };
               const subscribe = (name, listener) => {
                 if (typeof listener !== 'function') throw new TypeError('listener must be a function');
                 if (lostEvents.has(name)) throw runtimeError('EVENT_BACKLOG_OVERFLOW', 'Some early events were lost', { event: name, droppedCount: lostEvents.get(name) });
@@ -642,7 +802,7 @@ class RuntimeBridgeSession internal constructor(
                   writeText: text => call('clipboard.writeText', { text }),
                   readText: () => call('clipboard.readText')
                 },
-                network: { request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream },
+                network: { request: request => call('network.request', networkRequest(request)), openStream, readStream, cancelStream, openMedia, closeMedia },
                 notifications: {
                   post: (id, title, body) => call('notifications.post', { id, title, body }),
                   update: (id, title, body) => call('notifications.update', { id, title, body }),
@@ -752,6 +912,14 @@ internal object RuntimeBridgeLifecycle {
 
     fun release(webView: WebView) {
         sessions.remove(webView)?.close(webView)
+    }
+
+    fun resetForNavigation(webView: WebView) {
+        sessions[webView]?.resetForNavigation()
+    }
+
+    fun resetForNavigation(webView: WebView) {
+        sessions[webView]?.resetForNavigation()
     }
 
     fun isCurrent(webView: WebView, session: RuntimeBridgeSession): Boolean = sessions[webView] === session

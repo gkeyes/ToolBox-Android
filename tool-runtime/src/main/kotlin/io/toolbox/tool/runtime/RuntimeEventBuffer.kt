@@ -60,6 +60,17 @@ internal class RuntimeEventBuffer(private val budget: RuntimeEventBudget = share
         acknowledged = upTo
     }
 
+    /** A new document starts with an empty backlog; sequence IDs remain unique within the bridge. */
+    @Synchronized fun resetForNavigation() {
+        if (closed) return
+        budget.release(bytes)
+        bytes = 0
+        pending.clear()
+        retained.clear()
+        lastPosted = sequence
+        acknowledged = sequence
+    }
+
     @Synchronized fun close() {
         if (closed) return
         closed = true

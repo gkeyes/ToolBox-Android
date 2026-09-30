@@ -11,9 +11,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -26,6 +30,101 @@ import org.junit.runner.RunWith
 /** Exercises the production native admission path and document-start SDK together. */
 @RunWith(AndroidJUnit4::class)
 class RuntimeBridgeAdmissionInstrumentationTest {
+    @SuppressLint("SetJavaScriptEnabled")
+    @Test
+    fun queuedAdmittedWriteSurvivesNavigationBeforeJsonDecode() {
+        val scenario = ActivityScenario.launch<WasmRuntimeTestActivity>(
+            Intent(InstrumentationRegistry.getInstrumentation().context, WasmRuntimeTestActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        val toolId = "io.example.queuedwrite"
+        val identity = RuntimeSessionIdentity(toolId, 1, "queued-generation", "0.8.0", "queued-nonce",
+            RuntimeIdentity.origin(toolId), setOf("storage"))
+        val queued = LinkedBlockingQueue<Runnable>()
+        val flushAdmissions = AtomicInteger()
+        val dispatcher = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) { queued.add(block) }
+        }
+        val saved = AtomicReference<RpcValue?>()
+        val reads = AtomicInteger()
+        val handler = object : RuntimeBatchStorageHandler {
+            override suspend fun get(key: String): RpcValue? { reads.incrementAndGet(); return null }
+            override suspend fun getMany(keys: List<String>): List<RpcValue?> = keys.map { null }
+            override suspend fun apply(mutation: RuntimeStorageMutation) = Unit
+            override suspend fun set(key: String, value: RpcValue) { saved.set(value) }
+            override suspend fun remove(key: String) = Unit
+            override suspend fun keys(): List<String> = emptyList()
+            override suspend fun clear() = Unit
+        }
+        val policy = object : RuntimeAuthorizationPolicy {
+            override suspend fun isCurrent(identity: RuntimeSessionIdentity) = true
+            override suspend fun isGranted(identity: RuntimeSessionIdentity, capability: ToolBoxCapabilityId) =
+                capability == ToolBoxCapabilityId.STORAGE
+            override suspend fun hasSystemPermissions(identity: RuntimeSessionIdentity, permissions: Set<String>) = true
+            override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int): RuntimePolicyDecision {
+                if (method.name == "runtime.flushComplete") flushAdmissions.incrementAndGet()
+                return RuntimePolicyDecision.Allowed
+            }
+        }
+        val session = RuntimeBridgeSession(identity, policy, RuntimeM1Handlers(storage = handler),
+            ordinaryDispatcher = dispatcher)
+        var view: WebView? = null
+        try {
+            val created = CompletableFuture<WebView>()
+            scenario.onActivity { activity ->
+                runCatching {
+                    WebView(activity).also { webView ->
+                        webView.settings.javaScriptEnabled = true
+                        activity.addContentView(webView, FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                        session.attach(webView)
+                        webView.loadDataWithBaseURL(identity.exactOrigin + "index.html", """
+                            <html><body><script>
+                              window.bridgeReady = false;
+                              window.beginWrite = () => ToolBox.storage.set('checkpoint', { value: 'old' }).catch(() => undefined);
+                              window.beginRead = () => ToolBox.storage.get('old').catch(() => undefined);
+                              ToolBox.ready().then(() => window.bridgeReady = true);
+                            </script></body></html>
+                        """.trimIndent(), "text/html", "UTF-8", null)
+                    }
+                }.onSuccess(created::complete).onFailure(created::completeExceptionally)
+            }
+            view = created.get(10, TimeUnit.SECONDS)
+            val webView = requireNotNull(view)
+            await { evaluate(webView, "window.bridgeReady") == "true" }
+            main { webView.evaluateJavascript("window.beginWrite()", null) }
+            val oldWrite = queued.poll(10, TimeUnit.SECONDS) ?: error("The ordinary request was not admitted")
+            main { webView.evaluateJavascript("window.beginRead()", null) }
+            val oldRead = queued.poll(10, TimeUnit.SECONDS) ?: error("The ordinary read was not admitted")
+            assertNull(saved.get()) // The bridge has reserved the request, but JSON has not been decoded.
+            main {
+                session.resetForNavigation()
+                webView.loadDataWithBaseURL(identity.exactOrigin + "index.html", """
+                    <html><body><script>
+                      window.bridgeReady = false;
+                      ToolBox.ready().then(() => window.bridgeReady = true);
+                    </script></body></html>
+                """.trimIndent(), "text/html", "UTF-8", null)
+            }
+            val closing = CompletableFuture.supplyAsync { runBlocking { session.flushBeforeClose(webView, null) } }
+            await { session.isClosing() && evaluate(webView, "window.bridgeReady") == "true" && flushAdmissions.get() > 0 }
+            assertFalse("The close must retain an admitted but unparsed write", closing.isDone)
+            oldRead.run()
+            assertEquals("Stale non-write requests must stop before the handler", 0, reads.get())
+            assertFalse(closing.isDone)
+            oldWrite.run()
+            await { saved.get() == RpcValue.ObjectValue(mapOf("value" to RpcValue.StringValue("old"))) }
+            assertTrue("The new document did not acknowledge the close", closing.get(10, TimeUnit.SECONDS))
+        } finally {
+            view?.let { webView -> main {
+                RuntimeBridgeLifecycle.release(webView)
+                (webView.parent as? ViewGroup)?.removeView(webView)
+                webView.destroy()
+            } }
+            scenario.close()
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Test
     fun busyOrdinaryAdmissionRetriesTheSameNonemptyFinalWriteWhileControlsRemainAvailable() {

@@ -42,6 +42,7 @@ export default function ArticleCard({ article }) {
   });
 
   const imageUrl = article.coverUrl;
+  const imageSources = article.coverSources;
   const feedTitle = useMemo(() => {
     const feed = $feeds.find((f) => f.id === article.feedId);
     return feed?.title || article.feedId;
@@ -213,11 +214,11 @@ export default function ArticleCard({ article }) {
                   </span>
                 )}
                 {cardImageSize === "large" && (
-                  <ArticleCardCover imageUrl={imageUrl} />
+                  <ArticleCardCover imageUrl={imageUrl} imageSources={imageSources} />
                 )}
               </div>
               {cardImageSize === "small" && (
-                <ArticleCardCover imageUrl={imageUrl} />
+                <ArticleCardCover imageUrl={imageUrl} imageSources={imageSources} />
               )}
             </div>
           </div>

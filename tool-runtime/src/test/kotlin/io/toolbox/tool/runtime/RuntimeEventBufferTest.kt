@@ -65,6 +65,30 @@ class RuntimeEventBufferTest {
         assertEquals(0L, byteBudget.reservedBytes())
     }
 
+    @Test
+    fun navigationReleasesOldCreditsWithoutClosingOrReusingSequenceNumbers() {
+        val budget = RuntimeEventBudget { 512L }
+        val buffer = RuntimeEventBuffer(budget)
+        assertTrue(buffer.offer { sequence -> "event-$sequence" })
+        assertTrue(buffer.offer { sequence -> "event-$sequence" })
+        val first = buffer.poll()
+        assertEquals(1L, first?.sequence)
+        assertTrue(budget.reservedBytes() > 0)
+
+        buffer.resetForNavigation()
+        assertEquals(0L, budget.reservedBytes())
+        assertEquals(0, buffer.retainedCount())
+        assertNull(buffer.poll())
+        buffer.acknowledge(1)
+
+        assertTrue(buffer.offer { sequence -> "event-$sequence" })
+        assertEquals(3L, buffer.poll()?.sequence)
+        buffer.acknowledge(2) // The old document's last sequence cannot release this event.
+        assertEquals(1, buffer.retainedCount())
+        buffer.acknowledge(3)
+        assertEquals(0L, budget.reservedBytes())
+    }
+
     private fun expectInvalidAck(action: () -> Unit) {
         try {
             action()

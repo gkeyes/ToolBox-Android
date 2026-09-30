@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { HashRouter, Route, Routes, useNavigate, useLocation } from "react-router-dom";
+import { HashRouter, Route, Routes, useNavigate, useLocation, useParams } from "react-router-dom";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
@@ -26,9 +26,11 @@ window.navigationFixture = {
 function Fixture() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { feedId } = useParams();
+  const basePath = feedId ? `/feed/${feedId}` : "";
   return <main className="main-content flex">
     <section data-testid="list" className="nextflux-article-list-page w-full shrink-0 md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh relative" style={{ background: "var(--background)" }}>
-      {rows.map((row) => <button key={row.id} style={{ display: "block", minHeight: 64 }} onClick={() => navigate(`/article/${row.id}`)}>打开文章 {row.id}</button>)}
+      {rows.map((row) => <button key={row.id} style={{ display: "block", minHeight: 64 }} onClick={() => navigate(`${basePath}/article/${row.id}`)}>打开文章 {row.id}</button>)}
       <output data-testid="route">{location.pathname}</output>
       <div className="nextflux-list-transition-cover" aria-hidden="true" />
     </section>
@@ -38,4 +40,6 @@ function Fixture() {
 createRoot(document.getElementById("root")).render(<HashRouter><Routes>
   <Route path="/" element={<Fixture />} />
   <Route path="/article/:articleId" element={<Fixture />} />
+  <Route path="/feed/:feedId" element={<Fixture />} />
+  <Route path="/feed/:feedId/article/:articleId" element={<Fixture />} />
 </Routes></HashRouter>);

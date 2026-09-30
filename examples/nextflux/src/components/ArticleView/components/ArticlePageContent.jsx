@@ -13,6 +13,7 @@ import { settingsState } from "@/stores/settingsStore.js";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
 import { runtimeForeground } from "@/toolbox/foreground.js";
 import { getFontSizeClass, cn } from "@/lib/utils.js";
+import { isHlsPlaylist } from "@/reading/media-sources.mjs";
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
   { article, passive = false, readingPaused = false, className },
@@ -31,7 +32,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
   const foreground = useStore(runtimeForeground);
 
   const mediaEnclosures = useMemo(
-    () => article?.enclosures?.filter((enclosure) => /^(audio|video)\//.test(enclosure.mime_type || "")) || [],
+    () => article?.enclosures?.filter((enclosure) => /^(audio|video)\//.test(enclosure.mime_type || "") || isHlsPlaylist({ url: enclosure.url, type: enclosure.mime_type })) || [],
     [article?.enclosures],
   );
 
@@ -65,6 +66,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             name: enclosure.mime_type.startsWith("audio/") ? "audio" : "video",
             attribs: { src: enclosure.url },
           }}
+          sources={[{ url: enclosure.url, type: enclosure.mime_type }]}
         />
       ))}
 
@@ -95,7 +97,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             paused={readingPaused || !foreground}
             articleId={article.id}
             html={article.content}
-            baseUrl={article.url}
+            baseUrl={article.shownOriginal && article.fullTextBaseUrl || article.url}
             title={article.titleText ?? article.title}
             shownOriginal={Boolean(article.shownOriginal)}
           />

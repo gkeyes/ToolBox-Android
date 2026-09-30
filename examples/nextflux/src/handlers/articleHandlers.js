@@ -92,6 +92,7 @@ export const handleToggleContent = async (article) => {
       if (activeArticle.get()?.id === article.id) {
         activeArticle.set({ ...activeArticle.get(), content: result.content, shownOriginal: showOriginal,
           fullTextSource: showOriginal ? result.source : null,
+          fullTextBaseUrl: showOriginal ? result.baseUrl : null,
           fullTextCandidates: showOriginal ? result.candidates : null });
       }
     });

@@ -2,7 +2,11 @@ package io.toolbox.tool.runtime
 
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -97,6 +101,64 @@ class RuntimeAuthorizationStageTest {
         assertTrue(released)
     }
 
+    @Test
+    fun navigatedDocumentCannotInvokeAfterSuspendedForegroundOrAuthorization() = runBlocking {
+        for (pauseAt in listOf("foreground", "second grant")) {
+            val calls = mutableListOf<String>()
+            val state = RecordingGrantState(calls)
+            val basePolicy = policy(state, calls)
+            val entered = CompletableDeferred<Unit>()
+            val resume = CompletableDeferred<Unit>()
+            var paused = false
+            var currentEpoch = 1
+            val suspendingPolicy = object : RuntimeAuthorizationPolicy by basePolicy {
+                override suspend fun isGranted(identity: RuntimeSessionIdentity, capability: ToolBoxCapabilityId): Boolean {
+                    val granted = basePolicy.isGranted(identity, capability)
+                    if (pauseAt == "second grant" && !paused && calls.count { it == "grant" } == 2) {
+                        paused = true
+                        entered.complete(Unit)
+                        resume.await()
+                    }
+                    return granted
+                }
+            }
+            val dispatcher = RuntimeRpcDispatcher(
+                identity = identity,
+                authorization = suspendingPolicy,
+                handlers = RuntimeM1Handlers(clipboardWrite = RuntimeClipboardWriteHandler { calls += "write" }),
+                foregroundInteractionGuard = {
+                    calls += "foreground"
+                    if (pauseAt == "foreground" && !paused) {
+                        paused = true
+                        entered.complete(Unit)
+                        resume.await()
+                    }
+                },
+            )
+            val stale = async {
+                dispatch(dispatcher) {
+                    if (currentEpoch != 1) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "The document navigated")
+                }
+            }
+            try {
+                withTimeout(2_000) { entered.await() }
+                currentEpoch = 2
+                resume.complete(Unit)
+                val response = withTimeout(2_000) { stale.await() } as RuntimeRpcResponse.Failure
+                assertEquals(RuntimeRpcErrorCode.CANCELLED, response.error.code)
+                assertTrue("A stale $pauseAt request must not write", "write" !in calls)
+
+                assertTrue(dispatch(dispatcher) {
+                    if (currentEpoch != 2) throw RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "The document navigated")
+                } is RuntimeRpcResponse.Success)
+                assertEquals(1, calls.count { it == "write" })
+            } finally {
+                resume.complete(Unit)
+                stale.cancelAndJoin()
+            }
+        }
+    }
+
     private fun dispatcher(
         state: RecordingGrantState,
         calls: MutableList<String>,
@@ -109,12 +171,16 @@ class RuntimeAuthorizationStageTest {
         foregroundInteractionGuard = { calls += "foreground"; onForegroundDispatch() },
     )
 
-    private suspend fun dispatch(dispatcher: RuntimeRpcDispatcher): RuntimeRpcResponse =
+    private suspend fun dispatch(
+        dispatcher: RuntimeRpcDispatcher,
+        beforeInvoke: (String) -> Unit = {},
+    ): RuntimeRpcResponse =
         dispatcher.dispatch(
             RuntimeRpcRequest("request", "clipboard.writeText", identity.nonce, identity.toolId,
                 identity.versionCode, identity.generation,
                 RpcValue.ObjectValue(mapOf("text" to RpcValue.StringValue("saved"))), 100),
             RuntimeInboundContext(identity.exactOrigin, true),
+            beforeInvoke,
         )
 
     private fun policy(state: RecordingGrantState, calls: MutableList<String>, quotaAllowed: Boolean = true) =

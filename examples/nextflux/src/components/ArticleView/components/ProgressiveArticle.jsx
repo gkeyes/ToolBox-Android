@@ -15,7 +15,7 @@ function ReadingPortal({ item, highlights }) {
   }, [item]);
   let content;
   if (item.type === "image") content = <ArticleImage imgNode={{ attribs: item.attrs }} />;
-  else if (item.type === "media") content = <Iframe domNode={{ name: item.kind, attribs: { "data-media-kind": item.kind, "data-media-url": item.url } }} />;
+  else if (item.type === "media") content = <Iframe sources={item.sources} domNode={{ name: item.kind, attribs: { "data-media-kind": item.kind, "data-media-url": item.url } }} />;
   else if (item.type === "code") content = <CodeBlock code={item.code} language={item.language} highlights={highlights} plainElement={item.plainElement} container={item.container} />;
   else content = <div className="flex justify-center"><Chip color="accent" variant="soft" className="cursor-pointer my-2"><a href={item.href} className="border-none!" rel="noopener noreferrer" target="_blank">{new URL(item.href).hostname}</a><Link.Icon /></Chip></div>;
   return createPortal(content, item.target, String(item.id));

@@ -1,6 +1,6 @@
 # 运行时性能实现记录
 
-本次实现以宿主 0.8.27 / 60 为源码基线，宿主目标版本为 0.8.28 / 61。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
+本次实现以宿主 0.8.27 / 60 为源码基线，性能阶段宿主为 0.8.28 / 61；整合媒体与调试状态后的当前目标为 0.8.29 / 62，配套 NextFlux 为 1.0.35 / 56。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
 
 ## 1. 状态、事件与关闭协议
 
@@ -15,7 +15,7 @@ Activity / 原生页面 → RuntimePresentationCoordinator
   → 文档启动 SDK → ToolBox.runtime.onStateChanged → 各工具前台展示
 ```
 
-每个 WebView generation 只有一个 coordinator。原生维护 `{generation, revision, foreground, closing}`；状态实际改变才递增 revision。`ready()` 自动初始化且缓存同一个 Promise。原生保存最新状态，SDK 订阅时立即回放最新状态，丢弃旧 generation 和重复、倒退 revision。`foreground` 由 Activity 已恢复且原生工具页面处于 attached 状态共同决定；同一 WebView 进入后台仍保留原来的业务运行方式。
+每个 WebView generation 只有一个 coordinator。同一 WebView 的后续主文档导航只重置一次 document epoch：清空旧事件并释放预算，保留单调序号与现有 generation / close token；取消旧非写入请求，已准入但尚未解析的请求解析一次后分类，写入继续完成，旧回复丢弃并归还资源。首次入口加载保留 ready 前事件。原生维护 `{generation, revision, foreground, closing}`；状态实际改变才递增 revision。`ready()` 自动初始化且缓存同一个 Promise。原生保存最新状态，SDK 订阅时立即回放最新状态，丢弃旧 generation 和重复、倒退 revision。`foreground` 由 Activity 已恢复且原生工具页面处于 attached 状态共同决定；同一 WebView 进入后台仍保留原来的业务运行方式。
 
 ### 准入和事件参数
 
@@ -70,7 +70,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | FGS | 支持性查询挂起后取最新状态再渲染；empty / stop 分支再检查当前状态；成功 stopSelfResult 后清除旧 start 标记，后续新会话能够重新启动 |
 | MIUI 支持性 | 有效期 30 秒；Activity 恢复和显式查询使缓存失效。系统通知权限仍实时检查 |
 | 工具图片 | 解码并发 `min(2, CPU 数)` 且至少 1；边长 256 px；4 MiB 缓存。界面调用统一图片加载入口 |
-| WebView 初始化 | 调试开关和默认 / stateless ServiceWorker 进程内一次；专用 Profile 使用其自身 ServiceWorkerController，按 Profile 生命周期初始化，删除后撤销初始化记录 |
+| WebView 初始化 | 按宿主 APK debuggable 标志设置调试状态、默认 / stateless ServiceWorker 进程内一次；专用 Profile 使用其自身 ServiceWorkerController，按 Profile 生命周期初始化，删除后撤销初始化记录 |
 | 生命周期 | 每个 WebView 使用 onPause / onResume；不调用全局 pauseTimers。前后台保持原有 WebView / FGS 模型 |
 | 浏览器规则 | 候选规则索引和预处理，保留异常规则优先、IDN 归一化与过滤结果；没有增加全量扫描 fallback |
 
@@ -83,9 +83,9 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | Notification Lab 1.0.3 / 4 | 日志 200 条环形保留，前台增量追加；后台累计，回前台补展示；close 等待已有动作、live 更新、恢复后保存 | 原生 1 / 2 / 5 秒实验计时 |
 | Kegel Trainer 1.0.4 / 5 | 使用宿主 foreground；前台结束时显式暂停训练展示，取消 RAF、释放 WakeLock；用户操作恢复 | 训练状态、休息与结束语义 |
 | SocialCoach 1.0.6 / 7 | raw revision 缓存角色回复解析；前台 50 ms preview，250 ms 内容变化 checkpoint；消息 ID 稳定；最终回复和回合元数据一次写入；close 取消网络并等待 Chat cleanup、真实 storage writer | 回复文本、业务持久化和异常回滚；附解析 / 序列化 / 原生写入计数，不以渲染批数替代 I/O 次数 |
-| NextFlux 1.0.33 / 54 | 宿主状态统一暂停列表 / 阅读前台工作；nativeTimerEffective 与设置 intent 分开；自动同步共用到期 claim，同周期迟到触发不重复同步；状态文件打断循环导入 | 同步间隔、已读 / 摘要、语音与音频；原有 48 项 / 4 ms 调度及语音容量参数 |
+| NextFlux 1.0.35 / 56 | 宿主状态统一暂停列表 / 阅读前台工作；nativeTimerEffective 与设置 intent 分开；自动同步共用到期 claim，同周期迟到触发不重复同步；状态文件打断循环导入 | 同步间隔、已读 / 摘要、语音与音频；原有 48 项 / 4 ms 调度及语音容量参数 |
 
-六个变更工具的 minHostVersion 为 0.8.28，避免在缺少新关闭和状态协议的旧宿主上运行。
+Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整合后的 NextFlux 为 0.8.29，因为同时需要运行时协议和媒体接口。
 
 ## 6. GitHub 验证及交付边界
 
@@ -111,7 +111,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | 宿主迁移及运行时首次执行 | [run 36754104266](https://github.com/gkeyes/ToolBox-Android/actions/runs/36754104266)，提交 `3bd78e9335a84e4915d6a76c53db66770b896c34`：使用旧版实际 `SUCCEEDED` / `STRICT` 枚举创建迁移夹具后，真实迁移方法 1 / 1 通过。tool-runtime 实际执行 8 项，6 通过、1 失败、1 跳过；通过的为两种 JavaScript dialog、非空最终写入 BUSY / 控制准入、3 个 Wasm 场景。生命周期夹具的随机 ID 末段可能以数字开头，第二次加载被真实 ID 校验拒绝，已修为字母前缀。Profile 在该 API 35 镜像的 WebView 124.0.6367.219 上缺少所需能力，跳过不计通过 |
 | 宿主剩余定向场景 | [run 36758324823](https://github.com/gkeyes/ToolBox-Android/actions/runs/36758324823)，提交 `652dee8779f700525ce619091c2ee67ace95c5fa`：只选择生命周期、专用 Profile 删除后重建，以及同样修正 ID 的真实 Room 最终写入方法，共 3 项。API 36 镜像实际 WebView 为 `com.google.android.webview 133.0.6943.137`；3 / 3 通过、0 失败、0 跳过。专用 Profile 创建、删除 / 重建和自身 ServiceWorker 设置由真实平台执行。选择证据记录每个方法恰好执行 1 次。结合此前输入未变的通过项，累计 34 个不同定向 Android 用例通过 |
 
-六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。最终签名产物在云端完成后补入。
+六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。性能阶段 [签名 run 36760399026](https://github.com/gkeyes/ToolBox-Android/actions/runs/36760399026) 已通过：合并提交 `9c02516292623d55040dd46bef582fd16500fec2`、0.8.28 / 61、原证书 `849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d`、非 debuggable、R8 / resource shrinking、内置示例字节比对与 API 35 初始主页冷启动通过。实际 APK SHA-256 为 `e8e595ac1a03140f2a9d35a1ff15e08710a05c4c05df4cf4c81421b44c162afc`；receipt 精确保留 run 36758324823 attempt 1 的 targeted 三方法范围。该产物是整合前性能版本，当前组合版以后续证据为准。
 
 ## 7. 与媒体任务 PR #54 的整合要求
 
@@ -119,7 +119,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 
 只读合并检查以共同基线 `06cd8ec7899f139f974c4c72b565af59a3f91118`、本 PR 提交 `652dee8779f700525ce619091c2ee67ace95c5fa` 和媒体提交 `d96b9fbec1d9b5908305eb3defeb481649c6da96` 为准：16 个共同修改文件，7 个文本冲突。冲突为 NextFlux 的 manifest、package / lock、notice，以及 `HardenedRuntimeWebView`、`RuntimeRpc`、`RuntimeWebMessageBridge`。检查没有修改工作树、合并 PR 或操作另一任务。
 
-建议先合入运行时基础，再将媒体实现接入当前主调用链。具体整合点：
+运行时基础已先合入；按用户后续授权，媒体与调试状态正在接入当前主调用链。具体整合点：
 
 1. **网络所有权与清理。** 保留本次 complete 请求的 active controller 登记 / 释放，不能退回仅登记公开 stream 的实现。媒体的 `openStream` / 资源所有权加入同一取消路径；保留媒体任务的 `clear` / `close` 和撤权取消。锁内收集资源，锁外取消；关闭、撤权、刷新都必须释放资源。
 2. **RPC 关闭协议。** `network.openMedia` 属于普通准入，挂起工作后仍检验版本 / 权限。`network.closeMedia` 为资源清理加入 closing 允许的方法及控制准入，撤权后仍可清理已有资源；身份、声明、当前 generation 和控制体积检查继续生效。媒体方法接入本次授权前后检查和保存截止点，不能创建第二套关闭逻辑。
@@ -127,3 +127,17 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 4. **WebView 与版本。** 保留本次专用 Profile 自身的 ServiceWorker 初始化、进程调试初始化和精确本地来源判断，再加入媒体任务的非主文档路由。每个 WebView 只建立一个媒体 handler，创建失败也释放资源。NextFlux 采用合并后的一个版本，并同步 manifest、package、lock 和 notice 校验值；不得覆盖任一方功能或保留平行实现。
 
 整合后仅验证直接受影响的媒体 GET / HEAD / Range / 416、播放与拖动、刷新 / 退出 / 撤权资源清理、旧页面回复与 ACK 隔离、严格同源检查，以及运行时准入 / 生命周期 / 最终写入相关回归。当前各 PR 的通过证据不能替代合并后共享调用链的验证。
+
+## 8. 已完成分支的统一整合
+
+用户授权在性能交付完成后合并所有已完成分支，再仅保留默认分支。性能 PR #56 已合并并完成签名证据；媒体 PR #54 和调试状态 PR #55 在临时整合分支通过 merge commit 保留完整提交祖先关系。代码只保留一个版本。
+
+调试状态采用 PR #55 的 APK 编译标志策略，并保留本次首次 WebView 创建前、每进程一次的初始化；专用 Profile 的 ServiceWorker 加固不受覆盖。其 user-image Debug / 非 debuggable Verification 专项检查是当前需要的测试门禁，不创建第二条正式发布链。
+
+媒体清理 `network.closeMedia` 走既有控制预算，closing / 保存封口 / 撤权后仍可清理已有资源，同时核验来源、身份、声明和当前版本。`openMedia` 保持普通准入，在挂起授权后复核当前性和协程取消；重复媒体 ID 的 BUSY 不关闭已有 owner。挂起旧 open 的失败只清理自己拥有的 entry，不删除新 entry。
+
+移除未知媒体 ID 的 `cancelledBeforeOpen` 集合：未知 close 是无状态的幂等清理。SDK 已在 abort 后的迟到打开结果上再次 close；原生 open 只建立本地 URL、尚未发出 HTTP，取消的调用方不会把 URL 交给播放器。保留该迟到清理即可避免取消 ID 无界滞留。有效会话、头部请求、阻塞读取和媒体 body 仍由同一所有权路径取消。
+
+删除只验证全局取消所有普通 Job 的 `RuntimeMediaNavigationJobsTest`：该行为会丢失已准入写入，已经由选择性取消、真实 WebView 未解析队列与真实 Room 导航写入回归替代。原生保存封口不因导航重置；停止后台会话属于已准入持久化工作，关闭期允许其结束，封口仍拒绝新普通工作。
+
+当前组合版本为宿主 0.8.29 / 62、NextFlux 1.0.35 / 56（最低宿主 0.8.29），package / lock / notice 同步。前台暂停只作用于正文分批渲染和摘要，不卸载用户已经启动的音视频。隐藏订阅入口、图片缓存升级、HLS 与直接媒体功能保留。合并后的共享链路、专项调试双变体及 NextFlux 直接相关检查待云端完成，不复跑全局测试；通过证据与最终签名产物在此补入。
