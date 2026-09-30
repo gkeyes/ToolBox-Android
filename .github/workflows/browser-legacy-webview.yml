@@ -5,6 +5,9 @@ on:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
       - "app/src/main/kotlin/io/toolbox/host/browser/BrowserCompatibilityPolicy.kt"
+      - "app/src/main/kotlin/io/toolbox/host/browser/BrowserActivity.kt"
+      - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeBrowserUrl.kt"
+      - "app/src/androidTest/kotlin/io/toolbox/host/browser/BrowserNavigationInstrumentationTest.kt"
       - "app/src/androidTest/kotlin/io/toolbox/host/browser/BrowserLegacyPageCompatibilityTest.kt"
       - ".github/workflows/browser-legacy-webview.yml"
 
@@ -44,4 +47,4 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserLegacyPageCompatibilityTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserLegacyPageCompatibilityTest,io.toolbox.host.browser.BrowserNavigationInstrumentationTest

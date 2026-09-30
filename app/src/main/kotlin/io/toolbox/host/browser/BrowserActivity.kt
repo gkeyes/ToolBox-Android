@@ -189,15 +189,7 @@ class BrowserActivity : ComponentActivity() {
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (view !== webView) return true
-                    val requested = request.url.toString()
-                    val normalized = validUrl(requested)
-                    if (normalized != null) {
-                        if (request.isForMainFrame && normalized != requested) {
-                            view.loadUrl(normalized)
-                            return true
-                        }
-                        return false
-                    }
+                    if (validUrl(request.url.toString()) != null) return false
                     if (request.isForMainFrame) unsupported("此链接需要其他应用，请从底部“更多”选择系统浏览器。")
                     return true
                 }
@@ -620,7 +612,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun validUrl(url: String): String? = try {
-        BrowserNavigationPolicy.normalize(validateRuntimeBrowserUrl(url))
+        validateRuntimeBrowserUrl(url)
     } catch (_: IllegalArgumentException) {
         null
     }
