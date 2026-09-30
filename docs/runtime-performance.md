@@ -109,7 +109,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | 宿主 Android 首次运行 | 同一 run 实际执行 app 26 项，25 通过、1 失败、0 跳过。最终非空 Room 写入、封口拒绝晚写、取消后恢复写入、两种关闭弹窗、Worker、备份及选中浏览器场景通过。迁移测试读取无索引表时错误要求必填 indices 字段，已改为读取 Room 的可选数组；保留全部记录 / 索引 / 分页断言。tool-runtime 场景因前一步失败尚未开始 |
 
 | 宿主迁移及运行时首次执行 | [run 36754104266](https://github.com/gkeyes/ToolBox-Android/actions/runs/36754104266)，提交 `3bd78e9335a84e4915d6a76c53db66770b896c34`：使用旧版实际 `SUCCEEDED` / `STRICT` 枚举创建迁移夹具后，真实迁移方法 1 / 1 通过。tool-runtime 实际执行 8 项，6 通过、1 失败、1 跳过；通过的为两种 JavaScript dialog、非空最终写入 BUSY / 控制准入、3 个 Wasm 场景。生命周期夹具的随机 ID 末段可能以数字开头，第二次加载被真实 ID 校验拒绝，已修为字母前缀。Profile 在该 API 35 镜像的 WebView 124.0.6367.219 上缺少所需能力，跳过不计通过 |
-| 宿主剩余定向场景 | [run 36758324823](https://github.com/gkeyes/ToolBox-Android/actions/runs/36758324823)，提交 `652dee8779f700525ce619091c2ee67ace95c5fa`：只选择生命周期、专用 Profile 删除后重建，以及同样修正 ID 的真实 Room 最终写入方法，共 3 项。行为镜像改为 API 36；是否具备实际 Profile / ServiceWorker 能力由运行结果确认，不由镜像级别推定。结果待完成，未计作通过 |
+| 宿主剩余定向场景 | [run 36758324823](https://github.com/gkeyes/ToolBox-Android/actions/runs/36758324823)，提交 `652dee8779f700525ce619091c2ee67ace95c5fa`：只选择生命周期、专用 Profile 删除后重建，以及同样修正 ID 的真实 Room 最终写入方法，共 3 项。API 36 镜像实际 WebView 为 `com.google.android.webview 133.0.6943.137`；3 / 3 通过、0 失败、0 跳过。专用 Profile 创建、删除 / 重建和自身 ServiceWorker 设置由真实平台执行。选择证据记录每个方法恰好执行 1 次。结合此前输入未变的通过项，累计 34 个不同定向 Android 用例通过 |
 
 六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。最终签名产物在云端完成后补入。
 
