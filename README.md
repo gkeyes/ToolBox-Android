@@ -30,3 +30,16 @@ Android 实机或模拟器交互需要单独运行 `androidTest`；编译、JVM 
 GitHub Android CI 的手动入口可填写 `android_test_filter`（完整宿主测试类名或 `类名#方法名`），仅编译所需 debug/测试 APK 并执行指定用例，报告会明确标记为局部验证。
 
 发布时可通过 `reuse_verified_run` 指定已经通过的宿主验证。流程核对同仓库来源、提交已并入当前版本及 Android/SDK/内置工具的构建输入未变后，保留原验证范围并复用结果，仅检查 CI 调整和最终签名 APK 的冷启动。独立 TBX 的源码和打包由对应工具的工作流单独验证。
+
+### 调试版与正式版切换（0.8.28 起）
+
+「设置 → 开发者帮助」中的「小工具 WebView 调试」开关只显示编译版本的状态，应用内不可切换。构建需求为“调试版”时选择 Debug，为“正式版”时选择 Release：
+
+| 版本 | 构建命令 | 小工具 WebView 调试状态 |
+| --- | --- | --- |
+| 调试版（Debug） | `./gradlew :app:assembleDebug` | 固定开启，无法关闭 |
+| 正式版（Release） | `./gradlew :app:assembleRelease` | 普通用户版 Android 上固定关闭，无法开启 |
+
+状态由 APK 的 `android:debuggable` 编译标志决定。需要切换时，重新构建并安装对应的已签名 APK；使用相同签名才能覆盖安装并保留已有数据。构建产物分别位于 `app/build/outputs/apk/debug/` 和 `app/build/outputs/apk/release/`。重启应用不改变调试状态，WebView 的 Dev / Stable 通道也不决定该状态。
+
+开发版 Android 系统（`userdebug` / `eng`）可能强制开启接口，正式版请求关闭也会被忽略；此时开关显示实际开启状态并注明系统限制。连接电脑检查页面的步骤见 [开发手册](sdk/help/manual.md) 中的「小工具 WebView 调试」。
