@@ -333,7 +333,10 @@ export default {
       titleFontSize: "Size",
       reset: "Reset",
     },
-    speech: {\n      title: "Speech",\n    },\n    ai: {
+    speech: {
+      title: "Speech",
+    },
+    ai: {
       title: "AI",
       description: "Currently only supports OpenAI and OpenAI-compatible APIs",
       openai: "OpenAI Configuration",
