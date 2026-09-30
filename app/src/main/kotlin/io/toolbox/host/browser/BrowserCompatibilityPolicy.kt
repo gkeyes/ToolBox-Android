@@ -1,8 +1,6 @@
 package io.toolbox.host.browser
 
 import android.webkit.WebSettings
-import androidx.webkit.WebSettingsCompat
-import androidx.webkit.WebViewFeature
 
 /**
  * Browser-first defaults for ordinary web content.
@@ -44,10 +42,7 @@ internal object BrowserCompatibilityPolicy {
     }
 
     fun applyCompat(settings: WebSettings) {
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
-            WebSettingsCompat.setSafeBrowsingEnabled(settings, true)
-        }
-        // Media Integrity remains at the platform default. Experimental BFCache/prerender toggles
-        // stay untouched: predictable memory and navigation behavior is more important here.
+        // Keep Android System WebView defaults. The host should not layer extra blocking policy
+        // on top of ordinary browsing behavior.
     }
 }
