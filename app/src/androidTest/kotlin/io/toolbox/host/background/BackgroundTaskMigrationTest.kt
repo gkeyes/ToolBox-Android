@@ -111,9 +111,10 @@ class BackgroundTaskMigrationTest {
             val entity = entities.getJSONObject(index)
             val tableName = entity.getString("tableName")
             db.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", tableName))
-            val indices = entity.getJSONArray("indices")
-            repeat(indices.length()) { item ->
-                db.execSQL(indices.getJSONObject(item).getString("createSql").replace("${'$'}{TABLE_NAME}", tableName))
+            entity.optJSONArray("indices")?.let { indices ->
+                repeat(indices.length()) { item ->
+                    db.execSQL(indices.getJSONObject(item).getString("createSql").replace("${'$'}{TABLE_NAME}", tableName))
+                }
             }
         }
         val setup = schema.getJSONArray("setupQueries")
