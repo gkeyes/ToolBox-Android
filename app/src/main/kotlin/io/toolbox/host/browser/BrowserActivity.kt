@@ -101,6 +101,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+
+private data class PendingSslWarning(
+    val page: WebView,
+    val handler: SslErrorHandler,
+    val url: String,
+    val reason: String,
+)
+
 /** Ordinary web content: no asset loader, tool profile, page-to-native bridge or native RPC.
  * Local content-filter scripts only manipulate the current webpage DOM. */
 class BrowserActivity : ComponentActivity() {
@@ -132,6 +140,7 @@ class BrowserActivity : ComponentActivity() {
     private var userAgentMode by mutableStateOf(BrowserUserAgentMode.ChromeMobile)
     private val browserPreferences by lazy { getSharedPreferences(BROWSER_PREFERENCES, MODE_PRIVATE) }
     private var clearConfirmation by mutableStateOf(false)
+    private var sslWarning by mutableStateOf<PendingSslWarning?>(null)
     private var fullAddress by mutableStateOf(false)
     private var clearing by mutableStateOf(false)
     private var fullScreenView by mutableStateOf<View?>(null)
@@ -311,17 +320,35 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    if (view === webView) {
-                        handler.proceed()
-                        if (mediaDiagnosticsCapture) {
-                            BrowserMediaDiagnostics.networkEvent(
-                                label = "TLS 继续加载",
-                                url = failure.url.orEmpty(),
-                                detail = "primaryError=${failure.primaryError}",
-                            )?.let(::recordMediaDiagnosticEvent)
-                        }
+                    val failureUrl = failure.url.orEmpty()
+                    val canPrompt = view === webView &&
+                        BrowserSslPromptPolicy.shouldOfferPrompt(address, failureUrl)
+
+                    if (canPrompt && sslWarning == null) {
+                        sslWarning = PendingSslWarning(
+                            page = view,
+                            handler = handler,
+                            url = failureUrl,
+                            reason = BrowserSslPromptPolicy.describe(
+                                hasUntrusted = failure.hasError(SslError.SSL_UNTRUSTED),
+                                hasIdMismatch = failure.hasError(SslError.SSL_IDMISMATCH),
+                                hasExpired = failure.hasError(SslError.SSL_EXPIRED),
+                                hasNotYetValid = failure.hasError(SslError.SSL_NOTYETVALID),
+                                hasDateInvalid = failure.hasError(SslError.SSL_DATE_INVALID),
+                                hasInvalid = failure.hasError(SslError.SSL_INVALID),
+                            ),
+                        )
+                        showBrowserChrome()
                     } else {
                         handler.cancel()
+                    }
+
+                    if (view === webView && mediaDiagnosticsCapture) {
+                        BrowserMediaDiagnostics.networkEvent(
+                            label = if (canPrompt) "TLS 等待用户确认" else "TLS 拒绝",
+                            url = failureUrl,
+                            detail = "primaryError=${failure.primaryError}",
+                        )?.let(::recordMediaDiagnosticEvent)
                     }
                 }
 
@@ -494,7 +521,7 @@ class BrowserActivity : ComponentActivity() {
         val imeVisible = ViewCompat.getRootWindowInsets(window.decorView)
             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
         return imeVisible || fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
-            fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
+            fullAddress || clearConfirmation || sslWarning != null || filters.sheet || filters.picker.active ||
             interaction.showRecoveryPrompt || error != null
     }
 
@@ -840,11 +867,25 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun destroyPage(page: WebView) {
+        if (sslWarning?.page === page) cancelSslWarning()
         filters.detach(page)
         if (page === webView) webView = null
         page.setWebViewRenderProcessClient(null as WebViewRenderProcessClient?)
         (page.parent as? ViewGroup)?.removeView(page)
         page.destroy()
+    }
+
+    private fun continueSslOnce() {
+        val pending = sslWarning ?: return
+        sslWarning = null
+        if (pending.page === webView && !isFinishing && !isDestroyed) pending.handler.proceed()
+        else pending.handler.cancel()
+    }
+
+    private fun cancelSslWarning() {
+        val pending = sslWarning ?: return
+        sslWarning = null
+        pending.handler.cancel()
     }
 
     private fun unsupported(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
@@ -926,6 +967,7 @@ class BrowserActivity : ComponentActivity() {
     override fun onDestroy() {
         resumed = false
         mediaDiagnosticsCapture = false
+        cancelSslWarning()
         pendingWebPermissionRequest?.deny()
         pendingWebPermissionRequest = null
         pendingGeolocationCallback?.let { callback ->
@@ -952,7 +994,7 @@ class BrowserActivity : ComponentActivity() {
             }
         }
         val chromeLocked = fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
-            fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
+            fullAddress || clearConfirmation || sslWarning != null || filters.sheet || filters.picker.active ||
             interaction.showRecoveryPrompt || error != null
         LaunchedEffect(chromeLocked) {
             if (chromeLocked) showBrowserChrome()
@@ -1323,6 +1365,49 @@ class BrowserActivity : ComponentActivity() {
                 }
             }
         }
+        sslWarning?.let { warning ->
+            ToolBoxModalDialog(onDismissRequest = ::cancelSslWarning) {
+                ToolBoxText(
+                    "网站证书存在问题",
+                    modifier = Modifier.semantics { heading() },
+                    style = ToolBoxThemeTokens.textStyles.title.copy(
+                        color = colors.textPrimary,
+                        fontSize = 20.sp,
+                        lineHeight = 28.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                ToolBoxText(
+                    warning.reason,
+                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
+                )
+                Spacer(Modifier.height(8.dp))
+                ToolBoxText(
+                    Uri.parse(warning.url).host ?: warning.url,
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(12.dp))
+                ToolBoxText(
+                    "继续访问会忽略本次证书警告，仅对这一次连接生效。",
+                    style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
+                )
+                Spacer(Modifier.height(24.dp))
+                ToolBoxDestructiveButton(
+                    "继续访问一次",
+                    ::continueSslOnce,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                ToolBoxSecondaryButton(
+                    "取消",
+                    ::cancelSslWarning,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         if (clearConfirmation) ToolBoxModalDialog(onDismissRequest = { if (!clearing) clearConfirmation = false }) {
             ToolBoxText(
                 "清除浏览器网站数据",
@@ -1349,7 +1434,7 @@ class BrowserActivity : ComponentActivity() {
         }
         // Avoid stacked dialogs and background-window prompts; a recovery callback removes this immediately.
         if (interaction.showRecoveryPrompt && resumed && !menu && !mediaDiagnosticsSheet && !userAgentSheet &&
-            !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
+            !fullAddress && !clearConfirmation && sslWarning == null && !filters.sheet && !filters.picker.active) {
             ToolBoxModalDialog(onDismissRequest = { interaction = interaction.keepWaiting() }) {
                 ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
                     style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
