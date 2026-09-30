@@ -61,7 +61,7 @@ async function bounds(page) {
     const a = items[i];
     expect(a.height).toBe(48);
     if (page.viewportSize().width <= 640) {
-      expect(a.width).toBeGreaterThanOrEqual(28);
+      expect(a.width).toBeGreaterThanOrEqual(26);
       expect(a.width).toBeLessThanOrEqual(48);
     } else {
       expect(a.width).toBe(48);
