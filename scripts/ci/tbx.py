@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -177,8 +176,6 @@ def build(name):
         output = Path(temporary) / filename
         substitutions = {"output": str(output), "version": manifest["version"]}
         execute([argument.format(**substitutions) for argument in config["package"]], source)
-        if config.get("built_path"):
-            shutil.copyfile(ROOT / config["built_path"].format(**substitutions), output)
         digest = check_package(output, manifest, config)
         delivery = directory / "delivery"
         delivery.mkdir(exist_ok=True)
