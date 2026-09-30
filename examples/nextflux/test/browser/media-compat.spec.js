@@ -1,4 +1,7 @@
 import { test as base, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+
+const streamingFixture = JSON.parse(readFileSync(new URL("./fixtures/streaming-media.json", import.meta.url), "utf8"));
 
 const PRIMARY = "https://media.example.invalid/images/primary";
 const FALLBACK = "https://media.example.invalid/images/fallback.png?signature=fixture";
@@ -6,6 +9,8 @@ const SECONDARY = "https://media.example.invalid/images/secondary.png";
 const SERVER_ARCHIVE = "https://miniflux.xiaochen.win/media/v1/store/fixture-origin/sig";
 const ORIGIN = "https://origin.example.invalid/full.png";
 const TRANSPARENT_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+const HLS = "https://media.example.invalid/video/playlist.m3u8";
+const MP4 = "https://media.example.invalid/video/movie.mp4";
 
 const test = base.extend({
   page: async ({ page }, use, testInfo) => {
@@ -290,4 +295,112 @@ test("DW lazy image templates survive real extraction and keep image alt and cap
   await expect(image).toHaveAttribute("alt", "DW supercomputer image");
   await expect(page.getByText("DW supercomputer caption", { exact: true })).toBeVisible();
   expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([source]);
+});
+
+test("HLS video starts from the first segment while later segments remain undownloaded", async ({ page }) => {
+  await openArticle(page, `<video controls><source src="${HLS}" type="application/x-mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await respond(page, HLS, { type: "application/x-mpegurl", text: streamingFixture.playlist });
+  const first = new URL("part0.ts", HLS).href;
+  await respond(page, first, { type: "video/mp2t", base64: streamingFixture.segments["part0.ts"] });
+  const video = page.getByTestId("article-body").locator("video");
+  await expect.poll(() => video.evaluate((element) => [element.readyState >= 2, element.videoWidth, element.videoHeight])).toEqual([true, 64, 36]);
+  await video.evaluate((element) => element.play());
+  await expect.poll(() => video.evaluate((element) => element.currentTime)).toBeGreaterThan(.25);
+  expect(await page.evaluate((value) => window.mediaCompatFixture.requestCount(value), MP4)).toBe(0);
+  expect(await page.evaluate((value) => window.mediaCompatFixture.requestCount(value), new URL("part3.ts", HLS).href)).toBe(0);
+  await pending(page, new URL("part1.ts", HLS).href);
+  await page.getByRole("button", { name: "关闭媒体", exact: true }).click();
+  await expect.poll(async () => { const state = await snapshot(page); return [state.activeStreams, state.activeObjectUrls.length]; }).toEqual([0, 0]);
+});
+
+test("closing an HLS player aborts its pending manifest without starting MP4 fallback", async ({ page }) => {
+  await openArticle(page, `<video><source src="${HLS}" type="application/vnd.apple.mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await pending(page, HLS);
+  await page.getByRole("button", { name: "取消加载", exact: true }).click();
+  await expect.poll(async () => (await snapshot(page)).activeStreams).toBe(0);
+  expect(await page.evaluate((value) => window.mediaCompatFixture.requestCount(value), MP4)).toBe(0);
+  await expect(page.getByTestId("article-body").locator("video")).toHaveCount(0);
+});
+
+test("a rejected HLS playlist falls back to a decoded MP4 source", async ({ page }) => {
+  await openArticle(page, `<video><source src="${HLS}" type="application/x-mpegurl"><source src="${MP4}" type="video/mp4"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await respond(page, HLS, { type: "text/html", body: "html" });
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
+  const video = page.getByTestId("article-body").locator("video");
+  await expect.poll(() => video.evaluate((element) => [element.readyState >= 2, element.videoWidth, element.videoHeight])).toEqual([true, 64, 36]);
+  await expect(page.getByRole("button", { name: "关闭媒体", exact: true })).toBeVisible();
+});
+
+test("direct video decode errors advance to the next MP4 candidate and release the failed Blob", async ({ page }) => {
+  await openArticle(page, `<video><source src="${PRIMARY}" type="video/mp4"><source src="${MP4}" type="video/mp4"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await respond(page, PRIMARY, { type: "video/mp4", body: "invalid" });
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
+  const video = page.getByTestId("article-body").locator("video");
+  await expect.poll(() => video.evaluate((element) => element.videoWidth)).toBe(64);
+  const state = await snapshot(page);
+  expect(state.createdUrls).toHaveLength(2);
+  expect(state.revokedUrls).toContain(state.createdUrls[0]);
+});
+
+test("cancelling a direct media download releases its native stream before body completion", async ({ page }) => {
+  await openArticle(page, `<video src="${MP4}"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4, holdAfterFirst: true });
+  await expect(page.getByRole("status")).toContainText("已下载");
+  await page.getByRole("button", { name: "取消加载", exact: true }).click();
+  await expect.poll(async () => { const state = await snapshot(page); return [state.activeStreams, state.waitingReads, state.activeObjectUrls.length]; }).toEqual([0, 0, 0]);
+});
+
+test("list covers use server-first candidates and recover from an HTML response", async ({ page }) => {
+  await openFixture(page);
+  await page.evaluate((article) => window.mediaCompatFixture.renderCover(article), { url: "https://www.dw.com/zh/story", content: `<img src="${SERVER_ARCHIVE}" srcset="${FALLBACK} 1200w">` });
+  await respond(page, SERVER_ARCHIVE, { type: "text/html", body: "html" });
+  await respond(page, FALLBACK);
+  const image = page.getByTestId("list-cover").locator("img");
+  await expect.poll(() => image.evaluate((element) => [element.complete, element.naturalWidth, element.naturalHeight])).toEqual([true, 8, 4]);
+  expect((await snapshot(page)).requests.map(({ source }) => source)).toEqual([SERVER_ARCHIVE, FALLBACK]);
+  await expect(page.getByRole("button", { name: "重试图片", exact: true })).toHaveCount(0);
+});
+
+for (const { kind, type, bytes } of [
+  { kind: "video", type: "video/mp4", bytes: streamingFixture.mp4 },
+  { kind: "audio", type: "audio/mpeg", bytes: streamingFixture.mp3 },
+]) test(`native ${kind} sessions use the media element's Range requests and release on close`, async ({ page }) => {
+  const ranges = [];
+  const body = Buffer.from(bytes, "base64");
+  await page.route("**/.toolbox/media/*", async (route) => {
+    const range = route.request().headers().range;
+    ranges.push(range);
+    const match = /^bytes=(\d+)-(\d*)$/.exec(range || "");
+    const start = match ? Number(match[1]) : 0;
+    const end = match?.[2] ? Math.min(Number(match[2]), body.length - 1) : body.length - 1;
+    await route.fulfill({ status: match ? 206 : 200, headers: { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": String(end - start + 1), ...(match ? { "Content-Range": `bytes ${start}-${end}/${body.length}` } : {}) }, body: body.subarray(start, end + 1) });
+  });
+  await openArticle(page, `<${kind} src="${MP4}"></${kind}>`);
+  await page.evaluate(() => window.mediaCompatFixture.enableNativeMediaSessions());
+  await page.getByRole("button", { name: kind === "audio" ? "加载音频" : "加载视频", exact: true }).click();
+  const element = page.getByTestId("article-body").locator(kind);
+  await expect.poll(() => element.evaluate((media) => media.readyState)).toBeGreaterThanOrEqual(2);
+  await expect(element).toHaveAttribute("src", /\/\.toolbox\/media\/fixture-media-1$/);
+  await element.evaluate((media) => { media.muted = true; media.currentTime = .5; return media.play(); });
+  await expect.poll(() => element.evaluate((media) => media.currentTime)).toBeGreaterThan(.6);
+  expect(ranges.some((value) => value?.startsWith("bytes="))).toBe(true);
+  expect((await snapshot(page)).requests).toHaveLength(0);
+  expect((await snapshot(page)).createdUrls).toHaveLength(0);
+  await page.getByRole("button", { name: "关闭媒体", exact: true }).click();
+  await expect.poll(async () => (await snapshot(page)).mediaSessions.filter((value) => !value.closed).length).toBe(0);
+});
+
+test("account media teardown closes an active native media session", async ({ page }) => {
+  await page.route("**/.toolbox/media/*", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: Buffer.from(streamingFixture.mp4, "base64") }));
+  await openArticle(page, `<video src="${MP4}"></video>`);
+  await page.evaluate(() => window.mediaCompatFixture.enableNativeMediaSessions());
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await expect.poll(async () => (await snapshot(page)).mediaSessions.length).toBe(1);
+  await page.evaluate(() => window.mediaCompatFixture.clearSessionMedia());
+  await expect.poll(async () => (await snapshot(page)).mediaSessions.filter((value) => !value.closed).length).toBe(0);
 });

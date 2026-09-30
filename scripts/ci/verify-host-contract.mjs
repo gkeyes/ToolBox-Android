@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const root = resolve(import.meta.dirname, '../..');
@@ -77,3 +78,4 @@ for (const module of ['app', 'tool-runtime']) {
   }
 }
 console.log(`Host contract: ${methods.length} methods, ${capabilities.length} capabilities; bridge binary/text behavior and security entry checks passed.`);
+execFileSync(process.execPath, ['--test', resolve(root, 'tool-runtime/src/test/js/runtime-media-sdk.test.mjs')], { stdio: 'inherit' });

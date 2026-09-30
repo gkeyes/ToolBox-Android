@@ -352,6 +352,7 @@ internal class ProductionHostBackgroundOperations(
                 }
             },
             toolId = runtime.toolId,
+            origin = runtime.origin,
         ),
         notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) {

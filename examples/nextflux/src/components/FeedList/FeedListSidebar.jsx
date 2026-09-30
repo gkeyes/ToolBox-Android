@@ -19,6 +19,7 @@ import FeedsGroup from "@/components/FeedList/components/FeedsGroup.jsx";
 import SyncButton from "@/components/FeedList/components/SyncButton.jsx";
 import ProfileButton from "@/components/FeedList/components/ProfileButton.jsx";
 import SidebarBackgroundSync from "@/components/FeedList/components/SidebarBackgroundSync.jsx";
+import SidebarHiddenFeeds from "@/components/FeedList/components/SidebarHiddenFeeds.jsx";
 import logo from "@/assets/logo.png";
 import { getLastSyncTime } from "@/db/storage.js";
 import AddFeedButton from "@/components/FeedList/components/AddFeedButton.jsx";
@@ -86,6 +87,7 @@ const FeedListSidebar = () => {
       </SidebarContent>
       <SidebarFooter>
         <SidebarBackgroundSync />
+        <SidebarHiddenFeeds />
         <ProfileButton />
       </SidebarFooter>
     </Sidebar>

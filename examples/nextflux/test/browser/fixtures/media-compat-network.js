@@ -9,6 +9,7 @@ const streams = new Map();
 const objectUrls = new Set();
 const createdUrls = [];
 const revokedUrls = [];
+const mediaSessions = [];
 let nextId = 0;
 
 function close(request, state) {
@@ -26,6 +27,7 @@ function chunk(request) {
   const data = first ? request.body.slice(0, midpoint) : request.body.slice(midpoint);
   request.cursor += 1;
   if (!first) close(request, "completed");
+  if (first && request.holdAfterFirst) request.hold = true;
   return { data, done: !first };
 }
 
@@ -85,6 +87,20 @@ export function installNativeMediaFixture() {
   };
 }
 
+export function enableNativeMediaSessions() {
+  network.openMedia = async (request, { signal } = {}) => {
+    if (signal?.aborted) throw cancelled();
+    const sessionId = `fixture-media-${mediaSessions.length + 1}`;
+    const session = { sessionId, source: request.url, kind: request.kind, url: `${window.location.origin}/.toolbox/media/${sessionId}`, closed: false };
+    mediaSessions.push(session);
+    return { sessionId, url: session.url };
+  };
+  network.closeMedia = async (sessionId) => {
+    const session = mediaSessions.find((value) => value.sessionId === sessionId);
+    if (session) session.closed = true;
+  };
+}
+
 export function pendingRequests(source) {
   return requests.filter((request) => request.state === "opening" && (!source || request.source === source)).length;
 }
@@ -93,14 +109,15 @@ export function requestCount(source) {
   return requests.filter((request) => request.source === source).length;
 }
 
-export function respond(source, { status = 200, type = "image/png", body = "png", hold = false } = {}) {
+export function respond(source, { status = 200, type = "image/png", body = "png", hold = false, holdAfterFirst = false, base64, text, finalUrl } = {}) {
   const request = requests.find((item) => item.source === source && item.state === "opening");
   if (!request) throw new Error(`No pending fixture native request: ${source}`);
-  request.body = body === "png" ? png
+  request.body = base64 ? Uint8Array.from(atob(base64), (character) => character.charCodeAt(0)) : typeof text === "string" ? encoder.encode(text) : body === "png" ? png
     : encoder.encode(body === "html" ? "<!doctype html><html><body>Origin returned HTML</body></html>" : "invalid image bytes");
   request.hold = hold;
+  request.holdAfterFirst = holdAfterFirst;
   request.state = "streaming";
-  request.resolve({ streamId: request.streamId, status, headers: { "Content-Type": type } });
+  request.resolve({ streamId: request.streamId, status, headers: { "Content-Type": type, "Content-Length": String(request.body.length), ...(finalUrl ? { "x-toolbox-final-url": finalUrl } : {}) } });
 }
 
 export function resumeReads(source) {
@@ -117,6 +134,7 @@ export function snapshot() {
     activeObjectUrls: [...objectUrls],
     createdUrls: [...createdUrls],
     revokedUrls: [...revokedUrls],
+    mediaSessions: mediaSessions.map((value) => ({ ...value })),
     requests: requests.map(({ source, headers, method, state, reads, cancels, aborted }) => ({ source, headers, method, state, reads, cancels, aborted })),
   };
 }

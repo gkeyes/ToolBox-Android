@@ -11,6 +11,10 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.Base64
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 sealed interface RpcValue {
     data object Null : RpcValue
@@ -170,6 +174,11 @@ fun interface RuntimeNetworkHandler {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network streaming is unavailable")
     suspend fun cancelStream(streamId: String): Unit =
         throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network streaming is unavailable")
+    suspend fun openMedia(sessionId: String, url: String, kind: String? = null): RuntimeNetworkMediaSession =
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network media is unavailable")
+    suspend fun closeMedia(sessionId: String): Unit =
+        throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Network media is unavailable")
+    suspend fun interceptMedia(url: String, method: String, headers: Map<String, String>): RuntimeNetworkMediaResponse? = null
     fun cancelStreams() = Unit
     fun close() = Unit
 }
@@ -463,6 +472,8 @@ class RuntimeRpcDispatcher(
         if (method.contractPhase !in SUPPORTED_CONTRACT_PHASES) {
             return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Method is not available in this host milestone")
         }
+        // Cleanup remains callable after network access is revoked.
+        val mediaCleanup = method.name == "network.closeMedia"
         val capability = try {
             if (method.name == "files.read") {
                 requireHandler(m3Handlers.files).capabilityFor(
@@ -481,11 +492,11 @@ class RuntimeRpcDispatcher(
             if (descriptor.wireName !in identity.declaredCapabilities) {
                 return failure(RuntimeRpcErrorCode.NOT_DECLARED, "Capability is not declared by this tool")
             }
-            if (!authorization.isGranted(identity, capability)) {
+            if (!mediaCleanup && !authorization.isGranted(identity, capability)) {
                 if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability is disabled for this tool")
             }
-            if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
+            if (!mediaCleanup && !authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
                 if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Required Android permission is unavailable")
             }
@@ -499,7 +510,7 @@ class RuntimeRpcDispatcher(
             m2Handlers.network?.cancelStreams()
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
         }
-        if (capability != null) {
+        if (capability != null && !mediaCleanup) {
             val descriptor = ToolBoxApiV1.capability(capability)
             if (!authorization.isGranted(identity, capability)) {
                 if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
@@ -662,6 +673,33 @@ class RuntimeRpcDispatcher(
         "network.cancelStream" -> {
             params.requireOnly("streamId")
             requireHandler(m2Handlers.network).cancelStream(params.requiredNetworkStreamId())
+            RpcValue.Null
+        }
+        "network.openMedia" -> {
+            params.requireOnly("sessionId", "url", "kind")
+            val sessionId = params.requiredNetworkMediaSessionId()
+            val url = params.requiredNetworkMediaUrl()
+            val kind = params.optionalString("kind", 5).also { require(it == null || it in setOf("audio", "video")) }
+            val network = requireHandler(m2Handlers.network)
+            try {
+                currentCoroutineContext().ensureActive()
+                val session = network.openMedia(sessionId, url, kind)
+                currentCoroutineContext().ensureActive()
+                require(session.sessionId == sessionId)
+                require(RuntimeNetworkMediaRoute.token(session.url, identity.exactOrigin) != null)
+                requireNetworkStreamAuthorization()
+                RpcValue.ObjectValue(mapOf(
+                    "sessionId" to RpcValue.StringValue(sessionId),
+                    "url" to RpcValue.StringValue(session.url),
+                ))
+            } catch (error: Exception) {
+                withContext(NonCancellable) { runCatching { network.closeMedia(sessionId) } }
+                throw error
+            }
+        }
+        "network.closeMedia" -> {
+            params.requireOnly("sessionId")
+            requireHandler(m2Handlers.network).closeMedia(params.requiredNetworkMediaSessionId())
             RpcValue.Null
         }
         "notifications.post" -> {
@@ -936,6 +974,16 @@ class RuntimeRpcDispatcher(
 
     private fun RpcValue.ObjectValue.requiredNetworkStreamId(): String =
         requiredString("streamId", 39).also { require(isNetworkStreamId(it)) }
+
+    private fun RpcValue.ObjectValue.requiredNetworkMediaSessionId(): String =
+        requiredString("sessionId", 38).also { require(isNetworkMediaId(it)) }
+
+    private fun RpcValue.ObjectValue.requiredNetworkMediaUrl(): String =
+        requiredString("url", maxResponseBytes).also { url ->
+            require(url == url.trim() && url.none(Char::isISOControl))
+            val uri = runCatching { URI(url) }.getOrNull() ?: throw IllegalArgumentException("url")
+            require(uri.scheme?.lowercase(Locale.ROOT) == "https" && !uri.host.isNullOrBlank() && uri.rawUserInfo == null)
+        }
 
     private fun RuntimeBasicDeviceInfo.toRpcValue(): RpcValue.ObjectValue {
         require(apiLevel >= 33)

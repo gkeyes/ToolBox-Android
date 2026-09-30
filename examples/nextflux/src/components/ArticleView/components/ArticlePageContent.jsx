@@ -12,6 +12,7 @@ import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { currentThemeMode, themeState } from "@/stores/themeStore.js";
 import { getFontSizeClass, cn } from "@/lib/utils.js";
+import { isHlsPlaylist } from "@/reading/media-sources.mjs";
 
 const ArticlePageContent = forwardRef(function ArticlePageContent(
   { article, passive = false, readingPaused = false, className },
@@ -29,7 +30,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
   const currentMode = useStore(currentThemeMode);
 
   const mediaEnclosures = useMemo(
-    () => article?.enclosures?.filter((enclosure) => /^(audio|video)\//.test(enclosure.mime_type || "")) || [],
+    () => article?.enclosures?.filter((enclosure) => /^(audio|video)\//.test(enclosure.mime_type || "") || isHlsPlaylist({ url: enclosure.url, type: enclosure.mime_type })) || [],
     [article?.enclosures],
   );
 
@@ -63,6 +64,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
             name: enclosure.mime_type.startsWith("audio/") ? "audio" : "video",
             attribs: { src: enclosure.url },
           }}
+          sources={[{ url: enclosure.url, type: enclosure.mime_type }]}
         />
       ))}
 

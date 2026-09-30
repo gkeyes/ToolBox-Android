@@ -1,5 +1,8 @@
 import { Parser } from "htmlparser2";
-import { cleanAttributes } from "./content.js";
+import { imageSourceCandidates } from "./content.js";
+
+export const ARTICLE_METADATA_VERSION = 1;
+export const currentArticleMetadata = (row) => row?.metadataVersion === ARTICLE_METADATA_VERSION && Array.isArray(row.coverSources);
 
 // Keep the list's cleanTitle/extractTextFromHtml semantics without creating DOM nodes.
 const OMIT_TEXT = new Set(["script", "style", "iframe", "object", "embed", "svg", "math", "template"]);
@@ -7,25 +10,26 @@ const OMIT_IMAGES = new Set(["script", "style", "iframe", "template"]);
 const WHITESPACE = /\s/;
 const PREVIEW_LENGTH = 300;
 
-function parseMetadata(html, textLimit, findImage = false) {
+function parseMetadata(html, textLimit, findImage = false, baseUrl) {
   let text = "";
   let pendingSpace = false;
   let omittedTextDepth = 0;
   let omittedImageDepth = 0;
-  let imageFound = false;
-  let imageSource = null;
+  let imageSources = [];
+  const pictures = [];
 
   const parser = new Parser({
     onopentag(name, attributes) {
       if (OMIT_TEXT.has(name)) omittedTextDepth += 1;
       if (OMIT_IMAGES.has(name)) omittedImageDepth += 1;
-      if (findImage && !imageFound && !omittedImageDepth && name === "img") {
-        // The first img wins even if it has no src, matching querySelector("img").
-        imageFound = true;
-        imageSource = attributes.src || null;
+      if (findImage && !omittedImageDepth && !imageSources.length) {
+        if (name === "picture") pictures.push([]);
+        if (name === "source" && pictures.length) pictures.at(-1).push(attributes);
+        if (name === "img") imageSources = imageSourceCandidates(attributes, baseUrl, pictures.at(-1));
       }
     },
     onclosetag(name) {
+      if (name === "picture") pictures.pop();
       if (OMIT_TEXT.has(name)) omittedTextDepth -= 1;
       if (OMIT_IMAGES.has(name)) omittedImageDepth -= 1;
     },
@@ -51,14 +55,7 @@ function parseMetadata(html, textLimit, findImage = false) {
   }, { xmlMode: false, decodeEntities: true });
 
   parser.end(html ? String(html) : "");
-  return { text, imageSource };
-}
-
-function coverSource(value, articleUrl) {
-  if (typeof value !== "string" || !value) return null;
-  // Reuse the article image URL rules, including /proxy/ resolution and raster data.
-  // This is metadata only; media.js still owns media fetching, validation and native resource errors.
-  return cleanAttributes("img", { src: value }, articleUrl)["data-image-source"] || null;
+  return { text, imageSources };
 }
 
 /**
@@ -72,11 +69,16 @@ export function deriveArticleMetadata(article) {
   const enclosure = content && Array.isArray(article?.enclosures)
     ? article.enclosures.find((item) => typeof item?.mime_type === "string" && item.mime_type.startsWith("image/"))
     : null;
-  const { text: previewText, imageSource } = parseMetadata(content, PREVIEW_LENGTH, !enclosure?.url);
+  const { text: previewText, imageSources } = parseMetadata(content, PREVIEW_LENGTH, true, article?.url);
+  const coverSources = content ? imageSourceCandidates({
+    "data-image-candidates": JSON.stringify([enclosure?.url, ...imageSources].filter(Boolean)),
+  }, article?.url) : [];
 
   return {
     titleText,
     previewText,
-    coverUrl: content ? coverSource(enclosure?.url || imageSource, article?.url) : null,
+    coverUrl: coverSources[0] || null,
+    coverSources,
+    metadataVersion: ARTICLE_METADATA_VERSION,
   };
 }

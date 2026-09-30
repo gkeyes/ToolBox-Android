@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 
 /** Reserve one UTF-16 working copy for parsing, including requests waiting on a dispatcher. */
@@ -61,6 +62,10 @@ internal class RuntimeSessionJobs(
             globalBudget.release(retainedBytes)
         }
         return job
+    }
+
+    fun cancelPending() {
+        owner.cancelChildren(CancellationException("ToolBox document navigated"))
     }
 
     fun close() {

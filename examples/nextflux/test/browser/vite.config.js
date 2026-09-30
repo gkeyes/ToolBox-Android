@@ -16,6 +16,19 @@ const controlComponents = [
   "components/ArticleList/components/FeedTitleFilterButton.jsx",
   "components/Settings/Settings.jsx",
 ].map((name) => path.join(sourceRoot, name));
+const sidebarComponents = new Set([
+  "components/FeedList/FeedListSidebar.jsx",
+  "components/FeedList/components/SidebarBackgroundSync.jsx",
+  "components/FeedList/components/SidebarHiddenFeeds.jsx",
+  "components/Settings/General.jsx",
+].map((name) => path.join(sourceRoot, name)));
+const sidebarBoundaries = new Set([
+  "stores/feedsStore.js", "stores/syncStore.js", "stores/modalStore", "stores/modalStore.js",
+  "db/storage.js", "toolbox/background.js",
+].map((name) => path.join(sourceRoot, name)));
+const sidebarCatalogViews = new Set([
+  "ArticlesGroup.jsx", "FeedsGroup.jsx", "SyncButton.jsx", "AddFeedButton.jsx", "ProfileButton.jsx",
+].map((name) => path.join(sourceRoot, "components/FeedList/components", name)));
 const controlBoundaries = new Set([
   "toolbox/actions.js", "handlers/articleHandlers.js",
   "stores/articlesStore", "stores/articlesStore.js",
@@ -42,7 +55,7 @@ export default defineConfig({
   root: fixture,
   // The navigation fixture uses a different account boundary at its importers.
   // Scan the original entries together; navigation imports resolve individually.
-  optimizeDeps: { entries: ["index.html", "controls.html", "title-filter.html", "media-compat.html"] },
+  optimizeDeps: { entries: ["index.html", "controls.html", "controls-main.jsx", "controls-sidebar.jsx", "title-filter.html", "media-compat.html"] },
   plugins: [
     {
       name: "reading-test-boundaries",
@@ -51,6 +64,13 @@ export default defineConfig({
         // Vite's alias plugin may resolve @ before this hook. Recognize both
         // forms, and scope mocks to the real controls rather than all imports.
         const file = importer?.split("?")[0];
+        if (sidebarComponents.has(file)) {
+          const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
+          if (sidebarBoundaries.has(resolved)) return path.join(fixture, "controls-sidebar-state.js");
+          if (file === path.join(sourceRoot, "components/FeedList/FeedListSidebar.jsx") && sidebarCatalogViews.has(resolved)) {
+            return path.join(fixture, "controls-sidebar-placeholder.jsx");
+          }
+        }
         if (navigationComponents.has(file)) {
           const resolved = source.startsWith("@/") ? path.join(sourceRoot, source.slice(2)) : source;
           if (navigationBoundaries.has(resolved) || resolved === path.join(fixture, "stores.js")) {

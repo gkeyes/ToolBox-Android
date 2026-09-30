@@ -45,7 +45,7 @@ export function createMediaTransport({
       waiter.resolve();
     }
   }
-  async function load(value, { accept, mime, signal, check = () => {} }) {
+  async function load(value, { accept, mime, signal, check = () => {}, timeoutMs, onProgress }) {
     const url = new URL(value, `${SERVER_URL}/`);
     if (url.protocol !== "https:" || url.username || url.password) throw failure("INVALID_MEDIA");
     const verify = () => { if (signal?.aborted) throw failure("CANCELLED"); check(); };
@@ -61,12 +61,16 @@ export function createMediaTransport({
       if (!api?.openStream || !api.readStream || !api.cancelStream) throw failure("UNSUPPORTED");
       const response = await api.openStream({
         url: url.href, method: "GET", headers: { Accept: accept },
+        ...(timeoutMs ? { timeoutMs } : {}),
       }, { signal });
       streamId = response.streamId;
       if (typeof streamId !== "string" || !streamId) throw failure("INVALID_MEDIA");
       signal?.addEventListener("abort", abort, { once: true });
       verify();
       if (response.status < 200 || response.status >= 300) throw failure("NETWORK_UNAVAILABLE");
+      const declaredLength = Number(Object.entries(response.headers || {}).find(([key]) => key.toLowerCase() === "content-length")?.[1]);
+      const totalBytes = Number.isSafeInteger(declaredLength) && declaredLength > 0 ? declaredLength : null;
+      let receivedBytes = 0;
       let type = Object.entries(response.headers || {}).find(([key]) => key.toLowerCase() === "content-type")?.[1]?.split(";")[0]?.trim()?.toLowerCase();
       const needsSignature = !type || isGenericBinaryMime(type);
       if (!needsSignature && !mime.test(type)) throw failure("INVALID_MIME");
@@ -78,7 +82,7 @@ export function createMediaTransport({
         verify();
         if (!(chunk.data instanceof Uint8Array) || typeof chunk.done !== "boolean") throw failure("INVALID_MEDIA");
         const bytes = chunk.data.byteLength;
-        if (bytes) chunks.push(chunk.data);
+        if (bytes) { chunks.push(chunk.data); receivedBytes += bytes; }
         if (chunk.done) completed = true;
         if (header) {
           const count = Math.min(bytes, MEDIA_HEADER_BYTES - headerBytes);
@@ -88,6 +92,7 @@ export function createMediaTransport({
           if (type) header = null;
           else if (headerBytes === MEDIA_HEADER_BYTES || chunk.done) throw failure("INVALID_MIME");
         }
+        onProgress?.({ receivedBytes, totalBytes });
         if (chunk.done) break;
       }
       if (!chunks.length) throw failure("INVALID_MEDIA");

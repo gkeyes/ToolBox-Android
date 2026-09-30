@@ -196,3 +196,70 @@ test("mobile sheet keeps a small drag and dismisses a deliberate downward drag",
   await page.mouse.up();
   await expect(dialog).toHaveCount(0);
 });
+
+async function openSidebarPreferences(page, width = 1280) {
+  await page.setViewportSize({ width, height: 850 });
+  await page.goto("/controls.html?sidebar=1");
+  await page.waitForFunction(() => Boolean(window.controlsSidebarFixture));
+  if (width <= 640) await page.locator('[data-sidebar="trigger"]').click();
+  await expect(page.getByRole("switch", { name: "显示隐藏订阅", exact: true })).toBeVisible();
+}
+
+test("sidebar hidden feeds is a first-level peer of background sync and leaves General", async ({ page }) => {
+  await openSidebarPreferences(page);
+  const hidden = page.getByRole("switch", { name: "显示隐藏订阅", exact: true });
+  const background = page.getByRole("switch", { name: "后台同步", exact: true });
+  await expect(background).toBeVisible();
+  await expect(hidden).not.toBeChecked();
+  const positions = await hidden.evaluate((element) => {
+    const footer = element.closest('[data-sidebar="footer"]');
+    const peer = [...footer?.querySelectorAll('[role="switch"]') || []].find((node) => node.getAttribute("aria-label") === "后台同步");
+    const row = (node) => [...footer?.children || []].find((child) => child.contains(node));
+    return { hasFooter: Boolean(footer), sameLevel: Boolean(peer && row(element)?.parentElement === row(peer)?.parentElement), distinctRows: row(element) !== row(peer) };
+  });
+  expect(positions).toEqual({ hasFooter: true, sameLevel: true, distinctRows: true });
+  await expect(page.getByTestId("sidebar-general").getByText("显示隐藏订阅", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("sidebar-general").getByText("默认展开分类", { exact: true })).toBeVisible();
+  await hidden.locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
+  await expect(hidden).toBeChecked();
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(true);
+  expect(await page.evaluate(() => window.controlsSidebarFixture.feedLoads)).toEqual([false, true]);
+  await page.reload();
+  await page.waitForFunction(() => Boolean(window.controlsSidebarFixture));
+  await expect(page.getByRole("switch", { name: "显示隐藏订阅", exact: true })).toBeChecked();
+  await page.getByRole("switch", { name: "显示隐藏订阅", exact: true }).locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
+});
+
+test("sidebar hidden feeds disables its mobile switch until the native preference write completes", async ({ page }) => {
+  await openSidebarPreferences(page, 393);
+  const hidden = page.getByRole("switch", { name: "显示隐藏订阅", exact: true });
+  const baseline = await page.evaluate(() => ({
+    persisted: window.controlsSidebarFixture.persistedHidden(),
+    writes: window.controlsSidebarFixture.writes.length,
+  }));
+  await page.evaluate(() => window.controlsSidebarFixture.holdWrites());
+  await hidden.locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
+  await expect(hidden).toBeChecked();
+  await expect(hidden).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.pendingWrites())).toBe(1);
+  expect(await page.evaluate((start) => window.controlsSidebarFixture.writes.slice(start), baseline.writes)).toEqual([true]);
+  expect(await page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(baseline.persisted);
+  await page.evaluate(() => window.controlsSidebarFixture.finishWrites());
+  await expect(hidden).toBeEnabled();
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(true);
+});
+
+test("sidebar hidden feeds reports a native persistence failure and remains usable", async ({ page }) => {
+  await openSidebarPreferences(page);
+  const hidden = page.getByRole("switch", { name: "显示隐藏订阅", exact: true });
+  const persistedBefore = await page.evaluate(() => window.controlsSidebarFixture.persistedHidden());
+  await page.evaluate(() => window.controlsSidebarFixture.failNextWrite());
+  await hidden.locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
+  await expect(page.getByText("Fixture preference storage unavailable", { exact: true })).toBeVisible();
+  await expect(hidden).toBeEnabled();
+  expect(await page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(persistedBefore);
+  await hidden.locator('xpath=ancestor::*[@data-slot="switch"][1]').click();
+  await expect(hidden).not.toBeChecked();
+  await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
+});

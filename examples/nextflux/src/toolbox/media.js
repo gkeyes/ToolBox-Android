@@ -129,10 +129,73 @@ export function clearMediaCache() {
   for (const media of activeMedia) media.release();
 }
 
-export async function loadProxyMedia(value, kind) {
+export async function attachProxyHlsMedia(element, value, callbacks) {
+  const approved = approvedImageSource(value);
+  if (approved?.kind !== "proxy") throw new Error("流媒体地址无效，请使用 HTTPS 地址。");
+  const epoch = mediaEpoch;
+  let playback = null, released = false;
+  const media = {
+    release() {
+      if (released) return;
+      released = true;
+      callbacks.signal?.removeEventListener("abort", abort);
+      playback?.release();
+      activeMedia.delete(media);
+    },
+  };
+  const abort = () => media.release();
+  activeMedia.add(media);
+  if (callbacks.signal?.aborted) media.release();
+  else callbacks.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const { attachHlsPlayback } = await import("./hlsPlayback.mjs");
+    if (released || epoch !== mediaEpoch) throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
+    playback = attachHlsPlayback(element, approved.url, {
+      onReady: () => { if (!released && epoch === mediaEpoch) callbacks.onReady?.(); },
+      onError: (error) => { if (!released && epoch === mediaEpoch) callbacks.onError?.(error); },
+    });
+    return media;
+  } catch (error) { media.release(); throw error; }
+}
+
+export async function loadProxyMedia(value, kind, { signal, onProgress } = {}) {
   const approved = approvedImageSource(value);
   if (approved?.kind !== "proxy" || !["audio", "video"].includes(kind)) throw new Error("媒体地址或类型无效，请使用 HTTPS 音视频地址。");
+  const native = globalThis.window?.ToolBox?.network;
+  if (native?.openMedia && native.closeMedia) {
+    const epoch = mediaEpoch;
+    const controller = new AbortController();
+    let session = null, released = false;
+    const media = {
+      release() {
+        if (released) return;
+        released = true;
+        controller.abort();
+        signal?.removeEventListener("abort", abort);
+        if (session?.sessionId) void Promise.resolve(native.closeMedia(session.sessionId)).catch(() => {});
+        activeMedia.delete(media);
+      },
+    };
+    const abort = () => media.release();
+    activeMedia.add(media);
+    if (signal?.aborted) media.release();
+    else signal?.addEventListener("abort", abort, { once: true });
+    try {
+      session = await native.openMedia({ url: approved.url, kind }, { signal: controller.signal });
+      if (released || epoch !== mediaEpoch) {
+        if (session?.sessionId) void Promise.resolve(native.closeMedia(session.sessionId)).catch(() => {});
+        throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
+      }
+      if (typeof session?.sessionId !== "string" || !session.sessionId || typeof session.url !== "string") throw new Error("宿主返回了无效的媒体会话。");
+      const local = new URL(session.url, window.location.href);
+      if (local.origin !== window.location.origin || local.username || local.password || local.search || local.hash || !/^\/\.toolbox\/media\/[a-z0-9_-]+$/i.test(local.pathname)) throw new Error("宿主返回了无效的媒体会话。");
+      return { url: local.href, release: media.release, isActive: () => !released && epoch === mediaEpoch };
+    } catch (error) { media.release(); throw error; }
+  }
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
   const epoch = mediaEpoch;
   let blob = null;
   let url = null;
@@ -153,15 +216,18 @@ export async function loadProxyMedia(value, kind) {
       accept: kind === "audio" ? "audio/*" : "video/*",
       mime: kind === "audio" ? /^audio\// : /^video\//,
       signal: controller.signal,
+      timeoutMs: 60000, onProgress,
     });
     if (released || epoch !== mediaEpoch) {
       blob = null;
       throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
     }
     url = URL.createObjectURL(blob);
-    return { url, release: media.release };
+    return { url, release: media.release, isActive: () => !released && epoch === mediaEpoch };
   } catch (error) {
     media.release();
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }

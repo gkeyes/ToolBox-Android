@@ -46,6 +46,26 @@ test("parser keeps lazy images usable and source-less images inert",()=>{
   assert.deepEqual(images[2].attrs,{alt:"missing"});
 });
 
+test("video parser retains MP4 alternatives when the first source is an HLS playlist",()=>{
+  const parsed=operationsFor('<video controls><source src="https://media.invalid/master.m3u8" type="application/x-mpegurl"><source src="/movie.mp4" type="video/mp4"></video>');
+  const media=parsed.operations.find(op=>op.type==="media");
+  assert.equal(media.url,"https://example.test/movie.mp4");
+  assert.deepEqual(media.sources,[{url:"https://example.test/movie.mp4",type:"video/mp4"},{url:"https://media.invalid/master.m3u8",type:"application/x-mpegurl"}]);
+});
+
+test("video parser keeps multiple safe direct sources and excludes credentials or executable URLs",()=>{
+  const parsed=operationsFor('<video src="/first.mp4"><source src="javascript:alert(1)" type="video/mp4"><source src="https://u:p@bad.invalid/a.mp4"><source src="/backup.webm" type="video/webm"><source src="/first.mp4" type="video/mp4"></video>');
+  const media=parsed.operations.find(op=>op.type==="media");
+  assert.deepEqual(media.sources,[{url:"https://example.test/first.mp4",type:""},{url:"https://example.test/backup.webm",type:"video/webm"}]);
+});
+
+test("audio parser retains lazy HLS and direct audio sources for the same playback path",()=>{
+  const parsed=operationsFor('<audio data-src="/radio.m3u8"><source src="/backup.mp3" type="audio/mpeg"></audio>');
+  const media=parsed.operations.find(op=>op.type==="media");
+  assert.equal(media.kind,"audio");
+  assert.deepEqual(media.sources,[{url:"https://example.test/backup.mp3",type:"audio/mpeg"},{url:"https://example.test/radio.m3u8",type:""}]);
+});
+
 test("parser removes exact standalone ad labels but leaves normal prose",()=>{
   const parsed=operationsFor("<p>正文。</p><p>广告</p><p>这篇文章讨论广告行业。</p>");
   assert.ok(parsed.operations.some(op=>op.type==="remove"));

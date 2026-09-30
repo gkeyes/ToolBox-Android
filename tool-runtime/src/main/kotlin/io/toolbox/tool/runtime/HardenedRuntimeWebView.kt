@@ -27,6 +27,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import kotlinx.coroutines.runBlocking
 
 data class RuntimeWebViewCallbacks(
     val onMainEntryLoaded: () -> Unit,
@@ -51,11 +52,13 @@ object HardenedRuntimeWebView {
     /** A modal JS dialog can prevent onPageStarted itself; settle before host navigation. */
     fun loadEntry(webView: WebView, runtime: PreparedToolRuntime) {
         RuntimeJavaScriptDialogs.dismiss(webView)
+        RuntimeBridgeLifecycle.resetForNavigation(webView)
         webView.loadUrl(runtime.entryUrl)
     }
 
     fun reload(webView: WebView) {
         RuntimeJavaScriptDialogs.dismiss(webView)
+        RuntimeBridgeLifecycle.resetForNavigation(webView)
         webView.reload()
     }
 
@@ -85,6 +88,7 @@ object HardenedRuntimeWebView {
     ): RuntimeWebViewCreationResult {
         var webView: WebView? = null
         var runtimeClient: RuntimeWebViewClient? = null
+        var network: RuntimeNetworkHandler? = null
         try {
             WebView.setWebContentsDebuggingEnabled(false)
             val createdWebView = RuntimeWindowWebView(context)
@@ -131,15 +135,18 @@ object HardenedRuntimeWebView {
                     BundlePathHandler(runtime.privateFilesRoot, runtime.bundleRoot, runtime.securityProfile),
                 )
                 .build()
+            val bridgeConfiguration = bridgeProvider.create(runtime)
+            network = bridgeConfiguration.m2Handlers.network
             runtimeClient = RuntimeWebViewClient(
                 runtime = runtime,
                 assetLoader = assetLoader,
                 callbacks = callbacks,
                 requireStatelessSentinel = creationPermit.isolationMode == RuntimeIsolationMode.ORIGIN_ONLY_STATELESS,
+                network = bridgeConfiguration.m2Handlers.network,
             )
             createdWebView.webViewClient = runtimeClient
             createdWebView.webChromeClient = RuntimeWebChromeClient(runtime)
-            createRuntimeBridgeSession(runtime, bridgeProvider.create(runtime)).attach(createdWebView)
+            createRuntimeBridgeSession(runtime, bridgeConfiguration).attach(createdWebView)
             creationPermit.attach(createdWebView)
             runtimeClient.beginFirstMainFrameTrace()
             loadEntry(createdWebView, runtime)
@@ -148,6 +155,7 @@ object HardenedRuntimeWebView {
             runtimeClient?.endFirstMainFrameTrace()
             creationPermit.close()
             webView?.let(RuntimeWebViewLifecycle::destroyAndUnregister)
+            runCatching { network?.close() }
             return RuntimeWebViewCreationResult.Failed(
                 "工具运行环境创建失败，请返回工具列表后重试。",
             )
@@ -294,6 +302,7 @@ private class RuntimeWebViewClient(
     private val assetLoader: WebViewAssetLoader,
     private val callbacks: RuntimeWebViewCallbacks,
     private val requireStatelessSentinel: Boolean,
+    private val network: RuntimeNetworkHandler?,
 ) : WebViewClient() {
     private var mainFrameTerminal = false
     private var sentinelCheckPending = false
@@ -317,6 +326,18 @@ private class RuntimeWebViewClient(
         if (!RuntimeIdentity.isExactLocalUrl(request.url.toString(), runtime.origin)) {
             return RuntimePolicy.blockedResponse()
         }
+        if (request.url.path?.startsWith(RuntimeNetworkMediaRoute.PREFIX) == true) {
+            if (request.isForMainFrame) return RuntimePolicy.blockedResponse()
+            return try {
+                val response = runBlocking {
+                    network?.interceptMedia(request.url.toString(), request.method, request.requestHeaders)
+                } ?: return RuntimePolicy.blockedResponse(404, "Not Found")
+                try {
+                    WebResourceResponse(response.mimeType, null, response.status, response.reason,
+                        response.headers + RuntimePolicy.responseHeaders(runtime.securityProfile), response.body)
+                } catch (error: Exception) { response.body.close(); throw error }
+            } catch (_: Exception) { RuntimePolicy.blockedResponse() }
+        }
         return assetLoader.shouldInterceptRequest(request.url) ?: RuntimePolicy.blockedResponse(404, "Not Found")
     }
 
@@ -329,6 +350,7 @@ private class RuntimeWebViewClient(
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
         RuntimeJavaScriptDialogs.dismiss(view)
+        RuntimeBridgeLifecycle.resetForNavigation(view)
         if (url == runtime.entryUrl) {
             mainFrameTerminal = false
             sentinelCheckPending = false
