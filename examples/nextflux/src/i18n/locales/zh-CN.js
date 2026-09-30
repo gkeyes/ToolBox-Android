@@ -332,7 +332,7 @@ export default {
       titleFontSize: "大小",
       reset: "重 置",
     },
-    ai: {
+    speech: {\n      title: "语音朗读",\n    },\n    ai: {
       title: "AI",
       description: "目前仅支持 OpenAI 及兼容 OpenAI 格式的 API",
       openai: "OpenAI 配置",
