@@ -51,6 +51,7 @@ export function cleanAttributes(tag, attributes, baseUrl) {
     if (["alt", "title"].includes(name)) clean[name] = String(value);
     if (tag === "img" && ["width", "height"].includes(name) && imageDimension(value)) clean[name] = String(imageDimension(value));
     if (["colspan", "rowspan", "start"].includes(name) && /^\d+$/.test(value)) clean[name] = value;
+    if (tag === "p" && name === "data-reading-role" && ["list", "meta"].includes(value)) clean[name] = value;
     // Keep article-local anchors as inert metadata, never document-global IDs.
     if ((name === "id" && tag !== "img") || (name === "name" && tag === "a")) {
       if (value) clean["data-article-anchor"] = value;

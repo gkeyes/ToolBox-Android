@@ -200,6 +200,34 @@ function pipelineOperations({html,baseUrl,title}){
   }
 }
 
+function renderedParagraphs(operations){
+  const elements=new Map(operations.filter(op=>op.type==="element").map(op=>[op.id,op]));
+  const paragraphs=operations.filter(op=>op.type==="element"&&op.tag==="p")
+    .map(op=>({id:op.id,text:"",breaks:0,role:op.attrs["data-reading-role"]||null,indent:false}));
+  const byId=new Map(paragraphs.map(paragraph=>[paragraph.id,paragraph]));
+  const parentParagraph=(id)=>{
+    while(id){
+      const element=elements.get(id);
+      if(!element)return null;
+      if(element.tag==="p")return byId.get(id);
+      id=element.parent;
+    }
+    return null;
+  };
+  for(const op of operations){
+    if(op.type==="paragraphStyle"&&op.indent)byId.get(op.id).indent=true;
+    if(op.type==="text"){
+      const paragraph=parentParagraph(op.parent);
+      if(paragraph)paragraph.text+=op.text;
+    }
+    if(op.type==="element"&&op.tag==="br"){
+      const paragraph=parentParagraph(op.parent);
+      if(paragraph)paragraph.breaks++;
+    }
+  }
+  return paragraphs;
+}
+
 test("Telegram adapter converts br-separated message blocks into canonical paragraphs",()=>{
   const title='中国启动“太空之弦”计算星座建设';
   const html='<p><strong>'+title+'</strong><br><br>在第五届全球数字贸易博览会期间，项目正式启动。<br><br>—— 澎湃新闻</p>';
@@ -224,6 +252,53 @@ test("Telegram canonical paragraphs reuse generic paragraph semantics",()=>{
   const paragraphs=parsed.operations.filter(op=>op.type==="element"&&op.tag==="p").map(op=>op.id);
   const indented=new Set(parsed.operations.filter(op=>op.type==="paragraphStyle"&&op.indent).map(op=>op.id));
   assert.deepEqual(paragraphs.map(id=>indented.has(id)),[true,false]);
+});
+
+test("Telegram Miniflux line breaks separate prose after a repeated emoji title",()=>{
+  const parsed=pipelineOperations({
+    html:'<p>太窒息了。<br>为什么这些人这么任性，<br>后来才知道原因。<br><br><a href="https://t.me/channel">频道链接</a></p>',
+    baseUrl:"https://t.me/channel/123",
+    title:"🖼 太窒息了。",
+  });
+  const paragraphs=renderedParagraphs(parsed.operations);
+  assert.deepEqual(paragraphs.map(({text,indent,breaks})=>[text,indent,breaks]),[
+    ["为什么这些人这么任性，后来才知道原因。",true,0],
+    ["频道链接",false,0],
+  ]);
+});
+
+test("Telegram sentence breaks become paragraphs while list rows stay unindented",()=>{
+  const parsed=pipelineOperations({
+    html:"<p>重复标题。<br>第一段结束。<br>第二段也结束。<br>🔍 检索资讯。<br>📊 整理资料。<br><br>来源：频道</p>",
+    baseUrl:"https://t.me/channel/456",
+    title:"🎬 重复标题。",
+  });
+  const paragraphs=renderedParagraphs(parsed.operations);
+  assert.deepEqual(paragraphs.map(({text,indent,role})=>[text,indent,role]),[
+    ["第一段结束。",true,null],
+    ["第二段也结束。",true,null],
+    ["🔍 检索资讯。",false,"list"],
+    ["📊 整理资料。",false,"list"],
+    ["来源：频道",false,"meta"],
+  ]);
+});
+
+test("Telegram preserves uncertain rows and removes a repeated title underline",()=>{
+  const parsed=pipelineOperations({
+    html:"<p>文章标题<br>======<br>甲：资料<br>乙：补充</p>",
+    baseUrl:"https://t.me/channel/789",
+    title:"文章标题",
+  });
+  const paragraphs=renderedParagraphs(parsed.operations);
+  assert.equal(paragraphs.length,1);
+  assert.equal(paragraphs[0].text,"甲：资料乙：补充");
+  assert.equal(paragraphs[0].breaks,1);
+  assert.equal(paragraphs[0].indent,false);
+});
+
+test("editorial metadata stays aligned while ordinary linked prose indents",()=>{
+  const parsed=operationsFor('<p>某某对本文有报道贡献。</p><p><a href="https://example.test/en">点击查看本文英文版。</a></p><p><a href="https://example.test/byline">某某</a>是报社记者，负责科技报道。</p><p>正文引用<a href="https://example.test/ref">资料</a>后继续说明。</p>');
+  assert.deepEqual(renderedParagraphs(parsed.operations).map(({indent})=>indent),[false,false,false,true]);
 });
 
 test("generic sources bypass site adapters unchanged",()=>{
