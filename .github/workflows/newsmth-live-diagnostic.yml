@@ -29,11 +29,22 @@ jobs:
             -w 'final_url=%{url_effective}\nhttp_code=%{http_code}\ncontent_type=%{content_type}\nsize=%{size_download}\n' \
             "$url" || true
           cat /tmp/newsmth-headers.txt || true
-          echo '=== mixed/legacy resource candidates ==='
-          grep -Eo '(src|href)=["\']http://[^"\']+' /tmp/newsmth.html | head -80 || true
           echo '=== html summary ==='
           wc -c /tmp/newsmth.html || true
-          grep -oi '<title[^>]*>[^<]*' /tmp/newsmth.html | head -5 || true
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          data = Path('/tmp/newsmth.html').read_bytes()
+          print('raw_bytes=', len(data))
+          try:
+              text = data.decode('gbk')
+              print('decoded_as=gbk')
+          except UnicodeDecodeError:
+              text = data.decode('utf-8', errors='replace')
+              print('decoded_as=utf8-replace')
+          print('body_preview=', repr(text[:2000]))
+          print('http_resources=', re.findall(r'''(?:src|href)=["'](http://[^"']+)''', text, flags=re.I)[:80])
+          PY
 
       - name: Inspect live endpoint in headless Chromium
         run: |
