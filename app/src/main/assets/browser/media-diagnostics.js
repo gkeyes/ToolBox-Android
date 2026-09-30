@@ -85,8 +85,13 @@
 
     videos.slice(0, 8).forEach((video, index) => {
         const error = video.error ? ('code=' + video.error.code + ' ' + clean(video.error.message || '')) : 'none';
+        const style = getComputedStyle(video);
         lines.push(
             'video[' + index + '] ' + describe(video) + ' · ' + styleState(video) +
+            ' · intrinsic=' + video.videoWidth + 'x' + video.videoHeight +
+            ' · attr=' + clean(video.getAttribute('width') || '') + 'x' + clean(video.getAttribute('height') || '') +
+            ' · aspect=' + clean(style.aspectRatio) +
+            ' · repair=' + clean(video.dataset.toolboxLayoutRepairRatio || 'none') +
             ' · ready=' + video.readyState + ' network=' + video.networkState +
             ' paused=' + video.paused + ' error=' + error +
             ' · src=' + safeUrl(video.currentSrc || video.src || ''),
@@ -106,8 +111,11 @@
         const key = describe(node);
         if (seen.has(key)) return;
         seen.add(key);
+        const style = getComputedStyle(node);
         lines.push(
             'container ' + key + ' · ' + styleState(node) +
+            ' · aspect=' + clean(style.aspectRatio) +
+            ' · repair=' + clean(node.dataset.toolboxMediaLayoutRepair || 'none') +
             ' · childVideos=' + node.querySelectorAll('video').length,
         );
     });
