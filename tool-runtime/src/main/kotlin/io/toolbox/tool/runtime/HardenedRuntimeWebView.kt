@@ -333,10 +333,10 @@ private class RuntimeWebViewClient(
                     network?.interceptMedia(request.url.toString(), request.method, request.requestHeaders)
                 } ?: return RuntimePolicy.blockedResponse(404, "Not Found")
                 try {
-                    val body = RuntimeMediaWebViewInputStream.wrap(request.method, request.requestHeaders,
+                    val adapted = RuntimeMediaWebViewInputStream.prepare(request.method, request.requestHeaders,
                         response.status, response.headers, response.body)
                     WebResourceResponse(response.mimeType, null, response.status, response.reason,
-                        response.headers + RuntimePolicy.responseHeaders(runtime.securityProfile), body)
+                        adapted.headers + RuntimePolicy.responseHeaders(runtime.securityProfile), adapted.body)
                 } catch (error: Exception) { response.body.close(); throw error }
             } catch (_: Exception) { RuntimePolicy.blockedResponse() }
         }

@@ -177,6 +177,8 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将返回的临时同源 `url` 赋给播放器。宿主按播放器请求读取 HTTPS 源，无需先把完整媒体下载到 JS 内存。音视频编码由当前 WebView 支持情况决定；按字节快进依赖源站正确返回 Range/206，忽略 Range 的源站不保证快进。`kind` 只接受 `audio` 或 `video`，可以省略；源 URL 不得含用户名或密码。会话仅供当前工具运行环境使用。
 
+临时媒体地址还受 Android WebView 输入流接口限制：响应长度需能由 Content-Length 或 Content-Range 确定，并能在其 32 位长度接口内准确交付当前范围。无法确定长度或无法表示当前范围的请求会失败；工具应提供备用媒体源或原文入口。HLS 分片可通过 openStream/readStream 加载，不依赖该输入流接口。
+
 播放器停止、切换媒体或组件卸载时调用 `network.closeMedia(sessionId)`。已经取消的 AbortSignal 不会打开会话；等待打开期间取消会立即以 `CANCELLED` 拒绝，并清理迟到的会话。打开后取消、页面离开、导航、撤权和运行环境结束也会释放媒体连接。关闭会话在 network 权限撤销后仍可调用。
 
 网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误。网络可改用 openStream 分块；files.read 暂无文件分块接口，应选择可放入内存的文件，或由工具自行提供分页数据。
