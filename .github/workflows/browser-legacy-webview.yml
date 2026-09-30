@@ -1,9 +1,12 @@
-name: Browser Legacy WebView Regression
+name: Browser Core WebView Regression
 
 on:
   pull_request:
     branches: ["codex/refactor-lightweight-v2"]
     paths:
+      - "app/src/main/AndroidManifest.xml"
+      - "app/src/main/kotlin/io/toolbox/host/browser/**"
+      - "app/src/androidTest/kotlin/io/toolbox/host/browser/**"
       - "app/src/main/kotlin/io/toolbox/host/browser/BrowserCompatibilityPolicy.kt"
       - "app/src/main/kotlin/io/toolbox/host/browser/BrowserActivity.kt"
       - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeBrowserUrl.kt"
@@ -16,7 +19,7 @@ permissions:
 
 jobs:
   webview:
-    name: Verify legacy page compatibility in Android WebView
+    name: Verify browsing and live sites in Android WebView
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -31,14 +34,14 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - name: Compile targeted legacy-page instrumentation test
+      - name: Compile targeted browser instrumentation tests
         run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Enable emulator acceleration
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Run legacy page compatibility test in Android WebView
+      - name: Run core browsing and live-site tests in Android WebView
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -47,4 +50,13 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserLegacyPageCompatibilityTest,io.toolbox.host.browser.BrowserNavigationInstrumentationTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserLegacyPageCompatibilityTest,io.toolbox.host.browser.BrowserNavigationInstrumentationTest,io.toolbox.host.browser.BrowserBrowsingCompatibilityTest,io.toolbox.host.browser.BrowserLiveSitesTest
+      - name: Retain browser test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: browser-core-webview-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
