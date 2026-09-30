@@ -1447,11 +1447,4 @@ internal fun runtimeFileReadRawBudget(requestId: String, maxResponseBytes: Int):
     return availableBase64Bytes.coerceAtLeast(0) / 4 * 3
 }
 
-internal fun runtimeFileReadEncodedUpperBound(requestId: String, rawBytes: Int): Int {
-    require(isSafeRuntimeRequestId(requestId))
-    require(rawBytes >= 0)
-    val base64Bytes = 4L * ((rawBytes.toLong() + 2) / 3)
-    return (FILE_READ_RESPONSE_FIXED_BYTES + requestId.length + base64Bytes).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-}
-
 private const val FILE_READ_RESPONSE_FIXED_BYTES = 42

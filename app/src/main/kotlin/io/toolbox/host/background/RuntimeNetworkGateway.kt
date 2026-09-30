@@ -79,7 +79,8 @@ internal class RuntimeNetworkGateway(
         val responseLimit = request.maxResponseBytes ?: policy?.maxResponseBytes
         val timeout = request.timeoutMillis ?: policy?.timeoutMs?.toLong() ?: DEFAULT_TIMEOUT_MILLIS
         val requestId = "request-${java.util.UUID.randomUUID()}"
-        val control = streams.reserve(requestId, timeout)
+        // The proxy owns the full-response deadline; retain the stream registry only for revocation.
+        val control = streams.reserve(requestId, 0)
         val result = try {
             proxy.requestWithControl(ToolNetworkRequest(
                 request.url, NetworkRequestMethod.valueOf(request.method.name), request.headers,

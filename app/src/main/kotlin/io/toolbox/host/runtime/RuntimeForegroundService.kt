@@ -53,7 +53,6 @@ internal class RuntimeForegroundService : Service() {
                 startForeground(card.notificationId, notification)
             }
             startupDeadline?.cancel()
-            notificationManager.cancel(RuntimeNotificationIds.LEGACY_RUNTIME_ID)
         }
 
         override fun post(card: RuntimeNotificationCard): Boolean = try {

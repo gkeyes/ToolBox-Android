@@ -4,7 +4,7 @@
 
 ## 使用
 
-在 ToolBox 0.8.0 或更新版本导入 `socialcoach-v1.0.4.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
+在 ToolBox 0.8.0 或更新版本导入 `socialcoach-v1.0.5.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
 
 支持 OpenAI Chat Completions 兼容接口及 Anthropic Messages；Gemini 可使用其 OpenAI 兼容端点。兼容服务的 Base URL 填到 `/v1` 等基路径，不要包含 `/chat/completions`。推理模型可选择 `max_completion_tokens`。首版不提供共享 API、不内置密钥、不部署服务器。
 
@@ -50,18 +50,17 @@
 - `src/lib/tasks`, `src/lib/prompts.ts`：原训练核心。
 - `platform/`：ToolBox 网络、存储、导航、备份、模型设置和启动入口。
 - `test/`：传输、备份、浏览器交互回归。
-- `bootstrap.py`：一次性固定版本导入记录；常规构建不运行、不下载上游。
 
 ## 构建与验证
 
-正式构建和测试通过 GitHub Actions `SocialCoach TBX` 执行；该工作流使用提交中的 `package-lock.json` 执行 `npm ci`。产物通过仓库 `scripts/package-tool.py` 打包并生成完整性哈希。标准 TBX CI 中也登记了 `socialcoach` 目标。
+TBX CI 使用提交中的 `package-lock.json` 执行 `npm ci`，再通过仓库 `scripts/package-tool.py` 打包并生成完整性哈希。
 
 ```sh
 npm ci --ignore-scripts
 npm test
 npm run build
 npm run test:browser
-bash package.sh ../../build/socialcoach-v1.0.4.tbx
+bash package.sh ../../build/socialcoach-v1.0.5.tbx
 ```
 
 浏览器集成测试使用明确标记的模拟 ToolBox/模型响应，仅验证协议与界面交互，不代表真实模型效果或 Android 真机验证。未使用任何用户密钥进行测试。

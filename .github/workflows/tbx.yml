@@ -95,6 +95,26 @@ jobs:
       - name: Watcher reliability regressions
         if: ${{ matrix.tool == 'github-actions-watcher' }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
+      - name: Prepare watcher layout browser checks
+        if: ${{ matrix.tool == 'github-actions-watcher' }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/watcher-layout-venv"
+          "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m pip install --disable-pip-version-check playwright==1.58.0
+          "$RUNNER_TEMP/watcher-layout-venv/bin/python" -m playwright install --with-deps --only-shell chromium
+      - name: Verify watcher layout and details interactions
+        if: ${{ matrix.tool == 'github-actions-watcher' }}
+        run: '"$RUNNER_TEMP/watcher-layout-venv/bin/python" examples/github-actions-watcher/tests/layout.py'
+      - name: Save watcher layout evidence
+        if: ${{ always() && matrix.tool == 'github-actions-watcher' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: watcher-layout-${{ github.sha }}
+          path: build/watcher-layout/
+          if-no-files-found: warn
+      - name: SocialCoach unit and corpus regressions
+        if: ${{ matrix.tool == 'socialcoach' }}
+        working-directory: examples/socialcoach
+        run: npm test
       - name: NextFlux reading unit tests
         if: ${{ matrix.tool == 'nextflux' }}
         working-directory: examples/nextflux
@@ -116,9 +136,25 @@ jobs:
           name: nextflux-reading-checks-${{ github.sha }}
           path: examples/nextflux/test/browser/test-results/reading-results.json
           if-no-files-found: warn
-      - env:
+      - name: Build and verify registered TBX
+        env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py build --tool "$TBX_TOOL"
+      - name: Prepare SocialCoach browser checks
+        if: ${{ matrix.tool == 'socialcoach' }}
+        working-directory: examples/socialcoach
+        run: npx playwright install --with-deps chromium
+      - name: Verify SocialCoach mobile and desktop interactions
+        if: ${{ matrix.tool == 'socialcoach' }}
+        working-directory: examples/socialcoach
+        run: npm run test:browser
+      - name: Save SocialCoach browser results
+        if: ${{ always() && matrix.tool == 'socialcoach' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: socialcoach-browser-${{ github.sha }}
+          path: examples/socialcoach/test-results/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.tool }}-${{ github.sha }}

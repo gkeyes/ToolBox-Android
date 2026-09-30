@@ -47,8 +47,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 59
-        versionName = "0.8.26"
+        versionCode = 60
+        versionName = "0.8.27"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

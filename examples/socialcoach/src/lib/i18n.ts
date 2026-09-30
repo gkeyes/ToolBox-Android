@@ -423,7 +423,7 @@ const dict = {
   st_model_incomplete: { zh: "填完密钥与两个模型名", en: "Fill in the key and both model names" },
   ob_model_title: { zh: "先接一个模型", en: "Connect a model first" },
   ob_model_sub: { zh: "这个部署没有配模型。填你自己的，只存在这台设备。", en: "This deployment has no model configured. Add your own; it stays on this device." },
-  st_about_body: { zh: "SocialCoach TBX 1.0.0，基于 GeminiLight/SocialCoach（Apache-2.0）移植。想说的话，说出来。用于低风险练习与反思，不是临床评估；模型评分仅作参考。记录留在本机，练习时相关文本会发送至你配置的模型服务。本版无使用统计、反馈上报或语音采集。", en: "SocialCoach TBX 1.0.0, adapted from GeminiLight/SocialCoach (Apache-2.0). Say the thing you’ve been not saying. For low-stakes practice, not clinical assessment. Model ratings are estimates. Records stay on this device; relevant text is sent to your configured model provider. No telemetry, feedback upload or voice capture." },
+  st_about_body: { zh: "SocialCoach TBX 1.0.5，基于 GeminiLight/SocialCoach（Apache-2.0）移植。想说的话，说出来。用于低风险练习与反思，不是临床评估；模型评分仅作参考。记录留在本机，练习时相关文本会发送至你配置的模型服务。本版无使用统计、反馈上报或语音采集。", en: "SocialCoach TBX 1.0.5, adapted from GeminiLight/SocialCoach (Apache-2.0). Say the thing you’ve been not saying. For low-stakes practice, not clinical assessment. Model ratings are estimates. Records stay on this device; relevant text is sent to your configured model provider. No telemetry, feedback upload or voice capture." },
   st_edit: { zh: "编辑", en: "Edit" },
   st_stats: { zh: "统计", en: "Stats" },
 

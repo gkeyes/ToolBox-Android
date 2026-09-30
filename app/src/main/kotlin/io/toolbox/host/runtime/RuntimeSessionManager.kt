@@ -352,11 +352,6 @@ internal class RuntimeSessionManager(
         (hosts.keys + openingTools.keys + sessionsByTool.keys + alarmsByTool.keys).toSet()
     }
 
-    suspend fun stopAll() = withContext(Dispatchers.Main.immediate) {
-        sessionsByTool.keys.toList().forEach { stopTool(it, removeAlarms = false) }
-        RuntimeForegroundService.stop(appContext)
-    }
-
     internal suspend fun backgroundCancellationToolIds(): List<String> = withContext(Dispatchers.Main.immediate) {
         // An empty owner still needs persistence cleanup after stopSession removed its last session.
         sessionsByTool.keys.toList()

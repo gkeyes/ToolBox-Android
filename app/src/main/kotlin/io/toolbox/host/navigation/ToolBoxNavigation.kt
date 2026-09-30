@@ -81,8 +81,6 @@ internal fun ToolBoxNavigation(
 ) {
     val primaryBackStack = rememberNavBackStack<ToolBoxRoute>(HomeRoute)
     val secondaryBackStack = rememberNavBackStack<ToolBoxRoute>()
-    // Preserve decoding of old saved stacks, but never restore the removed page.
-    LaunchedEffect(Unit) { secondaryBackStack.removeAll { it == ImportRoute } }
     val toolsListState = rememberLazyListState()
     val homeListState = rememberLazyListState()
     val settingsListState = rememberLazyListState()
@@ -444,8 +442,6 @@ private fun SecondaryRouteContent(
     onNavigate: (ToolBoxRoute) -> Unit,
 ) {
     when (route) {
-        // A restored legacy entry is removed by ToolBoxNavigation's initial effect.
-        ImportRoute -> Unit
         AboutRoute -> AboutScreen(onBack, onReady)
         BackupRestoreRoute -> {
             val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)

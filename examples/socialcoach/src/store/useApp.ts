@@ -7,7 +7,6 @@ import type { ContextId, Lang, SkillId } from "@/data/taxonomy";
 import type { Scenario } from "@/data/corpus/types";
 import type { ChatMessage, Profile, Proficiency, Reflection, Report, Session } from "@/lib/types";
 import type { PatternResult } from "@/lib/tasks/types";
-import { DEVICE_KEY, OPEN_DAY_KEY } from "@/lib/analytics/keys";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -187,8 +186,6 @@ export const useApp = create<AppState>()(
             if (key === "socialcoach.rehearsal-draft" || key === "socialcoach.arena.location" || key.startsWith("socialcoach.draft.")) draftStorage.removeItem(key);
           }
         } catch {}
-        // The analytics device id goes with everything else: a reset learner is a new device.
-        try { localStorage.removeItem(DEVICE_KEY); localStorage.removeItem(OPEN_DAY_KEY); } catch {}
         set({ ...initial, hydrated: true });
       },
     }),

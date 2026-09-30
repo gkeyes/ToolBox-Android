@@ -30,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,10 +52,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 
 @Composable
 fun ToolBoxSearchField(
@@ -278,85 +275,6 @@ private fun ToolBoxValueLabel(title: String, summary: String?, modifier: Modifie
         ))
         summary?.takeIf(String::isNotBlank)?.let {
             ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
-        }
-    }
-}
-
-data class ToolBoxSettingChoice(
-    val value: String,
-    val label: String,
-    val summary: String? = null,
-)
-
-@Composable
-fun ToolBoxChoiceSettingRow(
-    title: String,
-    selectedValue: String,
-    choices: List<ToolBoxSettingChoice>,
-    onSelected: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    dialogSummary: String? = null,
-    icon: ToolBoxIconKey? = null,
-    enabled: Boolean = true,
-) {
-    val sizes = ToolBoxThemeTokens.sizes
-    val spacing = ToolBoxThemeTokens.spacing
-    val selectedLabel = choices.firstOrNull { it.value == selectedValue }?.label.orEmpty()
-    var choiceDialogVisible by rememberSaveable(title) { mutableStateOf(false) }
-
-    ArrowPreference(
-        title = title,
-        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
-        endActions = {
-            if (selectedLabel.isNotBlank()) {
-                ToolBoxText(
-                    text = selectedLabel,
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent,
-                        textAlign = TextAlign.End,
-                    ),
-                )
-            }
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget))
-            .semantics { role = Role.Button; if (!enabled) disabled() },
-        insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
-        onClick = { if (enabled) choiceDialogVisible = true },
-        enabled = enabled,
-    )
-
-    OverlayDialog(
-        show = choiceDialogVisible,
-        title = title,
-        onDismissRequest = { choiceDialogVisible = false },
-    ) {
-        Column {
-            dialogSummary?.let { explanation ->
-                ToolBoxText(
-                    text = explanation,
-                    modifier = Modifier.padding(horizontal = spacing.oneHalf, vertical = spacing.one),
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                    ),
-                )
-            }
-            choices.forEach { choice ->
-                RadioButtonPreference(
-                    title = choice.label,
-                    summary = choice.summary,
-                    selected = choice.value == selectedValue,
-                    onClick = {
-                        onSelected(choice.value)
-                        choiceDialogVisible = false
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = maxOf(sizes.denseRow, sizes.touchTarget)),
-                    insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
-                )
-            }
         }
     }
 }

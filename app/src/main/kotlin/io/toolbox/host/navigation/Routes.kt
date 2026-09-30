@@ -39,10 +39,6 @@ data object BackgroundSafeguardsRoute : ToolBoxRoute
 @Serializable
 data object DeveloperHelpRoute : ToolBoxRoute
 
-// Decode saved stacks from older releases; navigation removes this legacy entry.
-@Serializable
-data object ImportRoute : ToolBoxRoute
-
 @Serializable
 data object AboutRoute : ToolBoxRoute
 

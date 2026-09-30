@@ -32,8 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -54,7 +52,6 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.toolBoxOpenDesignSurface
@@ -422,29 +419,6 @@ internal fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: ()
                 onClick = onDetails,
                 modifier = Modifier.testTag("tool_more:" + tool.toolId),
             )
-        }
-    }
-}
-
-@Composable
-internal fun CatalogRecentTools(
-    tools: List<CatalogTool>,
-    tileWidth: Dp,
-    onAction: (CatalogAction) -> Unit,
-    editing: Boolean = false,
-    onOptions: (String) -> Unit,
-) {
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(tools, key = CatalogTool::toolId) { tool ->
-            CatalogHomeTile(tool, editing,
-                onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                onOptions = { onOptions(tool.toolId) },
-                labelMaxLines = 1,
-                iconSize = 44.dp,
-                labelFontSize = 12.sp,
-                labelLineHeight = 16.sp,
-                labelSpacing = 4.dp,
-                modifier = Modifier.width(tileWidth).testTag("recent:" + tool.toolId))
         }
     }
 }

@@ -1,6 +1,5 @@
 import {shareText} from "@platform/backup";
 "use client";
-import { FeedbackPrompt } from "@/components/Feedback";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -12,7 +11,6 @@ import { CaseBody, TheoryBody } from "@/components/Knowledge";
 import { useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
 import { assessStream, reflectStream } from "@/lib/client-api";
-import { track } from "@/lib/analytics/track";
 import { buildSession } from "@/lib/session-utils";
 import type { Report, Session } from "@/lib/types";
 import type { Character } from "@/data/corpus/types";
@@ -52,7 +50,6 @@ export function Debrief({ session }: { session: Session }) {
         (p) => setPartial(p),
       );
       applyReport(session.id, final);
-      track({ name: "debrief_view", ts: Date.now(), session: session.id, scenario: sc.custom ? "custom" : sc.id, stars: final.stars, outcome: final.outcome, scoring_version: final.scoringVersion, rated: final.scoringVersion === 2 ? !!final.ratings?.length : true });
       setPartial(null);
     } catch (e) {
       console.error("[assess]", e);
@@ -432,10 +429,6 @@ function ReportView({ session, report, streaming, onAgain }: { session: Session;
           </Section>
         )}
 
-        {!streaming && <FeedbackPrompt />}
-
-
-
         {!streaming && deltaEntries.length > 0 && (
           <Section title={t(lang, "rp_growth")} sub={t(lang, "rp_growth_note")}>
             <ul className="card divide-y divide-line">
@@ -565,7 +558,6 @@ function ReflectItem({ session, question, idx, addReflection, updateReflection, 
     let index = rIdx;
     if (index === -1) {
       addReflection(session.id, { question, answer });
-      track({ name: "reflect", ts: Date.now(), session: session.id, index: idx });
       index = session.reflections.length;
     }
     try {
