@@ -44,6 +44,10 @@ on:
         type: choice
         options: [full, performance]
         default: full
+      android_test_filter:
+        description: "Optional host instrumentation class#method; run only this test"
+        type: string
+        required: false
       reuse_verified_run:
         description: "Optional completed host-check run whose source is merged and unchanged; preserves its verification scope"
         type: string
@@ -59,8 +63,10 @@ concurrency:
 
 jobs:
   verify:
-    name: Build APK and verify host behavior
+    name: ${{ inputs.android_test_filter && 'Verify selected Android test' || 'Build APK and verify host behavior' }}
     runs-on: ubuntu-24.04
+    env:
+      TARGET_ANDROID_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.android_test_filter || '' }}
     outputs:
       verification_scope: ${{ steps.baseline.outputs.scope }}
       verification_run: ${{ steps.baseline.outputs.source_run }}
@@ -82,7 +88,12 @@ jobs:
         run: |
           run_ui=false
           reason=''
-          if [ "$RUN_ANDROID_UI" = true ]; then
+          if [ -n "$TARGET_ANDROID_TEST" ]; then
+            test_filter_pattern='^io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?$'
+            [[ "$TARGET_ANDROID_TEST" =~ $test_filter_pattern ]] || { echo 'Invalid host test class#method' >&2; exit 1; }
+            run_ui=true
+            reason="Only the requested test will run: $TARGET_ANDROID_TEST"
+          elif [ "$RUN_ANDROID_UI" = true ]; then
             run_ui=true
             reason='Manual Android emulator request.'
           elif [ "$EVENT_NAME" = pull_request ] || [ "$EVENT_NAME" = push ]; then
@@ -122,19 +133,30 @@ jobs:
           REUSE_VERIFIED_RUN: ${{ steps.android_ui.outputs.enabled == 'true' && inputs.reuse_verified_run || '' }}
           VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: python3 scripts/ci/reuse-host-verification.py
+        run: |
+          if [ -n "$TARGET_ANDROID_TEST" ]; then
+            printf '%s\n' 'scope=current_run' 'checks=targeted' >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci/reuse-host-verification.py
+          fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         with:
           node-version: "22"
       - name: Verify browser picker selection and restore regressions
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: node --test scripts/tests/browser-picker.test.cjs
       - name: Verify browser media layout recovery regressions
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: node --test scripts/tests/browser-media-layout.test.cjs
       - name: Verify browser media layout in real Chromium
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: node --test scripts/tests/browser-media-layout-chromium.test.cjs
       - name: Verify watcher polling and stopped-session regressions
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
       - name: Verify release evidence and baseline reuse guards
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
@@ -149,20 +171,23 @@ jobs:
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
       - name: Lint the complete Android app
+        if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: ./gradlew --no-daemon :app:lint
       - name: Verify API contract, embedded SDK, and security entry points
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
         run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: ${{ steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs') }}
+      - name: ${{ env.TARGET_ANDROID_TEST != '' && 'Compile APK for the selected test' || (steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs')) }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         env:
           VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
           SKIP_ANDROID_UI: ${{ steps.android_ui.outputs.enabled == 'false' }}
         run: |
-          if [ "$SKIP_ANDROID_UI" = true ]; then
+          if [ "$VALIDATION_SCOPE" = targeted ]; then
+            ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
+          elif [ "$SKIP_ANDROID_UI" = true ]; then
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
           elif [ "$VALIDATION_SCOPE" = performance ]; then
             ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
@@ -170,7 +195,7 @@ jobs:
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
           fi
       - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance unit regressions' || 'Verify installation, catalog, network, runtime and cancellation regressions' }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
         env:
           VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
         run: |
@@ -188,12 +213,13 @@ jobs:
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance behavior on Android' || 'Verify catalog, backup, execution identity, dialogs and Wasm on Android' }}
+      - name: ${{ env.TARGET_ANDROID_TEST != '' && format('Verify {0}', env.TARGET_ANDROID_TEST) || (steps.baseline.outputs.checks == 'performance' && 'Verify performance behavior on Android' || 'Verify catalog, backup, execution identity, dialogs and Wasm on Android') }}
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
         id: runtime_emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         env:
           TOOLBOX_BEHAVIOR_SCOPE: ${{ steps.baseline.outputs.checks }}
+          TOOLBOX_ANDROID_TEST_FILTER: ${{ env.TARGET_ANDROID_TEST }}
         with:
           api-level: 35
           target: google_apis
@@ -207,7 +233,7 @@ jobs:
             adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
             bash scripts/ci/run-android-behavior.sh
       - name: Retain host unit test reports
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-unit-tests-${{ github.sha }}
@@ -246,7 +272,7 @@ jobs:
     name: Package stable signed release
     needs: verify
     # PRs never receive the signing key; manual feature-branch runs only build.
-    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: ${{ github.event_name != 'pull_request' && inputs.android_test_filter == '' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d

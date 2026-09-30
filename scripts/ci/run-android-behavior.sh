@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run both suites sequentially on the shared emulator and retain a failing result.
+# Run the requested Android scope on the shared emulator and retain a failing result.
 set -uo pipefail
 result=0
 evidence_dir=build/wasm-emulator
@@ -19,6 +19,12 @@ prepare_visible_emulator() {
 }
 
 prepare_visible_emulator app || exit 1
+if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = targeted ]; then
+  test -n "${TOOLBOX_ANDROID_TEST_FILTER:-}" || exit 2
+  ./gradlew --no-daemon :app:connectedDebugAndroidTest \
+    "-Pandroid.testInstrumentationRunnerArguments.class=$TOOLBOX_ANDROID_TEST_FILTER"
+  exit "$?"
+fi
 if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = performance ]; then
   ./gradlew --no-daemon :app:connectedDebugAndroidTest \
     -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.CatalogNameSortTest,io.toolbox.host.icons.ToolIconCompatibilityTest,io.toolbox.host.icons.CatalogToolIconBehaviorTest || result=1
