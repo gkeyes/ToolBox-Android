@@ -28,16 +28,25 @@
     function preferredContainer(video) {
         let cursor = video.parentElement;
         let fallback = collapsed(video) ? video : null;
+        let playerRoot = null;
         for (let depth = 0; cursor && depth < 7; depth++, cursor = cursor.parentElement) {
             if (!collapsed(cursor)) {
                 if (fallback) break;
                 continue;
             }
             fallback = cursor;
-            const hint = (cursor.id || '') + ' ' + (cursor.className || '');
-            if (PLAYER_HINT.test(String(hint))) return cursor;
+            const id = String(cursor.id || '');
+            const classes = cursor.classList ? [...cursor.classList] : [];
+            const highConfidence =
+                classes.includes('dplayer') ||
+                classes.includes('plyr') ||
+                classes.includes('video-js') ||
+                cursor.localName === 'jwplayer' ||
+                /^(?:player|video-player|media-player)(?:-|$)/i.test(id);
+            if (highConfidence) playerRoot = cursor;
+            else if (!playerRoot && PLAYER_HINT.test(id + ' ' + classes.join(' '))) playerRoot = cursor;
         }
-        return fallback;
+        return playerRoot || fallback;
     }
 
     function repair(video) {
