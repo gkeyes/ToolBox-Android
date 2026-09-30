@@ -1,6 +1,11 @@
+import { createMediaTransport as createNativeMediaTransport } from "../../../src/toolbox/mediaTransport.js";
+
 const requests = [];
 
 export function createMediaTransport() {
+  // The compatibility fixture exercises the production stream transport through
+  // a native network boundary. Existing reading tests keep their held requests.
+  if (globalThis.window?.__nextfluxNativeMediaFixture) return createNativeMediaTransport();
   return {
     load(source, { signal }) {
       return new Promise((resolve, reject) => {

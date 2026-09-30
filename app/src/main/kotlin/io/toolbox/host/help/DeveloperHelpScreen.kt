@@ -28,24 +28,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxDisclosureRow
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
+import io.toolbox.core.ui.component.ToolBoxGroupedSurface
+import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
+import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.mergePadding
 import io.toolbox.tool.api.ToolBoxApiV1
+import io.toolbox.tool.runtime.RuntimeWebViewDebugging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -57,6 +60,7 @@ internal object DeveloperHelpTestTags {
     const val Search = "developer_help_search"
     const val List = "developer_help_list"
     const val CopyAll = "developer_help_copy_all"
+    const val WebViewDebugging = "developer_help_webview_debugging"
     fun chapter(id: String) = "developer_help_chapter_" + id
     fun article(id: String) = "developer_help_article_" + id
 }
@@ -68,6 +72,7 @@ internal fun DeveloperHelpScreen(
     onReady: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
+    val webViewDebugging = remember(context) { RuntimeWebViewDebugging.status(context) }
     var loadAttempt by remember { mutableStateOf(0) }
     val state by produceState<HelpLoadState>(HelpLoadState.Loading, context, loadAttempt) {
         value = HelpLoadState.Loading
@@ -91,6 +96,8 @@ internal fun DeveloperHelpScreen(
         onBack = onBack,
         onInstallExamples = onInstallExamples,
         onRetry = { loadAttempt += 1 },
+        webViewDebuggingEnabled = webViewDebugging.enabled,
+        webViewDebuggingForced = webViewDebugging.forcedByPlatform,
     )
 }
 
@@ -100,6 +107,8 @@ internal fun DeveloperHelpPage(
     onBack: () -> Unit,
     onInstallExamples: () -> Unit,
     onRetry: () -> Unit,
+    webViewDebuggingEnabled: Boolean = false,
+    webViewDebuggingForced: Boolean = false,
 ) {
     DetailScreen(
         title = "开发帮助",
@@ -110,30 +119,54 @@ internal fun DeveloperHelpPage(
             .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
             .fillMaxSize()
             .align(Alignment.TopCenter)
-        when (val loaded = state) {
-            is HelpLoadState.Loaded -> DeveloperHelpContent(
-                document = loaded.document,
-                onInstallExamples = onInstallExamples,
-                modifier = pageModifier,
-                contentPadding = mergePadding(
-                    chromePadding,
-                    PaddingValues(ToolBoxThemeTokens.spacing.two),
-                ),
-            )
-            HelpLoadState.Loading -> AppText(
-                "正在读取离线手册…",
-                modifier = pageModifier
-                    .padding(chromePadding)
-                    .padding(ToolBoxThemeTokens.spacing.two),
-            )
-            HelpLoadState.Failed -> Column(
-                modifier = pageModifier
-                    .padding(chromePadding)
-                    .padding(ToolBoxThemeTokens.spacing.two),
+        Column(pageModifier.padding(chromePadding)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ToolBoxThemeTokens.spacing.two)
+                    .padding(top = ToolBoxThemeTokens.spacing.two),
                 verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
             ) {
-                AppText("离线手册暂时无法读取，请重试。持续失败时请更新或重新安装 ToolBox。")
-                ToolBoxPrimaryButton("重新读取", onClick = onRetry)
+                ToolBoxGroupedSurface {
+                    ToolBoxSwitchSettingRow(
+                        title = "小工具 WebView 调试",
+                        summary = when {
+                            webViewDebuggingForced -> "当前系统强制开启接口；应用内不可切换。"
+                            webViewDebuggingEnabled -> "调试版：编译时开启，应用内无法关闭。"
+                            else -> "正式版：编译时关闭，应用内无法开启。"
+                        },
+                        icon = ToolBoxIconKey.Code,
+                        checked = webViewDebuggingEnabled,
+                        onCheckedChange = {},
+                        enabled = false,
+                        modifier = Modifier.testTag(DeveloperHelpTestTags.WebViewDebugging),
+                    )
+                }
+                if (webViewDebuggingEnabled) {
+                    AppText(
+                        "电脑 Chrome 打开 chrome://inspect/#devices，选择小工具页面的 Inspect。",
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        color = ToolBoxThemeTokens.colors.textSecondary,
+                    )
+                }
+            }
+            when (val loaded = state) {
+                is HelpLoadState.Loaded -> DeveloperHelpContent(
+                    document = loaded.document,
+                    onInstallExamples = onInstallExamples,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+                HelpLoadState.Loading -> AppText(
+                    "正在读取离线手册…",
+                    modifier = Modifier.padding(ToolBoxThemeTokens.spacing.two),
+                )
+                HelpLoadState.Failed -> Column(
+                    modifier = Modifier.padding(ToolBoxThemeTokens.spacing.two),
+                    verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+                ) {
+                    AppText("离线手册暂时无法读取，请重试。持续失败时请更新或重新安装 ToolBox。")
+                    ToolBoxPrimaryButton("重新读取", onClick = onRetry)
+                }
             }
         }
     }

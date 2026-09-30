@@ -9,18 +9,28 @@ import io.toolbox.tool.runtime.RuntimeNetworkRequest
 import io.toolbox.tool.runtime.RuntimeNetworkResponse
 import io.toolbox.tool.runtime.RuntimeNetworkStreamResponse
 import io.toolbox.tool.runtime.RuntimeNetworkStreamChunk
+import io.toolbox.tool.runtime.RuntimeNetworkMediaSession
+import io.toolbox.tool.runtime.RuntimeNetworkMediaResponse
+import java.io.ByteArrayInputStream
+import java.io.PushbackInputStream
+import java.net.URI
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 internal class RuntimeNetworkGateway(
     private val proxy: ToolNetworkProxy,
     private val policy: InstalledManifestNetwork?,
     private val validateNetworkAccess: suspend () -> Unit = {},
     private val toolId: String? = null,
+    private val origin: String? = null,
 ) : RuntimeNetworkHandler {
     private val streams = RuntimeNetworkStreams()
-    init { toolId?.let { NetworkStreamCancellation.register(it, this, streams::clear) } }
+    private val media = RuntimeNetworkMediaSessions(origin)
+    init { toolId?.let { NetworkStreamCancellation.register(it, this, ::cancelStreams) } }
 
     override suspend fun openStream(streamId: String, request: RuntimeNetworkRequest): RuntimeNetworkStreamResponse {
         val limit = request.maxResponseBytes ?: policy?.maxResponseBytes
@@ -67,11 +77,97 @@ internal class RuntimeNetworkGateway(
 
     override suspend fun cancelStream(streamId: String) = streams.cancel(streamId)
 
-    override fun cancelStreams() = streams.clear()
+    override fun cancelStreams() {
+        streams.clear()
+        media.clear()
+    }
 
     override fun close() {
         toolId?.let { NetworkStreamCancellation.unregister(it, this) }
         streams.close()
+        media.clear(end = true)
+    }
+
+    override suspend fun openMedia(sessionId: String, url: String, kind: String?): RuntimeNetworkMediaSession {
+        require(sessionId.matches(Regex("media-[0-9a-f]{32}")))
+        require(kind == null || kind in setOf("audio", "video"))
+        val endpoint = url.toHttpUrlOrNull() ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "媒体地址无效。")
+        if (runCatching { URI(url).rawUserInfo != null }.getOrDefault(true) || NetworkPolicy.validateEndpoint(endpoint) != null) {
+            throw RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_BLOCKED, "媒体地址仅支持不含凭据的 HTTPS。")
+        }
+        currentCoroutineContext().ensureActive()
+        val entry = media.reserve(sessionId, endpoint.toString(), kind)
+        return try {
+            validateMediaAccess()
+            currentCoroutineContext().ensureActive()
+            media.requireCurrent(entry)
+            media.session(entry)
+        } catch (error: Exception) { media.cancel(entry); throw error }
+    }
+
+    override suspend fun closeMedia(sessionId: String) {
+        require(sessionId.matches(Regex("media-[0-9a-f]{32}")))
+        media.cancel(sessionId)
+    }
+
+    override suspend fun interceptMedia(url: String, method: String, headers: Map<String, String>): RuntimeNetworkMediaResponse? {
+        val entry = media.find(url) ?: return null
+        val requestHeaders = RuntimeMediaHttpPolicy.requestHeaders(method, headers)
+        val control = media.request(entry)
+        try {
+            validateMediaAccess()
+            media.requireCurrent(entry)
+            // Playback has no implicit whole-response timeout or full-body materialisation.
+            val stream = proxy.openStream(ToolNetworkRequest(entry.source, NetworkRequestMethod.valueOf(method),
+                requestHeaders, null, false, timeoutMillis = 0, maxResponseBytes = policy?.maxResponseBytes,
+                resourceOwner = toolId ?: "foreground"), control)
+            validateMediaAccess()
+            media.requireCurrent(entry)
+            control.requireActive()
+            val response = stream.response
+            if (response.code == 416) {
+                val contentRange = response.header("Content-Range")?.takeIf { it.matches(Regex("bytes \\*/[0-9]+")) }
+                    ?: throw ToolNetworkFailure("MEDIA_RESPONSE")
+                media.finish(entry, control)
+                return RuntimeNetworkMediaResponse(416, "Range Not Satisfiable", "application/octet-stream",
+                    mapOf("Content-Range" to contentRange, "Content-Length" to "0", "Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
+            }
+            if (response.code !in setOf(200, 206)) throw ToolNetworkFailure("MEDIA_RESPONSE")
+            val exposed = RuntimeMediaHttpPolicy.responseHeaders(response.code, response.headers.toMap())
+            val type = response.header("Content-Type")
+            // Reject markup before reading, then inspect at most 32 bytes for otherwise untyped binary media.
+            var mime = RuntimeMediaHttpPolicy.mimeType(type, entry.kind)
+            val input = PushbackInputStream(response.body.byteStream(), 32)
+            if (mime == "application/octet-stream") mime = media.mime(entry) ?: mime
+            if (method == "GET" && mime == "application/octet-stream") {
+                val prefix = ByteArray(32)
+                var size = 0
+                while (size < prefix.size) {
+                    control.requireActive()
+                    val count = input.read(prefix, size, prefix.size - size)
+                    if (count < 0) break
+                    size += count
+                }
+                control.requireActive()
+                mime = RuntimeMediaHttpPolicy.mimeType(type, entry.kind, prefix.copyOf(size))
+                input.unread(prefix, 0, size)
+                media.rememberMime(entry, mime)
+            }
+            media.requireCurrent(entry)
+            control.requireActive()
+            val body = if (method == "HEAD") {
+                media.finish(entry, control)
+                ByteArrayInputStream(ByteArray(0))
+            } else RuntimeMediaInputStream(input, control, policy?.maxResponseBytes) { media.finish(entry, control) }
+            return RuntimeNetworkMediaResponse(response.code, if (response.code == 206) "Partial Content" else "OK", mime, exposed, body)
+        } catch (error: Exception) {
+            media.finish(entry, control)
+            throw error
+        }
+    }
+
+    private suspend fun validateMediaAccess() {
+        try { validateNetworkAccess() } catch (error: Exception) { cancelStreams(); throw error }
     }
 
     override suspend fun request(request: RuntimeNetworkRequest): RuntimeNetworkResponse {

@@ -7,7 +7,6 @@ import {
   CircleDot,
   ClockArrowDown,
   ClockArrowUp,
-  Eye,
   FolderOpen,
   RefreshCw,
   CalendarDays,
@@ -29,7 +28,6 @@ export default function General() {
   const {
     sortDirection,
     sortField,
-    showHiddenFeeds,
     markAsReadOnScroll,
     syncInterval,
     defaultExpandCategory,
@@ -68,17 +66,6 @@ export default function General() {
         <p className="text-xs text-muted">后台同步使用持续通知，可随时停止。开启时会立即同步一次；同步间隔设为“手动”时，后台固定每 15 分钟同步。</p>
       </div>
       <ItemWrapper title={t("settings.general.feeds")}>
-        <SwitchItem
-          label={t("settings.general.showHiddenFeeds")}
-          icon={
-            <SettingIcon variant="purple">
-              <Eye />
-            </SettingIcon>
-          }
-          settingName="showHiddenFeeds"
-          settingValue={showHiddenFeeds}
-        />
-        <Separator />
         <SwitchItem
           label={t("settings.general.defaultExpandCategory")}
           icon={

@@ -51,6 +51,24 @@ class RuntimeBridgeLifecycleInstrumentationTest {
         await { evaluate(first, "window.fetchedState && window.fetchedState.revision") == "1" }
         assertEquals(1, fixture.readyAdmissions.get())
 
+        val firstDocument = evaluate(first, "window.documentId")
+        main { first.evaluateJavascript("window.unsubscribeTimer()", null) }
+        assertTrue(HardenedRuntimeWebView.emitEvent(first, "background.timer", timerPayload(99)))
+        main { HardenedRuntimeWebView.loadEntry(first, fixture.runtime) }
+        await {
+            evaluate(first, "window.documentId") != firstDocument &&
+                evaluate(first, "window.bridgeReady") == "true" &&
+                evaluate(first, "window.bridgeStates.length") == "1"
+        }
+        assertEquals(firstGeneration, evaluate(first, "window.bridgeStates[0].generation"))
+        assertEquals("1", evaluate(first, "window.bridgeStates[0].revision"))
+        assertEquals("true", evaluate(first, "window.bridgeStates[0].foreground"))
+        assertEquals(2, fixture.readyAdmissions.get())
+        main { first.evaluateJavascript("window.installTimerListener()", null) }
+        assertEquals("\"\"", evaluate(first, "window.timerEvents.join(',')"))
+        assertTrue(HardenedRuntimeWebView.emitEvent(first, "background.timer", timerPayload(3)))
+        await { evaluate(first, "window.timerEvents.join(',')") == "\"3\"" }
+
         val saved = CompletableFuture.supplyAsync {
             runBlocking { HardenedRuntimeWebView.flushBeforeClose(first, 2_000L) }
         }.get(5, TimeUnit.SECONDS)
@@ -65,7 +83,7 @@ class RuntimeBridgeLifecycleInstrumentationTest {
         val second = fixture.attach()
         await { evaluate(second, "window.bridgeReady") == "true" && evaluate(second, "window.bridgeStates.length") == "1" }
         assertNotEquals(firstGeneration, evaluate(second, "window.bridgeStates[0].generation"))
-        assertEquals(2, fixture.readyAdmissions.get())
+        assertEquals(3, fixture.readyAdmissions.get())
     }
 
     @Test
@@ -134,8 +152,9 @@ class RuntimeBridgeLifecycleInstrumentationTest {
                 window.timerEvents = [];
                 window.bridgeReady = false;
                 window.fetchedState = null;
+                window.documentId = crypto.randomUUID();
                 ToolBox.runtime.onStateChanged(state => window.bridgeStates.push(state));
-                window.installTimerListener = () => ToolBox.background.onTimer(event => window.timerEvents.push(event.sequence));
+                window.installTimerListener = () => window.unsubscribeTimer = ToolBox.background.onTimer(event => window.timerEvents.push(event.sequence));
                 ToolBox.ready().then(() => window.bridgeReady = true);
             """.trimIndent().toByteArray())
             runtime = PreparedToolRuntime(

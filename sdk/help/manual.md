@@ -161,6 +161,18 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 ## 权限与运行
 
+### 小工具 WebView 调试（0.8.28 起）
+
+「设置 → 开发者帮助」中的「小工具 WebView 调试」开关仅显示编译版本的状态，应用内不可切换：调试版固定开启，正式版固定关闭。需要改变状态时，重新编译并安装对应版本；重启应用不会改变该状态。
+
+1. 使用 ToolBox 调试版，确认上述开关显示开启。
+2. 在手机开启 USB 调试，连接电脑并授权。
+3. 电脑 Chrome 打开 `chrome://inspect/#devices`，找到小工具页面后点击 Inspect。
+
+编译配置使用 APK 的 `android:debuggable` 标志：Debug 构建开启，Release 构建关闭。该状态不写入设置备份。WebView 的 Dev / Stable 通道不决定此状态。
+
+开发版 Android 系统（`userdebug` / `eng`）可能由系统强制开启接口，即使正式版 APK 请求关闭也会被忽略。此时页面显示实际开启状态并说明系统限制；普通用户版 Android 上，正式版接口保持关闭。
+
 ### 能力开关
 
 先在 manifest.permissions 声明，再由用户在工具权限页控制。接口没有隐式授权方法；工具授权与 Android 系统权限分别生效。新增能力默认关闭，已有授权在同身份更新中按声明继承。关闭安全存储权限或卸载工具会清理相应安全数据。
@@ -186,6 +198,12 @@ registerFlushHandler 用于确实销毁或主动重载之前保存：停止生�
 不设置统一的包大小、解压大小、笔记条数或持续任务时长额度。宿主在分配和写入前检查当前进程可用堆与目标磁盘空间，安装仍保持事务与回滚。调用方明确填写的网络请求预算继续生效；工具不必填写 network 预算。
 
 大网络响应使用 openStream/readStream 逐块消费，处理完一块再读取下一块；每块长度只是传输单位，不是总数据上限。openStream 支持 AbortSignal。EOF、取消、撤权和运行环境结束释放连接。
+
+audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将返回的临时同源 `url` 赋给播放器。宿主按播放器请求读取 HTTPS 源，无需先把完整媒体下载到 JS 内存。音视频编码由当前 WebView 支持情况决定；按字节快进依赖源站正确返回 Range/206，忽略 Range 的源站不保证快进。`kind` 只接受 `audio` 或 `video`，可以省略；源 URL 不得含用户名或密码。会话仅供当前工具运行环境使用。
+
+临时媒体地址还受 Android WebView 输入流接口限制：响应长度需能由 Content-Length 或 Content-Range 确定，并能在其 32 位长度接口内准确交付当前范围。无法确定长度或无法表示当前范围的请求会失败；工具应提供备用媒体源或原文入口。HLS 分片可通过 openStream/readStream 加载，不依赖该输入流接口。
+
+播放器停止、切换媒体或组件卸载时调用 `network.closeMedia(sessionId)`。已经取消的 AbortSignal 不会打开会话；等待打开期间取消会立即以 `CANCELLED` 拒绝，并清理迟到的会话。打开后取消、页面离开、导航、撤权和运行环境结束也会释放媒体连接。关闭会话在 network 权限撤销后仍可调用。
 
 网络未指定 timeoutMs 时不施加宿主总时限；0 表示关闭调用时限。调用方明确指定的超时用于该次请求。request 返回完整正文，files.read 返回完整 Uint8Array；这两种一次性返回仍须能够放入当前可用内存，并不意味着可以一次读取任意大的文件。超出实际资源时应显示错误。网络可改用 openStream 分块；files.read 暂无文件分块接口，应选择可放入内存的文件，或由工具自行提供分页数据。
 
@@ -384,6 +402,8 @@ export type ToolBoxMethodName =
   | "network.openStream"
   | "network.readStream"
   | "network.cancelStream"
+  | "network.openMedia"
+  | "network.closeMedia"
   | "notifications.post"
   | "notifications.update"
   | "notifications.cancel"
@@ -519,6 +539,23 @@ export interface NetworkStreamChunk {
   readonly data: Uint8Array;
   readonly done: boolean;
   readonly receivedBytes: number;
+}
+
+export interface NetworkMediaRequest {
+  /** HTTPS source without URL user information. */
+  readonly url: string;
+  readonly kind?: "audio" | "video";
+}
+
+export interface NetworkMediaOptions {
+  /** Immediately rejects a pending open and closes an opened or late session. */
+  readonly signal?: AbortSignal;
+}
+
+export interface NetworkMediaSession {
+  readonly sessionId: string;
+  /** Temporary same-origin player URL owned by this runtime. */
+  readonly url: string;
 }
 
 export type LiveNotificationTone = "neutral" | "positive" | "negative" | "warning";
@@ -716,6 +753,9 @@ export interface ToolBoxApi {
     openStream(request: NetworkRequest, options?: NetworkStreamOptions): Promise<NetworkStreamResponse>;
     readStream(streamId: string, options?: NetworkStreamReadOptions): Promise<NetworkStreamChunk>;
     cancelStream(streamId: string): Promise<void>;
+    openMedia(request: NetworkMediaRequest, options?: NetworkMediaOptions): Promise<NetworkMediaSession>;
+    /** Also callable after the tool's network grant is revoked. */
+    closeMedia(sessionId: string): Promise<void>;
   };
   notifications: {
     /** Text admission uses current available process heap; Android controls display truncation and IPC capacity. */

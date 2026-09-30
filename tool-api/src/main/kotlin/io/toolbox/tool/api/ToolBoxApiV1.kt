@@ -95,6 +95,8 @@ object ToolBoxApiV1 {
         MethodDescriptor("network.openStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamOpenRequest", "NetworkStreamResponse"),
         MethodDescriptor("network.readStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamIdRequest", "NetworkStreamChunk"),
         MethodDescriptor("network.cancelStream", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkStreamIdRequest", "void"),
+        MethodDescriptor("network.openMedia", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkMediaOpenRequest", "NetworkMediaSession"),
+        MethodDescriptor("network.closeMedia", ContractPhase.M2, ToolBoxCapabilityId.NETWORK, "NetworkMediaSessionIdRequest", "void"),
         MethodDescriptor("notifications.post", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.update", ContractPhase.M3, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationPostRequest", "void"),
         MethodDescriptor("notifications.cancel", ContractPhase.M2, ToolBoxCapabilityId.NOTIFICATIONS, "NotificationCancelRequest", "void"),

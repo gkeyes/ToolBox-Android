@@ -9,14 +9,17 @@ import { imageDimensions, imageSize } from "@/toolbox/imageDimensions.js";
 
 function ArticleImage({ imgNode, type = "article" }) {
   const attributes = imgNode?.attribs && typeof imgNode.attribs === "object" ? imgNode.attribs : {};
-  const { src, "data-image-source": sanitizedSource, alt = "" } = attributes;
-  const source = sanitizedSource || src;
+  const { src, "data-image-source": sanitizedSource, "data-image-candidates": candidatesMetadata, alt = "" } = attributes;
+  let candidates;
+  try { candidates = JSON.parse(candidatesMetadata); } catch { /* older article portals contain a single source */ }
+  if (!Array.isArray(candidates)) candidates = [sanitizedSource || src].filter(Boolean);
+  const primarySource = candidates[0];
   const galleryOpen = useStore(imageGalleryActive);
-  const { containerRef, url, error, retry } = useSafeImage(source, false, galleryOpen);
+  const { containerRef, url, error, retry, onError, source: loadedSource } = useSafeImage(candidates, false, galleryOpen);
+  const source = loadedSource || primarySource;
   const [dimensions, setDimensions] = useState(null);
-  const [failedUrl, setFailedUrl] = useState(null);
   const epoch = imageDimensions.epoch;
-  const failure = error || (failedUrl && failedUrl === url ? "图片解码失败，暂时无法显示。" : null);
+  const failure = error;
   const measured = imageSize(attributes.width, attributes.height)
     || (dimensions && dimensions.source === source && dimensions.epoch === epoch ? dimensions : null)
     || (source ? imageDimensions.get(source) : null);
@@ -28,7 +31,7 @@ function ArticleImage({ imgNode, type = "article" }) {
           <ImageOff className="size-5" />
           <span className="text-sm">{failure || "没有可安全显示的图片地址。"}</span>
           {alt && <span className="text-xs">{alt}</span>}
-          {approvedImageSource(source)?.kind === "proxy" && <button type="button" className="text-sm text-accent min-h-12 px-4" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setFailedUrl(null); retry(); }}>重试图片</button>}
+          {candidates.some((candidate) => approvedImageSource(candidate)?.kind === "proxy") && <button type="button" className="text-sm text-accent min-h-12 px-4" onClick={(event) => { event.preventDefault(); event.stopPropagation(); retry(); }}>重试图片</button>}
         </div>
       ) : (
         <div className={cn("max-w-full overflow-hidden", !measured && "w-full")} style={imageStyle}>
@@ -48,7 +51,7 @@ function ArticleImage({ imgNode, type = "article" }) {
                       ? previous : { source, width, height, epoch });
                   }
                 }}
-                onError={() => setFailedUrl(url)}
+                onError={() => onError(url)}
               />
             </PhotoView>
           ) : <div role="status" className={cn("bg-default w-full rounded-lg text-muted text-xs flex items-center justify-center", measured ? "h-full" : "min-h-12 p-4")}>图片加载中…</div>}

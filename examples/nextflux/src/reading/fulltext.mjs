@@ -18,6 +18,7 @@ export async function loadBestFullText({article,api,fetchSource=fetchWebDocument
   const selection=chooseBestArticleCandidate(candidates);
   return {
     content:selection.selected.content,
+    baseUrl:selection.selected.metadata?.baseUrl||article.url,
     source:selection.selected.source,
     score:selection.selected.score,
     candidates:selection.candidates.map(c=>({source:c.source,score:c.score,textChars:c.analysis.textChars,coverage:c.coverage})),

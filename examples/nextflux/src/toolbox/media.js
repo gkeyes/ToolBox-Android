@@ -36,13 +36,17 @@ export function acquireImage(value, allowLocal = false) {
 }
 
 export function useSafeImage(src, allowLocal = false, keepAlive = false) {
+  // Compare the candidate identities, rather than the array allocated by a
+  // portal render. The cache still shares each actual URL across all viewers.
+  const sourceKey = JSON.stringify([...new Set((Array.isArray(src) ? src : [src]).filter((value) => typeof value === "string" && value))].slice(0, 32));
   const containerRef = useRef(null);
   const leaseRef = useRef(null);
+  const decodeErrorRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState({ source: null, url: null, error: null });
+  const [state, setState] = useState({ key: null, source: null, url: null, error: null });
   // Opening a gallery retains mounted images, without fetching unseen images.
-  const active = visible || (keepAlive && leaseRef.current?.source === src);
+  const active = visible || (keepAlive && leaseRef.current?.key === sourceKey);
   useEffect(() => {
     const element = containerRef.current;
     if (!element || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
@@ -51,30 +55,68 @@ export function useSafeImage(src, allowLocal = false, keepAlive = false) {
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (!active || !src) return;
+    const sources = JSON.parse(sourceKey);
+    if (!active || !sources.length) return;
     let mounted = true;
-    let handle;
-    try {
-      handle = acquireImage(src, allowLocal);
-      leaseRef.current = { source: src, handle };
-      setState({ source: src, url: handle.url, error: null });
-      handle.promise.then(
-        (url) => mounted && setState({ source: src, url, error: null }),
-        (error) => mounted && setState({ source: src, url: null, error: error.message }),
-      );
-    } catch (error) { setState({ source: src, url: null, error: error.message }); }
+    const epoch = mediaEpoch;
+    let current = null, cursor = 0;
+    const release = () => {
+      if (leaseRef.current === current) leaseRef.current = null;
+      current?.handle.release();
+      current = null;
+    };
+    const advance = async (failure = null) => {
+      release();
+      while (mounted && epoch === mediaEpoch && cursor < sources.length) {
+        const source = sources[cursor++];
+        let request;
+        try {
+          request = { key: sourceKey, source, handle: acquireImage(source, allowLocal) };
+          current = request;
+          leaseRef.current = request;
+          request.url = request.handle.url;
+          setState({ key: sourceKey, source, url: request.url, error: null });
+          const url = await request.handle.promise;
+          if (!mounted || current !== request) return;
+          request.url = url;
+          setState({ key: sourceKey, source, url, error: null });
+          return;
+        } catch (error) {
+          if (!mounted || (request && current !== request)) return;
+          failure = error;
+          release();
+          // Account teardown invalidates pending leases. It must not start a
+          // new candidate under the next account's cache generation.
+          if (error.code === "CANCELLED" || error.code === "ACCOUNT_CHANGED") break;
+        }
+      }
+      if (mounted) setState({ key: sourceKey, source: null, url: null, error: failure?.message || "没有可安全显示的图片地址。" });
+    };
+    const onDecodeError = (url) => {
+      if (!mounted || epoch !== mediaEpoch || !url || current?.url !== url) return;
+      current.handle.invalidate?.();
+      void advance(new Error("图片解码失败，暂时无法显示。"));
+    };
+    decodeErrorRef.current = onDecodeError;
+    void advance();
     return () => {
       mounted = false;
-      if (leaseRef.current?.handle === handle) leaseRef.current = null;
-      handle?.release();
+      if (decodeErrorRef.current === onDecodeError) decodeErrorRef.current = null;
+      release();
     };
-  }, [src, active, allowLocal, attempt]);
+  }, [sourceKey, active, allowLocal, attempt]);
   const retry = useCallback(() => {
     leaseRef.current?.handle.invalidate?.();
-    setState({ source: src, url: null, error: null });
+    setState({ key: sourceKey, source: null, url: null, error: null });
     setAttempt((value) => value + 1);
-  }, [src]);
-  return { containerRef, retry, url: active && state.source === src && (!state.url?.startsWith("blob:") || images.hasBlob(state.url)) ? state.url : null, error: state.source === src ? state.error : null };
+  }, [sourceKey]);
+  const onError = useCallback((url) => decodeErrorRef.current?.(url), []);
+  return {
+    containerRef, retry, onError,
+    source: state.key === sourceKey ? state.source : null,
+    url: active && state.key === sourceKey && (!state.url?.startsWith("blob:") || images.hasBlob(state.url)) ? state.url : null,
+    error: state.key === sourceKey ? state.error : null,
+  };
 }
 
 const activeMedia = new Set();
@@ -87,10 +129,73 @@ export function clearMediaCache() {
   for (const media of activeMedia) media.release();
 }
 
-export async function loadProxyMedia(value, kind) {
+export async function attachProxyHlsMedia(element, value, callbacks) {
+  const approved = approvedImageSource(value);
+  if (approved?.kind !== "proxy") throw new Error("流媒体地址无效，请使用 HTTPS 地址。");
+  const epoch = mediaEpoch;
+  let playback = null, released = false;
+  const media = {
+    release() {
+      if (released) return;
+      released = true;
+      callbacks.signal?.removeEventListener("abort", abort);
+      playback?.release();
+      activeMedia.delete(media);
+    },
+  };
+  const abort = () => media.release();
+  activeMedia.add(media);
+  if (callbacks.signal?.aborted) media.release();
+  else callbacks.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const { attachHlsPlayback } = await import("./hlsPlayback.mjs");
+    if (released || epoch !== mediaEpoch) throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
+    playback = attachHlsPlayback(element, approved.url, {
+      onReady: () => { if (!released && epoch === mediaEpoch) callbacks.onReady?.(); },
+      onError: (error) => { if (!released && epoch === mediaEpoch) callbacks.onError?.(error); },
+    });
+    return media;
+  } catch (error) { media.release(); throw error; }
+}
+
+export async function loadProxyMedia(value, kind, { signal, onProgress } = {}) {
   const approved = approvedImageSource(value);
   if (approved?.kind !== "proxy" || !["audio", "video"].includes(kind)) throw new Error("媒体地址或类型无效，请使用 HTTPS 音视频地址。");
+  const native = globalThis.window?.ToolBox?.network;
+  if (native?.openMedia && native.closeMedia) {
+    const epoch = mediaEpoch;
+    const controller = new AbortController();
+    let session = null, released = false;
+    const media = {
+      release() {
+        if (released) return;
+        released = true;
+        controller.abort();
+        signal?.removeEventListener("abort", abort);
+        if (session?.sessionId) void Promise.resolve(native.closeMedia(session.sessionId)).catch(() => {});
+        activeMedia.delete(media);
+      },
+    };
+    const abort = () => media.release();
+    activeMedia.add(media);
+    if (signal?.aborted) media.release();
+    else signal?.addEventListener("abort", abort, { once: true });
+    try {
+      session = await native.openMedia({ url: approved.url, kind }, { signal: controller.signal });
+      if (released || epoch !== mediaEpoch) {
+        if (session?.sessionId) void Promise.resolve(native.closeMedia(session.sessionId)).catch(() => {});
+        throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
+      }
+      if (typeof session?.sessionId !== "string" || !session.sessionId || typeof session.url !== "string") throw new Error("宿主返回了无效的媒体会话。");
+      const local = new URL(session.url, window.location.href);
+      if (local.origin !== window.location.origin || local.username || local.password || local.search || local.hash || !/^\/\.toolbox\/media\/[a-z0-9_-]+$/i.test(local.pathname)) throw new Error("宿主返回了无效的媒体会话。");
+      return { url: local.href, release: media.release, isActive: () => !released && epoch === mediaEpoch };
+    } catch (error) { media.release(); throw error; }
+  }
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
   const epoch = mediaEpoch;
   let blob = null;
   let url = null;
@@ -111,15 +216,18 @@ export async function loadProxyMedia(value, kind) {
       accept: kind === "audio" ? "audio/*" : "video/*",
       mime: kind === "audio" ? /^audio\// : /^video\//,
       signal: controller.signal,
+      timeoutMs: 60000, onProgress,
     });
     if (released || epoch !== mediaEpoch) {
       blob = null;
       throw Object.assign(new Error("媒体加载已取消。"), { code: "CANCELLED" });
     }
     url = URL.createObjectURL(blob);
-    return { url, release: media.release };
+    return { url, release: media.release, isActive: () => !released && epoch === mediaEpoch };
   } catch (error) {
     media.release();
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }

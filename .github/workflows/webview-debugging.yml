@@ -1,0 +1,95 @@
+name: WebView debugging controls
+
+on:
+  pull_request:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - ".github/workflows/webview-debugging.yml"
+      - "app/build.gradle.kts"
+      - "app/src/main/kotlin/io/toolbox/host/help/DeveloperHelpScreen.kt"
+      - "app/src/androidTest/kotlin/io/toolbox/host/DeveloperWebViewDebuggingBehaviorTest.kt"
+      - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt"
+      - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webview-debugging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify ${{ matrix.variant }} debugging state on a user Android image
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: debug
+            task-suffix: Debug
+            arguments: ""
+          - variant: verification
+            task-suffix: Verification
+            arguments: "-Ptoolbox.verifyWebViewDebugging=true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Compile the selected APK signed only for testing
+        run: ./gradlew --no-daemon :app:assemble${{ matrix.task-suffix }} :app:compile${{ matrix.task-suffix }}AndroidTestKotlin ${{ matrix.arguments }}
+      - name: Enable accelerated emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify the full debugging test class on production Android
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis_playstore
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            mkdir -p build/webview-debugging
+            adb shell getprop ro.build.type > build/webview-debugging/android-build-type.txt
+            adb shell dumpsys webviewupdate > build/webview-debugging/webview-provider.txt
+            python3 -c "from pathlib import Path; assert Path('build/webview-debugging/android-build-type.txt').read_text().strip() == 'user'"
+            adb shell svc power stayon true
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }}
+      - name: Require all twelve scenarios to run and pass
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          cases = []
+          for path in Path('app/build/outputs/androidTest-results/connected').rglob('TEST-*.xml'):
+              cases.extend(case for case in ET.parse(path).getroot().iter('testcase')
+                           if case.get('classname') == 'io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest')
+          assert len(cases) == 12, f'Expected 12 executed cases, got {len(cases)}'
+          assert not any(case.find(tag) is not None for case in cases for tag in ('failure', 'error', 'skipped'))
+          print('Verified 12 executed scenarios with no failures, errors, or skips.')
+          PY
+      - name: Retain behavior reports and environment evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: webview-debugging-${{ matrix.variant }}-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+            build/webview-debugging/
+          if-no-files-found: warn
+          retention-days: 14

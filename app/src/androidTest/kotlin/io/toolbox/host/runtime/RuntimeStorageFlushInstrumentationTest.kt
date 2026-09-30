@@ -127,6 +127,21 @@ class RuntimeStorageFlushInstrumentationTest {
             runBlocking { withTimeout(10_000) { controlledStorage.entered.await() } }
             assertFalse("Close must wait for the admitted Room write", closing.isDone)
             assertNull(runBlocking { actualStorage.get("checkpoint") })
+            // The old document's admitted write must outlive navigation. The new
+            // document acknowledges the same close ticket without writing checkpoint.
+            Files.write(bundle.resolve("app.js"), """
+                window.bridgeReady = false;
+                window.writeResult = null;
+                window.documentAfterNavigation = true;
+                ToolBox.runtime.registerFlushHandler(() => Promise.resolve());
+                ToolBox.ready().then(() => window.bridgeReady = true);
+                window.tryWrite = (key, value) => ToolBox.storage.set(key, value)
+                  .then(() => window.writeResult = 'ok', error => window.writeResult = error.code);
+            """.trimIndent().toByteArray())
+            main { HardenedRuntimeWebView.loadEntry(view, runtime) }
+            await { evaluate(view, "window.documentAfterNavigation && window.bridgeReady") == "true" }
+            assertFalse("A new document must not bypass the old admitted write", closing.isDone)
+            assertNull(runBlocking { actualStorage.get("checkpoint") })
             // A later external stop shares the soft close ticket, but its own
             // two-second call must still return without cancelling the UI wait.
             val externalStop = CompletableFuture.supplyAsync {

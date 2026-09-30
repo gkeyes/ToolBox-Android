@@ -22,6 +22,10 @@ class RuntimePresentationCoordinatorTest {
         assertTrue(ticket.result.await())
         assertFalse(coordinator.admitOrdinaryRequest())
         coordinator.checkMethodAvailable("storage.set")
+        coordinator.checkMethodAvailable("background.stop")
+        assertTrue("network.closeMedia" in RuntimePresentationCoordinator.CONTROL_METHODS)
+        assertTrue(runtimeControlMethod("""{"id":"close","method":"network.closeMedia","params":{"sessionId":"media-123"}}"""))
+        coordinator.checkMethodAvailable("network.closeMedia")
         expectCode(RuntimeRpcErrorCode.SESSION_ENDED) { coordinator.checkMethodAvailable("ui.toast") }
 
         val drained = async { coordinator.awaitWrites() }

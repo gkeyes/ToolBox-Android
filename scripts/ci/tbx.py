@@ -29,8 +29,20 @@ RUNTIME_PERFORMANCE_TEST = "scripts/tests/tool-runtime-performance.test.cjs"
 RUNTIME_PERFORMANCE_TOOLS = {"stock-monitor", "notification-lab", "kegel-trainer"}
 TEST_FILES = {
     "nextflux": {
-        "unit": {"test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs", "test/background-preemption.test.mjs", "test/foreground-gate.test.mjs", "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs"},
-        "browser": {"test/browser/reading.spec.js", "test/browser/article-navigation.spec.js"},
+        "unit": {
+            "test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs",
+            "test/background-preemption.test.mjs", "test/foreground-gate.test.mjs",
+            "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs",
+            "test/cache-metadata.test.mjs", "test/cover-cache-upgrade.test.mjs",
+            "test/fulltext-extraction.test.mjs", "test/image-dimensions.test.mjs",
+            "test/image-sources.test.mjs", "test/media-mime.test.mjs",
+            "test/native-hls-loader.test.mjs", "test/reading-pipeline.test.mjs",
+            "test/source-document.test.mjs",
+        },
+        "browser": {
+            "test/browser/reading.spec.js", "test/browser/article-navigation.spec.js",
+            "test/browser/controls.spec.js", "test/browser/media-compat.spec.js",
+        },
     },
     "socialcoach": {
         "unit": {"test/platform.test.ts", "test/minimax.test.ts"},
@@ -146,6 +158,8 @@ def selected_tests(name, changed, requested_filter, full):
                 continue
             elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")):
                 selected |= allowed
+            elif name == "nextflux" and relative in {"test/browser/playwright.config.js", "test/browser/vite.config.js"}:
+                selected |= browser_files
             elif name == "socialcoach" and (relative.startswith("platform/") or relative.startswith("src/")):
                 selected |= allowed
             elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:

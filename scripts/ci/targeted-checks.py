@@ -43,11 +43,23 @@ RUNTIME_STORAGE_ANDROID = {
 }
 RUNTIME_ADMISSION_ANDROID = {
     "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeAdmissionInstrumentationTest#busyOrdinaryAdmissionRetriesTheSameNonemptyFinalWriteWhileControlsRemainAvailable",
+    "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeAdmissionInstrumentationTest#queuedAdmittedWriteSurvivesNavigationBeforeJsonDecode",
 }
 RUNTIME_SAVE_DIALOG_ANDROID = {
     "io.toolbox.host.ui.RuntimeSaveDialogBehaviorTest#miuixCloseChoicesAndCallbacks",
     "io.toolbox.host.ui.RuntimeSaveDialogBehaviorTest#liquidGlassCloseChoicesAndCallbacks",
 }
+MEDIA_APP_UNIT = {
+    "app=io.toolbox.host.background.RuntimeNetworkMediaTest",
+    "app=io.toolbox.host.background.RuntimeNetworkMediaTransportTest",
+}
+MEDIA_RUNTIME_UNIT = {
+    "tool-runtime=io.toolbox.tool.runtime.RuntimeNetworkMediaRpcTest",
+    "tool-runtime=io.toolbox.tool.runtime.RuntimeMediaWebViewInputStreamTest",
+}
+MEDIA_ANDROID = {"io.toolbox.host.RuntimeMediaStreamingBehaviorTest"}
+WEBVIEW_DEBUG_UNIT = {"tool-runtime=io.toolbox.tool.runtime.RuntimeWebViewDebuggingPolicyTest"}
+WEBVIEW_DEBUG_ANDROID = {"io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest"}
 UNIT_RE = re.compile(r"^(app|core-data|tool-package|tool-runtime)=([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?:#([A-Za-z_]\w*))?$")
 ANDROID_RE = re.compile(r"^(?:(app|tool-runtime)=)?(io\.toolbox\.[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:#([A-Za-z_]\w*))?$")
 NODE_RE = re.compile(r"^scripts/tests/browser-[A-Za-z0-9-]+\.test\.cjs$")
@@ -68,16 +80,32 @@ def validate(values, pattern, label):
 def classify(paths):
     unit, android, node, unknown = set(), set(), set(), []
     for path in paths:
-        if (path.startswith("examples/") or path == ".github/workflows/tbx.yml"
+        if (path.startswith("examples/") or path in {".github/workflows/tbx.yml", ".github/workflows/webview-debugging.yml"}
                 or path in {"scripts/tests/watcher-reliability.test.cjs", "scripts/tests/tool-runtime-performance.test.cjs"}
                 or path == "README.md" or path.startswith("docs/")
                 or path.startswith("core-data/schemas/")
                 or path in {"scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}):
-            # These inputs are checked by TBX CI or do not change Android behavior.
+            # Specialist workflows check their own inputs; the other paths do not change Android behavior.
             continue
         if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh"}:
             node.add("scripts/tests/browser-picker.test.cjs")
             android |= BROWSER_ANDROID
+        elif path.startswith("app/src/androidTest/assets/runtime-media/"):
+            android |= MEDIA_ANDROID
+        elif path.startswith("app/src/test/kotlin/io/toolbox/host/background/") and Path(path).stem in {
+            "RuntimeNetworkMediaTest", "RuntimeNetworkMediaTransportTest",
+        }:
+            unit.add("app=io.toolbox.host.background." + Path(path).stem)
+        elif path.startswith("app/src/main/kotlin/io/toolbox/host/background/") and Path(path).stem in {
+            "RuntimeMediaHttpPolicy", "RuntimeMediaInputStream", "RuntimeNetworkMediaSessions", "RuntimeNetworkGateway",
+        }:
+            unit |= MEDIA_APP_UNIT | MEDIA_RUNTIME_UNIT
+            android |= MEDIA_ANDROID
+        elif path == "tool-runtime/src/test/js/runtime-media-sdk.test.mjs":
+            # The SDK gate executes this file; selecting a host check keeps that gate active.
+            unit |= MEDIA_RUNTIME_UNIT
+        elif path.startswith("tool-runtime/src/test/kotlin/io/toolbox/tool/runtime/") and Path(path).stem.endswith("Test"):
+            unit.add("tool-runtime=io.toolbox.tool.runtime." + Path(path).stem)
         elif path.startswith("app/src/main/kotlin/io/toolbox/host/background/") or path.startswith("app/src/test/kotlin/io/toolbox/host/background/"):
             unit |= NETWORK_UNIT if any(name in path for name in ("Network", "RuntimeNetwork")) else BACKGROUND_UNIT
             android |= BACKGROUND_ANDROID
@@ -87,6 +115,12 @@ def classify(paths):
             android.add("io.toolbox.host.background." + Path(path).stem)
         elif path == "app/src/androidTest/AndroidManifest.xml":
             android |= RUNTIME_STORAGE_ANDROID | RUNTIME_SAVE_DIALOG_ANDROID
+        elif path == "app/src/main/kotlin/io/toolbox/host/help/DeveloperHelpScreen.kt":
+            android |= WEBVIEW_DEBUG_ANDROID
+        elif path == "app/src/main/kotlin/io/toolbox/host/settings/SettingsScreen.kt":
+            android.add("io.toolbox.host.BackgroundSettingsBehaviorTest")
+        elif path == "app/src/androidTest/kotlin/io/toolbox/host/DeveloperWebViewDebuggingBehaviorTest.kt":
+            android |= WEBVIEW_DEBUG_ANDROID
         elif path == "core-data/build.gradle.kts" or (path.startswith("core-data/src/main/kotlin/io/toolbox/core/data/") and Path(path).name in {
             "CoreDataFactory.kt", "Repositories.kt", "Daos.kt", "Entities.kt", "RoomRepositories.kt", "ToolBoxDatabase.kt", "ToolBoxMigrations.kt",
         }):
@@ -134,6 +168,8 @@ def classify(paths):
         elif path == "app/build.gradle.kts":
             unit |= NETWORK_UNIT | BACKGROUND_UNIT
             android |= MIGRATION_ANDROID
+            unit |= WEBVIEW_DEBUG_UNIT
+            android |= WEBVIEW_DEBUG_ANDROID
         elif path in {"scripts/ci/verify-host-contract.mjs", "sdk/help/manual.md"}:
             unit.add("tool-runtime=io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest")
             android.add("tool-runtime=io.toolbox.tool.runtime.WasmRuntimeInstrumentationTest")
@@ -145,7 +181,14 @@ def classify(paths):
             unit.add("core-data=" + path.removeprefix("core-data/src/test/kotlin/").removesuffix(".kt").replace("/", "."))
         elif path.startswith("tool-package/src/test/kotlin/") and Path(path).stem.endswith("Test"):
             unit.add("tool-package=" + path.removeprefix("tool-package/src/test/kotlin/").removesuffix(".kt").replace("/", "."))
-        elif path.startswith("tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/") or path.startswith("tool-runtime/src/test/kotlin/io/toolbox/tool/runtime/"):
+        elif path in {
+            "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt",
+            "tool-runtime/src/test/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebuggingPolicyTest.kt",
+        }:
+            unit |= WEBVIEW_DEBUG_UNIT
+            if path.endswith("RuntimeWebViewDebugging.kt"):
+                android |= WEBVIEW_DEBUG_ANDROID
+        elif path.startswith("tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/"):
             unit |= {
                 "tool-runtime=io.toolbox.tool.runtime.ToolRuntimeSecurityBoundaryTest",
                 "tool-runtime=io.toolbox.tool.runtime.RuntimeNetworkBudgetTest",
@@ -158,6 +201,15 @@ def classify(paths):
                 "tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#dedicatedProfileServiceWorkerHardeningIsRestoredAfterDeleteAndRecreate",
             }
             android |= RUNTIME_ADMISSION_ANDROID
+            if Path(path).name in {
+                "RuntimeRpc.kt", "RuntimeNetworkMedia.kt", "RuntimeMediaWebViewInputStream.kt",
+                "HardenedRuntimeWebView.kt", "RuntimeWebMessageBridge.kt",
+            }:
+                unit |= MEDIA_RUNTIME_UNIT | MEDIA_APP_UNIT
+                android |= MEDIA_ANDROID
+            if Path(path).name == "HardenedRuntimeWebView.kt":
+                unit |= WEBVIEW_DEBUG_UNIT
+                android |= WEBVIEW_DEBUG_ANDROID
         elif path.startswith("tool-runtime/src/androidTest/kotlin/io/toolbox/tool/runtime/"):
             test_name = Path(path).stem
             if test_name == "RuntimeBridgeLifecycleInstrumentationTest":

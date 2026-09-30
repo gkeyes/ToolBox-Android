@@ -1,7 +1,7 @@
 {
   "name": "nextflux-toolbox",
   "private": true,
-  "version": "1.0.33",
+  "version": "1.0.35",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -26,6 +26,7 @@
     "dayjs": "^1.11.13",
     "defuddle": "0.19.4",
     "framer-motion": "^12.4.4",
+    "hls.js": "1.7.3",
     "htmlparser2": "10.1.0",
     "i18next": "^24.2.2",
     "lodash": "^4.17.21",
