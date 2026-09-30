@@ -22,15 +22,16 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-media-layout-'));
   const htmlPath = path.join(dir, 'fixture.html');
 
+  const playerId = playerClass ? 'player' : 'content';
   const html = `<!doctype html>
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; width: 384px; min-height: 800px; }
-  #player { width: 384px; height: 0; display: block; }
+  #${playerId} { width: 384px; height: 0; display: block; }
   #wrap { width: 384px; height: 0; display: flex; }
   #video { width: 384px; height: 0; display: block; }
 </style>
-<div id="player" class="${playerClass}">
+<div id="${playerId}" class="${playerClass}">
   <div id="wrap" class="${playerClass ? 'dplayer-video-wrap' : ''}">
     <video id="video" class="dplayer-video dplayer-video-current"></video>
   </div>
@@ -44,9 +45,9 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
 </script>
 <script>
   try {
-    const before = document.getElementById('player').getBoundingClientRect();
+    const before = document.getElementById('${playerId}').getBoundingClientRect();
     const repaired = window.__toolboxRepairCollapsedMediaLayout();
-    const player = document.getElementById('player');
+    const player = document.getElementById('${playerId}');
     const wrap = document.getElementById('wrap');
     const video = document.getElementById('video');
     const after = player.getBoundingClientRect();
