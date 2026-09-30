@@ -45,7 +45,7 @@ class RuntimeBridgeAdmissionInstrumentationTest {
         )
         val holdEntered = CompletableDeferred<Unit>()
         val releaseHold = CompletableDeferred<Unit>()
-        val mutation = AtomicReference<RuntimeStorageMutation?>()
+        val appliedMutation = AtomicReference<RuntimeStorageMutation?>()
         val handler = object : RuntimeBatchStorageHandler {
             override suspend fun get(key: String): RpcValue? {
                 holdEntered.complete(Unit)
@@ -53,7 +53,7 @@ class RuntimeBridgeAdmissionInstrumentationTest {
                 return null
             }
             override suspend fun getMany(keys: List<String>): List<RpcValue?> = keys.map { get(it) }
-            override suspend fun apply(value: RuntimeStorageMutation) { mutation.set(value) }
+            override suspend fun apply(mutation: RuntimeStorageMutation) { appliedMutation.set(mutation) }
             override suspend fun set(key: String, value: RpcValue) = Unit
             override suspend fun remove(key: String) = Unit
             override suspend fun keys(): List<String> = emptyList()
@@ -111,14 +111,14 @@ class RuntimeBridgeAdmissionInstrumentationTest {
             await { evaluate(webView, "window.closeObserved") == "true" }
             // Allow more than two 50 ms SDK retries while the ordinary budget is held.
             Thread.sleep(160)
-            assertNull("Final write reached the handler before budget was released", mutation.get())
+            assertNull("Final write reached the handler before budget was released", appliedMutation.get())
             assertFalse(closing.isDone)
 
             releaseHold.complete(Unit)
             await { evaluate(webView, "window.holdDone") == "true" }
             assertTrue("Control flushComplete was blocked with ordinary work", closing.get(10, TimeUnit.SECONDS))
             assertEquals(RuntimeStorageMutation(set = listOf(RuntimeStorageSet("checkpoint",
-                RpcValue.ObjectValue(mapOf("value" to RpcValue.StringValue("saved")))))), mutation.get())
+                RpcValue.ObjectValue(mapOf("value" to RpcValue.StringValue("saved")))))), appliedMutation.get())
         } finally {
             releaseHold.complete(Unit)
             view?.let { webView -> main {

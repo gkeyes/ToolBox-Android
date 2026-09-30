@@ -55,7 +55,7 @@ class BackgroundTaskMigrationTest {
                 assertEquals("task-000", tasks.observeResult("task-000").first()?.taskId)
             }
 
-            SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY).use { migrated ->
+            SQLiteDatabase.openDatabase(path.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { migrated ->
                 assertEquals(2, migrated.version)
                 val indexes = mutableSetOf<String>()
                 migrated.rawQuery("PRAGMA index_list('background_tasks')", null).use { cursor ->
@@ -68,7 +68,7 @@ class BackgroundTaskMigrationTest {
                 assertFalse("index_background_tasks_state" in indexes)
             }
 
-            SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { changed ->
+            SQLiteDatabase.openDatabase(path.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { changed ->
                 repeat(51) { index ->
                     changed.execSQL(
                         "INSERT INTO background_tasks (taskId, toolId, versionCode, `key`, operation, specJson, periodic, state, createdAt, updatedAt, runAttempt) VALUES (?, 'tool', 1, ?, 'NOTIFY', '{}', 0, 'COMPLETED', 200, 200, 1)",
@@ -88,7 +88,7 @@ class BackgroundTaskMigrationTest {
                 assertEquals("task-050", loaded.last().taskId)
                 assertTrue(tasks.observeActiveTasks("tool").first().any { it.taskId == "task-051" && it.state == TaskState.RUNNING })
             }
-            SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { changed ->
+            SQLiteDatabase.openDatabase(path.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { changed ->
                 changed.execSQL("UPDATE background_tasks SET state = 'COMPLETED', updatedAt = 201 WHERE taskId = 'task-051'")
             }
             CoreDataFactory.create(context, name, "settings-$name").use { stores ->
