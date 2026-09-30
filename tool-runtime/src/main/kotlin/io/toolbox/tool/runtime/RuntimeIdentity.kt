@@ -17,11 +17,15 @@ object RuntimeIdentity {
         "miniapps/$toolId/versions/$versionCode/bundle"
 
     fun isExactLocalUrl(url: String, expectedOrigin: String): Boolean {
-        val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val origin = runCatching { URI(expectedOrigin) }.getOrNull() ?: return false
+        return isExactLocalUrl(url, origin)
+    }
+
+    fun isExactLocalUrl(url: String, expectedOrigin: URI): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
         return uri.scheme == "https" &&
             uri.rawUserInfo == null &&
-            uri.host == origin.host &&
+            uri.host == expectedOrigin.host &&
             uri.port == -1 &&
             uri.rawFragment == null
     }
