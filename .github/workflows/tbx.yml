@@ -58,9 +58,9 @@ on:
         required: true
         default: all
       validation_scope:
-        description: "Run all registered tests or one selected test path"
+        description: "Run registered tests, selected test paths, or build only"
         type: choice
-        options: [full, targeted]
+        options: [full, targeted, build]
         default: full
       test_filter:
         description: "For targeted runs: comma-separated test paths relative to the tool; watcher accepts scripts/tests/watcher-reliability.test.cjs"

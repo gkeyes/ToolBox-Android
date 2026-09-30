@@ -103,7 +103,8 @@ function runtimeHarness(respond = () => ({ ok: true, result: {} })) {
     dispatchEvent(event) { if (event.type === 'toolbox:runtime.error') errors.push(event.detail); },
   });
   vm.runInContext(shim, page);
-  const settle = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
+  // Drain nested promise/allSettled/retry continuations without advancing fake timers.
+  const settle = async () => { for (let index = 0; index < 64; index++) await Promise.resolve(); };
   const emit = payload => native.onmessage({ data: JSON.stringify(payload) });
   const runNextTimer = async (advance = 0) => {
     clock += advance;
@@ -163,6 +164,24 @@ assert(!eventsHarness.sent.some(request => request.method === 'runtime.ackEvents
 await eventsHarness.runNextTimer(1);
 assert(eventsHarness.sent.some(request => request.method === 'runtime.ackEvents' && request.params.sequence === 65),
   'A partial batch must be acknowledged at the 50 ms soft target');
+
+let ackAttempts = 0;
+const ackBusyHarness = runtimeHarness(request => {
+  if (request.method === 'runtime.ackEvents' && ++ackAttempts === 1) {
+    return { ok: false, error: { code: 'BUSY', message: 'Control request budget is full' } };
+  }
+  return { ok: true, result: {} };
+});
+await ackBusyHarness.settle();
+for (let sequence = 1; sequence <= 32; sequence++) ackBusyHarness.emit({ type: 'event',
+  event: 'background.timer', generation: 'generation', sequence, data: { sequence } });
+await ackBusyHarness.settle();
+assert.equal(ackAttempts, 1, 'A full batch must send one ACK before backoff');
+await ackBusyHarness.runNextTimer(49);
+assert.equal(ackAttempts, 1, 'BUSY must not spin or preempt its 50 ms retry');
+await ackBusyHarness.runNextTimer(1);
+assert.deepEqual(ackBusyHarness.sent.filter(request => request.method === 'runtime.ackEvents')
+  .map(request => request.params.sequence), [32, 32], 'The same high-water mark must retry after BUSY');
 
 const timeSliceHarness = runtimeHarness();
 await timeSliceHarness.settle();

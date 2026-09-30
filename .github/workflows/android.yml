@@ -167,6 +167,9 @@ jobs:
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           node-version: "22"
+      - name: Verify API contract, embedded SDK, and security entry points
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+        run: node scripts/ci/verify-host-contract.mjs
       - name: Verify browser picker selection and restore regressions
         if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
         run: node --test scripts/tests/browser-picker.test.cjs
@@ -233,9 +236,6 @@ jobs:
       - name: Lint the complete Android app
         if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: ./gradlew --no-daemon :app:lint
-      - name: Verify API contract, embedded SDK, and security entry points
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        run: node scripts/ci/verify-host-contract.mjs
       - name: Verify Wasm binary packaging
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v

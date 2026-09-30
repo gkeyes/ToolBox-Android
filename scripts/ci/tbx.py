@@ -142,7 +142,7 @@ def selected_tests(name, changed, requested_filter, full):
             full_path = path if name == "github-actions-watcher" else relative
             if full_path in allowed:
                 selected.add(full_path)
-            elif relative in {"manifest.json", "package.json", "package-lock.json", "README.md", "package.sh"}:
+            elif relative in {"manifest.json", "package.json", "package-lock.json", "README.md", "package.sh", "THIRD_PARTY_NOTICES.txt"}:
                 continue
             elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")):
                 selected |= allowed
@@ -178,12 +178,14 @@ def plan(selection, validation_scope="full", test_filter=""):
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
         changed = git_changes(event, os.environ["GITHUB_EVENT_NAME"])
     selected = select_targets(registry, selection, changed)
-    if validation_scope not in {"full", "targeted"}:
+    if validation_scope not in {"full", "targeted", "build"}:
         raise ValueError("Unknown TBX validation scope")
     if test_filter and validation_scope != "targeted":
         raise ValueError("Choose targeted validation when selecting a test path")
     if validation_scope == "targeted" and selection != "changed" and not test_filter:
         raise ValueError("Targeted TBX dispatch needs a test path")
+    if validation_scope == "build" and selection == "changed":
+        raise ValueError("Build-only dispatch needs an explicitly selected tool")
     for name in selected:
         metadata(name, registry[name])
     matrix = {"include": [
@@ -199,7 +201,7 @@ def plan(selection, validation_scope="full", test_filter=""):
     print(json.dumps(matrix, indent=2))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
-            handle.write("TBX targets: " + (", ".join(selected) or "none (no registered tool affected)") + "\n")
+            handle.write(f"TBX scope: {validation_scope}; targets: " + (", ".join(selected) or "none (no registered tool affected)") + "\n")
 
 
 def execute(command, source):

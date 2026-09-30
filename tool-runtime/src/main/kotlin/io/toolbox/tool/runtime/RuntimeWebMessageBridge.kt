@@ -376,6 +376,7 @@ class RuntimeBridgeSession internal constructor(
               let receivedSequence = 0;
               let acknowledgedSequence = 0;
               let ackTimer = null;
+              let ackBackoff = false;
               let ackInFlight = false;
               let ackFailed = false;
               const runtimeError = (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra });
@@ -430,13 +431,17 @@ class RuntimeBridgeSession internal constructor(
               };
               const acknowledgeEvents = () => {
                 if (ackTimer !== null) { clearTimeout(ackTimer); ackTimer = null; }
+                ackBackoff = false;
                 if (disposed || ackFailed || ackInFlight || receivedSequence <= acknowledgedSequence) return;
                 const upTo = receivedSequence;
                 ackInFlight = true;
                 call('runtime.ackEvents', { sequence: upTo }).then(() => {
                   acknowledgedSequence = upTo;
                 }).catch(error => {
-                  if (error.code === 'BUSY') ackTimer = setTimeout(acknowledgeEvents, 50);
+                  if (error.code === 'BUSY') {
+                    ackBackoff = true;
+                    ackTimer = setTimeout(acknowledgeEvents, 50);
+                  }
                   else { ackFailed = true; reportError(error); }
                 }).finally(() => {
                   ackInFlight = false;
@@ -444,7 +449,7 @@ class RuntimeBridgeSession internal constructor(
                 });
               };
               const arrangeAck = () => {
-                if (disposed || ackFailed || ackInFlight || ackTimer !== null || receivedSequence <= acknowledgedSequence) return;
+                if (disposed || ackFailed || ackInFlight || ackBackoff || receivedSequence <= acknowledgedSequence) return;
                 if (receivedSequence - acknowledgedSequence >= 32) acknowledgeEvents();
                 else if (ackTimer === null) ackTimer = setTimeout(acknowledgeEvents, 50);
               };
