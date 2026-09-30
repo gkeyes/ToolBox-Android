@@ -163,7 +163,7 @@ export default function ActionButtons() {
           : "bg-background/70 md:bg-overlay/70",
       )}
     >
-      <div className="flex flex-wrap items-start gap-1">
+      <div className="flex flex-nowrap items-center gap-0.5 overflow-hidden">
         <Tooltip
           content={t("common.close")}
           classNames={{ content: "shadow-custom!" }}
@@ -210,7 +210,7 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
         </div>
-        <div className="ml-auto flex min-w-[48px] flex-1 flex-wrap items-center justify-end gap-1">
+        <div className="ml-auto flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <ArticleTitleFilterButton />
           <FullTextAdaptButton />
           <ArticleSpeechButton article={$activeArticle} />
