@@ -1,8 +1,6 @@
 package io.toolbox.host.runtime
 
-import android.app.Activity
 import android.content.Intent
-import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
@@ -19,6 +17,7 @@ import io.toolbox.core.data.InstallTransactionState
 import io.toolbox.core.data.SecurityProfile
 import io.toolbox.core.data.ToolMetadata
 import io.toolbox.core.data.ToolVersion
+import io.toolbox.host.MainActivity
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxCapabilityId
 import io.toolbox.tool.packagekit.InstalledManifest
@@ -66,10 +65,8 @@ class RuntimeStorageFlushInstrumentationTest {
         val root = context.filesDir.toPath()
         val bundle = root.resolve(RuntimeIdentity.expectedBundleLocator(toolId, 1))
         val manager = RuntimeProfileManager(context.filesDir)
-        val scenario = ActivityScenario.launch<RuntimeFlushTestActivity>(
-            Intent(InstrumentationRegistry.getInstrumentation().context, RuntimeFlushTestActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+        val scenario = ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java))
+        var attachedView: WebView? = null
         try {
             Files.createDirectories(bundle)
             Files.write(bundle.resolve("index.html"),
@@ -109,14 +106,17 @@ class RuntimeStorageFlushInstrumentationTest {
             val opened = CompletableFuture<WebView>()
             scenario.onActivity { activity ->
                 runCatching {
-                    activity.attach(runtime, permit, RuntimeBridgeProvider {
+                    attach(activity, runtime, permit, RuntimeBridgeProvider {
                         RuntimeBridgeConfiguration(
                             authorization = storageAuthorization,
                             handlers = RuntimeM1Handlers(storage = controlledStorage),
                             hostVersion = "0.8.0",
                         )
                     })
-                }.onSuccess(opened::complete).onFailure(opened::completeExceptionally)
+                }.onSuccess { view ->
+                    attachedView = view
+                    opened.complete(view)
+                }.onFailure(opened::completeExceptionally)
             }
             val view = opened.get(10, TimeUnit.SECONDS)
             await { evaluate(view, "window.bridgeReady") == "true" }
@@ -148,7 +148,12 @@ class RuntimeStorageFlushInstrumentationTest {
             await { evaluate(view, "window.writeResult") == "\"ok\"" }
             assertEquals(RpcValue.StringValue("after-cancel"), runBlocking { actualStorage.get("late") })
         } finally {
-            scenario.onActivity { it.dispose() }
+            scenario.onActivity {
+                attachedView?.let { view ->
+                    (view.parent as? ViewGroup)?.removeView(view)
+                    HardenedRuntimeWebView.release(view)
+                }
+            }
             scenario.close()
             runBlocking { manager.clearThenRun(toolId) { Unit } }.let {
                 assertTrue("Runtime profile cleanup failed: $it", it is RuntimeDataCleanupExecution.Completed)
@@ -194,6 +199,24 @@ class RuntimeStorageFlushInstrumentationTest {
             RuntimePolicyDecision.Allowed
     }
 
+    private fun attach(
+        activity: MainActivity,
+        runtime: PreparedToolRuntime,
+        permit: RuntimeCreationPermit,
+        provider: RuntimeBridgeProvider,
+    ): WebView {
+        val content = FrameLayout(activity)
+        activity.setContentView(content)
+        val result = HardenedRuntimeWebView.create(activity, runtime, permit,
+            RuntimeWebViewCallbacks({}, { error(it) }, { error("renderer gone") }), provider)
+        val view = when (result) {
+            is RuntimeWebViewCreationResult.Created -> result.webView
+            is RuntimeWebViewCreationResult.Failed -> error(result.message)
+        }
+        content.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        return view
+    }
+
     private fun evaluate(view: WebView, expression: String): String {
         val result = CompletableFuture<String>()
         main { view.evaluateJavascript(expression) { result.complete(it) } }
@@ -215,40 +238,5 @@ class RuntimeStorageFlushInstrumentationTest {
             runCatching(action).onSuccess(result::complete).onFailure(result::completeExceptionally)
         }
         return result.get(10, TimeUnit.SECONDS)
-    }
-}
-
-class RuntimeFlushTestActivity : Activity() {
-    private lateinit var content: FrameLayout
-    private var active: WebView? = null
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        content = FrameLayout(this)
-        setContentView(content)
-    }
-
-    fun attach(runtime: PreparedToolRuntime, permit: RuntimeCreationPermit, provider: RuntimeBridgeProvider): WebView {
-        val result = HardenedRuntimeWebView.create(this, runtime, permit,
-            RuntimeWebViewCallbacks({}, { error(it) }, { error("renderer gone") }), provider)
-        val view = when (result) {
-            is RuntimeWebViewCreationResult.Created -> result.webView
-            is RuntimeWebViewCreationResult.Failed -> error(result.message)
-        }
-        active = view
-        content.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        return view
-    }
-
-    fun dispose() {
-        val view = active ?: return
-        content.removeView(view)
-        HardenedRuntimeWebView.release(view)
-        active = null
-    }
-
-    override fun onDestroy() {
-        dispose()
-        super.onDestroy()
     }
 }

@@ -7,6 +7,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -100,19 +102,20 @@ class RuntimeNotificationControllerTest {
     }
 
     @Test
-    fun identicalExplicitTimeSkipsRefreshButOmittedTimeGetsFreshReceipt() = runBlocking {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun identicalExplicitTimeSkipsRefreshButOmittedTimeGetsFreshReceipt() = runTest {
         var now = 1_000L
         var refreshes = 0
         val coordinator = LiveNotificationCoordinator(this, { now }, { refreshes++ })
         val explicit = liveRequest(updatedAt = 123L)
         coordinator.start("com.example.tool", "Example", explicit)
         val first = coordinator.snapshot().single()
-        kotlinx.coroutines.yield()
+        advanceUntilIdle()
         assertEquals(1, refreshes)
 
         now = 2_000L
         coordinator.update("com.example.tool", "Example", explicit)
-        kotlinx.coroutines.yield()
+        advanceUntilIdle()
         assertEquals(first, coordinator.snapshot().single())
         assertEquals(1, refreshes)
 
@@ -120,13 +123,13 @@ class RuntimeNotificationControllerTest {
         coordinator.update("com.example.tool", "Example", omitted)
         val second = coordinator.snapshot().single()
         assertEquals(2_000L, second.receivedAt)
-        kotlinx.coroutines.yield()
+        advanceUntilIdle()
         assertEquals(2, refreshes)
 
         now = 3_000L
         coordinator.update("com.example.tool", "Example", omitted)
         assertEquals(3_000L, coordinator.snapshot().single().receivedAt)
-        kotlinx.coroutines.yield()
+        advanceUntilIdle()
         assertEquals(3, refreshes)
     }
 
