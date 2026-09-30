@@ -230,9 +230,10 @@ def run_selected_tests(name, test_filter, browser=False):
             if path == RUNTIME_PERFORMANCE_TEST and name in RUNTIME_PERFORMANCE_TOOLS:
                 command += ["--test-name-pattern", {"stock-monitor": "^stock ", "notification-lab": "^notification lab ", "kegel-trainer": "^Kegel "}[name]]
             command.append(path)
-            completed = subprocess.run(command, cwd=source, text=True, capture_output=True, check=True)
+            completed = subprocess.run(command, cwd=source, text=True, capture_output=True)
             sys.stdout.write(completed.stdout)
             sys.stderr.write(completed.stderr)
+            completed.check_returncode()
             count = re.findall(r"^# pass (\d+)\s*$", completed.stdout, re.MULTILINE)
             if not count or int(count[-1]) == 0:
                 raise ValueError(f"No Node tests executed for {name}: {path}")
