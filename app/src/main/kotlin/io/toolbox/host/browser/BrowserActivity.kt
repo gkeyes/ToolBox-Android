@@ -278,7 +278,7 @@ class BrowserActivity : ComponentActivity() {
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
                     val compatible = view === webView &&
                         BrowserSslPolicy.allowLegacyUntrustedChain(
-                            pageUrl = view.url.orEmpty(),
+                            pageUrl = address,
                             failureUrl = failure.url.orEmpty(),
                             hasUntrusted = failure.hasError(SslError.SSL_UNTRUSTED),
                             hasIdMismatch = failure.hasError(SslError.SSL_IDMISMATCH),
