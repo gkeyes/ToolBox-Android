@@ -56,5 +56,4 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
             adb shell dumpsys webviewupdate
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserMediaLayoutInstrumentationTest
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.BrowserMediaLayoutInstrumentationTest
