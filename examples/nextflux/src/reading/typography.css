@@ -70,6 +70,16 @@
   text-indent: 2em;
 }
 
+.article-content p[data-reading-role="list"] {
+  margin-block: .18em !important;
+  text-indent: 0;
+}
+
+.article-content p[data-reading-role="meta"] {
+  margin-block: .32em !important;
+  text-indent: 0;
+}
+
 /* Keep structural/editorial blocks aligned even if source markup is unusual. */
 .article-content :is(li, blockquote, figure, figcaption, table, th, td) p {
   text-indent: 0;

@@ -1,6 +1,6 @@
 import { ALLOWED_TAGS, safeContentUrl } from "../toolbox/content.js";
 
-const SAFE_ATTRIBUTES = new Set(["alt", "title", "colspan", "rowspan", "start", "class", "href", "rel", "data-article-anchor"]);
+const SAFE_ATTRIBUTES = new Set(["alt", "title", "colspan", "rowspan", "start", "class", "href", "rel", "data-article-anchor", "data-reading-role"]);
 
 // Only this module owns descendants of the supplied empty article body. React
 // owns its surrounding UI and portals; no raw HTML is ever assigned to the DOM.
@@ -38,7 +38,7 @@ export function createReadingRenderer(root, baseUrl, addPortal) {
     if (!old || old === root || old.tagName.toLowerCase() === tag) return old;
     const element = document.createElement(tag);
     for (const attribute of old.attributes) {
-      if (["data-font-block", "data-article-anchor", "data-reading-indent", "title"].includes(attribute.name)) element.setAttribute(attribute.name, attribute.value);
+      if (["data-font-block", "data-article-anchor", "data-reading-indent", "data-reading-role", "title"].includes(attribute.name)) element.setAttribute(attribute.name, attribute.value);
     }
     while (old.firstChild) element.appendChild(old.firstChild);
     old.replaceWith(element);

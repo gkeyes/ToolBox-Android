@@ -19,7 +19,7 @@ export function createReadingParser(html, baseUrl) {
   const normalization = createNormalizationPlan(analysis);
   let offset = 0, nextId = 1, ended = false;
   const pending = [];
-  const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false }];
+  const stack = [{ id: 0, tag: null, parentTag: null, blocked: false, depth: 0, layoutProtected: false, textLength: 0, linkTextLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false }];
   let queuedText = 0;
   const emit = (operation) => { pending.push(operation); queuedText += operation.text?.length || 0; };
   let textTail = "", textParent = 0, textPreserveBreaks = false;
@@ -94,7 +94,7 @@ export function createReadingParser(html, baseUrl) {
     onopentag(tag, attributes) {
       flushText();
       const parent = stack.at(-1);
-      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentenceTerminal: false };
+      const entry = { tag, parentTag: parent.tag, id: parent.id, blocked: parent.blocked || DROP_CONTENT.has(tag), depth: parent.depth, media: parent.media, code: parent.code, literalText: parent.literalText || tag === "code", layoutProtected: parent.layoutProtected || ["pre","code","table","thead","tbody","tfoot","tr","th","td","ul","ol","li","blockquote"].includes(tag), textLength: 0, linkTextLength: 0, textPreview: "", hasMedia: false, childElements: [], hasBlockChild: false, displayStarted: false, hasSentenceTerminal: false };
       stack.push(entry);
       if (parent.media && tag === "source" && !parent.media.url) parent.media.url = mediaUrl(attributes.src, baseUrl);
       if (entry.blocked) return;
@@ -155,10 +155,12 @@ export function createReadingParser(html, baseUrl) {
       }
       const normalized = displayText.replace(/\s+/g, " ").trim();
       if (normalized) {
+        const insideLink = stack.some((entry) => entry.tag === "a");
         for (let index = 1; index < stack.length; index += 1) {
           const entry = stack[index];
           if (entry.blocked) continue;
           entry.textLength += normalized.length;
+          if (insideLink) entry.linkTextLength += normalized.length;
           if (entry.textPreview.length < 192) {
             entry.textPreview = (entry.textPreview ? entry.textPreview + " " + normalized : normalized)
               .replace(/\s+/g, " ").trim().slice(0, 192);
@@ -196,6 +198,10 @@ export function createReadingParser(html, baseUrl) {
         tag: entry.tag,
         protectedText: entry.layoutProtected,
         hasSentence: entry.hasSentenceTerminal,
+        role: entry.attrs?.["data-reading-role"],
+        text: entry.textPreview,
+        textLength: entry.textLength,
+        linkTextLength: entry.linkTextLength,
       });
       if (entry.id && presentation) emit({ type: "paragraphStyle", id: entry.id, ...presentation });
       if (entry.id && shouldRemoveStandaloneNoise({

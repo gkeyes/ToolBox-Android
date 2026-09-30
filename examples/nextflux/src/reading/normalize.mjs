@@ -23,8 +23,16 @@ export function hasSentenceTerminal(text){
   return /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(String(text||""));
 }
 
-export function paragraphPresentation({tag,protectedText=false,hasSentence=false}={}){
-  if(tag!=="p"||protectedText||!hasSentence)return null;
+function isEditorialMetadata(text, textLength, linkTextLength) {
+  const value=compact(text);
+  if(textLength>96)return false;
+  if(textLength>0&&linkTextLength/textLength>=.8)return true;
+  if(linkTextLength>0&&/(?:是.{0,48}(?:记者|编辑|作者)|为.{0,48}(?:撰稿|撰写|报道))/u.test(value))return true;
+  return /^(?:翻译|译者|来源|作者|撰文|编辑|责任编辑|校对|摄影|图源)[：:]|^点击(?:查看|阅读)(?:本文|原文|英文版|全文|详情)|(?:对本文有报道贡献|为本文提供报道)[。.!！]?$/u.test(value);
+}
+
+export function paragraphPresentation({tag,protectedText=false,hasSentence=false,role,text,textLength=0,linkTextLength=0}={}){
+  if(tag!=="p"||protectedText||!hasSentence||role||isEditorialMetadata(text,textLength,linkTextLength))return null;
   return {indent:true};
 }
 
