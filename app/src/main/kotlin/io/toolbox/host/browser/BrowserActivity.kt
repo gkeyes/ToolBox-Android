@@ -1,9 +1,11 @@
 package io.toolbox.host.browser
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
@@ -32,6 +34,7 @@ import android.webkit.WebSettings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -69,6 +72,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -137,6 +141,37 @@ class BrowserActivity : ComponentActivity() {
     private var browserTouchDownPx = 0f
     private var browserTouchUpPx = 0f
     private var browserChromeGestureCommitted = false
+    private var pendingWebPermissionRequest: PermissionRequest? = null
+    private var pendingGeolocationOrigin: String? = null
+    private var pendingGeolocationCallback: GeolocationPermissions.Callback? = null
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+
+    private val webPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            val request = pendingWebPermissionRequest ?: return@registerForActivityResult
+            pendingWebPermissionRequest = null
+            settleWebPermissionRequest(request)
+        }
+
+    private val geolocationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            val origin = pendingGeolocationOrigin
+            val callback = pendingGeolocationCallback
+            pendingGeolocationOrigin = null
+            pendingGeolocationCallback = null
+            if (origin != null && callback != null) {
+                callback.invoke(origin, hasLocationPermission(), false)
+            }
+        }
+
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooser ?: return@registerForActivityResult
+            pendingFileChooser = null
+            callback.onReceiveValue(
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+            )
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -338,25 +373,67 @@ class BrowserActivity : ComponentActivity() {
                         request.deny()
                         return
                     }
+                    handleWebPermissionRequest(request)
+                }
 
-                    val granted = BrowserMediaPolicy.grantedResources(
-                        originScheme = request.origin.scheme,
-                        requested = request.resources,
-                    )
-                    if (granted.isEmpty()) request.deny() else request.grant(granted)
-
-                    if (BrowserMediaPolicy.requestsCapture(request.resources)) {
-                        unsupported("内置浏览器仍不提供摄像头或麦克风权限；网页视频播放不受此限制。")
+                override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                    if (pendingWebPermissionRequest === request) {
+                        pendingWebPermissionRequest = null
                     }
                 }
-                override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
-                    callback.invoke(origin, false, false)
-                    if (page === webView) unsupported("内置浏览器不提供定位权限，可从菜单选择系统浏览器。")
+
+                override fun onGeolocationPermissionsShowPrompt(
+                    origin: String,
+                    callback: GeolocationPermissions.Callback,
+                ) {
+                    if (page !== webView) {
+                        callback.invoke(origin, false, false)
+                        return
+                    }
+                    if (hasLocationPermission()) {
+                        callback.invoke(origin, true, false)
+                        return
+                    }
+                    pendingGeolocationCallback?.let { previous ->
+                        pendingGeolocationOrigin?.let { previousOrigin ->
+                            previous.invoke(previousOrigin, false, false)
+                        }
+                    }
+                    pendingGeolocationOrigin = origin
+                    pendingGeolocationCallback = callback
+                    geolocationPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                        ),
+                    )
                 }
-                override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
-                    callback.onReceiveValue(null)
-                    if (view === webView) unsupported("内置浏览器暂不支持上传文件，可从菜单选择系统浏览器。")
-                    return true
+
+                override fun onGeolocationPermissionsHidePrompt() {
+                    pendingGeolocationOrigin = null
+                    pendingGeolocationCallback = null
+                }
+
+                override fun onShowFileChooser(
+                    view: WebView,
+                    callback: ValueCallback<Array<Uri>>,
+                    params: FileChooserParams,
+                ): Boolean {
+                    if (view !== webView) {
+                        callback.onReceiveValue(null)
+                        return true
+                    }
+                    pendingFileChooser?.onReceiveValue(null)
+                    pendingFileChooser = callback
+                    return runCatching {
+                        fileChooserLauncher.launch(params.createIntent())
+                        true
+                    }.getOrElse {
+                        pendingFileChooser = null
+                        callback.onReceiveValue(null)
+                        Toast.makeText(this@BrowserActivity, "无法打开系统文件选择器", Toast.LENGTH_SHORT).show()
+                        true
+                    }
                 }
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                     if (page !== webView || fullScreenView != null) {
@@ -500,6 +577,54 @@ class BrowserActivity : ComponentActivity() {
             MotionEvent.ACTION_CANCEL -> resetBrowserChromeGesture()
         }
     }
+
+    private fun handleWebPermissionRequest(request: PermissionRequest) {
+        pendingWebPermissionRequest?.takeIf { it !== request }?.deny()
+
+        val needed = buildList {
+            if (
+                request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                !hasAndroidPermission(Manifest.permission.CAMERA)
+            ) {
+                add(Manifest.permission.CAMERA)
+            }
+            if (
+                request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                !hasAndroidPermission(Manifest.permission.RECORD_AUDIO)
+            ) {
+                add(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+
+        if (needed.isEmpty()) {
+            settleWebPermissionRequest(request)
+        } else {
+            pendingWebPermissionRequest = request
+            webPermissionLauncher.launch(needed.distinct().toTypedArray())
+        }
+    }
+
+    private fun settleWebPermissionRequest(request: PermissionRequest) {
+        val granted = request.resources.filter { resource ->
+            when (resource) {
+                PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID -> true
+                PermissionRequest.RESOURCE_VIDEO_CAPTURE ->
+                    hasAndroidPermission(Manifest.permission.CAMERA)
+                PermissionRequest.RESOURCE_AUDIO_CAPTURE ->
+                    hasAndroidPermission(Manifest.permission.RECORD_AUDIO)
+                else -> false
+            }
+        }.distinct().toTypedArray()
+
+        if (granted.isEmpty()) request.deny() else request.grant(granted)
+    }
+
+    private fun hasAndroidPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun hasLocationPermission(): Boolean =
+        hasAndroidPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            hasAndroidPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
 
     private fun applyUserAgent(settings: WebSettings) {
         val profile = BrowserUserAgentPolicy.profile(
@@ -801,6 +926,15 @@ class BrowserActivity : ComponentActivity() {
     override fun onDestroy() {
         resumed = false
         mediaDiagnosticsCapture = false
+        pendingWebPermissionRequest?.deny()
+        pendingWebPermissionRequest = null
+        pendingGeolocationCallback?.let { callback ->
+            pendingGeolocationOrigin?.let { origin -> callback.invoke(origin, false, false) }
+        }
+        pendingGeolocationCallback = null
+        pendingGeolocationOrigin = null
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         hideFullScreen()
         unresponsiveRenderer = null
         webView?.let(::destroyPage)
