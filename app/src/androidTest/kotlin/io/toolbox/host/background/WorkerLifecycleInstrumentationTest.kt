@@ -34,8 +34,10 @@ class WorkerLifecycleInstrumentationTest {
         withHarness(BackgroundOperation.NOTIFY) { stores, task ->
             val blocked = AtomicBoolean(true)
             val entered = CompletableDeferred<Job>()
+            val policyReads = AtomicInteger()
             val notifications = RecordingNotifications()
             val authorization = BackgroundAuthorization { _, _ ->
+                policyReads.incrementAndGet()
                 entered.complete(currentCoroutineContext().job)
                 if (blocked.get()) awaitCancellation()
                 allowedPolicy()
@@ -54,7 +56,28 @@ class WorkerLifecycleInstrumentationTest {
             blocked.set(false)
             assertEquals(ListenableWorker.Result.success(), worker(task.taskId).startWork().get(10, TimeUnit.SECONDS))
             assertEquals(1, notifications.posts.get())
+            assertEquals(2, policyReads.get())
             assertEquals(TaskState.COMPLETED, current(stores, task.taskId).state)
+        }
+    }
+
+    @Test
+    fun revocationDuringNotificationPreparationPreventsDelivery() = runBlocking(Dispatchers.IO) {
+        withHarness(BackgroundOperation.NOTIFY) { stores, task ->
+            val entered = CompletableDeferred<Unit>()
+            val prepared = CompletableDeferred<Unit>()
+            val notifications = RecordingNotifications {
+                entered.complete(Unit)
+                prepared.await()
+            }
+            ToolBoxBackgroundRuntime.install(dependencies(stores, BackgroundAuthorization { _, _ -> allowedPolicy() }, notifications))
+            val future = worker(task.taskId).startWork()
+            withTimeout(10_000) { entered.await() }
+            success(stores.repositories.grants.put(PermissionGrant(TOOL, "notifications", false, 2)))
+            prepared.complete(Unit)
+            assertEquals(ListenableWorker.Result.success(), future.get(10, TimeUnit.SECONDS))
+            assertEquals(0, notifications.posts.get())
+            assertEquals(TaskState.CANCELLED, current(stores, task.taskId).state)
         }
     }
 
@@ -168,6 +191,8 @@ class WorkerLifecycleInstrumentationTest {
             success(stores.repositories.lifecycle.commitInstall(CatalogInstallAttempt(tx,
                 ToolMetadata(TOOL, "Worker lifecycle", SecurityProfile.STRICT, 1),
                 ToolVersion(TOOL, 1, "1.0.0", BundleLocator("miniapps/$TOOL/versions/1/bundle"), 0, "a".repeat(64), 1), emptyList())))
+            success(stores.repositories.grants.put(PermissionGrant(TOOL, "background.tasks", true, 1)))
+            success(stores.repositories.grants.put(PermissionGrant(TOOL, "notifications", true, 1)))
             val id = UUID.randomUUID().toString()
             val spec = if (operation == BackgroundOperation.NOTIFY) """{"title":"Test","body":""}"""
                 else """{"url":"https://fixture.invalid/body"}"""
@@ -188,11 +213,14 @@ class WorkerLifecycleInstrumentationTest {
         }
     }
 
-    private class RecordingNotifications : BackgroundNotificationGateway {
+    private class RecordingNotifications(private val onPrepare: suspend () -> Unit = {}) : BackgroundNotificationGateway {
         val posts = AtomicInteger()
-        override suspend fun post(toolId: String, notificationId: String, title: String, body: String): NotificationResult {
-            posts.incrementAndGet()
-            return NotificationResult.Posted
+        override suspend fun prepare(toolId: String, notificationId: String, title: String, body: String): BackgroundPreparedNotification {
+            onPrepare()
+            return BackgroundPreparedNotification {
+                posts.incrementAndGet()
+                NotificationResult.Posted
+            }
         }
         override suspend fun cancel(toolId: String, notificationId: String) = Unit
         override suspend fun cancelTool(toolId: String) = Unit

@@ -58,10 +58,10 @@ class ReuseHostVerificationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             reuse.validate_prior_run(run, jobs, "owner/host", "main")
 
-    def test_standalone_tbx_and_ci_orchestration_changes_do_not_change_host_inputs(self):
+    def test_standalone_tbx_changes_do_not_change_host_inputs(self):
         reuse.validate_changed_files([
             "README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
-            "scripts/ci/run-android-behavior.sh", "examples/nextflux/src/reading/normalize.mjs",
+            "examples/nextflux/src/reading/normalize.mjs",
             "examples/socialcoach/manifest.json",
         ])
 
@@ -77,8 +77,6 @@ class ReuseHostVerificationTest(unittest.TestCase):
                 reuse.validate_prior_run(run, changed, "owner/host", "main")
 
     def test_any_application_build_resource_or_behavior_test_change_requires_fresh_checks(self):
-        evidence = ["scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py"]
-        reuse.validate_changed_files(evidence)
-        for changed in ("app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
+        for changed in (".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/run-android-behavior.sh", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
-                reuse.validate_changed_files(evidence + [changed])
+                reuse.validate_changed_files([changed])

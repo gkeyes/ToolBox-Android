@@ -929,6 +929,7 @@ class BrowserActivity : ComponentActivity() {
         BrowserFilterSheet(
             filters,
             canPick = webView != null && error == null && !interaction.loading && !interaction.unresponsive && !clearing,
+            resumed = resumed,
         )
         if (menu) ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { menu = false }) {
             Column(Modifier.fillMaxWidth()) {
@@ -1667,4 +1668,3 @@ class BrowserActivity : ComponentActivity() {
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
-

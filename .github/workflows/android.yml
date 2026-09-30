@@ -40,12 +40,20 @@ on:
         type: boolean
         default: false
       validation_scope:
-        description: "Checks to run: full suite or catalog/icon/root-state/network performance regressions"
+        description: "Checks to run: full, performance, or selected test cases"
         type: choice
-        options: [full, performance]
+        options: [full, performance, targeted]
         default: full
+      unit_test_filter:
+        description: "For targeted runs: module=fully.qualified.TestClass#method, comma separated"
+        type: string
+        required: false
       android_test_filter:
-        description: "Optional host instrumentation class#method; run only this test"
+        description: "For targeted runs: host instrumentation class#method, comma separated"
+        type: string
+        required: false
+      node_test_path:
+        description: "For targeted runs: scripts/tests/browser-*.test.cjs paths, comma separated"
         type: string
         required: false
       reuse_verified_run:
@@ -65,8 +73,6 @@ jobs:
   verify:
     name: ${{ inputs.android_test_filter && 'Verify selected Android test' || 'Build APK and verify host behavior' }}
     runs-on: ubuntu-24.04
-    env:
-      TARGET_ANDROID_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.android_test_filter || '' }}
     outputs:
       verification_scope: ${{ steps.baseline.outputs.scope }}
       verification_run: ${{ steps.baseline.outputs.source_run }}
@@ -78,6 +84,19 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Select focused checks for known source changes
+        id: targeted
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
+          UNIT_TEST_FILTER: ${{ inputs.unit_test_filter || '' }}
+          ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
+          NODE_TEST_PATH: ${{ inputs.node_test_path || '' }}
+          RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
+        run: python3 scripts/ci/targeted-checks.py plan
+      - name: Apply selected Android test filter
+        run: echo "TARGET_ANDROID_TEST=${{ steps.targeted.outputs.android }}" >> "$GITHUB_ENV"
       - name: Select Android emulator test policy
         id: android_ui
         env:
@@ -89,8 +108,8 @@ jobs:
           run_ui=false
           reason=''
           if [ -n "$TARGET_ANDROID_TEST" ]; then
-            test_filter_pattern='^io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?$'
-            [[ "$TARGET_ANDROID_TEST" =~ $test_filter_pattern ]] || { echo 'Invalid host test class#method' >&2; exit 1; }
+            test_filter_pattern='^io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?(,io\.toolbox\.host\.[A-Za-z_][A-Za-z0-9_.]*(#[A-Za-z_][A-Za-z0-9_]*)?)*$'
+            [[ "$TARGET_ANDROID_TEST" =~ $test_filter_pattern ]] || { echo 'Invalid host test class#method list' >&2; exit 1; }
             run_ui=true
             reason="Only the requested test will run: $TARGET_ANDROID_TEST"
           elif [ "$RUN_ANDROID_UI" = true ]; then
@@ -131,32 +150,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REUSE_VERIFIED_RUN: ${{ steps.android_ui.outputs.enabled == 'true' && inputs.reuse_verified_run || '' }}
-          VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
+          VALIDATION_SCOPE: ${{ steps.targeted.outputs.scope }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ -n "$TARGET_ANDROID_TEST" ]; then
+          if [ '${{ steps.targeted.outputs.scope }}' = targeted ]; then
             printf '%s\n' 'scope=current_run' 'checks=targeted' >> "$GITHUB_OUTPUT"
           else
             python3 scripts/ci/reuse-host-verification.py
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           node-version: "22"
       - name: Verify browser picker selection and restore regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
         run: node --test scripts/tests/browser-picker.test.cjs
       - name: Verify browser media layout recovery regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
         run: node --test scripts/tests/browser-media-layout.test.cjs
       - name: Verify browser media layout in real Chromium
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
         run: node --test scripts/tests/browser-media-layout-chromium.test.cjs
       - name: Verify watcher polling and stopped-session regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
+      - name: Verify selected browser Node cases
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.targeted.outputs.node != '' }}
+        env:
+          NODE_TEST_PATH: ${{ steps.targeted.outputs.node }}
+        run: python3 scripts/ci/targeted-checks.py node --filters "$NODE_TEST_PATH"
       - name: Verify release evidence and baseline reuse guards
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
           if [ '${{ steps.baseline.outputs.scope }}' = current_run ]; then
@@ -173,7 +197,7 @@ jobs:
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
       - name: Lint the complete Android app
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: ./gradlew --no-daemon :app:lint
       - name: Verify API contract, embedded SDK, and security entry points
         if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
@@ -188,7 +212,11 @@ jobs:
           SKIP_ANDROID_UI: ${{ steps.android_ui.outputs.enabled == 'false' }}
         run: |
           if [ "$VALIDATION_SCOPE" = targeted ]; then
-            ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
+            if [ "$SKIP_ANDROID_UI" = true ]; then
+              ./gradlew --no-daemon :app:assembleDebug
+            else
+              ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
+            fi
           elif [ "$SKIP_ANDROID_UI" = true ]; then
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
           elif [ "$VALIDATION_SCOPE" = performance ]; then
@@ -197,7 +225,7 @@ jobs:
             ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
           fi
       - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance unit regressions' || 'Verify installation, catalog, network, runtime and cancellation regressions' }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.checks != 'targeted' }}
         env:
           VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
         run: |
@@ -209,6 +237,11 @@ jobs:
           else
             ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
           fi
+      - name: Verify selected unit cases
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.targeted.outputs.unit != '' }}
+        env:
+          UNIT_TEST_FILTER: ${{ steps.targeted.outputs.unit }}
+        run: python3 scripts/ci/targeted-checks.py unit --filters "$UNIT_TEST_FILTER"
       - name: Enable accelerated behavior test emulator
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
         run: |
@@ -234,8 +267,13 @@ jobs:
             adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
             adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
             bash scripts/ci/run-android-behavior.sh
+      - name: Confirm selected Android cases actually ran
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.android_ui.outputs.enabled == 'true' }}
+        env:
+          ANDROID_TEST_FILTER: ${{ steps.targeted.outputs.android }}
+        run: python3 scripts/ci/targeted-checks.py android-results --filters "$ANDROID_TEST_FILTER"
       - name: Retain host unit test reports
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && (env.TARGET_ANDROID_TEST == '' || steps.targeted.outputs.unit != '') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wasm-unit-tests-${{ github.sha }}
@@ -274,7 +312,7 @@ jobs:
     name: Package stable signed release
     needs: verify
     # PRs never receive the signing key; manual feature-branch runs only build.
-    if: ${{ github.event_name != 'pull_request' && inputs.android_test_filter == '' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: ${{ github.event_name != 'pull_request' && inputs.android_test_filter == '' && needs.verify.outputs.verification_checks == 'full' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d

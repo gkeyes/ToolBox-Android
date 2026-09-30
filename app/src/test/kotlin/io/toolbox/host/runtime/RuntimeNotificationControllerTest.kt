@@ -1,12 +1,23 @@
 package io.toolbox.host.runtime
 
 import android.content.pm.ServiceInfo
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeNotificationControllerTest {
+    private val emptySnapshot = RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false)
+    private val activeSnapshot = RuntimeForegroundNotificationSnapshot(
+        listOf(RuntimeBackgroundSessionUi("session-1", "com.example.tool", "Example", 1L, 42)),
+        emptyList(),
+        usesLocation = false,
+    )
+
     @Test
     fun foregroundServiceUsesLocationTypeOnlyWhenSnapshotRequiresIt() {
         assertEquals(
@@ -39,6 +50,51 @@ class RuntimeNotificationControllerTest {
         assertFalse(controller.hasForegroundCarrier)
         assertEquals(1, sink.stopForegroundCalls)
         assertEquals(listOf(42), sink.cancelledIds)
+    }
+
+    @Test
+    fun newSessionDuringSupportQueryReplacesTheOldEmptySnapshot() = runBlocking {
+        val state = MutableStateFlow(emptySnapshot)
+        val entered = CompletableDeferred<Unit>()
+        val finishQuery = CompletableDeferred<Unit>()
+        val presented = mutableListOf<RuntimeForegroundNotificationSnapshot>()
+        var stops = 0
+        val collector = async {
+            presentCurrentRuntimeNotificationSnapshot(
+                refreshSupport = { entered.complete(Unit); finishQuery.await() },
+                currentSnapshot = { state.value },
+                present = { presented += it },
+                stopIfEmpty = { stops++ },
+            )
+        }
+        entered.await()
+        state.value = activeSnapshot
+        finishQuery.complete(Unit)
+        collector.await()
+        assertEquals(listOf(activeSnapshot), presented)
+        assertEquals(0, stops)
+    }
+
+    @Test
+    fun stopRechecksThePublishedSnapshotAfterPresentation() = runBlocking {
+        val state = MutableStateFlow(emptySnapshot)
+        var stops = 0
+        presentCurrentRuntimeNotificationSnapshot(
+            refreshSupport = {},
+            currentSnapshot = { state.value },
+            present = { state.value = activeSnapshot },
+            stopIfEmpty = { stops++ },
+        )
+        assertEquals(0, stops)
+
+        state.value = emptySnapshot
+        presentCurrentRuntimeNotificationSnapshot(
+            refreshSupport = {},
+            currentSnapshot = { state.value },
+            present = {},
+            stopIfEmpty = { stops++ },
+        )
+        assertEquals(1, stops)
     }
 
     private class RecordingSink : RuntimeNotificationSink {

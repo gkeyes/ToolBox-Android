@@ -8,6 +8,7 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.content.Context
 import android.content.pm.PackageManager
@@ -23,24 +24,24 @@ class AndroidNotificationGateway(
     private val appContext = context.applicationContext
     private val manager = appContext.getSystemService(NotificationManager::class.java)
 
-    override suspend fun post(
-        toolId: String,
-        notificationId: String,
-        title: String,
-        body: String,
-    ): NotificationResult = postOrUpdate(toolId, notificationId, title, body)
-
     suspend fun postOrUpdate(
         toolId: String,
         notificationId: String,
         title: String,
         body: String,
-    ): NotificationResult = withContext(Dispatchers.Default) {
+    ): NotificationResult = prepare(toolId, notificationId, title, body).post()
+
+    override suspend fun prepare(
+        toolId: String,
+        notificationId: String,
+        title: String,
+        body: String,
+    ): BackgroundPreparedNotification = withContext(Dispatchers.Default) {
         if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return@withContext NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED")
+            return@withContext BackgroundPreparedNotification { NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED") }
         }
         if (!isValidNotification(notificationId, title)) {
-            return@withContext NotificationResult.Rejected("INVALID_NOTIFICATION")
+            return@withContext BackgroundPreparedNotification { NotificationResult.Rejected("INVALID_NOTIFICATION") }
         }
         val channelId = channelId(toolId)
         manager.createNotificationChannel(
@@ -57,8 +58,14 @@ class AndroidNotificationGateway(
             .setStyle(Notification.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .build()
-        manager.notify(toolId, notificationId.hashCode(), notification)
-        NotificationResult.Posted
+        BackgroundPreparedNotification {
+            if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED")
+            } else {
+                manager.notify(toolId, notificationId.hashCode(), notification)
+                NotificationResult.Posted
+            }
+        }
     }
 
     suspend fun liveSupport(): LiveNotificationSupportState = withContext(Dispatchers.IO) {
@@ -69,15 +76,7 @@ class AndroidNotificationGateway(
         val protocol = runCatching {
             Settings.System.getInt(context.contentResolver, "notification_focus_protocol", 0)
         }.getOrDefault(0)
-        val permission = runCatching {
-            val extras = Bundle().apply { putString("package", context.packageName) }
-            context.contentResolver.call(
-                Uri.parse("content://miui.statusbar.notification.public"),
-                "canShowFocus",
-                null,
-                extras,
-            )?.getBoolean("canShowFocus", false) == true
-        }.getOrDefault(false)
+        val permission = if (protocol > 0) cachedMiuiPermission(context, protocol) else false
         val androidLiveAvailable = Build.VERSION.SDK_INT >= 36
         val androidLiveAllowed = androidLiveAvailable && runCatching {
             manager.canPostPromotedNotifications()
@@ -107,6 +106,31 @@ class AndroidNotificationGateway(
         return "toolbox.${digest.take(8).joinToString("") { "%02x".format(it) }}"
     }
 
+    companion object {
+        private const val MIUI_SUPPORT_CACHE_MILLIS = 30_000L
+        private val MIUI_STATUS_URI = Uri.parse("content://miui.statusbar.notification.public")
+        private data class MiuiPermission(val protocol: Int, val granted: Boolean, val checkedAt: Long)
+        private val miuiCacheLock = Any()
+        private var miuiPermission: MiuiPermission? = null
+
+        fun invalidateMiuiSupportCache() {
+            synchronized(miuiCacheLock) { miuiPermission = null }
+        }
+
+        private fun cachedMiuiPermission(context: Context, protocol: Int): Boolean = synchronized(miuiCacheLock) {
+            val now = SystemClock.elapsedRealtime()
+            miuiPermission?.takeIf {
+                it.protocol == protocol && now >= it.checkedAt && now - it.checkedAt < MIUI_SUPPORT_CACHE_MILLIS
+            }?.let { return@synchronized it.granted }
+            val granted = runCatching {
+                val extras = Bundle().apply { putString("package", context.packageName) }
+                context.contentResolver.call(MIUI_STATUS_URI, "canShowFocus", null, extras)
+                    ?.getBoolean("canShowFocus", false) == true
+            }.getOrDefault(false)
+            miuiPermission = MiuiPermission(protocol, granted, now)
+            granted
+        }
+    }
 }
 
 data class LiveNotificationSupportState(

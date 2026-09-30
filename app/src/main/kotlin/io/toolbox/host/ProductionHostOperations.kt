@@ -355,7 +355,7 @@ internal class ProductionHostBackgroundOperations(
         ),
         notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) {
-                when (val result = notifications.post(runtime.toolId, notificationId, title, body)) {
+                when (val result = notifications.postOrUpdate(runtime.toolId, notificationId, title, body)) {
                     io.toolbox.host.background.NotificationResult.Posted -> Unit
                     is io.toolbox.host.background.NotificationResult.Rejected -> throw RuntimeHandlerException(
                         result.errorCode.toRuntimeErrorCode(),

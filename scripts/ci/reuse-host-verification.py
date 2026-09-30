@@ -8,15 +8,7 @@ import re
 import subprocess
 
 
-EVIDENCE_FILES = {
-    ".github/workflows/android.yml",
-    "scripts/ci/release-startup-smoke.py",
-    "scripts/ci/run-android-behavior.sh",
-    "scripts/ci/reuse-host-verification.py",
-    "scripts/ci/verify_release.py",
-    "scripts/tests/test_release_startup.py",
-    "scripts/tests/test_reuse_host_verification.py",
-}
+EVIDENCE_FILES = set()
 NON_HOST_FILES = {"README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}
 BUNDLED_EXAMPLES = {"position-calculator", "quick-notes", "background-task-demo", "notification-lab"}
 FULL_CHECKS = {

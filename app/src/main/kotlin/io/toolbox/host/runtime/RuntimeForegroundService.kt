@@ -32,6 +32,20 @@ internal fun runtimeForegroundServiceTypes(usesLocation: Boolean): Int =
     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
         if (usesLocation) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
 
+internal suspend fun presentCurrentRuntimeNotificationSnapshot(
+    refreshSupport: suspend () -> Unit,
+    currentSnapshot: () -> RuntimeForegroundNotificationSnapshot,
+    present: (RuntimeForegroundNotificationSnapshot) -> Unit,
+    stopIfEmpty: () -> Unit,
+) {
+    refreshSupport()
+    // Support discovery may suspend while a new session starts. Read the published cache again.
+    val snapshot = currentSnapshot()
+    present(snapshot)
+    // On the service's main dispatcher this check and stop cannot be interleaved by another session update.
+    if (snapshot.sessions.isEmpty() && currentSnapshot().sessions.isEmpty()) stopIfEmpty()
+}
+
 internal class RuntimeForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val commands = Mutex()
@@ -74,6 +88,8 @@ internal class RuntimeForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        markRunning(this)
+        AndroidNotificationGateway.invalidateMiuiSupportCache()
         renderer = RuntimeLiveNotificationRenderer(this)
         renderer.createChannel()
         notificationManager = getSystemService(NotificationManager::class.java)
@@ -102,6 +118,7 @@ internal class RuntimeForegroundService : Service() {
                 }
                 val sessions = dependencies.runtimeSessions
                 sessions.recover(RESTORE_PROCESS)
+                AndroidNotificationGateway.invalidateMiuiSupportCache()
                 if (intent?.action == ACTION_STOP_SESSION) {
                     val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
                     val toolId = intent.getStringExtra(EXTRA_TOOL_ID)
@@ -116,13 +133,19 @@ internal class RuntimeForegroundService : Service() {
                     }.forEach { notificationManager.cancel(it.id) }
                     snapshots = scope.launch {
                         sessions.notificationSnapshots.collect {
-                            support = withContext(Dispatchers.IO) {
-                                AndroidNotificationGateway(this@RuntimeForegroundService).liveSupport()
-                            }
-                            val current = sessions.foregroundNotificationSnapshot()
-                            notifications.render(current)
-                            synchronizeIcons(current, dependencies.toolIcons, sessions)
-                            if (current.sessions.isEmpty()) stopSelfResult(latestStartId)
+                            presentCurrentRuntimeNotificationSnapshot(
+                                refreshSupport = {
+                                    support = withContext(Dispatchers.IO) {
+                                        AndroidNotificationGateway(this@RuntimeForegroundService).liveSupport()
+                                    }
+                                },
+                                currentSnapshot = { sessions.notificationSnapshots.value },
+                                present = { current ->
+                                    notifications.render(current)
+                                    synchronizeIcons(current, dependencies.toolIcons, sessions)
+                                },
+                                stopIfEmpty = { stopSelfResult(latestStartId) },
+                            )
                         }
                     }
                 }
@@ -134,6 +157,7 @@ internal class RuntimeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        markStopped(this)
         scope.cancel()
         iconLoads.clear()
         toolIcons.clear()
@@ -196,9 +220,31 @@ internal class RuntimeForegroundService : Service() {
         private const val EXTRA_STARTED_AT = "startedAt"
         private const val TAG = "RuntimeNotifications"
         private const val RESTORE_PROCESS = "process"
+        private val runningLock = Any()
+        private var startRequested = false
+        private var runningInstance: RuntimeForegroundService? = null
+
+        val isRunningOrStarting: Boolean
+            get() = synchronized(runningLock) { startRequested }
+
+        private fun markRunning(service: RuntimeForegroundService) = synchronized(runningLock) {
+            runningInstance = service
+            startRequested = true
+        }
+
+        private fun markStopped(service: RuntimeForegroundService) = synchronized(runningLock) {
+            if (runningInstance === service) {
+                runningInstance = null
+                startRequested = false
+            }
+        }
 
         fun ensureRunning(context: Context, snapshot: RuntimeForegroundNotificationSnapshot): Boolean {
             val first = snapshot.cards().firstOrNull()?.session ?: return false
+            synchronized(runningLock) {
+                if (startRequested) return true
+                startRequested = true
+            }
             return runCatching {
                 context.startForegroundService(
                     Intent(context, RuntimeForegroundService::class.java).setAction(ACTION_REFRESH)
@@ -208,10 +254,13 @@ internal class RuntimeForegroundService : Service() {
                         .putExtra(EXTRA_STARTED_AT, first.startedAt)
                         .putExtra(EXTRA_NOTIFICATION_ID, first.notificationId),
                 )
-            }.isSuccess
+            }.isSuccess.also { started ->
+                if (!started) synchronized(runningLock) { startRequested = false }
+            }
         }
 
         fun stop(context: Context) {
+            synchronized(runningLock) { startRequested = false }
             runCatching { context.stopService(Intent(context, RuntimeForegroundService::class.java)) }
         }
 
