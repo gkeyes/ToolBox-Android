@@ -505,4 +505,15 @@
 }
 @media (max-width: 640px) {
   .nextflux-compact-touch-target, .profile-button button { min-height: 44px; }
+
+  /* Reader toolbar: keep every article action visible on one row.
+     48px is retained vertically; horizontal occupancy adapts to the viewport.
+     The formula reserves 48px for Close + 16px page padding and fits up to
+     nine article actions without overlap. */
+  .action-buttons .nextflux-toolbar-button {
+    inline-size: calc((100vw - 64px) / 9);
+    min-inline-size: calc((100vw - 64px) / 9);
+    max-inline-size: calc((100vw - 64px) / 9);
+    flex-basis: calc((100vw - 64px) / 9);
+  }
 }

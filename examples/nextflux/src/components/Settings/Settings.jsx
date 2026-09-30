@@ -7,6 +7,7 @@ import General from "@/components/Settings/General.jsx";
 import Appearance from "@/components/Settings/Appearance.jsx";
 import Readability from "@/components/Settings/Readability.jsx";
 import AI from "@/components/Settings/AI.jsx";
+import Speech from "@/components/Settings/Speech.jsx";
 import About from "@/components/Settings/About.jsx";
 import Shortcuts from "@/components/Settings/Shortcuts.jsx";
 import { useTranslation } from "react-i18next";
@@ -16,6 +17,7 @@ import {
   Paintbrush,
   FileText,
   Sparkles,
+  Volume2,
   Keyboard,
   Info,
   ArrowLeft,
@@ -34,6 +36,7 @@ const menuItems = [
     translationKey: "settings.readability.title",
   },
   { id: "ai", icon: Sparkles, translationKey: "settings.ai.title" },
+  { id: "speech", icon: Volume2, translationKey: "settings.speech.title" },
   {
     id: "shortcuts",
     icon: Keyboard,
@@ -70,7 +73,7 @@ function MenuList({ onSelect }) {
               )}
             >
               <Icon className="size-4 shrink-0 text-muted" />
-              <span>{t(item.translationKey)}</span>
+              <span>{item.label || t(item.translationKey)}</span>
             </button>
           );
         })}
@@ -99,6 +102,8 @@ function ContentArea({ activeTab, showTitle = false }) {
         return <Readability />;
       case "ai":
         return <AI />;
+      case "speech":
+        return <Speech />;
       case "shortcuts":
         return <Shortcuts />;
       case "about":
@@ -113,7 +118,7 @@ function ContentArea({ activeTab, showTitle = false }) {
       {showTitle && (
         <div className="nextflux-close-header px-4 pt-4 pb-2">
           <h3 className="text-base font-medium">
-            {t(currentMenuItem?.translationKey || "")}
+            {currentMenuItem?.label || t(currentMenuItem?.translationKey || "")}
           </h3>
         </div>
       )}
@@ -139,7 +144,10 @@ function MobileSettings() {
   const currentPage = activeTab === null ? "menu" : "content";
   const currentTitle = activeTab === null
     ? t("common.settings")
-    : t(menuItems.find((item) => item.id === activeTab)?.translationKey || "");
+    : (() => {
+        const item = menuItems.find((entry) => entry.id === activeTab);
+        return item?.label || t(item?.translationKey || "");
+      })();
 
   return (
     <MobileSheet
@@ -230,7 +238,7 @@ function DesktopSettings() {
                         )}
                       >
                         <Icon className="size-4 shrink-0 text-muted" />
-                        <span>{t(item.translationKey)}</span>
+                        <span>{item.label || t(item.translationKey)}</span>
                       </button>
                     );
                   })}

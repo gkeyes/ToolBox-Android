@@ -3,9 +3,9 @@
   "id": "io.toolbox.nextflux",
   "name": "NextFlux",
   "shortName": "NextFlux",
-  "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要及后台同步。",
-  "version": "1.0.30",
-  "versionCode": 51,
+  "description": "连接指定 Miniflux 服务的 RSS 阅读器，支持订阅管理、阅读缓存、AI 摘要、MiniMax 语音朗读及后台同步。",
+  "version": "1.0.31",
+  "versionCode": 52,
   "entry": "index.html",
   "icon": "web-app-manifest-512x512.png",
   "apiVersion": "1.0",
@@ -22,12 +22,12 @@
     },
     {
       "name": "storage.secure",
-      "reason": "安全保存 Miniflux 登录凭据及 AI API 密钥。",
+      "reason": "安全保存 Miniflux 登录凭据、AI API 密钥及 MiniMax 语音密钥。",
       "required": true
     },
     {
       "name": "network",
-      "reason": "同步 Miniflux、请求 AI 摘要并通过受控代理获取媒体及字体。",
+      "reason": "同步 Miniflux、请求 AI 摘要与 MiniMax 语音，并通过受控代理获取媒体及字体。",
       "required": true
     },
     {

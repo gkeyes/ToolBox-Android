@@ -333,6 +333,9 @@ export default {
       titleFontSize: "Boyut",
       reset: "Sıfırla",
     },
+    speech: {
+      title: "Sesli okuma",
+    },
     ai: {
       title: "AI",
       description:

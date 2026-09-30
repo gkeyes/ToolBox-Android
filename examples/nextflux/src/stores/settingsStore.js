@@ -34,6 +34,13 @@ const defaultValue = {
   aiApiKey: "",
   aiBaseUrl: "https://api.openai.com/v1",
   aiModel: "gpt-4o-mini",
+  speechApiKey: "",
+  speechRegion: "global",
+  speechModel: "speech-2.8-turbo",
+  speechVoiceId: "presenter_male",
+  speechPlaybackRate: 1,
+  speechReadTitle: true,
+  speechPrefetch: true,
   aiPrompt:
     "You are a helpful assistant that summarizes articles concisely. Provide a clear, structured summary in the same language as the article. Format: just plain text, no markdown.",
 };

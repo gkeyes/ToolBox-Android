@@ -335,6 +335,9 @@ export default {
       titleFontSize: "Taille",
       reset: "Réinitialiser",
     },
+    speech: {
+      title: "Lecture audio",
+    },
     ai: {
       title: "IA",
       description:
