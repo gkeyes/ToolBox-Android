@@ -41,7 +41,7 @@ function harness(request) {
   const window = { ToolBox: toolbox, GitHubWatcherModel: model, GitHubWatcherReliability: reliability, addEventListener() {} };
   const context = vm.createContext({ window, document, URL, Intl, Date, console, setTimeout, clearTimeout, setInterval, clearInterval });
   let source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-  const end = '  startForegroundClock();\n  bootPromise = boot();';
+  const end = '  bootPromise = boot();';
   assert.ok(source.includes(end));
   source = source.replace(end, `
     renderDashboard = function () {};
