@@ -1,6 +1,7 @@
 import { shareText } from "@/toolbox/actions.js";
 import ArticleTitleFilterButton from "./ArticleTitleFilterButton.jsx";
 import FullTextAdaptButton from "./FullTextAdaptButton.jsx";
+import { ArticleSpeechBar, ArticleSpeechButton } from "./ArticleSpeech.jsx";
 import {
   ArrowLeft,
   Circle,
@@ -212,6 +213,7 @@ export default function ActionButtons() {
         <div className="ml-auto flex min-w-[48px] flex-1 flex-wrap items-center justify-end gap-1">
           <ArticleTitleFilterButton />
           <FullTextAdaptButton />
+          <ArticleSpeechButton article={$activeArticle} />
           <Tooltip delay={0}>
             <Button
               className="nextflux-toolbar-button max-[359px]:hidden"
@@ -407,6 +409,7 @@ export default function ActionButtons() {
           </div>
         </div>
       </div>
+      <ArticleSpeechBar article={$activeArticle} />
     </div>
   );
 }
