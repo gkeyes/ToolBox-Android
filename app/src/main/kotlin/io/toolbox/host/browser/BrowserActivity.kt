@@ -276,10 +276,23 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    handler.cancel()
+                    val compatible = view === webView &&
+                        BrowserSslPolicy.allowLegacyUntrustedChain(
+                            pageUrl = view.url.orEmpty(),
+                            failureUrl = failure.url.orEmpty(),
+                            hasUntrusted = failure.hasError(SslError.SSL_UNTRUSTED),
+                            hasIdMismatch = failure.hasError(SslError.SSL_IDMISMATCH),
+                            hasExpired = failure.hasError(SslError.SSL_EXPIRED),
+                            hasNotYetValid = failure.hasError(SslError.SSL_NOTYETVALID),
+                            hasDateInvalid = failure.hasError(SslError.SSL_DATE_INVALID),
+                            hasInvalid = failure.hasError(SslError.SSL_INVALID),
+                        )
+
+                    if (compatible) handler.proceed() else handler.cancel()
+
                     if (view === webView && mediaDiagnosticsCapture) {
                         BrowserMediaDiagnostics.networkEvent(
-                            label = "TLS 拒绝",
+                            label = if (compatible) "TLS 兼容放行" else "TLS 拒绝",
                             url = failure.url.orEmpty(),
                             detail = "primaryError=${failure.primaryError}",
                         )?.let(::recordMediaDiagnosticEvent)
