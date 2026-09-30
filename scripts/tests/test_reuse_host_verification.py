@@ -39,11 +39,31 @@ class ReuseHostVerificationTest(unittest.TestCase):
         run, jobs = self.fixture()
         for key, value in (
             ("repository", {"full_name": "fork/host"}), ("head_repository", {"full_name": "fork/host"}),
-            ("head_branch", "feature"), ("event", "pull_request"),
+            ("head_branch", "feature"), ("event", "schedule"),
             ("path", ".github/workflows/other.yml"), ("status", "in_progress"), ("head_sha", "bad"),
         ):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 reuse.validate_prior_run(run | {key: value}, jobs, "owner/host", "main")
+
+    def test_same_repository_pr_checks_can_be_reused_after_ancestry_validation(self):
+        run, jobs = self.fixture()
+        run.update(event="pull_request", head_branch="feature")
+        self.assertEqual(("a" * 40, "full"), reuse.validate_prior_run(run, jobs, "owner/host", "main"))
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run | {"head_repository": {"full_name": "fork/host"}}, jobs, "owner/host", "main")
+
+    def test_targeted_test_run_is_not_a_full_verification_baseline(self):
+        run, jobs = self.fixture()
+        jobs[0]["name"] = "Verify selected Android test"
+        with self.assertRaises(ValueError):
+            reuse.validate_prior_run(run, jobs, "owner/host", "main")
+
+    def test_standalone_tbx_and_ci_orchestration_changes_do_not_change_host_inputs(self):
+        reuse.validate_changed_files([
+            "README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
+            "scripts/ci/run-android-behavior.sh", "examples/nextflux/src/reading/normalize.mjs",
+            "examples/socialcoach/manifest.json",
+        ])
 
     def test_skipped_failed_or_missing_checks_cannot_be_promoted_to_pass(self):
         run, jobs = self.fixture()
@@ -59,6 +79,6 @@ class ReuseHostVerificationTest(unittest.TestCase):
     def test_any_application_build_resource_or_behavior_test_change_requires_fresh_checks(self):
         evidence = ["scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py"]
         reuse.validate_changed_files(evidence)
-        for changed in ("app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "scripts/ci/run-android-behavior.sh", "app/src/androidTest/Foo.kt"):
+        for changed in ("app/build.gradle.kts", "app/src/main/Foo.kt", "sdk/help/manual.md", "gradle/libs.versions.toml", "app/src/androidTest/Foo.kt", "scripts/package-tool.py", "scripts/package-examples.sh", "examples/position-calculator/app.js", "examples/notification-lab/manifest.json", "examples/quick-notes/style.css", "examples/background-task-demo/app.js"):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 reuse.validate_changed_files(evidence + [changed])

@@ -140,27 +140,29 @@ jobs:
             python3 scripts/ci/reuse-host-verification.py
           fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         with:
           node-version: "22"
       - name: Verify browser picker selection and restore regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         run: node --test scripts/tests/browser-picker.test.cjs
       - name: Verify browser media layout recovery regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         run: node --test scripts/tests/browser-media-layout.test.cjs
       - name: Verify browser media layout in real Chromium
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         run: node --test scripts/tests/browser-media-layout-chromium.test.cjs
       - name: Verify watcher polling and stopped-session regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
       - name: Verify release evidence and baseline reuse guards
         if: ${{ env.TARGET_ANDROID_TEST == '' }}
         run: |
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
+          if [ '${{ steps.baseline.outputs.scope }}' = current_run ]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
+            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
+          fi
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
@@ -171,7 +173,7 @@ jobs:
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
       - name: Lint the complete Android app
-        if: ${{ env.TARGET_ANDROID_TEST == '' }}
+        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' }}
         run: ./gradlew --no-daemon :app:lint
       - name: Verify API contract, embedded SDK, and security entry points
         if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' }}

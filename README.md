@@ -28,3 +28,5 @@ python3 scripts/ci/tbx.py build --tool all
 Android 实机或模拟器交互需要单独运行 `androidTest`；编译、JVM 单测和 TBX 打包通过不等于设备运行通过。工具开发、清单格式及权限接口见应用内的 `sdk/help/manual.md`；浏览器现行行为见 `docs/browser-core.md` 和 `docs/browser-filtering.md`。
 
 GitHub Android CI 的手动入口可填写 `android_test_filter`（完整宿主测试类名或 `类名#方法名`），仅编译所需 debug/测试 APK 并执行指定用例，报告会明确标记为局部验证。
+
+发布时可通过 `reuse_verified_run` 指定已经通过的宿主验证。流程核对同仓库来源、提交已并入当前版本及 Android/SDK/内置工具的构建输入未变后，保留原验证范围并复用结果，仅检查 CI 调整和最终签名 APK 的冷启动。独立 TBX 的源码和打包由对应工具的工作流单独验证。

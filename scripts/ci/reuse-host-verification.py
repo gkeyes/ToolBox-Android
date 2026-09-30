@@ -3,7 +3,7 @@
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 
@@ -11,11 +11,14 @@ import subprocess
 EVIDENCE_FILES = {
     ".github/workflows/android.yml",
     "scripts/ci/release-startup-smoke.py",
+    "scripts/ci/run-android-behavior.sh",
     "scripts/ci/reuse-host-verification.py",
     "scripts/ci/verify_release.py",
     "scripts/tests/test_release_startup.py",
     "scripts/tests/test_reuse_host_verification.py",
 }
+NON_HOST_FILES = {"README.md", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}
+BUNDLED_EXAMPLES = {"position-calculator", "quick-notes", "background-task-demo", "notification-lab"}
 FULL_CHECKS = {
     "Verify API contract, embedded SDK, and security entry points",
     "Verify Wasm binary packaging",
@@ -35,11 +38,11 @@ def validate_prior_run(run, jobs, repository, default_branch):
     if (run.get("repository", {}).get("full_name") != repository
             or run.get("head_repository", {}).get("full_name") != repository
             or not run.get("head_branch")
-            or (run.get("head_branch") != default_branch and run.get("event") != "workflow_dispatch")
+            or (run.get("head_branch") != default_branch and run.get("event") not in ("workflow_dispatch", "pull_request"))
             or run.get("path") != ".github/workflows/android.yml"
-            or run.get("event") not in ("push", "workflow_dispatch")
+            or run.get("event") not in ("push", "workflow_dispatch", "pull_request")
             or run.get("status") != "completed"):
-        raise ValueError("Baseline must be a completed default-branch or manual Android workflow in this repository")
+        raise ValueError("Baseline must be a completed default-branch, manual, or same-repository PR Android workflow")
     commit = run.get("head_sha", "")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Baseline commit is invalid")
@@ -55,7 +58,13 @@ def validate_prior_run(run, jobs, repository, default_branch):
 
 
 def validate_changed_files(paths):
-    unexpected = set(paths) - EVIDENCE_FILES
+    def standalone_example(path):
+        parts = PurePosixPath(path).parts
+        return len(parts) >= 3 and parts[0] == "examples" and parts[1] not in BUNDLED_EXAMPLES
+
+    # Only four examples enter the APK. Standalone TBX inputs and their build
+    # registry are validated separately; all Android/SDK/build inputs remain guarded.
+    unexpected = {path for path in paths if path not in EVIDENCE_FILES | NON_HOST_FILES and not standalone_example(path)}
     if unexpected:
         raise ValueError("Host inputs changed; run affected host checks instead of reusing this baseline: " + ", ".join(sorted(unexpected)))
 
