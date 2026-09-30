@@ -79,7 +79,9 @@ internal class BrowserNavigationController(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
             accept = {
                 try {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE))
+                    val intent = Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
+                    parsed?.`package`?.let(intent::setPackage)
+                    context.startActivity(intent)
                 } catch (_: android.content.ActivityNotFoundException) {
                     if (fallback != null) navigate(page, fallback)
                     else notify("未安装能够打开此链接的应用。")
@@ -134,11 +136,12 @@ internal class BrowserNavigationController(
     fun cancelPage(page: WebView) {
         val canceled = decisions.filter { it.page === page }
         decisions = decisions.filterNot { it.page === page }
-        canceled.forEach { it.cancel() }
+        canceled.forEach { runCatching { it.cancel() } }
     }
 
-    private fun resolve(allow: Boolean) {
-        val decision = decisions.firstOrNull() ?: return
+    private fun resolve(decision: Decision, allow: Boolean) {
+        // A double click on an obsolete dialog must not approve the next queued request.
+        if (decisions.firstOrNull() !== decision) return
         decisions = decisions.drop(1)
         if (allow && isCurrentPage(decision.page)) decision.accept() else decision.cancel()
     }
@@ -147,14 +150,14 @@ internal class BrowserNavigationController(
     fun Prompt() {
         val decision = decisions.firstOrNull() ?: return
         val colors = ToolBoxThemeTokens.colors
-        ToolBoxModalDialog(onDismissRequest = { resolve(false) }) {
+        ToolBoxModalDialog(onDismissRequest = { resolve(decision, false) }) {
             ToolBoxText(decision.title, style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
             Spacer(Modifier.height(12.dp))
             ToolBoxText(decision.message, style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary))
             Spacer(Modifier.height(20.dp))
-            ToolBoxSecondaryButton(decision.actionLabel, { resolve(true) }, Modifier.fillMaxWidth())
+            ToolBoxSecondaryButton(decision.actionLabel, { resolve(decision, true) }, Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            ToolBoxTextButton("取消", { resolve(false) }, Modifier.fillMaxWidth(), outlined = false)
+            ToolBoxTextButton("取消", { resolve(decision, false) }, Modifier.fillMaxWidth(), outlined = false)
         }
     }
 }

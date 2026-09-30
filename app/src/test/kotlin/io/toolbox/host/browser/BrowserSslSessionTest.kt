@@ -90,16 +90,31 @@ class BrowserSslSessionTest {
         assertEquals(1, next.proceeded)
     }
 
-    @Test fun unannouncedNavigationAndUnexpectedRedirectCancelObsoleteRequests() {
+    @Test fun firstRedirectedStartPreservesCurrentOperationThenUnannouncedNavigationClearsIt() {
         val f = Fixture()
         f.session.navigationRequested(f.view, "https://example.test/")
         val request = f.request()
-        assertTrue(f.session.navigationStarted(f.view, "https://another.test/"))
-        assertEquals(1, request.cancelled)
+        val clears = f.cleared.size
+        assertFalse(f.session.navigationStarted(f.view, "https://another.test/"))
+        assertEquals(0, request.cancelled)
+        assertEquals(clears, f.cleared.size)
         val redirected = f.request("https://another.test/resource")
         assertTrue(f.session.navigationStarted(f.view, "https://third.test/"))
+        assertEquals(1, request.cancelled)
         assertEquals(1, redirected.cancelled)
         assertNull(f.session.first)
+    }
+
+    @Test fun canonicalizedFirstStartDoesNotCancelTlsOrSignalCancellationOfCurrentSitePrompts() {
+        val f = Fixture()
+        f.session.navigationRequested(f.view, "https://example.test")
+        val request = f.request("https://example.test/")
+        val clears = f.cleared.size
+        assertFalse(f.session.navigationStarted(f.view, "https://example.test/"))
+        assertEquals(0, request.cancelled)
+        assertEquals(clears, f.cleared.size)
+        f.session.resolve(requireNotNull(f.session.first).id, true)
+        assertEquals(1, request.proceeded)
     }
 
     @Test fun destructionSettlesEveryPendingConnectionOnlyOnceAndClearsTrust() {
@@ -133,8 +148,7 @@ class BrowserSslSessionTest {
         assertEquals(1, f.session.size)
     }
 
-    @Test fun navigationKeyIgnoresFragmentsAndLabelsDoNotExposeUrlCredentials() {
-        assertEquals("https://example.test/path", BrowserSslPromptPolicy.navigationKey("https://example.test/path#anchor"))
+    @Test fun labelsDoNotExposeUrlCredentials() {
         val label = BrowserSslPromptPolicy.connectionLabel("https://name:secret@example.test:8443/path?token=private")
         assertEquals("https://example.test:8443", label)
         assertFalse(label.contains("secret"))

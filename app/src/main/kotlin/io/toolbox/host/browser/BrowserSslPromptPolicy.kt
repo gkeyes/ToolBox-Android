@@ -28,7 +28,6 @@ internal object BrowserSslPromptPolicy {
         "${uri.scheme}://$host" + if (uri.port >= 0) ":${uri.port}" else ""
     }.getOrDefault("未知地址")
 
-    fun navigationKey(url: String): String = url.substringBefore('#')
 }
 
 /** The production callback queue. Platform actions are injected so lifecycle ordering is testable. */
@@ -48,7 +47,6 @@ internal class BrowserSslSession<Page : Any>(
 
     private var page: Page? = null
     private var awaitingStart = false
-    private var requestedUrl: String? = null
     private var nextId = 0L
     private val warnings = ArrayDeque<Warning<Page>>()
     val first: Warning<Page>? get() = warnings.firstOrNull()
@@ -59,18 +57,17 @@ internal class BrowserSslSession<Page : Any>(
         if (view !== currentPage()) return
         replaceSession(view)
         awaitingStart = true
-        requestedUrl = url?.let(BrowserSslPromptPolicy::navigationKey)
     }
 
     /** True only when this callback starts a session that was not announced by the host. */
     fun navigationStarted(view: Page, url: String): Boolean {
         if (view !== currentPage()) return false
-        val key = BrowserSslPromptPolicy.navigationKey(url)
-        if (view === page && awaitingStart && (requestedUrl == null || requestedUrl == key)) {
+        if (view === page && awaitingStart) {
             // SSL can arrive before onPageStarted. This is the start of the already announced
-            // navigation, including a late callback after proceed(), not a new session.
+            // navigation, including a late callback after proceed(), not a new session. The
+            // engine may normalize the URL or follow a redirect before delivering this start;
+            // URL equality cannot identify a navigation operation.
             awaitingStart = false
-            requestedUrl = null
             return false
         }
         replaceSession(view)
@@ -103,7 +100,6 @@ internal class BrowserSslSession<Page : Any>(
         if (view !== page) return
         page = null
         awaitingStart = false
-        requestedUrl = null
         clearPreferences(view)
         cancelOutstanding()
     }
@@ -112,7 +108,6 @@ internal class BrowserSslSession<Page : Any>(
         val previous = page
         page = view
         awaitingStart = false
-        requestedUrl = null
         if (previous != null && previous !== view) clearPreferences(previous)
         clearPreferences(view)
         cancelOutstanding()

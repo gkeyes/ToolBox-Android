@@ -4,14 +4,18 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.http.SslError
 import android.os.SystemClock
+import android.util.Log
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,6 +36,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
+import kotlin.math.abs
 
 /** Real network, DOM, touch and POST behavior with the production navigation decision boundary. */
 @RunWith(AndroidJUnit4::class)
@@ -102,6 +107,8 @@ internal class BrowsingTestPage : AutoCloseable {
     val failures = CopyOnWriteArrayList<String>()
     val notifications = CopyOnWriteArrayList<String>()
     val decisions = CopyOnWriteArrayList<Pair<String, Boolean>>()
+    private val consoleErrors = CopyOnWriteArrayList<String>()
+    private var touchGeometry = "No touch attempted"
 
     init {
         // BrowserActivity lives in :browser. Use a same-process host so ActivityScenario can
@@ -128,6 +135,17 @@ internal class BrowsingTestPage : AutoCloseable {
                     handler.cancel()
                 }
             }
+            page.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                    BrowserMediaDiagnostics.consoleEvent(
+                        message.messageLevel().name, message.message(), message.sourceId(), message.lineNumber(),
+                    )?.let {
+                        if (consoleErrors.size < 20) consoleErrors.add(it)
+                        Log.i("BrowserCompatibilityTest", it)
+                    }
+                    return true
+                }
+            }
             activity.setContentView(page, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             page.requestFocus()
         }
@@ -150,15 +168,82 @@ internal class BrowsingTestPage : AutoCloseable {
     }
 
     fun tap(selector: String) {
-        val bounds = JSONObject(evaluate("(() => {const e=document.querySelector(${JSONObject.quote(selector)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,width:innerWidth};})()"))
-        instrumentation.runOnMainSync {
-            val scale = page.width.toFloat() / bounds.getDouble("width").toFloat()
-            val x = bounds.getDouble("x").toFloat() * scale
-            val y = bounds.getDouble("y").toFloat() * scale
-            val down = SystemClock.uptimeMillis()
-            for ((action, time) in listOf(MotionEvent.ACTION_DOWN to down, MotionEvent.ACTION_UP to down + 60)) {
-                MotionEvent.obtain(down, time, action, x, y, 0).also { event -> page.dispatchTouchEvent(event); event.recycle() }
+        val quotedSelector = JSONObject.quote(selector)
+        evaluate("document.querySelector($quotedSelector).scrollIntoView({block:'center',inline:'center',behavior:'instant'})")
+        // DOM readiness does not imply that CSS entrance/scrolling has reached the compositor.
+        // Read geometry on separate frames and require that the visible point hits this control.
+        val inspect = """(() => {
+            const e=document.querySelector($quotedSelector), r=e.getBoundingClientRect(), v=visualViewport;
+            const left=Math.max(r.left,v?.offsetLeft||0), top=Math.max(r.top,v?.offsetTop||0);
+            const right=Math.min(r.right,(v?.offsetLeft||0)+(v?.width||innerWidth));
+            const bottom=Math.min(r.bottom,(v?.offsetTop||0)+(v?.height||innerHeight));
+            const x=(left+right)/2, y=(top+bottom)/2, target=document.elementFromPoint(x,y);
+            let animating=false;
+            for(let n=e;n;n=n.parentElement) {
+                if(n.getAnimations().some(a=>a.playState==='running' && a.effect?.getTiming().iterations!==Infinity)) animating=true;
             }
+            return {x,y,width:innerWidth,height:innerHeight,visualWidth:v?.width||innerWidth,
+                offsetX:v?.offsetLeft||0,offsetY:v?.offsetTop||0,
+                left:r.left,top:r.top,right:r.right,bottom:r.bottom,
+                hit:right>left && bottom>top && !!target && (target===e || e.contains(target)),
+                target:target?.tagName+'#'+(target?.id||'')+'.'+(target?.className||''),animating};
+        })()"""
+        var previous: JSONObject? = null
+        var bounds: JSONObject? = null
+        var stable = 0
+        await("stable visible touch target $selector") {
+            val current = JSONObject(evaluate(inspect))
+            touchGeometry = current.toString()
+            val old = previous
+            stable = if (current.getBoolean("hit") && !current.getBoolean("animating") && old != null &&
+                listOf("x", "y", "width", "height", "left", "top", "right", "bottom").all { abs(current.getDouble(it) - old.getDouble(it)) < 0.5 }) stable + 1 else 0
+            previous = current
+            bounds = current
+            stable >= 2
+        }
+        val frameReady = CountDownLatch(1)
+        instrumentation.runOnMainSync {
+            page.postVisualStateCallback(SystemClock.uptimeMillis(), object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) { frameReady.countDown() }
+            })
+        }
+        assertTrue("WebView did not present touch target; $touchGeometry", frameReady.await(10, TimeUnit.SECONDS))
+        val finalBounds = JSONObject(evaluate(inspect))
+        assertTrue("Target moved before real touch: $finalBounds", finalBounds.getBoolean("hit") &&
+            abs(finalBounds.getDouble("x") - requireNotNull(bounds).getDouble("x")) < 1 &&
+            abs(finalBounds.getDouble("y") - requireNotNull(bounds).getDouble("y")) < 1)
+        evaluate("""(() => {
+            window.__browserTestTouch=[];
+            for(const type of ['pointerdown','pointerup','click']) document.addEventListener(type,e=>{
+                window.__browserTestTouch.push({type:e.type,trusted:e.isTrusted,x:e.clientX,y:e.clientY,
+                    target:e.target.tagName+'#'+(e.target.id||''),matches:!!e.target.closest($quotedSelector)});
+            },{capture:true,passive:true});
+        })()""")
+        var x = 0f
+        var y = 0f
+        instrumentation.runOnMainSync {
+            assertTrue("WebView must be visible and focused", page.isShown && page.hasWindowFocus() && page.width > 0 && page.height > 0)
+            val scale = page.width.toFloat() / finalBounds.getDouble("visualWidth").toFloat()
+            x = (finalBounds.getDouble("x") - finalBounds.getDouble("offsetX")).toFloat() * scale
+            y = (finalBounds.getDouble("y") - finalBounds.getDouble("offsetY")).toFloat() * scale
+            touchGeometry = "$finalBounds; WebView=${page.width}x${page.height}; nativePoint=($x,$y)"
+            Log.i("BrowserCompatibilityTest", "Touch $selector: $touchGeometry")
+        }
+        val down = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            if (action == MotionEvent.ACTION_UP) SystemClock.sleep(80)
+            instrumentation.runOnMainSync {
+                MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0).also { event ->
+                    event.source = InputDevice.SOURCE_TOUCHSCREEN
+                    page.dispatchTouchEvent(event)
+                    event.recycle()
+                }
+            }
+        }
+        await("trusted click delivered to $selector") {
+            evaluate("window.__browserTestTouch?.some(e=>e.type==='click' && e.trusted && e.matches) === true") == "true" ||
+                // A successful navigation replaces the old document and its event diagnostics.
+                evaluate("typeof window.__browserTestTouch === 'undefined'") == "true"
         }
     }
 
@@ -169,7 +254,7 @@ internal class BrowsingTestPage : AutoCloseable {
             if (condition()) return
             SystemClock.sleep(100)
         }
-        throw AssertionError("Timed out: $label; url=${currentUrl()}; failures=$failures; notifications=$notifications; DOM=${evaluate("document.body?.innerText?.slice(0,300)")}")
+        throw AssertionError("Timed out: $label; url=${currentUrl()}; failures=$failures; notifications=$notifications; console=$consoleErrors; touch=$touchGeometry; events=${evaluate("window.__browserTestTouch")}; DOM=${evaluate("document.body?.innerText?.slice(0,300)")}")
     }
 
     override fun close() {
