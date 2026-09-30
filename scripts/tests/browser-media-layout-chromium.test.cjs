@@ -39,10 +39,12 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
   const video = document.getElementById('video');
   video.src = URL.createObjectURL(new Blob(['not-real-media'], { type: 'video/mp4' }));
 </script>
-<script>${repairSource}</script>
+<script>
+  window.__toolboxRepairCollapsedMediaLayout = ${repairSource};
+</script>
 <script>
   const before = document.getElementById('player').getBoundingClientRect();
-  const repaired = repairCollapsedMediaLayout();
+  const repaired = window.__toolboxRepairCollapsedMediaLayout();
   const player = document.getElementById('player');
   const wrap = document.getElementById('wrap');
   const video = document.getElementById('video');
