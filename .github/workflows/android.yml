@@ -8,6 +8,8 @@ on:
       - "!README.md"
       - "!docs/**"
       - "!core-data/schemas/**"
+      - "!scripts/tests/watcher-reliability.test.cjs"
+      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -30,6 +32,8 @@ on:
       - "!README.md"
       - "!docs/**"
       - "!core-data/schemas/**"
+      - "!scripts/tests/watcher-reliability.test.cjs"
+      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -52,9 +56,9 @@ on:
         type: boolean
         default: false
       validation_scope:
-        description: "Checks to run: full, performance, or selected test cases"
+        description: "Checks to run: full, performance, selected cases, or reuse a completed run"
         type: choice
-        options: [full, performance, targeted]
+        options: [full, performance, targeted, reuse]
         default: full
       unit_test_filter:
         description: "For targeted runs: module=fully.qualified.TestClass#method, comma separated"
@@ -88,14 +92,19 @@ jobs:
     outputs:
       verification_scope: ${{ steps.baseline.outputs.scope }}
       verification_run: ${{ steps.baseline.outputs.source_run }}
+      verification_attempt: ${{ steps.baseline.outputs.source_attempt }}
       verification_commit: ${{ steps.baseline.outputs.base_commit }}
       verification_checks: ${{ steps.android_ui.outputs.enabled == 'false' && 'build_and_unit_only' || steps.baseline.outputs.checks }}
+      unit_filter: ${{ steps.baseline.outputs.unit_filter }}
+      android_filter: ${{ steps.baseline.outputs.android_filter }}
+      node_filter: ${{ steps.baseline.outputs.node_filter }}
       android_ui_enabled: ${{ steps.android_ui.outputs.enabled }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Select focused checks for known source changes
         id: targeted
         env:
@@ -137,13 +146,17 @@ jobs:
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
-          REUSE_VERIFIED_RUN: ${{ steps.android_ui.outputs.enabled == 'true' && inputs.reuse_verified_run || '' }}
+          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run || '' }}
           VALIDATION_SCOPE: ${{ steps.targeted.outputs.scope }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ '${{ steps.targeted.outputs.scope }}' = targeted ]; then
             printf '%s\n' 'scope=current_run' 'checks=targeted' \
-              "source_run=$GITHUB_RUN_ID" "base_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+              "source_run=$GITHUB_RUN_ID" "source_attempt=$GITHUB_RUN_ATTEMPT" \
+              "base_commit=$(git rev-parse HEAD)" \
+              "unit_filter=${{ steps.targeted.outputs.unit }}" \
+              "android_filter=${{ steps.targeted.outputs.android }}" \
+              "node_filter=${{ steps.targeted.outputs.node }}" >> "$GITHUB_OUTPUT"
           elif [ '${{ steps.targeted.outputs.scope }}' = docs_only ]; then
             printf '%s\n' 'scope=docs_only' 'checks=docs_only' \
               "source_run=$GITHUB_RUN_ID" "base_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
@@ -172,7 +185,7 @@ jobs:
           NODE_TEST_PATH: ${{ steps.targeted.outputs.node }}
         run: python3 scripts/ci/targeted-checks.py node --filters "$NODE_TEST_PATH"
       - name: Verify release evidence and baseline reuse guards
-        if: ${{ steps.baseline.outputs.scope == 'current_run' || steps.baseline.outputs.scope == 'reused_unchanged_host' }}
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
           if [ '${{ steps.baseline.outputs.scope }}' = current_run ]; then
@@ -180,14 +193,17 @@ jobs:
             PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
           fi
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
       - name: Generate actual Room v1 schema from the fixed installed baseline
         if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
         run: |
@@ -289,6 +305,17 @@ jobs:
         env:
           ANDROID_TEST_FILTER: ${{ steps.targeted.outputs.android }}
         run: python3 scripts/ci/targeted-checks.py android-results --filters "$ANDROID_TEST_FILTER"
+      - name: Verify targeted selection evidence
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' }}
+        run: python3 scripts/ci/targeted-checks.py evidence-verify
+      - name: Save targeted check evidence
+        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-targeted-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-evidence/targeted-selection.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Retain host unit test reports
         if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && (env.TARGET_ANDROID_TEST == '' || steps.targeted.outputs.unit != '') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -338,8 +365,8 @@ jobs:
   delivery:
     name: Package stable signed release
     needs: verify
-    # PRs never receive the signing key; the verified default branch can deliver a targeted build.
-    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.verify.outputs.verification_scope == 'current_run' && (needs.verify.outputs.verification_checks == 'full' || needs.verify.outputs.verification_checks == 'targeted') }}
+    # PRs never receive the signing key; a merged unchanged targeted run may supply verification evidence.
+    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.verify.outputs.verification_scope == 'current_run' || (needs.verify.outputs.verification_scope == 'reused_unchanged_host' && needs.verify.outputs.android_ui_enabled == 'true')) && (needs.verify.outputs.verification_checks == 'full' || needs.verify.outputs.verification_checks == 'targeted') }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
@@ -411,8 +438,12 @@ jobs:
           ALLOW_UNTESTED_STARTUP: ${{ needs.verify.outputs.android_ui_enabled == 'false' && 'true' || 'false' }}
           HOST_VERIFICATION_SCOPE: ${{ needs.verify.outputs.verification_scope }}
           HOST_VERIFICATION_RUN: ${{ needs.verify.outputs.verification_run }}
+          HOST_VERIFICATION_ATTEMPT: ${{ needs.verify.outputs.verification_attempt }}
           HOST_VERIFICATION_COMMIT: ${{ needs.verify.outputs.verification_commit }}
           HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.verification_checks }}
+          HOST_UNIT_TEST_FILTER: ${{ needs.verify.outputs.unit_filter }}
+          HOST_ANDROID_TEST_FILTER: ${{ needs.verify.outputs.android_filter }}
+          HOST_NODE_TEST_PATH: ${{ needs.verify.outputs.node_filter }}
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"

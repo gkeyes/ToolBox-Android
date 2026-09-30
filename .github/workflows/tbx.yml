@@ -10,6 +10,7 @@ on:
       - "scripts/ci/tbx.py"
       - "scripts/ci/tbx-targets.json"
       - "scripts/tests/watcher-reliability.test.cjs"
+      - "scripts/tests/tool-runtime-performance.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -33,6 +34,7 @@ on:
       - "scripts/ci/tbx.py"
       - "scripts/ci/tbx-targets.json"
       - "scripts/tests/watcher-reliability.test.cjs"
+      - "scripts/tests/tool-runtime-performance.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -83,6 +85,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - id: targets
         env:
           TBX_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.tool || 'changed' }}
@@ -101,6 +104,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
@@ -137,6 +141,11 @@ jobs:
         if: ${{ matrix.tool == 'nextflux' && matrix.full_tests }}
         working-directory: examples/nextflux
         run: npm test
+      - name: Bundled tool runtime performance regression
+        if: ${{ matrix.full_tests && (matrix.tool == 'stock-monitor' || matrix.tool == 'notification-lab' || matrix.tool == 'kegel-trainer') }}
+        env:
+          TBX_TOOL: ${{ matrix.tool }}
+        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/tool-runtime-performance.test.cjs
       - name: Verify selected tool unit cases
         if: ${{ !matrix.full_tests && matrix.unit_test_filter != '' }}
         env:

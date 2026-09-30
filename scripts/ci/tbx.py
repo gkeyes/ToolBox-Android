@@ -25,9 +25,11 @@ SHARED_PATHS = (
     "gradle.properties", "build.gradle.kts", "settings.gradle.kts",
 )
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
+RUNTIME_PERFORMANCE_TEST = "scripts/tests/tool-runtime-performance.test.cjs"
+RUNTIME_PERFORMANCE_TOOLS = {"stock-monitor", "notification-lab", "kegel-trainer"}
 TEST_FILES = {
     "nextflux": {
-        "unit": {"test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs", "test/foreground-gate.test.mjs", "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs"},
+        "unit": {"test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs", "test/background-preemption.test.mjs", "test/foreground-gate.test.mjs", "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs"},
         "browser": {"test/browser/reading.spec.js", "test/browser/article-navigation.spec.js"},
     },
     "socialcoach": {
@@ -38,6 +40,7 @@ TEST_FILES = {
         "unit": {"scripts/tests/watcher-reliability.test.cjs"},
         "browser": {"examples/github-actions-watcher/tests/layout.py"},
     },
+    **{name: {"unit": {RUNTIME_PERFORMANCE_TEST}, "browser": set()} for name in RUNTIME_PERFORMANCE_TOOLS},
 }
 
 
@@ -58,7 +61,8 @@ def select_targets(registry, selection, changed=()):
             return sorted(registry)
         return sorted(name for name in registry
                       if any(path.startswith(f"examples/{name}/") for path in changed)
-                      or (name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed))
+                      or (name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed)
+                      or (name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed))
     requested = selection.split(",")
     requested = [name.strip() for name in requested]
     unknown = [name for name in requested if name not in registry]
@@ -146,12 +150,18 @@ def selected_tests(name, changed, requested_filter, full):
                 selected |= allowed
             elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:
                 selected |= allowed
+            elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".js", ".html", ".css")):
+                selected |= allowed
+            elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".png", ".svg", ".ogg")):
+                continue
             else:
                 raise ValueError(f"No TBX test mapping for {path}")
         if shared:
             selected |= allowed
         if name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed:
             selected.add("scripts/tests/watcher-reliability.test.cjs")
+        if name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed:
+            selected.add(RUNTIME_PERFORMANCE_TEST)
     if name == "github-actions-watcher":
         result["watcher_reliability"] = "scripts/tests/watcher-reliability.test.cjs" in selected
         result["watcher_layout"] = "examples/github-actions-watcher/tests/layout.py" in selected
@@ -214,13 +224,16 @@ def run_selected_tests(name, test_filter, browser=False):
                 raise ValueError(f"No Playwright tests matched {path}")
         execute(["npx", "playwright", "test", *paths], source)
     else:
-        source = ROOT if name == "github-actions-watcher" else ROOT / "examples" / name
         for path in selected:
-            command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test", path]
+            source = ROOT if path.startswith("scripts/") else ROOT / "examples" / name
+            command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test"]
+            if path == RUNTIME_PERFORMANCE_TEST and name in RUNTIME_PERFORMANCE_TOOLS:
+                command += ["--test-name-pattern", {"stock-monitor": "^stock ", "notification-lab": "^notification lab ", "kegel-trainer": "^Kegel "}[name]]
+            command.append(path)
             completed = subprocess.run(command, cwd=source, text=True, capture_output=True, check=True)
             sys.stdout.write(completed.stdout)
             sys.stderr.write(completed.stderr)
-            count = re.findall(r"^# tests (\d+)\s*$", completed.stdout, re.MULTILINE)
+            count = re.findall(r"^# pass (\d+)\s*$", completed.stdout, re.MULTILINE)
             if not count or int(count[-1]) == 0:
                 raise ValueError(f"No Node tests executed for {name}: {path}")
 

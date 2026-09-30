@@ -2,6 +2,7 @@
 """Select focused Android checks and run explicitly named test cases."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -50,6 +51,7 @@ RUNTIME_SAVE_DIALOG_ANDROID = {
 UNIT_RE = re.compile(r"^(app|core-data|tool-package|tool-runtime)=([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?:#([A-Za-z_]\w*))?$")
 ANDROID_RE = re.compile(r"^(?:(app|tool-runtime)=)?(io\.toolbox\.[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:#([A-Za-z_]\w*))?$")
 NODE_RE = re.compile(r"^scripts/tests/browser-[A-Za-z0-9-]+\.test\.cjs$")
+EVIDENCE_FILE = Path("build/ci-evidence/targeted-selection.json")
 
 
 def items(value):
@@ -67,12 +69,13 @@ def classify(paths):
     unit, android, node, unknown = set(), set(), set(), []
     for path in paths:
         if (path.startswith("examples/") or path == ".github/workflows/tbx.yml"
+                or path in {"scripts/tests/watcher-reliability.test.cjs", "scripts/tests/tool-runtime-performance.test.cjs"}
                 or path == "README.md" or path.startswith("docs/")
                 or path.startswith("core-data/schemas/")
                 or path in {"scripts/ci/tbx.py", "scripts/ci/tbx-targets.json"}):
             # These inputs are checked by TBX CI or do not change Android behavior.
             continue
-        if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/run-android-behavior.sh"}:
+        if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh"}:
             node.add("scripts/tests/browser-picker.test.cjs")
             android |= BROWSER_ANDROID
         elif path.startswith("app/src/main/kotlin/io/toolbox/host/background/") or path.startswith("app/src/test/kotlin/io/toolbox/host/background/"):
@@ -82,6 +85,8 @@ def classify(paths):
                 android |= MIGRATION_ANDROID
         elif path.startswith("app/src/androidTest/kotlin/io/toolbox/host/background/"):
             android.add("io.toolbox.host.background." + Path(path).stem)
+        elif path == "app/src/androidTest/AndroidManifest.xml":
+            android |= RUNTIME_STORAGE_ANDROID | RUNTIME_SAVE_DIALOG_ANDROID
         elif path == "core-data/build.gradle.kts" or (path.startswith("core-data/src/main/kotlin/io/toolbox/core/data/") and Path(path).name in {
             "CoreDataFactory.kt", "Repositories.kt", "Daos.kt", "Entities.kt", "RoomRepositories.kt", "ToolBoxDatabase.kt", "ToolBoxMigrations.kt",
         }):
@@ -196,7 +201,15 @@ def plan():
     android = validate(items(os.environ.get("ANDROID_TEST_FILTER", "")), ANDROID_RE, "Android class#method")
     android_groups(",".join(android))
     node = validate(items(os.environ.get("NODE_TEST_PATH", "")), NODE_RE, "Node test path")
+    reuse_run = os.environ.get("REUSE_VERIFIED_RUN", "")
     if manual:
+        if requested == "reuse":
+            if not re.fullmatch(r"[0-9]+", reuse_run) or unit or android or node:
+                raise ValueError("Reuse needs a prior numeric run ID and no new test filters")
+            if os.environ.get("RUN_ANDROID_UI") != "true":
+                raise ValueError("Reused verification must cold-start the signed release")
+        elif reuse_run and os.environ.get("RUN_ANDROID_UI") != "true":
+            raise ValueError("Reused verification must cold-start the signed release")
         if android:
             requested = "targeted"
         if requested != "targeted" and (unit or node):
@@ -205,8 +218,8 @@ def plan():
             raise ValueError("Targeted dispatch needs at least one test filter")
         if requested == "targeted" and os.environ.get("RUN_ANDROID_UI") == "true" and not android:
             raise ValueError("Targeted emulator runs need an Android class#method filter")
-        if requested == "targeted" and os.environ.get("REUSE_VERIFIED_RUN"):
-            raise ValueError("Targeted checks cannot reuse a prior full verification run")
+        if requested == "targeted" and reuse_run:
+            raise ValueError("Select reuse validation to use a completed targeted run")
         scope = requested
         unknown = []
     else:
@@ -228,6 +241,40 @@ def plan():
         output.writelines(f"{key}={value}\n" for key, value in outputs.items())
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
         summary.write(f"Android check scope: `{scope}`. Unit: {len(unit)}, Android: {len(android)}, Node: {len(node)}.\n")
+    if scope == "targeted":
+        checkout_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        expected_commit = os.environ["HEAD_SHA"] if not manual else os.environ["GITHUB_SHA"]
+        if checkout_commit != expected_commit:
+            raise ValueError("Targeted checks must execute the exact PR head or dispatch commit")
+        EVIDENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        EVIDENCE_FILE.write_text(json.dumps({
+            "scope": "targeted", "run_id": int(os.environ["GITHUB_RUN_ID"]),
+            "attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]), "head_sha": checkout_commit,
+            "filters": {"unit": unit, "android": android, "node": node},
+            "executed": {"unit": {}, "android": {}, "node": {}},
+        }, sort_keys=True) + "\n")
+
+
+def record_execution(kind, counts):
+    if not EVIDENCE_FILE.exists():
+        return
+    evidence = json.loads(EVIDENCE_FILE.read_text())
+    if set(counts) - set(evidence["filters"][kind]):
+        raise ValueError(f"Executed {kind} cases do not match the selected filters")
+    evidence["executed"][kind].update(counts)
+    replacement = EVIDENCE_FILE.with_suffix(".tmp")
+    replacement.write_text(json.dumps(evidence, sort_keys=True) + "\n")
+    replacement.replace(EVIDENCE_FILE)
+
+
+def verify_evidence():
+    evidence = json.loads(EVIDENCE_FILE.read_text())
+    if evidence["scope"] != "targeted":
+        raise ValueError("Only targeted check evidence can be uploaded here")
+    for kind, selected in evidence["filters"].items():
+        executed = evidence["executed"][kind]
+        if set(executed) != set(selected) or any(type(executed[key]) is not int or executed[key] <= 0 for key in selected):
+            raise ValueError(f"Selected {kind} checks lack nonzero execution evidence")
 
 
 def android_groups(filters):
@@ -267,6 +314,7 @@ def run_unit(filters):
         grouped.setdefault(module, []).append((name, method))
     if not grouped:
         return
+    executed = {}
     for module, selected in grouped.items():
         command = ["./gradlew", "--no-daemon", f":{module}:testDebugUnitTest"]
         for name, method in selected:
@@ -274,39 +322,54 @@ def run_unit(filters):
         subprocess.run(command, check=True)
         cases = testcases(Path(module) / "build/test-results/testDebugUnitTest")
         for name, method in selected:
-            if not any(case.get("classname") == name and (method is None or case.get("name") == method)
-                       for case in cases):
+            count = sum(case.get("classname") == name and (method is None or case.get("name") == method)
+                        for case in cases)
+            if not count:
                 raise ValueError(f"No executed unit test matched {module}={name}{'#' + method if method else ''}")
+            executed[f"{module}={name}{'#' + method if method else ''}"] = count
+    record_execution("unit", executed)
 
 
 def run_node(paths):
     selected = validate(items(paths), NODE_RE, "Node test path")
+    executed = {}
     for path in selected:
         result = subprocess.run(["node", "--test", path], check=True, text=True, capture_output=True)
         sys.stdout.write(result.stdout)
         sys.stderr.write(result.stderr)
-        counts = re.findall(r"^# tests (\d+)\s*$", result.stdout, re.MULTILINE)
+        counts = re.findall(r"^# pass (\d+)\s*$", result.stdout, re.MULTILINE)
         if not counts or int(counts[-1]) == 0:
             raise ValueError(f"No Node tests executed in {path}")
+        executed[path] = int(counts[-1])
+    record_execution("node", executed)
 
 
 def testcases(folder):
-    return [case for path in folder.rglob("TEST-*.xml") for case in ET.parse(path).iter("testcase")]
+    return [case for path in folder.rglob("TEST-*.xml") for case in ET.parse(path).iter("testcase")
+            if not any(child.tag in {"skipped", "failure", "error"} for child in case)]
 
 
 def android_results(filters):
-    for module, selected in android_groups(filters).items():
-        cases = testcases(Path(module) / "build/outputs/androidTest-results/connected")
-        for classname, method in selected:
-            if not any(case.get("classname") == classname and (not method or case.get("name") == method) for case in cases):
-                raise ValueError(f"No executed Android test matched {module}={classname}{'#' + method if method else ''}")
+    android_groups(filters)
+    executed, reports = {}, {}
+    for value in items(filters):
+        module, classname, method = ANDROID_RE.fullmatch(value).groups()
+        module = module or "app"
+        if module not in reports:
+            reports[module] = testcases(Path(module) / "build/outputs/androidTest-results/connected")
+        cases = reports[module]
+        count = sum(case.get("classname") == classname and (not method or case.get("name") == method) for case in cases)
+        if not count:
+            raise ValueError(f"No executed Android test matched {value}")
+        executed[value] = count
+    record_execution("android", executed)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["plan", "unit", "node", "android-compile", "android-run", "android-results"])
+    parser.add_argument("action", choices=["plan", "unit", "node", "android-compile", "android-run", "android-results", "evidence-verify"])
     parser.add_argument("--filters", default="")
     args = parser.parse_args()
     {"plan": plan, "unit": lambda: run_unit(args.filters), "node": lambda: run_node(args.filters),
      "android-compile": lambda: android_compile(args.filters), "android-run": lambda: android_run(args.filters),
-     "android-results": lambda: android_results(args.filters)}[args.action]()
+     "android-results": lambda: android_results(args.filters), "evidence-verify": verify_evidence}[args.action]()
