@@ -22,6 +22,42 @@ async function openArticle(page) {
   return errors;
 }
 
+test("clicking the article RSS source closes the article and restores list interaction", async ({ page }) => {
+  const errors = await openArticle(page);
+  const articlePage = page.locator(".nextflux-article-page");
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  await articlePage.locator(".nextflux-article-feed-button").click();
+  await expect(page.getByTestId("route")).toHaveText("/feed/1");
+  await expect(articlePage).toBeHidden();
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  await expect(articlePage).not.toHaveAttribute("data-reading-motion");
+
+  await page.getByRole("button", { name: "打开文章 2", exact: true }).click();
+  await expect(page.getByTestId("route")).toHaveText("/feed/1/article/2");
+  await expect(articlePage.locator(".article-title")).toHaveText("文章 2");
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  await touch(page, "touchstart", 100, 450);
+  await touch(page, "touchmove", 240, 452);
+  await touch(page, "touchend", 300, 452);
+  await expect(page.getByTestId("route")).toHaveText("/feed/1");
+  await expect(articlePage).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("button navigation away from an article finishes the exit animation", async ({ page }) => {
+  const errors = await openArticle(page);
+  const articlePage = page.locator(".nextflux-article-page");
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  await page.getByRole("button", { name: "关闭文章", exact: true }).click();
+  await expect(page.getByTestId("route")).toHaveText("/");
+  await expect(articlePage).toBeHidden();
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  await page.getByRole("button", { name: "打开文章 3", exact: true }).click();
+  await expect(articlePage.locator(".article-title")).toHaveText("文章 3");
+  await expect(articlePage).toHaveAttribute("data-navigation-state", "idle");
+  expect(errors).toEqual([]);
+});
+
 async function installReadingMessageHold(page) {
   await page.addInitScript(() => {
     window.heldReadingMessages = [];

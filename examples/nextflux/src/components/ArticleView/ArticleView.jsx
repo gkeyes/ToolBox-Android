@@ -325,11 +325,16 @@ const ArticleView = () => {
   }, [articleId, contentRevision]);
 
   useEffect(() => () => {
+    // Route changes must leave the new exit animation running until it finishes.
     cancelDeferredResume();
     shellMotionCancelRef.current?.();
+    shellMotionCancelRef.current = null;
+  }, [cancelDeferredResume]);
+
+  useEffect(() => () => {
     imageGalleryActive.set(false);
     speechController.stop();
-  }, [articleId, cancelDeferredResume]);
+  }, [articleId]);
 
   return <>
     <div className="nextflux-transition-effect" aria-hidden="true">
