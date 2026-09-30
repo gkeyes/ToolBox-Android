@@ -14,15 +14,7 @@ internal object BrowserNavigationPolicy {
         val host = uri.host?.lowercase(Locale.ROOT) ?: return url
         if (scheme != "http" || !isNewSmthHost(host)) return url
 
-        return URI(
-            "https",
-            uri.rawUserInfo,
-            uri.host,
-            uri.port,
-            uri.rawPath,
-            uri.rawQuery,
-            uri.rawFragment,
-        ).toASCIIString()
+        return url.replaceRange(0, uri.scheme.length, "https")
     }
 
     private fun isNewSmthHost(host: String): Boolean =
