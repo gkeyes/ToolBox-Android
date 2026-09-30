@@ -131,6 +131,9 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle, private val
         }
         groupMember("b").performClick()
         compose.onNodeWithTag("catalog_group_cancel").performClick()
+        compose.onNodeWithText("放弃本次修改？").assertExists()
+        compose.onNodeWithText("放弃修改").performClick()
+        compose.waitUntil(5_000) { compose.runOnIdle { groupId.value == null } }
         compose.runOnIdle {
             assertTrue(fixture.layout.value.groups.single { it.id == "g2" }.members.isEmpty())
             groupId.value = "g2"

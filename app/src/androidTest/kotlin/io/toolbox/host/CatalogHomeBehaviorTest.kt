@@ -92,7 +92,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.runOnIdle { assertTrue(isEditing) }
         compose.onNodeWithTag(HostTestTags.BottomTools).performClick()
         compose.onNodeWithText("搜索工具").assertExists()
-        compose.onNodeWithText("排序").assertExists()
+        compose.onNodeWithText("排序 · ${fixture.layout.value.sort.label}").assertExists()
         compose.onNodeWithText("快捷工具").assertDoesNotExist()
         compose.onNodeWithTag("catalog_organize").assertDoesNotExist()
         compose.runOnIdle { assertFalse(isEditing) }
@@ -429,7 +429,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
     }
 
-    @Test fun shortNamesUseOneLineAndGroupRowsGrowForCompleteTwoLineNames() {
+    @Test fun shortAndLongGroupNamesKeepCompactRowsAndFullAccessibleName() {
         fixture.tools.value = listOf(CatalogTool("a", "测", 1, "1.0", 1, null))
         fixture.layout.value = CatalogLayout(groups = listOf(CatalogGroup("g1", "工作", listOf("a"))))
         render()
@@ -444,22 +444,20 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         assertTrue("A one-line name must not reserve an unused second line: $shortLabelHeight / $oneLineHeight",
             shortLabelHeight <= ceil(oneLineHeight).toInt() + 1)
 
-        // Derive a two-line Chinese name from the measured font and column, so this also
-        // exercises the wider, scaled-font variant without relying on a device width.
+        // Derive an overflowing name from the measured font and column in every density variant.
         val glyphWidth = shortLayout.getLineRight(0) - shortLayout.getLineLeft(0)
         assertTrue(glyphWidth > 0f)
         val longName = "测".repeat((tile.size.width / glyphWidth).toInt() + 2)
         compose.runOnIdle { fixture.tools.value = fixture.tools.value.map { it.copy(name = longName) } }
         homeTile("member:g1:a").assertContentDescriptionEquals(longName).assertHasClickAction()
         val longLayout = homeLabelLayout("member:g1:a")
-        assertEquals("The measured fixture must exercise both supported lines", 2, longLayout.lineCount)
-        assertFalse("Both lines of a fitting name must remain visible", longLayout.hasVisualOverflow)
-        assertFalse(longLayout.isLineEllipsized(1))
+        assertEquals("Grouped tools use compact single-line labels", 1, longLayout.lineCount)
+        assertTrue("The long label must exercise the compact ellipsis", longLayout.isLineEllipsized(0))
         val longRowHeight = compose.runOnIdle {
             homeListState.layoutInfo.visibleItemsInfo.single { it.key == "member-row:g1:0" }.size
         }
-        assertTrue("The group row must grow with a second text line: $shortRowHeight -> $longRowHeight",
-            longRowHeight > shortRowHeight)
+        assertTrue("A long name must not enlarge its compact group row: $shortRowHeight -> $longRowHeight",
+            longRowHeight <= shortRowHeight + 1)
         homeTile("member:g1:a").performTouchInput { click() }
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }

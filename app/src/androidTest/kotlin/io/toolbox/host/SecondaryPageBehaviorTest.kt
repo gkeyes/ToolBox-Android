@@ -111,16 +111,17 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
                 BackupContent(state.value, {}, { exports++ }, { restores++ }, { consents++ }, { confirmations++ }, { cancellations++ })
             }
         }
-        compose.onNodeWithText("备份内容").assertExists()
+        compose.onNodeWithTag("backup_page").performScrollToKey("overview")
+        compose.onNodeWithText("工具、设置与数据").assertExists()
         compose.onNodeWithTag("backup_page").performScrollToKey("actions")
         compose.onNodeWithTag("backup_export").performScrollTo().performClick()
         compose.onNodeWithTag("backup_restore").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, exports); assertEquals(1, restores); state.value = BackupUiState.ExportConsent }
-        compose.onNodeWithText("备份内容").assertDoesNotExist()
+        compose.onNodeWithText("工具、设置与数据").assertDoesNotExist()
         compose.onNodeWithText("ZIP 不加密，ToolBox 不会上传它。请只保存到可信的本地位置，不要公开分享。硬件密钥不导出；可解密数据将写入备份，并在恢复时重新加密。").assertExists()
         compose.onNodeWithTag("backup_export_consent").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, consents); state.value = BackupUiState.Progress("正在恢复", 42) }
-        compose.onNodeWithText("备份内容").assertDoesNotExist()
+        compose.onNodeWithText("工具、设置与数据").assertDoesNotExist()
         assertBackupStateDisplayed("backup_progress_label").assertTextEquals("42% · 正在恢复")
         compose.onNodeWithText("取消操作").performClick()
         compose.runOnIdle { assertEquals(1, cancellations); state.value = BackupUiState.Progress("正在安全取消", 42, true) }
@@ -133,17 +134,18 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
             emptyMap(), setOf("session"), setOf("task"), listOf("请重新获取外部文件授权。"),
         )
         compose.runOnIdle { state.value = BackupUiState.ConfirmRestore(preview) }
-        compose.onNodeWithText("备份内容").assertDoesNotExist()
-        compose.onNodeWithTag("backup_conflicts", useUnmergedTree = true).assertTextContains("恢复 101 个工具，其中 1 个与本机冲突", substring = true)
+        compose.onNodeWithText("工具、设置与数据").assertDoesNotExist()
+        compose.onNodeWithTag("backup_conflicts", useUnmergedTree = true)
+            .assertTextContains("可恢复 101 个 · 覆盖 1 个 · 跳过 1 个")
         compose.onNodeWithText("当前有 1 个运行环境和 1 个待执行或运行任务。恢复将停止全部本机工具会话与任务，完成或取消后均需手动重新打开。").assertExists()
         compose.onNodeWithText("下方版本覆盖只确认一次；安装时仍执行原有校验。备份中的授权不会绕过当前权限模型。").assertExists()
         compose.onNodeWithText("不兼容工具").assertDoesNotExist()
         compose.onNodeWithTag("backup_page").performScrollToKey("tool-one")
         compose.onNodeWithText("1.0 → 2.0").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("tool-two")
-        compose.onNodeWithText("跳过：不支持的数据版本").assertIsDisplayed()
+        compose.onNodeWithText("跳过 · 不支持的数据版本").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("跳过：不支持的数据版本").assertIsDisplayed()
+        compose.onNodeWithText("跳过 · 不支持的数据版本").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("warning-0")
         compose.onNodeWithText("请重新获取外部文件授权。").assertIsDisplayed()
         compose.onNodeWithTag("backup_page").performScrollToKey("confirm-actions")
@@ -154,7 +156,7 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
             assertEquals(2, cancellations)
             state.value = BackupUiState.Result("恢复已完成", "已恢复数据", listOf("请重新打开工具。"))
         }
-        compose.onNodeWithText("备份内容").assertDoesNotExist()
+        compose.onNodeWithText("工具、设置与数据").assertDoesNotExist()
         assertBackupStateDisplayed("backup_result").assertTextEquals("恢复已完成")
         compose.onNodeWithText("请重新打开工具。").assertExists()
         compose.onNodeWithTag("backup_page").performScrollToKey("actions")
