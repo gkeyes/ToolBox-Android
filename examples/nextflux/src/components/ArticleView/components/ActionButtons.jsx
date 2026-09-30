@@ -163,7 +163,7 @@ export default function ActionButtons() {
           : "bg-background/70 md:bg-overlay/70",
       )}
     >
-      <div className="flex flex-nowrap items-center gap-0.5 overflow-hidden">
+      <div className="flex flex-wrap items-start gap-0">
         <Tooltip
           content={t("common.close")}
           classNames={{ content: "shadow-custom!" }}
@@ -210,13 +210,13 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
         </div>
-        <div className="ml-auto flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-0.5 overflow-visible [&>*]:shrink-0">
+        <div className="ml-auto flex min-w-[48px] flex-1 flex-wrap items-center justify-end gap-0">
           <ArticleTitleFilterButton />
           <FullTextAdaptButton />
           <ArticleSpeechButton article={$activeArticle} />
           <Tooltip delay={0}>
             <Button
-              className="nextflux-toolbar-button max-[479px]:hidden"
+              className="nextflux-toolbar-button max-[639px]:hidden"
               aria-label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
               onPress={() => handleMarkStatus($activeArticle)}
               variant="ghost"
@@ -238,7 +238,7 @@ export default function ActionButtons() {
           </Tooltip>
           <Tooltip delay={0}>
             <Button
-              className="nextflux-toolbar-button max-[479px]:hidden"
+              className="nextflux-toolbar-button max-[639px]:hidden"
               aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
               ref={buttonRef}
               variant="ghost"
@@ -263,7 +263,7 @@ export default function ActionButtons() {
           {$hasIntegrations && (
             <Tooltip delay={0}>
               <Button
-                className="nextflux-toolbar-button"
+                className="nextflux-toolbar-button max-[639px]:hidden"
                 aria-label={t("articleView.saveToThirdParty")}
                 variant="ghost"
                 isIconOnly
@@ -286,7 +286,7 @@ export default function ActionButtons() {
           {aiApiKey && (
             <Tooltip delay={0}>
               <Button
-                className="nextflux-toolbar-button max-[359px]:hidden"
+                className="nextflux-toolbar-button max-[639px]:hidden"
                 onPress={handleAISummarize}
                 variant="ghost"
                 isIconOnly
@@ -338,7 +338,7 @@ export default function ActionButtons() {
             </Tooltip.Content>
           </Tooltip>
           <Tooltip delay={0}>
-            <Button className="nextflux-toolbar-button max-[479px]:hidden" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
+            <Button className="nextflux-toolbar-button max-[639px]:hidden" aria-label={t("common.share")} variant="ghost" isIconOnly size="sm" onPress={handleShare}>
               <Share className="size-4 text-muted" />
             </Button>
             <Tooltip.Content showArrow>
@@ -346,7 +346,7 @@ export default function ActionButtons() {
               {t("common.share")}
             </Tooltip.Content>
           </Tooltip>
-          <div className="relative shrink-0 min-[480px]:hidden">
+          <div className="relative shrink-0 min-[640px]:hidden">
             <Button
               className="nextflux-toolbar-button"
               aria-label="更多操作"
@@ -396,7 +396,7 @@ export default function ActionButtons() {
                   <Button
                     role="menuitem"
                     variant="ghost"
-                    className="hidden h-10 w-full justify-start gap-2 px-3 max-[359px]:flex"
+                    className="hidden h-10 w-full justify-start gap-2 px-3 max-[639px]:flex"
                     onPress={() => {
                       handleAISummarize();
                       setMoreOpen(false);
@@ -404,6 +404,21 @@ export default function ActionButtons() {
                   >
                     <Sparkles className="size-4 text-muted" />
                     {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
+                  </Button>
+                )}
+                {$hasIntegrations && (
+                  <Button
+                    role="menuitem"
+                    variant="ghost"
+                    className="h-10 w-full justify-start gap-2 px-3"
+                    onPress={async () => {
+                      await handleSaveToThirdParty();
+                      setMoreOpen(false);
+                    }}
+                    isPending={saveLoading}
+                  >
+                    {saveLoading ? <Spinner color="current" size="sm" /> : <CloudUpload className="size-4 text-muted" />}
+                    {t("articleView.saveToThirdParty")}
                   </Button>
                 )}
                 <Button
