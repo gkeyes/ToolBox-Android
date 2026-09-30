@@ -4,6 +4,8 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.CoreDataFactory
+import io.toolbox.core.data.RunOutcome
+import io.toolbox.core.data.SecurityProfile
 import io.toolbox.core.data.TaskState
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +29,8 @@ class BackgroundTaskMigrationTest {
         try {
             SQLiteDatabase.openOrCreateDatabase(path, null).use { old ->
                 createVersionOneSchema(old)
-                old.execSQL("INSERT INTO tools (id, name, securityProfile, installedAt) VALUES ('tool', 'Tool', 'STANDARD', 1)")
+                old.execSQL("INSERT INTO tools (id, name, securityProfile, installedAt) VALUES ('tool', 'Tool', ?, 1)",
+                    arrayOf(SecurityProfile.STRICT.name))
                 repeat(52) { index ->
                     old.execSQL(
                         "INSERT INTO background_tasks (taskId, toolId, versionCode, `key`, operation, specJson, periodic, state, createdAt, updatedAt, runAttempt) VALUES (?, 'tool', 1, ?, 'NOTIFY', '{}', 0, 'COMPLETED', 100, 100, 1)",
@@ -35,7 +38,8 @@ class BackgroundTaskMigrationTest {
                     )
                 }
                 old.execSQL("INSERT INTO background_tasks (taskId, toolId, versionCode, `key`, operation, specJson, periodic, state, createdAt, updatedAt, runAttempt) VALUES ('active', 'tool', 1, 'active', 'NOTIFY', '{}', 0, 'QUEUED', 101, 101, 0)")
-                old.execSQL("INSERT INTO task_results (taskId, outcome, completedAt, attemptCount) VALUES ('task-000', 'SUCCESS', 100, 1)")
+                old.execSQL("INSERT INTO task_results (taskId, outcome, completedAt, attemptCount) VALUES ('task-000', ?, 100, 1)",
+                    arrayOf(RunOutcome.SUCCEEDED.name))
                 old.version = 1
             }
 
@@ -53,10 +57,16 @@ class BackgroundTaskMigrationTest {
                 assertEquals(TaskState.QUEUED, tasks.observeActiveTasks("tool").first().single().state)
                 assertEquals(53, tasks.observeTasks("tool").first().size)
                 assertEquals("task-000", tasks.observeResult("task-000").first()?.taskId)
+                assertEquals(RunOutcome.SUCCEEDED, tasks.observeResult("task-000").first()?.outcome)
             }
 
             SQLiteDatabase.openDatabase(path.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { migrated ->
                 assertEquals(2, migrated.version)
+                migrated.rawQuery("SELECT name, securityProfile FROM tools WHERE id = 'tool'", null).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("Tool", cursor.getString(0))
+                    assertEquals(SecurityProfile.STRICT.name, cursor.getString(1))
+                }
                 val indexes = mutableSetOf<String>()
                 migrated.rawQuery("PRAGMA index_list('background_tasks')", null).use { cursor ->
                     while (cursor.moveToNext()) indexes += cursor.getString(cursor.getColumnIndexOrThrow("name"))

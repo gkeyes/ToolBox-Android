@@ -300,10 +300,15 @@ def android_run(filters):
     modules = android_groups(filters)
     if not modules:
         raise ValueError("No Android test filter selected")
+    failed = []
     for module, selected in modules.items():
         classes = ",".join(name + ("#" + method if method else "") for name, method in selected)
-        subprocess.run(["./gradlew", "--no-daemon", f":{module}:connectedDebugAndroidTest",
-                        f"-Pandroid.testInstrumentationRunnerArguments.class={classes}"], check=True)
+        result = subprocess.run(["./gradlew", "--no-daemon", f":{module}:connectedDebugAndroidTest",
+                                 f"-Pandroid.testInstrumentationRunnerArguments.class={classes}"], check=False)
+        if result.returncode:
+            failed.append(module)
+    if failed:
+        raise RuntimeError("Selected Android checks failed in: " + ", ".join(failed))
 
 
 def run_unit(filters):
