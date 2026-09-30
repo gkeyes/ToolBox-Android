@@ -1,0 +1,87 @@
+name: NewSMTH Browser Compatibility Diagnostic
+
+on:
+  pull_request:
+    branches: ["codex/refactor-lightweight-v2"]
+    paths:
+      - "app/src/androidTest/kotlin/io/toolbox/host/browser/NewSmthLiveWebViewDiagnosticTest.kt"
+      - ".github/workflows/newsmth-live-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Compare live NewSMTH in curl, Chromium and Android WebView
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Inspect live endpoint with curl
+        run: |
+          set -o pipefail
+          url='https://www.newsmth.net/nForum/article/AutoWorld/1945318701'
+          echo '=== curl HEAD/redirect chain ==='
+          curl -ksS -D /tmp/newsmth-headers.txt -o /tmp/newsmth.html -L --max-redirs 10 \
+            -A 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36' \
+            -w 'final_url=%{url_effective}\nhttp_code=%{http_code}\ncontent_type=%{content_type}\nsize=%{size_download}\n' \
+            "$url" || true
+          cat /tmp/newsmth-headers.txt || true
+          echo '=== mixed/legacy resource candidates ==='
+          grep -Eo '(src|href)=["\']http://[^"\']+' /tmp/newsmth.html | head -80 || true
+          echo '=== html summary ==='
+          wc -c /tmp/newsmth.html || true
+          grep -oi '<title[^>]*>[^<]*' /tmp/newsmth.html | head -5 || true
+
+      - name: Inspect live endpoint in headless Chromium
+        run: |
+          set -euo pipefail
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          test -n "$chrome"
+          "$chrome" --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --virtual-time-budget=6000 --dump-dom \
+            'https://www.newsmth.net/nForum/article/AutoWorld/1945318701' \
+            > /tmp/newsmth-chromium.html 2>/tmp/newsmth-chromium.err || true
+          echo '=== chromium stderr ==='
+          tail -120 /tmp/newsmth-chromium.err || true
+          echo '=== chromium DOM summary ==='
+          wc -c /tmp/newsmth-chromium.html || true
+          grep -oi '<title[^>]*>[^<]*' /tmp/newsmth-chromium.html | head -5 || true
+          grep -Eo 'https?://[^"<> ]+' /tmp/newsmth-chromium.html | grep -E 'newsmth|mysmth' | head -40 || true
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+
+      - name: Compile targeted WebView diagnostic
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Enable emulator acceleration
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Load live page in Android System WebView
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb shell dumpsys webviewupdate
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.browser.NewSmthLiveWebViewDiagnosticTest
