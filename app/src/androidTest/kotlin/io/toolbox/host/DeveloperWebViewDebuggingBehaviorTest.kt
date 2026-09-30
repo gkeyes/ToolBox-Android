@@ -143,7 +143,7 @@ class DeveloperWebViewDebuggingBehaviorTest(
         val id = "io.example.debug.${suffix}.${UUID.randomUUID().toString().replace("-", "")}"
         val bundle = root.toPath().resolve(RuntimeIdentity.expectedBundleLocator(id, 1))
         Files.createDirectories(bundle)
-        Files.writeString(bundle.resolve("index.html"), "<html><body>Debugging test</body></html>")
+        Files.write(bundle.resolve("index.html"), "<html><body>Debugging test</body></html>".toByteArray())
         val runtime = PreparedToolRuntime(
             id, "调试测试", 1, root.toPath(), bundle, "index.html", RuntimeIdentity.origin(id),
             RuntimeIdentity.profileName(id), SecurityProfile.STRICT,
