@@ -43,23 +43,30 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
   window.__toolboxRepairCollapsedMediaLayout = ${repairSource};
 </script>
 <script>
-  const before = document.getElementById('player').getBoundingClientRect();
-  const repaired = window.__toolboxRepairCollapsedMediaLayout();
-  const player = document.getElementById('player');
-  const wrap = document.getElementById('wrap');
-  const video = document.getElementById('video');
-  const after = player.getBoundingClientRect();
-  const wrapRect = wrap.getBoundingClientRect();
-  const videoRect = video.getBoundingClientRect();
-  const expected = ${expectedRepair ? 'true' : 'false'};
-  const pass = expected
-    ? before.height <= 2 && repaired === 1 && after.height > 200 && wrapRect.height > 200 && videoRect.height > 200
-    : before.height <= 2 && repaired === 0 && after.height <= 2;
-  document.body.setAttribute('data-result', pass ? 'PASS' : 'FAIL');
-  document.body.setAttribute('data-before', Math.round(before.width) + 'x' + Math.round(before.height));
-  document.body.setAttribute('data-after', Math.round(after.width) + 'x' + Math.round(after.height));
-  document.body.setAttribute('data-repaired', String(repaired));
-  document.body.setAttribute('data-marker', player.dataset.toolboxMediaLayoutRepair || 'none');
+  try {
+    const before = document.getElementById('player').getBoundingClientRect();
+    const repaired = window.__toolboxRepairCollapsedMediaLayout();
+    const player = document.getElementById('player');
+    const wrap = document.getElementById('wrap');
+    const video = document.getElementById('video');
+    const after = player.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const videoRect = video.getBoundingClientRect();
+    const expected = ${expectedRepair ? 'true' : 'false'};
+    const pass = expected
+      ? before.height <= 2 && repaired === 1 && after.height > 200 && wrapRect.height > 200 && videoRect.height > 200
+      : before.height <= 2 && repaired === 0 && after.height <= 2;
+    document.body.setAttribute('data-result', pass ? 'PASS' : 'FAIL');
+    document.body.setAttribute('data-before', Math.round(before.width) + 'x' + Math.round(before.height));
+    document.body.setAttribute('data-after', Math.round(after.width) + 'x' + Math.round(after.height));
+    document.body.setAttribute('data-wrap', Math.round(wrapRect.width) + 'x' + Math.round(wrapRect.height));
+    document.body.setAttribute('data-video', Math.round(videoRect.width) + 'x' + Math.round(videoRect.height));
+    document.body.setAttribute('data-repaired', String(repaired));
+    document.body.setAttribute('data-marker', player.dataset.toolboxMediaLayoutRepair || 'none');
+  } catch (error) {
+    document.body.setAttribute('data-result', 'ERROR');
+    document.body.setAttribute('data-error', String(error && (error.stack || error.message || error)));
+  }
 </script>`;
 
   fs.writeFileSync(htmlPath, html);
