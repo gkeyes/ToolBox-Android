@@ -335,7 +335,10 @@ export default {
       titleFontSize: "Taille",
       reset: "Réinitialiser",
     },
-    speech: {\n      title: "Lecture audio",\n    },\n    ai: {
+    speech: {
+      title: "Lecture audio",
+    },
+    ai: {
       title: "IA",
       description:
         "Actuellement, seuls OpenAI et les API compatibles OpenAI sont pris en charge",
