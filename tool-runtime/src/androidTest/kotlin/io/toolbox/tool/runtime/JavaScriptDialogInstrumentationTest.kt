@@ -116,11 +116,11 @@ class JavaScriptDialogInstrumentationTest {
                 loadedDocuments.get() > beforeNavigation && main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true"
             }
             open(webView, "confirm")
-            val beforeReload = loadedDocuments.get()
-            main { HardenedRuntimeWebView.reload(webView) }
-            await("Host reload did not settle the pending dialog") { main { RuntimeJavaScriptDialogs.current(webView) == null } }
-            await("Reloaded document did not load") {
-                loadedDocuments.get() > beforeReload && main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true"
+            val beforeRepeatedNavigation = loadedDocuments.get()
+            main { HardenedRuntimeWebView.loadEntry(webView, runtime) }
+            await("Repeated host navigation did not settle the pending dialog") { main { RuntimeJavaScriptDialogs.current(webView) == null } }
+            await("Repeatedly navigated document did not load") {
+                loadedDocuments.get() > beforeRepeatedNavigation && main { webView.hasWindowFocus() } && evaluate(webView, "window.dialogReady") == "true"
             }
             open(webView, "alert")
             val interrupted = main { RuntimeJavaScriptDialogs.current(webView)!! }

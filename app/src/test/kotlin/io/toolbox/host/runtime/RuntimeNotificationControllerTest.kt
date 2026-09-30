@@ -1,6 +1,8 @@
 package io.toolbox.host.runtime
 
 import android.content.pm.ServiceInfo
+import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
+import io.toolbox.tool.runtime.RuntimeLiveNotificationTone
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +98,50 @@ class RuntimeNotificationControllerTest {
         )
         assertEquals(1, stops)
     }
+
+    @Test
+    fun identicalExplicitTimeSkipsRefreshButOmittedTimeGetsFreshReceipt() = runBlocking {
+        var now = 1_000L
+        var refreshes = 0
+        val coordinator = LiveNotificationCoordinator(this, { now }, { refreshes++ })
+        val explicit = liveRequest(updatedAt = 123L)
+        coordinator.start("com.example.tool", "Example", explicit)
+        val first = coordinator.snapshot().single()
+        kotlinx.coroutines.yield()
+        assertEquals(1, refreshes)
+
+        now = 2_000L
+        coordinator.update("com.example.tool", "Example", explicit)
+        kotlinx.coroutines.yield()
+        assertEquals(first, coordinator.snapshot().single())
+        assertEquals(1, refreshes)
+
+        val omitted = liveRequest(updatedAt = null)
+        coordinator.update("com.example.tool", "Example", omitted)
+        val second = coordinator.snapshot().single()
+        assertEquals(2_000L, second.receivedAt)
+        kotlinx.coroutines.yield()
+        assertEquals(2, refreshes)
+
+        now = 3_000L
+        coordinator.update("com.example.tool", "Example", omitted)
+        assertEquals(3_000L, coordinator.snapshot().single().receivedAt)
+        kotlinx.coroutines.yield()
+        assertEquals(3, refreshes)
+    }
+
+    private fun liveRequest(updatedAt: Long?) = RuntimeLiveNotificationRequest(
+        sessionId = "session-1",
+        title = "Example",
+        primaryText = "Running",
+        secondaryText = null,
+        body = null,
+        shortText = null,
+        updatedAt = updatedAt,
+        progress = null,
+        accentColor = null,
+        tone = RuntimeLiveNotificationTone.NEUTRAL,
+    )
 
     private class RecordingSink : RuntimeNotificationSink {
         var stopForegroundCalls = 0

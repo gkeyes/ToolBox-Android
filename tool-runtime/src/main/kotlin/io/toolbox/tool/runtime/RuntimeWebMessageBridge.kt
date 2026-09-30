@@ -497,8 +497,9 @@ class RuntimeBridgeSession internal constructor(
               };
               const call = (method, params = {}) => {
                 if (disposed) return Promise.reject(runtimeError('SESSION_ENDED', 'The tool document has ended'));
-                const ticket = writeMethods.has(method) ? closeToken : null;
-                if (ticket && flushFinishedToken === ticket) return Promise.reject(runtimeError('SESSION_ENDED', 'The final save has completed'));
+                const isWrite = writeMethods.has(method);
+                const ticket = isWrite || method === 'runtime.flushComplete' ? closeToken : null;
+                if (isWrite && ticket && flushFinishedToken === ticket) return Promise.reject(runtimeError('SESSION_ENDED', 'The final save has completed'));
                 const id = `${'$'}{Date.now().toString(36)}-${'$'}{(++sequence).toString(36)}`;
                 let encoded;
                 try {
@@ -511,7 +512,7 @@ class RuntimeBridgeSession internal constructor(
                   pending.set(id, { resolve, reject });
                   try { nativeBridge.postMessage(encoded); } catch (error) { pending.delete(id); reject(error); }
                 }).catch(error => {
-                  // Wait for ordinary capacity; do not allocate a second, oversized storage budget.
+                  // Retry final writes/acknowledgement while this close is current; keep native budgets unchanged.
                   if (ticket && closeToken === ticket && error.code === 'BUSY') return new Promise(resolve => setTimeout(resolve, 50)).then(attempt);
                   throw error;
                 });
