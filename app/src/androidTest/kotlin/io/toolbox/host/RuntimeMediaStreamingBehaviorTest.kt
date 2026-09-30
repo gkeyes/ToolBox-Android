@@ -185,7 +185,7 @@ class RuntimeMediaStreamingBehaviorTest {
             assets.open("runtime-media/page.js").use { input ->
                 Files.newOutputStream(bundleRoot.resolve("page.js")).use { output -> input.copyTo(output) }
             }
-            Files.writeString(bundleRoot.resolve("index.html"), """
+            Files.write(bundleRoot.resolve("index.html"), """
                 <!doctype html><html><head><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
                 <script defer src="page.js"></script>
@@ -193,7 +193,7 @@ class RuntimeMediaStreamingBehaviorTest {
                 </head><body><button id="play" disabled>Play</button><button id="seek" disabled>Seek</button><button id="close" disabled>Close</button><br>
                 <button id="hold" disabled>Hold body</button><button id="close-held" disabled>Close held</button>
                 <video id="video" playsinline preload="auto"></video><audio id="audio" preload="auto"></audio></body></html>
-            """.trimIndent())
+            """.trimIndent().toByteArray(Charsets.UTF_8))
             runtime = PreparedToolRuntime(toolId, "Runtime media behavior test", 1, filesRoot, bundleRoot,
                 "index.html", RuntimeIdentity.origin(toolId), RuntimeIdentity.profileName(toolId), SecurityProfile.STRICT,
                 InstalledManifest(toolId, "Runtime media behavior test", 1, "0.3.0", "index.html", SecurityProfile.STRICT,
