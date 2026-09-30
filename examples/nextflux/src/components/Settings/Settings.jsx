@@ -36,7 +36,7 @@ const menuItems = [
     translationKey: "settings.readability.title",
   },
   { id: "ai", icon: Sparkles, translationKey: "settings.ai.title" },
-  { id: "speech", icon: Volume2, label: "语音朗读" },
+  { id: "speech", icon: Volume2, translationKey: "settings.speech.title" },
   {
     id: "shortcuts",
     icon: Keyboard,
