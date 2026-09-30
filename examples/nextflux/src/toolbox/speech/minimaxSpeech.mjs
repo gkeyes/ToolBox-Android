@@ -75,13 +75,13 @@ export async function synthesizeSpeechSegment(text, settings, { signal } = {}) {
   const model = ["speech-2.8-turbo", "speech-2.8-hd"].includes(settings?.speechModel)
     ? settings.speechModel
     : "speech-2.8-turbo";
-  const voiceId = String(settings?.speechVoiceId || "male-qn-qingse").trim() || "male-qn-qingse";
+  const voiceId = String(settings?.speechVoiceId || "presenter_male").trim() || "presenter_male";
   const body = {
     model,
     text: cleanText,
     stream: false,
     voice_setting: { voice_id: voiceId, speed: 1, vol: 1, pitch: 0 },
-    audio_setting: { sample_rate: 32000, bitrate: 64000, format: "mp3", channel: 1 },
+    audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 },
     language_boost: "auto",
     output_format: "hex",
   };
