@@ -333,7 +333,7 @@ export default {
       titleFontSize: "Boyut",
       reset: "Sıfırla",
     },
-    ai: {
+    speech: {\n      title: "Sesli okuma",\n    },\n    ai: {
       title: "AI",
       description:
         "Şu anda yalnızca OpenAI ve OpenAI uyumlu API'ler desteklenmektedir",
