@@ -92,7 +92,8 @@ test('a pre-aborted signal never opens or closes a native session', { timeout: 2
   const controller = new AbortController();
   controller.abort();
   await assert.rejects(host.api.openMedia({ url: sourceUrl }, { signal: controller.signal }), cancelled);
-  assert.equal(host.sent.length, 0);
+  assert.equal(host.opens().length, 0);
+  assert.equal(host.closes().length, 0);
 });
 
 test('abort immediately rejects a pending open and closes its late result', { timeout: 2_000 }, async () => {
@@ -182,21 +183,32 @@ test('native open failure removes all local session state', { timeout: 2_000 }, 
   assert.equal(signal.abortListeners.size, 0);
 });
 
-test('pagehide closes opened and pending sessions and cleans late opens', { timeout: 2_000 }, async () => {
+test('pagehide closes opened and pending sessions and discards replies to the ended document', { timeout: 2_000 }, async () => {
   const host = harness();
-  const first = host.api.openMedia({ url: sourceUrl });
+  const firstSignal = new TrackedSignal();
+  const secondSignal = new TrackedSignal();
+  const first = host.api.openMedia({ url: sourceUrl }, { signal: firstSignal });
   const a = host.opens()[0];
   host.reply(a, opened(a));
   await first;
-  const second = host.api.openMedia({ url: sourceUrl });
+  const second = host.api.openMedia({ url: sourceUrl }, { signal: secondSignal });
   const b = host.opens()[1];
   const rejected = assert.rejects(second, cancelled);
   host.pagehide();
   await rejected;
   assert.deepEqual(host.closes().map(message => message.params.sessionId).sort(), [a.params.sessionId, b.params.sessionId].sort());
+  assert.equal(firstSignal.abortListeners.size, 0);
+  assert.equal(secondSignal.abortListeners.size, 0);
+  const sentAtDisposal = host.sent.length;
+  // Navigation also clears the native media registry and cancels pending opens.
+  // Its old document reply channel has ended; the SDK must not revive it.
   host.reply(b, opened(b));
   await flush();
-  assert.equal(host.closes().length, 3);
+  await assert.rejects(host.api.openMedia({ url: sourceUrl }), error => error?.code === 'SESSION_ENDED');
+  firstSignal.abort();
+  secondSignal.abort();
+  assert.equal(host.sent.length, sentAtDisposal);
+  assert.equal(host.closes().length, 2);
 });
 
 test('bridge send failure detaches the abort listener', { timeout: 2_000 }, async () => {
@@ -205,6 +217,7 @@ test('bridge send failure detaches the abort listener', { timeout: 2_000 }, asyn
   await assert.rejects(host.api.openMedia({ url: sourceUrl }, { signal }), /Native bridge ended/);
   signal.abort();
   host.pagehide();
-  assert.equal(host.sent.length, 1);
+  assert.equal(host.opens().length, 1);
+  assert.equal(host.closes().length, 0);
   assert.equal(signal.abortListeners.size, 0);
 });

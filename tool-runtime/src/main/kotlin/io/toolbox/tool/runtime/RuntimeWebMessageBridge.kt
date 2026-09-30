@@ -918,10 +918,6 @@ internal object RuntimeBridgeLifecycle {
         sessions[webView]?.resetForNavigation()
     }
 
-    fun resetForNavigation(webView: WebView) {
-        sessions[webView]?.resetForNavigation()
-    }
-
     fun isCurrent(webView: WebView, session: RuntimeBridgeSession): Boolean = sessions[webView] === session
 
     fun emitEvent(webView: WebView, name: String, payload: RpcValue): Boolean =
