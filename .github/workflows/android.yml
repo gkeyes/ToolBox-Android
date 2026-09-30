@@ -289,7 +289,7 @@ jobs:
           TOOLBOX_BEHAVIOR_SCOPE: ${{ steps.baseline.outputs.checks }}
           TOOLBOX_ANDROID_TEST_FILTER: ${{ env.TARGET_ANDROID_TEST }}
         with:
-          api-level: 35
+          api-level: 36
           target: google_apis
           arch: x86_64
           profile: pixel_2

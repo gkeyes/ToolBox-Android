@@ -59,7 +59,7 @@ class RuntimeStorageFlushInstrumentationTest {
     fun nonemptyFinalWriteWaitsForRoomThenSealRejectsAndCancelAllowsNewWrite() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val suffix = UUID.randomUUID().toString().replace("-", "")
-        val toolId = "com.example.flush.$suffix"
+        val toolId = "com.example.flush.t$suffix"
         val databaseName = "runtime-flush-$suffix.db"
         val stores = CoreDataFactory.create(context, databaseName, "runtime-flush-settings")
         val root = context.filesDir.toPath()

@@ -71,7 +71,7 @@ class RuntimeBridgeLifecycleInstrumentationTest {
     @Test
     fun dedicatedProfileServiceWorkerHardeningIsRestoredAfterDeleteAndRecreate() = withFixture { fixture ->
         val capabilities = runBlocking { fixture.manager.providerCapabilities() }
-        assumeTrue("Provider cannot create and delete dedicated profiles",
+        assumeTrue("Provider cannot create and delete dedicated profiles: $capabilities",
             capabilities.preferredIsolationMode == RuntimeIsolationMode.DEDICATED_PROFILE &&
                 capabilities.serviceWorkerBasicUsage && capabilities.serviceWorkerShouldInterceptRequest)
         fixture.attach()
@@ -119,7 +119,7 @@ class RuntimeBridgeLifecycleInstrumentationTest {
         val filesRoot: Path = RuntimeBridgeLifecycleInstrumentationTest.main {
             InstrumentationRegistry.getInstrumentation().targetContext.filesDir.toPath()
         }
-        val toolId = "com.example.lifecycle.${UUID.randomUUID().toString().replace("-", "")}"
+        val toolId = "com.example.lifecycle.t${UUID.randomUUID().toString().replace("-", "")}"
         val bundle = filesRoot.resolve(RuntimeIdentity.expectedBundleLocator(toolId, 1))
         val manager = RuntimeProfileManager(filesRoot.toFile())
         val readyAdmissions = AtomicInteger()
