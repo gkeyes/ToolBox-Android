@@ -23,7 +23,11 @@ internal object BrowserCompatibilityPolicy {
         cacheMode = WebSettings.LOAD_DEFAULT
 
         useWideViewPort = true
-        loadWithOverviewMode = false
+        // Keep legacy desktop-style pages usable on phones. Sites such as NewSMTH return
+        // a compact verification form without a viewport meta tag; overview mode is what
+        // lets WebView fit that old layout into the mobile viewport instead of presenting
+        // it at desktop scale.
+        loadWithOverviewMode = true
         textZoom = 100
         setSupportZoom(true)
         builtInZoomControls = true
