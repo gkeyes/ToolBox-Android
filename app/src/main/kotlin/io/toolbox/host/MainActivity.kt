@@ -28,6 +28,7 @@ import io.toolbox.host.browser.BrowserAppearance
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.navigation.ToolBoxNavigation
+import io.toolbox.host.settings.SettingsUiState
 import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.runtime.ForegroundCapabilityBroker
 import io.toolbox.host.runtime.RuntimeSessionManager
@@ -95,7 +96,7 @@ class MainActivity : ComponentActivity() {
                     }
                     val settingsState by remember(settingsViewModel) {
                         settingsViewModel.state.rootSettings()
-                    }.collectAsStateWithLifecycle(initialValue = settingsViewModel.state.value.rootSettings())
+                    }.collectAsStateWithLifecycle(initialValue = SettingsUiState().rootSettings())
                     val pendingShortcutIntent by shortcutIntent.collectAsStateWithLifecycle()
                     if (!settingsState.loaded) {
                         ToolBoxTheme(mode = ToolBoxThemeMode.System) {
