@@ -71,6 +71,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.webkit.UserAgentMetadata
+import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxActionSheet
@@ -109,6 +111,9 @@ class BrowserActivity : ComponentActivity() {
     private var canForward by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
     private var menu by mutableStateOf(false)
+    private var userAgentSheet by mutableStateOf(false)
+    private var userAgentMode by mutableStateOf(BrowserUserAgentMode.ChromeMobile)
+    private val browserPreferences by lazy { getSharedPreferences(BROWSER_PREFERENCES, MODE_PRIVATE) }
     private var clearConfirmation by mutableStateOf(false)
     private var fullAddress by mutableStateOf(false)
     private var clearing by mutableStateOf(false)
@@ -126,6 +131,9 @@ class BrowserActivity : ComponentActivity() {
             finish()
             return
         }
+        userAgentMode = BrowserUserAgentMode.fromStored(
+            browserPreferences.getString(USER_AGENT_MODE_KEY, null),
+        )
         enableEdgeToEdge()
         applyHyperOsGestureNavigationImmersion()
         createPage(savedInstanceState?.getBundle("page"))
@@ -171,6 +179,7 @@ class BrowserActivity : ComponentActivity() {
                 // media without requiring a second WebView-level gesture. Sites can still expose
                 // their own autoplay controls, and hardware capture remains blocked below.
                 mediaPlaybackRequiresUserGesture = false
+                applyUserAgent(this)
             }
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(page, true)
@@ -340,7 +349,7 @@ class BrowserActivity : ComponentActivity() {
     private fun browserChromeLocked(): Boolean {
         val imeVisible = ViewCompat.getRootWindowInsets(window.decorView)
             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-        return imeVisible || fullScreenView != null || menu || fullAddress || clearConfirmation ||
+        return imeVisible || fullScreenView != null || menu || userAgentSheet || fullAddress || clearConfirmation ||
             filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
     }
 
@@ -422,6 +431,70 @@ class BrowserActivity : ComponentActivity() {
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> resetBrowserChromeGesture()
         }
+    }
+
+    private fun applyUserAgent(settings: WebSettings) {
+        val profile = BrowserUserAgentPolicy.profile(
+            mode = userAgentMode,
+            defaultUserAgent = WebSettings.getDefaultUserAgent(this),
+        )
+        settings.userAgentString = profile.userAgent
+
+        if (!profile.overrideMetadata ||
+            !WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)
+        ) {
+            return
+        }
+
+        val metadata = UserAgentMetadata.Builder()
+            .setMobile(profile.mobile)
+            .setPlatform(profile.platform)
+
+        profile.chromeVersion?.let { fullVersion ->
+            val majorVersion = fullVersion.substringBefore('.').ifBlank { fullVersion }
+            metadata
+                .setFullVersion(fullVersion)
+                .setBrandVersionList(
+                    listOf(
+                        UserAgentMetadata.BrandVersion.Builder()
+                            .setBrand("Chromium")
+                            .setMajorVersion(majorVersion)
+                            .setFullVersion(fullVersion)
+                            .build(),
+                        UserAgentMetadata.BrandVersion.Builder()
+                            .setBrand("Google Chrome")
+                            .setMajorVersion(majorVersion)
+                            .setFullVersion(fullVersion)
+                            .build(),
+                    ),
+                )
+        }
+
+        WebSettingsCompat.setUserAgentMetadata(settings, metadata.build())
+    }
+
+    private fun setUserAgentMode(mode: BrowserUserAgentMode) {
+        userAgentSheet = false
+        if (mode == userAgentMode || clearing || interaction.restarting) return
+
+        val currentAddress = validUrl(webView?.url.orEmpty()) ?: address
+        userAgentMode = mode
+        browserPreferences.edit().putString(USER_AGENT_MODE_KEY, mode.storageValue).apply()
+
+        hideFullScreen()
+        filters.stopPicker()
+        webView?.let { page ->
+            page.stopLoading()
+            destroyPage(page)
+        }
+        address = currentAddress
+        title = ""
+        loadProgress = 0
+        canBack = false
+        canForward = false
+        error = null
+        interaction = BrowserInteractionState()
+        createPage()
     }
 
     private fun validUrl(url: String): String? = try { validateRuntimeBrowserUrl(url) } catch (_: IllegalArgumentException) { null }
@@ -595,7 +668,7 @@ class BrowserActivity : ComponentActivity() {
                 isAppearanceLightNavigationBars = lightSystemBars
             }
         }
-        val chromeLocked = fullScreenView != null || menu || fullAddress || clearConfirmation ||
+        val chromeLocked = fullScreenView != null || menu || userAgentSheet || fullAddress || clearConfirmation ||
             filters.sheet || filters.picker.active || interaction.showRecoveryPrompt || error != null
         LaunchedEffect(chromeLocked) {
             if (chromeLocked) showBrowserChrome()
@@ -690,6 +763,13 @@ class BrowserActivity : ComponentActivity() {
                     menu = false
                 }
                 BrowserMenuAction(
+                    "网站兼容性 · ${userAgentMode.shortLabel}",
+                    ToolBoxIconKey.Device,
+                ) {
+                    menu = false
+                    userAgentSheet = true
+                }
+                BrowserMenuAction(
                     "清除浏览器网站数据",
                     ToolBoxIconKey.Shield,
                     destructive = true,
@@ -699,6 +779,54 @@ class BrowserActivity : ComponentActivity() {
                     clearConfirmation = true
                 }
                 Spacer(Modifier.height(2.dp))
+            }
+        }
+        if (userAgentSheet) {
+            ToolBoxActionSheet(
+                title = "网站兼容性",
+                onDismissRequest = { userAgentSheet = false },
+                containerColor = colors.background,
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    ToolBoxActionSheetHeader {
+                        Column(Modifier.fillMaxWidth()) {
+                            ToolBoxText(
+                                "网页身份",
+                                style = ToolBoxThemeTokens.textStyles.title.copy(
+                                    color = colors.textPrimary,
+                                    fontSize = 18.sp,
+                                    lineHeight = 22.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            ToolBoxText(
+                                "切换后会重新加载当前网页。默认使用 Chrome Mobile，提高视频和登录页兼容性。",
+                                style = ToolBoxThemeTokens.textStyles.body.copy(
+                                    color = colors.textSecondary,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                            )
+                        }
+                    }
+                    BrowserUserAgentOption(
+                        mode = BrowserUserAgentMode.ChromeMobile,
+                        label = "Chrome Mobile",
+                        description = "默认 · 适合大多数移动网页和视频播放器",
+                    )
+                    BrowserUserAgentOption(
+                        mode = BrowserUserAgentMode.AndroidWebView,
+                        label = "Android WebView",
+                        description = "原始身份 · 用于兼容性排查",
+                    )
+                    BrowserUserAgentOption(
+                        mode = BrowserUserAgentMode.DesktopChrome,
+                        label = "Desktop Chrome",
+                        description = "桌面身份 · 请求桌面版网页",
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
             }
         }
         if (fullAddress) {
@@ -855,7 +983,7 @@ class BrowserActivity : ComponentActivity() {
             )
         }
         // Avoid stacked dialogs and background-window prompts; a recovery callback removes this immediately.
-        if (interaction.showRecoveryPrompt && resumed && !menu && !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
+        if (interaction.showRecoveryPrompt && resumed && !menu && !userAgentSheet && !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
             ToolBoxModalDialog(onDismissRequest = { interaction = interaction.keepWaiting() }) {
                 ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
                     style = ToolBoxThemeTokens.textStyles.title.copy(color = colors.textPrimary))
@@ -1147,6 +1275,75 @@ class BrowserActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun BrowserUserAgentOption(
+        mode: BrowserUserAgentMode,
+        label: String,
+        description: String,
+    ) {
+        val colors = ToolBoxThemeTokens.colors
+        val selected = userAgentMode == mode
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (selected) colors.softPrimary else androidx.compose.ui.graphics.Color.Transparent)
+                .clickable(
+                    enabled = !clearing && !interaction.restarting,
+                    role = Role.Button,
+                    onClick = { setUserAgentMode(mode) },
+                )
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (selected) colors.primary.copy(alpha = 0.12f) else colors.surfaceMuted),
+                contentAlignment = Alignment.Center,
+            ) {
+                ToolBoxIcon(
+                    ToolBoxIconKey.Device,
+                    contentDescription = null,
+                    modifier = Modifier.size(19.dp),
+                    tint = if (selected) colors.primary else colors.textSecondary,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                ToolBoxText(
+                    label,
+                    maxLines = 1,
+                    style = ToolBoxThemeTokens.textStyles.body.copy(
+                        color = colors.textPrimary,
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+                Spacer(Modifier.height(2.dp))
+                ToolBoxText(
+                    description,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                        color = colors.textSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    ),
+                )
+            }
+            if (selected) {
+                Spacer(Modifier.width(8.dp))
+                ToolBoxIcon(
+                    ToolBoxIconKey.Check,
+                    contentDescription = "当前网页身份",
+                    modifier = Modifier.size(19.dp),
+                    tint = colors.primary,
+                )
+            }
+        }
+    }
+
+    @Composable
     private fun BrowserMenuAction(
         label: String,
         icon: ToolBoxIconKey,
@@ -1194,6 +1391,8 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val BROWSER_PREFERENCES = "browser_settings"
+        const val USER_AGENT_MODE_KEY = "user_agent_mode"
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }
