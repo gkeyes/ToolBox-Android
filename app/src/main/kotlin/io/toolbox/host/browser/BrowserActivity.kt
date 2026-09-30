@@ -104,6 +104,9 @@ class BrowserActivity : ComponentActivity() {
     private val mediaDiagnosticsScript by lazy {
         applicationContext.assets.open("browser/media-diagnostics.js").bufferedReader().use { it.readText() }
     }
+    private val mediaLayoutCompatScript by lazy {
+        applicationContext.assets.open("browser/media-layout-compat.js").bufferedReader().use { it.readText() }
+    }
     private var webView by mutableStateOf<WebView?>(null)
     private var address by mutableStateOf("")
     private var title by mutableStateOf("")
@@ -186,7 +189,15 @@ class BrowserActivity : ComponentActivity() {
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (view !== webView) return true
-                    if (validUrl(request.url.toString()) != null) return false
+                    val requested = request.url.toString()
+                    val normalized = validUrl(requested)
+                    if (normalized != null) {
+                        if (request.isForMainFrame && normalized != requested) {
+                            view.loadUrl(normalized)
+                            return true
+                        }
+                        return false
+                    }
                     if (request.isForMainFrame) unsupported("此链接需要其他应用，请从底部“更多”选择系统浏览器。")
                     return true
                 }
@@ -212,6 +223,11 @@ class BrowserActivity : ComponentActivity() {
                     loadProgress = 100
                     updateNavigation(view)
                     filters.applyToPage()
+                    applyMediaLayoutCompatibility(view)
+                    view.postDelayed(
+                        { if (view === webView) applyMediaLayoutCompatibility(view) },
+                        MEDIA_LAYOUT_COMPAT_RETRY_MS,
+                    )
                     flushCookies()
                     if (mediaDiagnosticsCapture) {
                         val epoch = mediaDiagnosticsEpoch
@@ -598,7 +614,16 @@ class BrowserActivity : ComponentActivity() {
         }
     }
 
-    private fun validUrl(url: String): String? = try { validateRuntimeBrowserUrl(url) } catch (_: IllegalArgumentException) { null }
+    private fun applyMediaLayoutCompatibility(page: WebView) {
+        if (page !== webView) return
+        page.evaluateJavascript("($mediaLayoutCompatScript)()", null)
+    }
+
+    private fun validUrl(url: String): String? = try {
+        BrowserNavigationPolicy.normalize(validateRuntimeBrowserUrl(url))
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     private fun updateNavigation(page: WebView) {
         if (page !== webView) return
@@ -1597,6 +1622,7 @@ class BrowserActivity : ComponentActivity() {
         const val BROWSER_PREFERENCES = "browser_settings"
         const val USER_AGENT_MODE_KEY = "user_agent_mode"
         const val MEDIA_DIAGNOSTIC_SETTLE_MS = 2500L
+        const val MEDIA_LAYOUT_COMPAT_RETRY_MS = 1500L
         const val MAX_MEDIA_DIAGNOSTIC_EVENTS = 30
         val cookieWrites = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
