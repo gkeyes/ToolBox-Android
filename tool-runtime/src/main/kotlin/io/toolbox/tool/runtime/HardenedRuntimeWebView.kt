@@ -43,7 +43,7 @@ sealed interface RuntimeWebViewCreationResult {
 
 object HardenedRuntimeWebView {
     private val hardeningLock = Any()
-    private var debuggingDisabled = false
+    private var debuggingConfigured = false
     private var defaultServiceWorkersHardened = false
     private val hardenedProfiles = hashSetOf<String>()
 
@@ -99,7 +99,7 @@ object HardenedRuntimeWebView {
         var webView: WebView? = null
         var runtimeClient: RuntimeWebViewClient? = null
         try {
-            disableDebuggingOnce()
+            configureDebuggingOnce(context)
             val createdWebView = RuntimeWindowWebView(context)
             webView = createdWebView
             val serviceWorkerBasic = WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
@@ -200,10 +200,10 @@ object HardenedRuntimeWebView {
         cookieManager.setAcceptThirdPartyCookies(webView, false)
     }
 
-    private fun disableDebuggingOnce() = synchronized(hardeningLock) {
-        if (!debuggingDisabled) {
-            WebView.setWebContentsDebuggingEnabled(false)
-            debuggingDisabled = true
+    private fun configureDebuggingOnce(context: Context) = synchronized(hardeningLock) {
+        if (!debuggingConfigured) {
+            RuntimeWebViewDebugging.applyBuildSetting(context)
+            debuggingConfigured = true
         }
     }
 

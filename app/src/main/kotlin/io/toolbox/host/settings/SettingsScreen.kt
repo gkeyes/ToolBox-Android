@@ -143,7 +143,7 @@ internal fun SettingsContent(
             ToolBoxGroupedSurface {
                 ToolBoxSettingRow(
                     title = "开发者帮助",
-                    summary = "离线手册与四个范例",
+                    summary = "调试状态、离线手册与四个范例",
                     icon = ToolBoxIconKey.Code,
                     onClick = onDeveloperHelp,
                     enabled = state.loaded,
