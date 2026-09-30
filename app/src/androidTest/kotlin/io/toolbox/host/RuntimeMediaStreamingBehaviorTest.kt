@@ -2,6 +2,7 @@ package io.toolbox.host
 
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.webkit.WebView
@@ -171,6 +172,7 @@ class RuntimeMediaStreamingBehaviorTest {
         private var permit: RuntimeCreationPermit? = null
         var page: WebView? = null
         private val loadFailure = AtomicReference<String?>()
+        private val entryLoaded = AtomicBoolean()
 
         fun create() {
             scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -226,7 +228,10 @@ class RuntimeMediaStreamingBehaviorTest {
                 val container = FrameLayout(activity)
                 activity.setContentView(container)
                 val created = HardenedRuntimeWebView.create(activity, runtime, requireNotNull(permit),
-                    RuntimeWebViewCallbacks({}, { loadFailure.set(it) }, { loadFailure.set("Runtime media renderer exited") }),
+                    RuntimeWebViewCallbacks({
+                        entryLoaded.set(true)
+                        report("RUNTIME_MEDIA_ENTRY_LOADED")
+                    }, { loadFailure.set(it) }, { loadFailure.set("Runtime media renderer exited") }),
                     RuntimeBridgeProvider { RuntimeBridgeConfiguration(authorization, RuntimeM1Handlers(), "1.0.0",
                         m2Handlers = RuntimeM2Handlers(network = gateway)) })
                 page = when (created) {
@@ -243,16 +248,54 @@ class RuntimeMediaStreamingBehaviorTest {
 
         fun awaitPage(label: String, condition: (JSONObject) -> Boolean): JSONObject {
             var last = JSONObject()
-            await(label) {
-                loadFailure.get()?.let { error(it) }
-                val decoded = JSONTokener(evaluate("JSON.stringify(globalThis.runtimeMediaReport || null)")).nextValue()
+            var lastSnapshot = "not evaluated"
+            var lastPhase: String? = null
+            await(label, { pageDiagnostics(lastSnapshot) }) {
+                loadFailure.get()?.let { error("$it; ${pageDiagnostics(lastSnapshot)}") }
+                val decoded = JSONTokener(evaluate("""
+                    JSON.stringify({
+                        report: globalThis.runtimeMediaReport || null,
+                        dom: {
+                            url: location.href, readyState: document.readyState,
+                            visibility: document.visibilityState, focused: document.hasFocus(),
+                            sdkReady: typeof globalThis.ToolBox?.ready,
+                            sdkOpenMedia: typeof globalThis.ToolBox?.network?.openMedia,
+                            scriptCount: document.scripts.length,
+                            buttons: Array.from(document.querySelectorAll('button'), button => ({ id: button.id, disabled: button.disabled })),
+                            players: ['video', 'audio'].map(id => {
+                                const player = document.getElementById(id);
+                                return player && { id, readyState: player.readyState, networkState: player.networkState,
+                                    src: player.currentSrc, errorCode: player.error?.code };
+                            }),
+                        },
+                    })
+                """.trimIndent())).nextValue()
                 if (decoded is String && decoded != "null") {
-                    last = JSONObject(decoded)
-                    if (!last.isNull("fatal")) error(last.toString())
+                    lastSnapshot = decoded
+                    last = JSONObject(decoded).optJSONObject("report") ?: JSONObject()
+                    val phase = last.optString("phase", "fixture-missing")
+                    if (phase != lastPhase) {
+                        lastPhase = phase
+                        report("RUNTIME_MEDIA_PHASE waiting=$label snapshot=$lastSnapshot ${networkDiagnostics()} entryLoaded=${entryLoaded.get()}")
+                    }
+                    if (!last.isNull("fatal")) error(pageDiagnostics(lastSnapshot))
                     condition(last)
                 } else false
             }
             return last
+        }
+
+        private fun networkDiagnostics(): String =
+            "reserved=${resources.reservedBytes} waiting=${resources.waitingCount} " +
+                if (::transport.isInitialized) transport.diagnostics() else "transport=uninitialized"
+
+        private fun pageDiagnostics(snapshot: String): String {
+            val view = runCatching {
+                onMain { page?.let { "url=${it.url} progress=${it.progress} shown=${it.isShown} focused=${it.hasWindowFocus()} size=${it.width}x${it.height}" } ?: "released" }
+            }.getOrElse { "unavailable: ${it.message}" }
+            val details = "RUNTIME_MEDIA_TIMEOUT snapshot=$snapshot ${networkDiagnostics()} entryLoaded=${entryLoaded.get()} view=[$view]"
+            report(details)
+            return details
         }
 
         private fun evaluate(script: String): String {
@@ -286,8 +329,8 @@ class RuntimeMediaStreamingBehaviorTest {
             }
         }
 
-        fun awaitBlocked(count: Int) = await("body entered blocked read $count") { transport.blockedReads.get() == count }
-        fun awaitReleased() = await("all network reservations and bodies released") {
+        fun awaitBlocked(count: Int) = await("body entered blocked read $count", ::networkDiagnostics) { transport.blockedReads.get() == count }
+        fun awaitReleased() = await("all network reservations and bodies released", ::networkDiagnostics) {
             resources.reservedBytes == 0L && resources.waitingCount == 0 && transport.sources.all { it.closed.get() }
         }
         fun assertRouteClosed(url: String) = runBlocking { assertNull(gateway.interceptMedia(url, "GET", emptyMap())) }
@@ -312,6 +355,7 @@ class RuntimeMediaStreamingBehaviorTest {
             cleanup {
                 if (::manager.isInitialized) {
                     val result = runBlocking { manager.clearThenRun(runtime.toolId) { Unit } }
+                    report("RUNTIME_MEDIA_PROFILE_CLEAR result=$result ${networkDiagnostics()}")
                     assertTrue("Runtime media cleanup failed: $result", result is RuntimeDataCleanupExecution.Completed)
                 }
             }
@@ -368,7 +412,8 @@ class RuntimeMediaStreamingBehaviorTest {
         }
 
         fun diagnostics(): String = "requests=${requests.size} rangeRequests=${requests.count { it.header("Range") != null }} " +
-            "tailRanges=${tailRanges.get()} tailRangeBytes=${tailRangeBytes.get()} bodies=${sources.size} closed=${sources.count { it.closed.get() }} blockedReads=${blockedReads.get()}"
+            "tailRanges=${tailRanges.get()} tailRangeBytes=${tailRangeBytes.get()} bodies=${sources.size} closed=${sources.count { it.closed.get() }} blockedReads=${blockedReads.get()} " +
+            "lastRequests=[${requests.takeLast(8).joinToString { "${it.method} ${it.url.encodedPath} ${it.header("Range") ?: "full"}" }}]"
     }
 
     /** Retains only the tiny sample and synthesizes the large free box while preserving mdat offsets. */
@@ -453,13 +498,13 @@ class RuntimeMediaStreamingBehaviorTest {
         override fun close() { if (closed.compareAndSet(false, true)) releaseRead.countDown() }
     }
 
-    private fun await(label: String, condition: () -> Boolean) {
+    private fun await(label: String, diagnostics: () -> String = { "" }, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 20_000
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
             SystemClock.sleep(50)
         }
-        error("Timed out waiting for $label")
+        error("Timed out waiting for $label; ${diagnostics()}")
     }
 
     private fun <T> onMain(action: () -> T): T {
@@ -468,5 +513,8 @@ class RuntimeMediaStreamingBehaviorTest {
         return result.get(10, TimeUnit.SECONDS)
     }
 
-    private fun report(message: String) = instrumentation.sendStatus(2, Bundle().apply { putString("stream", "$message\n") })
+    private fun report(message: String) {
+        Log.i("RuntimeMediaTest", message)
+        instrumentation.sendStatus(2, Bundle().apply { putString("stream", "$message\n") })
+    }
 }

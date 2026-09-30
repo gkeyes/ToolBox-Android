@@ -2,15 +2,53 @@
 
 const report = globalThis.runtimeMediaReport = {
   phase: 'loading', violations: [], fatal: null, trusted: false,
-  videoTime: 0, audioTime: 0, videoFrames: 0,
+  videoTime: 0, audioTime: 0, videoFrames: 0, events: [], stages: [], media: {},
 };
+const started = performance.now();
 const video = document.getElementById('video');
 const audio = document.getElementById('audio');
 const sessions = [];
 video.muted = audio.muted = true;
 video.loop = audio.loop = true;
+
+function mediaState(player) {
+  return {
+    readyState: player.readyState, networkState: player.networkState,
+    currentTime: player.currentTime, duration: player.duration,
+    currentSrc: player.currentSrc, paused: player.paused, ended: player.ended,
+    error: player.error && { code: player.error.code, message: player.error.message },
+  };
+}
+
+function snapshot() {
+  report.media = { video: mediaState(video), audio: mediaState(audio) };
+}
+
+function stage(phase) {
+  report.phase = phase;
+  snapshot();
+  report.stages.push({ phase, elapsed: Math.round(performance.now() - started) });
+  if (report.stages.length > 32) report.stages.shift();
+  console.info('RUNTIME_MEDIA_STAGE ' + JSON.stringify({ phase, media: report.media }));
+}
+
+for (const player of [video, audio]) {
+  for (const type of ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'suspend', 'stalled', 'error', 'abort', 'emptied', 'seeking', 'seeked']) {
+    player.addEventListener(type, () => {
+      snapshot();
+      report.events.push({ player: player.id, type, elapsed: Math.round(performance.now() - started) });
+      if (report.events.length > 64) report.events.shift();
+    });
+  }
+}
 document.addEventListener('securitypolicyviolation', event => report.violations.push(event.violatedDirective));
-const fail = error => { report.fatal = String(error?.stack || error?.message || error); };
+const fail = error => {
+  report.fatal = String(error?.stack || error?.message || error);
+  snapshot();
+  console.error('RUNTIME_MEDIA_FATAL ' + report.fatal);
+};
+globalThis.addEventListener('error', event => fail(event.error || event.message));
+globalThis.addEventListener('unhandledrejection', event => fail(event.reason));
 
 function metadata(player) {
   if (player.readyState >= 1) return Promise.resolve();
@@ -21,32 +59,48 @@ function metadata(player) {
 }
 
 async function initialize() {
+  stage('sdk-ready-pending');
   await ToolBox.ready();
+  stage('sdk-ready');
+  stage('sessions-open-pending');
   const [videoSession, audioSession] = await Promise.all([
-    ToolBox.network.openMedia({ url: 'https://cdn.example.test/video.mp4', kind: 'video' }),
-    ToolBox.network.openMedia({ url: 'https://cdn.example.test/audio.mp3', kind: 'audio' }),
+    ToolBox.network.openMedia({ url: 'https://cdn.example.test/video.mp4', kind: 'video' }).then(session => {
+      report.videoSessionOpened = true;
+      return session;
+    }),
+    ToolBox.network.openMedia({ url: 'https://cdn.example.test/audio.mp3', kind: 'audio' }).then(session => {
+      report.audioSessionOpened = true;
+      return session;
+    }),
   ]);
   sessions.push(videoSession, audioSession);
   report.sessions = sessions;
+  stage('sessions-open');
   video.src = videoSession.url;
   audio.src = audioSession.url;
+  stage('metadata-pending');
   await Promise.all([metadata(video), metadata(audio)]);
   report.videoDuration = video.duration;
   report.audioDuration = audio.duration;
   report.videoWidth = video.videoWidth;
+  stage('metadata-loaded');
+  stage('range-probe-pending');
   const partial = await fetch(videoSession.url, { headers: { Range: 'bytes=8-31' } });
+  report.rangeStatus = partial.status;
+  stage('range-body-pending');
   report.range = {
     status: partial.status,
     contentRange: partial.headers.get('content-range'),
     bytes: Array.from(new Uint8Array(await partial.arrayBuffer())),
   };
-  report.phase = 'ready';
+  stage('ready');
   document.querySelectorAll('button').forEach(button => button.disabled = false);
 }
 
 document.getElementById('play').addEventListener('click', event => {
   report.trusted = event.isTrusted;
-  Promise.all([video.play(), audio.play()]).then(() => { report.phase = 'playing'; }).catch(fail);
+  stage('play-pending');
+  Promise.all([video.play(), audio.play()]).then(() => { stage('playing'); }).catch(fail);
 });
 
 document.getElementById('seek').addEventListener('click', () => {
@@ -62,7 +116,7 @@ document.getElementById('seek').addEventListener('click', () => {
     player.currentTime = target;
   });
   Promise.all([seek(video, 'videoSeek'), seek(audio, 'audioSeek')])
-    .then(() => { report.phase = 'seeked'; }).catch(fail);
+    .then(() => { stage('seeked'); }).catch(fail);
 });
 
 document.getElementById('close').addEventListener('click', async () => {
@@ -74,7 +128,7 @@ document.getElementById('close').addEventListener('click', async () => {
     }
     await Promise.all(sessions.map(session => ToolBox.network.closeMedia(session.sessionId)));
     report.closedStatus = await Promise.all(sessions.map(session => fetch(session.url).then(response => response.status)));
-    report.phase = 'closed';
+    stage('closed');
   } catch (error) { fail(error); }
 });
 
@@ -82,7 +136,7 @@ document.getElementById('hold').addEventListener('click', async () => {
   try {
     const session = await ToolBox.network.openMedia({ url: 'https://cdn.example.test/holding.mp4', kind: 'video' });
     report.held = session;
-    report.phase = 'holding';
+    stage('holding');
     fetch(session.url, { headers: { Range: 'bytes=0-' } }).then(response => response.arrayBuffer())
       .then(() => fail(new Error('The retained body unexpectedly completed')))
       .catch(error => { report.holdError = String(error.message); });
@@ -92,7 +146,7 @@ document.getElementById('hold').addEventListener('click', async () => {
 document.getElementById('close-held').addEventListener('click', async () => {
   try {
     await ToolBox.network.closeMedia(report.held.sessionId);
-    report.phase = 'held-closed';
+    stage('held-closed');
   } catch (error) { fail(error); }
 });
 
@@ -100,5 +154,6 @@ setInterval(() => {
   report.videoTime = Math.max(report.videoTime, video.currentTime);
   report.audioTime = Math.max(report.audioTime, audio.currentTime);
   report.videoFrames = video.getVideoPlaybackQuality?.().totalVideoFrames || 0;
+  snapshot();
 }, 20);
 initialize().catch(fail);
