@@ -959,7 +959,7 @@ internal class RuntimeSessionManager(
         cancelReminder(removed.sessionId)
         liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
-            recovery.cancel(toolId)?.join()
+            val cancelledRecovery = recovery.cancel(toolId)
             recoveryStatus.remove(toolId)
             timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
             clearBackgroundWatches(toolId)
@@ -974,6 +974,8 @@ internal class RuntimeSessionManager(
                     } else if (hosts[toolId] === closingHost) HardenedRuntimeWebView.cancelClose(closingHost.webView)
                 }
             }
+            // Start the close deadline before waiting for a cancelled recovery job to finish.
+            cancelledRecovery?.join()
         }
         persistSessions(toolId)
         refreshForegroundService()
