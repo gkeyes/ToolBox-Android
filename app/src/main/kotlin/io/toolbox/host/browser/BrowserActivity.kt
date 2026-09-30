@@ -473,7 +473,7 @@ class BrowserActivity : ComponentActivity() {
         WebSettingsCompat.setUserAgentMetadata(settings, metadata.build())
     }
 
-    private fun setUserAgentMode(mode: BrowserUserAgentMode) {
+    private fun changeUserAgentMode(mode: BrowserUserAgentMode) {
         userAgentSheet = false
         if (mode == userAgentMode || clearing || interaction.restarting) return
 
@@ -1289,7 +1289,7 @@ class BrowserActivity : ComponentActivity() {
                 .clickable(
                     enabled = !clearing && !interaction.restarting,
                     role = Role.Button,
-                    onClick = { setUserAgentMode(mode) },
+                    onClick = { changeUserAgentMode(mode) },
                 )
                 .padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
