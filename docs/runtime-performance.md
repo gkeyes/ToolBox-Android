@@ -1,6 +1,6 @@
 # 运行时性能实现记录
 
-本次实现以宿主 0.8.27 / 60 为源码基线，宿主目标版本为 0.8.28 / 61。此文件记录当前机制、参数与可验证边界；云端验证结果在合并前补入。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
+本次实现以宿主 0.8.27 / 60 为源码基线，宿主目标版本为 0.8.28 / 61。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
 
 ## 1. 状态、事件与关闭协议
 
@@ -108,4 +108,22 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | 宿主补充单元证据 | [run 36749624183](https://github.com/gkeyes/ToolBox-Android/actions/runs/36749624183)，提交 `c84b11a0da00ade0d150788d14e4905b76eb8677`：只执行修正后的通知方法及首次执行的 tool-package 2 类、tool-runtime 5 类，共 31 项通过、0 失败、0 跳过。结合前次未受修改影响的 67 项，累计 98 个不同定向单元用例通过；没有重跑那 67 项 |
 | 宿主 Android 首次运行 | 同一 run 实际执行 app 26 项，25 通过、1 失败、0 跳过。最终非空 Room 写入、封口拒绝晚写、取消后恢复写入、两种关闭弹窗、Worker、备份及选中浏览器场景通过。迁移测试读取无索引表时错误要求必填 indices 字段，已改为读取 Room 的可选数组；保留全部记录 / 索引 / 分页断言。tool-runtime 场景因前一步失败尚未开始 |
 
-六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。宿主失败项与此前未执行的模块 / Android 场景结果、最终签名产物将在完成后补入。
+| 宿主迁移及运行时首次执行 | [run 36754104266](https://github.com/gkeyes/ToolBox-Android/actions/runs/36754104266)，提交 `3bd78e9335a84e4915d6a76c53db66770b896c34`：使用旧版实际 `SUCCEEDED` / `STRICT` 枚举创建迁移夹具后，真实迁移方法 1 / 1 通过。tool-runtime 实际执行 8 项，6 通过、1 失败、1 跳过；通过的为两种 JavaScript dialog、非空最终写入 BUSY / 控制准入、3 个 Wasm 场景。生命周期夹具的随机 ID 末段可能以数字开头，第二次加载被真实 ID 校验拒绝，已修为字母前缀。Profile 在该 API 35 镜像的 WebView 124.0.6367.219 上缺少所需能力，跳过不计通过 |
+| 宿主剩余定向场景 | [run 36758324823](https://github.com/gkeyes/ToolBox-Android/actions/runs/36758324823)，提交 `652dee8779f700525ce619091c2ee67ace95c5fa`：只选择生命周期、专用 Profile 删除后重建，以及同样修正 ID 的真实 Room 最终写入方法，共 3 项。行为镜像改为 API 36；是否具备实际 Profile / ServiceWorker 能力由运行结果确认，不由镜像级别推定。结果待完成，未计作通过 |
+
+六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。最终签名产物在云端完成后补入。
+
+## 7. 与媒体任务 PR #54 的整合要求
+
+用户询问的任务 `01a0f244-a463-79e2-a0fd-69f38f68090c` 对应 [媒体 PR #54](https://github.com/gkeyes/ToolBox-Android/pull/54)。它补全 NextFlux 图片 / 音视频媒体通道；本 PR #56 收敛运行时调度、后台展示与持久化。两者可以整合，整合工作仍需独立执行和验证。
+
+只读合并检查以共同基线 `06cd8ec7899f139f974c4c72b565af59a3f91118`、本 PR 提交 `652dee8779f700525ce619091c2ee67ace95c5fa` 和媒体提交 `d96b9fbec1d9b5908305eb3defeb481649c6da96` 为准：16 个共同修改文件，7 个文本冲突。冲突为 NextFlux 的 manifest、package / lock、notice，以及 `HardenedRuntimeWebView`、`RuntimeRpc`、`RuntimeWebMessageBridge`。检查没有修改工作树、合并 PR 或操作另一任务。
+
+建议先合入运行时基础，再将媒体实现接入当前主调用链。具体整合点：
+
+1. **网络所有权与清理。** 保留本次 complete 请求的 active controller 登记 / 释放，不能退回仅登记公开 stream 的实现。媒体的 `openStream` / 资源所有权加入同一取消路径；保留媒体任务的 `clear` / `close` 和撤权取消。锁内收集资源，锁外取消；关闭、撤权、刷新都必须释放资源。
+2. **RPC 关闭协议。** `network.openMedia` 属于普通准入，挂起工作后仍检验版本 / 权限。`network.closeMedia` 为资源清理加入 closing 允许的方法及控制准入，撤权后仍可清理已有资源；身份、声明、当前 generation 和控制体积检查继续生效。媒体方法接入本次授权前后检查和保存截止点，不能创建第二套关闭逻辑。
+3. **页面切换与桥预算。** 将媒体任务的 navigation epoch 与本次 generation / revision、事件 FIFO、累计 ACK 和 flush token 对齐。旧页面回复 / 事件不能送到新页面；旧队列和在途预算必须释放。当前 event buffer 的 close 是最终关闭，页面 reset 需可复用且保持序号单调；`loadEntry` 与 `onPageStarted` 的重置去重，避免取消新页面刚发出的 ready。桥接回复和控制 token 仍由当前页面拥有。
+4. **WebView 与版本。** 保留本次专用 Profile 自身的 ServiceWorker 初始化、进程调试初始化和精确本地来源判断，再加入媒体任务的非主文档路由。每个 WebView 只建立一个媒体 handler，创建失败也释放资源。NextFlux 采用合并后的一个版本，并同步 manifest、package、lock 和 notice 校验值；不得覆盖任一方功能或保留平行实现。
+
+整合后仅验证直接受影响的媒体 GET / HEAD / Range / 416、播放与拖动、刷新 / 退出 / 撤权资源清理、旧页面回复与 ACK 隔离、严格同源检查，以及运行时准入 / 生命周期 / 最终写入相关回归。当前各 PR 的通过证据不能替代合并后共享调用链的验证。
