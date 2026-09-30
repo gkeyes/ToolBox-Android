@@ -4,6 +4,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import { aiSummaries } from "@/stores/aiStore.js";
+import { runtimeForeground } from "@/toolbox/foreground.js";
 import { rows, activeArticle, filteredArticles, settingsState, isModalOpen, imageGalleryActive } from "./article-navigation-state.js";
 import "../../../src/index.css";
 
@@ -12,6 +13,7 @@ await i18n.use(initReactI18next).init({ lng: "zh", fallbackLng: "zh", resources:
   articleList: { emptyPlaceholder: "请选择文章" },
 } } }, interpolation: { escapeValue: false } });
 document.documentElement.dataset.theme = "light";
+runtimeForeground.set(true);
 
 window.navigationFixture = {
   setReducedMotion: (value) => settingsState.set({ ...settingsState.get(), reduceMotion: value }),

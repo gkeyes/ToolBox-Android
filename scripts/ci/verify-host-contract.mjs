@@ -61,11 +61,11 @@ for (const clientPath of [
   }
 }
 await context.ToolBox.clipboard.writeText('');
-assert.equal(sent.at(-1).params.text, '');
+assert.equal(sent.findLast(request => request.method === 'clipboard.writeText')?.params.text, '');
 await context.ToolBox.share.text('line\nnext');
-assert.equal(sent.at(-1).params.text, 'line\nnext');
+assert.equal(sent.findLast(request => request.method === 'share.text')?.params.text, 'line\nnext');
 const chunk = await context.ToolBox.network.readStream('stream-fixture', { expectedChunkBytes: 131072 });
-assert.equal(sent.at(-1).params.expectedChunkBytes, 131072);
+assert.equal(sent.findLast(request => request.method === 'network.readStream')?.params.expectedChunkBytes, 131072);
 assert.deepEqual([...chunk.data], [1, 2, 3]);
 await assert.rejects(context.ToolBox.network.readStream('stream-fixture', { expectedChunkBytes: Number.MAX_SAFE_INTEGER + 1 }));
 
