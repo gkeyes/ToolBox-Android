@@ -96,6 +96,7 @@ internal class RuntimeForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        markRunning(this)
         latestStartId = startId
         if (!notifications.hasForegroundCarrier) {
             bootstrapSession(intent)?.let { session ->
@@ -106,7 +107,7 @@ internal class RuntimeForegroundService : Service() {
                     delay(4_000)
                     if (!notifications.hasForegroundCarrier) {
                         Log.w(TAG, "Runtime notification bootstrap timed out")
-                        stopSelfResult(latestStartId)
+                        stopIfCurrent(latestStartId)
                     }
                 }
             }
@@ -144,7 +145,7 @@ internal class RuntimeForegroundService : Service() {
                                     notifications.render(current)
                                     synchronizeIcons(current, dependencies.toolIcons, sessions)
                                 },
-                                stopIfEmpty = { stopSelfResult(latestStartId) },
+                                stopIfEmpty = { stopIfCurrent(latestStartId) },
                             )
                         }
                     }
@@ -157,12 +158,16 @@ internal class RuntimeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        markStopped(this)
+        markStopping(this)
         scope.cancel()
         iconLoads.clear()
         toolIcons.clear()
         notifications.clear()
         super.onDestroy()
+    }
+
+    private fun stopIfCurrent(startId: Int) {
+        if (stopSelfResult(startId)) markStopping(this)
     }
 
     private fun build(card: RuntimeNotificationCard) = renderer.build(
@@ -232,7 +237,7 @@ internal class RuntimeForegroundService : Service() {
             startRequested = true
         }
 
-        private fun markStopped(service: RuntimeForegroundService) = synchronized(runningLock) {
+        private fun markStopping(service: RuntimeForegroundService) = synchronized(runningLock) {
             if (runningInstance === service) {
                 runningInstance = null
                 startRequested = false
@@ -260,7 +265,10 @@ internal class RuntimeForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            synchronized(runningLock) { startRequested = false }
+            synchronized(runningLock) {
+                runningInstance = null
+                startRequested = false
+            }
             runCatching { context.stopService(Intent(context, RuntimeForegroundService::class.java)) }
         }
 
