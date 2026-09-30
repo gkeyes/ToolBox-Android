@@ -1,6 +1,6 @@
 # 运行时性能实现记录
 
-本次实现以宿主 0.8.27 / 60 为源码基线，性能阶段宿主为 0.8.28 / 61；整合媒体与调试状态后的当前目标为 0.8.29 / 62，配套 NextFlux 为 1.0.35 / 56。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
+本次实现以宿主 0.8.27 / 60 为源码基线，性能阶段宿主为 0.8.28 / 61；整合媒体与调试状态后的当前组合版本为 0.8.29 / 62，配套 NextFlux 为 1.0.35 / 56。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
 
 ## 1. 状态、事件与关闭协议
 
@@ -129,7 +129,9 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 ## 8. 已完成分支的统一整合
 
-用户授权在性能交付完成后合并所有已完成分支，再仅保留默认分支。性能 PR #56 已合并并完成签名证据；媒体 PR #54 和调试状态 PR #55 在临时整合分支通过 merge commit 保留完整提交祖先关系。代码只保留一个版本。
+用户授权在性能交付完成后合并所有已完成分支，再仅保留默认分支。性能 PR #56 已合并并完成签名证据；媒体 PR #54 和调试状态 PR #55 通过 merge commit 保留完整提交祖先关系，[整合 PR #57](https://github.com/gkeyes/ToolBox-Android/pull/57) 已合入默认分支，合并提交为 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b`。GitHub 同时将 #54 / #55 标记为已合并。代码只保留一个版本。
+
+逐一验证四个非默认分支的最新提交均为默认分支祖先后，带预期 SHA 检查一次性删除 `codex/runtime-performance-convergence`、`codex/nextflux-media-compat`、`codex/webview-debug-toggle`、`codex/converge-completed-branches`。GitHub 当前仅保留默认分支 `codex/refactor-lightweight-v2`；没有删除标签或提交历史。
 
 调试状态采用 PR #55 的 APK 编译标志策略，并保留本次首次 WebView 创建前、每进程一次的初始化；专用 Profile 的 ServiceWorker 加固不受覆盖。其 user-image Debug / 非 debuggable Verification 专项检查是当前需要的测试门禁，不创建第二条正式发布链。
 
@@ -153,4 +155,17 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 实际 NextFlux TBX SHA-256 为 `bc91f9b17390382ed699819b4140b56794a0886f844a8f952bd9c1721221b675`。包内 252 个文件逐项符合 integrity，manifest 为 1.0.35 / 56、minHostVersion 0.8.29；notice 的 lockfile 哈希 `349892af091cfda30ad1d677581456ebdf3873e6bb3af11f33a9619ae1943b28` 与当前 lock 文件一致，包含 hls.js 1.7.3。
 
-上述检查只覆盖本次改动与直接调用方；没有重跑全局测试。整合后的原证书签名交付及初始主页冷启动，在默认分支合并后另行执行并补入实际产物证据。
+上述检查只覆盖本次改动与直接调用方；没有重跑全局测试。
+
+### 默认分支签名交付
+
+[签名 run 36770673326](https://github.com/gkeyes/ToolBox-Android/actions/runs/36770673326) 在默认分支提交 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b` 完整成功。严格核对源码祖先与所有宿主输入后，复用 run 36768320423 attempt 1 的 targeted 范围，没有再次执行那 42 个 JVM / 9 个 Android 用例。随后独立构建签名包、比对内置示例字节、校验签名和优化配置，并在 API 35 / Android 15 模拟器上完成签名 Release 初始主页冷启动。
+
+下载的实际 APK、receipt、签名报告均符合附带 SHA256SUMS。receipt 和签名报告一致：`io.toolbox.host`、0.8.29 / 62、Release、`APK_DEBUGGABLE=false`、R8 / resource shrinking、原证书 `849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d`。APK SHA-256 为 `88bf23866ad8d1a459a71cf1230493b01456187771e3011aeaf0e2e05b3fa5e2`；receipt SHA-256 为 `1817ada0040562169498b6ea6f7df07dcb70b39133843fde20cfc5460d94e2fd`。压缩包无 CRC 错误，receipt 保留精确源提交、run / attempt 与测试筛选项。
+
+| 云端交付 | 下载 |
+| --- | --- |
+| ToolBox 0.8.29 / 62，原证书 Release | [APK、receipt、签名与校验文件](https://github.com/gkeyes/ToolBox-Android/actions/runs/36770673326/artifacts/11124580057) |
+| NextFlux 1.0.35 / 56，最低宿主 0.8.29 | [TBX 与校验文件](https://github.com/gkeyes/ToolBox-Android/actions/runs/36766560998/artifacts/11121092200) |
+
+这是 GitHub Actions 构建产物，本次没有发布新的 GitHub Release 或操作手机。冷启动仅证明初始主页，不代表压缩后小工具全链路真机验收、真实服务器登录或 CPU / 电池测量。实现与证据文档保存在 GitHub；本次临时 clone 和下载验证文件在远端保存完成后清理。
