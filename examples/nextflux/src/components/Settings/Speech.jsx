@@ -22,19 +22,19 @@ export default function Speech() {
     speechPrefetch,
   } = settings;
   const [localApiKey, setLocalApiKey] = useState(speechApiKey || "");
-  const [localVoiceId, setLocalVoiceId] = useState(speechVoiceId || "male-qn-qingse");
+  const [localVoiceId, setLocalVoiceId] = useState(speechVoiceId || "presenter_male");
   const [saving, setSaving] = useState(false);
   const canReuseAiKey = Boolean(aiApiKey && isOfficialMiniMaxBase(aiBaseUrl));
 
   useEffect(() => setLocalApiKey(speechApiKey || ""), [speechApiKey]);
-  useEffect(() => setLocalVoiceId(speechVoiceId || "male-qn-qingse"), [speechVoiceId]);
+  useEffect(() => setLocalVoiceId(speechVoiceId || "presenter_male"), [speechVoiceId]);
 
   const save = async () => {
     setSaving(true);
     try {
       await updateSettings({
         speechApiKey: localApiKey.trim(),
-        speechVoiceId: localVoiceId.trim() || "male-qn-qingse",
+        speechVoiceId: localVoiceId.trim() || "presenter_male",
       });
       toast.success("语音朗读设置已保存");
     } catch (error) {
@@ -72,11 +72,11 @@ export default function Speech() {
             <Input
               value={localVoiceId}
               onChange={(event) => setLocalVoiceId(event.target.value)}
-              placeholder="male-qn-qingse"
+              placeholder="presenter_male"
               autoComplete="off"
               spellCheck="false"
             />
-            <Description>默认使用 MiniMax 通用中文男声；也可以填写你自己的系统音色、克隆音色或设计音色 ID。</Description>
+            <Description>默认使用 MiniMax 男性主持人音色；也可以填写 presenter_female、audiobook_male_1、audiobook_female_1，或你自己的克隆/设计音色 ID。</Description>
           </TextField>
         </div>
       </ItemWrapper>
