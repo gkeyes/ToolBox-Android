@@ -17,6 +17,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.SafeBrowsingResponse
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -108,6 +109,15 @@ class BrowserActivity : ComponentActivity() {
         applicationContext.assets.open("browser/media-layout-compat.js").bufferedReader().use { it.readText() }
     }
     private var webView by mutableStateOf<WebView?>(null)
+    private val ssl = BrowserSslController { webView }
+    private val capabilities = BrowserCapabilityController(this) { it === webView }
+    private val navigation = BrowserNavigationController(
+        context = this,
+        isCurrentPage = { it === webView },
+        navigate = ::navigatePage,
+        notify = { Toast.makeText(this, it, Toast.LENGTH_LONG).show() },
+    )
+    private val hasBrowserPrompt get() = ssl.hasPrompt || capabilities.hasPrompt || navigation.hasPrompt
     private var address by mutableStateOf("")
     private var title by mutableStateOf("")
     private var loadProgress by mutableIntStateOf(0)
@@ -171,6 +181,7 @@ class BrowserActivity : ComponentActivity() {
         try {
             val page = WebView(this)
             webView = page
+            prepareNavigation(page)
             filters.attach(page, address)
             page.settings.apply {
                 BrowserCompatibilityPolicy.apply(this)
@@ -188,22 +199,27 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    if (view !== webView) return true
-                    val requested = request.url.toString()
-                    val normalized = validUrl(requested)
-                    if (normalized != null) {
-                        if (request.isForMainFrame && normalized != requested) {
-                            view.loadUrl(normalized)
-                            return true
-                        }
-                        return false
+                    val handled = navigation.handle(view, request)
+                    val destination = request.url.toString()
+                    val current = view.url.orEmpty()
+                    val fragmentOnly = destination != current &&
+                        destination.substringBefore('#') == current.substringBefore('#')
+                    if (!handled && request.isForMainFrame && !fragmentOnly) {
+                        prepareNavigation(view, destination)
                     }
-                    if (request.isForMainFrame) unsupported("此链接需要其他应用，请从底部“更多”选择系统浏览器。")
-                    return true
+                    return handled
                 }
+
+                override fun onSafeBrowsingHit(
+                    view: WebView, request: WebResourceRequest, threatType: Int, callback: SafeBrowsingResponse,
+                ) = navigation.safeBrowsing(view, request, callback)
 
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                     if (view !== webView) return
+                    if (ssl.onNavigationStarted(view, url)) {
+                        capabilities.cancelPage(view)
+                        navigation.cancelPage(view)
+                    }
                     validUrl(url)?.let { address = it }
                     filters.navigated(url)
                     title = ""
@@ -276,10 +292,10 @@ class BrowserActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, failure: SslError) {
-                    handler.cancel()
+                    ssl.handle(view, handler, failure)
                     if (view === webView && mediaDiagnosticsCapture) {
                         BrowserMediaDiagnostics.networkEvent(
-                            label = "TLS 拒绝",
+                            label = "TLS 等待用户选择",
                             url = failure.url.orEmpty(),
                             detail = "primaryError=${failure.primaryError}",
                         )?.let(::recordMediaDiagnosticEvent)
@@ -329,31 +345,15 @@ class BrowserActivity : ComponentActivity() {
                 override fun onReceivedTitle(view: WebView, newTitle: String?) {
                     if (view === webView) title = newTitle.orEmpty()
                 }
-                override fun onPermissionRequest(request: PermissionRequest) {
-                    if (page !== webView) {
-                        request.deny()
-                        return
-                    }
-
-                    val granted = BrowserMediaPolicy.grantedResources(
-                        originScheme = request.origin.scheme,
-                        requested = request.resources,
-                    )
-                    if (granted.isEmpty()) request.deny() else request.grant(granted)
-
-                    if (BrowserMediaPolicy.requestsCapture(request.resources)) {
-                        unsupported("内置浏览器仍不提供摄像头或麦克风权限；网页视频播放不受此限制。")
-                    }
-                }
-                override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
-                    callback.invoke(origin, false, false)
-                    if (page === webView) unsupported("内置浏览器不提供定位权限，可从菜单选择系统浏览器。")
-                }
-                override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
-                    callback.onReceiveValue(null)
-                    if (view === webView) unsupported("内置浏览器暂不支持上传文件，可从菜单选择系统浏览器。")
-                    return true
-                }
+                override fun onPermissionRequest(request: PermissionRequest) =
+                    capabilities.handleWebPermission(page, request)
+                override fun onPermissionRequestCanceled(request: PermissionRequest) =
+                    capabilities.cancelWebPermission(request)
+                override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) =
+                    capabilities.handleGeolocation(page, origin, callback)
+                override fun onGeolocationPermissionsHidePrompt() = capabilities.cancelGeolocation(page)
+                override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean =
+                    capabilities.showFileChooser(view, callback, params)
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                     if (page !== webView || fullScreenView != null) {
                         callback.onCustomViewHidden()
@@ -389,12 +389,12 @@ class BrowserActivity : ComponentActivity() {
                     showBrowserChrome()
                 }
             }
-            page.setDownloadListener { _, _, _, _, _ ->
-                if (page === webView) unsupported("内置浏览器暂不支持下载，可从菜单选择系统浏览器。")
+            page.setDownloadListener { url, userAgent, disposition, mimeType, _ ->
+                navigation.download(page, url, userAgent, disposition, mimeType)
             }
             if (savedState == null || page.restoreState(savedState) == null) {
                 interaction = interaction.pageStarted()
-                page.loadUrl(address)
+                navigatePage(page, address)
             } else {
                 validUrl(page.url.orEmpty())?.let { address = it }
                 title = page.title.orEmpty()
@@ -412,7 +412,7 @@ class BrowserActivity : ComponentActivity() {
     private fun browserChromeLocked(): Boolean {
         val imeVisible = ViewCompat.getRootWindowInsets(window.decorView)
             ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-        return imeVisible || fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
+        return hasBrowserPrompt || imeVisible || fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
             fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
             interaction.showRecoveryPrompt || error != null
     }
@@ -581,7 +581,10 @@ class BrowserActivity : ComponentActivity() {
         loadProgress = 0
         interaction = interaction.pageStarted()
         val page = webView
-        if (page == null) createPage() else page.reload()
+        if (page == null) createPage() else {
+            prepareNavigation(page, page.url)
+            page.reload()
+        }
     }
 
     private fun collectMediaDiagnostics(page: WebView, epoch: Int) {
@@ -620,7 +623,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun validUrl(url: String): String? = try {
-        BrowserNavigationPolicy.normalize(validateRuntimeBrowserUrl(url))
+        validateRuntimeBrowserUrl(url)
     } catch (_: IllegalArgumentException) {
         null
     }
@@ -629,6 +632,31 @@ class BrowserActivity : ComponentActivity() {
         if (page !== webView) return
         canBack = page.canGoBack()
         canForward = page.canGoForward()
+    }
+
+    private fun prepareNavigation(page: WebView, url: String? = null) {
+        capabilities.cancelPage(page)
+        navigation.cancelPage(page)
+        ssl.onNavigationRequested(page, url)
+    }
+
+    private fun navigatePage(page: WebView, url: String) {
+        if (page !== webView) return
+        prepareNavigation(page, url)
+        page.loadUrl(url)
+    }
+
+    private fun traverseHistory(forward: Boolean) {
+        webView?.let { page ->
+            prepareNavigation(page)
+            if (forward) page.goForward() else page.goBack()
+        }
+    }
+
+    private fun cancelPageRequests(page: WebView) {
+        capabilities.cancelPage(page)
+        navigation.cancelPage(page)
+        ssl.onDestroyPage(page)
     }
 
     private fun reload() {
@@ -641,7 +669,10 @@ class BrowserActivity : ComponentActivity() {
         error = null
         loadProgress = 0
         interaction = interaction.pageStarted()
-        if (webView == null) createPage() else webView?.reload()
+        if (webView == null) createPage() else webView?.let { page ->
+            prepareNavigation(page, page.url)
+            page.reload()
+        }
     }
 
     private fun performLoadAction() {
@@ -650,7 +681,10 @@ class BrowserActivity : ComponentActivity() {
             BrowserLoadAction.Stop -> {
                 // Set this before stopLoading: an interrupted request must not become an error overlay.
                 interaction = interaction.stopRequested()
-                webView?.stopLoading()
+                webView?.let { page ->
+                    cancelPageRequests(page)
+                    page.stopLoading()
+                }
                 loadProgress = 100
             }
             BrowserLoadAction.Recover -> { interaction = interaction.requestRecoveryPrompt() }
@@ -680,7 +714,7 @@ class BrowserActivity : ComponentActivity() {
                 WindowInsetsControllerCompat(window, decor).hide(WindowInsetsCompat.Type.ime())
             filters.picker.active -> filters.stopPicker()
             fullScreenView != null -> hideFullScreen()
-            !interaction.unresponsive && !interaction.restarting && webView?.canGoBack() == true -> webView?.goBack()
+            !interaction.unresponsive && !interaction.restarting && webView?.canGoBack() == true -> traverseHistory(forward = false)
             else -> finish()
         }
     }
@@ -711,6 +745,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun destroyPage(page: WebView) {
+        cancelPageRequests(page)
         filters.detach(page)
         if (page === webView) webView = null
         page.setWebViewRenderProcessClient(null as WebViewRenderProcessClient?)
@@ -813,7 +848,7 @@ class BrowserActivity : ComponentActivity() {
                 isAppearanceLightNavigationBars = lightSystemBars
             }
         }
-        val chromeLocked = fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
+        val chromeLocked = hasBrowserPrompt || fullScreenView != null || menu || mediaDiagnosticsSheet || userAgentSheet ||
             fullAddress || clearConfirmation || filters.sheet || filters.picker.active ||
             interaction.showRecoveryPrompt || error != null
         LaunchedEffect(chromeLocked) {
@@ -1185,6 +1220,11 @@ class BrowserActivity : ComponentActivity() {
                 }
             }
         }
+        if (resumed) {
+            ssl.Prompt()
+            capabilities.Prompt(visible = !ssl.hasPrompt)
+            if (!ssl.hasPrompt && !capabilities.hasPrompt) navigation.Prompt()
+        }
         if (clearConfirmation) ToolBoxModalDialog(onDismissRequest = { if (!clearing) clearConfirmation = false }) {
             ToolBoxText(
                 "清除浏览器网站数据",
@@ -1210,7 +1250,7 @@ class BrowserActivity : ComponentActivity() {
             )
         }
         // Avoid stacked dialogs and background-window prompts; a recovery callback removes this immediately.
-        if (interaction.showRecoveryPrompt && resumed && !menu && !mediaDiagnosticsSheet && !userAgentSheet &&
+        if (interaction.showRecoveryPrompt && resumed && !hasBrowserPrompt && !menu && !mediaDiagnosticsSheet && !userAgentSheet &&
             !fullAddress && !clearConfirmation && !filters.sheet && !filters.picker.active) {
             ToolBoxModalDialog(onDismissRequest = { interaction = interaction.keepWaiting() }) {
                 ToolBoxText("网页暂未响应", modifier = Modifier.semantics { heading() },
@@ -1399,7 +1439,7 @@ class BrowserActivity : ComponentActivity() {
                 Modifier.weight(1f),
                 enabled = (canBack || filters.picker.active) && canInteract,
             ) {
-                if (filters.picker.active) filters.stopPicker() else webView?.goBack()
+                if (filters.picker.active) filters.stopPicker() else traverseHistory(forward = false)
             }
             BrowserDockButton(
                 ToolBoxIconKey.ChevronRight,
@@ -1407,7 +1447,7 @@ class BrowserActivity : ComponentActivity() {
                 Modifier.weight(1f),
                 enabled = canForward && canInteract,
             ) {
-                webView?.goForward()
+                traverseHistory(forward = true)
             }
             BrowserDockButton(
                 ToolBoxIconKey.Shield,
