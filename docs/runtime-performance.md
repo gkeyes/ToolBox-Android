@@ -37,7 +37,7 @@ Activity / 原生页面 → RuntimePresentationCoordinator
 3. 普通请求在解析前登记。解析后非写入请求退出 drain 计数；写入直到原生 handler 和回复投递完成才退出。这样 token 到达前已准入但尚未解析的写入仍在截止点内。
 4. SDK 最终保存成功发 `runtime.flushComplete`。coordinator 在同一同步区验证 token 并封住新普通请求；原生还要等截止点内写入全部结束。保存失败不会封口。
 5. 正常返回将结束运行环境、或用户重载时，保留页面等待保存；2 秒后出现继续等待、取消退出、明确放弃保存后退出三个选择。取消使旧 token 失效、恢复原 generation；明确放弃才强制结束。若返回仍有后台会话，沿用 detach 路径继续运行。重载建立新 WebView、nonce 和 generation，再按现行业务恢复路径恢复后台任务。
-6. 后台最后一个会话被外部停止：停止生产，最多等待总计 2 秒，然后结束；没有分阶段累加的多个 2 秒。未完成保存有原生日志。更新、撤权、数据清理、崩溃使用立即失效路径，旧 ACK 无法延长或重开旧 generation。
+6. 后台最后一个会话被外部停止：停止生产，在等待已取消的恢复任务结束之前启动唯一的 2 秒保存 / 关闭窗口，窗口结束后销毁仍无会话且不可见的原 WebView；没有分阶段累加的多个 2 秒。恢复任务 join 和会话记录持久化不计入保存窗口，整个 stopSession API 不承诺 2 秒内返回。未完成保存有原生日志。更新、撤权、数据清理、崩溃使用立即失效路径，旧 ACK 无法延长或重开旧 generation。
 
 每个 flush handler 必须等真实写入完成；只触发一次保存然后立即返回不满足截止点。取消后旧 handler 可能结束其已准入写入，但不能确认新 token。此协议不是崩溃时保存承诺。
 
@@ -97,4 +97,15 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 
 ### 当前验证结果
 
-待 GitHub 定向运行完成后，补充精确提交、run、范围、通过 / 失败 / 跳过情况及产物。
+通过证据按检查及其相关源码复用。下表的部分检查来自整体失败的 run；只复用其中实际通过、随后未改变输入的步骤，不能将整个失败 run 记作通过。
+
+| 范围 | 实际证据 |
+| --- | --- |
+| Stock / Lab / Kegel / SocialCoach | [TBX run 36742777153](https://github.com/gkeyes/ToolBox-Android/actions/runs/36742777153)：这四个工具各自选中的 Node / 浏览器检查、构建和 TBX 完整性通过。该 PR run 的 GITHUB_SHA 为合成提交 `76a84f205652c97b01409fbd18eccb6b0192f113`，实际 checkout 为 PR head `6387af1`；Watcher / NextFlux 的失败另行修复，没有重跑这四个工具 |
+| Watcher | [run 36743195025](https://github.com/gkeyes/ToolBox-Android/actions/runs/36743195025) 的 reliability 文件通过；更新测试启动标记后，[run 36743606513](https://github.com/gkeyes/ToolBox-Android/actions/runs/36743606513) 的布局 14 / 14 场景与打包通过 |
+| NextFlux | 上述初次 TBX run 的 reading 18 项通过；[run 36743799365](https://github.com/gkeyes/ToolBox-Android/actions/runs/36743799365) 的 article-navigation 19 项通过。补齐 notice 校验值后，[run 36745292362](https://github.com/gkeyes/ToolBox-Android/actions/runs/36745292362) 只执行构建 / 打包且通过，没有重复两组浏览器测试 |
+| 宿主已有定向单元证据 | [run 36747288250](https://github.com/gkeyes/ToolBox-Android/actions/runs/36747288250)，提交 `de3067a0ff8222a125e5a70c20a9471dd58dfcf8`：app 68 项执行，67 通过、1 失败、0 跳过；失败为通知测试的异步等待，保留原断言并改为等待测试调度器完成。SDK、lint、debug / release 和测试 APK 编译通过；后续模块与 Android 场景尚未执行 |
+| 宿主补充单元证据 | [run 36749624183](https://github.com/gkeyes/ToolBox-Android/actions/runs/36749624183)，提交 `c84b11a0da00ade0d150788d14e4905b76eb8677`：只执行修正后的通知方法及首次执行的 tool-package 2 类、tool-runtime 5 类，共 31 项通过、0 失败、0 跳过。结合前次未受修改影响的 67 项，累计 98 个不同定向单元用例通过；没有重跑那 67 项 |
+| 宿主 Android 首次运行 | 同一 run 实际执行 app 26 项，25 通过、1 失败、0 跳过。最终非空 Room 写入、封口拒绝晚写、取消后恢复写入、两种关闭弹窗、Worker、备份及选中浏览器场景通过。迁移测试读取无索引表时错误要求必填 indices 字段，已改为读取 Room 的可选数组；保留全部记录 / 索引 / 分页断言。tool-runtime 场景因前一步失败尚未开始 |
+
+六个交付 TBX 的 manifest 版本 / minHost、外部 SHA256SUMS 和包内完整性已按云端产物实际字节核对。宿主失败项与此前未执行的模块 / Android 场景结果、最终签名产物将在完成后补入。
