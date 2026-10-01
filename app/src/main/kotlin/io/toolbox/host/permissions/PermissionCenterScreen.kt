@@ -167,22 +167,6 @@ internal fun PermissionCenterContent(
     LaunchedEffect(state.loadState) {
         if (state.loadState != PermissionLoadState.Ready) confirmSecureWipe = false
     }
-    OverlayDialog(
-        show = confirmSecureWipe,
-        title = "关闭并清除安全存储？",
-        summary = "将删除此工具保存的密钥、令牌等安全数据，重新开启也无法恢复。普通工具数据不受影响。",
-        onDismissRequest = { confirmSecureWipe = false },
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-            ToolBoxTextButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
-            ToolBoxPrimaryButton(
-                "关闭并清除",
-                { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
-                modifier = Modifier.weight(1f),
-                destructive = true,
-            )
-        }
-    }
     ToolBoxAppScaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -195,6 +179,22 @@ internal fun PermissionCenterContent(
             )
         },
     ) { padding ->
+        OverlayDialog(
+            show = confirmSecureWipe,
+            title = "关闭并清除安全存储？",
+            summary = "将删除此工具保存的密钥、令牌等安全数据，重新开启也无法恢复。普通工具数据不受影响。",
+            onDismissRequest = { confirmSecureWipe = false },
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+                ToolBoxTextButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
+                ToolBoxPrimaryButton(
+                    "关闭并清除",
+                    { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
+                    modifier = Modifier.weight(1f),
+                    destructive = true,
+                )
+            }
+        }
         Box(Modifier.fillMaxSize().toolBoxBackdropSource(glassState)) {
             LazyColumn(
                 modifier = Modifier
