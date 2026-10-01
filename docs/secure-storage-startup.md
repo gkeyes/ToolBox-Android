@@ -40,5 +40,9 @@
 | 完整偏好、实际修改和错误说明 | [run 36812319320](https://github.com/gkeyes/ToolBox-Android/actions/runs/36812319320)，提交 `9b7f3433f14f4f00389d4497afbb091123a3787c`：三个真实开发入口用例全部通过，0 失败 / 跳过；启动无无值变化写入，实际设置与密钥修改仍保存，两类原生读取失败保留正确阶段 / 错误码。最终提交的这三个生产源文件与该提交一致；该证据不代替下面的打包运行 |
 | 1.0.35 生产入口对照 | [run 36814129795](https://github.com/gkeyes/ToolBox-Android/actions/runs/36814129795)，提交 `1c579ccfe478876e10a41c8f4502058a7b436511`：入口、认证与偏好源文件为原 1.0.35 实现；未登录与已登录两个打包入口用例均失败，无法进入相应页面 |
 | 1.0.36 生产入口 | [run 36814864062](https://github.com/gkeyes/ToolBox-Android/actions/runs/36814864062)，提交 `2f04f5ae2937fe45446d4fec72ee09f61cd6d17d`：相同两个用例全部通过，0 失败 / 跳过 / flaky；真实登录页、已登录列表和缓存 Worker 初始化可用，Vite 构建 / TBX 打包通过 |
+| 权限确认框修复前 | [run 36813326275](https://github.com/gkeyes/ToolBox-Android/actions/runs/36813326275)：实际执行 4 项，两种主题的真实触摸均无法显示“关闭并清除安全存储？”；另外两项既有清除重试检查通过 |
+| 权限确认框修复后 | [run 36814865493](https://github.com/gkeyes/ToolBox-Android/actions/runs/36814865493)，同一 `2f04f5a` 提交：API 36 / Android 16，两种主题共 4 项全部通过，0 失败 / 跳过。已下载核对 XML 与筛选证据，真实触摸覆盖行、滑块、取消、确认前零修改、确认一次及忙碌禁用；SDK 合同、lint、Debug / Release 编译和测试 APK 编译通过，没有执行全量宿主单元或 Android 测试 |
+
+参数化 Android 测试的方法筛选曾导致零项执行，证据门禁将该 run 判为失败。为覆盖两个主题使用唯一测试类筛选，执行 4 项；没有把零执行记录为通过。现有撤权、清除和加密读写实现未修改，不通过实际清除用户凭据来验证界面。
 
 实际 NextFlux 1.0.36 / 57 TBX SHA-256 为 `dc0af0d6220643a3c62aa42c9d2fdfe929a9fe7972e5a9c0308bb21f4ab83194`。包内 257 个文件（含 integrity）完整、逐项 hash 匹配，最低宿主 0.8.29；notice 与 lockfile SHA-256 `859551375ae55b99346de23373b84ff7cf414de89dc6e498d57e293643d0aff2` 一致。没有增加依赖。仍有原有的 CustomModal 混合静态 / 动态导入和大 chunk 构建提示，未通过关闭提示掩盖它们。
