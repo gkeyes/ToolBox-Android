@@ -46,3 +46,18 @@
 参数化 Android 测试的方法筛选曾导致零项执行，证据门禁将该 run 判为失败。为覆盖两个主题使用唯一测试类筛选，执行 4 项；没有把零执行记录为通过。现有撤权、清除和加密读写实现未修改，不通过实际清除用户凭据来验证界面。
 
 实际 NextFlux 1.0.36 / 57 TBX SHA-256 为 `dc0af0d6220643a3c62aa42c9d2fdfe929a9fe7972e5a9c0308bb21f4ab83194`。包内 257 个文件（含 integrity）完整、逐项 hash 匹配，最低宿主 0.8.29；notice 与 lockfile SHA-256 `859551375ae55b99346de23373b84ff7cf414de89dc6e498d57e293643d0aff2` 一致。没有增加依赖。仍有原有的 CustomModal 混合静态 / 动态导入和大 chunk 构建提示，未通过关闭提示掩盖它们。
+
+### 默认分支交付
+
+[PR #59](https://github.com/gkeyes/ToolBox-Android/pull/59) 已合入默认分支，合并提交 `820a013c3338ed404dfb93e79114c72efa3f926f`。[签名 run 36816078248](https://github.com/gkeyes/ToolBox-Android/actions/runs/36816078248) 在该提交完整通过：核验所有宿主输入及提交祖先关系后，复用 run 36814865493 的 targeted 范围，没有重跑那 4 个 Android 用例；独立生成原证书签名 Release，并在 API 35 / Android 15 完成签名包初始主页冷启动。
+
+下载的 APK、receipt 和签名报告均符合 SHA256SUMS。APK 为 `io.toolbox.host`、0.8.30 / 63、非 debuggable、R8 / resource shrinking；原证书 SHA-256 `849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d` 与签名报告和 receipt 一致。APK SHA-256 为 `ecedea5d81d6a13d9ac081f3d959797e42533b056affb1af6546d152c16e34c1`，receipt SHA-256 为 `a07c58be0689b6ed92d78dd3f60da888dcf5e9c731835f88910dec5cdea97fda`。
+
+| 下载 | 产物 |
+| --- | --- |
+| ToolBox 0.8.30 / 63 | [原证书签名 APK、receipt、签名及校验文件](https://github.com/gkeyes/ToolBox-Android/actions/runs/36816078248/artifacts/11141617398) |
+| NextFlux 1.0.36 / 57 | [TBX 与校验文件](https://github.com/gkeyes/ToolBox-Android/actions/runs/36814864062/artifacts/11141330742) |
+
+这些是 GitHub Actions 产物，本次未创建新的 GitHub Release。没有操作用户手机；签名冷启动只覆盖宿主初始主页，原生 API 边界测试与空 v3 缓存也不等于用户凭据、非空历史缓存或真实服务器的真机验收。
+
+核对 `codex/fix-nextflux-startup` 最新提交是默认分支祖先后，按预期 SHA 删除该修复分支。交付时新建的按钮样式 PR #58 仍是草稿，属于其他正在开发的任务，保留其分支。实现和证据记录保存在 GitHub，本次临时 clone 与下载核验文件在远端保存后清理。

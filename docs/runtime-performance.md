@@ -131,7 +131,7 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 用户授权在性能交付完成后合并所有已完成分支，再仅保留默认分支。性能 PR #56 已合并并完成签名证据；媒体 PR #54 和调试状态 PR #55 通过 merge commit 保留完整提交祖先关系，[整合 PR #57](https://github.com/gkeyes/ToolBox-Android/pull/57) 已合入默认分支，合并提交为 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b`。GitHub 同时将 #54 / #55 标记为已合并。代码只保留一个版本。
 
-逐一验证四个非默认分支的最新提交均为默认分支祖先后，带预期 SHA 检查一次性删除 `codex/runtime-performance-convergence`、`codex/nextflux-media-compat`、`codex/webview-debug-toggle`、`codex/converge-completed-branches`。GitHub 当前仅保留默认分支 `codex/refactor-lightweight-v2`；没有删除标签或提交历史。
+逐一验证四个非默认分支的最新提交均为默认分支祖先后，带预期 SHA 检查一次性删除 `codex/runtime-performance-convergence`、`codex/nextflux-media-compat`、`codex/webview-debug-toggle`、`codex/converge-completed-branches`。此次整合完成时 GitHub 仅保留默认分支 `codex/refactor-lightweight-v2`；没有删除标签或提交历史。后续新任务的草稿分支不属于这四条已完成分支，最新修复交付情况见本文开头链接。
 
 调试状态采用 PR #55 的 APK 编译标志策略，并保留本次首次 WebView 创建前、每进程一次的初始化；专用 Profile 的 ServiceWorker 加固不受覆盖。其 user-image Debug / 非 debuggable Verification 专项检查是当前需要的测试门禁，不创建第二条正式发布链。
 
@@ -157,7 +157,7 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 上述检查只覆盖本次改动与直接调用方；没有重跑全局测试。
 
-### 默认分支签名交付
+### 性能整合 0.8.29 的签名交付
 
 [签名 run 36770673326](https://github.com/gkeyes/ToolBox-Android/actions/runs/36770673326) 在默认分支提交 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b` 完整成功。严格核对源码祖先与所有宿主输入后，复用 run 36768320423 attempt 1 的 targeted 范围，没有再次执行那 42 个 JVM / 9 个 Android 用例。随后独立构建签名包、比对内置示例字节、校验签名和优化配置，并在 API 35 / Android 15 模拟器上完成签名 Release 初始主页冷启动。
 
