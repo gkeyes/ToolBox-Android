@@ -6,16 +6,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -76,7 +75,8 @@ class PermissionCleanupBehaviorTest(private val style: ToolBoxThemeStyle) {
             }
         }
         // Touch the title area, exercising the production row's pointer handler.
-        row.performTouchInput { click(Offset(size.width * 0.25f, size.height / 2f)) }
+        val rowBounds = row.fetchSemanticsNode().boundsInRoot
+        row.performTouchInput { click(Offset(rowBounds.width * 0.25f, rowBounds.height / 2f)) }
         compose.onNodeWithText(dialogTitle).assertIsDisplayed()
         compose.runOnIdle { assertTrue(toggles.isEmpty()) }
         compose.onNodeWithText("取消").performTouchInput { click() }
