@@ -101,7 +101,7 @@ test("production startup restores persisted settings and secure keys without wri
   await page.goto(PRODUCTION_URL);
   await expect(page).toHaveURL(/#\/login$/);
   await expect(page.getByRole("heading", { name: "NextFlux" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "登录" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "登 录" })).toBeVisible();
   await expect(page.locator(".toolbox-start-error")).toHaveCount(0);
 
   const restored = await page.evaluate(async () => {
