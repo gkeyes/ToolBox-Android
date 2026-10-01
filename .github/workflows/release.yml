@@ -1,0 +1,80 @@
+name: Publish release
+run-name: Publish ${{ inputs.tag }} from run ${{ inputs.run_id }}
+
+# Manual only: attaches the verified signed delivery from an Android CI run to a draft
+# release, carries over unchanged TBX packages from an earlier release, and publishes it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing draft release tag, e.g. v0.8.31"
+        type: string
+        required: true
+      run_id:
+        description: "Android CI run whose 'Package stable signed release' job succeeded"
+        type: string
+        required: true
+      reuse_tbx_from:
+        description: "Release tag whose .tbx assets are carried over unchanged (optional)"
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Attach signed delivery and publish
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ inputs.tag }}
+      RUN_ID: ${{ inputs.run_id }}
+      REUSE: ${{ inputs.reuse_tbx_from }}
+    steps:
+      - name: Check the source run and draft release
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Unexpected tag: $TAG" >&2; exit 1; }
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Unexpected run id" >&2; exit 1; }
+          gh run view "$RUN_ID" --json conclusion,workflowName,headSha \
+            --jq 'select(.workflowName == "Android CI" and .conclusion == "success") | .headSha' > head_sha.txt
+          test -s head_sha.txt || { echo "Run $RUN_ID is not a successful Android CI run" >&2; exit 1; }
+          gh release view "$TAG" --json isDraft --jq '.isDraft' | grep -qx true \
+            || { echo "$TAG must exist as a draft release" >&2; exit 1; }
+      - name: Download the signed delivery
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          name="toolbox-v${version}-release-$(cat head_sha.txt)"
+          gh run download "$RUN_ID" -n "$name" -D dist
+          test -f "dist/toolbox-v${version}-release.apk" || { echo "Signed APK for $version missing" >&2; ls -la dist; exit 1; }
+          if [ -f dist/SHA256SUMS.txt ]; then (cd dist && sha256sum -c SHA256SUMS.txt); fi
+      - name: Carry over unchanged TBX packages
+        if: ${{ inputs.reuse_tbx_from != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p reused
+          gh release download "$REUSE" --pattern '*.tbx' -D reused
+          gh release download "$REUSE" --pattern 'SHA256SUMS.txt' -O reused/previous-sums.txt
+          (cd reused && grep '\.tbx$' previous-sums.txt | sha256sum -c -)
+          cp reused/*.tbx dist/
+      - name: Write combined checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          rm -f SHA256SUMS.txt
+          find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs sha256sum > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt .
+          cat SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload assets and publish
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --draft=false --latest
