@@ -100,9 +100,13 @@ def classify(paths):
                 "io.toolbox.host.ActionButtonBehaviorTest",
                 "io.toolbox.host.SecondaryPageBehaviorTest",
                 "io.toolbox.host.CatalogPanelBehaviorTest",
+                "io.toolbox.host.permissions.PermissionCleanupBehaviorTest",
             }
+            android |= RUNTIME_SAVE_DIALOG_ANDROID
         elif path == "app/src/main/kotlin/io/toolbox/host/backup/BackupScreen.kt":
             android.add("io.toolbox.host.SecondaryPageBehaviorTest")
+        elif path == "app/src/main/kotlin/io/toolbox/host/permissions/PermissionCenterScreen.kt":
+            android.add("io.toolbox.host.permissions.PermissionCleanupBehaviorTest")
         elif path.startswith("app/src/androidTest/assets/runtime-media/"):
             android |= MEDIA_ANDROID
         elif path.startswith("app/src/test/kotlin/io/toolbox/host/background/") and Path(path).stem in {
