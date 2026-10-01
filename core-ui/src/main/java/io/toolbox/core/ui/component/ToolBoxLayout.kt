@@ -60,6 +60,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,8 +71,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
+import io.toolbox.core.ui.theme.readableForeground
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
-import top.yukonga.miuix.kmp.basic.ButtonColors as MiuixButtonColors
 import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
@@ -557,7 +559,7 @@ fun ToolBoxGroupDivider(
     )
 }
 
-private enum class ToolBoxActionTone { Primary, Neutral, Danger }
+private enum class ToolBoxActionTone { Primary, Neutral, Danger, DangerConfirmation }
 
 @Composable
 private fun ToolBoxActionButton(
@@ -568,17 +570,26 @@ private fun ToolBoxActionButton(
     tone: ToolBoxActionTone,
     contentColorOverride: Color? = null,
     icon: ToolBoxIconKey? = null,
+    iconColorOverride: Color? = null,
     outlined: Boolean = true,
     compact: Boolean = false,
 ) {
     val colors = ToolBoxThemeTokens.colors
-
-    val defaultContentColor = when (tone) {
-        ToolBoxActionTone.Primary -> colors.onPrimary
-        ToolBoxActionTone.Neutral -> colors.textPrimary
-        ToolBoxActionTone.Danger -> colors.onDanger
+    val dark = colors.surface.luminance() < 0.5f
+    val containerColor = when (tone) {
+        ToolBoxActionTone.Primary -> colors.primary.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(colors.surface)
+        ToolBoxActionTone.Neutral, ToolBoxActionTone.Danger -> colors.surfaceMuted
+        ToolBoxActionTone.DangerConfirmation -> if (dark) colors.softDanger else colors.danger
     }
-    val contentColor = contentColorOverride ?: defaultContentColor
+    val preferredContentColor = when (tone) {
+        ToolBoxActionTone.Primary -> if (dark) colors.primary.copy(alpha = 0.54f).compositeOver(Color.White) else colors.primary
+        ToolBoxActionTone.Neutral -> colors.textPrimary
+        ToolBoxActionTone.Danger -> colors.onSoftDanger
+        ToolBoxActionTone.DangerConfirmation -> if (dark) colors.onSoftDanger else colors.onDanger
+    }
+    val contentColor = readableForeground(contentColorOverride ?: preferredContentColor, listOf(containerColor))
+    val fontWeight = if (tone == ToolBoxActionTone.Primary) FontWeight.SemiBold else FontWeight.Medium
+    val cornerRadius = ToolBoxThemeTokens.radii.control
 
     if (!outlined) {
         val interactionSource = remember { MutableInteractionSource() }
@@ -588,7 +599,7 @@ private fun ToolBoxActionButton(
             animationSpec = ToolBoxMotion.pressSpec(pressed),
             label = "toolbox-text-button-scale",
         )
-        val shape = RoundedCornerShape(if (compact) 14.dp else 16.dp)
+        val shape = RoundedCornerShape(cornerRadius)
 
         Box(
             modifier = modifier
@@ -621,8 +632,8 @@ private fun ToolBoxActionButton(
                     ToolBoxIcon(
                         icon = icon,
                         contentDescription = null,
-                        modifier = Modifier.size(if (compact) 18.dp else 20.dp),
-                        tint = contentColor,
+                        modifier = Modifier.size(if (compact) 13.dp else 20.dp),
+                        tint = iconColorOverride ?: contentColor,
                     )
                     Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
                 }
@@ -630,7 +641,7 @@ private fun ToolBoxActionButton(
                     text = label,
                     style = (if (compact) ToolBoxThemeTokens.textStyles.metadata else ToolBoxThemeTokens.textStyles.body).copy(
                         color = contentColor,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = fontWeight,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -640,33 +651,24 @@ private fun ToolBoxActionButton(
         return
     }
 
-    val baseColors = when (tone) {
-        ToolBoxActionTone.Primary -> MiuixButtonDefaults.buttonColorsPrimary()
-        ToolBoxActionTone.Neutral -> MiuixButtonDefaults.buttonColors()
-        ToolBoxActionTone.Danger -> MiuixButtonColors(
-            color = colors.danger,
-            disabledColor = colors.softDanger,
-            contentColor = colors.onDanger,
-            disabledContentColor = ToolBoxThemeTokens.disabledContent,
-        )
-    }
-    val buttonColors = if (contentColorOverride == null) {
-        baseColors
-    } else {
-        baseColors.copy(contentColor = contentColorOverride)
-    }
-    val displayedContentColor = if (enabled) contentColor else buttonColors.disabledContentColor
+    val buttonColors = MiuixButtonDefaults.buttonColors(
+        color = containerColor,
+        contentColor = contentColor,
+    )
+    val displayedContentColor = if (enabled) buttonColors.contentColor else buttonColors.disabledContentColor
 
     MiuixButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = if (compact) 40.dp else ToolBoxThemeTokens.sizes.touchTarget),
+        modifier = modifier
+            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+            .then(if (compact) Modifier.padding(vertical = 4.dp) else Modifier),
         enabled = enabled,
-        cornerRadius = if (compact) 14.dp else MiuixButtonDefaults.CornerRadius,
+        cornerRadius = cornerRadius,
         minWidth = if (compact) 48.dp else MiuixButtonDefaults.MinWidth,
-        minHeight = if (compact) 36.dp else MiuixButtonDefaults.MinHeight,
+        minHeight = if (compact) 40.dp else MiuixButtonDefaults.MinHeight,
         colors = buttonColors,
         insideMargin = PaddingValues(
-            horizontal = if (compact) 14.dp else 18.dp,
+            horizontal = if (compact) 11.dp else 18.dp,
             vertical = if (compact) 8.dp else 13.dp,
         ),
     ) {
@@ -674,8 +676,8 @@ private fun ToolBoxActionButton(
             ToolBoxIcon(
                 icon = icon,
                 contentDescription = null,
-                modifier = Modifier.size(if (compact) 18.dp else 20.dp),
-                tint = displayedContentColor,
+                modifier = Modifier.size(if (compact) 13.dp else 20.dp),
+                tint = if (enabled) iconColorOverride ?: displayedContentColor else displayedContentColor,
             )
             Spacer(Modifier.width(if (compact) 6.dp else 8.dp))
         }
@@ -683,7 +685,7 @@ private fun ToolBoxActionButton(
             text = label,
             style = (if (compact) ToolBoxThemeTokens.textStyles.metadata else ToolBoxThemeTokens.textStyles.body).copy(
                 color = displayedContentColor,
-                fontWeight = FontWeight.Medium,
+                fontWeight = fontWeight,
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -704,7 +706,7 @@ fun ToolBoxPrimaryButton(
         onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        tone = if (destructive) ToolBoxActionTone.Danger else ToolBoxActionTone.Primary,
+        tone = if (destructive) ToolBoxActionTone.DangerConfirmation else ToolBoxActionTone.Primary,
     )
 }
 
@@ -765,7 +767,9 @@ fun ToolBoxRunningStatusButton(
         onClick = onClick,
         modifier = modifier.sizeIn(minWidth = ToolBoxThemeTokens.sizes.touchTarget),
         enabled = enabled,
-        tone = ToolBoxActionTone.Danger,
+        tone = ToolBoxActionTone.Neutral,
+        icon = ToolBoxIconKey.Stop,
+        iconColorOverride = ToolBoxThemeTokens.colors.onSoftDanger,
         compact = true,
     )
 }

@@ -114,7 +114,7 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
                         backupSection("warning-$i") { AppText(warning, color = ToolBoxThemeTokens.colors.textSecondary) }
                     }
                     backupSection("confirm-actions") { ToolBoxCard {
-                        ToolBoxDestructiveButton("确认覆盖并恢复", onConfirmRestore, Modifier.fillMaxWidth().testTag("backup_confirm_restore"))
+                        ToolBoxPrimaryButton("确认覆盖并恢复", onConfirmRestore, Modifier.fillMaxWidth().testTag("backup_confirm_restore"), destructive = true)
                         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
                         ToolBoxSecondaryButton("取消恢复", onCancel, Modifier.fillMaxWidth())
                     } }

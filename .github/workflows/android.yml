@@ -342,6 +342,7 @@ jobs:
             tool-runtime/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
+            app/build/outputs/**/button-preview-*.png
             build/wasm-emulator/
           if-no-files-found: error
           retention-days: 14

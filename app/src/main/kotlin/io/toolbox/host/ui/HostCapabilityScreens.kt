@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import io.toolbox.core.ui.component.ToolBoxModalDialog
-import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -145,9 +144,10 @@ internal fun RuntimeSaveDialog(
             if (saving.error != null) ToolBoxPrimaryButton("重试保存", onRetry)
             if (saving.slow && !waiting && saving.error == null) ToolBoxTextButton("继续等待", { waiting = true })
             ToolBoxTextButton(if (saving.reloading) "取消重载" else "取消退出", onCancel)
-            if (saving.slow || saving.error != null) ToolBoxDestructiveButton(
+            if (saving.slow || saving.error != null) ToolBoxPrimaryButton(
                 if (saving.reloading) "放弃保存并重载" else "放弃保存并退出",
                 onDiscard,
+                destructive = true,
             )
         }
     }

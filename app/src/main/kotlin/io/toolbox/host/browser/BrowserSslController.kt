@@ -16,7 +16,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.toolbox.core.ui.component.ToolBoxDestructiveButton
+import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxText
@@ -95,10 +95,11 @@ internal class BrowserSslController(currentPage: () -> WebView?) {
                 )
             }
             Spacer(Modifier.height(24.dp))
-            ToolBoxDestructiveButton(
+            ToolBoxPrimaryButton(
                 "允许本页继续加载",
                 { session.resolve(warning.id, true) },
                 modifier = Modifier.fillMaxWidth(),
+                destructive = true,
             )
             Spacer(Modifier.height(12.dp))
             ToolBoxSecondaryButton(

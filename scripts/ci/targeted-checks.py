@@ -90,6 +90,14 @@ def classify(paths):
         if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh"}:
             node.add("scripts/tests/browser-picker.test.cjs")
             android |= BROWSER_ANDROID
+        elif path == "core-ui/src/main/java/io/toolbox/core/ui/component/ToolBoxLayout.kt":
+            android |= {
+                "io.toolbox.host.ActionButtonBehaviorTest",
+                "io.toolbox.host.SecondaryPageBehaviorTest#backgroundActionsAdaptAndKeepTheirOwnTargetsAndBusyStates",
+                "io.toolbox.host.CatalogPanelBehaviorTest#createCancelAndDeleteKeepOtherGroupsToolsAndFavorites",
+            }
+        elif path == "app/src/main/kotlin/io/toolbox/host/backup/BackupScreen.kt":
+            android.add("io.toolbox.host.SecondaryPageBehaviorTest#backupStatesLeadWithCurrentTaskAndRetainRestoreWarningsAndActions")
         elif path.startswith("app/src/androidTest/assets/runtime-media/"):
             android |= MEDIA_ANDROID
         elif path.startswith("app/src/test/kotlin/io/toolbox/host/background/") and Path(path).stem in {
