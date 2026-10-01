@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["reading.spec.js", "controls.spec.js", "title-filter.spec.js", "article-navigation.spec.js", "media-compat.spec.js"],
+  testMatch: ["reading.spec.js", "controls.spec.js", "title-filter.spec.js", "article-navigation.spec.js", "media-compat.spec.js", "startup.spec.js"],
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
@@ -22,10 +22,19 @@ export default defineConfig({
     video: "off",
     trace: "off",
   },
-  webServer: {
-    command: "npm run serve",
-    url: "http://127.0.0.1:4175",
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: "npm run serve",
+      url: "http://127.0.0.1:4175",
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      // Serve the production entry separately: the fixture server substitutes stores.
+      command: "../../node_modules/.bin/vite ../.. --config ../../vite.config.js --host 127.0.0.1 --port 4176 --strictPort",
+      url: "http://127.0.0.1:4176",
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+  ],
 });
