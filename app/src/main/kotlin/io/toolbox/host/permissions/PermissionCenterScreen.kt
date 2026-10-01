@@ -42,6 +42,7 @@ import io.toolbox.core.ui.component.ToolBoxAppScaffold
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
@@ -186,7 +187,7 @@ internal fun PermissionCenterContent(
             onDismissRequest = { confirmSecureWipe = false },
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-                ToolBoxTextButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
+                ToolBoxSecondaryButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
                 ToolBoxPrimaryButton(
                     "关闭并清除",
                     { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
