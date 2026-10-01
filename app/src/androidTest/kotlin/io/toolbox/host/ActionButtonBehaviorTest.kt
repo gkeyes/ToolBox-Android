@@ -65,9 +65,11 @@ class ActionButtonBehaviorTest(
         }
         savePreview("enabled")
         tags.dropLast(1).forEach { compose.onNodeWithTag(it).performClick() }
-        // Tap the compact control near its top edge using a real injected pointer.
-        val stopBounds = compose.onNodeWithTag("stop").fetchSemanticsNode().boundsInRoot
-        compose.onRoot().performTouchInput { click(Offset(stopBounds.center.x, stopBounds.top + 1f)) }
+        // Tap the expanded 48 dp touch target above the compact 40 dp surface.
+        val stopNode = compose.onNodeWithTag("stop").assertTouchHeightIsEqualTo(48.dp).fetchSemanticsNode()
+        val touchBounds = stopNode.touchBoundsInRoot
+        val inset = with(stopNode.layoutInfo.density) { 1.dp.toPx() }
+        compose.onRoot().performTouchInput { click(Offset(touchBounds.center.x, touchBounds.top + inset)) }
         compose.onNodeWithTag("stop").assertIsNotEnabled().assertTextEquals("停止中")
         compose.runOnIdle {
             assertEquals(tags, clicks)
