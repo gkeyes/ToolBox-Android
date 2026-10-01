@@ -42,6 +42,8 @@ TEST_FILES = {
         "browser": {
             "test/browser/reading.spec.js", "test/browser/article-navigation.spec.js",
             "test/browser/controls.spec.js", "test/browser/media-compat.spec.js",
+            "test/browser/startup.spec.js",
+            "test/browser/packaged-startup.spec.js",
         },
     },
     "socialcoach": {

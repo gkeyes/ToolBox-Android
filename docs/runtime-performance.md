@@ -1,6 +1,6 @@
 # 运行时性能实现记录
 
-本次实现以宿主 0.8.27 / 60 为源码基线，性能阶段宿主为 0.8.28 / 61；整合媒体与调试状态后的当前组合版本为 0.8.29 / 62，配套 NextFlux 为 1.0.35 / 56。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
+本次实现以宿主 0.8.27 / 60 为源码基线，性能阶段宿主为 0.8.28 / 61；整合媒体与调试状态后为 0.8.29 / 62、NextFlux 1.0.35 / 56。修复权限确认框和打包启动后的当前版本为 ToolBox 0.8.30 / 63、NextFlux 1.0.36 / 57，最新交付与定向证据见 [安全存储与启动](secure-storage-startup.md)。此文件记录当前机制、参数与可验证边界，以及按检查范围保留的云端证据。源码变化可以证明删除了哪些工作，不能直接证明耗电、CPU、内存驻留或设备手感的变化。
 
 ## 1. 状态、事件与关闭协议
 
@@ -83,7 +83,7 @@ Worker 获取执行身份 claim 后立即进入覆盖授权、通知准备、请
 | Notification Lab 1.0.3 / 4 | 日志 200 条环形保留，前台增量追加；后台累计，回前台补展示；close 等待已有动作、live 更新、恢复后保存 | 原生 1 / 2 / 5 秒实验计时 |
 | Kegel Trainer 1.0.4 / 5 | 使用宿主 foreground；前台结束时显式暂停训练展示，取消 RAF、释放 WakeLock；用户操作恢复 | 训练状态、休息与结束语义 |
 | SocialCoach 1.0.6 / 7 | raw revision 缓存角色回复解析；前台 50 ms preview，250 ms 内容变化 checkpoint；消息 ID 稳定；最终回复和回合元数据一次写入；close 取消网络并等待 Chat cleanup、真实 storage writer | 回复文本、业务持久化和异常回滚；附解析 / 序列化 / 原生写入计数，不以渲染批数替代 I/O 次数 |
-| NextFlux 1.0.35 / 56 | 宿主状态统一暂停列表 / 阅读前台工作；nativeTimerEffective 与设置 intent 分开；自动同步共用到期 claim，同周期迟到触发不重复同步；状态文件打断循环导入 | 同步间隔、已读 / 摘要、语音与音频；原有 48 项 / 4 ms 调度及语音容量参数 |
+| NextFlux 1.0.36 / 57 | 宿主状态统一暂停列表 / 阅读前台工作；nativeTimerEffective 与设置 intent 分开；自动同步共用到期 claim，同周期迟到触发不重复同步；关闭 handler 在偏好初始化后动态加载同步和后台模块，入口不提前加载 store | 同步间隔、已读 / 摘要、语音与音频；原有 48 项 / 4 ms 调度及语音容量参数 |
 
 Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整合后的 NextFlux 为 0.8.29，因为同时需要运行时协议和媒体接口。
 
@@ -131,7 +131,7 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 用户授权在性能交付完成后合并所有已完成分支，再仅保留默认分支。性能 PR #56 已合并并完成签名证据；媒体 PR #54 和调试状态 PR #55 通过 merge commit 保留完整提交祖先关系，[整合 PR #57](https://github.com/gkeyes/ToolBox-Android/pull/57) 已合入默认分支，合并提交为 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b`。GitHub 同时将 #54 / #55 标记为已合并。代码只保留一个版本。
 
-逐一验证四个非默认分支的最新提交均为默认分支祖先后，带预期 SHA 检查一次性删除 `codex/runtime-performance-convergence`、`codex/nextflux-media-compat`、`codex/webview-debug-toggle`、`codex/converge-completed-branches`。GitHub 当前仅保留默认分支 `codex/refactor-lightweight-v2`；没有删除标签或提交历史。
+逐一验证四个非默认分支的最新提交均为默认分支祖先后，带预期 SHA 检查一次性删除 `codex/runtime-performance-convergence`、`codex/nextflux-media-compat`、`codex/webview-debug-toggle`、`codex/converge-completed-branches`。此次整合完成时 GitHub 仅保留默认分支 `codex/refactor-lightweight-v2`；没有删除标签或提交历史。后续新任务的草稿分支不属于这四条已完成分支，最新修复交付情况见本文开头链接。
 
 调试状态采用 PR #55 的 APK 编译标志策略，并保留本次首次 WebView 创建前、每进程一次的初始化；专用 Profile 的 ServiceWorker 加固不受覆盖。其 user-image Debug / 非 debuggable Verification 专项检查是当前需要的测试门禁，不创建第二条正式发布链。
 
@@ -141,7 +141,7 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 
 删除只验证全局取消所有普通 Job 的 `RuntimeMediaNavigationJobsTest`：该行为会丢失已准入写入，已经由选择性取消、真实 WebView 未解析队列与真实 Room 导航写入回归替代。原生保存封口不因导航重置；停止后台会话属于已准入持久化工作，关闭期允许其结束，封口仍拒绝新普通工作。
 
-当前组合版本为宿主 0.8.29 / 62、NextFlux 1.0.35 / 56（最低宿主 0.8.29），package / lock / notice 同步。前台暂停只作用于正文分批渲染和摘要，不卸载用户已经启动的音视频。隐藏订阅入口、图片缓存升级、HLS 与直接媒体功能保留。
+此次整合交付为宿主 0.8.29 / 62、NextFlux 1.0.35 / 56（最低宿主 0.8.29），package / lock / notice 同步；后续权限与启动修复见本文开头链接。前台暂停只作用于正文分批渲染和摘要，不卸载用户已经启动的音视频。隐藏订阅入口、图片缓存升级、HLS 与直接媒体功能保留。
 
 整合后的首次云端检查发现一份完全相同的 `resetForNavigation(WebView)` 声明重复保留，已删除第二份；没有改变导航实现。媒体 SDK 测试的两处断言按 `openMedia` / `closeMedia` 方法计数，避免把性能侧自动 ready 计为媒体请求。`pagehide` 测试验证两个清理请求、两个 abort listener 解除、pending open 拒绝及销毁后迟到回复不能复活调用；原生导航清空媒体 registry、取消挂起 open 与阻塞 body 由原生回归验证。存活文档内的 abort 仍要求迟到成功结果再次 close。
 
@@ -153,11 +153,11 @@ Watcher / Stock / Lab / Kegel / SocialCoach 的 minHostVersion 为 0.8.28；整�
 | WebView 调试编译策略 | [run 36768325226](https://github.com/gkeyes/ToolBox-Android/actions/runs/36768325226)，提交 `f0bd291f0b2373fd2cd1551476c2fde6389ecc8e`：API 35 Google Play `user` 镜像、实际 WebView `124.0.6367.219`；Debug 与非 debuggable Verification 各 12 个不同场景全部通过，0 失败 / 跳过。下载的两份 XML 各恰好 12 项；不是用开发系统的强制调试行为代替正式系统策略 |
 | 宿主共享调用链 | [run 36768320423](https://github.com/gkeyes/ToolBox-Android/actions/runs/36768320423)，同一提交、attempt 1：8 个定向 JVM 类共 42 项全部通过；7 个 Android 筛选项共实际执行 9 项全部通过，0 失败 / 跳过。API 36 / Android 16、实际 WebView `133.0.6943.137`；覆盖媒体 GET / HEAD / Range / 416 与实际音视频时钟 / 解码帧、拖动、阻塞 body 在刷新 / 销毁后的释放，真实 Room 导航后最终非空写入、未解析队列写入、控制准入、事件 / 回复隔离、专用 Profile 重建及后台设置。SDK 合同 / 媒体行为、lint、Debug / Release 构建和相关测试 APK 编译同样通过；已核对下载的 XML 与每个筛选项非零执行证据 |
 
-实际 NextFlux TBX SHA-256 为 `bc91f9b17390382ed699819b4140b56794a0886f844a8f952bd9c1721221b675`。包内 252 个文件逐项符合 integrity，manifest 为 1.0.35 / 56、minHostVersion 0.8.29；notice 的 lockfile 哈希 `349892af091cfda30ad1d677581456ebdf3873e6bb3af11f33a9619ae1943b28` 与当前 lock 文件一致，包含 hls.js 1.7.3。
+此次整合交付的 NextFlux TBX SHA-256 为 `bc91f9b17390382ed699819b4140b56794a0886f844a8f952bd9c1721221b675`。包内 252 个文件逐项符合 integrity，manifest 为 1.0.35 / 56、minHostVersion 0.8.29；notice 的 lockfile 哈希 `349892af091cfda30ad1d677581456ebdf3873e6bb3af11f33a9619ae1943b28` 与该次提交的 lock 文件一致，包含 hls.js 1.7.3。
 
 上述检查只覆盖本次改动与直接调用方；没有重跑全局测试。
 
-### 默认分支签名交付
+### 性能整合 0.8.29 的签名交付
 
 [签名 run 36770673326](https://github.com/gkeyes/ToolBox-Android/actions/runs/36770673326) 在默认分支提交 `b8ab481e05f82b1600575cf9f4f0aa6f00ff619b` 完整成功。严格核对源码祖先与所有宿主输入后，复用 run 36768320423 attempt 1 的 targeted 范围，没有再次执行那 42 个 JVM / 9 个 Android 用例。随后独立构建签名包、比对内置示例字节、校验签名和优化配置，并在 API 35 / Android 15 模拟器上完成签名 Release 初始主页冷启动。
 
