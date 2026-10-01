@@ -45,7 +45,10 @@ export const AI_SECRET = "startup-regression-ai-secret";
 export const UPDATED_AI_SECRET = "startup-regression-updated-ai-secret";
 export const SPEECH_SECRET = "startup-regression-speech-secret";
 
-export async function installNativeBoundary(page, { denySecure = false, failAuthRead = false, url = PRODUCTION_URL } = {}) {
+export async function installNativeBoundary(page, {
+  denySecure = false, failAuthRead = false, url = PRODUCTION_URL,
+  auth = null, cacheRoot = null, settings = STORED_SETTINGS,
+} = {}) {
   const allowedOrigin = new URL(url).origin;
   await page.route("**/*", async (route) => {
     if (new URL(route.request().url()).origin === allowedOrigin) {
@@ -54,7 +57,7 @@ export async function installNativeBoundary(page, { denySecure = false, failAuth
       await route.abort("blockedbyclient");
     }
   });
-  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret }) => {
+  await page.addInitScript(({ denySecure, failAuthRead, storedSettings, storedTheme, storedCategoryExpanded, aiSecret, speechSecret, auth, cacheRoot }) => {
     const preferences = {
       settings: JSON.stringify(storedSettings),
       theme: JSON.stringify(storedTheme),
@@ -62,16 +65,18 @@ export async function installNativeBoundary(page, { denySecure = false, failAuth
       language: "zh-CN",
     };
     const plain = new Map([["nextflux.preferences.v1", preferences]]);
+    if (cacheRoot) plain.set("nextflux.cache.v3.root", cacheRoot);
     const secure = new Map([
       ["nextflux.ai-key.v1", aiSecret],
       ["nextflux.speech-key.v1", speechSecret],
-      ["nextflux.auth", null],
+      ["nextflux.auth", auth],
     ]);
     const reads = [];
     const writes = [];
     const network = [];
     let flushHandler;
     const delayed = (value) => new Promise((resolve) => setTimeout(() => resolve(value), 20));
+    const copy = (value) => value === undefined ? undefined : structuredClone(value);
     const recordWrite = (operation, key, value) => {
       const prior = plain.get(key);
       const changedPreferenceKeys = key === "nextflux.preferences.v1"
@@ -111,15 +116,38 @@ export async function installNativeBoundary(page, { denySecure = false, failAuth
       storage: {
         async get(key) {
           reads.push(`storage.get:${key}`);
-          return delayed(plain.get(key) ?? null);
+          return delayed(copy(plain.get(key) ?? null));
+        },
+        async getMany(keys) {
+          reads.push(`storage.getMany:${keys.join(",")}`);
+          return delayed(keys.map((key) => copy(plain.get(key) ?? null)));
         },
         async set(key, value) {
           recordWrite("storage.set", key, value);
-          plain.set(key, value);
+          plain.set(key, copy(value));
         },
         async remove(key) {
           recordWrite("storage.remove", key);
           plain.delete(key);
+        },
+        async apply(change = {}) {
+          const updates = change.set || [];
+          const removals = change.remove || [];
+          const changedKeys = [...updates.map((item) => item.key), ...removals];
+          if (new Set(changedKeys).size !== changedKeys.length) {
+            throw Object.assign(new Error("Duplicate storage mutation key"), { code: "INVALID_REQUEST" });
+          }
+          const next = new Map(plain);
+          for (const { key, value } of updates) next.set(key, copy(value));
+          for (const key of removals) next.delete(key);
+          for (const { key, value } of updates) recordWrite("storage.apply.set", key, value);
+          for (const key of removals) recordWrite("storage.apply.remove", key);
+          plain.clear();
+          for (const [key, value] of next) plain.set(key, value);
+        },
+        async keys() {
+          reads.push("storage.keys");
+          return [...plain.keys()];
         },
         secure: {
           async get(key) {
@@ -131,7 +159,7 @@ export async function installNativeBoundary(page, { denySecure = false, failAuth
             if (failAuthRead && key === "nextflux.auth") {
               throw Object.assign(new Error("NATIVE_INTERNAL_DETAILS"), { code: "INTERNAL_ERROR" });
             }
-            return secure.get(key) ?? null;
+            return copy(secure.get(key) ?? null);
           },
           async set(key, value) {
             writes.push({ operation: "secure.set", key });
@@ -146,14 +174,13 @@ export async function installNativeBoundary(page, { denySecure = false, failAuth
       network: {
         async request(payload) {
           network.push(payload.url);
-          throw new Error("Unexpected network request during logged-out startup");
+          throw Object.assign(new Error("Synthetic native network failure"), { code: "NETWORK_UNAVAILABLE" });
         },
       },
     };
   }, {
-    denySecure, failAuthRead, storedSettings: STORED_SETTINGS,
+    denySecure, failAuthRead, storedSettings: settings,
     storedTheme: STORED_THEME, storedCategoryExpanded: STORED_CATEGORY_EXPANDED,
-    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET,
+    aiSecret: AI_SECRET, speechSecret: SPEECH_SECRET, auth, cacheRoot,
   });
 }
-
