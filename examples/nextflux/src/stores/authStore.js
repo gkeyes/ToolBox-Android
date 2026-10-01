@@ -26,8 +26,10 @@ export async function restoreAuth() {
   let stored;
   try {
     stored = await secureStorage().get(AUTH_KEY);
-  } catch {
-    throw new Error("无法读取登录信息，请检查小工具的安全存储权限。");
+  } catch (cause) {
+    const failure = new Error("无法读取登录信息。", { cause });
+    if (typeof cause?.code === "string") failure.code = cause.code;
+    throw failure;
   }
   if (!stored || typeof stored !== "object") return;
   if (stored.serverUrl !== SERVER_URL || !stored.userId ||
