@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["reading.spec.js", "controls.spec.js", "title-filter.spec.js", "article-navigation.spec.js", "media-compat.spec.js", "startup.spec.js"],
+  testMatch: ["reading.spec.js", "controls.spec.js", "title-filter.spec.js", "article-navigation.spec.js", "media-compat.spec.js", "startup.spec.js", "packaged-startup.spec.js"],
   fullyParallel: false,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
@@ -35,6 +35,12 @@ export default defineConfig({
       url: "http://127.0.0.1:4176",
       reuseExistingServer: false,
       timeout: 60_000,
+    },
+    {
+      command: "npm --prefix ../.. run build && ../../node_modules/.bin/vite preview ../.. --config ../../vite.config.js --host 127.0.0.1 --port 4177 --strictPort",
+      url: "http://127.0.0.1:4177",
+      reuseExistingServer: false,
+      timeout: 180_000,
     },
   ],
 });
