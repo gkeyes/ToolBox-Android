@@ -46,7 +46,8 @@ class ActionButtonBehaviorTest(
                         .padding(24.dp).testTag("button-preview"),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    ToolBoxText("ToolBox · ${style.name} · ${mode.name}")
+                    ToolBoxText("ToolBox · ${style.name} · ${mode.name}",
+                        style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary))
                     ToolBoxPrimaryButton("打开工具", { clicks += "open" }, Modifier.fillMaxWidth().testTag("open"), enabled.value)
                     ToolBoxSecondaryButton("取消", { clicks += "cancel" }, Modifier.fillMaxWidth().testTag("cancel"), enabled.value)
                     ToolBoxDestructiveButton("删除工具", { clicks += "delete" }, Modifier.fillMaxWidth().testTag("delete"), enabled.value)

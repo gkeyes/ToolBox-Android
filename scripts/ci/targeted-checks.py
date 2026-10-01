@@ -90,14 +90,19 @@ def classify(paths):
         if path in {".github/workflows/android.yml", "scripts/ci/targeted-checks.py", "scripts/ci/reuse-host-verification.py", "scripts/tests/test_reuse_host_verification.py", "scripts/ci/verify_release.py", "scripts/ci/release-startup-smoke.py", "scripts/tests/test_release_startup.py", "scripts/tests/test_release_scope.py", "scripts/ci/run-android-behavior.sh"}:
             node.add("scripts/tests/browser-picker.test.cjs")
             android |= BROWSER_ANDROID
-        elif path == "core-ui/src/main/java/io/toolbox/core/ui/component/ToolBoxLayout.kt":
+        elif path in {
+            "core-ui/src/main/java/io/toolbox/core/ui/component/ToolBoxLayout.kt",
+            "core-ui/src/main/java/io/toolbox/core/ui/component/ToolBoxIcon.kt",
+        }:
+            # AndroidJUnitRunner's method filter omits JUnit parameter suffixes.
+            # Select these small UI classes so every requested theme really runs.
             android |= {
                 "io.toolbox.host.ActionButtonBehaviorTest",
-                "io.toolbox.host.SecondaryPageBehaviorTest#backgroundActionsAdaptAndKeepTheirOwnTargetsAndBusyStates",
-                "io.toolbox.host.CatalogPanelBehaviorTest#createCancelAndDeleteKeepOtherGroupsToolsAndFavorites",
+                "io.toolbox.host.SecondaryPageBehaviorTest",
+                "io.toolbox.host.CatalogPanelBehaviorTest",
             }
         elif path == "app/src/main/kotlin/io/toolbox/host/backup/BackupScreen.kt":
-            android.add("io.toolbox.host.SecondaryPageBehaviorTest#backupStatesLeadWithCurrentTaskAndRetainRestoreWarningsAndActions")
+            android.add("io.toolbox.host.SecondaryPageBehaviorTest")
         elif path.startswith("app/src/androidTest/assets/runtime-media/"):
             android |= MEDIA_ANDROID
         elif path.startswith("app/src/test/kotlin/io/toolbox/host/background/") and Path(path).stem in {
