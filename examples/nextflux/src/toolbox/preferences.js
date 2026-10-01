@@ -16,6 +16,15 @@ function reportFailure() {
   globalThis.dispatchEvent?.(new CustomEvent("nextflux:storage-error"));
 }
 
+// Settings are flat JSON values. Mounting a store may only reorder its fields.
+function sameSettings(previous, next) {
+  if (!previous) return false;
+  const before = JSON.parse(previous);
+  const after = JSON.parse(next);
+  const keys = Object.keys(after);
+  return keys.length === Object.keys(before).length && keys.every((key) => before[key] === after[key]);
+}
+
 function persist() {
   const snapshot = { ...values };
   let aiKey = "";
@@ -49,8 +58,9 @@ const engine = new Proxy(values, {
   set(target, key, value) {
     if (!KEYS.has(key) || typeof value !== "string") return true;
     if (target[key] !== value) {
+      const unchanged = key === "settings" && sameSettings(target[key], value);
       target[key] = value;
-      if (storage) persist();
+      if (storage && !unchanged) persist();
     }
     return true;
   },

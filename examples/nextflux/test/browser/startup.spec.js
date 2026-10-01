@@ -44,6 +44,7 @@ const STORED_SETTINGS = {
 const STORED_THEME = { themeMode: "system", lightTheme: "light", darkTheme: "dark" };
 const STORED_CATEGORY_EXPANDED = { 7: true };
 const AI_SECRET = "startup-regression-ai-secret";
+const UPDATED_AI_SECRET = "startup-regression-updated-ai-secret";
 const SPEECH_SECRET = "startup-regression-speech-secret";
 
 async function installNativeBoundary(page, { denySecure = false, failAuthRead = false } = {}) {
@@ -207,6 +208,42 @@ test("production startup restores persisted settings and secure keys without wri
   ]));
   expect(restored.writes).toEqual([]);
   expect(restored.network).toEqual([]);
+  expect(pageErrors).toEqual([]);
+
+  const updated = await page.evaluate(async ({ fontSize, aiApiKey }) => {
+    const { settingsState, updateSettings } = await import("/src/stores/settingsStore.js");
+    await updateSettings({ fontSize, aiApiKey });
+    await window.__startupNative.flush();
+    return {
+      settings: settingsState.get(),
+      persistedPreferences: window.__startupNative.persistedPreferences(),
+      aiSecret: await window.ToolBox.storage.secure.get("nextflux.ai-key.v1"),
+      speechSecret: await window.ToolBox.storage.secure.get("nextflux.speech-key.v1"),
+      writes: window.__startupNative.writes,
+      network: window.__startupNative.network,
+    };
+  }, { fontSize: 22, aiApiKey: UPDATED_AI_SECRET });
+  expect(updated.settings).toMatchObject({
+    ...STORED_SETTINGS,
+    fontSize: 22,
+    aiApiKey: UPDATED_AI_SECRET,
+    speechApiKey: SPEECH_SECRET,
+  });
+  expect(updated.aiSecret).toBe(UPDATED_AI_SECRET);
+  expect(updated.speechSecret).toBe(SPEECH_SECRET);
+  expect(JSON.parse(updated.persistedPreferences.settings)).toEqual({ ...STORED_SETTINGS, fontSize: 22 });
+  const ordinaryStorage = JSON.stringify(updated.persistedPreferences);
+  expect(ordinaryStorage).not.toContain(AI_SECRET);
+  expect(ordinaryStorage).not.toContain(UPDATED_AI_SECRET);
+  expect(ordinaryStorage).not.toContain(SPEECH_SECRET);
+  expect(updated.writes).toEqual([
+    { operation: "secure.set", key: "nextflux.ai-key.v1" },
+    {
+      operation: "storage.set", key: "nextflux.preferences.v1",
+      changedPreferenceKeys: ["settings"], changedSettingsFields: ["fontSize"], plainSecretLeak: false,
+    },
+  ]);
+  expect(updated.network).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
 
