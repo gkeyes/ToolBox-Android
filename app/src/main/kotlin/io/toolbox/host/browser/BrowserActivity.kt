@@ -84,7 +84,7 @@ import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
-import io.toolbox.core.ui.component.ToolBoxDestructiveButton
+import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -1240,9 +1240,10 @@ class BrowserActivity : ComponentActivity() {
                 style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textSecondary),
             )
             Spacer(Modifier.height(24.dp))
-            ToolBoxDestructiveButton(
+            ToolBoxPrimaryButton(
                 if (clearing) "正在清除…" else "清除", ::clearWebsiteData,
                 modifier = Modifier.fillMaxWidth(), enabled = !clearing,
+                destructive = true,
             )
             Spacer(Modifier.height(12.dp))
             ToolBoxSecondaryButton(

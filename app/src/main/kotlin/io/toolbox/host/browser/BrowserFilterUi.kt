@@ -116,7 +116,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                     editing != null -> key(editing!!.id) { FilterEditor(editing!!, filters) { editing = null } }
                     resetConfirm -> {
                         ToolBoxText("清除此网站的点选规则？手动添加的规则会保留。")
-                        ToolBoxDestructiveButton("清除点选规则", { filters.resetPicked(); resetConfirm = false }, Modifier.fillMaxWidth())
+                        ToolBoxPrimaryButton("清除点选规则", { filters.resetPicked(); resetConfirm = false }, Modifier.fillMaxWidth(), destructive = true)
                         ToolBoxSecondaryButton("取消", { resetConfirm = false }, Modifier.fillMaxWidth())
                     }
                     screen == "home" -> {
