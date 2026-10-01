@@ -1,13 +1,13 @@
 name: Publish release
 run-name: Publish ${{ inputs.tag }} from run ${{ inputs.run_id }}
 
-# Manual only: attaches the verified signed delivery from an Android CI run to a draft
-# release, carries over unchanged TBX packages from an earlier release, and publishes it.
+# Manual only: creates a release at the commit an Android CI run built, attaches that run's
+# verified signed delivery, carries over unchanged TBX packages from an earlier release, and publishes it.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing draft release tag, e.g. v0.8.31"
+        description: "New release tag, e.g. v0.8.31 (must match the APK version)"
         type: string
         required: true
       run_id:
@@ -18,6 +18,10 @@ on:
         description: "Release tag whose .tbx assets are carried over unchanged (optional)"
         type: string
         required: false
+      notes:
+        description: "Release notes (Markdown)"
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -37,8 +41,9 @@ jobs:
       TAG: ${{ inputs.tag }}
       RUN_ID: ${{ inputs.run_id }}
       REUSE: ${{ inputs.reuse_tbx_from }}
+      NOTES: ${{ inputs.notes }}
     steps:
-      - name: Check the source run and draft release
+      - name: Check the source run and tag
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Unexpected tag: $TAG" >&2; exit 1; }
@@ -46,8 +51,7 @@ jobs:
           gh run view "$RUN_ID" --json conclusion,workflowName,headSha \
             --jq 'select(.workflowName == "Android CI" and .conclusion == "success") | .headSha' > head_sha.txt
           test -s head_sha.txt || { echo "Run $RUN_ID is not a successful Android CI run" >&2; exit 1; }
-          gh release view "$TAG" --json isDraft --jq '.isDraft' | grep -qx true \
-            || { echo "$TAG must exist as a draft release" >&2; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG already exists" >&2; exit 1; fi
       - name: Download the signed delivery
         run: |
           set -euo pipefail
@@ -76,5 +80,8 @@ jobs:
       - name: Upload assets and publish
         run: |
           set -euo pipefail
+          printf '%s\n' "$NOTES" > notes.md
+          gh release create "$TAG" --draft --target "$(cat head_sha.txt)" \
+            --title "ToolBox Android ${TAG#v}" --notes-file notes.md
           gh release upload "$TAG" dist/* --clobber
           gh release edit "$TAG" --draft=false --latest
