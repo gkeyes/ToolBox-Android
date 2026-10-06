@@ -75,7 +75,10 @@ android {
             if (compactWebViewDebug) {
                 isMinifyEnabled = true
                 isShrinkResources = true
-                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+                proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "compact-debug.pro",
+                )
                 testProguardFiles("compact-debug-test.pro")
             }
             stableSigningConfig?.let { signingConfig = it }
