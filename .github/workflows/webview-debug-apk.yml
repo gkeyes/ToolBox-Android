@@ -66,6 +66,7 @@ jobs:
             2>&1 | tee build/webview-debug-evidence/build.log
       - name: Verify the APK identity, compiled debug flag and original certificate
         id: verify_apk
+        if: always()
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"

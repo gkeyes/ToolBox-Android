@@ -167,6 +167,9 @@ dependencies {
     androidTestImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    if (compactWebViewDebug) {
+        androidTestImplementation("com.google.errorprone:error_prone_annotations:2.26.1")
+    }
 
 
 
