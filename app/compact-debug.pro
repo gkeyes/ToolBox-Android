@@ -1,5 +1,7 @@
 # Retain JVM symbols for debugging and instrumentation's shared runtime.
 -dontobfuscate
+# Instrumentation reads generated flags even after the app folds its own reads.
+-keep class io.toolbox.host.BuildConfig { *; }
 # Instrumentation shares the app's Kotlin library, including facades that the
 # app's own call graph does not reference. Preserve that library's test ABI.
 -keep class kotlin.** { *; }
@@ -16,3 +18,9 @@
     protected *;
 }
 -keep class androidx.compose.ui.node.RootForTest** { *; }
+# Test idling observes snapshots and controls recomposition through this shared
+# runtime API, including Snapshot.hasPendingChanges unused by the app itself.
+-keep class androidx.compose.runtime.** {
+    public *;
+    protected *;
+}
