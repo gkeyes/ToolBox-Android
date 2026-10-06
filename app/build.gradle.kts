@@ -76,6 +76,7 @@ android {
                 isMinifyEnabled = true
                 isShrinkResources = true
                 proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+                testProguardFiles("compact-debug-test.pro")
             }
             stableSigningConfig?.let { signingConfig = it }
         }
