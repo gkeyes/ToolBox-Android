@@ -2,6 +2,8 @@
 -dontobfuscate
 # Instrumentation reads generated flags even after the app folds its own reads.
 -keep class io.toolbox.host.BuildConfig { *; }
+# The focused runtime test constructs this shared model with Kotlin defaults.
+-keep class io.toolbox.tool.packagekit.InstalledManifest { *; }
 # Instrumentation shares the app's Kotlin library, including facades that the
 # app's own call graph does not reference. Preserve that library's test ABI.
 -keep class kotlin.** { *; }
@@ -10,14 +12,13 @@
 -keep class kotlinx.coroutines.** { *; }
 # Tests implement shared Kotlin interfaces and call their compatibility bridges.
 -keep class **$DefaultImpls { *; }
-# Compose's test SDK registers roots and replaces window recomposition factories
-# through shared platform API absent from the app-only call graph. Preserve that
-# API while private platform implementation and the rest of Compose still shrink.
--keep class androidx.compose.ui.platform.** {
+# Compose's test SDK queries semantics/layout and controls platform roots through
+# shared UI API absent from the app-only call graph. Private implementation and
+# unrelated packages continue to shrink.
+-keep class androidx.compose.ui.** {
     public *;
     protected *;
 }
--keep class androidx.compose.ui.node.RootForTest** { *; }
 # Test idling observes snapshots and controls recomposition through this shared
 # runtime API, including Snapshot.hasPendingChanges unused by the app itself.
 -keep class androidx.compose.runtime.** {
