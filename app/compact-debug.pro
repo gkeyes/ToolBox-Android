@@ -6,3 +6,5 @@
 # Coroutine test dispatchers implement interfaces absent from the app call graph.
 # Both APKs share coroutines-core, so preserve its ABI for instrumentation.
 -keep class kotlinx.coroutines.** { *; }
+# Tests implement shared Kotlin interfaces and call their compatibility bridges.
+-keep class **$DefaultImpls { *; }
