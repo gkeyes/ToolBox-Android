@@ -63,6 +63,7 @@ jobs:
           ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest \
             2>&1 | tee build/webview-debug-evidence/build.log
       - name: Verify the APK identity, compiled debug flag and original certificate
+        id: verify_apk
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"
@@ -89,6 +90,7 @@ jobs:
               'certificate_sha256': os.environ['RELEASE_CERT_SHA256'],
               'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
               'device_installation': 'NOT RUN', 'nextflux_touch_behavior': 'NOT TESTED',
+              'webview_endpoint_tests': {'result': 'NOT VERIFIED'},
           }
           (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
           print('Verified io.toolbox.host 0.8.31 (64), debuggable=true, original release certificate.')
@@ -116,29 +118,30 @@ jobs:
             adb shell wm dismiss-keyguard
             adb install -r delivery/toolbox-v0.8.31-webview-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            adb shell am instrument -w -r -e class 'io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest#compiledModeIsFixedForExistingAndNewRuntimeDebugging' io.toolbox.host.test/androidx.test.runner.AndroidJUnitRunner > build/webview-debug-evidence/instrumentation.txt
-      - name: Require all four theme cases to pass and record the result
+            adb shell am instrument -w -r -e class io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest io.toolbox.host.test/androidx.test.runner.AndroidJUnitRunner > build/webview-debug-evidence/instrumentation.txt
+      - name: Require all twelve debugging cases to pass and record the result
         run: |
           set -euo pipefail
           cat build/webview-debug-evidence/instrumentation.txt
           python3 - <<'PY'
           import hashlib, json, pathlib, re
           evidence = pathlib.Path('build/webview-debug-evidence/instrumentation.txt').read_text()
-          assert re.search(r'OK\s*\(4 tests\)', evidence), 'Expected four successful endpoint cases'
+          assert re.search(r'OK\s*\(12 tests\)', evidence), 'Expected twelve successful debugging cases'
           assert 'FAILURES!!!' not in evidence and 'INSTRUMENTATION_FAILED' not in evidence
           d = pathlib.Path('delivery')
           receipt = json.loads((d / 'BUILD_RECEIPT.json').read_text())
           apk = d / 'toolbox-v0.8.31-webview-debug.apk'
           assert hashlib.sha256(apk.read_bytes()).hexdigest() == receipt['apk_sha256']
           receipt['webview_endpoint_tests'] = {
-              'result': 'PASS', 'cases': 4, 'android_api': 35, 'android_build_type': 'user',
-              'test': 'DeveloperWebViewDebuggingBehaviorTest#compiledModeIsFixedForExistingAndNewRuntimeDebugging',
+              'result': 'PASS', 'cases': 12, 'android_api': 35, 'android_build_type': 'user',
+              'test': 'DeveloperWebViewDebuggingBehaviorTest',
           }
           (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
           (d / 'SHA256SUMS.txt').write_text(receipt['apk_sha256'] + '  ' + apk.name + '\n')
-          print('All four cases passed: existing and newly created WebViews expose real debugging endpoints.')
+          print('All twelve debugging cases passed, including real endpoints for existing and new WebViews.')
           PY
       - name: Upload the debug APK and verification receipt
+        if: ${{ always() && steps.verify_apk.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: toolbox-v0.8.31-webview-debug-original-signature
