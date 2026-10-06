@@ -9,6 +9,7 @@ plugins {
 
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
 val verifyWebViewDebugging = providers.gradleProperty("toolbox.verifyWebViewDebugging").orNull == "true"
+val compactWebViewDebug = providers.gradleProperty("toolbox.compactWebViewDebug").orNull == "true"
 
 val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
 val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
@@ -71,6 +72,11 @@ android {
 
     buildTypes {
         debug {
+            if (compactWebViewDebug) {
+                isMinifyEnabled = true
+                isShrinkResources = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            }
             stableSigningConfig?.let { signingConfig = it }
         }
         release {
@@ -101,6 +107,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    if (compactWebViewDebug) {
+        packaging.dex.useLegacyPackaging = true
     }
 
     sourceSets.getByName("main").assets.directories.add(

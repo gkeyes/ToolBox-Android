@@ -1,9 +1,9 @@
-name: WebView debug APK - original signature
+name: Compact WebView debug APK - original signature
 
 on:
   push:
     branches: ["codex/webview-debug-20261006"]
-    paths: [".github/workflows/webview-debug-apk.yml"]
+    paths: [".github/workflows/webview-debug-apk.yml", "app/build.gradle.kts"]
   workflow_dispatch:
 
 permissions:
@@ -19,7 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      SOURCE_COMMIT: cba35ba9978dc9e992230f9a54e288b79c16c33f
+      SOURCE_COMMIT: ${{ github.sha }}
+      BASE_SOURCE_COMMIT: cba35ba9978dc9e992230f9a54e288b79c16c33f
       RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -35,7 +36,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-      - name: Build debug APK and its focused instrumentation test with the original key
+      - name: Build compact debug APK and its focused instrumentation test with the original key
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_BASE64 }}
           TOOLBOX_SIGNING_STORE_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_PASSWORD }}
@@ -61,6 +62,7 @@ jobs:
           actual="$(sha256sum "$signing_dir/certificate.der" | cut -d' ' -f1)"
           test "$actual" = "$RELEASE_CERT_SHA256" || { echo 'Original certificate mismatch' >&2; exit 1; }
           ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest \
+            -Ptoolbox.compactWebViewDebug=true \
             2>&1 | tee build/webview-debug-evidence/build.log
       - name: Verify the APK identity, compiled debug flag and original certificate
         id: verify_apk
@@ -68,11 +70,12 @@ jobs:
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"
           apk=app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/mapping/debug/mapping.txt
           "$tools/apksigner" verify --verbose --print-certs "$apk" > delivery/SIGNATURE.txt
           "$tools/aapt" dump badging "$apk" > delivery/BADGING.txt
-          cp "$apk" delivery/toolbox-v0.8.31-webview-debug.apk
+          cp "$apk" delivery/toolbox-v0.8.31-webview-debug-compact.apk
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, re
+          import hashlib, json, os, pathlib, re, zipfile
           d = pathlib.Path('delivery')
           signature = (d / 'SIGNATURE.txt').read_text()
           certs = {s.lower() for s in re.findall(r'^.*certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$', signature, re.M)}
@@ -82,18 +85,28 @@ jobs:
           identity = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
           assert identity and identity.groups() == ('io.toolbox.host', '64', '0.8.31'), 'Unexpected APK identity'
           assert re.search(r'^application-debuggable\s*$', badging, re.M), 'APK is not debuggable'
-          apk = d / 'toolbox-v0.8.31-webview-debug.apk'
+          apk = d / 'toolbox-v0.8.31-webview-debug-compact.apk'
+          with zipfile.ZipFile(apk) as z:
+              dex = [entry for entry in z.infolist() if entry.filename.endswith('.dex')]
+              assert dex and all(entry.compress_type == zipfile.ZIP_DEFLATED for entry in dex), 'DEX files must be compressed'
+              dex_bytes = sum(entry.file_size for entry in dex)
+              compressed_dex_bytes = sum(entry.compress_size for entry in dex)
+          assert apk.stat().st_size < 72060519, 'Compact APK must be smaller than the previous debug build'
           receipt = {
               'package': 'io.toolbox.host', 'version_name': '0.8.31', 'version_code': 64,
               'source_commit': os.environ['SOURCE_COMMIT'], 'workflow_commit': os.environ['GITHUB_SHA'],
+              'base_source_commit': os.environ['BASE_SOURCE_COMMIT'],
               'workflow_run': os.environ['GITHUB_RUN_ID'], 'debuggable': True,
               'certificate_sha256': os.environ['RELEASE_CERT_SHA256'],
               'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+              'apk_size_bytes': apk.stat().st_size, 'previous_apk_size_bytes': 72060519,
+              'minified': True, 'resources_shrunk': True, 'dex_compressed': True,
+              'dex_uncompressed_bytes': dex_bytes, 'dex_compressed_bytes': compressed_dex_bytes,
               'device_installation': 'NOT RUN', 'nextflux_touch_behavior': 'NOT TESTED',
               'webview_endpoint_tests': {'result': 'NOT VERIFIED'},
           }
           (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
-          print('Verified io.toolbox.host 0.8.31 (64), debuggable=true, original release certificate.')
+          print(f'Verified compact io.toolbox.host 0.8.31 (64): {apk.stat().st_size} bytes, debuggable=true, original certificate.')
           PY
       - name: Enable accelerated emulator
         run: |
@@ -116,7 +129,7 @@ jobs:
             adb shell svc power stayon true
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
-            adb install -r delivery/toolbox-v0.8.31-webview-debug.apk
+            adb install -r delivery/toolbox-v0.8.31-webview-debug-compact.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell am instrument -w -r -e class io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest io.toolbox.host.test/androidx.test.runner.AndroidJUnitRunner > build/webview-debug-evidence/instrumentation.txt
       - name: Require all twelve debugging cases to pass and record the result
@@ -124,13 +137,15 @@ jobs:
           set -euo pipefail
           cat build/webview-debug-evidence/instrumentation.txt
           python3 - <<'PY'
-          import hashlib, json, pathlib, re
+          import collections, hashlib, json, pathlib, re
           evidence = pathlib.Path('build/webview-debug-evidence/instrumentation.txt').read_text()
           assert re.search(r'OK\s*\(12 tests\)', evidence), 'Expected twelve successful debugging cases'
           assert 'FAILURES!!!' not in evidence and 'INSTRUMENTATION_FAILED' not in evidence
+          statuses = collections.Counter(int(v) for v in re.findall(r'^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$', evidence, re.M))
+          assert statuses == {1: 12, 0: 12}, f'Tests must run without failures or skips: {statuses}'
           d = pathlib.Path('delivery')
           receipt = json.loads((d / 'BUILD_RECEIPT.json').read_text())
-          apk = d / 'toolbox-v0.8.31-webview-debug.apk'
+          apk = d / 'toolbox-v0.8.31-webview-debug-compact.apk'
           assert hashlib.sha256(apk.read_bytes()).hexdigest() == receipt['apk_sha256']
           receipt['webview_endpoint_tests'] = {
               'result': 'PASS', 'cases': 12, 'android_api': 35, 'android_build_type': 'user',
@@ -144,7 +159,7 @@ jobs:
         if: ${{ always() && steps.verify_apk.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v0.8.31-webview-debug-original-signature
+          name: toolbox-v0.8.31-webview-debug-compact-original-signature
           path: delivery/
           if-no-files-found: error
           retention-days: 14
@@ -153,7 +168,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: webview-debug-evidence-${{ github.run_id }}
-          path: build/webview-debug-evidence/
+          path: |
+            build/webview-debug-evidence/
+            app/build/outputs/mapping/debug/mapping.txt
+            app/build/outputs/mapping/debug/configuration.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Remove private signing material on all exits
