@@ -1,0 +1,158 @@
+name: WebView debug APK - original signature
+
+on:
+  push:
+    branches: ["codex/webview-debug-20261006"]
+    paths: [".github/workflows/webview-debug-apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webview-debug-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/codex/webview-debug-20261006' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_COMMIT: cba35ba9978dc9e992230f9a54e288b79c16c33f
+      RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Build debug APK and its focused instrumentation test with the original key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_BASE64 }}
+          TOOLBOX_SIGNING_STORE_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_PASSWORD }}
+          TOOLBOX_SIGNING_KEY_ALIAS: ${{ secrets.TOOLBOX_ANDROID_KEY_ALIAS }}
+          TOOLBOX_SIGNING_KEY_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SIGNING_KEYSTORE_BASE64:?Original signing key is required}"
+          : "${TOOLBOX_SIGNING_STORE_PASSWORD:?Missing store password}"
+          : "${TOOLBOX_SIGNING_KEY_ALIAS:?Missing signing alias}"
+          : "${TOOLBOX_SIGNING_KEY_PASSWORD:?Missing key password}"
+          signing_dir="$RUNNER_TEMP/toolbox-webview-debug-signing"
+          mkdir -p "$signing_dir" build/webview-debug-evidence delivery
+          chmod 700 "$signing_dir"
+          trap 'rm -rf "$signing_dir"' EXIT
+          export TOOLBOX_SIGNING_STORE_FILE="$signing_dir/toolbox.p12"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$TOOLBOX_SIGNING_STORE_FILE"
+          chmod 600 "$TOOLBOX_SIGNING_STORE_FILE"
+          unset SIGNING_KEYSTORE_BASE64
+          keytool -exportcert -keystore "$TOOLBOX_SIGNING_STORE_FILE" \
+            -storepass:env TOOLBOX_SIGNING_STORE_PASSWORD -alias "$TOOLBOX_SIGNING_KEY_ALIAS" \
+            > "$signing_dir/certificate.der" 2>/dev/null
+          actual="$(sha256sum "$signing_dir/certificate.der" | cut -d' ' -f1)"
+          test "$actual" = "$RELEASE_CERT_SHA256" || { echo 'Original certificate mismatch' >&2; exit 1; }
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest \
+            2>&1 | tee build/webview-debug-evidence/build.log
+      - name: Verify the APK identity, compiled debug flag and original certificate
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > delivery/SIGNATURE.txt
+          "$tools/aapt" dump badging "$apk" > delivery/BADGING.txt
+          cp "$apk" delivery/toolbox-v0.8.31-webview-debug.apk
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re
+          d = pathlib.Path('delivery')
+          signature = (d / 'SIGNATURE.txt').read_text()
+          certs = {s.lower() for s in re.findall(r'^.*certificate SHA-256 digest:\s*([0-9a-fA-F]{64})\s*$', signature, re.M)}
+          assert certs == {os.environ['RELEASE_CERT_SHA256']}, 'APK certificate mismatch'
+          assert re.search(r'^Number of signers:\s*1\s*$', signature, re.M), 'Expected one signer'
+          badging = (d / 'BADGING.txt').read_text()
+          identity = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
+          assert identity and identity.groups() == ('io.toolbox.host', '64', '0.8.31'), 'Unexpected APK identity'
+          assert re.search(r'^application-debuggable\s*$', badging, re.M), 'APK is not debuggable'
+          apk = d / 'toolbox-v0.8.31-webview-debug.apk'
+          receipt = {
+              'package': 'io.toolbox.host', 'version_name': '0.8.31', 'version_code': 64,
+              'source_commit': os.environ['SOURCE_COMMIT'], 'workflow_commit': os.environ['GITHUB_SHA'],
+              'workflow_run': os.environ['GITHUB_RUN_ID'], 'debuggable': True,
+              'certificate_sha256': os.environ['RELEASE_CERT_SHA256'],
+              'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+              'device_installation': 'NOT RUN', 'nextflux_touch_behavior': 'NOT TESTED',
+          }
+          (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print('Verified io.toolbox.host 0.8.31 (64), debuggable=true, original release certificate.')
+          PY
+      - name: Enable accelerated emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Check real WebView debugging endpoints for existing and new views
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis_playstore
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb shell getprop ro.build.type > build/webview-debug-evidence/android-build-type.txt
+            adb shell dumpsys webviewupdate > build/webview-debug-evidence/webview-provider.txt
+            python3 -c "from pathlib import Path; assert Path('build/webview-debug-evidence/android-build-type.txt').read_text().strip() == 'user'"
+            adb shell svc power stayon true
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            adb install -r delivery/toolbox-v0.8.31-webview-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class 'io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest#compiledModeIsFixedForExistingAndNewRuntimeDebugging' io.toolbox.host.test/androidx.test.runner.AndroidJUnitRunner > build/webview-debug-evidence/instrumentation.txt
+      - name: Require all four theme cases to pass and record the result
+        run: |
+          set -euo pipefail
+          cat build/webview-debug-evidence/instrumentation.txt
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+          evidence = pathlib.Path('build/webview-debug-evidence/instrumentation.txt').read_text()
+          assert re.search(r'OK\s*\(4 tests\)', evidence), 'Expected four successful endpoint cases'
+          assert 'FAILURES!!!' not in evidence and 'INSTRUMENTATION_FAILED' not in evidence
+          d = pathlib.Path('delivery')
+          receipt = json.loads((d / 'BUILD_RECEIPT.json').read_text())
+          apk = d / 'toolbox-v0.8.31-webview-debug.apk'
+          assert hashlib.sha256(apk.read_bytes()).hexdigest() == receipt['apk_sha256']
+          receipt['webview_endpoint_tests'] = {
+              'result': 'PASS', 'cases': 4, 'android_api': 35, 'android_build_type': 'user',
+              'test': 'DeveloperWebViewDebuggingBehaviorTest#compiledModeIsFixedForExistingAndNewRuntimeDebugging',
+          }
+          (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          (d / 'SHA256SUMS.txt').write_text(receipt['apk_sha256'] + '  ' + apk.name + '\n')
+          print('All four cases passed: existing and newly created WebViews expose real debugging endpoints.')
+          PY
+      - name: Upload the debug APK and verification receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-v0.8.31-webview-debug-original-signature
+          path: delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain focused build and endpoint evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: webview-debug-evidence-${{ github.run_id }}
+          path: build/webview-debug-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove private signing material on all exits
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/toolbox-webview-debug-signing"
