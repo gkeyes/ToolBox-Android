@@ -4,6 +4,11 @@
 -keep class io.toolbox.host.BuildConfig { *; }
 # The focused runtime test constructs this shared model with Kotlin defaults.
 -keep class io.toolbox.tool.packagekit.InstalledManifest { *; }
+# The same runtime-creation path uses defaults in these shared DTOs. Their
+# synthetic/no-argument constructors must remain callable from the test APK.
+-keep class io.toolbox.tool.runtime.PreparedToolRuntime { *; }
+-keep class io.toolbox.tool.runtime.RuntimeBridgeConfiguration { *; }
+-keep class io.toolbox.tool.runtime.RuntimeM1Handlers { *; }
 # Instrumentation shares the app's Kotlin library, including facades that the
 # app's own call graph does not reference. Preserve that library's test ABI.
 -keep class kotlin.** { *; }
@@ -22,6 +27,12 @@
 # Test idling observes snapshots and controls recomposition through this shared
 # runtime API, including Snapshot.hasPendingChanges unused by the app itself.
 -keep class androidx.compose.runtime.** {
+    public *;
+    protected *;
+}
+# Touch injection uses collection facades such as IntSetKt.intSetOf that the
+# app-only call graph can remove along with unused collection overloads.
+-keep class androidx.collection.** {
     public *;
     protected *;
 }
