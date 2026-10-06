@@ -8,7 +8,11 @@
 -keep class kotlinx.coroutines.** { *; }
 # Tests implement shared Kotlin interfaces and call their compatibility bridges.
 -keep class **$DefaultImpls { *; }
-# Compose's test SDK registers and drives roots through the app's shared test
-# interfaces, including callback setters unused by the app's own call graph.
--keep class androidx.compose.ui.platform.ViewRootForTest** { *; }
+# Compose's test SDK registers roots and replaces window recomposition factories
+# through shared platform API absent from the app-only call graph. Preserve that
+# API while private platform implementation and the rest of Compose still shrink.
+-keep class androidx.compose.ui.platform.** {
+    public *;
+    protected *;
+}
 -keep class androidx.compose.ui.node.RootForTest** { *; }
