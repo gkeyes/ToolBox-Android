@@ -3,7 +3,7 @@ name: Compact WebView debug APK - original signature
 on:
   push:
     branches: ["codex/webview-debug-20261006"]
-    paths: [".github/workflows/webview-debug-apk.yml", "app/build.gradle.kts"]
+    paths: [".github/workflows/webview-debug-apk.yml", "app/build.gradle.kts", "app/compact-debug*.pro"]
   workflow_dispatch:
 
 permissions:
