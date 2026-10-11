@@ -53,6 +53,7 @@ data class ToolBoxColorScheme(
     val softSuccess: Color,
     val onSoftSuccess: Color,
     val softWarning: Color,
+    val onSoftWarning: Color,
     val softDanger: Color,
     val onSoftDanger: Color,
 )
@@ -69,26 +70,42 @@ data class ToolBoxTextStyles(
 )
 
 @Immutable
+/** 4dp grid. [micro] is the only sub-grid value and is reserved for hairline offsets. */
 data class ToolBoxSpacing(
     val micro: Dp = 2.dp,
-    val tight: Dp = 3.dp,
+    val tight: Dp = 4.dp,
     val half: Dp = 4.dp,
-    val compact: Dp = 6.dp,
+    val compact: Dp = 8.dp,
     val one: Dp = 8.dp,
-    val row: Dp = 10.dp,
+    val row: Dp = 12.dp,
     val oneHalf: Dp = 12.dp,
-    val card: Dp = 14.dp,
+    /** Inner padding of a card. */
+    val card: Dp = 16.dp,
     val two: Dp = 16.dp,
+    /** Page side gutter. */
+    val page: Dp = 16.dp,
+    /** Gap between stacked cards / groups. */
+    val stack: Dp = 12.dp,
     val twoHalf: Dp = 20.dp,
     val three: Dp = 24.dp,
+    /** Gap above a section header. */
+    val section: Dp = 24.dp,
 )
 
 @Immutable
+/**
+ * Corner radii. Large cards 20–24dp, list items / buttons 14–16dp, small elements 10dp.
+ * Shapes are built with [io.toolbox.core.ui.component.toolBoxShape], which uses Miuix's
+ * continuous-curvature (G2) corners so large radii do not look "pinched".
+ */
 data class ToolBoxRadii(
-    val control: Dp = 12.dp,
-    val badge: Dp = 12.dp,
+    val control: Dp = 14.dp,
+    val badge: Dp = 10.dp,
     val denseSurface: Dp = 16.dp,
-    val card: Dp = 16.dp,
+    val button: Dp = 16.dp,
+    val card: Dp = 20.dp,
+    val sheet: Dp = 24.dp,
+    val dialog: Dp = 24.dp,
     val full: Dp = 999.dp,
 )
 
@@ -144,6 +161,7 @@ internal val LightToolBoxColors = ToolBoxColorScheme(
     softSuccess = Color(0xFFEAF8F0),
     onSoftSuccess = Color(0xFF197B48),
     softWarning = Color(0xFFFFF4E2),
+    onSoftWarning = Color(0xFF8A4B00),
     softDanger = Color(0xFFFFEEEE),
     onSoftDanger = Color(0xFFB3261E),
 )
@@ -165,36 +183,43 @@ internal val DarkToolBoxColors = ToolBoxColorScheme(
     softSuccess = Color(0xFF173D27),
     onSoftSuccess = Color(0xFF75E395),
     softWarning = Color(0xFF493414),
+    onSoftWarning = Color(0xFFFFD08A),
     softDanger = Color(0xFF4B2524),
     onSoftDanger = Color(0xFFFFB4AB),
 )
 
+/** Digits keep a fixed advance so counters, sizes and versions do not jitter as they change. */
+private const val TabularNumbers = "tnum"
+
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    screenTitle = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
     detailTitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    sectionTitle = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
-    body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    metadata = TextStyle(fontSize = 13.sp, lineHeight = 17.sp),
-    label = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
+    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp),
+    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+    body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontFeatureSettings = TabularNumbers),
+    metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = TabularNumbers),
+    label = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
 )
 
 private val LiquidGlassTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
+    screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
     detailTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.2.sp),
     title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp),
-    metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
-    label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+    body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontFeatureSettings = TabularNumbers),
+    metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = TabularNumbers),
+    label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
 )
 
 private val MiuixRadii = ToolBoxRadii()
 private val LiquidGlassRadii = ToolBoxRadii(
     control = 17.dp,
-    badge = 14.dp,
+    badge = 12.dp,
     denseSurface = 20.dp,
-    card = 22.dp,
+    button = 22.dp,
+    card = 24.dp,
+    sheet = 28.dp,
+    dialog = 28.dp,
 )
 
 private val LocalToolBoxColors = staticCompositionLocalOf { LightToolBoxColors }
