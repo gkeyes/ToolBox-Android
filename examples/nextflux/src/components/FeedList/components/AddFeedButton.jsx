@@ -1,5 +1,12 @@
 import { Button, Dropdown, Label } from "@heroui/react";
-import { CirclePlus, FolderPlus, Rss, Upload } from "lucide-react";
+import {
+  FolderPlus,
+  Upload,
+} from "lucide-react";
+import {
+  AddFeedIcon as CirclePlus,
+  FeedIcon as Rss,
+} from "@/components/ui/icons.jsx";
 import { addCategoryModalOpen, addFeedModalOpen } from "@/stores/modalStore";
 import { useSidebar } from "@/components/ui/sidebar.jsx";
 import minifluxAPI from "@/api/miniflux";
@@ -29,8 +36,8 @@ export default function AddFeedButton() {
   return (
     <>
       <Dropdown>
-        <Button className="nextflux-compact-touch-target" aria-label="添加订阅" size="sm" variant="ghost" isIconOnly>
-          <CirclePlus className="size-4 text-muted" />
+        <Button className="nextflux-toolbar-button" aria-label="添加订阅" size="sm" variant="ghost" isIconOnly>
+          <CirclePlus className="size-5 text-muted" />
         </Button>
         <Dropdown.Popover>
           <Dropdown.Menu

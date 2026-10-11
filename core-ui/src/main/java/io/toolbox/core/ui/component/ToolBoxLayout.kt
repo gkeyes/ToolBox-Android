@@ -80,6 +80,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
@@ -164,6 +165,10 @@ fun ToolBoxTopBar(
     navigationContentDescription: String = "返回",
     onNavigationClick: (() -> Unit)? = null,
     glassState: ToolBoxGlassState? = null,
+    windowInsets: WindowInsets = WindowInsets.statusBars.union(
+        WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
+    ),
+    titleAlpha: () -> Float = { 1f },
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -171,34 +176,33 @@ fun ToolBoxTopBar(
     Layout(
         modifier = modifier
             .fillMaxWidth()
-            .windowInsetsPadding(
-                WindowInsets.statusBars.union(
-                    WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal),
-                ),
-            )
-            .heightIn(min = 60.dp)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .windowInsetsPadding(windowInsets)
+            .heightIn(min = ToolBoxThemeTokens.sizes.topBar)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.xs, vertical = ToolBoxThemeTokens.spacing.xxs),
         content = {
             Box {
                 if (navigationIcon != null && onNavigationClick != null) {
                     ToolBoxIconButton(
                         navigationIcon, navigationContentDescription, onNavigationClick,
-                        modifier = Modifier.toolBoxOpenDesignSurface(CircleShape),
                         tint = colors.primary,
                     )
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, content = actions)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                ToolBoxText(
-                    title,
-                    style = ToolBoxThemeTokens.textStyles.title.copy(
-                        fontSize = 18.sp, lineHeight = 24.sp,
-                        textAlign = TextAlign.Center, color = colors.textPrimary,
-                    ),
-                    maxLines = titleLines,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Column(
+                Modifier.graphicsLayer { alpha = titleAlpha() },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                androidx.compose.animation.Crossfade(title, animationSpec = ToolBoxMotion.effects(), label = "bar title") { text ->
+                    ToolBoxText(
+                        text,
+                        style = ToolBoxThemeTokens.textStyles.collapsedTitle.copy(
+                            textAlign = TextAlign.Center, color = colors.textPrimary,
+                        ),
+                        maxLines = titleLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (subtitle.isNotBlank()) {
                     ToolBoxText(
                         subtitle,
@@ -241,6 +245,7 @@ fun ToolBoxTopBar(
     }
 }
 
+/** Top-level screen bar: large title that collapses into the 17sp bar title on scroll. */
 @Composable
 fun ToolBoxLargeTopBar(
     title: String,
@@ -249,60 +254,17 @@ fun ToolBoxLargeTopBar(
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState? = null,
     compact: Boolean = false,
+    scrolledPx: (() -> Float)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
-    val barModifier = modifier
-    if (isGlass) {
-        Row(
-            modifier = barModifier
-                .fillMaxWidth()
-                .then(
-                    if (defaultWindowInsetsPadding) Modifier.windowInsetsPadding(WindowInsets.statusBars)
-                    else Modifier,
-                )
-                .heightIn(min = if (compact) 60.dp else 76.dp)
-                .padding(
-                    start = ToolBoxThemeTokens.spacing.two,
-                    top = if (compact) ToolBoxThemeTokens.spacing.compact else ToolBoxThemeTokens.spacing.one,
-                    end = ToolBoxThemeTokens.spacing.one,
-                    bottom = if (compact) ToolBoxThemeTokens.spacing.compact else ToolBoxThemeTokens.spacing.one,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                ToolBoxText(
-                    text = title,
-                    style = ToolBoxThemeTokens.textStyles.screenTitle.copy(
-                        fontSize = if (compact) 28.sp else ToolBoxThemeTokens.textStyles.screenTitle.fontSize,
-                        lineHeight = if (compact) 34.sp else ToolBoxThemeTokens.textStyles.screenTitle.lineHeight,
-                        color = ToolBoxThemeTokens.colors.textPrimary,
-                    ),
-                )
-                if (subtitle.isNotBlank()) {
-                    ToolBoxText(
-                        text = subtitle,
-                        style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                            color = ToolBoxThemeTokens.colors.textSecondary,
-                        ),
-                    )
-                }
-            }
-            actions()
-        }
-        return
-    }
-    TopAppBar(
+    ToolBoxCollapsingTopBar(
         title = title,
-        largeTitle = title,
+        modifier = modifier,
         subtitle = subtitle,
-        modifier = barModifier,
-        color = if (isGlass) Color.Transparent else ToolBoxThemeTokens.colors.background,
-        titleColor = ToolBoxThemeTokens.colors.textPrimary,
-        largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
-        subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
+        scrolledPx = scrolledPx,
+        glassState = glassState,
+        statusBarPadding = defaultWindowInsetsPadding,
         actions = actions,
-        defaultWindowInsetsPadding = defaultWindowInsetsPadding,
     )
 }
 
@@ -317,11 +279,16 @@ fun ToolBoxNavigationBar(
     val usesIconOnlyLayout = LocalDensity.current.fontScale >= 1.5f
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val navigationShape = RoundedCornerShape(25.dp)
+    val haptics = rememberToolBoxHaptics()
+    val select: (ToolBoxNavigationItem) -> Unit = { item ->
+        if (item.id != selectedId) haptics.tick()
+        onItemSelected(item)
+    }
     if (isGlass) {
         LiquidGlassNavigationBar(
             items = items,
             selectedId = selectedId,
-            onItemSelected = onItemSelected,
+            onItemSelected = select,
             modifier = modifier,
             navigationShape = navigationShape,
         )
@@ -347,7 +314,7 @@ fun ToolBoxNavigationBar(
             key(item.id) {
                 NavigationBarItem(
                     selected = item.id == selectedId,
-                    onClick = { onItemSelected(item) },
+                    onClick = { select(item) },
                     icon = item.icon.asImageVector(),
                     label = item.label,
                     modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
@@ -387,7 +354,7 @@ private fun LiquidGlassNavigationBar(
         val selectedIndex = items.indexOfFirst { it.id == selectedId }
         val selectionOffset = animateDpAsState(
             targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
-            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+            animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
             label = "navigation selection lens",
         )
         val materials = ToolBoxThemeTokens.materials
@@ -506,7 +473,7 @@ fun ToolBoxCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier.toolBoxOpenDesignSurface(RoundedCornerShape(ToolBoxThemeTokens.radii.card)).then(
+        modifier = modifier.toolBoxOpenDesignSurface(toolBoxShape(ToolBoxThemeTokens.radii.card)).then(
             if (onClick != null || onLongClick != null) {
                 Modifier.sizeIn(minHeight = ToolBoxThemeTokens.sizes.touchTarget)
             } else {
@@ -533,8 +500,8 @@ fun ToolBoxGroupedSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth().toolBoxOpenDesignSurface(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface)),
-        cornerRadius = ToolBoxThemeTokens.radii.denseSurface,
+        modifier = modifier.fillMaxWidth().toolBoxOpenDesignSurface(toolBoxShape(ToolBoxThemeTokens.radii.card)),
+        cornerRadius = ToolBoxThemeTokens.radii.card,
         insideMargin = PaddingValues(0.dp),
         colors = CardColors(
             color = Color.Transparent,
@@ -550,13 +517,8 @@ fun ToolBoxGroupDivider(
     startPadding: Dp = 60.dp,
     endPadding: Dp = 0.dp,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(start = startPadding, end = endPadding)
-            .height(ToolBoxThemeTokens.sizes.divider)
-            .background(ToolBoxThemeTokens.colors.divider),
-    )
+    // Design system v2: group cards never draw separators; rows separate by 56dp height and inset.
+    Unit
 }
 
 private enum class ToolBoxActionTone { Primary, Tonal, Neutral, Danger, DangerConfirmation }
@@ -640,11 +602,8 @@ private fun ToolBoxActionButton(
         ToolBoxActionColors(Color.Transparent, readableForeground(preferred, listOf(colors.surface)))
     }
     val emphasized = tone == ToolBoxActionTone.Primary || tone == ToolBoxActionTone.DangerConfirmation
-    val shape = if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
-        RoundedCornerShape(percent = 50)
-    } else {
-        RoundedCornerShape(16.dp)
-    }
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.button)
+    val haptics = rememberToolBoxHaptics()
 
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -654,7 +613,7 @@ private fun ToolBoxActionButton(
         label = "toolbox-action-press",
     )
     // A state layer tinted by the label color reads in both themes, unlike a grey wash.
-    val pressedOverlay = palette.content.copy(alpha = (if (filled && emphasized) 0.14f else 0.10f) * press)
+    val pressedOverlay = palette.content.copy(alpha = (if (filled && emphasized) 0.14f else 0.10f) * press.coerceIn(0f, 1f))
     val background = if (filled) pressedOverlay.compositeOver(palette.container) else pressedOverlay
 
     val labelStyle = if (compact) {
@@ -671,9 +630,15 @@ private fun ToolBoxActionButton(
     Box(
         modifier = modifier
             .sizeIn(minWidth = 48.dp)
-            .heightIn(min = if (compact) 40.dp else ToolBoxThemeTokens.sizes.touchTarget)
+            .heightIn(
+                min = when {
+                    compact -> 40.dp
+                    filled && emphasized -> ToolBoxThemeTokens.sizes.primaryButton
+                    else -> ToolBoxThemeTokens.sizes.touchTarget
+                },
+            )
             .graphicsLayer {
-                val scale = 1f - 0.03f * press
+                val scale = 1f - (1f - ToolBoxMotion.PressScale) * press
                 scaleX = scale
                 scaleY = scale
                 alpha = if (enabled) 1f else 0.42f
@@ -685,7 +650,10 @@ private fun ToolBoxActionButton(
                 role = Role.Button,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    if (emphasized || tone == ToolBoxActionTone.Danger) haptics.confirm()
+                    onClick()
+                },
             )
             .padding(
                 horizontal = if (compact) 12.dp else if (filled) 20.dp else 16.dp,
@@ -740,7 +708,8 @@ fun ToolBoxSecondaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    ToolBoxActionButton(label, onClick, modifier, enabled, ToolBoxActionTone.Neutral)
+    // Secondary actions are tonal: accent at 12% behind an accent label.
+    ToolBoxActionButton(label, onClick, modifier, enabled, ToolBoxActionTone.Tonal)
 }
 
 @Composable

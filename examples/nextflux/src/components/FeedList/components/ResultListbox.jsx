@@ -6,7 +6,7 @@ export default function ResultListbox({ results, searchType, handleSelect }) {
   const ListboxWrapper = ({ children }) => (
     <div
       className={cn(
-        "w-full bg-default/60 h-auto overflow-y-auto p-1 rounded-2xl shadow-surface max-h-60",
+        "w-full h-auto overflow-y-auto p-1 rounded-[var(--ds-radius-card)] bg-[color-mix(in_srgb,var(--ds-on-surface)_4%,var(--ds-raised))] max-h-60 overscroll-contain",
         results.length === 0 ? "hidden" : "opacity-100",
       )}
     >
@@ -16,7 +16,7 @@ export default function ResultListbox({ results, searchType, handleSelect }) {
   return (
     <>
       <Separator
-        className={cn("my-1", results.length === 0 ? "hidden" : "opacity-100")}
+        className={cn("my-1 opacity-0", results.length === 0 ? "hidden" : "")}
       />
       <ListboxWrapper>
         <ListBox
@@ -33,7 +33,7 @@ export default function ResultListbox({ results, searchType, handleSelect }) {
                   src={item.icon_url}
                   alt={item.title}
                   className={cn(
-                    "size-8 object-cover aspect-square rounded-sm shadow-custom shrink-0",
+                    "size-8 object-cover aspect-square rounded-[var(--ds-radius-small)] shrink-0",
                   )}
                 />
               ) : (

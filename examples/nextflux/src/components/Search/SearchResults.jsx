@@ -1,4 +1,7 @@
-import { Inbox, Search } from "lucide-react";
+import {
+  EmptyIcon as Inbox,
+  SearchIcon as Search,
+} from "@/components/ui/icons.jsx";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
 import { formatDate } from "@/lib/format.js";
 import { useEffect, useRef, useState } from "react";
@@ -6,7 +9,6 @@ import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import { searching } from "@/stores/searchStore.js";
 import { useStore } from "@nanostores/react";
-import { ProgressCircle } from "@heroui/react";
 
 export default function SearchResults({
   results,
@@ -74,26 +76,26 @@ export default function SearchResults({
 
   if (!keyword) {
     return (
-      <div className="flex flex-col items-center gap-2 w-full justify-center h-full text-muted opacity-60">
-        <Inbox className="size-16" />
-        {t("search.searchPlaceholder")}
+      <div className="ds-empty h-full">
+        <span className="ds-empty-icon is-accent"><Inbox /></span>
+        <p className="ds-empty-text">{t("search.searchPlaceholder")}</p>
       </div>
     );
   }
 
   if ($searching) {
     return (
-      <div className="flex flex-col items-center gap-2 w-full justify-center h-full text-muted opacity-60">
-        <ProgressCircle aria-label="loading" />
+      <div className="ds-empty h-full" role="progressbar" aria-label="loading">
+        <span className="ds-spinner" />
       </div>
     );
   }
 
   if (!isComposing && results.length === 0 && !$searching) {
     return (
-      <div className="flex flex-col items-center gap-2 w-full justify-center h-full text-muted opacity-60">
-        <Search className="size-16" />
-        {t("search.searchResultsPlaceholder")}
+      <div className="ds-empty h-full">
+        <span className="ds-empty-icon"><Search /></span>
+        <p className="ds-empty-text">{t("search.searchResultsPlaceholder")}</p>
       </div>
     );
   }
@@ -101,7 +103,7 @@ export default function SearchResults({
   return (
     <Virtuoso
       ref={listRef}
-      className="h-full mx-2"
+      className="h-full mx-3"
       totalCount={results.length}
       data={results}
       components={{
@@ -111,21 +113,17 @@ export default function SearchResults({
       itemContent={(index, item) => (
         <div
           key={item.id}
-          className={`flex items-center justify-between gap-2 px-2 py-2 text-sm rounded-lg cursor-pointer ${
-            index === selectedIndex
-              ? "bg-default/80"
-              : hoverEffect
-                ? "hover:bg-default/60"
-                : ""
-          }`}
+          className={`search-result-row ds-state ds-press-row flex min-h-14 items-center justify-between gap-3 px-3 rounded-[var(--ds-radius-row)] cursor-pointer ${
+            index === selectedIndex ? "is-selected" : ""
+          } ${hoverEffect ? "" : "no-hover"}`}
           onClick={() => onSelect(item)}
           onMouseMove={() => setHoverEffect(true)}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-3">
             <FeedIcon feedId={type === "articles" ? item.feedId : item.id} />
-            <div className="flex-1 line-clamp-1">{item.title}</div>
+            <div className="ds-body flex-1 line-clamp-1">{item.title}</div>
           </div>
-          <div className="shrink-0 line-clamp-1 text-xs text-muted opacity-60 font-mono">
+          <div className="shrink-0 line-clamp-1 ds-caption ds-text-tertiary ds-tnum">
             {type === "articles" && formatDate(item.published_at)}
           </div>
         </div>

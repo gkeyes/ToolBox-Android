@@ -47,6 +47,17 @@ import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
+import io.toolbox.host.ui.CatalogStatusState
+import io.toolbox.host.ui.mergePadding
+import io.toolbox.host.ui.rememberTitleBoundListState
+import io.toolbox.core.ui.component.ToolBoxContinuousShape
+import io.toolbox.core.ui.component.ToolBoxMotion
+import io.toolbox.core.ui.component.rememberToolBoxEntrance
+import io.toolbox.core.ui.component.toolBoxEntrance
+import io.toolbox.core.ui.component.toolBoxShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
 import io.toolbox.tool.api.ToolBoxApiV1
 import io.toolbox.tool.runtime.RuntimeWebViewDebugging
 import kotlinx.coroutines.CancellationException
@@ -119,14 +130,8 @@ internal fun DeveloperHelpPage(
             .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
             .fillMaxSize()
             .align(Alignment.TopCenter)
-        Column(pageModifier.padding(chromePadding)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = ToolBoxThemeTokens.spacing.two)
-                    .padding(top = ToolBoxThemeTokens.spacing.two),
-                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-            ) {
+        val header: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
                 ToolBoxGroupedSurface {
                     ToolBoxSwitchSettingRow(
                         title = "小工具 WebView 调试",
@@ -145,27 +150,39 @@ internal fun DeveloperHelpPage(
                 if (webViewDebuggingEnabled) {
                     AppText(
                         "电脑 Chrome 打开 chrome://inspect/#devices，选择小工具页面的 Inspect。",
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        modifier = Modifier.padding(horizontal = ToolBoxThemeTokens.spacing.md),
+                        textStyle = ToolBoxThemeTokens.textStyles.label,
                         color = ToolBoxThemeTokens.colors.textSecondary,
                     )
                 }
             }
-            when (val loaded = state) {
-                is HelpLoadState.Loaded -> DeveloperHelpContent(
-                    document = loaded.document,
-                    onInstallExamples = onInstallExamples,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-                HelpLoadState.Loading -> AppText(
-                    "正在读取离线手册…",
-                    modifier = Modifier.padding(ToolBoxThemeTokens.spacing.two),
-                )
-                HelpLoadState.Failed -> Column(
-                    modifier = Modifier.padding(ToolBoxThemeTokens.spacing.two),
-                    verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-                ) {
-                    AppText("离线手册暂时无法读取，请重试。持续失败时请更新或重新安装 ToolBox。")
-                    ToolBoxPrimaryButton("重新读取", onClick = onRetry)
+        }
+        val padding = mergePadding(chromePadding, PaddingValues(ToolBoxThemeTokens.spacing.md))
+        when (val loaded = state) {
+            is HelpLoadState.Loaded -> DeveloperHelpContent(
+                document = loaded.document,
+                onInstallExamples = onInstallExamples,
+                modifier = pageModifier,
+                contentPadding = padding,
+                header = header,
+            )
+            else -> LazyColumn(
+                modifier = pageModifier.testTag(DeveloperHelpTestTags.List),
+                state = rememberTitleBoundListState(),
+                contentPadding = padding,
+            ) {
+                item("debugging") { header() }
+                item("status") {
+                    if (loaded == HelpLoadState.Loading) {
+                        CatalogStatusState("正在读取离线手册…", loading = true)
+                    } else {
+                        CatalogStatusState(
+                            "离线手册暂时无法读取",
+                            icon = ToolBoxIconKey.Note,
+                            detail = "请重试。持续失败时请更新或重新安装 ToolBox。",
+                        )
+                        ToolBoxPrimaryButton("重新读取", onClick = onRetry, modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
         }
@@ -179,6 +196,7 @@ internal fun DeveloperHelpContent(
     modifier: Modifier = Modifier,
     onCopy: ((String) -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(ToolBoxThemeTokens.spacing.two),
+    header: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var query by rememberSaveable { mutableStateOf("") }
@@ -208,12 +226,20 @@ internal fun DeveloperHelpContent(
             copiedKey = null
         }
     }
+    val entrance = rememberToolBoxEntrance("developer-help")
     LazyColumn(
         modifier = modifier.testTag(DeveloperHelpTestTags.List),
+        state = rememberTitleBoundListState(),
         contentPadding = contentPadding,
     ) {
+        header?.let { content ->
+            item("debugging", contentType = "help-debugging") {
+                Box(Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.lg)) { content() }
+            }
+        }
         item("intro", contentType = "help-intro") {
-            Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+            Column(Modifier.toolBoxEntrance(entrance, 1).padding(bottom = ToolBoxThemeTokens.spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppText(
                         "离线手册 · API " + ToolBoxApiV1.API_VERSION,
@@ -227,7 +253,8 @@ internal fun DeveloperHelpContent(
                         modifier = Modifier.testTag(DeveloperHelpTestTags.CopyAll),
                     )
                 }
-                AppText(document.introduction, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                AppText(document.introduction, textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    color = ToolBoxThemeTokens.colors.textSecondary)
                 ToolBoxSearchField(
                     value = query,
                     onValueChange = {
@@ -250,6 +277,7 @@ internal fun DeveloperHelpContent(
                 )
             }
         }
+        // Each chapter reads as one rounded card: header, any open content, then an end cap.
         if (searching) {
             item("search-summary", contentType = "help-message") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -263,9 +291,13 @@ internal fun DeveloperHelpContent(
                 }
             }
         }
-        chapters.forEach { chapter ->
-            if (!searching) {
+        chapters.forEachIndexed { chapterIndex, chapter ->
+            val open = searching || expandedChapter == chapter.id
+            if (searching) {
+                item("chapter-top:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = true, Modifier.padding(top = ToolBoxThemeTokens.spacing.xs)) }
+            } else {
                 item("chapter:" + chapter.id, contentType = "help-chapter") {
+                    val radius = ToolBoxThemeTokens.radii.denseSurface
                     ToolBoxDisclosureRow(
                         title = chapter.title,
                         summary = chapter.summary,
@@ -276,17 +308,20 @@ internal fun DeveloperHelpContent(
                             expandedArticle = null
                         },
                         modifier = Modifier
-                            .padding(top = ToolBoxThemeTokens.spacing.one)
+                            .toolBoxEntrance(entrance, chapterIndex + 2)
+                            .padding(top = ToolBoxThemeTokens.spacing.xs)
+                            .clip(ToolBoxContinuousShape(radius, radius, if (open) 0.dp else radius, if (open) 0.dp else radius))
                             .background(ToolBoxThemeTokens.colors.surface)
                             .testTag(DeveloperHelpTestTags.chapter(chapter.id)),
                     )
                 }
             }
-            if (searching || expandedChapter == chapter.id) {
+            if (open) {
                 chapter.articles.forEach { article ->
                     item("article:" + article.id, contentType = "help-article") {
-                        Column(Modifier.background(ToolBoxThemeTokens.colors.surface)) {
-                            ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        Column(Modifier.animateItem(
+                            fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null,
+                        ).background(ToolBoxThemeTokens.colors.surface)) {
                             ToolBoxDisclosureRow(
                                 title = article.title,
                                 summary = chapter.title.takeIf { searching },
@@ -304,6 +339,7 @@ internal fun DeveloperHelpContent(
                         helpArticleBlocks(article, copiedKey, copyText)
                     }
                 }
+                item("chapter-end:" + chapter.id, contentType = "help-cap") { HelpCardCap(top = false, Modifier.animateItem(fadeInSpec = null, placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null)) }
             }
         }
         item("examples", contentType = "help-action") {
@@ -311,7 +347,7 @@ internal fun DeveloperHelpContent(
                 label = "安装四个范例",
                 onClick = onInstallExamples,
                 modifier = Modifier
-                    .padding(top = ToolBoxThemeTokens.spacing.two)
+                    .padding(top = ToolBoxThemeTokens.spacing.lg)
                     .fillMaxWidth()
                     .testTag(DeveloperHelpTestTags.InstallExamples),
             )
@@ -330,9 +366,10 @@ private fun LazyListScope.helpArticleBlocks(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .animateItem(fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = null)
                     .background(ToolBoxThemeTokens.colors.surface)
-                    .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf)
-                    .padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
+                    .padding(horizontal = ToolBoxThemeTokens.spacing.md)
+                    .padding(bottom = ToolBoxThemeTokens.spacing.sm),
             ) {
                 if (block.code) {
                     HelpCodeBlock(block, article.title, key, copiedKey == key) { onCopy(key, block.text) }
@@ -359,8 +396,10 @@ private fun HelpCodeBlock(block: HelpBlock, articleTitle: String, key: String, c
             },
         )
     }
-    val container = Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surfaceMuted)
-        .padding(horizontal = spacing.one)
+    val container = Modifier.fillMaxWidth()
+        .clip(toolBoxShape(ToolBoxThemeTokens.radii.badge))
+        .background(ToolBoxThemeTokens.colors.background)
+        .padding(horizontal = spacing.sm)
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val codeStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontFamily = FontFamily.Monospace)
@@ -407,6 +446,17 @@ private fun HelpCodeText(text: String, modifier: Modifier = Modifier) {
             ),
         )
     }
+}
+
+/** Rounded top or bottom edge that closes a chapter card around its lazily listed rows. */
+@Composable
+private fun HelpCardCap(top: Boolean, modifier: Modifier = Modifier) {
+    val radius = ToolBoxThemeTokens.radii.denseSurface
+    Box(
+        modifier.fillMaxWidth().height(ToolBoxThemeTokens.spacing.xs)
+            .clip(if (top) ToolBoxContinuousShape(radius, radius, 0.dp, 0.dp) else ToolBoxContinuousShape(0.dp, 0.dp, radius, radius))
+            .background(ToolBoxThemeTokens.colors.surface),
+    )
 }
 
 internal sealed interface HelpLoadState {

@@ -11,12 +11,12 @@ const defaultValue = {
 // 主题配置
 export const themes = {
   light: [
-    { id: "light", name: "白色", color: "#ffffff" },
+    { id: "light", name: "白色", color: "#F5F6F8" },
     { id: "stone", name: "石灰", color: "#F3F1ED" },
     { id: "leaf", name: "leaf", color: "#c8e6c9" },
   ],
   dark: [
-    { id: "dark", name: "黑色", color: "#1E1E1E" },
+    { id: "dark", name: "黑色", color: "#000000" },
     { id: "nord-dark", name: "深蓝", color: "#4c566a" },
   ],
 };

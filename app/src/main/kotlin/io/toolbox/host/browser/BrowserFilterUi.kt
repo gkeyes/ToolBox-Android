@@ -122,7 +122,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                     screen == "home" -> {
                         Column(
                             Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(24.dp))
+                                .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.card))
                                 .background(ToolBoxThemeTokens.colors.surface)
                         ) {
                             ToolBoxSwitchSettingRow(
@@ -137,7 +137,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                         FilterSectionLabel("当前网站")
                         Column(
                             Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(24.dp))
+                                .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.card))
                                 .background(ToolBoxThemeTokens.colors.surface)
                         ) {
                             ToolBoxSwitchSettingRow(
@@ -157,7 +157,7 @@ fun BrowserFilterSheet(filters: BrowserFilterController, canPick: Boolean, resum
                         FilterSectionLabel("规则与拦截")
                         Column(
                             Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(24.dp))
+                                .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.card))
                                 .background(ToolBoxThemeTokens.colors.surface)
                         ) {
                             ToolBoxSettingRow(
@@ -274,7 +274,7 @@ private fun FilterHostAccordionHeader(
 ) {
     val enabledCount = rules.count { it.enabled }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        Modifier.fillMaxWidth().clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button))
             .background(ToolBoxThemeTokens.colors.surfaceMuted)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -315,7 +315,7 @@ private fun FilterCompactRule(
     val compactValue = if (rule.value.length > 54) rule.value.take(54) + "…" else rule.value
 
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control))
             .background(ToolBoxThemeTokens.colors.surfaceMuted)
     ) {
         ToolBoxSettingRow(
@@ -385,7 +385,7 @@ private fun FilterField(label: String, value: String, change: (String) -> Unit) 
         ToolBoxText(label, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
         Spacer(Modifier.height(6.dp))
         BasicTextField(value, { change(it.take(1024)) },
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control))
                 .background(ToolBoxThemeTokens.colors.surfaceMuted).padding(12.dp).semantics { contentDescription = label },
             textStyle = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
             cursorBrush = SolidColor(ToolBoxThemeTokens.colors.primary), maxLines = 4)

@@ -1,5 +1,4 @@
 import { settingsState } from "@/stores/settingsStore";
-import { Separator } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import {
   ItemWrapper,
@@ -31,6 +30,7 @@ export default function Appearance() {
     feedIconShape,
     useGrayIcon,
     cardImageSize,
+    articleListStyle,
     showFavicon,
     showReadingTime,
     reduceMotion,
@@ -61,7 +61,6 @@ export default function Appearance() {
             { value: "18", label: t("settings.appearance.LargerText") },
           ]}
         />
-        <Separator />
         <SliderItem
           label={t("settings.appearance.borderRadius")}
           icon={
@@ -91,7 +90,6 @@ export default function Appearance() {
             { value: "square", label: t("settings.appearance.square") },
           ]}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.appearance.grayscale")}
           icon={
@@ -126,7 +124,6 @@ export default function Appearance() {
           settingName="showIndicator"
           settingValue={showIndicator}
         />
-        <Separator />
         <SliderItem
           label={t("settings.appearance.titleLines")}
           icon={
@@ -140,7 +137,6 @@ export default function Appearance() {
           min={0}
           step={1}
         />
-        <Separator />
         <SliderItem
           label={t("settings.appearance.textPreviewLines")}
           icon={
@@ -154,7 +150,20 @@ export default function Appearance() {
           min={0}
           step={1}
         />
-        <Separator />
+        <SelItem
+          label={t("settings.appearance.listStyle")}
+          icon={
+            <SettingIcon variant="green">
+              <LayoutList />
+            </SettingIcon>
+          }
+          settingName="articleListStyle"
+          settingValue={articleListStyle}
+          options={[
+            { value: "lines", label: t("settings.appearance.listStyleLines") },
+            { value: "cards", label: t("settings.appearance.listStyleCards") },
+          ]}
+        />
         <SelItem
           label={t("settings.appearance.imagePreviews")}
           icon={
@@ -170,7 +179,6 @@ export default function Appearance() {
             { value: "large", label: t("settings.appearance.large") },
           ]}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.appearance.showFavicon")}
           icon={
@@ -181,7 +189,6 @@ export default function Appearance() {
           settingName="showFavicon"
           settingValue={showFavicon}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.appearance.showReadingTime")}
           icon={

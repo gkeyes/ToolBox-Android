@@ -2,7 +2,13 @@ package io.toolbox.host.navigation
 
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import kotlinx.coroutines.CancellationException
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.foundation.background
+import androidx.compose.runtime.SideEffect
+import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -70,6 +76,13 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
 private val RetainedPageMotion = ToolBoxMotion.pageSpec()
 
+/** Fraction of the page width the predictive-back gesture may drag the page before commit. */
+private const val PredictiveBackTravel = 1f
+
+/** Shared-axis travel, read inside graphics layers (Density receiver). */
+private val androidx.compose.ui.graphics.GraphicsLayerScope.PageShiftPx: Float
+    get() = ToolBoxMotion.PageShift.toPx()
+
 @Composable
 internal fun ToolBoxNavigation(
     dependencies: HostDependencies,
@@ -130,6 +143,12 @@ internal fun ToolBoxNavigation(
         }
     }
     val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
+    // Each retained page's push progress (1 = hidden, 0 = shown) is hoisted so the page beneath
+    // it can fade out as it fades in (fade-through); two top bars never overlap mid-transition.
+    val pageProgress = remember { HashMap<ToolBoxRoute, Animatable<Float, AnimationVector1D>>() }
+    fun progressFor(route: ToolBoxRoute) = pageProgress.getOrPut(route) { Animatable(1f) }
+    SideEffect { pageProgress.keys.retainAll(retainedRoutes.toSet()) }
+    val firstRetainedProgress = retainedRoutes.firstOrNull()?.let(::progressFor)
     val entryProgress = remember(runtimeRoute) { Animatable(if (runtimeRoute == null) 0f else 1f) }
     val sourceReturnProgress = remember(runtimeRoute) { Animatable(0f) }
     var runtimeLayerEnabled by remember(runtimeRoute) { mutableStateOf(false) }
@@ -190,6 +209,8 @@ internal fun ToolBoxNavigation(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Shown only at the midpoint of a fade-through; matches every page's base colour.
+            .background(ToolBoxThemeTokens.colors.background)
             .clipToBounds(),
     ) {
         Box(
@@ -200,16 +221,17 @@ internal fun ToolBoxNavigation(
                     val enteringDepth = if (
                         runtimeRoute != null && entryCoverVisible && !sourceAboveRuntime
                     ) {
-                        1f - entryProgress.value
+                        // Fade through: the source is gone before the runtime cover appears.
+                        1f - ToolBoxMotion.fadeThroughOutgoingAlpha(1f - entryProgress.value.coerceIn(0f, 1f))
                     } else {
                         0f
                     }
-                    val depth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
-                    translationX = -trailingDirection * depth * size.width * 0.14f
-                    val depthScale = 1f - depth * 0.012f
-                    scaleX = depthScale
-                    scaleY = depthScale
-                    alpha = 1f - depth * 0.08f
+                    // This layer also hosts the retained secondary pages, so only the runtime
+                    // transition may fade it. Covering by a secondary page fades the primary
+                    // screen alone (inner box below), never the pages stacked above it.
+                    val runtimeDepth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
+                    translationX = -trailingDirection * runtimeDepth * PageShiftPx
+                    alpha = 1f - runtimeDepth
                 }
                 .then(
                     if (runtimeRoute != null && !sourceAboveRuntime) {
@@ -225,6 +247,13 @@ internal fun ToolBoxNavigation(
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            // Shared X axis: the primary screen drifts back and fades through
+                            // while the first secondary page comes in above it.
+                            val coverage = firstRetainedProgress?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
+                            translationX = -trailingDirection * coverage * PageShiftPx
+                            alpha = ToolBoxMotion.fadeThroughOutgoingAlpha(coverage)
+                        }
                         .then(
                             if (retainedRoutes.isEmpty() && runtimeRoute == null) {
                                 Modifier
@@ -250,6 +279,11 @@ internal fun ToolBoxNavigation(
                         organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
                         onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
                         onCreateGroup = if (selectedDestination == MainDestination.Home && homeEditing) ({ homeCreatingGroup = true }) else null,
+                        listStates = mapOf(
+                            MainDestination.Home to homeListState,
+                            MainDestination.Tools to toolsListState,
+                            MainDestination.Settings to settingsListState,
+                        ),
                     ) { destination, padding, layout ->
                         when (destination) {
                             MainDestination.Home, MainDestination.Tools -> ToolManagerRouteContent(
@@ -292,6 +326,8 @@ internal fun ToolBoxNavigation(
                 key(route) {
                     RetainedSecondaryPage(
                         route = route,
+                        progress = progressFor(route),
+                        coveredBy = retainedRoutes.getOrNull(index + 1)?.let(::progressFor),
                         isTop = runtimeRoute == null && index == retainedRoutes.lastIndex,
                         modifier = Modifier.zIndex(index + 1f),
                         onRemove = {
@@ -350,11 +386,8 @@ internal fun ToolBoxNavigation(
                     }
                     .graphicsLayer {
                         val motion = entryProgress.value.coerceIn(0f, 1f)
-                        translationX = trailingDirection * motion * size.width
-                        val incomingScale = 1f - motion * 0.012f
-                        scaleX = incomingScale
-                        scaleY = incomingScale
-                        alpha = 1f - motion * 0.08f
+                        translationX = trailingDirection * motion * PageShiftPx
+                        alpha = ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion)
                     },
             ) {
                 RuntimeShellPreviewContent(toolName = runtimeTitle)
@@ -370,6 +403,8 @@ internal fun ToolBoxNavigation(
 @Composable
 private fun RetainedSecondaryPage(
     route: ToolBoxRoute,
+    progress: Animatable<Float, AnimationVector1D>,
+    coveredBy: Animatable<Float, AnimationVector1D>?,
     isTop: Boolean,
     modifier: Modifier = Modifier,
     onRemove: () -> Unit,
@@ -377,7 +412,6 @@ private fun RetainedSecondaryPage(
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val trailingDirection = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
-    val progress = remember(route) { Animatable(1f) }
     val coroutineScope = rememberCoroutineScope()
     var leaving by remember(route) { mutableStateOf(false) }
     var presentationReady by remember(route) { mutableStateOf(false) }
@@ -403,7 +437,20 @@ private fun RetainedSecondaryPage(
         }
     }
 
-    BackHandler(enabled = isTop, onBack = requestBack)
+    // Predictive back: the page follows the system back gesture and either springs away on
+    // commit or springs back on cancel. A plain Back press delivers no progress events and
+    // takes the same commit path as the on-screen back button.
+    PredictiveBackHandler(enabled = isTop && !leaving) { events ->
+        try {
+            events.collect { event ->
+                progress.snapTo(PredictiveBackTravel * event.progress)
+            }
+            requestBack()
+        } catch (cancelled: CancellationException) {
+            coroutineScope.launch { progress.animateTo(0f, animationSpec = RetainedPageMotion) }
+            throw cancelled
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -413,12 +460,11 @@ private fun RetainedSecondaryPage(
                 }
             }
             .graphicsLayer {
+                // Shared X axis: 30dp of travel, fading through the page beneath.
                 val motion = progress.value.coerceIn(0f, 1f)
-                translationX = trailingDirection * motion * size.width
-                val incomingScale = 1f - motion * 0.012f
-                scaleX = incomingScale
-                scaleY = incomingScale
-                alpha = 1f - motion * 0.08f
+                val coverage = coveredBy?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
+                translationX = trailingDirection * (motion - coverage) * PageShiftPx
+                alpha = ToolBoxMotion.pageLayerAlpha(motion, coverage)
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {

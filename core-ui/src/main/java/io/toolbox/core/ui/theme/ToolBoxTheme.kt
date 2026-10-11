@@ -44,6 +44,10 @@ data class ToolBoxColorScheme(
     val surfaceMuted: Color,
     val textPrimary: Color,
     val textSecondary: Color,
+    /** Tertiary text: onSurface at 42%. */
+    val textTertiary: Color,
+    /** Sheets, pressed cards and other surfaces raised above a card. */
+    val raised: Color,
     val success: Color,
     val warning: Color,
     val danger: Color,
@@ -53,42 +57,84 @@ data class ToolBoxColorScheme(
     val softSuccess: Color,
     val onSoftSuccess: Color,
     val softWarning: Color,
+    val onSoftWarning: Color,
     val softDanger: Color,
     val onSoftDanger: Color,
+    val softInfo: Color,
+    val onSoftInfo: Color,
+    val softNeutral: Color,
+    val onSoftNeutral: Color,
+    val scrim: Color,
 )
 
 @Immutable
 data class ToolBoxTextStyles(
+    /** largeTitle 30 / Bold. */
     val screenTitle: TextStyle,
+    /** title 20 / SemiBold. */
     val detailTitle: TextStyle,
+    /** sectionHeader 13 / Medium (secondary colour at the call site). */
     val sectionTitle: TextStyle,
+    /** Row / list-item title, 16 / Medium. */
     val title: TextStyle,
+    /** body 16 / Regular. */
     val body: TextStyle,
+    /** subhead 14 / Regular. */
     val metadata: TextStyle,
+    /** caption 12 / Regular. */
     val label: TextStyle,
+    /** headline (card title) 17 / SemiBold. */
+    val headline: TextStyle,
+    /** Large title once collapsed into the bar: 17 / SemiBold. */
+    val collapsedTitle: TextStyle,
 )
 
 @Immutable
+/**
+ * 4dp grid (design system v2): xxs 4, xs 8, sm 12, md 16, lg 24, xl 32.
+ * The older names are kept as aliases so every call site lands on the same grid.
+ */
 data class ToolBoxSpacing(
+    val xxs: Dp = 4.dp,
+    val xs: Dp = 8.dp,
+    val sm: Dp = 12.dp,
+    val md: Dp = 16.dp,
+    val lg: Dp = 24.dp,
+    val xl: Dp = 32.dp,
     val micro: Dp = 2.dp,
-    val tight: Dp = 3.dp,
+    val tight: Dp = 4.dp,
     val half: Dp = 4.dp,
-    val compact: Dp = 6.dp,
+    val compact: Dp = 8.dp,
     val one: Dp = 8.dp,
-    val row: Dp = 10.dp,
+    val row: Dp = 12.dp,
     val oneHalf: Dp = 12.dp,
-    val card: Dp = 14.dp,
+    /** Card inner padding (md). */
+    val card: Dp = 16.dp,
     val two: Dp = 16.dp,
+    /** Page side gutter (md). */
+    val page: Dp = 16.dp,
+    /** Gap between stacked cards / groups (sm). */
+    val stack: Dp = 12.dp,
     val twoHalf: Dp = 20.dp,
     val three: Dp = 24.dp,
+    /** Gap between sections (lg). */
+    val section: Dp = 24.dp,
 )
 
 @Immutable
+/**
+ * Corner radii (design system v2): card 24, row / button 16, control 14, small 10,
+ * sheet / dialog 28, chip fully rounded. Shapes use continuous-curvature corners via
+ * [io.toolbox.core.ui.component.toolBoxShape].
+ */
 data class ToolBoxRadii(
-    val control: Dp = 12.dp,
-    val badge: Dp = 12.dp,
+    val control: Dp = 14.dp,
+    val badge: Dp = 10.dp,
     val denseSurface: Dp = 16.dp,
-    val card: Dp = 16.dp,
+    val button: Dp = 16.dp,
+    val card: Dp = 24.dp,
+    val sheet: Dp = 28.dp,
+    val dialog: Dp = 28.dp,
     val full: Dp = 999.dp,
 )
 
@@ -101,6 +147,13 @@ data class ToolBoxSizes(
     val compactChrome: Dp = 56.dp,
     val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
+    /** Primary button height. */
+    val primaryButton: Dp = 52.dp,
+    /** Collapsed top bar height below the status bar. */
+    val topBar: Dp = 56.dp,
+    /** Expanded large-title block height. */
+    val largeTitle: Dp = 52.dp,
+    val emptyStateIcon: Dp = 64.dp,
     val catalogRow: Dp = 64.dp,
     val compactToolGlyph: Dp = 42.dp,
     val toolGlyph: Dp = 48.dp,
@@ -127,75 +180,87 @@ data class ToolBoxMaterialTokens(
     val noiseFactor: Float,
 )
 
+private val LightOnSurface = Color(0xFF0B0C0E)
+private val DarkOnSurface = Color.White
+
 internal val LightToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF1264CC),
+    primary = Color(0xFF3478F6),
     onPrimary = Color.White,
-    background = Color(0xFFF7F7F7),
+    background = Color(0xFFF5F6F8),
     surface = Color.White,
-    surfaceMuted = Color(0xFFF0F0F2),
-    textPrimary = Color(0xFF17181A),
-    textSecondary = Color(0xFF676A70),
-    success = Color(0xFF24A865),
-    warning = Color(0xFFD48718),
-    danger = Color(0xFFBA252C),
+    surfaceMuted = Color(0xFFEEF0F3),
+    textPrimary = LightOnSurface.copy(alpha = 0.92f),
+    textSecondary = LightOnSurface.copy(alpha = 0.62f),
+    textTertiary = LightOnSurface.copy(alpha = 0.42f),
+    raised = Color.White,
+    success = Color(0xFF1B6B34),
+    warning = Color(0xFF8A5300),
+    danger = Color(0xFFB3261E),
     onDanger = Color.White,
-    divider = Color(0xFFEDEDEF),
-    softPrimary = Color(0xFFEAF3FF),
-    softSuccess = Color(0xFFEAF8F0),
-    onSoftSuccess = Color(0xFF197B48),
-    softWarning = Color(0xFFFFF4E2),
-    softDanger = Color(0xFFFFEEEE),
+    divider = Color.Black.copy(alpha = 0.08f),
+    softPrimary = Color(0xFFE5EEFD),
+    softSuccess = Color(0xFFE6F4EA),
+    onSoftSuccess = Color(0xFF1B6B34),
+    softWarning = Color(0xFFFDF1DC),
+    onSoftWarning = Color(0xFF8A5300),
+    softDanger = Color(0xFFFCE8E8),
     onSoftDanger = Color(0xFFB3261E),
+    softInfo = Color(0xFFE5EEFD),
+    onSoftInfo = Color(0xFF1A57C9),
+    softNeutral = Color(0xFFEEF0F3),
+    onSoftNeutral = Color(0xFF4A4F57),
+    scrim = Color.Black.copy(alpha = 0.32f),
 )
 
 internal val DarkToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF4A9BFF),
-    onPrimary = Color(0xFF10243A),
-    background = Color(0xFF111214),
-    surface = Color(0xFF1C1D20),
-    surfaceMuted = Color(0xFF2C2D31),
-    textPrimary = Color(0xFFF3F4F6),
-    textSecondary = Color(0xFFA2A4AA),
-    success = Color(0xFF75E395),
-    warning = Color(0xFFFFC165),
-    danger = Color(0xFFFF8B83),
-    onDanger = Color(0xFF30100F),
-    divider = Color(0xFF303136),
-    softPrimary = Color(0xFF183A63),
-    softSuccess = Color(0xFF173D27),
-    onSoftSuccess = Color(0xFF75E395),
-    softWarning = Color(0xFF493414),
-    softDanger = Color(0xFF4B2524),
-    onSoftDanger = Color(0xFFFFB4AB),
+    primary = Color(0xFF5A93FF),
+    onPrimary = Color.White,
+    background = Color.Black,
+    surface = Color(0xFF16171A),
+    surfaceMuted = Color(0xFF26282D),
+    textPrimary = DarkOnSurface.copy(alpha = 0.92f),
+    textSecondary = DarkOnSurface.copy(alpha = 0.62f),
+    textTertiary = DarkOnSurface.copy(alpha = 0.42f),
+    raised = Color(0xFF212226),
+    success = Color(0xFF8FD9A8),
+    warning = Color(0xFFF5C36B),
+    danger = Color(0xFFF4A7A3),
+    onDanger = Color(0xFF3B1A1A),
+    divider = Color.White.copy(alpha = 0.10f),
+    softPrimary = Color(0xFF172947),
+    softSuccess = Color(0xFF17351F),
+    onSoftSuccess = Color(0xFF8FD9A8),
+    softWarning = Color(0xFF3A2B10),
+    onSoftWarning = Color(0xFFF5C36B),
+    softDanger = Color(0xFF3B1A1A),
+    onSoftDanger = Color(0xFFF4A7A3),
+    softInfo = Color(0xFF172947),
+    onSoftInfo = Color(0xFFA9C5FA),
+    softNeutral = Color(0xFF26282D),
+    onSoftNeutral = Color(0xFFC4C8CF),
+    scrim = Color.Black.copy(alpha = 0.50f),
 )
+
+/** Digits keep a fixed advance so counters, sizes and versions do not jitter as they change. */
+private const val TabularNumbers = "tnum"
 
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    screenTitle = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
     detailTitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    sectionTitle = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
-    body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    metadata = TextStyle(fontSize = 13.sp, lineHeight = 17.sp),
-    label = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium),
+    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
+    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
+    body = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontFeatureSettings = TabularNumbers),
+    metadata = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontFeatureSettings = TabularNumbers),
+    label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFeatureSettings = TabularNumbers),
+    headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = TabularNumbers),
+    collapsedTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
 )
 
-private val LiquidGlassTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
-    detailTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp),
-    metadata = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
-    label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
-)
+/** Design system v2 unifies metrics across both looks; Liquid Glass differs only in material. */
+private val LiquidGlassTextStyles = DefaultTextStyles
 
 private val MiuixRadii = ToolBoxRadii()
-private val LiquidGlassRadii = ToolBoxRadii(
-    control = 17.dp,
-    badge = 14.dp,
-    denseSurface = 20.dp,
-    card = 22.dp,
-)
+private val LiquidGlassRadii = ToolBoxRadii()
 
 private val LocalToolBoxColors = staticCompositionLocalOf { LightToolBoxColors }
 private val LocalToolBoxTextStyles = staticCompositionLocalOf { DefaultTextStyles }
@@ -443,21 +508,10 @@ internal fun liquidGlassColors(
     accentForeground: Color,
 ): ToolBoxColorScheme {
     val base = if (dark) DarkToolBoxColors else LightToolBoxColors
-    val background = if (dark) Color.Black else Color(0xFFF2F2F7)
-    val surface = if (dark) Color(0xFF1C1C1E) else Color.White
-    val surfaceMuted = if (dark) Color(0xFF2C2C2E) else Color(0xFFE9E9EE)
-    val textPrimary = if (dark) Color(0xFFF5F5F7) else Color(0xFF1C1C1E)
-    val textSecondary = if (dark) Color(0xFFAEAEB2) else Color(0xFF5F5F64)
     return base.copy(
         primary = accent,
         onPrimary = readableForeground(accentForeground, listOf(accent)),
-        background = background,
-        surface = surface,
-        surfaceMuted = surfaceMuted,
-        textPrimary = textPrimary,
-        textSecondary = textSecondary,
-        divider = if (dark) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.12f),
-        softPrimary = accent.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(surface),
+        softPrimary = accent.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(base.surface),
     )
 }
 

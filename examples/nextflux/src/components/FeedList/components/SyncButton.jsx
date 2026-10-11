@@ -1,7 +1,9 @@
 import { useStore } from "@nanostores/react";
 import { Button, Spinner } from "@heroui/react";
 import { forceSync, isOnline, isSyncing } from "@/stores/syncStore.js";
-import { RefreshCw } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 
 const SyncButton = () => {
   const $isOnline = useStore(isOnline);
@@ -17,7 +19,7 @@ const SyncButton = () => {
 
   return (
     <Button
-      className="nextflux-compact-touch-target"
+      className="nextflux-toolbar-button"
       aria-label="立即同步"
       onPress={handleForceSync}
       isDisabled={$isSyncing || !$isOnline}
@@ -29,7 +31,7 @@ const SyncButton = () => {
       {$isSyncing ? (
         <Spinner color="current" size="sm" />
       ) : (
-        <RefreshCw className="size-4 text-muted" />
+        <RefreshCw className="size-5 text-muted" />
       )}
     </Button>
   );

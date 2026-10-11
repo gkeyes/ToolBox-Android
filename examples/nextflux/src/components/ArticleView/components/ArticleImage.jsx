@@ -1,6 +1,8 @@
 import { PhotoView } from "react-photo-view";
 import { memo, useState } from "react";
-import { ImageOff } from "lucide-react";
+import {
+  ImageOffIcon as ImageOff,
+} from "@/components/ui/icons.jsx";
 import { cn } from "@/lib/utils.js";
 import { approvedImageSource, useSafeImage } from "@/toolbox/media.js";
 import { useStore } from "@nanostores/react";

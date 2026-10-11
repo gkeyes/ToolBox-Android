@@ -250,6 +250,9 @@ async function loadIndex(owner, index, { autoplay = true, position = 0 } = {}) {
     await player.play();
     return true;
   } catch (error) {
+    // Stopping pauses and empties the element, which rejects a pending play()
+    // with AbortError; that is a stop, not a playback failure to report.
+    if (!sameSession(owner)) throw fail("语音生成已停止。", "CANCELLED");
     if (error?.name === "NotAllowedError") {
       patchSpeechState({ phase: "paused", error: "语音已生成；请再点一次播放。" });
       setPlaybackState("paused");
@@ -290,10 +293,12 @@ export async function play() {
   const player = ensureAudio();
   if (!sourceUrl) return loadIndex(session, Math.max(0, currentIndex), { autoplay: true });
   player.playbackRate = Math.min(2, Math.max(0.5, Number(settingsState.get().speechPlaybackRate) || 1));
+  const owner = session;
   try {
     await player.play();
     return true;
   } catch {
+    if (!sameSession(owner)) throw fail("语音生成已停止。", "CANCELLED");
     throw fail("音频无法开始播放，请重试。", "PLAY_FAILED");
   }
 }

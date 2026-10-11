@@ -51,6 +51,8 @@ import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.toolBoxEntrance
+import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SurfaceCard
@@ -162,42 +164,32 @@ internal fun PermissionCenterContent(
     onOpenExactAlarmSettings: () -> Unit = {},
     onRetryCleanup: (String) -> Unit = {},
 ) {
-    val glassState = rememberToolBoxGlassState()
+    val entrance = io.toolbox.core.ui.component.rememberToolBoxEntrance("permission-center")
     val permissionGroups = remember(state.items) { state.items.permissionGroups() }
     var confirmSecureWipe by remember { mutableStateOf(false) }
     LaunchedEffect(state.loadState) {
         if (state.loadState != PermissionLoadState.Ready) confirmSecureWipe = false
     }
-    ToolBoxAppScaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            ToolBoxTopBar(
-                title = "工具权限",
-                subtitle = state.toolName.takeUnless { it == "权限" }.orEmpty(),
-                navigationIcon = ToolBoxIconKey.Back,
-                onNavigationClick = onBack,
-                glassState = glassState,
+    if (confirmSecureWipe) {
+        ToolBoxModalDialog(onDismissRequest = { confirmSecureWipe = false }, title = "关闭并清除安全存储？") {
+            io.toolbox.host.ui.HostConfirmationContent(
+                title = "关闭并清除安全存储？",
+                summary = "将删除此工具保存的密钥、令牌等安全数据，重新开启也无法恢复。普通工具数据不受影响。",
+                confirmLabel = "关闭并清除",
+                onConfirm = { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
+                onCancel = { confirmSecureWipe = false },
+                destructive = true,
             )
-        },
-    ) { padding ->
-        OverlayDialog(
-            show = confirmSecureWipe,
-            title = "关闭并清除安全存储？",
-            summary = "将删除此工具保存的密钥、令牌等安全数据，重新开启也无法恢复。普通工具数据不受影响。",
-            onDismissRequest = { confirmSecureWipe = false },
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-                ToolBoxSecondaryButton("取消", { confirmSecureWipe = false }, modifier = Modifier.weight(1f))
-                ToolBoxPrimaryButton(
-                    "关闭并清除",
-                    { confirmSecureWipe = false; onSetEnabled("storage.secure", false) },
-                    modifier = Modifier.weight(1f),
-                    destructive = true,
-                )
-            }
         }
-        Box(Modifier.fillMaxSize().toolBoxBackdropSource(glassState)) {
+    }
+    io.toolbox.host.ui.DetailScreen(
+        title = "工具权限",
+        subtitle = state.toolName.takeUnless { it == "权限" }.orEmpty(),
+        onBack = onBack,
+    ) { padding ->
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
+                state = io.toolbox.host.ui.rememberTitleBoundListState(),
                 modifier = Modifier
                     .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                     .fillMaxWidth()
@@ -212,45 +204,52 @@ internal fun PermissionCenterContent(
             ) {
                 item("explanation") {
                     AppText(
+                        modifier = Modifier.toolBoxEntrance(entrance, 0).padding(horizontal = ToolBoxThemeTokens.spacing.md),
                         text = "只管理此工具已声明的能力。关闭后，对应功能会立即不可用。",
                         color = ToolBoxThemeTokens.colors.textSecondary,
                         textStyle = ToolBoxThemeTokens.textStyles.metadata,
                     )
                 }
-                item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
+                item("after-explanation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.lg)) }
                 state.message?.let { message ->
                     item("message") {
-                        SurfaceCard {
-                            AppText(message, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.sm)) {
+                            Box(Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
+                                io.toolbox.core.ui.component.ToolBoxBanner(message, io.toolbox.core.ui.component.ToolBoxTone.Info)
+                            }
                             if (state.showSystemSettings) {
-                                ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings)
+                                ToolBoxPrimaryButton("前往系统设置", onOpenSystemSettings, Modifier.fillMaxWidth())
                             }
                         }
                     }
                     item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
                 }
                 when (val loadState = state.loadState) {
-                    PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限") }
+                    PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限", loading = true) }
                     PermissionLoadState.NotInstalled -> item("not-installed") {
-                        SurfaceCard { AppText("工具已不存在。") }
+                        CatalogStatusState("工具已不存在。", icon = io.toolbox.core.ui.component.ToolBoxIconKey.Tools)
                     }
                     is PermissionLoadState.Failed -> item("load-failed") {
-                        SurfaceCard {
-                            AppText("无法读取工具权限")
-                            AppText(loadState.message,
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                color = ToolBoxThemeTokens.colors.textSecondary)
-                        }
+                        io.toolbox.core.ui.component.ToolBoxStatusState(
+                            title = "无法读取工具权限",
+                            message = loadState.message,
+                            icon = io.toolbox.core.ui.component.ToolBoxIconKey.Shield,
+                            tone = io.toolbox.core.ui.component.ToolBoxStatusTone.Error,
+                        )
                     }
                     PermissionLoadState.Ready -> if (state.items.isEmpty()) {
-                        item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
+                        item("empty") {
+                            CatalogStatusState("这个工具没有声明权限。", icon = io.toolbox.core.ui.component.ToolBoxIconKey.Shield)
+                        }
                     } else permissionGroups.forEachIndexed { groupIndex, (title, items) ->
-                        item("permission-title:$title") { SectionHeader("$title · ${items.size}") }
+                        item("permission-title:$title") {
+                            Box(Modifier.toolBoxEntrance(entrance, 1 + groupIndex * 2)) { SectionHeader("$title · ${items.size}") }
+                        }
                         item("permission-title-gap:$title") {
                             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
                         }
                         item("permission-group:$title") {
-                            ToolBoxGroupedSurface {
+                            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2 + groupIndex * 2)) {
                                 items.forEachIndexed { index, item ->
                                     val busy = item.capability in state.busyCapabilities
                                     ToolBoxSwitchSettingRow(
@@ -273,7 +272,7 @@ internal fun PermissionCenterContent(
                                     if (item.capability in state.cleanupRetries) {
                                         Column(
                                             Modifier.fillMaxWidth().padding(
-                                                horizontal = ToolBoxThemeTokens.spacing.oneHalf,
+                                                horizontal = ToolBoxThemeTokens.spacing.md,
                                                 vertical = ToolBoxThemeTokens.spacing.one,
                                             ),
                                             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
@@ -301,7 +300,7 @@ internal fun PermissionCenterContent(
                         }
                         if (groupIndex != permissionGroups.lastIndex) {
                             item("permission-group-gap:$title") {
-                                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+                                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.lg))
                             }
                         }
                     }

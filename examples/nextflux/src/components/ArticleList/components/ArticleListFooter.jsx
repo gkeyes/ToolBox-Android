@@ -4,12 +4,12 @@ import { Tabs } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
 
-export default function ArticleListFooter() {
+export default function ArticleListFooter({ activeCount = null }) {
   const { t } = useTranslation();
   const $filter = useStore(filter);
 
   return (
-    <div className="article-list-footer absolute bottom-0 w-full bg-transparent flex flex-col items-center justify-center pb-4 standalone:pb-safe-or-4">
+    <div className="article-list-tabs px-3">
       <Tabs
         selectedKey={$filter}
         onSelectionChange={(value) => {
@@ -21,13 +21,14 @@ export default function ArticleListFooter() {
         <Tabs.ListContainer>
           <Tabs.List
             aria-label="filter"
-            className="bg-background/90 backdrop-blur-md shadow-custom w-fit *:h-6 *:w-fit *:px-3 *:text-xs *:font-normal *:data-[selected=true]:text-accent-foreground"
+            className="w-fit *:w-fit"
           >
             <Tabs.Tab id="starred">
               <Tabs.Indicator className="bg-accent" />
               <div className="flex items-center space-x-1.5">
                 <Star className="size-3 fill-current" />
                 <span>{t("articleList.starred")}</span>
+                {$filter === "starred" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="unread">
@@ -35,6 +36,7 @@ export default function ArticleListFooter() {
               <div className="flex items-center space-x-1.5">
                 <CircleDot className="size-3 p-px fill-current" />
                 <span>{t("articleList.unread")}</span>
+                {$filter === "unread" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="all">
@@ -42,6 +44,7 @@ export default function ArticleListFooter() {
               <div className="flex items-center space-x-1.5">
                 <Text strokeWidth={4} className="size-3" />
                 <span>{t("articleList.all")}</span>
+                {$filter === "all" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
           </Tabs.List>

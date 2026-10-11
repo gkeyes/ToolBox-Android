@@ -9,6 +9,9 @@ import Settings from "@/components/Settings/Settings.jsx";
 import CustomModal from "@/components/ui/CustomModal.jsx";
 import CustomAlertDialog from "@/components/ui/CustomAlertDialog.jsx";
 import { aiSummaries } from "@/stores/aiStore.js";
+import { settingsState as appSettings } from "@/stores/settingsStore.js";
+import { speechState } from "@/stores/speechStore.js";
+import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import { calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState } from "./controls-state.js";
 import "../../../src/index.css";
 import "../../../src/compact-controls.css";
@@ -36,6 +39,11 @@ function ControlsFixture() {
 
   useEffect(() => {
     window.controlsFixture = {
+      // Real app settings/speech stores used by the production speech controller.
+      speech: {
+        configure: () => appSettings.set({ ...appSettings.get(), speechApiKey: "fixture-speech-key", speechRegion: "global", speechPrefetch: false }),
+        phase: () => speechState.get().phase,
+      },
       calls,
       setIntegrations: (value) => hasIntegrations.set(value),
       setBusy: (value) => loadingOriginContent.set(value),
@@ -73,5 +81,8 @@ function ControlsFixture() {
       })} />
   </>;
 }
+
+// Same janitor as the app (render.jsx); the fixture's only store-driven overlay is Settings.
+installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
 
 createRoot(document.getElementById("root")).render(<HashRouter><ControlsFixture /></HashRouter>);

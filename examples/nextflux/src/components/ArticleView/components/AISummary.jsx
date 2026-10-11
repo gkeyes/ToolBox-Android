@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { aiSummaries, clearSummary } from "@/stores/aiStore.js";
 import { CloseButton, Spinner } from "@heroui/react";
-import { Sparkles } from "lucide-react";
+import {
+  AISummaryIcon as Sparkles,
+} from "@/components/ui/icons.jsx";
 import { useTranslation } from "react-i18next";
 import BorderBeam from "border-beam";
 import { currentThemeMode } from "@/stores/themeStore.js";
@@ -50,11 +52,11 @@ export default function AISummary({ articleId, passive = false, paused = false }
       size="line"
       theme={$currentThemeMode}
     >
-      <div className="ai-summary p-4 bg-background rounded-2xl">
+      <div className="ai-summary p-4">
         <div className="flex min-h-[48px] items-center gap-2">
           <div className="flex min-w-0 items-center gap-1">
             <Sparkles className="size-4 text-accent shrink-0" />
-            <span className="nextflux-summary-title text-sm font-medium text-accent">
+            <span className="nextflux-summary-title text-sm font-semibold text-accent">
               {t("articleView.aiSummary")}
             </span>
           </div>
@@ -74,7 +76,7 @@ export default function AISummary({ articleId, passive = false, paused = false }
           </div>
         )}
 
-        {state.error && <p className="text-sm text-danger">{state.error}</p>}
+        {state.error && <p className="ds-banner ds-tone-danger">{state.error}</p>}
 
         {displayedText && (
           <div className="text-sm text-muted leading-relaxed">

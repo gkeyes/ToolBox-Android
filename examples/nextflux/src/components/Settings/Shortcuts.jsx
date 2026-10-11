@@ -1,5 +1,4 @@
 import { ItemWrapper, KeyboardItem } from "@/components/ui/settingItem.jsx";
-import { Separator } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 
 export default function Shortcuts() {
@@ -31,42 +30,26 @@ export default function Shortcuts() {
     ],
   };
 
+  const groups = [
+    ["global", t("sidebar.shortcuts.global")],
+    ["sidebar", t("sidebar.shortcuts.sidebar")],
+    ["article", t("sidebar.shortcuts.article")],
+  ];
+
   return (
-    <div className="flex flex-col gap-4">
-      <ItemWrapper title={t("sidebar.shortcuts.global")}>
-        {shortcuts.global.map((shortcut, index) => (
-          <div key={shortcut.desc}>
+    <>
+      {groups.map(([id, title]) => (
+        <ItemWrapper key={id} title={title}>
+          {shortcuts[id].map((shortcut) => (
             <KeyboardItem
+              key={shortcut.desc}
               keyStr={shortcut.key}
               kbdKey={shortcut.kbdKey}
               desc={shortcut.desc}
             />
-            {index !== shortcuts.global.length - 1 && <Separator />}
-          </div>
-        ))}
-      </ItemWrapper>
-
-      <ItemWrapper title={t("sidebar.shortcuts.sidebar")}>
-        {shortcuts.sidebar.map((shortcut, index) => (
-          <div key={shortcut.desc}>
-            <KeyboardItem
-              keyStr={shortcut.key}
-              kbdKey={shortcut.kbdKey}
-              desc={shortcut.desc}
-            />
-            {index !== shortcuts.sidebar.length - 1 && <Separator />}
-          </div>
-        ))}
-      </ItemWrapper>
-
-      <ItemWrapper title={t("sidebar.shortcuts.article")}>
-        {shortcuts.article.map((shortcut, index) => (
-          <div key={shortcut.desc}>
-            <KeyboardItem keyStr={shortcut.key} desc={shortcut.desc} />
-            {index !== shortcuts.article.length - 1 && <Separator />}
-          </div>
-        ))}
-      </ItemWrapper>
-    </div>
+          ))}
+        </ItemWrapper>
+      ))}
+    </>
   );
 }

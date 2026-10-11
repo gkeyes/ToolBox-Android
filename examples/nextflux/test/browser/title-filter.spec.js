@@ -22,8 +22,20 @@ const open = async (page, route = "/category/17/article/900") => {
   await expect(page.getByRole("heading", { name: "真实源码过滤入口" })).toBeVisible();
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 };
+
+// Phones reach low-frequency reader actions through the dock's "More" sheet;
+// wide screens show them inline. Press whichever surface the layout offers.
+async function readerAction(page, name) {
+  const direct = page.getByRole("button", { name, exact: true });
+  const more = page.getByRole("button", { name: "更多", exact: true });
+  await expect(direct.or(more).first()).toBeVisible();
+  if (await direct.isVisible()) return direct.click();
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
+}
 const editor = async page => {
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect(page.getByLabel("屏蔽关键词", { exact: true })).toBeVisible();
   return page.getByRole("dialog");
 };
@@ -42,6 +54,9 @@ test("list and reader share server rules; clear removes only the managed line", 
   await save(page);
   await expect(page.locator(".nf-title-filter-toast")).toContainText("已保存 2");
   await page.evaluate(() => filterFixture.go("/category/17/article/900"));
+  // Wait for the reader to replace the list header before reaching its controls.
+  await expect(page.locator(".action-buttons")).toBeVisible();
+  await expect(page.locator("header.article-list-header")).toHaveCount(0);
   await editor(page);
   await expect(page.getByLabel("屏蔽关键词", { exact: true })).toHaveValue("广告|C++");
   await page.getByRole("dialog").getByRole("button", { name: "清空", exact: true }).click();
@@ -81,7 +96,7 @@ for (const [width, dark, scale] of [[320, false, 1], [393, false, 1], [393, true
 test("late reader request cannot show an old editor or write another source", async ({ page }) => {
   await open(page);
   await page.evaluate(() => filterFixture.mode("slowRead"));
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect.poll(() => page.evaluate(() => filterFixture.calls.length)).toBe(1);
   await page.evaluate(() => filterFixture.go("/article/901", { id: 901, feedId: 43, title: "另一篇", status: "read", starred: 1 }));
   await page.evaluate(() => filterFixture.release());
@@ -98,7 +113,7 @@ test("cancel and denied reads never save or claim success", async ({ page }) => 
   await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(() => filterFixture.mode("denied"));
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect(page.getByRole("alert")).toContainText("服务器拒绝访问");
   await expect(page.getByRole("dialog").getByRole("button", { name: "保存", exact: true })).toBeDisabled();
   expect(await page.evaluate(() => filterFixture.calls.filter(call => call.method === "PUT"))).toEqual([]);
@@ -127,5 +142,66 @@ test("pending write prevents duplicate save and close", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("button", { name: "取消", exact: true })).toBeDisabled();
   await page.evaluate(() => filterFixture.release());
   await expect(page.locator(".nf-title-filter-toast")).toContainText("已保存 1");
+  expect(await page.evaluate(() => filterFixture.calls.filter(call => call.method === "PUT").length)).toBe(1);
+});
+
+// Regression: nothing may stay over the page after the editor closes, and a
+// drag dismissal the editor refuses (pending save) must bring the sheet back
+// instead of parking it off-screen above a live backdrop that eats every tap.
+async function expectUncovered(page) {
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const points = [[innerWidth / 2, innerHeight / 2], [24, 160], [innerWidth - 24, 160], [innerWidth / 2, innerHeight - 160]];
+    return points.flatMap(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      const cover = hit?.closest(".drawer__backdrop, .modal__backdrop, .nextflux-modal-backdrop, [data-slot='backdrop'], [inert], [role='dialog']");
+      return !hit || cover ? [`${x},${y}`] : [];
+    }).concat(document.querySelector("#root[inert], #root[aria-hidden='true']") ? ["root"] : []);
+  })).toEqual([]);
+}
+async function dragSheetDown(page, distance = 260) {
+  const box = await page.getByRole("dialog").locator(".nextflux-sheet-handle-zone").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 4 });
+  await page.mouse.up();
+}
+
+test("More sheet hands off to the editor and every close path frees the page", async ({ page }) => {
+  await open(page);
+  await editor(page);
+  await page.getByRole("dialog").locator(".nextflux-close-button").click();
+  await expectUncovered(page);
+  await editor(page);
+  await dragSheetDown(page);
+  await expectUncovered(page);
+  await editor(page);
+  await page.keyboard.press("Escape");
+  await expectUncovered(page);
+  // A real tap still reaches the reader.
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectUncovered(page);
+});
+
+test("a drag dismissal refused by a pending save returns the sheet", async ({ page }) => {
+  await open(page);
+  const dialog = await editor(page);
+  await page.getByLabel("屏蔽关键词", { exact: true }).fill("mine");
+  const restingTop = (await dialog.boundingBox()).y;
+  await page.evaluate(() => filterFixture.mode("pauseWrite"));
+  await save(page);
+  await expect.poll(() => page.evaluate(() => filterFixture.calls.filter(call => call.method === "PUT").length)).toBe(1);
+  await dragSheetDown(page);
+  await expect(dialog).toBeVisible();
+  await expect.poll(async () => {
+    const box = await dialog.boundingBox();
+    const owned = await dialog.evaluate(element => ({ translate: element.style.translate, animations: element.getAnimations().length }));
+    return { settled: Boolean(box) && Math.abs(box.y - restingTop) < 24, ...owned };
+  }).toEqual({ settled: true, translate: "", animations: 0 });
+  await page.evaluate(() => filterFixture.release());
+  await expect(page.locator(".nf-title-filter-toast")).toContainText("已保存 1");
+  await expectUncovered(page);
   expect(await page.evaluate(() => filterFixture.calls.filter(call => call.method === "PUT").length)).toBe(1);
 });

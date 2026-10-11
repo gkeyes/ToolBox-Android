@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "@heroui/styles";
+@import "./design/tokens.css";
+@import "./design/components.css";
+@import "./design/views.css";
+@import "./design/reader.css";
 
 @config '../tailwind.config.js';
 
@@ -10,33 +14,13 @@
 }
 
 @layer base {
+  /* Design system v2: no heavy shadows. Cards are flat or ≤1dp; floating
+     surfaces use a soft drop plus a hairline. Names kept for existing utilities. */
   :root {
-    --shadow-custom: 0 0 5px 0 rgba(0, 0, 0, 0.02),
-      0 2px 10px 0 rgba(0, 0, 0, 0.07), 0 0 1px 0 rgba(0, 0, 0, 0.3);
-    --shadow-custom-inner: inset 0 0 2px 0 rgba(0, 0, 0, 0.05),
-      inset 0 0 4px 0 rgba(0, 0, 0, 0.05), inset 0 0 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-custom-md: 0 24px 40px -12px rgb(0 0 0 / 0.08),
-      0 16px 28px -8px rgb(0 0 0 / 0.04), 0 4px 6px -2px rgb(0 0 0 / 0.04),
-      0 0 2px 0 rgb(0 0 0 / 0.04), 0 0 0 1px rgb(0 0 0 / 0.04);
-    --shadow-custom-btn: 0 1px 2px -0.5px rgba(255, 255, 255, 0.12) inset,
-      0 0.5px 0.5px rgba(255, 255, 255, 0.16) inset,
-      0 8px 24px -4px rgba(255, 255, 255, 0.16) inset,
-      0 8px 8px -3px rgba(0, 0, 0, 0.03), 0 5px 5px -2.5px rgba(0, 0, 0, 0.03),
-      0 3px 3px -1.5px rgba(0, 0, 0, 0.03), 0 2px 2px -1px rgba(0, 0, 0, 0.03),
-      0 1px 1px -0.5px rgba(0, 0, 0, 0.03), 0 0.5px 0.5px rgba(0, 0, 0, 0.03);
-  }
-
-  .dark {
-    --shadow-custom: 0 0 5px 0 rgba(0, 0, 0, 0.05),
-      0 2px 10px 0 rgba(0, 0, 0, 0.2), inset 0 0 1px 0 hsla(0, 0%, 100%, 0.15),
-      0 0 1px 0 rgba(255, 255, 255, 0.6);
-    --shadow-custom-inner: inset 0 1px 1px 0 rgba(255, 255, 255, 0.02),
-      inset 0 -0.5px 1px 0 rgba(255, 255, 255, 0.1),
-      inset 1px 1.5px 4px 0 rgba(0, 0, 0, 0.08),
-      inset 1px 1.5px 4px 0 rgba(0, 0, 0, 0.1);
-    --shadow-custom-md: 0 1px 3px #ffffff0f inset,
-      0 0.5px 0.5px #ffffff0f inset, 0 16px 56px #0000003d,
-      0 4px 16px #0000003d, 0 1px 2px #0000003d, 0 0 0 1px rgba(0, 0, 0, 0.1);
+    --shadow-custom: 0 0 0 0.5px var(--ds-hairline, rgb(0 0 0 / 0.08));
+    --shadow-custom-inner: inset 0 0 0 0.5px var(--ds-hairline, rgb(0 0 0 / 0.08));
+    --shadow-custom-md: var(--overlay-shadow, 0 12px 32px rgb(0 0 0 / 0.12));
+    --shadow-custom-btn: none;
   }
 
   [data-theme="stone"] {
@@ -167,26 +151,14 @@
 
 @layer components {
   .dropdown__popover {
-    @apply min-w-40 shadow-custom-md bg-overlay/90 backdrop-blur-sm max-h-80!;
+    @apply min-w-40 max-h-80!;
   }
-  .button--primary,
-  .button--danger {
-    @apply shadow-custom-btn relative before:content-[''] before:absolute before:inset-0 before:rounded-[inherit] before:pointer-events-none before:opacity-5 before:bg-linear-to-b before:from-white before:to-white/50;
-  }
-  .button--primary {
-    @apply border border-accent;
-  }
-  .button--danger {
-    @apply border border-danger;
-  }
-  .close-button {
-    @apply rounded-full dark:shadow-custom-btn;
-  }
+  .close-button,
   .button--icon-only {
     @apply rounded-full;
   }
   .tooltip {
-    @apply shadow-custom-md py-1 rounded-full;
+    @apply py-1 rounded-full;
   }
 
   /* Page Slide Transition for Settings Drawer */
@@ -202,26 +174,23 @@
     opacity: 0;
     pointer-events: none;
     overflow-y: auto;
+    overscroll-behavior: contain;
     z-index: 1;
-    filter: blur(3px);
-    transform: translateX(-24px);
+    transform: translate3d(calc(var(--ds-page-shift) * -1), 0, 0);
     transition:
-      opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      filter 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
-    will-change: opacity, filter, transform;
+      opacity var(--ds-dur-effects) var(--ds-ease-effects),
+      transform var(--ds-dur-page) var(--ds-ease-page);
   }
 
   .t-settings-slide .t-page[data-page-id="content"] {
-    transform: translateX(24px);
+    transform: translate3d(var(--ds-page-shift), 0, 0);
   }
 
   .t-settings-slide[data-active="menu"] .t-page[data-page-id="menu"],
   .t-settings-slide[data-active="content"] .t-page[data-page-id="content"] {
     opacity: 1;
     pointer-events: auto;
-    filter: blur(0);
-    transform: translateX(0);
+    transform: none;
     z-index: 2;
   }
 }
@@ -352,15 +321,17 @@
   .toolbox-link-dialog::backdrop { backdrop-filter: none; }
 }
 
-/* Keep modal text on a stable surface while softening the content behind it. */
+/* Sheets and dialogs: solid raised surface separated from the page by colour
+   and a top hairline (design system v2), no blur so drags stay at frame rate. */
 .nextflux-modal-backdrop {
-  background: #0006;
+  background: var(--ds-scrim, #0006);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 .nextflux-modal-surface {
   color: var(--overlay-foreground, var(--foreground));
-  background: var(--overlay, var(--background));
+  background: var(--ds-raised, var(--overlay, var(--background)));
+  box-shadow: inset 0 0.5px 0 var(--ds-hairline, transparent), var(--overlay-shadow, none);
   max-block-size: calc(var(--visual-viewport-height, 100dvh) - 2rem);
   overflow: hidden;
 }
@@ -373,18 +344,21 @@
   margin: auto;
   inline-size: min(320px, calc(100vw - 2rem));
   padding: 1.5rem;
-  border: 1px solid var(--separator, var(--border));
-  border-radius: 1.5rem;
+  border: 0;
+  border-radius: var(--ds-radius-sheet, 1.5rem);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.nextflux-modal-loading::backdrop { background: #0006; }
+.nextflux-modal-loading::backdrop { background: var(--ds-scrim, #0006); }
 .nextflux-modal-loading button {
   display: block;
   width: 100%;
   min-height: 48px;
   margin-top: 1rem;
-  border-radius: .75rem;
-  color: inherit;
-  background: var(--default);
+  border-radius: var(--ds-radius-button, .75rem);
+  color: var(--ds-accent, inherit);
+  background: var(--ds-accent-tonal, var(--default));
+  font-weight: 600;
 }
 .nextflux-modal-loading button:focus-visible {
   outline: 2px solid var(--focus, var(--accent));
@@ -392,9 +366,8 @@
 }
 .nextflux-modal-footer {
   flex-shrink: 0;
-  gap: .5rem;
-  border-top: 1px solid var(--separator, var(--border));
-  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+  gap: var(--ds-space-xs, .5rem);
+  background: transparent;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 .nextflux-modal-footer button {
@@ -404,38 +377,24 @@
 }
 .nextflux-dialog-error {
   margin-block-start: .75rem;
-  padding: .75rem;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--danger) 8%, transparent);
-  color: var(--overlay-foreground, var(--foreground));
+  padding: .75rem 1rem;
+  border-radius: var(--ds-radius-row, 12px);
+  background: var(--ds-tone-danger-bg, color-mix(in oklch, var(--danger) 8%, transparent));
+  color: var(--ds-tone-danger-fg, var(--foreground));
   overflow-wrap: anywhere;
-}
-@supports (backdrop-filter: blur(1px)) {
-  .nextflux-modal-surface {
-    background: color-mix(in oklch, var(--overlay, var(--background)) 94%, transparent);
-    -webkit-backdrop-filter: blur(28px) saturate(1.15);
-    backdrop-filter: blur(28px) saturate(1.15);
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .nextflux-modal-surface {
-    background: var(--overlay, var(--background));
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 
 /* Shared mobile sheet behavior: HeroUI keeps dialog semantics/focus handling;
    the handle adds Vaul-style direct drag and velocity dismissal. */
 .nextflux-mobile-sheet {
-  border-start-start-radius: 24px;
-  border-start-end-radius: 24px;
+  border-start-start-radius: var(--ds-radius-sheet, 28px);
+  border-start-end-radius: var(--ds-radius-sheet, 28px);
   translate: 0 0;
   will-change: auto;
 }
 .nextflux-sheet-handle-zone {
-  min-block-size: 28px;
+  min-block-size: 20px;
   display: grid;
   place-items: center;
   touch-action: none;
@@ -449,8 +408,8 @@
     animation: none;
   }
   ::view-transition-group(nextflux-article-title) {
-    animation-duration: 260ms;
-    animation-timing-function: cubic-bezier(.2,.8,.2,1);
+    animation-duration: var(--ds-dur-spatial, 260ms);
+    animation-timing-function: var(--ds-ease-spatial, cubic-bezier(.2,.8,.2,1));
   }
   ::view-transition-old(nextflux-article-title),
   ::view-transition-new(nextflux-article-title) {
@@ -475,6 +434,9 @@
   padding: 0;
 }
 .nextflux-close-button { border-radius: 50%; }
+/* Dialog close triggers are absolutely positioned before the content; keep them
+   above sticky / tinted pane headers that come later in the DOM. */
+:is(.modal__close-trigger, .drawer__close-trigger, .alert-dialog__close-trigger).nextflux-close-button { z-index: 30; }
 .nextflux-toolbar-button > svg,
 .nextflux-toolbar-button > [data-slot="spinner"],
 .nextflux-close-button > svg {

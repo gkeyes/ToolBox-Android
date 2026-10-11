@@ -1,11 +1,13 @@
 import { Button, Dropdown, Label } from "@heroui/react";
 import {
-  EllipsisVertical,
   FilePen,
   FolderPen,
   Trash2,
-  RefreshCw,
 } from "lucide-react";
+import {
+  MoreVerticalIcon as EllipsisVertical,
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 import { useParams } from "react-router-dom";
 import {
   editFeedModalOpen,
@@ -26,7 +28,7 @@ export default function MenuButton() {
 
   return (
     <Dropdown>
-      <Button size="sm" variant="ghost" isIconOnly isDisabled={isDisabled}>
+      <Button className="nextflux-toolbar-button" aria-label={t("common.more", { defaultValue: "More" })} size="sm" variant="ghost" isIconOnly isDisabled={isDisabled}>
         <EllipsisVertical className="size-4 text-muted" />
       </Button>
 

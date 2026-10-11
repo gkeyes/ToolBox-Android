@@ -21,6 +21,8 @@ const { default: ArticleImage } = await import("@/components/ArticleView/compone
 const { default: ArticleCardCover } = await import("@/components/ArticleList/components/ArticleCardCover.jsx");
 const { default: Iframe } = await import("@/components/ArticleView/components/Iframe.jsx");
 const { clearMediaCache } = await import("@/toolbox/media.js");
+const { installOverlayJanitor } = await import("@/toolbox/overlayJanitor.js");
+installOverlayJanitor({ isOverlayExpected: () => imageGalleryActive.get(), settleMs: 300 });
 const baseUrl = "https://media.example.invalid/articles/story";
 
 function ArticleDocument({ html, baseUrl }) {

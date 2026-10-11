@@ -22,12 +22,12 @@ internal fun CatalogLazyGroupItem(
     dividerStart: Dp = ToolBoxThemeTokens.spacing.oneHalf,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val radius = ToolBoxThemeTokens.radii.denseSurface
-    val shape = RoundedCornerShape(
+    val radius = ToolBoxThemeTokens.radii.card
+    val shape = io.toolbox.core.ui.component.ToolBoxContinuousShape(
         topStart = if (index == 0) radius else 0.dp,
         topEnd = if (index == 0) radius else 0.dp,
-        bottomStart = if (index == count - 1) radius else 0.dp,
         bottomEnd = if (index == count - 1) radius else 0.dp,
+        bottomStart = if (index == count - 1) radius else 0.dp,
     )
     Column(modifier.fillMaxWidth().clip(shape).background(ToolBoxThemeTokens.colors.surface)) {
         content()

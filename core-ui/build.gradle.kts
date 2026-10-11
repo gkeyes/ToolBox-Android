@@ -36,7 +36,11 @@ dependencies {
     api(libs.miuix.ui)
     api(libs.miuix.preference)
     implementation(libs.haze)
+    // Predictive back for sheets; the app module already ships the same artifact.
+    implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.compose.material.icons.extended)
+
+    testImplementation("junit:junit:4.13.2")
 
 }

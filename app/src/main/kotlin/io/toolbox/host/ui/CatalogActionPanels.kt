@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -133,7 +134,7 @@ private fun CatalogToolOptionsSession(
                     }
                     items(groups, key = { "group:${it.id}" }) { group ->
                         val target = "group:${group.id}"
-                        Column {
+                        Column(Modifier.animateItem(fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = ToolBoxMotion.effects())) {
                             PanelCheckRow(
                                 title = group.name,
                                 summary = "${group.members.size} 个工具",
@@ -286,7 +287,7 @@ internal fun CatalogFavoritesPicker(
             }
             items(tools, key = { "tool:${it.toolId}" }) { tool ->
                 val target = "favorite:${tool.toolId}"
-                Column {
+                Column(Modifier.animateItem(fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = ToolBoxMotion.effects())) {
                     ToolCheckRow(tool, tool.toolId in state.layout.favorites, !writes.isWriting(target, state), "favorite-tool:${tool.toolId}") { selected ->
                         writes.submit(target, onAction) { id -> CatalogAction.SetFavorite(tool.toolId, selected, id) }
                     }
@@ -386,7 +387,7 @@ private fun GroupEditorContent(
                         textStyle = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textPrimary),
                         cursorBrush = SolidColor(ToolBoxThemeTokens.colors.primary),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
+                            .clip(toolBoxShape(ToolBoxThemeTokens.radii.control))
                             .background(ToolBoxThemeTokens.colors.surfaceMuted)
                             .padding(horizontal = 16.dp, vertical = 14.dp)
                             .testTag("catalog_group_name")
@@ -422,7 +423,8 @@ private fun GroupEditorContent(
                 if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
             }
             items(tools, key = { "tool:${it.toolId}" }) { tool ->
-                ToolCheckRow(tool, tool.toolId in memberIds, !writing, "group-tool:${tool.toolId}") { selected ->
+                ToolCheckRow(tool, tool.toolId in memberIds, !writing, "group-tool:${tool.toolId}",
+                    Modifier.animateItem(fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = ToolBoxMotion.effects())) { selected ->
                     members = if (selected) (members + tool.toolId).distinct() else members - tool.toolId
                 }
             }
@@ -478,7 +480,7 @@ private fun PanelHeader(title: String, onClose: () -> Unit, onBack: (() -> Unit)
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (onBack != null) ToolBoxIconButton(ToolBoxIconKey.Back, "返回", onBack, Modifier.testTag("catalog_panel_back"), enabled = enabled)
             if (tool != null) CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary))
-            ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.title.copy(color = ToolBoxThemeTokens.colors.textPrimary))
+            ToolBoxText(title, Modifier.weight(1f).semantics { heading() }, style = ToolBoxThemeTokens.textStyles.headline.copy(color = ToolBoxThemeTokens.colors.textPrimary))
             ToolBoxIconButton(
                 ToolBoxIconKey.Close, "关闭", onClose,
                 Modifier.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.full)).background(ToolBoxThemeTokens.colors.surfaceMuted).testTag("catalog_panel_close"),
@@ -500,42 +502,29 @@ private fun PanelShortcut(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (enabled && pressed) 0.975f else 1f,
-        animationSpec = ToolBoxMotion.pressSpec(pressed),
-        label = "panel-shortcut-scale",
+    val haptics = rememberToolBoxHaptics()
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.button)
+    // Selection cross-fades between the tonal and filled looks; no drop shadows on sheets.
+    val container = androidx.compose.animation.animateColorAsState(
+        if (selected) colors.primary else colors.surfaceMuted, ToolBoxMotion.effects(), label = "shortcut container",
     )
-    val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
-    val container = if (selected) colors.primary else colors.surface
     val content = if (selected) colors.onPrimary else colors.textPrimary
-    val shadow = if (selected) colors.primary.copy(alpha = 0.16f) else colors.textPrimary.copy(alpha = 0.07f)
     Row(
         modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                alpha = if (enabled) 1f else 0.46f
-            }
-            .shadow(
-                if (pressed) 1.dp else 5.dp,
-                shape,
-                clip = false,
-                ambientColor = shadow,
-                spotColor = shadow,
-            )
+            .graphicsLayer { alpha = if (enabled) 1f else 0.46f }
+            .toolBoxPressFeedback(interactionSource, enabled = enabled, shape = shape)
             .clip(shape)
-            .background(container)
+            .drawBehind { drawRect(container.value) }
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = { haptics.tick(); onClick() },
             )
             .semantics { if (busy) stateDescription = "正在保存" }
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .heightIn(min = ToolBoxThemeTokens.sizes.primaryButton)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -562,9 +551,9 @@ private fun PanelShortcut(
     }
 }
 @Composable
-private fun ToolCheckRow(tool: CatalogTool, selected: Boolean, enabled: Boolean, tag: String, onChecked: (Boolean) -> Unit) {
-    PanelCheckRow(tool.name, selected, enabled, Modifier.testTag(tag), icon = {
-        CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary), size = 40.dp)
+private fun ToolCheckRow(tool: CatalogTool, selected: Boolean, enabled: Boolean, tag: String, modifier: Modifier = Modifier, onChecked: (Boolean) -> Unit) {
+    PanelCheckRow(tool.name, selected, enabled, modifier.testTag(tag), icon = {
+        CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(ToolBoxThemeTokens.colors.primary), size = 36.dp)
     }, onChecked = onChecked)
 }
 
@@ -580,9 +569,15 @@ private fun PanelCheckRow(
     onChecked: (Boolean) -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
+    val interaction = remember { MutableInteractionSource() }
+    val haptics = rememberToolBoxHaptics()
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.denseSurface)
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(ToolBoxThemeTokens.radii.control))
-            .toggleable(selected, enabled = enabled, role = Role.Checkbox, onValueChange = onChecked)
+        modifier.fillMaxWidth()
+            .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape, scale = ToolBoxMotion.RowPressScale)
+            .clip(shape)
+            .toggleable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox,
+                onValueChange = { haptics.toggle(it); onChecked(it) })
             .semantics { if (busy) stateDescription = "正在保存" }
             .heightIn(min = 60.dp).padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -611,17 +606,18 @@ private fun PanelCheckRow(
 }
 
 @Composable
-private fun PanelDivider() { Spacer(Modifier.fillMaxWidth().height(1.dp).background(ToolBoxThemeTokens.colors.divider)) }
+private fun PanelDivider() { Spacer(Modifier.fillMaxWidth().height(ToolBoxThemeTokens.spacing.xs)) }
 
 @Composable
 private fun PanelEmpty(message: String) {
-    ToolBoxText(message, Modifier.fillMaxWidth().padding(vertical = 24.dp), style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textSecondary))
+    ToolBoxStatusState(title = message, icon = ToolBoxIconKey.Search, modifier = Modifier.padding(vertical = 0.dp))
 }
 
 @Composable
 private fun PanelError(message: String, modifier: Modifier = Modifier) {
-    ToolBoxText(message, modifier.fillMaxWidth().padding(vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.danger))
+    Box(modifier.fillMaxWidth().padding(vertical = 8.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
+        ToolBoxBanner(message, ToolBoxTone.Danger)
+    }
 }
 
 private fun matchingTools(tools: List<CatalogTool>, query: String): List<CatalogTool> {

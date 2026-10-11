@@ -37,8 +37,11 @@
 
 /* 文章内容链接样式 */
 .article-content a {
-  @apply border-b-[1px] border-dotted border-accent no-underline transition-colors text-accent
+  @apply no-underline text-accent;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  transition: border-color var(--ds-dur-effects, .2s) var(--ds-ease-effects, ease);
 }
+.article-content a:active { border-bottom-color: var(--accent); }
 
 /*表格*/
 .article-content td {
@@ -47,7 +50,11 @@
 
 /*code 相关样式 */
 .article-content code:not(pre code) {
-  @apply whitespace-pre-wrap before:content-none after:content-none border font-medium font-mono dark:text-muted rounded text-muted bg-background dark:bg-background/80 px-1.5 py-0.5
+  @apply whitespace-pre-wrap before:content-none after:content-none font-medium font-mono px-1.5 py-0.5;
+  color: var(--ds-text-primary);
+  background: var(--ds-tone-neutral-bg);
+  border-radius: 6px;
+  font-size: .9em;
 }
 
 .article-content pre code {
@@ -92,7 +99,8 @@ figcaption {
 
 /*代码主题跟随系统当前使用主题*/
 .shiki {
-  @apply shadow-custom
+  border-radius: var(--ds-radius-control, 14px);
+  box-shadow: none;
 }
 
 html[class$="dark"] .shiki,
@@ -121,6 +129,8 @@ div.force-dark-code-theme .shiki span {
 /*关闭按钮*/
 .PhotoView-Slider__toolbarIcon {
   @apply p-2 bg-black/50 rounded-full;
+  min-inline-size: 48px;
+  min-block-size: 48px;
 }
 
 .PhotoView-Slider__BannerRight svg {
@@ -142,7 +152,7 @@ div.force-dark-code-theme .shiki span {
    mature mobile-web stacks: moving pages use transform, while depth effects
    are separate opacity layers. Article text never becomes a full-page shadow. */
 .nextflux-article-page {
-  background: var(--background);
+  background: var(--ds-reader, var(--background));
   backface-visibility: hidden;
 }
 .nextflux-article-list-page {
@@ -202,7 +212,7 @@ div.force-dark-code-theme .shiki span {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--background);
+  background: var(--ds-reader, var(--background));
   transform: translate3d(0,100%,0);
   contain: layout paint;
   box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
@@ -221,13 +231,120 @@ div.force-dark-code-theme .shiki span {
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: var(--background);
-  border: 1px solid color-mix(in srgb,var(--foreground) 10%,transparent);
-  color: color-mix(in srgb,var(--foreground) 60%,transparent);
+  background: var(--ds-raised, var(--background));
+  border: 0;
+  box-shadow: var(--overlay-shadow, 0 0 0 1px color-mix(in srgb,var(--foreground) 10%,transparent));
+  color: var(--ds-text-secondary, color-mix(in srgb,var(--foreground) 60%,transparent));
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .nextflux-continuous-progress-icon { font-size: 17px; line-height: 1; }
 .nextflux-continuous-progress-dock.ready { color: var(--accent); }
 .nextflux-continuous-layer[data-phase="handoff"] .nextflux-continuous-progress-dock { visibility: hidden; }
 @media (min-width: 768px) { .nextflux-continuous-layer { display: none; } }
+
+
+/* ---------- Design system v2: reader surface ---------- */
+.reader-surface { background: var(--ds-reader, var(--background)); }
+@media (min-width: 768px) {
+  .reader-surface-card {
+    background: var(--ds-card, var(--overlay));
+    border-radius: var(--ds-radius-card, 24px);
+  }
+}
+
+/* Reader top bar: translucent reader colour; hairline fades in once scrolled. */
+.reader-topbar {
+  position: sticky;
+  background: color-mix(in srgb, var(--ds-reader, var(--background)) 84%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+@media (min-width: 768px) {
+  .reader-topbar-card { background: color-mix(in srgb, var(--ds-card, var(--overlay)) 84%, transparent); }
+}
+.reader-topbar::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 1px;
+  background: var(--ds-hairline, rgb(127 127 127 / .2));
+  transform: scaleY(.5);
+  transform-origin: bottom;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-dur-effects, .2s) var(--ds-ease-effects, ease);
+}
+.article-scroll-area[data-scrolled="true"] .reader-topbar::after { opacity: 1; }
+@media (prefers-reduced-transparency: reduce) {
+  .reader-topbar { background: var(--ds-reader, var(--background)); backdrop-filter: none; }
+}
+
+/* Article header: feed (caption), title (bold, tight), date (tabular). */
+.nextflux-article-header .nextflux-article-feed {
+  color: var(--ds-text-secondary, var(--muted));
+  font-weight: 500;
+}
+.nextflux-article-header .article-title {
+  margin-block: .5rem .4rem;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ds-text-primary, var(--foreground));
+}
+.nextflux-article-header .article-title .nextflux-article-title-link { font-weight: 700; }
+.nextflux-article-header .nextflux-article-date {
+  color: var(--ds-text-tertiary, var(--muted));
+  font-variant-numeric: tabular-nums;
+}
+.nextflux-article-header-gap { block-size: var(--ds-space-md, 16px); }
+
+/* Body text colours follow the onSurface alphas instead of Tailwind grays. */
+.article-content.prose {
+  --tw-prose-body: var(--ds-text-primary);
+  --tw-prose-headings: var(--ds-text-primary);
+  --tw-prose-lead: var(--ds-text-secondary);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--ds-text-primary);
+  --tw-prose-counters: var(--ds-text-secondary);
+  --tw-prose-bullets: var(--ds-text-tertiary);
+  --tw-prose-hr: var(--ds-hairline);
+  --tw-prose-quotes: var(--ds-text-secondary);
+  --tw-prose-quote-borders: var(--accent);
+  --tw-prose-captions: var(--ds-text-secondary);
+  --tw-prose-code: var(--ds-text-primary);
+  --tw-prose-th-borders: var(--ds-hairline);
+  --tw-prose-td-borders: var(--ds-hairline);
+  --tw-prose-invert-body: var(--ds-text-primary);
+  --tw-prose-invert-headings: var(--ds-text-primary);
+  --tw-prose-invert-lead: var(--ds-text-secondary);
+  --tw-prose-invert-links: var(--accent);
+  --tw-prose-invert-bold: var(--ds-text-primary);
+  --tw-prose-invert-counters: var(--ds-text-secondary);
+  --tw-prose-invert-bullets: var(--ds-text-tertiary);
+  --tw-prose-invert-hr: var(--ds-hairline);
+  --tw-prose-invert-quotes: var(--ds-text-secondary);
+  --tw-prose-invert-quote-borders: var(--accent);
+  --tw-prose-invert-captions: var(--ds-text-secondary);
+  --tw-prose-invert-code: var(--ds-text-primary);
+  --tw-prose-invert-th-borders: var(--ds-hairline);
+  --tw-prose-invert-td-borders: var(--ds-hairline);
+}
+.article-content figure img,
+.article-content > p > img { border-radius: var(--ds-radius-small, 10px); }
+
+/* AI summary: tonal accent card that sits in the reading flow. */
+.ai-summary {
+  border-radius: var(--ds-radius-card, 24px);
+  background: color-mix(in srgb, var(--accent) 7%, var(--ds-reader, var(--background)));
+}
+.ai-summary .leading-relaxed { color: var(--ds-text-primary, var(--foreground)); line-height: 1.7; }
+
+/* Speech player: raised control card. */
+.nextflux-speech-bar {
+  border-radius: var(--ds-radius-row, 16px);
+  background: var(--ds-raised, var(--overlay));
+  box-shadow: var(--overlay-shadow, none);
+}

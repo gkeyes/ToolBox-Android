@@ -1,11 +1,30 @@
-import { useRef } from "react";
+import { startTransition, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
 
-const SHEET_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+// Release motion: settle back on the sheet spring, dismiss on the 220ms
+// accelerate curve (design system v2). Durations come from spring.mjs.
+const SETTLE_EASING = "var(--ds-ease-sheet, cubic-bezier(0.32, 0.72, 0, 1))";
+const FLICK_MIN_DISTANCE = 56;
 
-function animateTranslate(element, from, to, duration, onDone) {
-  if (!element?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
-    if (element) element.style.translate = "";
+function resolveEasing(element, easing) {
+  if (!easing.startsWith("var(")) return easing;
+  const name = easing.slice(4, easing.indexOf(","));
+  const value = getComputedStyle(element).getPropertyValue(name).trim();
+  return value || easing.slice(easing.indexOf(",") + 1, -1).trim();
+}
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
+    || document.documentElement.dataset.reduceMotion === "true";
+}
+
+function animateTranslate(element, from, to, duration, onDone, easing = SETTLE_EASING) {
+  // Only used to settle back to rest; dismissal uses HeroUI's exit transition.
+  if (!element?.animate || prefersReducedMotion()) {
+    if (element) {
+      element.style.translate = "";
+      element.style.transition = "";
+    }
     onDone?.();
     return;
   }
@@ -17,17 +36,19 @@ function animateTranslate(element, from, to, duration, onDone) {
   element.style.translate = "";
   const animation = element.animate(
     [{ translate: `0 ${from}px` }, { translate: `0 ${to}px` }],
-    { duration, easing: SHEET_EASING, fill: "none" },
+    { duration, easing: resolveEasing(element, easing), fill: "none" },
   );
   let finished = false;
   animation.onfinish = () => {
     if (finished) return;
     finished = true;
     element.style.translate = "";
+    element.style.transition = "";
     onDone?.();
   };
   animation.oncancel = () => {
     element.style.translate = "";
+    element.style.transition = "";
   };
 }
 
@@ -45,6 +66,24 @@ export default function MobileSheet({
 }) {
   const dialogRef = useRef(null);
   const dragRef = useRef(null);
+  // A drag dismissal parks the sheet off-screen before asking the owner to
+  // close. The owner may refuse (a pending save or AI run), or reopen the
+  // sheet while its exit is still running (React Aria then reuses the same
+  // element). Either way the sheet must come back: an off-screen sheet over a
+  // live backdrop looks like nothing is open while every tap is swallowed.
+  const dismissRef = useRef(null);
+  const [dismissCheck, setDismissCheck] = useState(0);
+
+  useLayoutEffect(() => {
+    const pending = dismissRef.current;
+    if (!open || !pending) return;
+    dismissRef.current = null;
+    pending.animation?.cancel();
+    const dialog = dialogRef.current;
+    if (!dialog || dialog !== pending.dialog || !dialog.isConnected) return;
+    dialog.style.transition = "";
+    animateTranslate(dialog, pending.offscreen, 0, 440, () => { dialog.style.willChange = ""; });
+  }, [open, dismissCheck]);
 
   const onPointerDown = (event) => {
     if (event.button !== 0) return;
@@ -59,6 +98,8 @@ export default function MobileSheet({
       distance: 0,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    // The finger owns the position: no CSS transition may lag behind it.
+    dialog.style.transition = "none";
     dialog.style.willChange = "translate";
   };
 
@@ -82,16 +123,47 @@ export default function MobileSheet({
     if (!drag || drag.pointerId !== event.pointerId || !dialog) return;
     dragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
-    const threshold = Math.min(140, dialog.getBoundingClientRect().height * 0.22);
-    const dismiss = !cancelled && (drag.distance >= threshold || drag.velocity >= 720);
+    const threshold = Math.max(FLICK_MIN_DISTANCE, Math.min(140, dialog.getBoundingClientRect().height * 0.22));
+    // A flick dismisses only after a deliberate travel; tiny fast drags settle back.
+    const dismiss = !cancelled && (drag.distance >= threshold || (drag.velocity >= 720 && drag.distance >= FLICK_MIN_DISTANCE));
     const from = drag.distance;
     if (dismiss) {
-      animateTranslate(dialog, from, dialog.getBoundingClientRect().height + 32, 180, () => {
+      // Finish the slide ourselves from the finger position, then close with
+      // the sheet already off-screen. Closing must never depend on a CSS
+      // transition firing after inline style changes: if the overlay's exit
+      // never completes, its backdrop stays mounted and swallows every tap.
+      const offscreen = dialog.getBoundingClientRect().height + 32;
+      const pending = { dialog, offscreen, animation: null };
+      dismissRef.current = pending;
+      const close = () => {
+        if (dismissRef.current !== pending) return;
         dialog.style.willChange = "";
         onOpenChange(false);
-      });
+        // Re-check after the owner's update has rendered (a transition renders
+        // after ordinary and store updates). Still open means it refused.
+        startTransition(() => setDismissCheck((value) => value + 1));
+      };
+      if (!dialog.animate || prefersReducedMotion()) {
+        dialog.style.transition = "";
+        dialog.style.translate = `0 ${offscreen}px`;
+        close();
+        return;
+      }
+      dialog.style.translate = "";
+      dialog.style.transition = "";
+      const animation = dialog.animate(
+        [{ translate: `0 ${from}px` }, { translate: `0 ${offscreen}px` }],
+        { duration: 220, easing: "cubic-bezier(0.3, 0, 1, 1)", fill: "forwards" },
+      );
+      pending.animation = animation;
+      let done = false;
+      const finish = () => { if (!done) { done = true; close(); } };
+      animation.onfinish = finish;
+      animation.oncancel = finish;
+      // Watchdog: a throttled WebView may never deliver onfinish.
+      setTimeout(finish, 400);
     } else {
-      animateTranslate(dialog, from, 0, 220, () => { dialog.style.willChange = ""; });
+      animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });
     }
   };
 
@@ -114,11 +186,12 @@ export default function MobileSheet({
               onPointerMove={onPointerMove}
               onPointerUp={(event) => finishDrag(event)}
               onPointerCancel={(event) => finishDrag(event, true)}
+              onLostPointerCapture={(event) => finishDrag(event, true)}
             >
               <Drawer.Handle className="p-1" />
             </div>
             <Drawer.CloseTrigger className="nextflux-close-button" aria-label={closeLabel} />
-            <Drawer.Header className="nextflux-close-header px-4 pt-1 pb-4 flex flex-row items-center gap-2">
+            <Drawer.Header className="nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2">
               {headerStart}
               <Drawer.Heading>{title}</Drawer.Heading>
             </Drawer.Header>

@@ -1,0 +1,168 @@
+name: UI refresh v2 - signed release APK (artifact only)
+
+# Builds the ui-refresh-v2 branch as an optimized release APK signed with the original
+# release key, verifies identity and certificate, and uploads it as a workflow artifact.
+# No GitHub Release, no tags, no pushes.
+on:
+  push:
+    branches: ["ui-refresh-v2"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-refresh-v2-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    if: ${{ github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/ui-refresh-v2' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+      MIN_VERSION_CODE: "64"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Unit tests
+        run: ./gradlew --no-daemon :core-ui:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+      - name: Compile instrumentation sources
+        run: ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
+      - name: Build optimized release with the original signing key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_BASE64 }}
+          TOOLBOX_SIGNING_STORE_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEYSTORE_PASSWORD }}
+          TOOLBOX_SIGNING_KEY_ALIAS: ${{ secrets.TOOLBOX_ANDROID_KEY_ALIAS }}
+          TOOLBOX_SIGNING_KEY_PASSWORD: ${{ secrets.TOOLBOX_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SIGNING_KEYSTORE_BASE64:?Original signing key is required; no replacement key will be generated}"
+          : "${TOOLBOX_SIGNING_STORE_PASSWORD:?Missing store password}"
+          : "${TOOLBOX_SIGNING_KEY_ALIAS:?Missing signing alias}"
+          : "${TOOLBOX_SIGNING_KEY_PASSWORD:?Missing key password}"
+          signing_dir="$RUNNER_TEMP/toolbox-signing"
+          mkdir -p "$signing_dir" delivery
+          chmod 700 "$signing_dir"
+          trap 'rm -rf "$signing_dir"' EXIT
+          export TOOLBOX_SIGNING_STORE_FILE="$signing_dir/toolbox.p12"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$TOOLBOX_SIGNING_STORE_FILE"
+          chmod 600 "$TOOLBOX_SIGNING_STORE_FILE"
+          unset SIGNING_KEYSTORE_BASE64
+          keytool -exportcert -keystore "$TOOLBOX_SIGNING_STORE_FILE" -storepass:env TOOLBOX_SIGNING_STORE_PASSWORD \
+            -alias "$TOOLBOX_SIGNING_KEY_ALIAS" > "$signing_dir/certificate.der" 2>/dev/null
+          actual="$(sha256sum "$signing_dir/certificate.der" | awk '{print $1}')"
+          test "$actual" = "$RELEASE_CERT_SHA256" || { echo 'Original release certificate mismatch' >&2; exit 1; }
+          ./gradlew --no-daemon :app:assembleRelease
+      - name: Verify certificate, application id and version code
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > delivery/SIGNATURE.txt
+          "$tools/aapt" dump badging "$apk" > delivery/BADGING.txt
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, shutil
+          d = pathlib.Path('delivery')
+          sig = (d / 'SIGNATURE.txt').read_text()
+          certs = {c.lower() for c in re.findall(r'certificate SHA-256 digest:\s*([0-9a-fA-F]{64})', sig)}
+          assert certs == {os.environ['RELEASE_CERT_SHA256']}, f'certificate mismatch: {certs}'
+          badging = (d / 'BADGING.txt').read_text()
+          m = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
+          assert m, 'no package line'
+          app_id, code, name = m.group(1), int(m.group(2)), m.group(3)
+          assert app_id == 'io.toolbox.host', app_id
+          assert code >= int(os.environ['MIN_VERSION_CODE']), code
+          assert 'application-debuggable' not in badging, 'release APK must not be debuggable'
+          out = d / f'toolbox-v{name}-ui-refresh-v2-release.apk'
+          shutil.copy('app/build/outputs/apk/release/app-release.apk', out)
+          digest = hashlib.sha256(out.read_bytes()).hexdigest()
+          receipt = {'package': app_id, 'version_code': code, 'version_name': name,
+                     'certificate_sha256': os.environ['RELEASE_CERT_SHA256'], 'apk': out.name,
+                     'apk_sha256': digest, 'source_commit': os.environ['GITHUB_SHA'],
+                     'workflow_run': os.environ['GITHUB_RUN_ID']}
+          (d / 'BUILD_RECEIPT.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          (d / 'SHA256SUMS.txt').write_text(f'{digest}  {out.name}\n')
+          print(json.dumps(receipt, indent=2))
+          PY
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-ui-refresh-v2-release-${{ github.sha }}
+          path: delivery/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain unit test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ui-refresh-v2-unit-tests-${{ github.sha }}
+          path: |
+            */build/test-results/
+            */build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/toolbox-signing"
+
+  ui-tests:
+    # Emulator checks that navigate through the real app, so a blank or covered page fails CI.
+    if: ${{ github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/ui-refresh-v2' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Build app and instrumentation APKs
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable accelerated emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run navigation, secondary page and design behavior tests
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb shell svc power stayon true
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.SecondaryPageVisibilityTest,io.toolbox.host.SecondaryPageBehaviorTest,io.toolbox.host.DesignPolishBehaviorTest,io.toolbox.host.permissions.PermissionCleanupBehaviorTest
+      - name: Retain instrumentation reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ui-refresh-v2-android-tests-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 14

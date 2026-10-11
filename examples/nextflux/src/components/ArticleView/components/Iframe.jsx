@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { safeContentUrl } from "@/toolbox/content.js";
 import { approvedImageSource, loadProxyMedia } from "@/toolbox/media.js";
 import { isHlsPlaylist, isMediaPlaylist, mediaSourceCandidates } from "@/reading/media-sources.mjs";
-import StreamingMedia from "./StreamingMedia.jsx";
+import StreamingMedia, { keepMediaInline } from "./StreamingMedia.jsx";
 
 export default function Iframe({ domNode, sources }) {
   const [status, setStatus] = useState("");
@@ -113,7 +113,7 @@ export default function Iframe({ domNode, sources }) {
   };
   return (
     <div className="my-4 rounded-xl bg-default p-4 text-sm not-prose">
-      {stream ? <><StreamingMedia source={stream.source} kind={kind} onReady={() => { if (stream.generation === generation.current) { loadingRef.current = false; setLoading(false); } }} onFailure={streamFailure} /><button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : media ? <>{kind === "audio" ? <audio controls preload="metadata" className="w-full" src={media.url} onError={playbackError} /> : <video controls playsInline preload="metadata" className="w-full" src={media.url} onError={playbackError} />}<button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : <p>{canLoad ? `${label}可按需加载${hlsSources.length || window.ToolBox?.network?.openMedia ? "，支持流式播放" : "，下载完成后可播放"}。` : `${label}需要在浏览器中播放。`}{url ? "也可复制或分享链接。" : "没有可用的媒体链接。"}</p>}
+      {stream ? <><StreamingMedia source={stream.source} kind={kind} onReady={() => { if (stream.generation === generation.current) { loadingRef.current = false; setLoading(false); } }} onFailure={streamFailure} /><button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : media ? <>{kind === "audio" ? <audio controls preload="metadata" className="w-full" src={media.url} onError={playbackError} ref={keepMediaInline} /> : <video controls playsInline preload="metadata" className="w-full" src={media.url} onError={playbackError} ref={keepMediaInline} />}<button type="button" className="text-accent min-h-12" onClick={close}>关闭媒体</button></> : <p>{canLoad ? `${label}可按需加载${hlsSources.length || window.ToolBox?.network?.openMedia ? "，支持流式播放" : "，下载完成后可播放"}。` : `${label}需要在浏览器中播放。`}{url ? "也可复制或分享链接。" : "没有可用的媒体链接。"}</p>}
       {url && <div className="flex flex-wrap gap-4 mt-3">{canLoad && !media && !stream && <button type="button" disabled={loading} className="text-accent min-h-12" onClick={start}>{loading ? "正在加载…" : `加载${label}`}</button>}{loading && <button type="button" className="text-accent min-h-12" onClick={close}>取消加载</button>}<button type="button" className="text-accent min-h-12" onClick={() => act("copy")}>复制链接</button><button type="button" className="text-accent min-h-12" onClick={() => act("share")}>分享链接</button></div>}
       {loading && progress && <p role="status" className="mt-2 text-muted">已下载 {(progress.receivedBytes / 1048576).toFixed(1)} MB{progress.totalBytes ? ` / ${(progress.totalBytes / 1048576).toFixed(1)} MB` : ""}</p>}
       {status && <p role="status" className="mt-2 text-muted">{status}</p>}

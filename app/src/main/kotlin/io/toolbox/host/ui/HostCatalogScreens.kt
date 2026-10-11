@@ -44,6 +44,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -69,6 +71,14 @@ import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxValueRow
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.ToolBoxMotion
+import io.toolbox.core.ui.component.ToolBoxStatusState
+import io.toolbox.core.ui.component.ToolBoxStatusTone
+import io.toolbox.core.ui.component.rememberToolBoxEntrance
+import io.toolbox.core.ui.component.rememberToolBoxHaptics
+import io.toolbox.core.ui.component.toolBoxEntrance
+import io.toolbox.core.ui.component.toolBoxPressFeedback
+import io.toolbox.core.ui.component.toolBoxShape
 import io.toolbox.host.HostImportConfirmationKind
 import io.toolbox.host.R
 import io.toolbox.host.catalog.CatalogAction
@@ -78,7 +88,6 @@ import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.DateFormat
 import java.util.Date
@@ -137,6 +146,8 @@ internal fun ToolManagerContent(
             onExpireImportSuccess(importState.feedbackId)
         }
     }
+    val entrance = rememberToolBoxEntrance(if (home) "home" else "tools")
+    io.toolbox.core.ui.component.ToolBoxTitleCollapseSource(listState)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val direction = LocalLayoutDirection.current
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
@@ -162,15 +173,23 @@ internal fun ToolManagerContent(
                         value = state.query,
                         onValueChange = { onAction(CatalogAction.SetQuery(it)) },
                         placeholder = "搜索工具",
+                        modifier = Modifier.toolBoxEntrance(entrance, 0),
                     )
                 }
-                item("installed-title") { CatalogListHeader(state, onAction) }
+                item("installed-title") {
+                    Box(Modifier.toolBoxEntrance(entrance, 1)) { CatalogListHeader(state, onAction) }
+                }
                 item("after-search") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
             }
 
             if (importState.working || importState.message != null) {
                 item("import-feedback") {
                     FeedbackSurface(
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = ToolBoxMotion.effects(),
+                            placementSpec = ToolBoxMotion.ItemPlacement,
+                            fadeOutSpec = ToolBoxMotion.effects(),
+                        ).padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
                         message = if (importState.working) importState.progressMessage else requireNotNull(importState.message),
                         tone = importState.feedbackTone,
                         dismissible = !importState.working && !importState.succeeded,
@@ -178,7 +197,6 @@ internal fun ToolManagerContent(
                         onCancel = onCancelActiveImport.takeIf {
                             importState.working && importState.importPhase == PackageImportPhase.IMPORTING
                         },
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
                     )
                 }
             }
@@ -189,7 +207,11 @@ internal fun ToolManagerContent(
                         tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
                         dismissible = true,
                         onDismiss = { onAction(CatalogAction.DismissFeedback) },
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = ToolBoxMotion.effects(),
+                            placementSpec = ToolBoxMotion.ItemPlacement,
+                            fadeOutSpec = ToolBoxMotion.effects(),
+                        ).padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
                     )
                 }
             }
@@ -204,24 +226,37 @@ internal fun ToolManagerContent(
             }
 
             when {
-                !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具") }
-                state.tools.isEmpty() -> item("empty") { EmptyCatalogState(onImport, onInstallExamples) }
+                !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具", loading = true) }
+                state.tools.isEmpty() -> item("empty") {
+                    Box(Modifier.toolBoxEntrance(entrance, 0)) { EmptyCatalogState(onImport, onInstallExamples) }
+                }
                 home -> Unit
                 state.visibleTools.isEmpty() -> item("no-match") {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CatalogStatusState("没有匹配的工具")
-                        ToolBoxTextButton("清除搜索", { onAction(CatalogAction.SetQuery("")) }, outlined = false)
-                    }
+                    CatalogStatusState(
+                        "没有匹配的工具",
+                        icon = ToolBoxIconKey.Search,
+                        detail = "换个关键词试试",
+                        actionLabel = "清除搜索",
+                        onAction = { onAction(CatalogAction.SetQuery("")) },
+                        modifier = Modifier.animateItem(fadeInSpec = ToolBoxMotion.effects(), fadeOutSpec = null),
+                    )
                 }
                 else -> itemsIndexed(
                     items = state.visibleTools,
                     key = { _, tool -> tool.toolId },
                     contentType = { _, _ -> "tool" },
-                ) { _, tool ->
+                ) { index, tool ->
                     CatalogToolRow(
                         tool = tool,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onDetails = { selectedToolId = tool.toolId },
+                        modifier = Modifier
+                            .animateItem(
+                                fadeInSpec = ToolBoxMotion.effects(),
+                                placementSpec = ToolBoxMotion.ItemPlacement,
+                                fadeOutSpec = ToolBoxMotion.effects(),
+                            )
+                            .toolBoxEntrance(entrance, index + 2),
                     )
                 }
             }
@@ -290,9 +325,11 @@ internal fun ToolDetailScreen(
 ) {
     val tool = state.tools.firstOrNull { it.toolId == toolId }
     val confirmation = state.uninstallConfirmation?.takeIf { it.toolId == toolId }
+    val entrance = rememberToolBoxEntrance("tool-detail")
 
     DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
         LazyColumn(
+            state = rememberTitleBoundListState(),
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
@@ -311,10 +348,12 @@ internal fun ToolDetailScreen(
             overscrollEffect = null,
         ) {
             if (tool == null) {
-                item("missing") { CatalogStatusState("该工具已不存在") }
+                item("missing") {
+                    CatalogStatusState("该工具已不存在", icon = ToolBoxIconKey.Tools, detail = "它可能已被删除或正在更新。")
+                }
             } else {
                 item("identity") {
-                    SurfaceCard {
+                    SurfaceCard(Modifier.toolBoxEntrance(entrance, 0)) {
                         ToolIdentity(tool)
                         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
                         ToolBoxPrimaryButton(
@@ -324,21 +363,21 @@ internal fun ToolDetailScreen(
                         )
                     }
                 }
-                item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("management-title") { SectionHeader("管理") }
                 item("management-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("management") {
-                    ToolBoxGroupedSurface {
+                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 1)) {
                         ToolBoxSettingRow(title = "权限", icon = ToolBoxIconKey.Shield, onClick = { onPermissions(tool.toolId) })
                         ToolBoxGroupDivider()
                         ToolBoxSettingRow(title = "后台任务", icon = ToolBoxIconKey.Clock, onClick = { onBackground(tool.toolId) })
                     }
                 }
-                item("before-information") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+                item("before-information") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("information-title") { SectionHeader("信息") }
                 item("information-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("information") {
-                    ToolBoxGroupedSurface {
+                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2)) {
                         ToolBoxValueRow(title = "版本", value = tool.versionName)
                         ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         ToolBoxValueRow(title = "工具大小", value = tool.bundleBytes.fileSizeLabel())
@@ -346,22 +385,22 @@ internal fun ToolDetailScreen(
                         ToolBoxValueRow(title = "最近打开", value = tool.lastOpenedAt.lastOpenedLabel())
                     }
                 }
-                item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("delete") {
                     ToolBoxDestructiveButton(
                         label = "删除工具",
                         onClick = { onAction(CatalogAction.RequestUninstall(tool.toolId)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().toolBoxEntrance(entrance, 3),
                     )
                 }
             }
         }
 
-        OverlayDialog(
-            show = confirmation != null,
+        if (confirmation != null) ToolBoxModalDialog(
             onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
+            title = "删除 ${confirmation.toolName}？",
         ) {
-            confirmation?.let {
+            confirmation.let {
                 HostConfirmationContent(
                     title = "删除 ${it.toolName}？",
                     summary = "工具文件、权限、存储和后台任务都会一并删除。",
@@ -376,15 +415,22 @@ internal fun ToolDetailScreen(
 }
 
 @Composable
-internal fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: () -> Unit) {
+internal fun CatalogToolRow(
+    tool: CatalogTool,
+    onOpen: () -> Unit,
+    onDetails: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val corner = ToolBoxThemeTokens.radii.denseSurface
+    val shape = toolBoxShape(corner)
     val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
     val presentation = rememberCatalogToolPresentation(tool.toolId, tool.versionCode)
     val interactionSource = remember { MutableInteractionSource() }
+    val haptics = rememberToolBoxHaptics()
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 8.dp)
-            .toolBoxOpenDesignSurface(RoundedCornerShape(corner))
-            .indication(interactionSource, LocalIndication.current)
+        modifier.fillMaxWidth().padding(bottom = ToolBoxThemeTokens.spacing.one)
+            .toolBoxPressFeedback(interactionSource, shape = shape)
+            .toolBoxOpenDesignSurface(shape)
             .testTag("tool_card:" + tool.toolId),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -394,7 +440,10 @@ internal fun CatalogToolRow(tool: CatalogTool, onOpen: () -> Unit, onDetails: ()
                     .testTag("tool_main:" + tool.toolId)
                     .combinedClickable(interactionSource = interactionSource, indication = null,
                         role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen,
-                        onLongClickLabel = "收藏、分组与管理", onLongClick = onDetails)
+                        onLongClickLabel = "收藏、分组与管理", onLongClick = {
+                            haptics.longPress()
+                            onDetails()
+                        })
                     .padding(start = ToolBoxThemeTokens.spacing.oneHalf, end = ToolBoxThemeTokens.spacing.half,
                         top = ToolBoxThemeTokens.spacing.one, bottom = ToolBoxThemeTokens.spacing.one),
                 verticalAlignment = Alignment.CenterVertically,
@@ -454,18 +503,17 @@ internal fun FeedbackSurface(
     onCancel: (() -> Unit)? = null,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val container = when (tone) {
-        FeedbackTone.Progress -> colors.softPrimary
-        FeedbackTone.Success -> colors.softSuccess
-        FeedbackTone.Neutral -> colors.surfaceMuted
-        FeedbackTone.Error -> colors.softDanger
-    }
-    val content = when (tone) {
-        FeedbackTone.Progress -> colors.primary
-        FeedbackTone.Success -> colors.onSoftSuccess
-        FeedbackTone.Neutral -> colors.textSecondary
-        FeedbackTone.Error -> colors.danger
-    }
+    // Status banner: tone changes (progress -> success / error) cross-fade on the effects spring.
+    val (toneContainer, toneContent) = io.toolbox.core.ui.component.toolBoxToneColors(
+        when (tone) {
+            FeedbackTone.Progress -> io.toolbox.core.ui.component.ToolBoxTone.Info
+            FeedbackTone.Success -> io.toolbox.core.ui.component.ToolBoxTone.Success
+            FeedbackTone.Neutral -> io.toolbox.core.ui.component.ToolBoxTone.Neutral
+            FeedbackTone.Error -> io.toolbox.core.ui.component.ToolBoxTone.Danger
+        },
+    )
+    val containerState = androidx.compose.animation.animateColorAsState(toneContainer, ToolBoxMotion.effects(), label = "feedback container")
+    val content = androidx.compose.animation.animateColorAsState(toneContent, ToolBoxMotion.effects(), label = "feedback content").value
     val icon = when (tone) {
         FeedbackTone.Progress -> ToolBoxIconKey.Clock
         FeedbackTone.Success -> ToolBoxIconKey.Check
@@ -475,14 +523,23 @@ internal fun FeedbackSurface(
     Row(
         modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {
             if (tone != FeedbackTone.Progress) liveRegion = LiveRegionMode.Polite
-        }.clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge)).background(container)
+        }.clip(toolBoxShape(ToolBoxThemeTokens.radii.control)).drawBehind { drawRect(containerState.value) }
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget).padding(start = ToolBoxThemeTokens.spacing.oneHalf),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolBoxIcon(icon = icon, contentDescription = null, tint = content)
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-        AppText(text = message, modifier = Modifier.weight(1f), color = colors.textPrimary,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        androidx.compose.animation.AnimatedContent(
+            targetState = message,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                androidx.compose.animation.fadeIn(ToolBoxMotion.effects()) togetherWith
+                    androidx.compose.animation.fadeOut(ToolBoxMotion.effects())
+            },
+            label = "feedback text",
+        ) { text ->
+            AppText(text = text, color = colors.textPrimary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        }
         if (onCancel != null) {
             ToolBoxTextButton(label = "取消", onClick = onCancel)
         } else if (dismissible) {
@@ -495,28 +552,45 @@ internal fun FeedbackSurface(
 
 @Composable
 internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Unit) {
-    SurfaceCard(Modifier.testTag(HostTestTags.CatalogEmptyState)) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            ToolGlyph(icon = ToolBoxIconKey.Tools, accent = ToolBoxThemeTokens.colors.primary)
+    // Empty state: 64dp tonal icon disc, headline, one line of subhead, then the actions.
+    Column(
+        Modifier.fillMaxWidth().testTag(HostTestTags.CatalogEmptyState).padding(top = ToolBoxThemeTokens.spacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ToolBoxStatusState(
+            title = "还没有工具",
+            message = "先安装四个可直接使用的范例，或导入自己的 .tbx。",
+            icon = ToolBoxIconKey.Tools,
+        )
+        Column(
+            Modifier.widthIn(max = 360.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs),
+        ) {
+            ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
+            ToolBoxSecondaryButton("导入工具", onImport, Modifier.fillMaxWidth())
         }
-        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-        AppText(text = "还没有工具", modifier = Modifier.fillMaxWidth(),
-            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle, weight = FontWeight.SemiBold,
-            align = androidx.compose.ui.text.style.TextAlign.Center)
-        AppText(text = "先安装四个可直接使用的范例，或导入自己的 .tbx。", modifier = Modifier.fillMaxWidth(),
-            textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary,
-            align = androidx.compose.ui.text.style.TextAlign.Center)
-        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-        ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
-        ToolBoxTextButton("导入工具", onImport, Modifier.fillMaxWidth())
     }
 }
 
 @Composable
-internal fun CatalogStatusState(message: String) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 96.dp), contentAlignment = Alignment.Center) {
-        AppText(text = message, color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
-    }
+internal fun CatalogStatusState(
+    message: String,
+    modifier: Modifier = Modifier,
+    icon: ToolBoxIconKey? = null,
+    detail: String? = null,
+    loading: Boolean = false,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    ToolBoxStatusState(
+        title = message,
+        modifier = modifier,
+        icon = icon,
+        message = detail,
+        tone = if (loading) ToolBoxStatusTone.Loading else ToolBoxStatusTone.Neutral,
+        actionLabel = actionLabel,
+        onAction = onAction,
+    )
 }
 
 internal data class ToolVisual(val icon: ToolBoxIconKey, val accent: Color, val imageResource: Int? = null)

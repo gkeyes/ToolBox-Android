@@ -9,13 +9,22 @@ import {
     InputGroup,
     Label,
     Link,
-    Separator, Spinner,
+    Spinner,
     TextField,
 } from "@heroui/react";
-import {Eye, EyeClosed} from "lucide-react";
-import {toast} from "sonner";
+import {
+  Eye,
+  EyeClosed,
+  Rss,
+} from "lucide-react";
+import {
+  WarningIcon as CircleAlert,
+} from "@/components/ui/icons.jsx";
 import {useStore} from "@nanostores/react";
 import {useTranslation} from "react-i18next";
+import {Segmented} from "@/components/ui/settingItem.jsx";
+import {claimStagger} from "@/design/motion.js";
+import "@/components/Settings/settings.css";
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -28,6 +37,9 @@ export default function LoginPage() {
     const [token, setToken] = useState("");
     const [isVisible, setIsVisible] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const [stagger] = useState(() => claimStagger("login"));
+    const isAuthenticated = Boolean($auth.serverUrl && ($auth.token || ($auth.username && $auth.password)));
 
     useEffect(() => {
         if ($auth.serverUrl && ($auth.token || ($auth.username && $auth.password))) {
@@ -38,6 +50,7 @@ export default function LoginPage() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
+        setError("");
 
         try {
             await login(
@@ -48,146 +61,155 @@ export default function LoginPage() {
             );
             navigate("/");
         } catch (err) {
-            toast.error(err.message);
+            setError(err?.message || t("auth.loginFailed"));
         } finally {
             setLoading(false);
         }
     };
 
+    const switchAuthType = (next) => {
+        if (next === authType) return;
+        setAuthType(next);
+        setError("");
+        if (next === "basic") {
+            setUsername("");
+            setPassword("");
+        }
+        setToken("");
+    };
+
+    // Already signed in: render nothing for the frame before the redirect runs,
+    // instead of flashing the form.
+    if (isAuthenticated) return null;
+
     return (
-        <div className="flex min-h-screen items-center justify-center p-4">
-            <div className="w-full max-w-sm flex flex-col gap-6 p-6 bg-transparent">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                    NextFlux
-                </h1>
+        <main className="nf-auth">
+            <div className={stagger ? "nf-auth-column ds-stagger" : "nf-auth-column"}>
+                <header className="nf-auth-hero">
+                    <span className="ds-empty-icon is-accent" aria-hidden="true">
+                        <Rss/>
+                    </span>
+                    <h1 className="ds-large-title">NextFlux</h1>
+                    <p className="ds-subhead">连接你的 Miniflux，继续阅读。</p>
+                </header>
 
-                <p className="text-sm text-muted">连接你的 Miniflux，继续阅读。</p>
-                <Form
-                    className="flex flex-col gap-4"
-                    validationBehavior="native"
-                    onSubmit={handleSubmit}
-                >
-                    <TextField isRequired name="serverUrl">
-                        <Label>{t("auth.serverUrl")}</Label>
-                        <Input
-                            placeholder={t("auth.serverUrlPlaceholder")}
-                            type="url"
-                            readOnly
-                            value={serverUrl}
-                            onChange={(e) => setServerUrl(e.target.value)}
-                            className="w-full"
-                        />
-                        <FieldError/>
-                    </TextField>
-
-                    {authType === "basic" ? (
-                        <>
-                            <TextField isRequired name="username">
-                                <Label>{t("auth.username")}</Label>
-                                <Input
-                                    placeholder={t("auth.usernamePlaceholder")}
-                                    type="text"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full"
-                                />
-                                <FieldError/>
-                            </TextField>
-
-                            <TextField isRequired name="password">
-                                <Label>{t("auth.password")}</Label>
-                                <InputGroup>
-                                    <InputGroup.Input
-                                        placeholder={t("auth.passwordPlaceholder")}
-                                        type={isVisible ? "text" : "password"}
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full"
-                                    />
-                                    <InputGroup.Suffix>
-                                        <button
-                                            className="nextflux-compact-touch-target"
-                                            type="button"
-                                            onClick={() => setIsVisible(!isVisible)}
-                                            aria-label="Toggle password visibility"
-                                        >
-                                            {isVisible ? (
-                                                <EyeClosed
-                                                    className="text-xl text-muted pointer-events-none shrink-0"/>
-                                            ) : (
-                                                <Eye className="text-xl text-muted pointer-events-none shrink-0"/>
-                                            )}
-                                        </button>
-                                    </InputGroup.Suffix>
-                                </InputGroup>
-                                <FieldError/>
-                            </TextField>
-                        </>
-                    ) : (
-                        <TextField isRequired name="token">
-                            <Label>{t("auth.token")}</Label>
+                <div className="ds-group-card nf-auth-card">
+                    <Segmented
+                        block
+                        ariaLabel={t("auth.login")}
+                        selectedKey={authType}
+                        onSelectionChange={switchAuthType}
+                        options={[
+                            {value: "token", label: t("auth.tokenAuth")},
+                            {value: "basic", label: t("auth.basicAuth")},
+                        ]}
+                    />
+                    <Form
+                        className="nf-auth-form"
+                        validationBehavior="native"
+                        onSubmit={handleSubmit}
+                        aria-busy={loading}
+                    >
+                        <TextField isRequired name="serverUrl" className="nf-field">
+                            <Label>{t("auth.serverUrl")}</Label>
                             <Input
-                                placeholder={t("auth.tokenPlaceholder")}
-                                type="password"
-                                autoComplete="off"
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
+                                placeholder={t("auth.serverUrlPlaceholder")}
+                                type="url"
+                                readOnly
+                                value={serverUrl}
+                                onChange={(e) => setServerUrl(e.target.value)}
                                 className="w-full"
                             />
                             <FieldError/>
                         </TextField>
-                    )}
 
-                    <div>
-            <span className="text-sm">
-              {t("auth.needMoreInfo")}
-            </span>
-                        <Link href="https://miniflux.app" size="sm">
-                            {t("auth.visitMiniflux")}
-                            <Link.Icon/>
-                        </Link>
-                    </div>
-                    <Button
-                        fullWidth
-                        type="submit"
-                        isPending={loading}
-                    >
-                        {loading && <Spinner color="current" size="sm"/>}
-                        {t("common.login")}
-                    </Button>
-                </Form>
-                <div className="relative flex items-center justify-center w-full -my-3">
-                    <Separator className="absolute w-full"/>
-                    <span className="text-sm bg-background px-2 z-10">
-            {t("auth.or")}
-          </span>
+                        {authType === "basic" ? (
+                            <>
+                                <TextField isRequired name="username" className="nf-field">
+                                    <Label>{t("auth.username")}</Label>
+                                    <Input
+                                        placeholder={t("auth.usernamePlaceholder")}
+                                        type="text"
+                                        autoComplete="username"
+                                        value={username}
+                                        onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                                        className="w-full"
+                                    />
+                                    <FieldError/>
+                                </TextField>
+
+                                <TextField isRequired name="password" className="nf-field">
+                                    <Label>{t("auth.password")}</Label>
+                                    <InputGroup>
+                                        <InputGroup.Input
+                                            placeholder={t("auth.passwordPlaceholder")}
+                                            type={isVisible ? "text" : "password"}
+                                            autoComplete="current-password"
+                                            value={password}
+                                            onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                                            className="w-full"
+                                        />
+                                        <InputGroup.Suffix>
+                                            <button
+                                                className="nf-auth-reveal"
+                                                type="button"
+                                                onClick={() => setIsVisible(!isVisible)}
+                                                aria-label="Toggle password visibility"
+                                                aria-pressed={isVisible}
+                                            >
+                                                {isVisible ? (
+                                                    <EyeClosed className="pointer-events-none shrink-0"/>
+                                                ) : (
+                                                    <Eye className="pointer-events-none shrink-0"/>
+                                                )}
+                                            </button>
+                                        </InputGroup.Suffix>
+                                    </InputGroup>
+                                    <FieldError/>
+                                </TextField>
+                            </>
+                        ) : (
+                            <TextField isRequired name="token" className="nf-field">
+                                <Label>{t("auth.token")}</Label>
+                                <Input
+                                    placeholder={t("auth.tokenPlaceholder")}
+                                    type="password"
+                                    autoComplete="off"
+                                    value={token}
+                                    onChange={(e) => { setToken(e.target.value); setError(""); }}
+                                    className="w-full"
+                                />
+                                <FieldError/>
+                            </TextField>
+                        )}
+
+                        {error && (
+                            <div role="alert" className="ds-banner ds-tone-danger nf-auth-banner">
+                                <CircleAlert aria-hidden="true"/>
+                                <span>{error}</span>
+                            </div>
+                        )}
+
+                        <Button
+                            fullWidth
+                            size="lg"
+                            type="submit"
+                            isPending={loading}
+                        >
+                            {loading && <Spinner color="current" size="sm"/>}
+                            {t("common.login")}
+                        </Button>
+                    </Form>
                 </div>
-                {authType === "token" ? (
-                    <Button
-                        fullWidth
-                        variant="tertiary"
-                        onPress={() => {
-                            setAuthType("basic");
-                            setUsername("");
-                            setPassword("");
-                            setToken("");
-                        }}
-                    >
-                        {t("auth.basicAuth")}
-                    </Button>
-                ) : (
-                    <Button
-                        fullWidth
-                        variant="tertiary"
-                        onPress={() => {
-                            setAuthType("token");
-                            setToken("");
-                        }}
-                    >
-                        {t("auth.tokenAuth")}
-                    </Button>
-                )}
+
+                <p className="nf-auth-help">
+                    <span>{t("auth.needMoreInfo")}</span>
+                    <Link href="https://miniflux.app" size="sm">
+                        {t("auth.visitMiniflux")}
+                        <Link.Icon/>
+                    </Link>
+                </p>
             </div>
-        </div>
+        </main>
     );
 }

@@ -36,8 +36,9 @@ export default {
         },
       },
       animation: {
-        "collapsible-down": "collapsible-down 0.2s ease-out",
-        "collapsible-up": "collapsible-up 0.2s ease-out",
+        // Design system v2: expand on the spatial spring, collapse on the 220ms exit curve.
+        "collapsible-down": "collapsible-down var(--ds-dur-spatial, 0.2s) var(--ds-ease-spatial, ease-out)",
+        "collapsible-up": "collapsible-up var(--ds-dur-exit, 0.2s) var(--ds-ease-exit, ease-out)",
       },
     },
   },

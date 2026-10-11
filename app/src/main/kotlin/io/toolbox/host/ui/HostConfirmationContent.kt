@@ -30,27 +30,28 @@ internal fun HostConfirmationContent(
     cancelLabel: String = "取消",
     destructive: Boolean = false,
 ) {
+    val haptics = io.toolbox.core.ui.component.rememberToolBoxHaptics()
+    // Backing out of a destructive confirmation answers with a "reject" tick.
+    val cancel: () -> Unit = if (destructive) ({ haptics.reject(); onCancel() }) else onCancel
     Column(Modifier.fillMaxWidth()) {
         AppText(
             title,
             modifier = Modifier.semantics { heading() },
-            textStyle = ToolBoxThemeTokens.textStyles.title.copy(
-                fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
-            ),
+            textStyle = ToolBoxThemeTokens.textStyles.detailTitle,
         )
         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
         AppText(summary, color = ToolBoxThemeTokens.colors.textSecondary)
-        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.lg))
         val largeText = LocalDensity.current.fontScale >= 1.3f
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth < 300.dp || largeText) {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-                    ToolBoxSecondaryButton(cancelLabel, onCancel, Modifier.fillMaxWidth())
+                    ToolBoxSecondaryButton(cancelLabel, cancel, Modifier.fillMaxWidth())
                     ToolBoxPrimaryButton(confirmLabel, onConfirm, Modifier.fillMaxWidth(), destructive = destructive)
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
-                    ToolBoxSecondaryButton(cancelLabel, onCancel, Modifier.weight(1f))
+                    ToolBoxSecondaryButton(cancelLabel, cancel, Modifier.weight(1f))
                     ToolBoxPrimaryButton(confirmLabel, onConfirm, Modifier.weight(1f), destructive = destructive)
                 }
             }

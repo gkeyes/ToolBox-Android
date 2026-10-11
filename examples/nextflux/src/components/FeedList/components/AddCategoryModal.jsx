@@ -85,8 +85,8 @@ export default function AddCategoryModal() {
               <FieldError>{t("sidebar.categoryNameRequired")}</FieldError>
             </TextField>
           </FieldGroup>
-          <Separator className="my-2" />
-          <div className="flex flex-wrap gap-2 p-3 w-full rounded-2xl bg-default/60 shadow-surface">
+          <div className="h-2" aria-hidden="true" />
+          <div className="flex flex-wrap gap-2 p-4 w-full rounded-[var(--ds-radius-card)] bg-[color-mix(in_srgb,var(--ds-on-surface)_4%,var(--ds-raised))]">
             {$categories.map((category) => (
               <CategoryChip key={category.id} category={category} />
             ))}

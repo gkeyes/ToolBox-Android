@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { Separator, InputGroup, Kbd, Modal, Tabs, Button } from "@heroui/react";
-import { Search as SearchIcon } from "lucide-react";
+import {
+  SearchIcon as SearchIcon,
+} from "@/components/ui/icons.jsx";
 import {
   feedSearchResults,
   search,
@@ -85,14 +87,14 @@ export default function SearchModal() {
   }, [isOpen, searchType]);
 
   const input = (
-    <InputGroup className="bg-transparent shadow-none ring-0 ring-transparent">
+    <InputGroup className="ds-search-field search-field-group min-h-12 shadow-none ring-0 ring-transparent">
       <InputGroup.Prefix>
-        <SearchIcon className="size-5 text-muted opacity-60 stroke-3" />
+        <SearchIcon className="size-5 text-muted" />
       </InputGroup.Prefix>
       <InputGroup.Input
         ref={inputRef}
         autoFocus
-        className="text-lg"
+        className="text-[length:var(--ds-text-body)] bg-transparent"
         placeholder={searchType === "articles"
           ? t("search.searchArticlesPlaceholder")
           : t("search.searchFeedsPlaceholder")}
@@ -125,7 +127,7 @@ export default function SearchModal() {
       <Tabs.ListContainer>
         <Tabs.List
           aria-label="searchType"
-          className="w-fit *:h-6 *:w-fit *:px-3 *:text-sm *:font-normal p-px gap-0"
+          className="ds-segmented search-scope w-full gap-0 *:h-9 *:flex-1 *:text-sm *:font-medium"
         >
           <Tabs.Tab id="articles">
             {t("common.article")}
@@ -150,9 +152,8 @@ export default function SearchModal() {
         dialogClassName="h-[82vh]"
         bodyClassName="overflow-hidden flex flex-col"
       >
-        <div className="p-2 border-b shrink-0">{input}</div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{results}</div>
-        <div className="p-2 border-t bg-background shrink-0">{tabs}</div>
+        <div className="px-4 pb-3 shrink-0 flex flex-col gap-3">{input}{tabs}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{results}</div>
       </MobileSheet>
     );
   }
@@ -168,10 +169,10 @@ export default function SearchModal() {
       >
         <Modal.Container scroll="inside" size="lg">
           <Modal.Dialog className="nextflux-modal-surface w-[700px] max-w-[90vw] h-[500px] p-0">
-            <Modal.Header className="p-2 border-b">{input}</Modal.Header>
+            <Modal.Header className="p-4 pb-3">{input}</Modal.Header>
             <Modal.Body className="nextflux-modal-body p-0 m-0">{results}</Modal.Body>
             <Modal.Footer className="p-0 m-0">
-              <div className="w-full p-2 border-t bg-background flex items-center justify-between">
+              <div className="w-full px-4 py-3 flex items-center justify-between gap-3 [&_.search-scope]:w-56">
                 {tabs}
                 <div className="hidden md:flex items-center gap-1 px-1">
                   <Kbd><Kbd.Abbr keyValue="up" /></Kbd>

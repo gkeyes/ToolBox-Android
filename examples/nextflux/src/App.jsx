@@ -15,9 +15,10 @@ import { checkIntegrations } from "@/stores/basicInfoStore.js";
 import { useZoom } from "@/hooks/useZoom.js";
 import { useBorderRadius } from "@/hooks/useBorderRadius.js";
 import FontLoader from "@/components/FontLoader.jsx";
+import { useReducedMotionAttribute } from "@/design/motion.js";
 
 function App() {
-  const { syncInterval } = useStore(settingsState);
+  const { syncInterval, reduceMotion } = useStore(settingsState);
   const [backgroundReady, setBackgroundReady] = useState(false);
   useEffect(() => {
     let mounted = true;
@@ -43,6 +44,7 @@ function App() {
 
   useHotkeys();
   useZoom();
+  useReducedMotionAttribute(reduceMotion);
   useBorderRadius();
   return (
     <SidebarProvider>

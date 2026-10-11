@@ -65,11 +65,11 @@ const FeedListSidebar = () => {
       <SidebarHeader className="sidebar-header standalone:pt-safe-or-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <div className="flex items-center gap-1">
-              <img src={logo} alt="logo" className="size-8" />
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">Nextflux</span>
-                <span role="status" className="line-clamp-2 text-xs text-muted opacity-60">
+            <div className="flex items-center gap-2 pl-1">
+              <img src={logo} alt="" className="size-9 rounded-[var(--ds-radius-small)]" />
+              <div className="grid min-w-0 flex-1 text-left leading-tight">
+                <span className="ds-title truncate">Nextflux</span>
+                <span role="status" className="ds-caption ds-tnum line-clamp-2">
                   {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || formatLastSync($lastSync)}
                 </span>
               </div>
@@ -80,7 +80,7 @@ const FeedListSidebar = () => {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <ScrollShadow className="h-full" size={10}>
+        <ScrollShadow className="h-full overscroll-contain" size={10}>
           <ArticlesGroup />
           <FeedsGroup />
         </ScrollShadow>

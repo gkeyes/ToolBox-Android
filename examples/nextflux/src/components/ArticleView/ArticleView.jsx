@@ -260,6 +260,46 @@ const ArticleView = () => {
     setReadingPaused(false);
   }, [reduceMotion]);
 
+  // Top bar hairline fades in once the reader is scrolled, and on phones the
+  // bars tuck away while reading down (DOM attributes, no re-render). Scrolling
+  // up by a little, or reaching the top or the end, brings them back.
+  useEffect(() => {
+    const area = scrollAreaRef.current;
+    if (!area) return;
+    let anchor = area.scrollTop;
+    if (!area.dataset.chrome) area.dataset.chrome = "shown";
+    const update = () => {
+      const top = area.scrollTop;
+      const scrolled = top > 4 ? "true" : "false";
+      if (area.dataset.scrolled !== scrolled) area.dataset.scrolled = scrolled;
+      const atEnd = top + area.clientHeight >= area.scrollHeight - 32;
+      let chrome = area.dataset.chrome;
+      if (top < 64 || atEnd) chrome = "shown";
+      else if (top - anchor > 12) chrome = "hidden";
+      else if (anchor - top > 12) chrome = "shown";
+      if (chrome !== area.dataset.chrome) area.dataset.chrome = chrome;
+      // Direction is measured from the last turning point, so slow scrolls count.
+      if ((chrome === "hidden" && top > anchor) || (chrome === "shown" && top < anchor) || Math.abs(top - anchor) > 12) anchor = top;
+    };
+    update();
+    area.addEventListener("scroll", update, { passive: true });
+    return () => area.removeEventListener("scroll", update);
+  }, [isArticleVisible]);
+
+  // A new article opens with its bars visible — placed instantly, never
+  // animated in. Closing (no articleId) leaves the bars exactly as they are so
+  // nothing moves on the page while it slides away.
+  useEffect(() => {
+    const area = scrollAreaRef.current;
+    if (!area || !articleId || area.dataset.chrome === "shown") return undefined;
+    area.dataset.chromeInstant = "true";
+    area.dataset.chrome = "shown";
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => { delete area.dataset.chromeInstant; });
+    });
+    return () => { cancelAnimationFrame(frame); delete area.dataset.chromeInstant; };
+  }, [articleId]);
+
   const handleBack = useCallback(() => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
     navigate(basePath || "/");
@@ -346,8 +386,8 @@ const ArticleView = () => {
       floatingSidebar ? "" : "md:pr-2 md:py-2",
     )}>
       {!isArticleVisible ? <EmptyPlaceholder /> : <ScrollShadow ref={scrollAreaRef} isEnabled={false} className={cn(
-        "article-scroll-area h-full bg-background md:bg-transparent relative",
-        floatingSidebar ? "md:bg-transparent" : "md:bg-overlay md:shadow-custom md:rounded-2xl",
+        "article-scroll-area reader-surface h-full relative",
+        floatingSidebar ? "" : "reader-surface-card",
       )}>
         <ActionButtons />
         <ArticlePageContent

@@ -17,6 +17,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.remember
+import io.toolbox.core.ui.component.toolBoxPressFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -57,16 +60,24 @@ internal fun CatalogListHeader(state: CatalogUiState, onAction: (CatalogAction) 
         }
     }
     if (choosingSort) ToolBoxActionSheet(title = "排序", onDismissRequest = { choosingSort = false }) {
+        val haptics = io.toolbox.core.ui.component.rememberToolBoxHaptics()
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                AppText("排序", Modifier.weight(1f).semantics { heading() }, textStyle = ToolBoxThemeTokens.textStyles.sectionTitle)
-                ToolBoxIconButton(ToolBoxIconKey.Close, "关闭排序", { choosingSort = false })
+            io.toolbox.core.ui.component.ToolBoxActionSheetHeader {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    AppText("排序", Modifier.weight(1f).semantics { heading() }, textStyle = ToolBoxThemeTokens.textStyles.headline)
+                    ToolBoxIconButton(ToolBoxIconKey.Close, "关闭排序", { choosingSort = false })
+                }
             }
             CatalogSort.entries.forEach { sort ->
                 val selected = state.layout.sort == sort
+                val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface)
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
-                        .selectable(selected = selected, role = Role.RadioButton, onClick = {
+                    Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
+                        .toolBoxPressFeedback(interaction, shape = shape, scale = io.toolbox.core.ui.component.ToolBoxMotion.RowPressScale)
+                        .clip(shape)
+                        .selectable(selected = selected, interactionSource = interaction, indication = null, role = Role.RadioButton, onClick = {
+                            if (!selected) haptics.tick()
                             choosingSort = false
                             if (!selected) onAction(CatalogAction.SetSort(sort))
                         }).padding(horizontal = 16.dp, vertical = 12.dp),

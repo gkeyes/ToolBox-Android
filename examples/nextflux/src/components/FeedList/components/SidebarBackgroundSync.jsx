@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useStore } from "@nanostores/react";
 import { Switch } from "@heroui/react";
-import { RefreshCw } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { settingsState } from "@/stores/settingsStore.js";
@@ -47,12 +49,14 @@ export default function SidebarBackgroundSync() {
   };
 
   return (
-    <div className="px-1">
-      <div className="flex min-h-12 items-center gap-2 rounded-xl bg-default/45 px-3 py-2">
-        <RefreshCw className={`size-4 shrink-0 text-muted ${health.state === "syncing" ? "animate-spin" : ""}`} />
+    <div className="sidebar-pref-wrap">
+      <div className="sidebar-pref ds-row">
+        <span className={`ds-icon-badge ${health.state === "error" ? "ds-tone-danger" : active ? "ds-tone-success" : "ds-tone-neutral"}`}>
+          <RefreshCw className={health.state === "syncing" ? "animate-spin" : ""} />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{t("sidebar.backgroundSync.title")}</div>
-          <div className="truncate text-xs text-muted opacity-70">{status}</div>
+          <div className="truncate ds-body font-medium">{t("sidebar.backgroundSync.title")}</div>
+          <div className="truncate ds-caption ds-tnum">{status}</div>
         </div>
         <Switch
           aria-label={t("sidebar.backgroundSync.title")}

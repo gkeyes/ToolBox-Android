@@ -42,6 +42,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.ToolBoxIcon
+import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxMotion
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
@@ -133,20 +142,32 @@ internal fun RuntimeSaveDialog(
 ) {
     var waiting by remember(saving.reloading) { mutableStateOf(false) }
     ToolBoxModalDialog(onDismissRequest = onCancel) {
-        Column(Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.two)) {
+        Column(
+            Modifier.fillMaxWidth().animateContentSize(ToolBoxMotion.spatial()),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppText(
+                    saving.error ?: if (waiting) "正在等待保存完成" else if (saving.slow) "仍在保存" else "正在保存",
+                    modifier = Modifier.weight(1f),
+                    textStyle = ToolBoxThemeTokens.textStyles.headline,
+                )
+                if (saving.error == null) ToolBoxBusyIndicator()
+            }
             AppText(
-                saving.error ?: if (waiting) "正在等待保存完成" else if (saving.slow) "仍在保存" else "正在保存",
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+                if (saving.error != null) "页面已保留。" else "保存完成后会自动${if (saving.reloading) "重载" else "退出"}。",
+                color = ToolBoxThemeTokens.colors.textSecondary,
             )
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
-            AppText(if (saving.error != null) "页面已保留。" else "保存完成后会自动${if (saving.reloading) "重载" else "退出"}。")
-            if (saving.error == null) ToolBoxBusyIndicator()
-            if (saving.error != null) ToolBoxPrimaryButton("重试保存", onRetry)
-            if (saving.slow && !waiting && saving.error == null) ToolBoxTextButton("继续等待", { waiting = true })
-            ToolBoxTextButton(if (saving.reloading) "取消重载" else "取消退出", onCancel)
+            if (saving.error != null) ToolBoxPrimaryButton("重试保存", onRetry, Modifier.fillMaxWidth())
+            if (saving.slow && !waiting && saving.error == null) {
+                ToolBoxTextButton("继续等待", { waiting = true }, Modifier.fillMaxWidth())
+            }
+            ToolBoxTextButton(if (saving.reloading) "取消重载" else "取消退出", onCancel, Modifier.fillMaxWidth())
             if (saving.slow || saving.error != null) ToolBoxPrimaryButton(
                 if (saving.reloading) "放弃保存并重载" else "放弃保存并退出",
                 onDiscard,
+                Modifier.fillMaxWidth(),
                 destructive = true,
             )
         }
@@ -214,15 +235,14 @@ private fun RuntimeCenteredState(title: String, detail: String) {
         Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally) {
             // The runtime exposes readiness, not a measurable percentage. Do not invent progress.
-            Box(Modifier.size(24.dp).progressSemantics(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(ToolBoxThemeTokens.sizes.emptyStateIcon).progressSemantics(), contentAlignment = Alignment.Center) {
                 ToolBoxBusyIndicator()
             }
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             AppText(
                 title,
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-                weight = FontWeight.Bold,
+                textStyle = ToolBoxThemeTokens.textStyles.headline,
                 align = TextAlign.Center,
             )
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
@@ -272,11 +292,21 @@ private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)
     Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState())
         .testTag("host_status_scroll")) {
         SurfaceCard(Modifier.testTag("host_status_card")) {
+            if (onRetry != null || details != null) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.size(ToolBoxThemeTokens.sizes.emptyStateIcon).clip(CircleShape).background(ToolBoxThemeTokens.colors.softDanger),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ToolBoxIcon(ToolBoxIconKey.Refresh, null, tint = ToolBoxThemeTokens.colors.onSoftDanger)
+                    }
+                }
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
+            }
             AppText(
                 title,
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-                weight = FontWeight.Bold,
+                textStyle = ToolBoxThemeTokens.textStyles.headline,
                 align = TextAlign.Center,
             )
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
@@ -305,10 +335,12 @@ private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)
                     },
                     outlined = false,
                 )
-                if (expanded) SelectionContainer {
-                    AppText(fullMessage, modifier = Modifier.fillMaxWidth(),
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.textSecondary)
+                AnimatedVisibility(expanded, enter = ToolBoxMotion.ExpandIn, exit = ToolBoxMotion.CollapseOut) {
+                    SelectionContainer {
+                        AppText(fullMessage, modifier = Modifier.fillMaxWidth(),
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                            color = ToolBoxThemeTokens.colors.textSecondary)
+                    }
                 }
             }
         }

@@ -2,24 +2,40 @@
 .nf-title-filter-trigger{flex:none!important;position:relative;color:var(--muted)}
 .nf-title-filter-trigger[data-filter-active="true"]{color:var(--accent)}
 .nf-title-filter-trigger[data-filter-active="true"]::after{content:"";position:absolute;width:5px;height:5px;border-radius:50%;background:var(--accent);right:8px;top:8px}
-.nf-title-filter-form{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;min-width:0;color:var(--foreground)}
-.nf-title-filter-feed{margin:0;color:var(--muted);font-size:.875rem;overflow-wrap:anywhere}
-.nf-title-filter-label{font-size:1rem;font-weight:600;margin:0}
-.nf-title-filter-input{box-sizing:border-box;display:block;width:100%;min-height:96px;border:1px solid transparent;border-radius:14px;background:var(--default);color:var(--foreground);padding:12px 14px;resize:vertical;font:inherit;line-height:1.55}
-.nf-title-filter-input::placeholder{color:var(--muted)}
-.nf-title-filter-input:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}
-.nf-title-filter-input:disabled{opacity:.65}
-.nf-title-filter-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);font-size:.8125rem;min-width:0}
-.nf-title-filter-note{margin:0;font-size:.8125rem;line-height:1.6;color:var(--muted);overflow-wrap:anywhere}
-.nf-title-filter-error{margin:0;padding:12px;border-radius:12px;font-size:.875rem;line-height:1.6;color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent);overflow-wrap:anywhere}
-.nf-title-filter-toast{position:fixed;z-index:9999;left:50%;top:auto;bottom:calc(24px + env(safe-area-inset-bottom,0px) + var(--nf-toast-viewport-inset,0px));transform:translateX(-50%);width:max-content;max-width:min(480px,calc(100vw - 32px));box-sizing:border-box;overflow-wrap:anywhere;padding:12px 16px;border-radius:16px;background:var(--overlay);color:var(--foreground);border:1px solid var(--separator);box-shadow:var(--shadow-custom-md);font-size:.875rem;line-height:1.5;pointer-events:none;text-align:center}
+
+/* Editor: design system v2 tokens (fallbacks keep the isolated fixture readable). */
+.nf-title-filter-form{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px;min-width:0;color:var(--ds-text-primary,var(--foreground))}
+.nf-title-filter-feed{align-self:flex-start;max-width:100%;margin:0;padding:4px 10px;border-radius:999px;background:var(--ds-tone-neutral-bg,var(--default));color:var(--ds-tone-neutral-fg,var(--muted));font-size:var(--ds-text-caption,.75rem);font-weight:500;line-height:1.4;overflow-wrap:anywhere}
+.nf-title-filter-label{margin:4px 0 0;padding-inline:2px;font-size:var(--ds-text-section,.8125rem);font-weight:500;color:var(--ds-text-secondary,var(--muted))}
+.nf-title-filter-input{box-sizing:border-box;display:block;width:100%;min-height:104px;border:0;border-radius:var(--ds-radius-control,14px);background:var(--ds-field,var(--default));color:var(--ds-text-primary,var(--foreground));padding:12px 14px;resize:vertical;font:inherit;font-size:var(--ds-text-body,1rem);line-height:1.55;outline:none;box-shadow:0 0 0 1.5px transparent;transition:box-shadow var(--ds-dur-effects,200ms) var(--ds-ease-effects,ease),background-color var(--ds-dur-effects,200ms) var(--ds-ease-effects,ease)}
+.nextflux-modal-surface .nf-title-filter-input{background:color-mix(in srgb,var(--ds-on-surface,currentColor) 5%,transparent)}
+.nf-title-filter-input::placeholder{color:var(--ds-text-tertiary,var(--muted))}
+.nf-title-filter-input:focus,.nf-title-filter-input:focus-visible{outline:none;box-shadow:0 0 0 1.5px var(--ds-accent,var(--accent))}
+.nf-title-filter-input[aria-invalid="true"]{box-shadow:0 0 0 1.5px var(--ds-tone-danger-fg,var(--danger))}
+.nf-title-filter-input:disabled{opacity:.6}
+.nf-title-filter-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding-inline:2px;color:var(--ds-text-secondary,var(--muted));font-size:var(--ds-text-section,.8125rem)}
+.nf-title-filter-note{margin:0;padding-inline:2px;font-size:var(--ds-text-section,.8125rem);line-height:1.55;color:var(--ds-text-secondary,var(--muted));overflow-wrap:anywhere}
+.nf-title-filter-loading{display:flex;align-items:center;gap:10px;min-height:48px}
+.nf-title-filter-loading .ds-spinner{flex:none;width:18px;height:18px}
+.nf-title-filter-error{margin:0;padding:12px 16px;border-radius:var(--ds-radius-row,16px);font-size:var(--ds-text-subhead,.875rem);line-height:1.5;color:var(--ds-tone-danger-fg,var(--danger));background:var(--ds-tone-danger-bg,color-mix(in srgb,var(--danger) 8%,transparent));overflow-wrap:anywhere;animation:nf-title-filter-in var(--ds-dur-spatial,300ms) var(--ds-ease-spatial,ease) both}
+.nf-title-filter-toast{position:fixed;z-index:9999;left:50%;top:auto;bottom:calc(24px + env(safe-area-inset-bottom,0px) + var(--nf-toast-viewport-inset,0px));translate:-50% 0;width:max-content;max-width:min(480px,calc(100vw - 32px));box-sizing:border-box;overflow-wrap:anywhere;padding:14px 16px;border-radius:var(--ds-radius-row,16px);background:var(--ds-raised,var(--overlay));color:var(--ds-text-primary,var(--foreground));box-shadow:var(--overlay-shadow,var(--shadow-custom-md));font-size:var(--ds-text-subhead,.875rem);font-weight:500;line-height:1.5;font-variant-numeric:tabular-nums;pointer-events:none;text-align:center;animation:nf-title-filter-toast-in var(--ds-dur-spatial,300ms) var(--ds-ease-spatial,ease) both}
 .article-list-header .nf-title-filter-trigger{min-width:48px!important;width:48px!important;height:48px!important}
 
 /* Existing server rules are a read-only disclosure, not an editable regex form. */
-.nf-server-rules{border:1px solid var(--separator);border-radius:14px;padding:0 12px;min-width:0;background:var(--default)}
-.nf-server-rules>summary{min-height:48px;align-content:center;cursor:pointer;padding:10px 0;font-size:.875rem;font-weight:600;line-height:1.6;overflow-wrap:anywhere}
-.nf-server-rules>summary:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px;border-radius:4px}
-.nf-server-rules[open]{padding-bottom:12px}
+.nf-server-rules{border:0;border-radius:var(--ds-radius-row,16px);padding:0 14px;min-width:0;background:color-mix(in srgb,var(--ds-on-surface,currentColor) 5%,transparent)}
+.nf-server-rules>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;cursor:pointer;padding:10px 0;list-style:none;font-size:var(--ds-text-subhead,.875rem);font-weight:500;line-height:1.5;color:var(--ds-text-primary,var(--foreground));overflow-wrap:anywhere;-webkit-tap-highlight-color:transparent}
+.nf-server-rules>summary::-webkit-details-marker{display:none}
+.nf-server-rules>summary:focus-visible{outline:2px solid var(--ds-accent,var(--accent));outline-offset:2px;border-radius:8px}
+.nf-server-rules-chevron{flex:none;color:var(--ds-text-tertiary,var(--muted));transition:transform var(--ds-dur-spatial,300ms) var(--ds-ease-spatial,ease)}
+.nf-server-rules[open]>summary .nf-server-rules-chevron{transform:rotate(180deg)}
+.nf-server-rules[open]{padding-bottom:14px}
+.nf-server-rules[open]>:not(summary){animation:nf-title-filter-fade var(--ds-dur-effects,200ms) var(--ds-ease-effects,ease) both}
 .nf-server-rule{margin-top:12px;min-width:0}
-.nf-server-rule-label{font-size:.8125rem;font-weight:600;margin:0 0 6px}
-.nf-server-rule-text{font:inherit;font-size:.8125rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;user-select:text;margin:0;padding:10px;border-radius:10px;background:var(--overlay);color:var(--foreground)}
+.nf-server-rule-label{font-size:var(--ds-text-section,.8125rem);font-weight:500;color:var(--ds-text-secondary,var(--muted));margin:0 0 6px}
+.nf-server-rule-text{font:inherit;font-size:.8125rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;user-select:text;margin:0;padding:10px 12px;border-radius:var(--ds-radius-small,10px);background:var(--ds-raised,var(--overlay));color:var(--ds-text-primary,var(--foreground));font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+@keyframes nf-title-filter-in{from{opacity:0;transform:translate3d(0,-6px,0)}}
+@keyframes nf-title-filter-fade{from{opacity:0}}
+@keyframes nf-title-filter-toast-in{from{opacity:0;scale:.94}}
+@media (prefers-reduced-motion:reduce){.nf-title-filter-error,.nf-title-filter-toast,.nf-server-rules[open]>:not(summary){animation:none}.nf-server-rules-chevron{transition:none}}
+html[data-reduce-motion="true"] :is(.nf-title-filter-error,.nf-title-filter-toast,.nf-server-rules[open]>:not(summary)){animation:none}

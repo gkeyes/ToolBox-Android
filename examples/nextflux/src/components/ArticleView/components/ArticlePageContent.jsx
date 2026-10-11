@@ -2,7 +2,7 @@ import { forwardRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
-import { Separator } from "@heroui/react";
+import { releaseStuckGallery } from "@/toolbox/galleryRelease.js";
 import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx";
 import ProgressiveArticle from "@/components/ArticleView/components/ProgressiveArticle.jsx";
 import Attachments from "@/components/ArticleView/components/Attachments.jsx";
@@ -55,7 +55,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         interactive={!passive}
         onFeedClick={passive || !feedId ? undefined : () => navigate(`/feed/${feedId}`)}
       />
-      <Separator className="my-4" />
+      <div className="nextflux-article-header-gap" aria-hidden="true" />
 
       <AISummary articleId={article.id} passive={passive} paused={readingPaused || !foreground} />
 
@@ -74,6 +74,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         bannerVisible={!passive}
         onVisibleChange={(visible) => {
           if (!passive) imageGalleryActive.set(visible);
+          if (!visible) releaseStuckGallery();
         }}
         maskOpacity={0.8}
         loop={false}
@@ -82,7 +83,7 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         <div
           className={cn(
             "article-content prose dark:prose-invert max-w-none",
-            "prose-pre:rounded-lg prose-pre:shadow-small",
+            "prose-pre:rounded-[var(--ds-radius-control)]",
             "prose-h1:text-[1.5em] prose-h2:text-[1.25em] prose-h3:text-[1.125em] prose-h4:text-[1em]",
             getFontSizeClass(fontSize),
             isStoneTheme ? "prose-stone" : "",

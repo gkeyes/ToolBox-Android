@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  RefreshCw,
-  CircleCheck,
-  TriangleAlert,
   FilePen,
   Trash2,
 } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+  MarkAllReadIcon as CircleCheck,
+  WarningIcon as TriangleAlert,
+} from "@/components/ui/icons.jsx";
 import { cn } from "@/lib/utils";
 import {
   SidebarMenuSubButton,
@@ -52,10 +54,10 @@ const FeedItem = ({ feed }) => {
     <SidebarMenuSubItem>
       <SidebarMenuSubButton
         asChild
+        isActive={parseInt(feedId) === feed.id}
         className={cn(
-          "pl-8 pr-2 h-8",
-          parseInt(feedId) === feed.id &&
-            "active-feed bg-default/60 rounded-xl",
+          "pl-11 pr-3",
+          parseInt(feedId) === feed.id && "active-feed",
         )}
       >
         <Link
@@ -72,7 +74,7 @@ const FeedItem = ({ feed }) => {
             )}
             <span className="line-clamp-1">{feed.title}</span>
           </span>
-          <span className="text-muted opacity-60 text-xs">
+          <span className="sidebar-badge ds-tnum text-[length:var(--ds-text-subhead)]">
             {$getFeedCount(feed.id) !== 0 && $getFeedCount(feed.id)}
           </span>
         </Link>
@@ -114,7 +116,7 @@ const FeedItem = ({ feed }) => {
         >
           {t("articleList.editFeed")}
         </ContextMenuItem>
-        <div className="my-2 border-t" />
+        <div className="h-1" aria-hidden="true" />
         <ContextMenuItem
           onClick={() => {
             currentFeedId.set(feed.id.toString());

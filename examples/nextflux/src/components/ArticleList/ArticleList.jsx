@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import {
   filter,
@@ -13,7 +13,6 @@ import { lastSync } from "@/stores/syncStore.js";
 import { useParams } from "react-router-dom";
 import ArticleListHeader from "./components/ArticleListHeader";
 import ArticleListContent from "./components/ArticleListContent";
-import ArticleListFooter from "./components/ArticleListFooter";
 import { settingsState } from "@/stores/settingsStore.js";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import Indicator from "@/components/ArticleList/components/Indicator.jsx";
@@ -32,8 +31,10 @@ const ArticleList = () => {
     showHiddenFeeds,
     showIndicator,
     floatingSidebar,
+    articleListStyle,
   } = useStore(settingsState);
   const virtuosoRef = useRef(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
 
   const lastSyncTime = useRef(null);
   const lastQuery = useRef(null);
@@ -92,20 +93,21 @@ const ArticleList = () => {
     <div className="main-content flex">
       <div
         className={cn(
-          "nextflux-article-list-page w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
+          "nextflux-article-list-page bg-background w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
           floatingSidebar ? "md:border-r" : "",
         )}
+        data-list-style={articleListStyle === "cards" ? "cards" : "lines"}
       >
-        <ArticleListHeader />
+        <ArticleListHeader collapsed={headerCollapsed} />
         {showIndicator && <Indicator virtuosoRef={virtuosoRef} />}
         <ArticleListContent
           articles={$filteredArticles}
           virtuosoRef={virtuosoRef}
+          onCollapsedChange={setHeaderCollapsed}
           setVisibleRange={(range) => {
             visibleRange.set(range);
           }}
         />
-        <ArticleListFooter />
         <div className="nextflux-list-transition-cover" aria-hidden="true" />
       </div>
       <ArticleView />

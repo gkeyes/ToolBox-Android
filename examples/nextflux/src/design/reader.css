@@ -1,0 +1,456 @@
+/*
+ * Reader layout layer. NextFlux is an RSS reader, not a settings-style tool:
+ * content first, chrome quiet, many items per screen, unread state legible at
+ * a glance. Loaded after views.css so it has the final say on list, header
+ * and sidebar geometry.
+ */
+
+@layer components {
+  /* ---------- Top bar: always compact, title + live status ---------- */
+  .article-list-header.ds-topbar { min-block-size: 48px; }
+  .article-list-header .ds-topbar-title.article-list-title {
+    opacity: 1;
+    transform: none;
+    padding-inline-start: 2px;
+  }
+  .article-list-title h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--ds-text-primary);
+  }
+  .article-list-title .ds-topbar-subtitle { margin-block-start: 1px; }
+
+  /* ---------- Editorial type: serif headlines, sans meta ---------- */
+  :root { --nf-serif: "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif; }
+  .article-card .card-title {
+    font-family: var(--nf-serif);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.42;
+    letter-spacing: 0;
+  }
+  .article-list-title h1 { font-family: var(--nf-serif); font-size: 1.25rem; font-weight: 700; }
+
+  /* ---------- Article rows ---------- */
+  .card-unread-dot {
+    flex: none;
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-inline-end: 1px;
+  }
+  .article-card .card-source-title {
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  /* Read rows recede by colour, not by fading images and meta into mush. */
+  .article-card .card-content.is-read { opacity: 1; }
+  .article-card[data-read="true"] .card-title { color: var(--ds-text-tertiary); font-weight: 500; }
+  .article-card[data-read="true"] .card-preview { color: var(--ds-text-tertiary); }
+  .article-card[data-read="true"] .card-image { opacity: 0.6; }
+  .article-card .card-image { border-radius: 8px; }
+
+  /* Header floats over the list so it can slide away on a compositor
+     transform; the list reserves exactly its measured height. */
+  .article-list-header-wrap {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 0;
+    background: var(--ds-reader);
+    transition: transform var(--ds-dur-spatial) var(--ds-ease-spatial);
+  }
+  .article-list-header-wrap::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    block-size: 1px;
+    background: var(--ds-hairline);
+    transform: scaleY(0.5);
+    transform-origin: bottom;
+    pointer-events: none;
+  }
+  .article-list-header.ds-topbar::after { display: none; }
+  .nextflux-article-list-page[data-chrome="hidden"] .article-list-header-wrap {
+    transform: translate3d(0, calc(-100% - 1px), 0);
+  }
+  .vlist-header { block-size: var(--list-header-h, 84px); }
+  .article-list-loading { padding-block-start: var(--list-header-h, 84px); }
+
+  /* Filter: text tabs with an accent underline, under the title bar. */
+  .article-list-tabs .tabs__list {
+    gap: 20px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .article-list-tabs .tabs__tab {
+    block-size: 34px;
+    padding-inline: 0;
+    background: transparent;
+    font-size: 0.84375rem;
+    font-weight: 500;
+    color: var(--ds-text-tertiary);
+  }
+  .article-list-tabs .tabs__tab[data-selected="true"] { color: var(--ds-text-primary); }
+  .article-list-tabs .tabs__tab svg { display: none; }
+  .article-list-tabs .tabs__indicator {
+    inset-block: auto 0 !important;
+    block-size: 2px !important;
+    border-radius: 2px;
+    background: var(--accent) !important;
+  }
+
+  /* ---------- Sidebar: a plain source list, not stacked cards ---------- */
+  .sidebar-panel,
+  .sidebar-mobile-panel { background: var(--surface); }
+  [data-sidebar="group"] > [data-sidebar="menu"],
+  [data-sidebar="group"] > [data-sidebar="group-content"] {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-sidebar="group-label"] {
+    min-block-size: 24px;
+    padding-inline: var(--ds-space-sm);
+    font-size: var(--ds-text-caption);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ds-text-tertiary);
+  }
+  .sidebar-row { border-radius: 8px; }
+  .sidebar-row[data-active="true"] {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--ds-text-primary);
+  }
+  .sidebar-row[data-active="true"] .sidebar-row-icon { color: var(--accent); }
+  .sidebar-badge { color: var(--ds-text-tertiary); font-size: var(--ds-text-caption); }
+  .sidebar-pref,
+  .sidebar-profile { background: var(--background) !important; }
+
+  /* ---------- Sheets: content gets the height, chrome stays thin ---------- */
+  .nextflux-mobile-sheet .nextflux-close-header { min-block-size: 40px; }
+}
+
+/* ---------- Reader toolbar: top bar + floating dock + "More" sheet ---------- */
+.reader-dock { display: flex; align-items: center; }
+.reader-dock > .nextflux-toolbar-group { display: contents; }
+.reader-secondary { display: flex; align-items: center; }
+
+@media (min-width: 768px) {
+  /* Wide screens: one bar — back, prev/next, secondary actions, then the dock. */
+  .action-buttons.reader-topbar { display: flex; flex-wrap: wrap; align-items: center; }
+  .action-buttons .reader-topbar-row { flex: 1 1 0; min-inline-size: 0; }
+  .action-buttons .reader-speech-slot { flex: 1 0 100%; }
+  .reader-more-button { display: none !important; }
+  .nextflux-toolbar-groups { justify-content: flex-end; }
+}
+
+@media (max-width: 767px) {
+  /* Phones: the dock floats at the bottom with text labels; the top bar keeps
+     only "back". Secondary actions live in the More sheet. */
+  .action-buttons .reader-dock {
+    position: fixed;
+    z-index: 45;
+    inset-inline: 12px;
+    inset-block-end: calc(10px + env(safe-area-inset-bottom, 0px));
+    block-size: 60px;
+    padding-inline: 6px;
+    justify-content: space-around;
+    border-radius: 30px;
+    background: var(--ds-raised);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.14), 0 0 0 0.5px var(--ds-hairline);
+    transition:
+      transform var(--ds-dur-spatial) var(--ds-ease-spatial),
+      opacity var(--ds-dur-effects) var(--ds-ease-effects);
+  }
+
+  .dark .action-buttons .reader-dock { box-shadow: 0 0 0 0.5px var(--ds-hairline); }
+  .action-buttons .reader-dock .nextflux-toolbar-button {
+    inline-size: 48px;
+    min-inline-size: 48px;
+    max-inline-size: 48px;
+    flex: 0 0 48px;
+    block-size: 48px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0;
+    color: var(--ds-text-primary);
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button > svg,
+  .action-buttons .reader-dock .nextflux-toolbar-button > [data-slot="spinner"] {
+    inline-size: 20px;
+    block-size: 20px;
+    color: inherit;
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button > svg.text-muted { color: var(--ds-text-primary); }
+  .action-buttons .reader-dock .nextflux-toolbar-button::after {
+    content: attr(aria-label);
+    max-inline-size: 56px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--ds-text-tertiary);
+  }
+  /* Secondary buttons stay mounted (their dialogs and notices live with them)
+     but are reached through the sheet. */
+  .action-buttons .reader-secondary .nextflux-toolbar-button { display: none; }
+
+  /* Speech player docks just above the toolbar. */
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+    position: fixed;
+    z-index: 44;
+    inset-inline: 12px;
+    inset-block-end: calc(78px + env(safe-area-inset-bottom, 0px));
+    border-radius: 22px;
+    background: var(--ds-raised);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 0 0 0.5px var(--ds-hairline);
+    padding-inline: 6px;
+  }
+
+  /* Immersive reading: scrolling down tucks the bars away; scrolling up or
+     reaching either end brings them back. */
+  /* The sticky bar itself carries no filter/transform (that would become the
+     containing block of the fixed dock); its row is the visible, hideable bar. */
+  .action-buttons.reader-topbar {
+    padding: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  /* Solid, not blurred: a live backdrop blur on a page that slides in/out is
+     recomputed a frame late on Android WebView, which reads as a flash of the
+     bar (and its back button) on every open/close. */
+  .action-buttons .reader-topbar-row {
+    padding: 6px 8px;
+    background: var(--ds-reader, var(--background));
+    transition: transform var(--ds-dur-spatial) var(--ds-ease-spatial);
+  }
+  .article-scroll-area[data-chrome="hidden"] .reader-topbar-row { transform: translate3d(0, -100%, 0); }
+  .article-scroll-area[data-chrome="hidden"] .reader-topbar::after { opacity: 0; }
+  .article-scroll-area[data-chrome="hidden"] .reader-dock,
+  .article-scroll-area[data-chrome="hidden"] .reader-speech-slot {
+    transform: translate3d(0, calc(100% + 24px), 0);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* More sheet: a grid of labelled actions. */
+.reader-more-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 6px;
+  padding: 4px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.button.reader-more-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  block-size: auto;
+  min-block-size: 84px;
+  padding: 4px 0;
+  border-radius: 14px;
+  background: transparent;
+  white-space: normal;
+}
+.reader-more-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 16px;
+  background: var(--surface-secondary);
+  color: var(--ds-text-primary);
+}
+.reader-more-icon svg { inline-size: 22px; block-size: 22px; }
+.reader-more-label {
+  font-size: var(--ds-text-caption);
+  line-height: 1.25;
+  color: var(--ds-text-secondary);
+  text-align: center;
+}
+
+/* Title and count share one baseline in the bar. */
+.article-list-header .ds-topbar-title.article-list-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.article-list-title h1 { flex: none; max-inline-size: 60%; }
+.article-list-title .ds-topbar-subtitle { margin: 0; min-inline-size: 0; }
+
+/* Very narrow phones: six 44px targets still fit without overlap. */
+@media (max-width: 360px) {
+  .action-buttons .reader-dock { inset-inline: 8px; padding-inline: 2px; }
+  .action-buttons .reader-dock .nextflux-toolbar-button {
+    inline-size: 44px;
+    min-inline-size: 44px;
+    max-inline-size: 44px;
+    flex-basis: 44px;
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button::after { max-inline-size: 50px; }
+}
+
+/* Bars placed by a page change jump into place; only reading scrolls animate them. */
+.article-scroll-area[data-chrome-instant] :is(.reader-topbar-row, .reader-dock, .reader-speech-slot) {
+  transition: none !important;
+}
+
+/* ---------- Icons: one line weight everywhere, ink dot in the accent ---------- */
+.lucide { stroke-width: 1.75; }
+.nf-icon .nf-dot { fill: var(--accent); stroke: none; }
+/* A filled star keeps its dot-free silhouette; muted icons keep a live dot. */
+.text-muted .nf-dot, .nf-icon.text-muted .nf-dot { fill: var(--accent); }
+.sidebar-row .sidebar-row-icon > svg { inline-size: 20px; block-size: 20px; }
+.sidebar-row:not([data-active="true"]) .sidebar-row-icon { color: var(--ds-text-secondary); }
+/* The feed fallback badge: ink-dot RSS on a soft accent tile. */
+.feed-icon-fallback { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; color: var(--accent) !important; }
+
+/* ---------- Article list styles (Settings › Appearance › List style) ---------- */
+/* Shared: day headers between items. */
+.article-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--ds-space-md) 6px;
+  font-size: var(--ds-text-caption);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ds-text-primary);
+}
+
+/* Style 1 · Lines: one paper surface, 1px inset rules, ruled day headers. */
+[data-list-style="lines"] .article-card::after {
+  inset-inline: var(--ds-space-md);
+  block-size: 1px;
+  transform: none;
+  background: var(--ds-hairline);
+}
+[data-list-style="lines"] .article-day::after {
+  content: "";
+  flex: 1;
+  block-size: 1px;
+  background: var(--ds-hairline);
+}
+/* No rule directly above a day header. */
+[data-list-style="lines"] .article-list-item:has(+ .article-list-item.has-day) .article-card::after { opacity: 0; }
+
+/* Style 2 · Cards: each entry a small paper card on a tinted ground; read
+   entries drop to an outline so unread ones stand out. */
+/* Pure page: ground and card are both the theme background (white in light,
+   black in dark). Cards lift off it with a soft two-layer shadow and a
+   hairline edge — never by tinting the ground. */
+[data-list-style="cards"] {
+  --nf-card: var(--background);
+  --nf-list-ground: var(--background);
+  --nf-card-edge: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --nf-card-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 6px 18px -6px rgb(0 0 0 / 0.10);
+}
+.dark [data-list-style="cards"],
+[data-theme="dark"] [data-list-style="cards"] {
+  --nf-card-edge: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --nf-card-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) [data-list-style="cards"] {
+    --nf-card-edge: color-mix(in srgb, var(--foreground) 14%, transparent);
+    --nf-card-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.04);
+  }
+}
+[data-list-style="cards"] .article-list-body .v-list,
+[data-list-style="cards"] .article-list-body [data-virtuoso-scroller],
+[data-list-style="cards"] .article-list-header-wrap,
+[data-list-style="cards"] .article-list-header.ds-topbar { background: var(--nf-list-ground); }
+[data-list-style="cards"].nextflux-article-list-page { background: var(--nf-list-ground); }
+[data-list-style="cards"] .article-list-item { padding: 0 12px 8px; }
+[data-list-style="cards"] .article-day { padding: 12px 12px 8px; color: var(--ds-text-secondary); }
+[data-list-style="cards"] .article-card {
+  padding: 12px 14px 13px;
+  border-radius: 14px;
+  background: var(--nf-card);
+  box-shadow: 0 0 0 1px var(--nf-card-edge), var(--nf-card-shadow);
+}
+[data-list-style="cards"] .article-card::after { display: none; }
+/* Read entries settle flat: edge only, no lift. */
+[data-list-style="cards"] .article-card[data-read="true"] {
+  box-shadow: 0 0 0 1px var(--nf-card-edge);
+}
+[data-list-style="cards"] .article-card.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--nf-card));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ---------- Speech player: one surface, hairline track, a clean playhead ---------- */
+.reader-speech-slot .nextflux-speech-bar,
+.nextflux-speech-bar {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+@media (max-width: 767px) {
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+    border-radius: 24px;
+    padding: 4px 6px;
+    background: var(--ds-raised);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.12), 0 0 0 0.5px var(--ds-hairline);
+  }
+  .dark .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) { box-shadow: 0 0 0 0.5px var(--ds-hairline); }
+}
+.nextflux-speech-bar .slider__track {
+  block-size: 3px !important;
+  border-radius: 2px;
+  background: var(--ds-hairline);
+}
+.nextflux-speech-bar .slider__fill { border-radius: 2px; background: var(--accent); }
+.nextflux-speech-bar .slider__thumb {
+  inline-size: 12px !important;
+  block-size: 12px !important;
+  border-radius: 50%;
+  background: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--ds-raised) !important;
+}
+.nextflux-speech-bar .slider__thumb::after { display: none !important; }
+.nextflux-speech-bar [aria-label="切换播放速度"] {
+  border-radius: 9px;
+  background: var(--surface-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Header: tabs are the title in smart views ---------- */
+.article-list-inline-tabs { display: flex; align-items: stretch; align-self: stretch; padding-inline-start: 4px; }
+.article-list-inline-tabs .article-list-tabs { padding: 0; display: flex; align-items: stretch; }
+.article-list-inline-tabs .tabs,
+.article-list-inline-tabs [data-slot="tabs"] { display: flex; align-items: stretch; }
+.article-list-inline-tabs .article-list-tabs .tabs__tab {
+  block-size: 48px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.article-list-inline-tabs .article-list-tabs .tabs__tab[data-selected="true"] {
+  font-family: var(--nf-serif);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+.article-tab-count {
+  margin-inline-start: 5px;
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+.article-list-caption {
+  font-size: var(--ds-text-caption);
+  color: var(--ds-text-tertiary);
+}
+.article-list-caption-row { padding: 0 var(--ds-space-md) 6px; }

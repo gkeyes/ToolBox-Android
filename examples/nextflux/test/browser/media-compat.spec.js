@@ -404,3 +404,40 @@ test("account media teardown closes an active native media session", async ({ pa
   await page.evaluate(() => window.mediaCompatFixture.clearSessionMedia());
   await expect.poll(async () => (await snapshot(page)).mediaSessions.filter((value) => !value.closed).length).toBe(0);
 });
+
+// Regression for "tapping a video freezes the reader": the ToolBox runtime has
+// no fullscreen host view, so inline media must not offer fullscreen, and a
+// fullscreen entered anyway is left at once, leaving the page interactive.
+test("article video stays inline: no fullscreen entry, and a forced fullscreen is left", async ({ page }) => {
+  await openArticle(page, `<video src="${MP4}"></video>`);
+  await page.getByRole("button", { name: "加载视频", exact: true }).click();
+  await respond(page, MP4, { type: "video/mp4", base64: streamingFixture.mp4 });
+  const video = page.getByTestId("article-body").locator("video");
+  await expect.poll(() => video.evaluate((element) => element.videoWidth)).toBe(64);
+  expect(await video.evaluate((element) => ({
+    list: element.getAttribute("controlslist"),
+    pip: element.hasAttribute("disablepictureinpicture"),
+    remote: element.hasAttribute("disableremoteplayback"),
+  }))).toEqual({ list: "nofullscreen noremoteplayback nodownload", pip: true, remote: true });
+
+  // Force fullscreen from a real gesture, as a native control or double tap would.
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.textContent = "force fullscreen";
+    button.onclick = () => document.querySelector("video").requestFullscreen().catch(() => {});
+    document.querySelector("[data-testid='media-compat-surface']").prepend(button);
+  });
+  await page.getByRole("button", { name: "force fullscreen", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+  await expect.poll(() => page.evaluate(() => {
+    const blocked = [[0.5, 0.5], [0.15, 0.2], [0.85, 0.8]].filter(([fx, fy]) => {
+      const hit = document.elementFromPoint(innerWidth * fx, innerHeight * fy);
+      // Empty page areas hit <html>/<body>; anything else outside #root is a layer.
+      return !hit || (hit !== document.body && hit !== document.documentElement && !document.getElementById("root").contains(hit));
+    });
+    return { blocked: blocked.length, inert: document.getElementById("root").inert, body: getComputedStyle(document.body).pointerEvents };
+  })).toEqual({ blocked: 0, inert: false, body: "auto" });
+  // A real tap on a reader control still works.
+  await page.getByRole("button", { name: "关闭媒体", exact: true }).click();
+  await expect(video).toHaveCount(0);
+});
