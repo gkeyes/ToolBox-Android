@@ -28,8 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
@@ -78,29 +80,48 @@ val LocalToolBoxTitleCollapse = compositionLocalOf<ToolBoxTitleCollapse?> { null
 @Composable
 fun ToolBoxTitleCollapseSource(state: LazyListState) {
     val collapse = LocalToolBoxTitleCollapse.current ?: return
-    DisposableEffect(collapse, state) {
-        // Item sizes before the first visible item are remembered as they scroll past, so the
-        // distance stays exact even when the first item is shorter than the title.
-        val sizes = HashMap<Int, Int>()
-        var gap = 0
-        val source: () -> Float = {
-            val info = state.layoutInfo.visibleItemsInfo
-            info.forEach { if (it.index < 32) sizes[it.index] = it.size }
-            if (info.size >= 2) gap = (info[1].offset - info[0].offset - info[0].size).coerceAtLeast(0)
-            val first = state.firstVisibleItemIndex
-            var total = state.firstVisibleItemScrollOffset.toFloat()
-            var known = true
-            for (i in 0 until first) {
-                val size = sizes[i]
-                if (size == null) { known = false; break }
-                total += size + gap
-            }
-            if (known) total else Float.MAX_VALUE / 4f
-        }
+    val source = rememberToolBoxListScrolledPx(state)
+    DisposableEffect(collapse, source) {
         collapse.source = source
         onDispose { if (collapse.source === source) collapse.source = null }
     }
 }
+
+/**
+ * Exact distance a lazy list has scrolled from its top, readable synchronously in draw/layer
+ * phases. Item sizes before the first visible item are remembered as they scroll past, so the
+ * value stays exact when the first item is shorter than the title.
+ */
+@Composable
+fun rememberToolBoxListScrolledPx(state: LazyListState): () -> Float = remember(state) {
+    val sizes = HashMap<Int, Int>()
+    var gap = 0
+    val source: () -> Float = {
+        val info = state.layoutInfo.visibleItemsInfo
+        info.forEach { if (it.index < 32) sizes[it.index] = it.size }
+        if (info.size >= 2) gap = (info[1].offset - info[0].offset - info[0].size).coerceAtLeast(0)
+        val first = state.firstVisibleItemIndex
+        var total = state.firstVisibleItemScrollOffset.toFloat()
+        var known = true
+        for (i in 0 until first) {
+            val size = sizes[i]
+            if (size == null) { known = false; break }
+            total += size + gap
+        }
+        if (known) total else Float.MAX_VALUE / 4f
+    }
+    source
+}
+
+/** Collapse fraction (0 = expanded, 1 = collapsed) for [scrolledPx] against the title height. */
+fun toolBoxCollapseFraction(scrolledPx: Float, largeTitlePx: Float): Float =
+    if (largeTitlePx <= 0f) 0f else (scrolledPx / largeTitlePx).coerceIn(0f, 1f)
+
+/** Bar title / hairline alpha: appears only once the large title is mostly gone. */
+fun toolBoxBarTitleAlpha(fraction: Float): Float = ((fraction - 0.55f) / 0.45f).coerceIn(0f, 1f)
+
+/** Large title alpha: fades out slightly ahead of being covered by the bar. */
+fun toolBoxLargeTitleAlpha(fraction: Float): Float = 1f - (fraction * 1.4f).coerceAtMost(1f)
 
 /** Binds a plain vertical scroll container as the scroll source. */
 @Composable
@@ -130,6 +151,8 @@ fun ToolBoxCollapsingTopBar(
     modifier: Modifier = Modifier,
     subtitle: String = "",
     collapse: ToolBoxTitleCollapse? = LocalToolBoxTitleCollapse.current,
+    /** Synchronous scroll source that overrides [collapse] (for example the selected tab's list). */
+    scrolledPx: (() -> Float)? = null,
     navigationIcon: ToolBoxIconKey? = null,
     navigationContentDescription: String = "返回",
     onNavigationClick: (() -> Unit)? = null,
@@ -146,7 +169,8 @@ fun ToolBoxCollapsingTopBar(
         WindowInsets(0, 0, 0, 0)
     }
     val largePx = with(LocalDensity.current) { largeHeight.toPx() }
-    fun progress(scrolled: Float): Float = (scrolled / largePx).coerceIn(0f, 1f)
+    val readScrolled: () -> Float = scrolledPx ?: { collapse?.scrolledPx() ?: 0f }
+    fun progress(scrolled: Float): Float = toolBoxCollapseFraction(scrolled, largePx)
 
     Box(modifier.fillMaxWidth()) {
         // Large title first so the bar draws over it as it slides up.
@@ -161,19 +185,22 @@ fun ToolBoxCollapsingTopBar(
             Column(
                 Modifier.fillMaxWidth()
                     .graphicsLayer {
-                        val scrolled = collapse?.scrolledPx() ?: 0f
+                        val scrolled = readScrolled()
                         translationY = -scrolled.coerceAtMost(largePx)
-                        alpha = 1f - (progress(scrolled) * 1.4f).coerceAtMost(1f)
+                        alpha = toolBoxLargeTitleAlpha(progress(scrolled))
                     }
                     .padding(horizontal = ToolBoxThemeTokens.spacing.md)
                     .padding(top = ToolBoxThemeTokens.spacing.xs),
             ) {
-                ToolBoxText(
-                    title,
-                    style = ToolBoxThemeTokens.textStyles.screenTitle.copy(color = colors.textPrimary),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // Tab switches change the title in place: cross-fade it rather than swapping a frame.
+                androidx.compose.animation.Crossfade(title, animationSpec = ToolBoxMotion.effects(), label = "large title") { text ->
+                    ToolBoxText(
+                        text,
+                        style = ToolBoxThemeTokens.textStyles.screenTitle.copy(color = colors.textPrimary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (subtitle.isNotBlank()) {
                     ToolBoxText(
                         subtitle,
@@ -184,10 +211,16 @@ fun ToolBoxCollapsingTopBar(
                 }
             }
         }
-        val barSurface = when {
-            isGlass && glassState != null -> Modifier.toolBoxTopGlassEffect(glassState)
-            isGlass -> Modifier.toolBoxSolidGlass(androidx.compose.ui.graphics.RectangleShape)
-            else -> Modifier.background(colors.background)
+        // One deterministic material. A live blur here is switched off whenever its page stops
+        // being the active glass page (every push, pop and runtime entry) and back on afterwards,
+        // which flashed the bar between blurred glass and its solid fallback during transitions.
+        val materials = ToolBoxThemeTokens.materials
+        val barFill = if (isGlass) materials.glassTint.compositeOver(colors.background) else colors.background
+        // At the top of a page the bar is see-through onto the same page canvas, so a new page's
+        // first frame needs no material at all; the fill and hairline arrive with the collapse.
+        val barSurface = Modifier.drawBehind {
+            val fraction = progress(readScrolled())
+            if (fraction > 0f) drawRect(barFill.copy(alpha = barFill.alpha * fraction))
         }
         ToolBoxTopBar(
             title = title,
@@ -195,7 +228,7 @@ fun ToolBoxCollapsingTopBar(
                 .then(barSurface)
                 .drawWithContent {
                     drawContent()
-                    val fraction = progress(collapse?.scrolledPx() ?: 0f)
+                    val fraction = progress(readScrolled())
                     if (fraction > 0.01f) {
                         drawLine(
                             colors.divider.copy(alpha = colors.divider.alpha * fraction),
@@ -207,7 +240,7 @@ fun ToolBoxCollapsingTopBar(
             navigationContentDescription = navigationContentDescription,
             onNavigationClick = onNavigationClick,
             windowInsets = insets,
-            titleAlpha = { ((progress(collapse?.scrolledPx() ?: 0f) - 0.55f) / 0.45f).coerceIn(0f, 1f) },
+            titleAlpha = { toolBoxBarTitleAlpha(progress(readScrolled())) },
             actions = actions,
         )
     }

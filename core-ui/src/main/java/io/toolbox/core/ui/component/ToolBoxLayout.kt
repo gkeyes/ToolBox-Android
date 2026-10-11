@@ -193,14 +193,16 @@ fun ToolBoxTopBar(
                 Modifier.graphicsLayer { alpha = titleAlpha() },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                ToolBoxText(
-                    title,
-                    style = ToolBoxThemeTokens.textStyles.collapsedTitle.copy(
-                        textAlign = TextAlign.Center, color = colors.textPrimary,
-                    ),
-                    maxLines = titleLines,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                androidx.compose.animation.Crossfade(title, animationSpec = ToolBoxMotion.effects(), label = "bar title") { text ->
+                    ToolBoxText(
+                        text,
+                        style = ToolBoxThemeTokens.textStyles.collapsedTitle.copy(
+                            textAlign = TextAlign.Center, color = colors.textPrimary,
+                        ),
+                        maxLines = titleLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (subtitle.isNotBlank()) {
                     ToolBoxText(
                         subtitle,
@@ -252,12 +254,14 @@ fun ToolBoxLargeTopBar(
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState? = null,
     compact: Boolean = false,
+    scrolledPx: (() -> Float)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     ToolBoxCollapsingTopBar(
         title = title,
         modifier = modifier,
         subtitle = subtitle,
+        scrolledPx = scrolledPx,
         glassState = glassState,
         statusBarPadding = defaultWindowInsetsPadding,
         actions = actions,

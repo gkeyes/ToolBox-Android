@@ -69,6 +69,8 @@ import io.toolbox.core.ui.component.LocalToolBoxTitleCollapse
 import io.toolbox.core.ui.component.ToolBoxTitleCollapse
 import io.toolbox.core.ui.component.rememberToolBoxTitleCollapse
 import io.toolbox.core.ui.component.toolBoxLargeTitleHeight
+import io.toolbox.core.ui.component.rememberToolBoxListScrolledPx
+import androidx.compose.foundation.lazy.LazyListState
 import io.toolbox.core.ui.component.ToolBoxCollapsingTopBar
 import kotlin.math.absoluteValue
 import kotlin.math.abs
@@ -83,12 +85,30 @@ internal fun PrimaryScreen(
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
+    listStates: Map<MainDestination, LazyListState> = emptyMap(),
     content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
-    // Large title collapses with the visible tab's list; the bar never changes height.
     val titleCollapse = rememberToolBoxTitleCollapse()
-    LaunchedEffect(selected) { titleCollapse.reset() }
+    val pagerState = rememberPagerState(
+        initialPage = selected.ordinal,
+        pageCount = { MainDestination.entries.size },
+    )
+    // One top bar for all tabs. Its collapse is read synchronously from the tabs' own list
+    // states and blended by the pager position, so a tab switch never starts from a stale or
+    // late-bound value: the first frame of every page position is already correct.
+    val tabScroll = MainDestination.entries.map { destination ->
+        listStates[destination]?.let { rememberToolBoxListScrolledPx(it) }
+    }
+    val tabScrolledPx: () -> Float = {
+        val position = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+            .coerceIn(0f, (tabScroll.size - 1).toFloat())
+        val lower = position.toInt()
+        val upper = (lower + 1).coerceAtMost(tabScroll.lastIndex)
+        val fraction = position - lower
+        fun px(index: Int) = (tabScroll[index]?.invoke() ?: 0f).coerceIn(0f, TAB_SCROLL_CAP_PX)
+        px(lower) + (px(upper) - px(lower)) * fraction
+    }
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -96,12 +116,13 @@ internal fun PrimaryScreen(
             .testTag(selected.screenTestTag),
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
-        CompositionLocalProvider(LocalToolBoxTitleCollapse provides titleCollapse) {
+        // Tabs drive the bar through tabScrolledPx; no per-page binding that could lag a frame.
+        CompositionLocalProvider(LocalToolBoxTitleCollapse provides null) {
             if (layout.isCompact) {
                 ToolBoxAppScaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
-                        TopBar(title, subtitle, onImport, glassState = glassState,
+                        TopBar(title, subtitle, onImport, glassState = glassState, scrolledPx = tabScrolledPx,
                             organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
                     },
                     bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
@@ -121,7 +142,7 @@ internal fun PrimaryScreen(
                             contentPadding = mergePadding(scaffoldPadding, layout.contentPadding()),
                             layout = layout,
                             userScrollEnabled = !organizeEditing,
-                            titleCollapse = titleCollapse,
+                            pagerState = pagerState,
                             content = content,
                         )
                     }
@@ -152,7 +173,7 @@ internal fun PrimaryScreen(
                                 ),
                                 layout = layout,
                                 userScrollEnabled = false,
-                                titleCollapse = titleCollapse,
+                                pagerState = pagerState,
                                 content = content,
                             )
                         }
@@ -162,6 +183,7 @@ internal fun PrimaryScreen(
                             onImport,
                             defaultWindowInsetsPadding = false,
                             glassState = glassState,
+                            scrolledPx = tabScrolledPx,
                             organizeEditing = organizeEditing,
                             onOrganize = onOrganize,
                             onCreateGroup = onCreateGroup,
@@ -181,14 +203,10 @@ private fun PrimaryPager(
     contentPadding: PaddingValues,
     layout: HostRouteLayout,
     userScrollEnabled: Boolean,
-    titleCollapse: ToolBoxTitleCollapse,
+    pagerState: androidx.compose.foundation.pager.PagerState,
     content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val destinations = MainDestination.entries
-    val pagerState = rememberPagerState(
-        initialPage = selected.ordinal,
-        pageCount = { destinations.size },
-    )
     val latestSelected = rememberUpdatedState(selected)
     val latestOnDestination = rememberUpdatedState(onDestination)
 
@@ -240,12 +258,7 @@ private fun PrimaryPager(
                     else Modifier.clearAndSetSemantics { },
                 ),
         ) {
-            // Only the settled page drives the collapsing title.
-            CompositionLocalProvider(
-                LocalToolBoxTitleCollapse provides titleCollapse.takeIf { page == pagerState.currentPage },
-            ) {
-                content(destinations[page], contentPadding, layout)
-            }
+            content(destinations[page], contentPadding, layout)
         }
     }
 }
@@ -402,6 +415,7 @@ private fun TopBar(
     onImport: (() -> Unit)?,
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState,
+    scrolledPx: (() -> Float)? = null,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
@@ -411,6 +425,7 @@ private fun TopBar(
         subtitle = subtitle,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         glassState = glassState,
+        scrolledPx = scrolledPx,
         actions = {
             if (onOrganize != null) {
                 if (organizeEditing) {
@@ -489,3 +504,6 @@ private val MainDestination.screenTestTag: String
         MainDestination.Tools -> HostTestTags.PrimaryTools
         MainDestination.Settings -> HostTestTags.PrimarySettings
     }
+
+/** Beyond this scroll distance every tab reads as fully collapsed; keeps blending finite. */
+private const val TAB_SCROLL_CAP_PX = 4096f

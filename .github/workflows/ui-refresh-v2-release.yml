@@ -37,7 +37,7 @@ jobs:
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
       - name: Unit tests
-        run: ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+        run: ./gradlew --no-daemon :core-ui:testDebugUnitTest :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
       - name: Compile instrumentation sources
         run: ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
       - name: Build optimized release with the original signing key

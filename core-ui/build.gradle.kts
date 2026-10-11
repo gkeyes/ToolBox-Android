@@ -41,4 +41,6 @@ dependencies {
 
     implementation(libs.androidx.compose.material.icons.extended)
 
+    testImplementation("junit:junit:4.13.2")
+
 }

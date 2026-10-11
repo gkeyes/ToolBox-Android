@@ -101,6 +101,21 @@ object ToolBoxMotion {
         spring(dampingRatio = SpatialDamping, stiffness = SpatialStiffness, visibilityThreshold = IntOffset.VisibilityThreshold)
 
     /**
+     * Fade-through split for page pushes: the covered page is gone by this point of the
+     * transition and the incoming page only starts to appear after it, so two pages (and two
+     * top bars) are never visible on top of each other.
+     */
+    const val FadeThroughSplit = 0.35f
+
+    /** Alpha of an incoming page whose own visibility is [visibility] (0 hidden .. 1 shown). */
+    fun fadeThroughIncomingAlpha(visibility: Float): Float =
+        ((visibility - FadeThroughSplit) / (1f - FadeThroughSplit)).coerceIn(0f, 1f)
+
+    /** Alpha of a page covered by a page above it whose visibility is [coverage]. */
+    fun fadeThroughOutgoingAlpha(coverage: Float): Float =
+        (1f - coverage / FadeThroughSplit).coerceIn(0f, 1f)
+
+    /**
      * Closed-form step response of a unit-mass spring (0 -> 1) at [timeMillis]; used where many
      * items share one clock and each item evaluates its own delayed spring in the draw phase.
      */
