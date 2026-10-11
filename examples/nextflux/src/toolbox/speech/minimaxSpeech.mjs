@@ -32,12 +32,71 @@ export function speechEndpoint(region) {
   return endpoint;
 }
 
-export function hexToBytes(hex) {
+// MiniMax returns the whole MP3 as one hex string (a 3-minute segment is
+// ~6 MB of hex). The former slice()+parseInt() per byte allocated millions of
+// strings and blocked the WebView main thread for seconds per segment, and a
+// prefetch decodes the next segment while the current one plays, so taps
+// (including "stop") went unanswered. Decode through a lookup table instead,
+// and let the async variant yield between slices so stop is never starved.
+const HEX_VALUES = (() => {
+  const table = new Uint8Array(128).fill(255);
+  for (let i = 0; i < 10; i += 1) table[48 + i] = i;
+  for (let i = 0; i < 6; i += 1) { table[65 + i] = 10 + i; table[97 + i] = 10 + i; }
+  return table;
+})();
+const invalidAudio = () => failure("MiniMax 返回的音频数据无效。", "INVALID_AUDIO");
+
+function hexSource(hex) {
   const value = String(hex || "").trim();
-  if (!value || value.length % 2 !== 0 || /[^0-9a-f]/i.test(value)) throw failure("MiniMax 返回的音频数据无效。", "INVALID_AUDIO");
+  if (!value || value.length % 2 !== 0) throw invalidAudio();
+  return value;
+}
+
+function decodeHexRange(value, bytes, from, to) {
+  for (let j = from, i = from * 2; j < to; j += 1, i += 2) {
+    const high = value.charCodeAt(i);
+    const low = value.charCodeAt(i + 1);
+    const a = high < 128 ? HEX_VALUES[high] : 255;
+    const b = low < 128 ? HEX_VALUES[low] : 255;
+    if (a === 255 || b === 255) throw invalidAudio();
+    bytes[j] = (a << 4) | b;
+  }
+}
+
+export function hexToBytes(hex) {
+  const value = hexSource(hex);
   const bytes = new Uint8Array(value.length / 2);
-  for (let i = 0, j = 0; i < value.length; i += 2, j += 1) bytes[j] = Number.parseInt(value.slice(i, i + 2), 16);
+  decodeHexRange(value, bytes, 0, bytes.length);
   return bytes;
+}
+
+const yieldToEventLoop = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+export async function hexToBytesAsync(hex, { signal, sliceBytes = 64 * 1024, yieldControl = yieldToEventLoop } = {}) {
+  const value = hexSource(hex);
+  const bytes = new Uint8Array(value.length / 2);
+  for (let from = 0; from < bytes.length; from += sliceBytes) {
+    if (signal?.aborted) throw failure("语音生成已停止。", "CANCELLED");
+    decodeHexRange(value, bytes, from, Math.min(bytes.length, from + sliceBytes));
+    if (from + sliceBytes < bytes.length) await yieldControl();
+  }
+  if (signal?.aborted) throw failure("语音生成已停止。", "CANCELLED");
+  return bytes;
+}
+
+// A cancelled native stream may never answer its pending read. Settle the
+// read as soon as the run is stopped so nothing keeps waiting on it.
+function untilAborted(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(failure("语音生成已停止。", "CANCELLED"));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(failure("语音生成已停止。", "CANCELLED"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", onAbort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", onAbort); reject(error); },
+    );
+  });
 }
 
 function providerMessage(payload) {
@@ -50,11 +109,31 @@ async function readJsonResponse(response, network, signal) {
   let body = "";
   while (true) {
     if (signal?.aborted) throw failure("语音生成已停止。", "CANCELLED");
-    const part = await network.readStream(response.streamId);
+    const part = await untilAborted(network.readStream(response.streamId), signal);
     if (!(part?.data instanceof Uint8Array) || typeof part.done !== "boolean") throw failure("MiniMax 返回的数据格式无效。", "INVALID_RESPONSE");
     try { body += decoder.decode(part.data, { stream: !part.done }); }
     catch { throw failure("MiniMax 返回的数据编码无效。", "INVALID_RESPONSE"); }
     if (part.done) break;
+  }
+  return parseSpeechPayload(body);
+}
+
+// Parse the envelope without pushing megabytes of hex through JSON.parse in
+// one main-thread task: lift the data.audio string out first, parse the small
+// remainder, then put the (lazily sliced) hex string back.
+export function parseSpeechPayload(body) {
+  const marker = '"audio":"';
+  const start = body.indexOf(marker);
+  const end = start < 0 ? -1 : body.indexOf('"', start + marker.length);
+  if (start >= 0 && end > start) {
+    const valueStart = start + marker.length;
+    try {
+      const payload = JSON.parse(body.slice(0, valueStart) + body.slice(end));
+      if (payload?.data && payload.data.audio === "") {
+        payload.data.audio = body.slice(valueStart, end);
+        return payload;
+      }
+    } catch { /* fall back to a full parse below */ }
   }
   try { return JSON.parse(body); }
   catch { throw failure("MiniMax 返回的响应不是有效 JSON。", "INVALID_RESPONSE"); }
@@ -118,7 +197,8 @@ export async function synthesizeSpeechSegment(text, settings, { signal } = {}) {
     if (response.status === 401 || response.status === 403) throw failure("MiniMax API Key 无效或没有 Speech 权限。", "AUTH_ERROR");
     if (response.status < 200 || response.status >= 300) throw failure(message || `MiniMax 语音服务返回 HTTP ${response.status}。`, "HTTP_ERROR");
     if (Number(payload?.base_resp?.status_code || 0) !== 0) throw failure(message || "MiniMax 语音生成失败。", "PROVIDER_ERROR");
-    const bytes = hexToBytes(payload?.data?.audio);
+    if (signal?.aborted) throw failure("语音生成已停止。", "CANCELLED");
+    const bytes = await hexToBytesAsync(payload?.data?.audio, { signal });
     return {
       bytes,
       mimeType: "audio/mpeg",
@@ -127,8 +207,8 @@ export async function synthesizeSpeechSegment(text, settings, { signal } = {}) {
     };
   } finally {
     signal?.removeEventListener("abort", abort);
-    if (streamId && !completed) {
-      try { await network.cancelStream(streamId); } catch { /* stream may already be closed */ }
-    }
+    // Never wait on the cancel: a stopped run must settle even if the native
+    // side does not answer.
+    if (streamId && !completed) Promise.resolve().then(() => network.cancelStream(streamId)).catch(() => {});
   }
 }
