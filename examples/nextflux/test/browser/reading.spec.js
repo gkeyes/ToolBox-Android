@@ -321,3 +321,23 @@ test("Telegram source adapter removes duplicate title and restores message parag
   expect(Number.parseFloat(result.paragraphs[0].indent)).toBeGreaterThan(0);
   expect(Number.parseFloat(result.paragraphs[1].indent)).toBe(0);
 });
+
+
+test("a gallery whose close animation never reports its end still releases the page", async ({ page }) => {
+  await openFixture(page);
+  await resolveImage(page);
+  await decodedImage(page, 640, 320);
+  // Simulate a lost animationend: the fade-out never runs.
+  await page.addStyleTag({ content: ".PhotoView-Slider__Backdrop { animation: none !important; }" });
+  await page.getByTestId("image-fixture").locator("img").click();
+  await expect(page.locator(".PhotoView-Portal")).toBeVisible();
+  await page.locator(".PhotoView-Slider__toolbarIcon").last().click();
+  await expect.poll(() => page.evaluate(() => {
+    const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    return Boolean(hit?.closest(".PhotoView-Portal")) || getComputedStyle(document.body).overflow === "hidden";
+  }), { timeout: 3000 }).toBe(false);
+  expect(await page.evaluate(async () => (await import("/stores.js")).imageGalleryActive.get())).toBe(false);
+  // The image is tappable again: the gallery reopens.
+  await page.getByTestId("image-fixture").locator("img").click();
+  await expect(page.locator(".PhotoView-Portal:visible")).toHaveCount(1);
+});
