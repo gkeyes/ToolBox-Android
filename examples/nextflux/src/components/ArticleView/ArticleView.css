@@ -299,7 +299,7 @@ div.force-dark-code-theme .shiki span {
   color: var(--ds-text-tertiary, var(--muted));
   font-variant-numeric: tabular-nums;
 }
-.nextflux-article-header-gap { block-size: var(--ds-space-lg, 24px); }
+.nextflux-article-header-gap { block-size: var(--ds-space-md, 16px); }
 
 /* Body text colours follow the onSurface alphas instead of Tailwind grays. */
 .article-content.prose {

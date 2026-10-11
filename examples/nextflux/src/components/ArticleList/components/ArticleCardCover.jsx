@@ -25,12 +25,12 @@ function ArticleCardCover({ imageUrl, imageSources }) {
           "card-image bg-default overflow-hidden",
           cardImageSize === "large"
             ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
-            : "w-20 h-20 shrink-0 rounded-[var(--ds-radius-small)]",
+            : "w-16 h-16 shrink-0 rounded-[var(--ds-radius-small)]",
         )}
       >
-        <div className="flex flex-col items-center justify-center h-full gap-2 text-muted">
-          <ImageOff className="size-5 text-muted" />
-          <button type="button" className="text-xs text-accent min-h-12 px-3" onClick={(event) => { event.preventDefault(); event.stopPropagation(); retry(); }}>重试图片</button>
+        <div className="flex flex-col items-center justify-center h-full gap-1 text-muted">
+          <ImageOff className="size-4 text-muted" />
+          <button type="button" className="text-[11px] leading-none text-accent min-h-8 px-1" onClick={(event) => { event.preventDefault(); event.stopPropagation(); retry(); }}>重试图片</button>
         </div>
       </div>
     );
@@ -44,7 +44,7 @@ function ArticleCardCover({ imageUrl, imageSources }) {
         loading && "animate-pulse!",
         cardImageSize === "large"
           ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
-          : "w-20 h-20 shrink-0 rounded-[var(--ds-radius-small)]",
+          : "w-16 h-16 shrink-0 rounded-[var(--ds-radius-small)]",
       )}
     >
       {url && <img
@@ -59,7 +59,7 @@ function ArticleCardCover({ imageUrl, imageSources }) {
           "object-cover",
           cardImageSize === "large"
             ? "aspect-video w-full"
-            : "aspect-square w-20",
+            : "aspect-square w-16",
         )}
       />}
     </div>

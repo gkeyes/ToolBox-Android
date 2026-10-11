@@ -138,11 +138,11 @@ export default function ArticleCard({ article }) {
       >
         <div
           className={cn(
-            "card-content flex flex-col gap-1.5",
+            "card-content flex flex-col gap-1",
             article.status === "read" && article.starred === 0 && "is-read",
           )}
         >
-          <div className="card-header flex flex-col gap-1.5">
+          <div className="card-header flex flex-col gap-1">
             <div className="card-meta flex items-center justify-between gap-2">
               <div className="card-source flex items-center flex-1 gap-1.5 min-w-0">
                 <div className="card-source-content flex gap-1.5 items-center min-w-0">
@@ -163,8 +163,8 @@ export default function ArticleCard({ article }) {
                 </span>
               </div>
             </div>
-            <div className="card-content-body flex gap-3">
-              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+            <div className="card-content-body flex gap-2.5">
+              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                 <h3
                   data-shared-article-title={article.id}
                   className={cn(

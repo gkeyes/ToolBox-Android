@@ -464,9 +464,9 @@ const sidebarMenuButtonVariants = cva(
         default: "",
       },
       size: {
-        default: "min-h-12 text-[length:var(--ds-text-body)]",
+        default: "min-h-10 text-[length:var(--ds-text-body)]",
         sm: "min-h-10 text-sm",
-        lg: "min-h-14 text-[length:var(--ds-text-body)] group-data-[collapsible=icon]:p-0!",
+        lg: "min-h-12 text-[length:var(--ds-text-body)] group-data-[collapsible=icon]:p-0!",
       },
     },
     defaultVariants: {
@@ -532,7 +532,7 @@ const SidebarMenuBadge = React.forwardRef(({ className, ...props }, ref) => (
     ref={ref}
     data-sidebar="menu-badge"
     className={cn(
-      "sidebar-badge absolute right-3 top-0 flex h-12 min-w-5 items-center justify-end text-[length:var(--ds-text-subhead)] tabular-nums select-none pointer-events-none",
+      "sidebar-badge absolute right-3 top-0 flex h-10 min-w-5 items-center justify-end text-[length:var(--ds-text-subhead)] tabular-nums select-none pointer-events-none",
       "group-data-[collapsible=icon]:hidden",
       className,
     )}
@@ -571,7 +571,7 @@ const SidebarMenuSubButton = React.forwardRef(
         data-size={size}
         data-active={isActive}
         className={cn(
-          "sidebar-row ds-state ds-press-row flex min-h-12 min-w-0 items-center gap-3 overflow-hidden rounded-[var(--ds-radius-row)] px-3 outline-hidden ring-accent focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+          "sidebar-row ds-state ds-press-row flex min-h-10 min-w-0 items-center gap-3 overflow-hidden rounded-[var(--ds-radius-row)] px-3 outline-hidden ring-accent focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
           size === "sm" && "text-xs",
           size === "md" && "text-sm",
           "group-data-[collapsible=icon]:hidden",

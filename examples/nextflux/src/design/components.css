@@ -42,7 +42,7 @@
   /* SectionHeader: outside and above its card, aligned with the card's text. */
   .ds-section-header {
     display: block;
-    padding: 0 var(--ds-space-md) var(--ds-space-xs);
+    padding: 0 var(--ds-space-md) 6px;
     font-size: var(--ds-text-section);
     line-height: 1.38;
     font-weight: 500;
@@ -68,7 +68,7 @@
     align-items: center;
     gap: var(--ds-space-sm);
     min-block-size: var(--ds-row-min);
-    padding: var(--ds-space-xs) var(--ds-space-md);
+    padding: 6px var(--ds-space-md);
     color: var(--ds-text-primary);
   }
   .ds-icon-badge {
@@ -76,8 +76,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    inline-size: 36px;
-    block-size: 36px;
+    inline-size: 28px;
+    block-size: 28px;
     border-radius: var(--ds-radius-small);
     background: var(--ds-tone-info-bg);
     color: var(--ds-tone-info-fg);
@@ -232,7 +232,7 @@
   .ds-topbar[data-collapsed="true"]::after { opacity: 1; }
   .ds-topbar[data-collapsed="true"] .ds-topbar-title { opacity: 1; transform: none; }
   .ds-large-title-block {
-    padding: var(--ds-space-xxs) var(--ds-space-md) var(--ds-space-sm);
+    padding: 0 var(--ds-space-md) var(--ds-space-xs);
     transform-origin: 0 50%;
   }
 
@@ -257,7 +257,7 @@
   .ds-setting-row {
     min-block-size: var(--ds-row-min);
     padding-inline: var(--ds-space-md) !important;
-    padding-block: var(--ds-space-xs) !important;
+    padding-block: 6px !important;
     background: transparent;
     color: var(--ds-text-primary);
   }

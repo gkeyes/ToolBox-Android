@@ -8,11 +8,11 @@
  */
 
 @theme {
-  --radius-card: 24px;
-  --radius-row: 16px;
-  --radius-control: 14px;
-  --radius-small: 10px;
-  --radius-sheet: 28px;
+  --radius-card: 16px;
+  --radius-row: 10px;
+  --radius-control: 10px;
+  --radius-small: 8px;
+  --radius-sheet: 24px;
 }
 
 :root {
@@ -23,28 +23,29 @@
   --ds-space-md: 16px;
   --ds-space-lg: 24px;
   --ds-space-xl: 32px;
-  --ds-row-min: 56px;
+  /* Reader density: content apps show more per screen than settings-style apps. */
+  --ds-row-min: 44px;
   --ds-touch-min: 48px;
-  --ds-topbar: 56px;
+  --ds-topbar: 48px;
 
   /* Radii (continuous corners where supported) */
-  --ds-radius-card: 24px;
-  --ds-radius-row: 16px;
-  --ds-radius-button: 16px;
-  --ds-radius-control: 14px;
-  --ds-radius-small: 10px;
-  --ds-radius-sheet: 28px;
+  --ds-radius-card: 16px;
+  --ds-radius-row: 10px;
+  --ds-radius-button: 12px;
+  --ds-radius-control: 10px;
+  --ds-radius-small: 8px;
+  --ds-radius-sheet: 24px;
   --field-radius: var(--ds-radius-control);
 
   /* Type scale (rem follows the interface font-size preference) */
-  --ds-text-large-title: 1.875rem;   /* 30 / Bold */
+  --ds-text-large-title: 1.5rem;     /* 24 / Bold */
   --ds-text-collapsed-title: 1.0625rem; /* 17 / SemiBold */
-  --ds-text-title: 1.25rem;          /* 20 / SemiBold */
-  --ds-text-headline: 1.0625rem;     /* 17 / SemiBold */
-  --ds-text-body: 1rem;              /* 16 */
-  --ds-text-subhead: 0.875rem;       /* 14 */
-  --ds-text-section: 0.8125rem;      /* 13 / Medium */
-  --ds-text-caption: 0.75rem;        /* 12 */
+  --ds-text-title: 1.125rem;         /* 18 / SemiBold */
+  --ds-text-headline: 0.9375rem;     /* 15 / SemiBold */
+  --ds-text-body: 0.9375rem;         /* 15 */
+  --ds-text-subhead: 0.8125rem;      /* 13 */
+  --ds-text-section: 0.75rem;        /* 12 / Medium */
+  --ds-text-caption: 0.6875rem;      /* 11 */
 
   /* Text alphas on onSurface; non-host palettes derive onSurface from --foreground. */
   --ds-on-surface: var(--foreground);
@@ -89,7 +90,7 @@
   --ds-press-scale-row: 0.985;
   --ds-page-shift: 30px;
   --ds-stagger-step: 26ms;
-  --ds-stagger-rise: 16px;
+  --ds-stagger-rise: 8px;
   --ds-dur-spatial: 460ms;
   --ds-dur-effects: 380ms;
   --ds-dur-press-in: 240ms;

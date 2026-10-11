@@ -35,7 +35,7 @@ const ArticleItem = memo(({ article, index, staggerUntil }) => {
   const [stagger] = useState(() => index < STAGGER_LIMIT && performance.now() < staggerUntil);
   return (
     <div
-      className={cn("article-list-item px-3 pb-3", stagger && "ds-stagger-item")}
+      className={cn("article-list-item", stagger && "ds-stagger-item")}
       style={stagger ? { animationDelay: `calc(var(--ds-stagger-step) * ${index})` } : undefined}
     >
       <ArticleCard article={article} />
@@ -57,7 +57,7 @@ const ListEmpty = ({ context: { t } }) => (
   </div>
 );
 const ListFooter = ({ context: { feedId, categoryId, $filter, $isSyncing, $loadingMore, t, count } }) => (
-  <div className="vlist-footer h-28 pt-1 px-3">
+  <div className="vlist-footer h-24 pt-3 px-4">
     {count > 0 && (
       <Button
         size="md"

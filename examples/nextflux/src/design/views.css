@@ -6,24 +6,50 @@
 
 @layer components {
   /* ---------- Article list ---------- */
+  /* Dense reader list: one continuous surface, rows split by inset hairlines
+     (aligned with the text, not the edge) instead of floating cards. */
+  .article-list-body .v-list,
+  .article-list-body [data-virtuoso-scroller] { background: var(--ds-reader); }
   .article-card {
-    padding: var(--ds-space-md);
-    border-radius: var(--ds-radius-card);
-    background: var(--ds-card);
+    padding: 10px var(--ds-space-md) 11px;
+    border-radius: 0;
+    background: transparent;
     color: var(--ds-text-primary);
     transition:
       transform var(--ds-dur-press-release) var(--ds-ease-press-release),
       background-color var(--ds-dur-effects) var(--ds-ease-effects);
   }
-  .article-card.is-active {
-    background: color-mix(in srgb, var(--ds-accent) 10%, var(--ds-card));
+  .article-card::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--ds-space-md) 0;
+    inset-block-end: 0;
+    block-size: 1px;
+    background: var(--ds-hairline);
+    transform: scaleY(0.5);
+    transform-origin: bottom;
+    pointer-events: none;
   }
-  .article-card .card-content.is-read { opacity: 0.62; }
-  .article-card .card-title.is-read { color: var(--ds-text-secondary); }
+  .article-card.is-active { background: var(--ds-accent-tonal); }
+  .article-card.is-active::after,
+  .article-list-item:has(+ .article-list-item .article-card.is-active) .article-card::after { opacity: 0; }
+  .article-card .card-title {
+    font-size: var(--ds-text-headline);
+    line-height: 1.35;
+    letter-spacing: -0.005em;
+  }
+  .article-card .card-preview { font-size: var(--ds-text-subhead); line-height: 1.45; color: var(--ds-text-secondary); }
   .article-card .card-source-title { color: var(--ds-text-secondary); }
-  .article-card .card-preview { color: var(--ds-text-secondary); }
+  .article-card .card-source-content > :is(img, span) { inline-size: 16px; block-size: 16px; }
+  .article-card .card-content.is-read { opacity: 0.55; }
+  .article-card .card-title.is-read { color: var(--ds-text-secondary); font-weight: 500; }
+  .article-card .card-image { margin-block-start: 2px; }
 
-  .article-list-header-wrap { background: var(--ds-page); }
+  .article-list-header-wrap,
+  .article-list-header.ds-topbar,
+  .article-list-large-title { background: var(--ds-reader); }
+  .article-list-large-title { padding-block: 0 var(--ds-space-xs); }
+  .article-list-large-title .ds-subhead { font-size: var(--ds-text-caption); }
   .article-list-empty { min-block-size: 50vh; }
 
   /* Floating filter: segmented control on a raised pill, indicator springs. */
@@ -82,11 +108,11 @@
   /* Navigation groups render as cards; the label above is the section header. */
   [data-sidebar="group"] > [data-sidebar="menu"],
   [data-sidebar="group"] > [data-sidebar="group-content"] {
-    padding: var(--ds-space-xxs);
+    padding: 2px;
     border-radius: var(--ds-radius-card);
     background: var(--ds-card);
   }
-  [data-sidebar="group-label"] { padding-inline: var(--ds-space-md); }
+  [data-sidebar="group-label"] { padding-inline: var(--ds-space-md); min-block-size: 28px; font-size: var(--ds-text-section); }
   .sidebar-row {
     color: var(--ds-text-primary);
     transition:
@@ -98,7 +124,7 @@
     background: var(--ds-accent-tonal);
     color: var(--ds-accent);
   }
-  .sidebar-row .sidebar-row-icon { inline-size: 32px; block-size: 32px; margin-inline-start: -4px; }
+  .sidebar-row .sidebar-row-icon { inline-size: 24px; block-size: 24px; margin-inline-start: -2px; }
   .sidebar-row .sidebar-row-icon > svg { inline-size: 16px; block-size: 16px; }
   .sidebar-badge { color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
   .sidebar-row[data-active="true"] .sidebar-badge,

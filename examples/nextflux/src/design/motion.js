@@ -24,7 +24,7 @@ export const PRESS_SCALE_ROW = 0.985;
 export const PAGE_SHIFT = 30;
 export const STAGGER_STEP = 0.026;
 export const STAGGER_LIMIT = 8;
-export const STAGGER_RISE = 16;
+export const STAGGER_RISE = 8;
 
 /** whileTap / transition props for a pressable element. */
 export function pressProps(reduced, { row = false } = {}) {

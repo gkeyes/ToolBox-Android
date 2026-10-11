@@ -24,7 +24,7 @@ export default function ProfileButton() {
   return (
     <div className="profile-button standalone:pb-safe flex items-center gap-4">
       <Dropdown>
-        <Button size="sm" variant="ghost" className="sidebar-profile h-auto min-h-14 py-2 px-3 w-full">
+        <Button size="sm" variant="ghost" className="sidebar-profile h-auto min-h-12 py-1.5 px-3 w-full">
           <div className="flex items-center w-full gap-3">
             <span className="ds-icon-badge ds-tone-info"><CircleUser /></span>
             <div className="flex flex-col items-start flex-1 min-w-0">
