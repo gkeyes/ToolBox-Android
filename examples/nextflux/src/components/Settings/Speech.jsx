@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
-import { Button, Description, Input, Label, Separator, Spinner, TextField } from "@heroui/react";
+import { Button, Description, Input, Label, Spinner, TextField } from "@heroui/react";
 import { Gauge, Globe2, Headphones, ListStart, Sparkles, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { settingsState, updateSettings } from "@/stores/settingsStore.js";
-import { ItemWrapper, SelItem, SliderItem, SwitchItem } from "@/components/ui/settingItem.jsx";
+import { ItemWrapper, SelItem, SettingRow, SliderItem, SwitchItem } from "@/components/ui/settingItem.jsx";
 import SettingIcon from "@/components/ui/SettingIcon";
 import { isOfficialMiniMaxBase } from "@/toolbox/speech/minimaxSpeech.mjs";
 
@@ -45,10 +45,10 @@ export default function Speech() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <ItemWrapper title="MiniMax Speech 2.8">
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>API Key</Label>
             <Input
               type="password"
@@ -65,9 +65,8 @@ export default function Speech() {
             </Description>
           </TextField>
         </div>
-        <Separator />
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>音色 ID</Label>
             <Input
               value={localVoiceId}
@@ -90,7 +89,6 @@ export default function Speech() {
           options={[{ value: "global", label: "国际" }, { value: "cn", label: "中国大陆" }]}
           description="只连接 MiniMax 官方语音端点。Token Plan 国际站通常选择“国际”。"
         />
-        <Separator />
         <SelItem
           label="语音模型"
           icon={<SettingIcon variant="purple"><Sparkles /></SettingIcon>}
@@ -99,7 +97,6 @@ export default function Speech() {
           options={[{ value: "speech-2.8-turbo", label: "2.8 Turbo" }, { value: "speech-2.8-hd", label: "2.8 HD" }]}
           description="Turbo 优先降低文章开始播放的等待；HD 更偏重音质。"
         />
-        <Separator />
         <SwitchItem
           label="预生成下一段"
           icon={<SettingIcon variant="green"><ListStart /></SettingIcon>}
@@ -107,7 +104,6 @@ export default function Speech() {
           settingValue={speechPrefetch}
           description="播放当前段时提前生成下一段，减少长文章中途停顿；同一时间只预取一段。"
         />
-        <Separator />
         <SwitchItem
           label="先朗读文章标题"
           icon={<SettingIcon variant="default"><Headphones /></SettingIcon>}
@@ -127,17 +123,16 @@ export default function Speech() {
           step={0.05}
           description="使用本地播放倍速，不会为了改速度重新请求 MiniMax。正文播放器也可以快速切换常用倍速。"
         />
-        <Separator />
-        <div className="flex items-center gap-2 bg-default/60 dark:bg-default/30 px-2.5 py-3 text-xs text-muted">
-          <SettingIcon variant="blue"><Volume2 /></SettingIcon>
-          <span>长文章按自然句分段。首段生成完成即开始播放，后续按需生成；停止朗读会取消未完成请求并释放本次音频缓存。</span>
-        </div>
+        <SettingRow
+          icon={<SettingIcon variant="blue"><Volume2 /></SettingIcon>}
+          label={<span className="nf-set-row-sub">长文章按自然句分段。首段生成完成即开始播放，后续按需生成；停止朗读会取消未完成请求并释放本次音频缓存。</span>}
+        />
       </ItemWrapper>
 
-      <Button fullWidth onPress={save} isPending={saving}>
+      <Button fullWidth size="lg" onPress={save} isPending={saving}>
         {saving && <Spinner color="current" size="sm" />}
         保存密钥与音色
       </Button>
-    </div>
+    </>
   );
 }
