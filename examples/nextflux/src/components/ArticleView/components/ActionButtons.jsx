@@ -155,10 +155,8 @@ export default function ActionButtons() {
   return (
     <div
       className={cn(
-        "action-buttons py-2 standalone:pt-safe-or-2.5 backdrop-blur-sm border-b border-foreground/10 px-2 sticky top-0 z-50",
-        floatingSidebar
-          ? "bg-background/70"
-          : "bg-background/70 md:bg-overlay/70",
+        "action-buttons reader-topbar py-2 standalone:pt-safe-or-2.5 px-2 sticky top-0 z-50",
+        floatingSidebar ? "" : "reader-topbar-card",
       )}
     >
       <div className="flex flex-nowrap items-center gap-0 overflow-hidden">

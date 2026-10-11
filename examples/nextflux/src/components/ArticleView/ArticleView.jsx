@@ -260,6 +260,19 @@ const ArticleView = () => {
     setReadingPaused(false);
   }, [reduceMotion]);
 
+  // Top bar hairline fades in once the reader is scrolled (DOM attribute, no re-render).
+  useEffect(() => {
+    const area = scrollAreaRef.current;
+    if (!area) return;
+    const update = () => {
+      const scrolled = area.scrollTop > 4 ? "true" : "false";
+      if (area.dataset.scrolled !== scrolled) area.dataset.scrolled = scrolled;
+    };
+    update();
+    area.addEventListener("scroll", update, { passive: true });
+    return () => area.removeEventListener("scroll", update);
+  }, [isArticleVisible]);
+
   const handleBack = useCallback(() => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
     navigate(basePath || "/");
@@ -346,8 +359,8 @@ const ArticleView = () => {
       floatingSidebar ? "" : "md:pr-2 md:py-2",
     )}>
       {!isArticleVisible ? <EmptyPlaceholder /> : <ScrollShadow ref={scrollAreaRef} isEnabled={false} className={cn(
-        "article-scroll-area h-full bg-background md:bg-transparent relative",
-        floatingSidebar ? "md:bg-transparent" : "md:bg-overlay md:shadow-custom md:rounded-2xl",
+        "article-scroll-area reader-surface h-full relative",
+        floatingSidebar ? "" : "reader-surface-card",
       )}>
         <ActionButtons />
         <ArticlePageContent

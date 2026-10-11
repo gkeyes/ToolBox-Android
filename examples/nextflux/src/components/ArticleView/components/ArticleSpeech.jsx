@@ -89,14 +89,14 @@ export function ArticleSpeechBar({ article }) {
 
   return (
     <div
-      className="mt-1 flex min-h-11 items-center gap-1.5 rounded-xl border border-foreground/10 bg-default/70 px-1.5 py-1 shadow-custom-sm backdrop-blur-sm"
+      className="nextflux-speech-bar mt-1 mb-1 flex min-h-12 items-center gap-1.5 px-1.5 py-1"
       role="region"
       aria-label="文章语音播放器"
     >
       <Button isIconOnly size="sm" variant="ghost" className="size-8 min-w-8" aria-label="后退 15 秒" onPress={() => speechController.seekBy(-15)} isDisabled={busy || state.phase === "error"}>
         <RotateCcw className="size-3.5 text-muted" />
       </Button>
-      <Button isIconOnly size="sm" variant="tertiary" className="size-9 min-w-9 rounded-full" aria-label={playing ? "暂停朗读" : "播放朗读"} onPress={toggle}>
+      <Button isIconOnly size="sm" variant="primary" className="size-10 min-w-10 rounded-full" aria-label={playing ? "暂停朗读" : "播放朗读"} onPress={toggle}>
         {busy ? <Spinner color="current" size="sm" /> : playing ? <Pause className="size-4" /> : <Play className="size-4" />}
       </Button>
       <Button isIconOnly size="sm" variant="ghost" className="size-8 min-w-8" aria-label="前进 15 秒" onPress={() => speechController.seekBy(15)} isDisabled={busy || state.phase === "error"}>
@@ -106,7 +106,7 @@ export function ArticleSpeechBar({ article }) {
       <div className="min-w-0 flex-1 px-1">
         <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-muted">
           <span className="truncate">{status}</span>
-          {!busy && state.phase !== "error" && <span className="shrink-0 tabular-nums">{formatTime(state.currentTime)} / {formatTime(state.duration)}</span>}
+          {!busy && state.phase !== "error" && <span className="shrink-0 ds-tnum">{formatTime(state.currentTime)} / {formatTime(state.duration)}</span>}
         </div>
         <Slider
           aria-label="朗读进度"
