@@ -267,7 +267,7 @@ const ArticleView = () => {
     const area = scrollAreaRef.current;
     if (!area) return;
     let anchor = area.scrollTop;
-    area.dataset.chrome = "shown";
+    if (!area.dataset.chrome) area.dataset.chrome = "shown";
     const update = () => {
       const top = area.scrollTop;
       const scrolled = top > 4 ? "true" : "false";
@@ -286,9 +286,18 @@ const ArticleView = () => {
     return () => area.removeEventListener("scroll", update);
   }, [isArticleVisible]);
 
-  // A new article always opens with its bars visible.
+  // A new article opens with its bars visible — placed instantly, never
+  // animated in. Closing (no articleId) leaves the bars exactly as they are so
+  // nothing moves on the page while it slides away.
   useEffect(() => {
-    if (scrollAreaRef.current) scrollAreaRef.current.dataset.chrome = "shown";
+    const area = scrollAreaRef.current;
+    if (!area || !articleId || area.dataset.chrome === "shown") return undefined;
+    area.dataset.chromeInstant = "true";
+    area.dataset.chrome = "shown";
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => { delete area.dataset.chromeInstant; });
+    });
+    return () => { cancelAnimationFrame(frame); delete area.dataset.chromeInstant; };
   }, [articleId]);
 
   const handleBack = useCallback(() => {

@@ -163,19 +163,13 @@
     padding-inline: 6px;
     justify-content: space-around;
     border-radius: 30px;
-    background: color-mix(in srgb, var(--ds-raised) 94%, transparent);
+    background: var(--ds-raised);
     box-shadow: 0 10px 30px rgb(0 0 0 / 0.14), 0 0 0 0.5px var(--ds-hairline);
     transition:
       transform var(--ds-dur-spatial) var(--ds-ease-spatial),
       opacity var(--ds-dur-effects) var(--ds-ease-effects);
   }
-  @supports (backdrop-filter: blur(1px)) {
-    .action-buttons .reader-dock {
-      background: color-mix(in srgb, var(--ds-raised) 82%, transparent);
-      -webkit-backdrop-filter: blur(20px) saturate(1.4);
-      backdrop-filter: blur(20px) saturate(1.4);
-    }
-  }
+
   .dark .action-buttons .reader-dock { box-shadow: 0 0 0 0.5px var(--ds-hairline); }
   .action-buttons .reader-dock .nextflux-toolbar-button {
     inline-size: 48px;
@@ -232,11 +226,12 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  /* Solid, not blurred: a live backdrop blur on a page that slides in/out is
+     recomputed a frame late on Android WebView, which reads as a flash of the
+     bar (and its back button) on every open/close. */
   .action-buttons .reader-topbar-row {
     padding: 6px 8px;
-    background: color-mix(in srgb, var(--ds-reader, var(--background)) 92%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    backdrop-filter: blur(20px) saturate(1.4);
+    background: var(--ds-reader, var(--background));
     transition: transform var(--ds-dur-spatial) var(--ds-ease-spatial);
   }
   .article-scroll-area[data-chrome="hidden"] .reader-topbar-row { transform: translate3d(0, -100%, 0); }
@@ -305,4 +300,9 @@
     flex-basis: 44px;
   }
   .action-buttons .reader-dock .nextflux-toolbar-button::after { max-inline-size: 50px; }
+}
+
+/* Bars placed by a page change jump into place; only reading scrolls animate them. */
+.article-scroll-area[data-chrome-instant] :is(.reader-topbar-row, .reader-dock, .reader-speech-slot) {
+  transition: none !important;
 }
