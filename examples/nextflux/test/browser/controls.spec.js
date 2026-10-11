@@ -464,3 +464,83 @@ test("the full-text adapter can be cancelled while it is still reading", async (
   await expectUncovered(page);
   await expectPageInteractive(page);
 });
+
+// AI read-aloud: "stop" must end every phase, nothing may restart afterwards,
+// and the page must keep taking taps. The native stream bridge is a fixture;
+// the speech controller, MiniMax client and player UI are production code.
+async function installSpeech(page, { holdRead }) {
+  await page.addInitScript(() => {
+    window.speechAudios = new Set();
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...args) { window.speechAudios.add(this); return play.apply(this, args); };
+  });
+  await open(page, 393);
+  await page.evaluate((hold) => {
+    const wav = (seconds = 6, rate = 8000) => {
+      const count = seconds * rate;
+      const view = new DataView(new ArrayBuffer(44 + count));
+      const ascii = (offset, text) => { for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i)); };
+      ascii(0, "RIFF"); view.setUint32(4, 36 + count, true); ascii(8, "WAVE"); ascii(12, "fmt ");
+      view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+      view.setUint32(24, rate, true); view.setUint32(28, rate, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+      ascii(36, "data"); view.setUint32(40, count, true);
+      for (let i = 0; i < count; i += 1) view.setUint8(44 + i, 128 + Math.round(40 * Math.sin((i / rate) * 2 * Math.PI * 440)));
+      return Array.from(new Uint8Array(view.buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    const body = new TextEncoder().encode(JSON.stringify({
+      data: { audio: wav(), status: 2 }, extra_info: { audio_length: 6000 }, base_resp: { status_code: 0 },
+    }));
+    const net = window.speechNet = { opened: 0, cancelled: 0 };
+    const offsets = new Map();
+    window.ToolBox = { network: {
+      openStream: async () => { net.opened += 1; const id = `speech-${net.opened}`; offsets.set(id, 0); return { streamId: id, status: 200 }; },
+      readStream: async (id) => {
+        if (hold) return new Promise(() => {});
+        const offset = offsets.get(id);
+        const data = body.subarray(offset, offset + 65536);
+        offsets.set(id, offset + data.length);
+        return { data, done: offset + data.length >= body.length };
+      },
+      cancelStream: async () => { net.cancelled += 1; },
+    } };
+    window.controlsFixture.speech.configure();
+  }, holdRead);
+}
+
+async function expectSpeechStopped(page) {
+  await expect(page.locator(".nextflux-speech-bar")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "朗读文章", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => ({
+    phase: window.controlsFixture.speech.phase(),
+    playing: [...window.speechAudios].filter((audio) => !audio.paused).length,
+  }))).toEqual({ phase: "idle", playing: 0 });
+  // Nothing late (a held read, a pending play(), prefetch) may restart it.
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => window.controlsFixture.speech.phase())).toBe("idle");
+  await expect(page.locator(".nextflux-speech-bar")).toHaveCount(0);
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+}
+
+test("read-aloud stops while it is still preparing, from the bar and from the dock", async ({ page }) => {
+  await installSpeech(page, { holdRead: true });
+  await page.getByRole("button", { name: "朗读文章", exact: true }).click();
+  await expect(page.locator(".nextflux-speech-bar")).toContainText("正在准备");
+  await page.getByRole("button", { name: "停止朗读", exact: true }).click();
+  await expectSpeechStopped(page);
+  expect(await page.evaluate(() => window.speechNet.cancelled)).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "朗读文章", exact: true }).click();
+  await page.getByRole("button", { name: "停止语音生成", exact: true }).click();
+  await expectSpeechStopped(page);
+});
+
+test("read-aloud stops while it is playing and the page stays interactive", async ({ page }) => {
+  await installSpeech(page, { holdRead: false });
+  await page.getByRole("button", { name: "朗读文章", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.controlsFixture.speech.phase()), { timeout: 15_000 }).toBe("playing");
+  await expect(page.getByRole("button", { name: "暂停朗读", exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "停止朗读", exact: true }).click();
+  await expectSpeechStopped(page);
+  expect(await page.evaluate(() => [...window.speechAudios].every((audio) => !audio.getAttribute("src")))).toBe(true);
+});
