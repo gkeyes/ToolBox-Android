@@ -17,7 +17,7 @@ import {
   SelItem,
   SwitchItem,
 } from "@/components/ui/settingItem.jsx";
-import { Button, Separator } from "@heroui/react";
+import { Button } from "@heroui/react";
 import Language from "@/components/Settings/components/Language.jsx";
 import { useTranslation } from "react-i18next";
 import SettingIcon from "@/components/ui/SettingIcon";
@@ -56,14 +56,14 @@ export default function General() {
           ]}
         />
       </ItemWrapper>
-      <div className="px-3 flex flex-col gap-2">
-        <Button variant="secondary" isPending={changingBackground} onPress={async () => {
+      <div className="nf-set-group">
+        <Button fullWidth size="lg" variant={activeBackground ? "danger" : "secondary"} isPending={changingBackground} onPress={async () => {
           setChangingBackground(true);
           try { if (activeBackground) await stopContinuousSync(); else await startContinuousSync(); }
           catch (error) { toast.error(error.message || "后台同步操作失败，请重试。"); }
           finally { setChangingBackground(false); }
         }}>{activeBackground ? "停止后台同步" : "离开页面后继续同步"}</Button>
-        <p className="text-xs text-muted">后台同步使用持续通知，可随时停止。开启时会立即同步一次；同步间隔设为“手动”时，后台固定每 15 分钟同步。</p>
+        <p className="nf-set-footnote">后台同步使用持续通知，可随时停止。开启时会立即同步一次；同步间隔设为“手动”时，后台固定每 15 分钟同步。</p>
       </div>
       <ItemWrapper title={t("settings.general.feeds")}>
         <SwitchItem
@@ -92,7 +92,6 @@ export default function General() {
             { value: "asc", label: t("settings.general.sortAsc") },
           ]}
         />
-        <Separator />
         <SelItem
           label={t("settings.general.sortField")}
           icon={
@@ -113,7 +112,6 @@ export default function General() {
             },
           ]}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.general.showUnreadByDefault")}
           description={t("settings.general.showUnreadByDefaultDescription")}
@@ -125,7 +123,6 @@ export default function General() {
           settingName="showUnreadByDefault"
           settingValue={showUnreadByDefault}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.general.markAsReadOnScroll")}
           icon={

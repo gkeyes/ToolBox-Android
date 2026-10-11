@@ -16,6 +16,7 @@ import { useStore } from "@nanostores/react";
 import {
   GroupItem,
   ItemWrapper,
+  MenuRow,
   SliderItem,
   SwitchItem,
 } from "@/components/ui/settingItem.jsx";
@@ -25,7 +26,6 @@ import { useTranslation } from "react-i18next";
 import SettingIcon from "@/components/ui/SettingIcon";
 import { loadFont, getFontStatus, subscribeFontStatus, FONT_CATEGORIES, SYSTEM_FONTS } from "@/lib/fontLoader";
 import { updateSettings } from "@/stores/settingsStore.js";
-import { ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 
 // 字体选择器组件
@@ -84,91 +84,56 @@ function FontSelector({ label, icon, settingName, settingValue }) {
   };
 
   return (
-    <div className="bg-default/60 dark:bg-default/30 px-2.5 py-2">
-    <div className="flex justify-between items-center gap-2">
-      <div className="flex items-center gap-2">
-        {icon}
-        <div className="text-sm text-foreground">{label}</div>
-      </div>
-      <Dropdown>
-        <Button
-          variant="tertiary"
-          size="sm"
-          className="text-muted h-8 min-w-[100px]"
-        >
-          <span className="truncate">{getSelectedFontName()}</span>
-          <span
-            className="text-muted/60 ml-1"
-            style={{
-              fontFamily: `${settingValue}, system-ui, sans-serif`,
-            }}
-          >
+    <>
+      <MenuRow
+        label={label}
+        icon={icon}
+        ariaLabel="Font selection"
+        value={<>
+          {getSelectedFontName()}
+          <span className="ml-1.5 opacity-60" style={{ fontFamily: `${settingValue}, system-ui, sans-serif` }}>
             {getSelectedFontPreview()}
           </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted opacity-60" />
-        </Button>
-
-        <Dropdown.Popover className="max-h-[300px] overflow-y-auto">
-          <Dropdown.Menu
-            aria-label="Font selection"
-            selectedKeys={selected}
-            selectionMode="single"
-            onSelectionChange={handleSelectionChange}
-          >
+        </>}
+        selectedKeys={selected}
+        onSelectionChange={handleSelectionChange}
+        popoverClassName="max-h-[300px] overflow-y-auto"
+      >
+        <Dropdown.Section>
+          <Header>System</Header>
+          {SYSTEM_FONTS.map((font) => (
+            <Dropdown.Item key={font.value} id={font.value} textValue={font.name}>
+              <Dropdown.ItemIndicator />
+              <Label>{font.name}</Label>
+            </Dropdown.Item>
+          ))}
+        </Dropdown.Section>
+        <Separator />
+        {Object.entries(FONT_CATEGORIES).map(([categoryKey, category], index) => (
+          <Fragment key={categoryKey}>
             <Dropdown.Section>
-              <Header>System</Header>
-              {SYSTEM_FONTS.map((font) => (
-                <Dropdown.Item
-                  key={font.value}
-                  id={font.value}
-                  textValue={font.name}
-                >
+              <Header>{category.label}</Header>
+              {category.fonts.map((font) => (
+                <Dropdown.Item key={font.value} id={font.value} textValue={font.name}>
                   <Dropdown.ItemIndicator />
-                  <Label>{font.name}</Label>
+                  <Label style={{ fontFamily: `${font.value}, system-ui, sans-serif` }}>
+                    {font.name}
+                  </Label>
                 </Dropdown.Item>
               ))}
             </Dropdown.Section>
-            <Separator />
-            {Object.entries(FONT_CATEGORIES).map(
-              ([categoryKey, category], index) => (
-                <Fragment key={categoryKey}>
-                  <Dropdown.Section>
-                    <Header>{category.label}</Header>
-                    {category.fonts.map((font) => (
-                      <Dropdown.Item
-                        key={font.value}
-                        id={font.value}
-                        textValue={font.name}
-                      >
-                        <Dropdown.ItemIndicator />
-                        <Label
-                          style={{
-                            fontFamily: `${font.value}, system-ui, sans-serif`,
-                          }}
-                        >
-                          {font.name}
-                        </Label>
-                      </Dropdown.Item>
-                    ))}
-                  </Dropdown.Section>
-                  {index < Object.keys(FONT_CATEGORIES).length - 1 && (
-                    <Separator />
-                  )}
-                </Fragment>
-              ),
-            )}
-          </Dropdown.Menu>
-        </Dropdown.Popover>
-      </Dropdown>
-    </div>
-    <div aria-live="polite" className="text-xs text-muted mt-1">
-      {fontStatus.loading && "正在按阅读内容加载字体，暂用系统字体…"}
-      {!fontStatus.loading && fontStatus.error && <>
-        <span>{fontStatus.error}</span>
-        <Button size="sm" variant="tertiary" onPress={() => { loadFont(settingValue).catch(() => {}); window.dispatchEvent(new Event("nextflux:retry-font")); }}>重试字体</Button>
-      </>}
-    </div>
-    </div>
+            {index < Object.keys(FONT_CATEGORIES).length - 1 && <Separator />}
+          </Fragment>
+        ))}
+      </MenuRow>
+      <div aria-live="polite" className="nf-set-row-foot">
+        {fontStatus.loading && "正在按阅读内容加载字体，暂用系统字体…"}
+        {!fontStatus.loading && fontStatus.error && <>
+          <span>{fontStatus.error}</span>
+          <Button size="sm" variant="secondary" className="ml-2" onPress={() => { loadFont(settingValue).catch(() => {}); window.dispatchEvent(new Event("nextflux:retry-font")); }}>重试字体</Button>
+        </>}
+      </div>
+    </>
   );
 }
 
@@ -203,7 +168,6 @@ export default function Readability() {
             { value: "center", icon: <AlignCenter className="size-4" /> },
           ]}
         />
-        <Separator />
         <SliderItem
           label={t("settings.readability.titleFontSize")}
           icon={
@@ -229,7 +193,6 @@ export default function Readability() {
           settingName="fontFamily"
           settingValue={fontFamily}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.readability.textAlignJustify")}
           icon={
@@ -240,7 +203,6 @@ export default function Readability() {
           settingName="alignJustify"
           settingValue={alignJustify}
         />
-        <Separator />
         <SliderItem
           label={t("settings.readability.lineHeight")}
           icon={
@@ -254,7 +216,6 @@ export default function Readability() {
           min={1.2}
           step={0.1}
         />
-        <Separator />
         <SliderItem
           label={t("settings.readability.fontSize")}
           icon={
@@ -268,7 +229,6 @@ export default function Readability() {
           min={14}
           step={2}
         />
-        <Separator />
         <SliderItem
           label={t("settings.readability.maxWidth")}
           icon={
@@ -294,7 +254,6 @@ export default function Readability() {
           settingName="showLineNumbers"
           settingValue={showLineNumbers}
         />
-        <Separator />
         <SwitchItem
           label={t("settings.appearance.forceDarkCodeTheme")}
           icon={
@@ -308,6 +267,7 @@ export default function Readability() {
       </ItemWrapper>
       <Button
         fullWidth
+        size="lg"
         variant="danger"
         onPress={resetSettings}
         className="shrink-0"

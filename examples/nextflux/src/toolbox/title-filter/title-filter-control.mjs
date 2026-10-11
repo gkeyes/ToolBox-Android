@@ -42,6 +42,10 @@ export function createFeedTitleFilterControl({ React, createPortal, Button, load
     return h("svg", { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
       h("path", { d: "M4 4h16l-6.5 7.5V19l-3 2v-9.5L4 4Z" }));
   }
+  function Chevron() {
+    return h("svg", { className: "nf-server-rules-chevron", width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true },
+      h("path", { d: "m6 9 6 6 6-6" }));
+  }
   function RuleEditor({ feedId, feedTitle, auth, isContextCurrent, onClose, onSaved }) {
     const live = useRef(false);
     const requestId = useRef(0);
@@ -98,16 +102,16 @@ export function createFeedTitleFilterControl({ React, createPortal, Button, load
     const needsReload = state.code === "UNCONFIRMED" || state.code === "CONFLICT";
     const serverRules = existingServerRules(state.feed);
     const footer = h(Fragment, null,
-      h(Button, { variant: "tertiary", fullWidth: true, isDisabled: pending, onPress: close }, "取消"),
-      h(Button, { type: "submit", form: `nf-title-filter-${feedId}`, fullWidth: true, isPending: pending, isDisabled: disabled || Boolean(inputError) || needsReload }, pending ? "正在保存…" : "保存"));
+      h(Button, { variant: "secondary", size: "lg", fullWidth: true, isDisabled: pending, onPress: close }, "取消"),
+      h(Button, { type: "submit", form: `nf-title-filter-${feedId}`, size: "lg", fullWidth: true, isPending: pending, isDisabled: disabled || Boolean(inputError) || needsReload }, pending ? "正在保存…" : "保存"));
     return h(Modal, { open: true, onOpenChange: next => { if (!next) close(); }, title: "标题过滤", footer },
       h("form", { id: `nf-title-filter-${feedId}`, className: "nf-title-filter-form", onSubmit: submit, "aria-busy": pending || state.phase === "loading" },
         h("p", { className: "nf-title-filter-feed", title: state.feed?.title || feedTitle }, state.feed?.title || feedTitle || "当前订阅"),
-        state.phase === "loading" && h("p", { role: "status", className: "nf-title-filter-note" }, "正在读取服务器规则…"),
+        state.phase === "loading" && h("p", { role: "status", className: "nf-title-filter-note nf-title-filter-loading" }, h("span", { className: "ds-spinner", "aria-hidden": true }), "正在读取服务器规则…"),
         state.feed && h("p", { className: "nf-title-filter-note", "data-testid": "nf-server-rule-status" },
           serverRules.length ? "已读取服务器原有规则，继续保留，无需重新设置。" : "已读取当前订阅的服务器规则。"),
         serverRules.length > 0 && h("details", { className: "nf-server-rules", "data-testid": "nf-server-rules" },
-          h("summary", null, `查看服务器原有规则（${serverRules.length} 类）`),
+          h("summary", null, h("span", null, `查看服务器原有规则（${serverRules.length} 类）`), h(Chevron)),
           h("p", { className: "nf-title-filter-note" }, "以下为服务器原文，只读展示；不会自动转换成关键词或被本输入框替换。"),
           ...serverRules.map(rule => h("section", { key: rule.field, className: "nf-server-rule", "data-rule-field": rule.field },
             h("p", { className: "nf-server-rule-label" }, rule.label),
@@ -117,13 +121,13 @@ export function createFeedTitleFilterControl({ React, createPortal, Button, load
           serverRules.length > 0 && h("p", { className: "nf-title-filter-note" }, "此框只回显本入口保存的标题关键词；留空不代表服务器没有过滤规则。"),
           h("textarea", { id: `nf-title-words-${feedId}`, name: "keywords", rows: 3, className: "nf-title-filter-input", placeholder: "广告|抽奖|推广", value: state.text, disabled, spellCheck: false, autoComplete: "off", autoCapitalize: "none", "aria-describedby": `nf-title-help-${feedId}`, "aria-invalid": Boolean(inputError), onChange: event => setState(previous => ({ ...previous, text: event.target.value, error: needsReload ? previous.error : "", code: needsReload ? previous.code : "" })) }),
           h("div", { className: "nf-title-filter-meta" },
-            h("span", null, `${count} 个关键词`),
+            h("span", { className: "ds-tnum" }, `${count} 个关键词`),
             h(Button, { type: "button", variant: "ghost", size: "sm", isDisabled: disabled || !state.text, onPress: () => setState(previous => ({ ...previous, text: "" })) }, "清空")),
           h("p", { className: "nf-title-filter-note", id: `nf-title-help-${feedId}` }, "用 | 分隔；标题包含任一关键词即屏蔽，英文不区分大小写。"),
           h("p", { className: "nf-title-filter-note" }, "保存后用于后续抓取，旧条目不会自动删除。清空并保存只移除本入口的关键词，不删除原有规则。")),
         state.feed && h("p", { className: "nf-title-filter-note" }, "Miniflux 全局规则仍由服务器执行，本页不读取或修改。"),
         (state.error || inputError) && h("p", { role: "alert", className: "nf-title-filter-error" }, inputError || state.error),
-        !pending && state.phase !== "loading" && (state.phase === "error" || needsReload) && h(Button, { type: "button", variant: "tertiary", onPress: load }, needsReload ? "重新载入服务器规则" : "重试读取")));
+        !pending && state.phase !== "loading" && (state.phase === "error" || needsReload) && h(Button, { type: "button", variant: "secondary", fullWidth: true, onPress: load }, needsReload ? "重新载入服务器规则" : "重试读取")));
   }
   return function FeedTitleFilterButton({ feedId, feedTitle, contextKey = "feed", isContextCurrent = () => true }) {
     const auth = useSyncExternalStore(authSubscribe, getAuth, getAuth);

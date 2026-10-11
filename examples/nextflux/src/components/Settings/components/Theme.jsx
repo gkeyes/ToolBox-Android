@@ -1,179 +1,118 @@
-import {
-  ChevronsUpDown,
-  Monitor,
-  MoonStar,
-  Paintbrush,
-  Sun,
-} from "lucide-react";
+import { Monitor, MoonStar, Paintbrush, Sun } from "lucide-react";
 import { useStore } from "@nanostores/react";
-import { ItemWrapper } from "@/components/ui/settingItem";
-import { Button, Dropdown, Label } from "@heroui/react";
+import { ItemWrapper, MenuRow, SettingRow, Segmented } from "@/components/ui/settingItem";
+import { Dropdown, Label } from "@heroui/react";
 import { setTheme, themeState, themes } from "@/stores/themeStore";
 import { useTranslation } from "react-i18next";
 import SettingIcon from "@/components/ui/SettingIcon";
-import { Separator } from "@heroui/react";
+
+function Swatch({ color }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block size-4 shrink-0 rounded-full"
+      style={{ backgroundColor: color, boxShadow: "inset 0 0 0 1px var(--ds-hairline)" }}
+    />
+  );
+}
 
 export default function Theme() {
   const { t } = useTranslation();
   const { themeMode, lightTheme, darkTheme } = useStore(themeState);
 
   const mode = [
-    {
-      id: "system",
-      name: t("settings.appearance.system"),
-      icon: <Monitor className="shrink-0 size-4 text-muted" />,
-    },
-    {
-      id: "light",
-      name: t("settings.appearance.light"),
-      icon: <Sun className="shrink-0 size-4 text-muted" />,
-    },
-    {
-      id: "dark",
-      name: t("settings.appearance.dark"),
-      icon: <MoonStar className="shrink-0 size-4 text-muted" />,
-    },
+    { value: "system", ariaLabel: t("settings.appearance.system"), icon: <Monitor /> },
+    { value: "light", ariaLabel: t("settings.appearance.light"), icon: <Sun /> },
+    { value: "dark", ariaLabel: t("settings.appearance.dark"), icon: <MoonStar /> },
   ];
-
-  const bgColor = "bg-default/60 dark:bg-default/30";
+  const lightItem = themes.light.find((item) => item.id === lightTheme);
+  const darkItem = themes.dark.find((item) => item.id === darkTheme);
 
   return (
     <ItemWrapper title={t("settings.appearance.theme")}>
-      <div
-        className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-2`}
-      >
-        <div className="flex items-center gap-2">
+      <SettingRow
+        icon={
           <SettingIcon variant="blue">
             <Paintbrush />
           </SettingIcon>
-          <div className="text-sm text-foreground line-clamp-1">
-            {t("settings.appearance.mode")}
-          </div>
-        </div>
-        <Dropdown>
-          <Button size="sm" variant="tertiary" className="text-muted h-8">
-            {mode.find((item) => item.id === themeMode)?.name}
-            <ChevronsUpDown className="size-4 shrink-0 text-muted opacity-60" />
-          </Button>
-          <Dropdown.Popover>
-            <Dropdown.Menu
-              aria-label="theme"
-              selectedKeys={new Set([themeMode])}
-              selectionMode="single"
-              onSelectionChange={(values) => setTheme(values.currentKey)}
-            >
-              {mode.map((item) => (
-                <Dropdown.Item id={item.id} key={item.id} textValue={item.name}>
-                  {item.icon}
-                  <Label>{item.name}</Label>
-                  <Dropdown.ItemIndicator />
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-      </div>
-      <Separator />
-      <div
-        className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-2`}
-      >
-        <div className="flex items-center gap-2">
+        }
+        label={t("settings.appearance.mode")}
+        trailing={
+          <Segmented
+            ariaLabel="theme"
+            selectedKey={themeMode}
+            onSelectionChange={(value) => setTheme(value)}
+            options={mode}
+          />
+        }
+      />
+      <MenuRow
+        label={t("settings.appearance.lightTheme")}
+        icon={
           <SettingIcon variant="amber">
             <Sun />
           </SettingIcon>
-          <div className="text-sm text-foreground line-clamp-1">
-            {t("settings.appearance.lightTheme")}
-          </div>
-        </div>
-        <Dropdown>
-          <Button size="sm" variant="tertiary" className="text-muted h-8">
-            {t(
-              `settings.appearance.themes.${themes.light.find((item) => item.id === lightTheme)?.id}`,
-            )}
-            <ChevronsUpDown className="size-4 shrink-0 text-muted opacity-60" />
-          </Button>
-          <Dropdown.Popover>
-            <Dropdown.Menu
-              aria-label="theme"
-              selectedKeys={new Set([lightTheme])}
-              selectionMode="single"
-              onSelectionChange={(values) => {
-                themeState.set({
-                  ...themeState.get(),
-                  lightTheme: values.currentKey,
-                });
-                themeMode !== "dark" && setTheme(themeMode, values.currentKey);
-              }}
-            >
-              {themes.light.map((item) => (
-                <Dropdown.Item
-                  id={item.id}
-                  key={item.id}
-                  textValue={t(`settings.appearance.themes.${item.id}`)}
-                >
-                  <div
-                    className="size-4 border rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <Label>{t(`settings.appearance.themes.${item.id}`)}</Label>
-                  <Dropdown.ItemIndicator />
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-      </div>
-      <Separator />
-      <div
-        className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-2`}
+        }
+        ariaLabel="theme"
+        value={<span className="inline-flex items-center gap-2">
+          {lightItem && <Swatch color={lightItem.color} />}
+          {t(`settings.appearance.themes.${lightItem?.id}`)}
+        </span>}
+        selectedKeys={new Set([lightTheme])}
+        onSelectionChange={(values) => {
+          themeState.set({
+            ...themeState.get(),
+            lightTheme: values.currentKey,
+          });
+          themeMode !== "dark" && setTheme(themeMode, values.currentKey);
+        }}
       >
-        <div className="flex items-center gap-2">
+        {themes.light.map((item) => (
+          <Dropdown.Item
+            id={item.id}
+            key={item.id}
+            textValue={t(`settings.appearance.themes.${item.id}`)}
+          >
+            <Swatch color={item.color} />
+            <Label>{t(`settings.appearance.themes.${item.id}`)}</Label>
+            <Dropdown.ItemIndicator />
+          </Dropdown.Item>
+        ))}
+      </MenuRow>
+      <MenuRow
+        label={t("settings.appearance.darkTheme")}
+        icon={
           <SettingIcon variant="purple">
             <MoonStar />
           </SettingIcon>
-          <div className="text-sm text-foreground line-clamp-1">
-            {t("settings.appearance.darkTheme")}
-          </div>
-        </div>
-        <Dropdown>
-          <Button size="sm" variant="tertiary" className="text-muted h-8">
-            {t(
-              `settings.appearance.themes.${themes.dark.find((item) => item.id === darkTheme)?.id}`,
-            )}
-            <ChevronsUpDown className="size-4 shrink-0 text-muted opacity-60" />
-          </Button>
-          <Dropdown.Popover>
-            <Dropdown.Menu
-              disallowEmptySelection
-              aria-label="theme"
-              selectedKeys={new Set([darkTheme])}
-              selectionMode="single"
-              onSelectionChange={(values) => {
-                themeState.set({
-                  ...themeState.get(),
-                  darkTheme: values.currentKey,
-                });
-                themeMode !== "light" && setTheme(themeMode, values.currentKey);
-              }}
-            >
-              {themes.dark.map((item) => (
-                <Dropdown.Item
-                  id={item.id}
-                  key={item.id}
-                  textValue={t(`settings.appearance.themes.${item.id}`)}
-                >
-                  <div
-                    className="size-4 border rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <Label>{t(`settings.appearance.themes.${item.id}`)}</Label>
-                  <Dropdown.ItemIndicator />
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-      </div>
+        }
+        ariaLabel="theme"
+        disallowEmptySelection
+        value={<span className="inline-flex items-center gap-2">
+          {darkItem && <Swatch color={darkItem.color} />}
+          {t(`settings.appearance.themes.${darkItem?.id}`)}
+        </span>}
+        selectedKeys={new Set([darkTheme])}
+        onSelectionChange={(values) => {
+          themeState.set({
+            ...themeState.get(),
+            darkTheme: values.currentKey,
+          });
+          themeMode !== "light" && setTheme(themeMode, values.currentKey);
+        }}
+      >
+        {themes.dark.map((item) => (
+          <Dropdown.Item
+            id={item.id}
+            key={item.id}
+            textValue={t(`settings.appearance.themes.${item.id}`)}
+          >
+            <Swatch color={item.color} />
+            <Label>{t(`settings.appearance.themes.${item.id}`)}</Label>
+            <Dropdown.ItemIndicator />
+          </Dropdown.Item>
+        ))}
+      </MenuRow>
     </ItemWrapper>
   );
 }

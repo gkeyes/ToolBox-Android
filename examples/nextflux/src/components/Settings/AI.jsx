@@ -1,6 +1,6 @@
 import { useStore } from "@nanostores/react";
 import { settingsState, updateSettings } from "@/stores/settingsStore.js";
-import { Button, Description, Input, Label, Separator, Spinner, TextArea, TextField } from "@heroui/react";
+import { Button, Description, Input, Label, Spinner, TextArea, TextField } from "@heroui/react";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -33,10 +33,10 @@ export default function AI() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <ItemWrapper title="OpenAI">
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>{t("settings.ai.apiKey")}</Label>
             <Input
               type="password"
@@ -46,9 +46,8 @@ export default function AI() {
             />
           </TextField>
         </div>
-        <Separator />
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>{t("settings.ai.baseUrl")}</Label>
             <Input
               type="text"
@@ -59,9 +58,8 @@ export default function AI() {
             <Description>{t("settings.ai.description")} 支持自定义 HTTPS 服务。</Description>
           </TextField>
         </div>
-        <Separator />
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>{t("settings.ai.model")}</Label>
             <Input
               type="text"
@@ -71,9 +69,8 @@ export default function AI() {
             />
           </TextField>
         </div>
-        <Separator />
-        <div className="bg-default/60 dark:bg-default/30 p-2.5">
-          <TextField variant="secondary">
+        <div className="nf-field-row">
+          <TextField className="nf-field">
             <Label>{t("settings.ai.prompt")}</Label>
             <TextArea
               value={localPrompt}
@@ -83,10 +80,10 @@ export default function AI() {
           </TextField>
         </div>
       </ItemWrapper>
-      <Button fullWidth onPress={handleSave} isPending={saving}>
+      <Button fullWidth size="lg" onPress={handleSave} isPending={saving}>
         {saving && <Spinner color="current" size="sm" />}
         {t("common.save")}
       </Button>
-    </div>
+    </>
   );
 }
