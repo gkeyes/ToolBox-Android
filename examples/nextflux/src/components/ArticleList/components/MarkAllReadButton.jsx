@@ -1,7 +1,9 @@
 import { useParams } from "react-router-dom";
 import { Button, Dropdown, Label, Spinner } from "@heroui/react";
 import { handleMarkAllRead } from "@/handlers/articleHandlers";
-import { CircleCheck } from "lucide-react";
+import {
+  MarkAllReadIcon as CircleCheck,
+} from "@/components/ui/icons.jsx";
 import { isSyncing } from "@/stores/syncStore.js";
 import { useStore } from "@nanostores/react";
 import { filter } from "@/stores/articlesStore.js";

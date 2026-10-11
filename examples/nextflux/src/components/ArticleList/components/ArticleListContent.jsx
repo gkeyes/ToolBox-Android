@@ -13,7 +13,13 @@ import { useStore } from "@nanostores/react";
 import { Virtuoso } from "react-virtuoso";
 import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import { Button } from "@heroui/react";
-import { CheckCheck, Inbox, Loader2 } from "lucide-react";
+import {
+  Loader2,
+} from "lucide-react";
+import {
+  MarkAllReadIcon as CheckCheck,
+  EmptyIcon as Inbox,
+} from "@/components/ui/icons.jsx";
 import { handleMarkAllRead } from "@/handlers/articleHandlers";
 import { isSyncing } from "@/stores/syncStore.js";
 import { useTranslation } from "react-i18next";

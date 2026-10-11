@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { aiSummaries, clearSummary } from "@/stores/aiStore.js";
 import { CloseButton, Spinner } from "@heroui/react";
-import { Sparkles } from "lucide-react";
+import {
+  AISummaryIcon as Sparkles,
+} from "@/components/ui/icons.jsx";
 import { useTranslation } from "react-i18next";
 import BorderBeam from "border-beam";
 import { currentThemeMode } from "@/stores/themeStore.js";

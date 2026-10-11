@@ -2,7 +2,9 @@ import { useState } from "react";
 import { cn } from "@/lib/utils.js";
 import { settingsState } from "@/stores/settingsStore";
 import { useStore } from "@nanostores/react";
-import { ImageOff } from "lucide-react";
+import {
+  ImageOffIcon as ImageOff,
+} from "@/components/ui/icons.jsx";
 import { memo } from "react";
 import { useSafeImage } from "@/toolbox/media.js";
 

@@ -1,7 +1,11 @@
 import { useStore } from "@nanostores/react";
 import { filter } from "@/stores/articlesStore.js";
 import { totalStarredCount, totalUnreadCount } from "@/stores/feedsStore.js";
-import { CircleDot, Infinity, Star } from "lucide-react";
+import {
+  UnreadIcon as CircleDot,
+  AllIcon as Infinity,
+  StarredIcon as Star,
+} from "@/components/ui/icons.jsx";
 import {
   SidebarGroup,
   SidebarGroupLabel,

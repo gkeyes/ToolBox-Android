@@ -1,6 +1,15 @@
 import { Button, Slider, Spinner, Tooltip } from "@heroui/react";
 import { useStore } from "@nanostores/react";
-import { AudioLines, Pause, Play, RotateCcw, RotateCw, X } from "lucide-react";
+import {
+  RotateCcw,
+  RotateCw,
+  X,
+} from "lucide-react";
+import {
+  SpeechIcon as AudioLines,
+  PauseIcon as Pause,
+  PlayIcon as Play,
+} from "@/components/ui/icons.jsx";
 import { toast } from "sonner";
 import { speechState } from "@/stores/speechStore.js";
 import { settingsState } from "@/stores/settingsStore.js";

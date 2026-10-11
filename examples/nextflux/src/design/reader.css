@@ -306,3 +306,13 @@
 .article-scroll-area[data-chrome-instant] :is(.reader-topbar-row, .reader-dock, .reader-speech-slot) {
   transition: none !important;
 }
+
+/* ---------- Icons: one line weight everywhere, ink dot in the accent ---------- */
+.lucide { stroke-width: 1.75; }
+.nf-icon .nf-dot { fill: var(--accent); stroke: none; }
+/* A filled star keeps its dot-free silhouette; muted icons keep a live dot. */
+.text-muted .nf-dot, .nf-icon.text-muted .nf-dot { fill: var(--accent); }
+.sidebar-row .sidebar-row-icon > svg { inline-size: 20px; block-size: 20px; }
+.sidebar-row:not([data-active="true"]) .sidebar-row-icon { color: var(--ds-text-secondary); }
+/* The feed fallback badge: ink-dot RSS on a soft accent tile. */
+.feed-icon-fallback { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; color: var(--accent) !important; }

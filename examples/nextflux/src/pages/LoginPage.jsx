@@ -12,7 +12,14 @@ import {
     Spinner,
     TextField,
 } from "@heroui/react";
-import {CircleAlert, Eye, EyeClosed, Rss} from "lucide-react";
+import {
+  Eye,
+  EyeClosed,
+  Rss,
+} from "lucide-react";
+import {
+  WarningIcon as CircleAlert,
+} from "@/components/ui/icons.jsx";
 import {useStore} from "@nanostores/react";
 import {useTranslation} from "react-i18next";
 import {Segmented} from "@/components/ui/settingItem.jsx";

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useStore } from "@nanostores/react";
 import { Switch } from "@heroui/react";
-import { RefreshCw } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { settingsState } from "@/stores/settingsStore.js";

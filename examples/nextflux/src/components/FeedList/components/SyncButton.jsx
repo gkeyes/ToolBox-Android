@@ -1,7 +1,9 @@
 import { useStore } from "@nanostores/react";
 import { Button, Spinner } from "@heroui/react";
 import { forceSync, isOnline, isSyncing } from "@/stores/syncStore.js";
-import { RefreshCw } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 
 const SyncButton = () => {
   const $isOnline = useStore(isOnline);

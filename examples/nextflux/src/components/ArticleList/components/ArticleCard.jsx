@@ -1,4 +1,12 @@
-import { Clock, ArrowUpFromLine, Star, Circle, CircleDot } from "lucide-react";
+import {
+  Clock,
+  ArrowUpFromLine,
+} from "lucide-react";
+import {
+  StarIcon as Star,
+  ReadStateEmptyIcon as Circle,
+  ReadStateIcon as CircleDot,
+} from "@/components/ui/icons.jsx";
 import { cn } from "@/lib/utils";
 import { formatPublishDate } from "@/lib/format";
 import ArticleCardCover from "./ArticleCardCover.jsx";
@@ -225,9 +233,9 @@ export default function ArticleCard({ article, active = false, onOpen }) {
           }}
           startContent={
             article.status === "read" ? (
-              <CircleDot className="size-4 text-muted p-0.5 fill-current" />
+              <CircleDot className="size-4 text-muted" />
             ) : (
-              <Circle className="size-4 text-muted p-0.5" />
+              <Circle className="size-4 text-muted" />
             )
           }
         >

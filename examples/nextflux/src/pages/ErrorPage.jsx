@@ -1,7 +1,13 @@
 import {useNavigate, useRouteError} from "react-router-dom";
 import {Button} from "@heroui/react";
 import {useTranslation} from "react-i18next";
-import {CircleAlert, House, SearchX} from "lucide-react";
+import {
+  House,
+  SearchX,
+} from "lucide-react";
+import {
+  WarningIcon as CircleAlert,
+} from "@/components/ui/icons.jsx";
 
 // Designed error state: 64px tonal disc + headline + one line + action, centred.
 export default function ErrorPage() {

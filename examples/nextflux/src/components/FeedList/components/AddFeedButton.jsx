@@ -1,5 +1,12 @@
 import { Button, Dropdown, Label } from "@heroui/react";
-import { CirclePlus, FolderPlus, Rss, Upload } from "lucide-react";
+import {
+  FolderPlus,
+  Upload,
+} from "lucide-react";
+import {
+  AddFeedIcon as CirclePlus,
+  FeedIcon as Rss,
+} from "@/components/ui/icons.jsx";
 import { addCategoryModalOpen, addFeedModalOpen } from "@/stores/modalStore";
 import { useSidebar } from "@/components/ui/sidebar.jsx";
 import minifluxAPI from "@/api/miniflux";

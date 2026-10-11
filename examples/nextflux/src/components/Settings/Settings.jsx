@@ -16,16 +16,18 @@ import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import { claimStagger } from "@/design/motion.js";
 import "@/components/Settings/settings.css";
 import {
-  Cog,
   Paintbrush,
-  FileText,
-  Sparkles,
-  Volume2,
   Keyboard,
   Info,
   ArrowLeft,
   ChevronRight,
 } from "lucide-react";
+import {
+  SettingsIcon as Cog,
+  FullTextIcon as FileText,
+  AISummaryIcon as Sparkles,
+  SpeechIcon as Volume2,
+} from "@/components/ui/icons.jsx";
 
 const menuItems = [
   { id: "general", icon: Cog, tone: "default", translationKey: "settings.general.title" },

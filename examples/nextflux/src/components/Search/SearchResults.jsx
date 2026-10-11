@@ -1,4 +1,7 @@
-import { Inbox, Search } from "lucide-react";
+import {
+  EmptyIcon as Inbox,
+  SearchIcon as Search,
+} from "@/components/ui/icons.jsx";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
 import { formatDate } from "@/lib/format.js";
 import { useEffect, useRef, useState } from "react";

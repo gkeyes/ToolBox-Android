@@ -2,10 +2,12 @@ import { openInBrowser, showLinkActions } from "@/toolbox/actions.js";
 import { Button, Dropdown, Label, Link } from "@heroui/react";
 import {
   ChevronsUpDown,
-  Cog,
   LogOut,
   CircleUser,
 } from "lucide-react";
+import {
+  SettingsIcon as Cog,
+} from "@/components/ui/icons.jsx";
 import { authState } from "@/stores/authStore.js";
 import { settingsModalOpen } from "@/stores/modalStore.js";
 import {

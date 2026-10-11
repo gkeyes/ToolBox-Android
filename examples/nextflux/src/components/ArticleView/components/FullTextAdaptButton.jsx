@@ -1,6 +1,8 @@
 import { useStore } from "@nanostores/react";
 import { Button, Tooltip } from "@heroui/react";
-import { WandSparkles } from "lucide-react";
+import {
+  AdaptIcon as WandSparkles,
+} from "@/components/ui/icons.jsx";
 import { useEffect, useRef, useState } from "react";
 import { activeArticle } from "@/stores/articlesStore.js";
 import { feeds } from "@/stores/feedsStore.js";

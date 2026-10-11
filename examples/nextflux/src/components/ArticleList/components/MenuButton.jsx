@@ -1,11 +1,13 @@
 import { Button, Dropdown, Label } from "@heroui/react";
 import {
-  EllipsisVertical,
   FilePen,
   FolderPen,
   Trash2,
-  RefreshCw,
 } from "lucide-react";
+import {
+  MoreVerticalIcon as EllipsisVertical,
+  SyncIcon as RefreshCw,
+} from "@/components/ui/icons.jsx";
 import { useParams } from "react-router-dom";
 import {
   editFeedModalOpen,

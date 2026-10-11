@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { Separator, InputGroup, Kbd, Modal, Tabs, Button } from "@heroui/react";
-import { Search as SearchIcon } from "lucide-react";
+import {
+  SearchIcon as SearchIcon,
+} from "@/components/ui/icons.jsx";
 import {
   feedSearchResults,
   search,

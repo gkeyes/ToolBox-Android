@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  RefreshCw,
-  CircleCheck,
-  TriangleAlert,
   FilePen,
   Trash2,
 } from "lucide-react";
+import {
+  SyncIcon as RefreshCw,
+  MarkAllReadIcon as CircleCheck,
+  WarningIcon as TriangleAlert,
+} from "@/components/ui/icons.jsx";
 import { cn } from "@/lib/utils";
 import {
   SidebarMenuSubButton,

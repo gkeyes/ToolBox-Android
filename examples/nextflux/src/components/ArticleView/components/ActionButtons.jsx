@@ -4,18 +4,20 @@ import FullTextAdaptButton from "./FullTextAdaptButton.jsx";
 import { ArticleSpeechBar, ArticleSpeechButton } from "./ArticleSpeech.jsx";
 import {
   ArrowLeft,
-  Circle,
-  CircleDot,
-  FileText,
-  Share,
-  Star,
-  CloudUpload,
   ArrowRight,
-  Sparkles,
-  MoreHorizontal as Ellipsis,
-  Filter as Funnel,
-  WandSparkles,
 } from "lucide-react";
+import {
+  ReadStateEmptyIcon as Circle,
+  ReadStateIcon as CircleDot,
+  FullTextIcon as FileText,
+  ShareIcon as Share,
+  StarIcon as Star,
+  SaveIcon as CloudUpload,
+  AISummaryIcon as Sparkles,
+  MoreIcon as Ellipsis,
+  TitleFilterIcon as Funnel,
+  AdaptIcon as WandSparkles,
+} from "@/components/ui/icons.jsx";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
 import {
   handleMarkStatus,
@@ -239,9 +241,9 @@ export default function ActionButtons() {
                 size="sm"
               >
                 {$activeArticle?.status === "unread" ? (
-                  <CircleDot className="size-4 text-muted p-0.5 fill-current" />
+                  <CircleDot className="size-4 text-muted" />
                 ) : (
-                  <Circle className="size-4 text-muted p-0.5" />
+                  <Circle className="size-4 text-muted" />
                 )}
               </Button>
               <Tooltip.Content showArrow>
@@ -401,7 +403,7 @@ export default function ActionButtons() {
         <div className="reader-more-grid">
           <MoreItem
             label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
-            icon={$activeArticle?.status === "unread" ? <CircleDot className="fill-current p-0.5" /> : <Circle className="p-0.5" />}
+            icon={$activeArticle?.status === "unread" ? <CircleDot /> : <Circle />}
             onPress={() => { handleMarkStatus($activeArticle); setMoreOpen(false); }}
           />
           {hasTitleFilter && (
