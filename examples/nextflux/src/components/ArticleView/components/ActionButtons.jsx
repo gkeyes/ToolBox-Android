@@ -61,11 +61,8 @@ export default function ActionButtons() {
   const currentSummaryState = $aiSummaries[$activeArticle?.id];
   const [moreOpen, setMoreOpen] = useState(false);
   const rootRef = useRef(null);
-  const [hasTitleFilter, setHasTitleFilter] = useState(false);
-  useEffect(() => {
-    // The title filter control renders only when the article has a usable source.
-    setHasTitleFilter(Boolean(rootRef.current?.querySelector(".reader-secondary .nf-title-filter-trigger")));
-  });
+  // The title filter applies to the article's own feed.
+  const hasTitleFilter = Boolean($activeArticle?.feedId);
 
   // Close the sheet first, then press the real control so only one dialog is
   // ever open and the control keeps its own dialog/notice state.

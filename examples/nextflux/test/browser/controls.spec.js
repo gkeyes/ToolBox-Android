@@ -33,7 +33,9 @@ async function open(page, width = 393, theme = "light", scale = 1) {
 // wide screens show them inline. Press whichever surface the layout offers.
 async function readerAction(page, name) {
   const direct = page.getByRole("button", { name, exact: true });
-  if (await direct.isVisible().catch(() => false)) return direct.click();
+  const more = page.getByRole("button", { name: "更多", exact: true });
+  await expect(direct.or(more).first()).toBeVisible();
+  if (await direct.isVisible()) return direct.click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
