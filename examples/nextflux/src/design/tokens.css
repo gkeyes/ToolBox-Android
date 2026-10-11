@@ -170,28 +170,28 @@
   --overlay-shadow: 0 12px 32px rgb(0 0 0 / 0.12), 0 0 0 0.5px rgb(0 0 0 / 0.08);
 }
 
-/* Reader palette — dark: soft charcoal (not pure black) for long reading. */
+/* Reader palette — dark: pure black page (OLED), near-black raised surfaces. */
 [data-theme="dark"] {
   color-scheme: dark;
   --ds-on-surface: #F2F0EC;
-  --ds-reader: #141414;
-  --background: #141414;
+  --ds-reader: #000000;
+  --background: #000000;
   --foreground: rgb(242 240 236 / 0.90);
-  --surface: #1C1C1B;
+  --surface: #121212;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #252524;
+  --surface-secondary: #1C1C1C;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #2D2D2B;
+  --surface-tertiary: #262626;
   --surface-tertiary-foreground: var(--foreground);
-  --overlay: #1F1F1E;
+  --overlay: #161616;
   --overlay-foreground: var(--foreground);
   --muted: rgb(242 240 236 / 0.60);
   --scrollbar: rgb(242 240 236 / 0.20);
-  --default: #2A2A28;
+  --default: #222222;
   --default-foreground: rgb(242 240 236 / 0.90);
   --accent: #FF8A3D;
   --accent-foreground: #1A0D03;
-  --field-background: #1C1C1B;
+  --field-background: #161616;
   --field-foreground: var(--foreground);
   --field-placeholder: rgb(242 240 236 / 0.42);
   --field-border: transparent;
@@ -219,24 +219,24 @@
   :root:not([data-theme]) {
     color-scheme: dark;
     --ds-on-surface: #F2F0EC;
-    --ds-reader: #141414;
-    --background: #141414;
+    --ds-reader: #000000;
+    --background: #000000;
     --foreground: rgb(242 240 236 / 0.90);
-    --surface: #1C1C1B;
+    --surface: #121212;
     --surface-foreground: var(--foreground);
-    --surface-secondary: #252524;
+    --surface-secondary: #1C1C1C;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: #2D2D2B;
+    --surface-tertiary: #262626;
     --surface-tertiary-foreground: var(--foreground);
-    --overlay: #1F1F1E;
+    --overlay: #161616;
     --overlay-foreground: var(--foreground);
     --muted: rgb(242 240 236 / 0.60);
     --scrollbar: rgb(242 240 236 / 0.20);
-    --default: #2A2A28;
+    --default: #222222;
     --default-foreground: rgb(242 240 236 / 0.90);
     --accent: #FF8A3D;
     --accent-foreground: #1A0D03;
-    --field-background: #1C1C1B;
+    --field-background: #161616;
     --field-foreground: var(--foreground);
     --field-placeholder: rgb(242 240 236 / 0.42);
     --field-border: transparent;

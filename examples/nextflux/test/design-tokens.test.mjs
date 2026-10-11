@@ -41,7 +41,7 @@ test("framer-motion springs convert damping ratio with unit mass", () => {
 });
 
 test("reader palettes use paper-neutral surfaces and the RSS accent", () => {
-  for (const value of ["#FFFFFF", "#F6F5F2", "#141414", "#1C1C1B", "#C2410C", "#FF8A3D", "rgb(28 27 25 / 0.92)", "rgb(242 240 236 / 0.60)"]) {
+  for (const value of ["#FFFFFF", "#F6F5F2", "#000000", "#121212", "#C2410C", "#FF8A3D", "rgb(28 27 25 / 0.92)", "rgb(242 240 236 / 0.60)"]) {
     assert.ok(css.includes(value), value);
   }
   assert.match(css, /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme\]\)/, "first frame follows host scheme");
