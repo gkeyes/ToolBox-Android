@@ -32,7 +32,9 @@ import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.RunningToolsUiState
 import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.toolBoxPressFeedback
+import androidx.compose.animation.animateContentSize
 import java.text.DateFormat
 import java.util.Date
 
@@ -77,16 +79,18 @@ internal fun CatalogRunningToolsContent(
                     AppText(
                         "正在运行",
                         modifier = Modifier.weight(1f),
-                        textStyle = ToolBoxThemeTokens.textStyles.title,
+                        textStyle = ToolBoxThemeTokens.textStyles.headline,
                     )
-                    AppText(
-                        "${state.sessions.size} 个",
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                    )
+                    Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${state.sessions.size} 个" }) {
+                        io.toolbox.core.ui.component.ToolBoxRollingNumber(
+                            state.sessions.size,
+                            ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+                        )
+                        AppText(" 个", color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                    }
                 }
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
-                ToolBoxGroupedSurface {
+                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xs))
+                ToolBoxGroupedSurface(Modifier.animateContentSize(io.toolbox.core.ui.component.ToolBoxMotion.spatial())) {
                     state.sessions.forEachIndexed { index, session ->
                         key(session.sessionId) {
                             RunningToolRow(
@@ -119,31 +123,22 @@ internal fun CatalogRunningToolsContent(
 
 @Composable
 internal fun RunningToolsStopDialog(state: RunningToolsUiState, onCancelStop: () -> Unit, onConfirmStop: () -> Unit) {
-    OverlayDialog(
-        show = state.confirmation != null || state.batchConfirmation.isNotEmpty(),
-        title = if (state.batchConfirmation.isNotEmpty()) "停止全部后台运行？" else "停止后台运行？",
-        summary = if (state.batchConfirmation.isNotEmpty()) "将停止当前选择的 ${state.batchConfirmation.size} 个后台任务，并移除对应通知。" else state.confirmation?.let {
-            "将停止 ${it.toolName} 的后台运行，并移除它的实时通知。其他工具不受影响。"
-        },
-        onDismissRequest = onCancelStop,
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one),
-        ) {
-            ToolBoxTextButton(
-                label = "继续运行",
-                onClick = onCancelStop,
-                modifier = Modifier.weight(1f),
-                contentColor = ToolBoxThemeTokens.colors.textPrimary,
-            )
-            ToolBoxPrimaryButton(
-                label = "停止运行",
-                onClick = onConfirmStop,
-                modifier = Modifier.weight(1f),
-                destructive = true,
-            )
-        }
+    if (state.confirmation == null && state.batchConfirmation.isEmpty()) return
+    val title = if (state.batchConfirmation.isNotEmpty()) "停止全部后台运行？" else "停止后台运行？"
+    ToolBoxModalDialog(onDismissRequest = onCancelStop, title = title) {
+        HostConfirmationContent(
+            title = title,
+            summary = if (state.batchConfirmation.isNotEmpty()) {
+                "将停止当前选择的 ${state.batchConfirmation.size} 个后台任务，并移除对应通知。"
+            } else {
+                state.confirmation?.let { "将停止 ${it.toolName} 的后台运行，并移除它的实时通知。其他工具不受影响。" }.orEmpty()
+            },
+            confirmLabel = "停止运行",
+            cancelLabel = "继续运行",
+            onConfirm = onConfirmStop,
+            onCancel = onCancelStop,
+            destructive = true,
+        )
     }
 }
 
@@ -210,6 +205,7 @@ internal fun RunningToolRow(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val visual = tool?.visual(colors.primary) ?: ToolVisual(ToolBoxIconKey.Tools, colors.primary)
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(
         modifier = Modifier.fillMaxWidth().testTag("catalog-running-${session.sessionId}"),
         verticalAlignment = Alignment.CenterVertically,
@@ -218,9 +214,11 @@ internal fun RunningToolRow(
             modifier = Modifier
                 .weight(1f)
                 .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-                .then(if (onOpen != null) Modifier.clickable(role = Role.Button, onClick = onOpen)
+                .then(if (onOpen != null) Modifier
+                    .toolBoxPressFeedback(interaction, scale = io.toolbox.core.ui.component.ToolBoxMotion.RowPressScale)
+                    .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onOpen)
                     .semantics { contentDescription = "打开${session.toolName}" } else Modifier)
-                .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact),
+                .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CatalogToolGlyph(
@@ -229,7 +227,7 @@ internal fun RunningToolRow(
                 visual = visual,
                 size = ToolBoxThemeTokens.sizes.compactToolGlyph,
             )
-            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.sm))
             Column(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
@@ -261,7 +259,7 @@ internal fun RunningToolRow(
             enabled = canStop,
             onClick = onStop,
             modifier = Modifier
-                .padding(end = ToolBoxThemeTokens.spacing.oneHalf)
+                .padding(end = ToolBoxThemeTokens.spacing.md)
                 .semantics {
                     contentDescription = "停止${session.toolName}后台运行"
                     stateDescription = if (stopping) "停止中" else "运行中"

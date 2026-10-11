@@ -84,6 +84,14 @@ internal fun SurfaceCard(
     )
 }
 
+/** A list state that also drives the surrounding screen's collapsing large title. */
+@Composable
+internal fun rememberTitleBoundListState(): androidx.compose.foundation.lazy.LazyListState {
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    io.toolbox.core.ui.component.ToolBoxTitleCollapseSource(state)
+    return state
+}
+
 @Composable
 internal fun SectionHeader(title: String, action: String = "") {
     // Inset to line up with the text inside the grouped surface below it.

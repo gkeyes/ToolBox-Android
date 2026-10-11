@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -63,73 +64,91 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
     // Each stage keeps its own scroll and disclosure state; safety notices never live in the disclosure.
     val listState = key(stage) { rememberLazyListState() }
     var detailsExpanded by rememberSaveable(stage) { mutableStateOf(false) }
+    val entrance = rememberToolBoxEntrance("backup")
     DetailScreen("备份与恢复", onBack) { padding ->
+        ToolBoxTitleCollapseSource(listState)
         LazyColumn(Modifier.fillMaxSize().testTag("backup_page"), state = listState, contentPadding = mergePadding(padding, PaddingValues(16.dp))) {
+            val stagger = BackupStagger(entrance)
             if (state == BackupUiState.Idle) {
-                backupActions(onExport, onRestore)
-                backupSection("overview") { ToolBoxCard {
-                    AppText("工具、设置与数据", textStyle = ToolBoxThemeTokens.textStyles.title)
-                    AppText("备份保存在你选择的位置；恢复前会先列出将覆盖和跳过的工具。", color = ToolBoxThemeTokens.colors.textSecondary)
-                    Spacer(Modifier.height(8.dp))
-                    AppText("可能包含账号和令牌，ZIP 未加密，请勿公开分享。", color = ToolBoxThemeTokens.colors.danger)
+                backupActions(stagger, onExport, onRestore)
+                backupSection(stagger, "overview") { ToolBoxCard {
+                    AppText("工具、设置与数据", textStyle = ToolBoxThemeTokens.textStyles.headline)
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xxs))
+                    AppText("备份保存在你选择的位置；恢复前会先列出将覆盖和跳过的工具。", color = ToolBoxThemeTokens.colors.textSecondary,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm))
+                    ToolBoxBanner("可能包含账号和令牌，ZIP 未加密，请勿公开分享。", ToolBoxTone.Warning, icon = ToolBoxIconKey.Lock)
                 } }
             }
             when (state) {
-                BackupUiState.ExportConsent -> backupSection("consent") { ToolBoxCard {
-                    AppText("备份可能包含账号和令牌", textStyle = ToolBoxThemeTokens.textStyles.title)
+                BackupUiState.ExportConsent -> backupSection(stagger, "consent") { ToolBoxCard {
+                    AppText("备份可能包含账号和令牌", textStyle = ToolBoxThemeTokens.textStyles.headline)
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xs))
                     AppText("ZIP 不加密，ToolBox 不会上传它。请只保存到可信的本地位置，不要公开分享。硬件密钥不导出；可解密数据将写入备份，并在恢复时重新加密。")
                     Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two))
                     ToolBoxPrimaryButton("同意并生成备份", onExportConsent, Modifier.fillMaxWidth().testTag("backup_export_consent"))
                     Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
                     ToolBoxSecondaryButton("取消", onCancel, Modifier.fillMaxWidth())
                 } }
-                is BackupUiState.Progress -> backupSection("progress") { ToolBoxCard {
+                is BackupUiState.Progress -> backupSection(stagger, "progress") { ToolBoxCard {
                     AppText("${state.percent}% · ${state.label}", modifier = Modifier.testTag("backup_progress_label"))
-                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ToolBoxThemeTokens.colors.textSecondary.copy(alpha = .15f)).progressSemantics(state.percent / 100f).testTag("backup_progress")) {
-                        Box(Modifier.fillMaxWidth(state.percent / 100f).fillMaxHeight().background(ToolBoxThemeTokens.colors.primary))
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm))
+                    val accent = ToolBoxThemeTokens.colors.primary
+                    val shown = androidx.compose.animation.core.animateFloatAsState(
+                        state.percent / 100f, io.toolbox.core.ui.component.ToolBoxMotion.spatial(), label = "backup progress",
+                    )
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(ToolBoxThemeTokens.colors.softNeutral).progressSemantics(state.percent / 100f).testTag("backup_progress")) {
+                        Box(Modifier.fillMaxSize().drawBehind {
+                            val filled = size.width * shown.value.coerceIn(0f, 1f)
+                            val start = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) size.width - filled else 0f
+                            drawRect(accent, topLeft = androidx.compose.ui.geometry.Offset(start, 0f), size = size.copy(width = filled))
+                        })
                     }
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xs))
                     ToolBoxTextButton(if (state.cancelling) "正在安全取消" else "取消操作", onCancel, Modifier.fillMaxWidth(), enabled = !state.cancelling)
                 } }
-                is BackupUiState.Picking -> backupSection("picking") { ToolBoxCard {
+                is BackupUiState.Picking -> backupSection(stagger, "picking") { ToolBoxCard {
                     AppText(if (state.export) "请选择本地保存位置。" else "请选择一份本地备份 ZIP。")
                     ToolBoxTextButton("取消", onCancel)
                 } }
                 is BackupUiState.ConfirmRestore -> {
                     val counts = restorePlanCounts(state.preview.tools)
-                    backupSection("confirm-restore") { ToolBoxCard {
-                        AppText("恢复前确认", textStyle = ToolBoxThemeTokens.textStyles.title)
+                    backupSection(stagger, "confirm-restore") { ToolBoxCard {
+                        AppText("恢复前确认", textStyle = ToolBoxThemeTokens.textStyles.headline)
                         AppText("可恢复 ${counts.recoverable} 个 · 覆盖 ${counts.overwritten} 个 · 跳过 ${counts.skipped} 个",
                             textStyle = ToolBoxThemeTokens.textStyles.title, modifier = Modifier.testTag("backup_conflicts"))
-                        Spacer(Modifier.height(8.dp))
-                        AppText("将覆盖宿主设置及下方标记的工具；其他工具保留。", color = ToolBoxThemeTokens.colors.danger)
+                        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm))
+                        ToolBoxBanner("将覆盖宿主设置及下方标记的工具；其他工具保留。", ToolBoxTone.Danger)
+                        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm))
                         AppText("当前有 ${state.preview.runtimeIds.size} 个运行环境和 ${state.preview.activeTaskIds.size} 个待执行或运行任务。恢复将停止全部本机工具会话与任务，完成或取消后均需手动重新打开。")
                         AppText("下方版本覆盖只确认一次；安装时仍执行原有校验。备份中的授权不会绕过当前权限模型。",
                             color = ToolBoxThemeTokens.colors.textSecondary)
                     } }
-                    backupSection("tools-heading") { SectionHeader("工具变更清单") }
+                    backupSection(stagger, "tools-heading") { SectionHeader("工具变更清单") }
                     itemsIndexed(state.preview.tools, key = { _, tool -> "tool-${tool.id}" }) { index, tool ->
                         RestorePreviewRow(tool, first = index == 0, last = index == state.preview.tools.lastIndex)
                     }
                     state.preview.warnings.forEachIndexed { i, warning ->
-                        backupSection("warning-$i") { AppText(warning, color = ToolBoxThemeTokens.colors.textSecondary) }
+                        backupSection(stagger, "warning-$i") { AppText(warning, color = ToolBoxThemeTokens.colors.textSecondary) }
                     }
-                    backupSection("confirm-actions") { ToolBoxCard {
+                    backupSection(stagger, "confirm-actions") { ToolBoxCard {
                         ToolBoxPrimaryButton("确认覆盖并恢复", onConfirmRestore, Modifier.fillMaxWidth().testTag("backup_confirm_restore"), destructive = true)
                         Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
                         ToolBoxSecondaryButton("取消恢复", onCancel, Modifier.fillMaxWidth())
                     } }
                 }
-                is BackupUiState.Result -> backupSection("result") { ToolBoxCard(
+                is BackupUiState.Result -> backupSection(stagger, "result") { ToolBoxCard(
                     modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
                 ) {
-                    AppText(state.title, textStyle = ToolBoxThemeTokens.textStyles.title, modifier = Modifier.testTag("backup_result"))
+                    AppText(state.title, textStyle = ToolBoxThemeTokens.textStyles.headline, modifier = Modifier.testTag("backup_result"))
+                    Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xs))
                     AppText(state.message, color = if (state.failed) ToolBoxThemeTokens.colors.danger else ToolBoxThemeTokens.colors.textPrimary)
                     state.warnings.forEach { AppText(it, color = ToolBoxThemeTokens.colors.textSecondary) }
                 } }
                 else -> Unit
             }
-            if (state is BackupUiState.Result) backupActions(onExport, onRestore)
-            backupSection("technical-details") {
+            if (state is BackupUiState.Result) backupActions(stagger, onExport, onRestore)
+            backupSection(stagger, "technical-details") {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ToolBoxTextButton(
                         if (detailsExpanded) "收起备份范围与技术说明" else "备份范围与技术说明",
@@ -138,45 +157,53 @@ internal fun BackupContent(state: BackupUiState, onBack: () -> Unit, onExport: (
                             stateDescription = if (detailsExpanded) "已展开" else "已收起"
                         }, outlined = false,
                     )
-                    if (detailsExpanded) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        detailsExpanded,
+                        enter = io.toolbox.core.ui.component.ToolBoxMotion.ExpandIn,
+                        exit = io.toolbox.core.ui.component.ToolBoxMotion.CollapseOut,
+                    ) { Column(Modifier.padding(horizontal = ToolBoxThemeTokens.spacing.md), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppText("包含外观、明暗、系统取色、透明度与后台设置；完整工具包、安装信息、ToolBox storage 配置及数据库数据、可解密的安全存储和任务历史。",
                             textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
                         AppText("不迁移硬件密钥、Android 系统授权、WebView 私有浏览器数据库或活动会话。外部文件访问授权与临时相机缓存需重新获取。",
                             textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
                         AppText("先在私有临时文件中完整生成并原子发布，再写入所选位置。系统文件提供器不统一保证原子替换；写入失败会尝试删除不完整文件，强制结束应用仍可能留下待删除文件。",
                             textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
-                    }
+                    } }
                 }
             }
         }
     }
 }
 
-private fun LazyListScope.backupActions(onExport: () -> Unit, onRestore: () -> Unit) {
-    backupSection("actions") { ToolBoxGroupedSurface {
+/** Hands out stagger slots to backup sections in the order they are declared. */
+private class BackupStagger(val entrance: ToolBoxEntrance) { var next = 0 }
+
+private fun LazyListScope.backupActions(stagger: BackupStagger, onExport: () -> Unit, onRestore: () -> Unit) {
+    backupSection(stagger, "actions") { ToolBoxGroupedSurface {
         ToolBoxSettingRow("导出备份", summary = "保存为本地 ZIP 文件", icon = ToolBoxIconKey.Share, onClick = onExport, modifier = Modifier.testTag("backup_export"))
         ToolBoxGroupDivider()
         ToolBoxSettingRow("从文件恢复", summary = "先检查文件，再确认覆盖", icon = ToolBoxIconKey.Folder, onClick = onRestore, modifier = Modifier.testTag("backup_restore"))
     } }
 }
 
-private fun LazyListScope.backupSection(key: String, content: @Composable () -> Unit) {
+private fun LazyListScope.backupSection(stagger: BackupStagger, key: String, content: @Composable () -> Unit) {
+    val slot = stagger.next++
     item(key) {
-        Box(Modifier.fillMaxWidth().padding(bottom = 16.dp)) { content() }
+        Box(Modifier.fillMaxWidth().toolBoxEntrance(stagger.entrance, slot).padding(bottom = ToolBoxThemeTokens.spacing.sm)) { content() }
     }
 }
 
 @Composable
 private fun RestorePreviewRow(tool: RestoreToolPlan, first: Boolean, last: Boolean) {
     val radius = ToolBoxThemeTokens.radii.denseSurface
-    val shape = RoundedCornerShape(
+    val shape = io.toolbox.core.ui.component.ToolBoxContinuousShape(
         topStart = if (first) radius else 0.dp, topEnd = if (first) radius else 0.dp,
-        bottomStart = if (last) radius else 0.dp, bottomEnd = if (last) radius else 0.dp,
+        bottomEnd = if (last) radius else 0.dp, bottomStart = if (last) radius else 0.dp,
     )
     Column(Modifier.fillMaxWidth().padding(bottom = if (last) 16.dp else 0.dp)
         .clip(shape).background(ToolBoxThemeTokens.colors.surface)) {
         Column(Modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-            .padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             AppText(tool.name, textStyle = ToolBoxThemeTokens.textStyles.title)
             if (tool.skipped != null) {
                 AppText("跳过 · ${tool.skipped}", color = ToolBoxThemeTokens.colors.danger)
@@ -188,7 +215,7 @@ private fun RestorePreviewRow(tool: RestoreToolPlan, first: Boolean, last: Boole
             AppText("${tool.current ?: "未安装"} → ${tool.incoming}", textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary)
         }
-        if (!last) ToolBoxGroupDivider(startPadding = 12.dp)
+        if (!last) ToolBoxGroupDivider(startPadding = 16.dp)
     }
 }
 

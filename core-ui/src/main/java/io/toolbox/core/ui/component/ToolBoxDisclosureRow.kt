@@ -38,9 +38,9 @@ fun ToolBoxDisclosureRow(
 ) {
     val spacing = ToolBoxThemeTokens.spacing
     val colors = ToolBoxThemeTokens.colors
-    val rotation = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -90f else 90f
+    // Chevron points down when collapsed and flips 180° on the spatial spring when expanded.
     val angle = animateFloatAsState(
-        targetValue = if (expanded) rotation else 0f,
+        targetValue = if (expanded) 180f else 0f,
         animationSpec = ToolBoxMotion.spatial(),
         label = "disclosure direction",
     )
@@ -83,7 +83,7 @@ fun ToolBoxDisclosureRow(
             }
         }
         ToolBoxIcon(
-            icon = ToolBoxIconKey.ChevronRight,
+            icon = ToolBoxIconKey.ChevronDown,
             contentDescription = null,
             modifier = Modifier.graphicsLayer { rotationZ = angle.value },
         )

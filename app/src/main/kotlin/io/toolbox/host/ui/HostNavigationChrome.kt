@@ -64,8 +64,12 @@ import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import androidx.compose.runtime.CompositionLocalProvider
+import io.toolbox.core.ui.component.LocalToolBoxTitleCollapse
+import io.toolbox.core.ui.component.ToolBoxTitleCollapse
+import io.toolbox.core.ui.component.rememberToolBoxTitleCollapse
+import io.toolbox.core.ui.component.toolBoxLargeTitleHeight
+import io.toolbox.core.ui.component.ToolBoxCollapsingTopBar
 import kotlin.math.absoluteValue
 import kotlin.math.abs
 
@@ -82,13 +86,9 @@ internal fun PrimaryScreen(
     content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
-    // Miuix: the large title collapses into the small bar as the page scrolls.
-    val topBarScroll = MiuixScrollBehavior()
-    LaunchedEffect(selected) {
-        // Each tab keeps its own list position; start each tab with the title expanded.
-        topBarScroll.state.heightOffset = 0f
-        topBarScroll.state.contentOffset = 0f
-    }
+    // Large title collapses with the visible tab's list; the bar never changes height.
+    val titleCollapse = rememberToolBoxTitleCollapse()
+    LaunchedEffect(selected) { titleCollapse.reset() }
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -96,77 +96,75 @@ internal fun PrimaryScreen(
             .testTag(selected.screenTestTag),
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
-        val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
-        val collapseModifier = if (isGlass) Modifier else Modifier.nestedScroll(topBarScroll.nestedScrollConnection)
-        if (layout.isCompact) {
-            ToolBoxAppScaffold(
-                modifier = Modifier.fillMaxSize(),
-                topBar = {
-                    TopBar(title, subtitle, onImport, glassState = glassState,
-                        compact = selected == MainDestination.Home,
-                        scrollBehavior = topBarScroll.takeUnless { isGlass },
-                        organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
-                },
-                bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
-            ) { scaffoldPadding ->
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .then(collapseModifier)
-                        .toolBoxBackdropSource(glassState)
-                        .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
-                        .consumeWindowInsets(scaffoldPadding),
-                ) {
-                    PrimaryPager(
-                        selected = selected,
-                        onDestination = onDestination,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = mergePadding(
-                            if (isGlass) scaffoldPadding else PaddingValues(0.dp),
-                            layout.contentPadding(),
-                        ),
-                        layout = layout,
-                        userScrollEnabled = !organizeEditing,
-                        content = content,
-                    )
-                }
-            }
-        } else {
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.safeDrawing),
-            ) {
-                DestinationBar(selected, onDestination, compact = false, glassState = glassState)
-                Column(Modifier.weight(1f)) {
-                    TopBar(
-                        title,
-                        subtitle,
-                        onImport,
-                        defaultWindowInsetsPadding = false,
-                        glassState = glassState,
-                        compact = selected == MainDestination.Home,
-                        scrollBehavior = topBarScroll.takeUnless { isGlass },
-                        organizeEditing = organizeEditing,
-                        onOrganize = onOrganize,
-                        onCreateGroup = onCreateGroup,
-                    )
+        CompositionLocalProvider(LocalToolBoxTitleCollapse provides titleCollapse) {
+            if (layout.isCompact) {
+                ToolBoxAppScaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        TopBar(title, subtitle, onImport, glassState = glassState,
+                            organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
+                    },
+                    bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
+                ) { scaffoldPadding ->
+                    // Content always scrolls under the bars; the scaffold padding becomes list padding.
                     Box(
                         Modifier
-                            .weight(1f)
-                            .then(collapseModifier)
+                            .fillMaxSize()
+                            .nestedScroll(titleCollapse.nestedScrollConnection)
                             .toolBoxBackdropSource(glassState)
-                            .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
-                            .align(Alignment.CenterHorizontally),
+                            .consumeWindowInsets(scaffoldPadding),
                     ) {
                         PrimaryPager(
                             selected = selected,
                             onDestination = onDestination,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = layout.contentPadding(),
+                            contentPadding = mergePadding(scaffoldPadding, layout.contentPadding()),
                             layout = layout,
-                            userScrollEnabled = false,
+                            userScrollEnabled = !organizeEditing,
+                            titleCollapse = titleCollapse,
                             content = content,
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                ) {
+                    DestinationBar(selected, onDestination, compact = false, glassState = glassState)
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .nestedScroll(titleCollapse.nestedScrollConnection)
+                                .toolBoxBackdropSource(glassState)
+                                .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
+                                .align(Alignment.TopCenter),
+                        ) {
+                            PrimaryPager(
+                                selected = selected,
+                                onDestination = onDestination,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = mergePadding(
+                                    PaddingValues(top = ToolBoxThemeTokens.sizes.topBar + toolBoxLargeTitleHeight(subtitle)),
+                                    layout.contentPadding(),
+                                ),
+                                layout = layout,
+                                userScrollEnabled = false,
+                                titleCollapse = titleCollapse,
+                                content = content,
+                            )
+                        }
+                        TopBar(
+                            title,
+                            subtitle,
+                            onImport,
+                            defaultWindowInsetsPadding = false,
+                            glassState = glassState,
+                            organizeEditing = organizeEditing,
+                            onOrganize = onOrganize,
+                            onCreateGroup = onCreateGroup,
                         )
                     }
                 }
@@ -183,6 +181,7 @@ private fun PrimaryPager(
     contentPadding: PaddingValues,
     layout: HostRouteLayout,
     userScrollEnabled: Boolean,
+    titleCollapse: ToolBoxTitleCollapse,
     content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val destinations = MainDestination.entries
@@ -241,7 +240,12 @@ private fun PrimaryPager(
                     else Modifier.clearAndSetSemantics { },
                 ),
         ) {
-            content(destinations[page], contentPadding, layout)
+            // Only the settled page drives the collapsing title.
+            CompositionLocalProvider(
+                LocalToolBoxTitleCollapse provides titleCollapse.takeIf { page == pagerState.currentPage },
+            ) {
+                content(destinations[page], contentPadding, layout)
+            }
         }
     }
 }
@@ -341,36 +345,39 @@ internal fun DetailScreen(
     content: @Composable BoxScope.(PaddingValues) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
-    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+    val titleCollapse = rememberToolBoxTitleCollapse()
     Box(
         modifier = modifier.fillMaxSize().toolBoxOpenDesignCanvas(),
         contentAlignment = Alignment.TopCenter,
     ) {
-        ToolBoxAppScaffold(
-            modifier = Modifier.widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth).fillMaxSize(),
-            topBar = {
-                ToolBoxTopBar(
-                    title = title,
-                    subtitle = subtitle,
-                    navigationIcon = ToolBoxIconKey.Back,
-                    onNavigationClick = onBack,
-                    glassState = glassState,
-                    actions = actions,
-                )
-            },
-        ) { scaffoldPadding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .toolBoxBackdropSource(glassState)
-                    .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
-                    .consumeWindowInsets(scaffoldPadding),
-            ) {
+        CompositionLocalProvider(LocalToolBoxTitleCollapse provides titleCollapse) {
+            ToolBoxAppScaffold(
+                modifier = Modifier.widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth).fillMaxSize(),
+                topBar = {
+                    ToolBoxCollapsingTopBar(
+                        title = title,
+                        subtitle = subtitle,
+                        navigationIcon = ToolBoxIconKey.Back,
+                        onNavigationClick = onBack,
+                        glassState = glassState,
+                        actions = actions,
+                    )
+                },
+            ) { scaffoldPadding ->
+                // Both looks scroll content under the bar; pages apply this as list content padding.
                 Box(
-                    Modifier.widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
-                        .fillMaxSize().align(Alignment.TopCenter).testTag("host_detail_content"),
+                    Modifier
+                        .fillMaxSize()
+                        .nestedScroll(titleCollapse.nestedScrollConnection)
+                        .toolBoxBackdropSource(glassState)
+                        .consumeWindowInsets(scaffoldPadding),
                 ) {
-                    content(if (isGlass) scaffoldPadding else PaddingValues(0.dp))
+                    Box(
+                        Modifier.widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                            .fillMaxSize().align(Alignment.TopCenter).testTag("host_detail_content"),
+                    ) {
+                        content(scaffoldPadding)
+                    }
                 }
             }
         }
@@ -395,8 +402,6 @@ private fun TopBar(
     onImport: (() -> Unit)?,
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState,
-    compact: Boolean = false,
-    scrollBehavior: ScrollBehavior? = null,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
@@ -406,8 +411,6 @@ private fun TopBar(
         subtitle = subtitle,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         glassState = glassState,
-        compact = compact,
-        scrollBehavior = scrollBehavior,
         actions = {
             if (onOrganize != null) {
                 if (organizeEditing) {

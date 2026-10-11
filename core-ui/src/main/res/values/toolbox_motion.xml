@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Window animations respect the system transition-animation scale, including 0 (off). -->
-    <style name="ToolBox.DialogWindowAnimation" parent="">
-        <item name="android:windowEnterAnimation">@anim/toolbox_dialog_enter</item>
-        <item name="android:windowExitAnimation">@anim/toolbox_dialog_exit</item>
+    <!-- Sheets: Compose drives the spring entry; the window only animates its exit. -->
+    <style name="ToolBox.SheetWindowAnimation" parent="">
+        <item name="android:windowExitAnimation">@anim/toolbox_sheet_exit</item>
     </style>
 </resources>

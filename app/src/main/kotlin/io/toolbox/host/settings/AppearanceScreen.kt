@@ -18,12 +18,14 @@ import io.toolbox.core.data.ThemeMode
 import io.toolbox.core.data.ThemeStyle
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.toolBoxEntrance
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.mergePadding
+import io.toolbox.host.ui.rememberTitleBoundListState
 
 @Composable
 internal fun AppearanceScreen(
@@ -66,25 +68,29 @@ internal fun AppearanceContent(
     ),
 ) {
     val settings = state.settings
+    val entrance = io.toolbox.core.ui.component.rememberToolBoxEntrance("appearance")
     LazyColumn(
+        state = rememberTitleBoundListState(),
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
         state.error?.let { error ->
             item("error") {
                 SurfaceCard {
-                    AppText(error, color = ToolBoxThemeTokens.colors.danger)
+                    AppText(error, color = ToolBoxThemeTokens.colors.onSoftDanger)
                     if (state.canRetry) ToolBoxTextButton(label = "重试", onClick = onRetry)
                 }
             }
             item("error-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
-        item("preview") { AppearancePreview(settings.themeStyle, settings.theme) }
-        item("preview-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("preview") {
+            Box(Modifier.toolBoxEntrance(entrance, 0)) { AppearancePreview(settings.themeStyle, settings.theme) }
+        }
+        item("preview-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
         item("style-title") { SectionHeader("界面样式") }
         item("style-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("current-style") {
-            ToolBoxGroupedSurface(Modifier.testTag(HostTestTags.AppearanceLiquidGlass)) {
+            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 1).testTag(HostTestTags.AppearanceLiquidGlass)) {
                 ThemeStyle.entries.forEachIndexed { index, style ->
                     ToolBoxRadioSettingRow(
                         title = style.displayLabel,
@@ -96,29 +102,27 @@ internal fun AppearanceContent(
                 }
             }
         }
-        item("color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
         item("color-title") { SectionHeader("明暗模式") }
         item("color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("color-settings") {
-            ToolBoxGroupedSurface {
-                listOf(ThemeMode.SYSTEM to "跟随系统", ThemeMode.LIGHT to "浅色", ThemeMode.DARK to "深色").forEachIndexed { index, (mode, label) ->
-                    ToolBoxRadioSettingRow(
-                        title = label, selected = settings.theme.baseMode == mode,
-                        onClick = { onThemeModeSelected(mode.withSystemColor(settings.theme.usesSystemColor)) },
-                        enabled = state.loaded,
-                        modifier = if (index == 0) Modifier.testTag(HostTestTags.AppearanceMode) else Modifier,
-                    )
-                    if (index < 2) ToolBoxGroupDivider()
-                }
-            }
+            val modes = listOf(ThemeMode.SYSTEM to "跟随系统", ThemeMode.LIGHT to "浅色", ThemeMode.DARK to "深色")
+            io.toolbox.core.ui.component.ToolBoxSegmentedControl(
+                options = modes.map { it.second },
+                selectedIndex = modes.indexOfFirst { it.first == settings.theme.baseMode },
+                onSelect = { index -> onThemeModeSelected(modes[index].first.withSystemColor(settings.theme.usesSystemColor)) },
+                enabled = state.loaded,
+                segmentTestTags = listOf(HostTestTags.AppearanceMode),
+                modifier = Modifier.toolBoxEntrance(entrance, 2),
+            )
         }
-        item("system-color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("system-color-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
         item("system-color-title") {
             SectionHeader(if (settings.themeStyle == ThemeStyle.LIQUID_GLASS) "颜色与材质" else "颜色")
         }
         item("system-color-title-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("system-color-settings") {
-            ToolBoxGroupedSurface {
+            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 3)) {
                 ToolBoxSwitchSettingRow(
                     title = "系统取色",
                     modifier = Modifier.testTag(HostTestTags.AppearanceSystemColor),
@@ -140,9 +144,11 @@ internal fun AppearanceContent(
                 }
             }
         }
-        item("footer-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
+        item("footer-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm)) }
         item("footer") {
             AppText(
+                modifier = Modifier.padding(horizontal = ToolBoxThemeTokens.spacing.md),
+                text =
                 "更改自动保存，仅影响 ToolBox；小工具内部样式不变。",
                 textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary,
@@ -162,7 +168,7 @@ private fun AppearancePreview(style: ThemeStyle, mode: ThemeMode) {
         }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(40.dp).background(colors.softPrimary, RoundedCornerShape(ToolBoxThemeTokens.radii.control)),
+                Box(Modifier.size(36.dp).background(colors.softPrimary, io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.badge)),
                     contentAlignment = Alignment.Center) {
                     ToolBoxIcon(ToolBoxIconKey.Tools, null, tint = colors.primary)
                 }
@@ -171,9 +177,7 @@ private fun AppearancePreview(style: ThemeStyle, mode: ThemeMode) {
                     AppText("说明文字预览", textStyle = ToolBoxThemeTokens.textStyles.metadata, color = colors.textSecondary)
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            ToolBoxGroupDivider(startPadding = 0.dp)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(ToolBoxThemeTokens.spacing.md))
             AppText("${style.displayLabel} · ${mode.baseLabel}", color = colors.primary,
                 textStyle = ToolBoxThemeTokens.textStyles.metadata)
         }

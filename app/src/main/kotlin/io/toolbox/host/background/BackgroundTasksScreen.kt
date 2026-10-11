@@ -1,6 +1,10 @@
 package io.toolbox.host.background
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import io.toolbox.core.ui.component.toolBoxEntrance
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -160,8 +164,10 @@ internal fun BackgroundTasksContent(
     historyError: String? = null,
     onLoadMoreHistory: () -> Unit = {},
 ) {
+    val entrance = io.toolbox.core.ui.component.rememberToolBoxEntrance("background-tasks")
     DetailScreen(title = "后台任务", onBack = onBack) { chromePadding ->
         LazyColumn(
+            state = io.toolbox.host.ui.rememberTitleBoundListState(),
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
@@ -206,7 +212,8 @@ internal fun BackgroundTasksContent(
                         key = { _, session -> "session:${session.sessionId}" },
                         contentType = { _, _ -> "runtime-session" },
                     ) { index, session ->
-                        CatalogLazyGroupItem(index = index, count = page.runtimeSessions.size) {
+                        CatalogLazyGroupItem(index = index, count = page.runtimeSessions.size,
+                            modifier = Modifier.toolBoxEntrance(entrance, index)) {
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
@@ -219,7 +226,7 @@ internal fun BackgroundTasksContent(
                 if (page.tasks.isNotEmpty()) {
                     item("tasks-title") {
                         Column(Modifier.padding(
-                            top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.two else 0.dp,
+                            top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.section else 0.dp,
                             bottom = ToolBoxThemeTokens.spacing.one,
                         )) {
                             SectionHeader("已登记任务 · ${page.tasks.size}")
@@ -230,7 +237,12 @@ internal fun BackgroundTasksContent(
                         key = { _, task -> "task:${task.taskId}" },
                         contentType = { _, _ -> "background-task" },
                     ) { index, task ->
-                        CatalogLazyGroupItem(index = index, count = page.tasks.size) {
+                        CatalogLazyGroupItem(index = index, count = page.tasks.size,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
+                                placementSpec = io.toolbox.core.ui.component.ToolBoxMotion.ItemPlacement,
+                                fadeOutSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
+                            ).toolBoxEntrance(entrance, page.runtimeSessions.size + index + 1)) {
                             BackgroundTaskCard(
                                 task = task,
                                 result = resultFor(task),
@@ -293,6 +305,7 @@ private fun RuntimeSessionCard(
         },
     ) {
         AppText("持续运行环境", textStyle = ToolBoxThemeTokens.textStyles.title)
+        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xxs))
         AppText(
             "启动于 ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.startedAt))}",
             color = ToolBoxThemeTokens.colors.textSecondary,
@@ -324,15 +337,14 @@ private fun BackgroundTaskCard(
             )
         }) else null,
     ) {
-        AppText(task.key, textStyle = ToolBoxThemeTokens.textStyles.title)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppText(task.key, Modifier.weight(1f, fill = false), textStyle = ToolBoxThemeTokens.textStyles.title)
+            Spacer(Modifier.width(ToolBoxThemeTokens.spacing.xs))
+            io.toolbox.core.ui.component.ToolBoxStatusChip(task.state.displayName(), task.state.tone())
+        }
         AppText(
             task.operation.displayName(),
             color = ToolBoxThemeTokens.colors.textSecondary,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata,
-        )
-        AppText(
-            task.state.displayName(),
-            color = task.state.displayColor(),
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
         if (task.periodic) {
@@ -356,7 +368,7 @@ private fun BackgroundEntryLayout(
     BoxWithConstraints(
         modifier.fillMaxWidth()
             .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
-            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.one),
+            .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.sm),
     ) {
         if (action == null) {
             Column(Modifier.fillMaxWidth(), content = content)
@@ -423,11 +435,11 @@ private fun TaskState.displayName(): String = when (this) {
     TaskState.CANCELLED -> "已取消"
 }
 
-@Composable
-private fun TaskState.displayColor() = when (this) {
-    TaskState.QUEUED, TaskState.RUNNING -> ToolBoxThemeTokens.colors.primary
-    TaskState.COMPLETED -> ToolBoxThemeTokens.colors.success
-    TaskState.CANCELLED -> ToolBoxThemeTokens.colors.textSecondary
+private fun TaskState.tone() = when (this) {
+    TaskState.QUEUED -> io.toolbox.core.ui.component.ToolBoxTone.Neutral
+    TaskState.RUNNING -> io.toolbox.core.ui.component.ToolBoxTone.Info
+    TaskState.COMPLETED -> io.toolbox.core.ui.component.ToolBoxTone.Success
+    TaskState.CANCELLED -> io.toolbox.core.ui.component.ToolBoxTone.Neutral
 }
 
 private fun RunOutcome.displayName(): String = when (this) {

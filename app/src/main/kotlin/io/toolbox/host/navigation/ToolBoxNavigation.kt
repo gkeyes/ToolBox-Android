@@ -73,7 +73,11 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 private val RetainedPageMotion = ToolBoxMotion.pageSpec()
 
 /** Fraction of the page width the predictive-back gesture may drag the page before commit. */
-private const val PredictiveBackTravel = 0.4f
+private const val PredictiveBackTravel = 0.6f
+
+/** Shared-axis travel, read inside graphics layers (Density receiver). */
+private val androidx.compose.ui.graphics.GraphicsLayerScope.PageShiftPx: Float
+    get() = ToolBoxMotion.PageShift.toPx()
 
 @Composable
 internal fun ToolBoxNavigation(
@@ -210,11 +214,9 @@ internal fun ToolBoxNavigation(
                         0f
                     }
                     val depth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
-                    translationX = -trailingDirection * depth * size.width * 0.14f
-                    val depthScale = 1f - depth * 0.012f
-                    scaleX = depthScale
-                    scaleY = depthScale
-                    alpha = 1f - depth * 0.08f
+                    // Shared X axis: the covered page drifts 30dp back and fades.
+                    translationX = -trailingDirection * depth * PageShiftPx
+                    alpha = 1f - depth
                 }
                 .then(
                     if (runtimeRoute != null && !sourceAboveRuntime) {
@@ -355,11 +357,8 @@ internal fun ToolBoxNavigation(
                     }
                     .graphicsLayer {
                         val motion = entryProgress.value.coerceIn(0f, 1f)
-                        translationX = trailingDirection * motion * size.width
-                        val incomingScale = 1f - motion * 0.012f
-                        scaleX = incomingScale
-                        scaleY = incomingScale
-                        alpha = 1f - motion * 0.08f
+                        translationX = trailingDirection * motion * PageShiftPx
+                        alpha = 1f - motion
                     },
             ) {
                 RuntimeShellPreviewContent(toolName = runtimeTitle)
@@ -431,12 +430,10 @@ private fun RetainedSecondaryPage(
                 }
             }
             .graphicsLayer {
+                // Shared X axis: 30dp of travel plus fade, on the critically damped page spring.
                 val motion = progress.value.coerceIn(0f, 1f)
-                translationX = trailingDirection * motion * size.width
-                val incomingScale = 1f - motion * 0.012f
-                scaleX = incomingScale
-                scaleY = incomingScale
-                alpha = 1f - motion * 0.08f
+                translationX = trailingDirection * motion * PageShiftPx
+                alpha = 1f - motion
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {

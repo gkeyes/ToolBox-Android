@@ -18,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -71,8 +74,15 @@ fun ToolBoxActionSheet(
         val window = (LocalView.current.parent as DialogWindowProvider).window
         DisposableEffect(window) {
             val previousDim = window.attributes.dimAmount
+            val previousAnimations = window.attributes.windowAnimations
             window.setDimAmount(0f)
-            onDispose { window.setDimAmount(previousDim) }
+            // Entry is driven by Compose springs; the exit is a window animation so it also
+            // plays when the caller removes the sheet directly (a selection, a guard, Back).
+            window.setWindowAnimations(io.toolbox.core.ui.R.style.ToolBox_SheetWindowAnimation)
+            onDispose {
+                window.setDimAmount(previousDim)
+                window.setWindowAnimations(previousAnimations)
+            }
         }
         val density = LocalDensity.current
         val dismissDistance = with(density) { 64.dp.toPx() }
@@ -85,7 +95,30 @@ fun ToolBoxActionSheet(
         // Springs up from below on first show; the scrim fades with it. With animations
         // disabled the spring completes on the first frame, so nothing waits on it.
         val entrance = remember { Animatable(0f) }
-        LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.SheetEnter) }
+        val scrimAlpha = remember { Animatable(0f) }
+        LaunchedEffect(entrance) {
+            launch { scrimAlpha.animateTo(1f, ToolBoxMotion.ScrimFade) }
+            entrance.animateTo(1f, ToolBoxMotion.SheetEnter)
+        }
+        val backRequest by rememberUpdatedState(onBackRequest)
+        // Predictive back: the sheet follows the gesture down, then either leaves through the
+        // back route or springs back. A plain Back press takes the same commit path.
+        PredictiveBackHandler { events ->
+            try {
+                events.collect { event -> dragOffset = event.progress * dismissDistance * 1.5f }
+                backRequest()
+                settleJob = scope.launch {
+                    settle.snapTo(dragOffset)
+                    settle.animateTo(0f, ToolBoxMotion.spatial()) { dragOffset = value }
+                }
+            } catch (cancelled: CancellationException) {
+                settleJob = scope.launch {
+                    settle.snapTo(dragOffset)
+                    settle.animateTo(0f, ToolBoxMotion.spatial()) { dragOffset = value }
+                }
+                throw cancelled
+            }
+        }
         val headerDrag = Modifier.pointerInput(dismissDistance, dismissVelocity) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -127,9 +160,9 @@ fun ToolBoxActionSheet(
             }
         }
         Box(Modifier.fillMaxSize()) {
-            val scrim = MiuixTheme.colorScheme.windowDimming
+            val scrim = colors.scrim
             Box(Modifier.matchParentSize()
-                .graphicsLayer { alpha = entrance.value.coerceIn(0f, 1f) }
+                .graphicsLayer { alpha = scrimAlpha.value.coerceIn(0f, 1f) }
                 .background(scrim)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() }, indication = null,
@@ -149,8 +182,15 @@ fun ToolBoxActionSheet(
                             translationY = ((1f - entrance.value) * size.height).coerceAtLeast(0f)
                         }
                         .clip(shape)
-                        .background(containerColor ?: if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.surface)
-                        .then(if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape) else Modifier)
+                        .background(containerColor ?: if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.raised)
+                        .then(
+                            if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape)
+                            else Modifier.drawWithContent {
+                                drawContent()
+                                // Sheets separate by surface tone plus a top hairline, not a shadow.
+                                drawLine(colors.divider, Offset(size.width * 0.08f, 0f), Offset(size.width * 0.92f, 0f), 1.dp.toPx())
+                            },
+                        )
                         .pointerInput(Unit) { detectTapGestures { /* Consume taps on the sheet, not its scrim. */ } }
                         .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
                         .padding(horizontal = 20.dp).padding(bottom = 12.dp)

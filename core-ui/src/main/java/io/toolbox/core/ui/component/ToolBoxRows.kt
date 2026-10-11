@@ -76,8 +76,9 @@ fun ToolBoxSearchField(
     )
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = toolBoxSearchFieldMinHeight())
-            .toolBoxOpenDesignSurface(shape)
-            .border(1.dp, focusColor.value, shape)
+            .clip(shape)
+            .background(colors.surfaceMuted)
+            .border(1.5.dp, focusColor.value, shape)
             .padding(start = spacing.oneHalf, end = spacing.half),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -132,6 +133,7 @@ fun ToolBoxSettingRow(
     icon: ToolBoxIconKey? = null,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val spacing = ToolBoxThemeTokens.spacing
     val colors = ToolBoxThemeTokens.colors
@@ -170,6 +172,10 @@ fun ToolBoxSettingRow(
                 ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(
                     color = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent))
             }
+        }
+        trailing?.let {
+            Spacer(Modifier.width(spacing.one))
+            it()
         }
         // A disclosure indicator promises navigation: informational rows must not show one.
         if (onClick != null) {

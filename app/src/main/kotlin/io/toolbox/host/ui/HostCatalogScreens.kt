@@ -44,6 +44,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -86,7 +88,6 @@ import io.toolbox.host.catalog.CatalogUiState
 import io.toolbox.host.importflow.ImportUiState
 import io.toolbox.tool.packagekit.lifecycle.PackageImportPhase
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.DateFormat
 import java.util.Date
@@ -146,6 +147,7 @@ internal fun ToolManagerContent(
         }
     }
     val entrance = rememberToolBoxEntrance(if (home) "home" else "tools")
+    io.toolbox.core.ui.component.ToolBoxTitleCollapseSource(listState)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val direction = LocalLayoutDirection.current
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
@@ -327,6 +329,7 @@ internal fun ToolDetailScreen(
 
     DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
         LazyColumn(
+            state = rememberTitleBoundListState(),
             modifier = Modifier
                 .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
                 .fillMaxWidth()
@@ -393,11 +396,11 @@ internal fun ToolDetailScreen(
             }
         }
 
-        OverlayDialog(
-            show = confirmation != null,
+        if (confirmation != null) ToolBoxModalDialog(
             onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
+            title = "删除 ${confirmation.toolName}？",
         ) {
-            confirmation?.let {
+            confirmation.let {
                 HostConfirmationContent(
                     title = "删除 ${it.toolName}？",
                     summary = "工具文件、权限、存储和后台任务都会一并删除。",
@@ -500,18 +503,17 @@ internal fun FeedbackSurface(
     onCancel: (() -> Unit)? = null,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val container = when (tone) {
-        FeedbackTone.Progress -> colors.softPrimary
-        FeedbackTone.Success -> colors.softSuccess
-        FeedbackTone.Neutral -> colors.surfaceMuted
-        FeedbackTone.Error -> colors.softDanger
-    }
-    val content = when (tone) {
-        FeedbackTone.Progress -> colors.primary
-        FeedbackTone.Success -> colors.onSoftSuccess
-        FeedbackTone.Neutral -> colors.textSecondary
-        FeedbackTone.Error -> colors.onSoftDanger
-    }
+    // Status banner: tone changes (progress -> success / error) cross-fade on the effects spring.
+    val (toneContainer, toneContent) = io.toolbox.core.ui.component.toolBoxToneColors(
+        when (tone) {
+            FeedbackTone.Progress -> io.toolbox.core.ui.component.ToolBoxTone.Info
+            FeedbackTone.Success -> io.toolbox.core.ui.component.ToolBoxTone.Success
+            FeedbackTone.Neutral -> io.toolbox.core.ui.component.ToolBoxTone.Neutral
+            FeedbackTone.Error -> io.toolbox.core.ui.component.ToolBoxTone.Danger
+        },
+    )
+    val containerState = androidx.compose.animation.animateColorAsState(toneContainer, ToolBoxMotion.effects(), label = "feedback container")
+    val content = androidx.compose.animation.animateColorAsState(toneContent, ToolBoxMotion.effects(), label = "feedback content").value
     val icon = when (tone) {
         FeedbackTone.Progress -> ToolBoxIconKey.Clock
         FeedbackTone.Success -> ToolBoxIconKey.Check
@@ -521,14 +523,23 @@ internal fun FeedbackSurface(
     Row(
         modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {
             if (tone != FeedbackTone.Progress) liveRegion = LiveRegionMode.Polite
-        }.clip(toolBoxShape(ToolBoxThemeTokens.radii.control)).background(container)
+        }.clip(toolBoxShape(ToolBoxThemeTokens.radii.control)).drawBehind { drawRect(containerState.value) }
             .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget).padding(start = ToolBoxThemeTokens.spacing.oneHalf),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolBoxIcon(icon = icon, contentDescription = null, tint = content)
         Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
-        AppText(text = message, modifier = Modifier.weight(1f), color = colors.textPrimary,
-            textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        androidx.compose.animation.AnimatedContent(
+            targetState = message,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                androidx.compose.animation.fadeIn(ToolBoxMotion.effects()) togetherWith
+                    androidx.compose.animation.fadeOut(ToolBoxMotion.effects())
+            },
+            label = "feedback text",
+        ) { text ->
+            AppText(text = text, color = colors.textPrimary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        }
         if (onCancel != null) {
             ToolBoxTextButton(label = "取消", onClick = onCancel)
         } else if (dismissible) {
@@ -541,20 +552,23 @@ internal fun FeedbackSurface(
 
 @Composable
 internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Unit) {
-    SurfaceCard(Modifier.testTag(HostTestTags.CatalogEmptyState)) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            ToolGlyph(icon = ToolBoxIconKey.Tools, accent = ToolBoxThemeTokens.colors.primary)
+    // Empty state: 64dp tonal icon disc, headline, one line of subhead, then the actions.
+    Column(
+        Modifier.fillMaxWidth().testTag(HostTestTags.CatalogEmptyState).padding(top = ToolBoxThemeTokens.spacing.lg),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ToolBoxStatusState(
+            title = "还没有工具",
+            message = "先安装四个可直接使用的范例，或导入自己的 .tbx。",
+            icon = ToolBoxIconKey.Tools,
+        )
+        Column(
+            Modifier.widthIn(max = 360.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs),
+        ) {
+            ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
+            ToolBoxSecondaryButton("导入工具", onImport, Modifier.fillMaxWidth())
         }
-        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-        AppText(text = "还没有工具", modifier = Modifier.fillMaxWidth(),
-            textStyle = ToolBoxThemeTokens.textStyles.sectionTitle, weight = FontWeight.SemiBold,
-            align = androidx.compose.ui.text.style.TextAlign.Center)
-        AppText(text = "先安装四个可直接使用的范例，或导入自己的 .tbx。", modifier = Modifier.fillMaxWidth(),
-            textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary,
-            align = androidx.compose.ui.text.style.TextAlign.Center)
-        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-        ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
-        ToolBoxTextButton("导入工具", onImport, Modifier.fillMaxWidth())
     }
 }
 

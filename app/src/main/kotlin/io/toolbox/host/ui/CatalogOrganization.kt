@@ -218,9 +218,8 @@ private fun GroupHeader(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val collapsedRotation = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
     val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 0f else collapsedRotation,
+        targetValue = if (expanded) 180f else 0f,
         animationSpec = ToolBoxMotion.spatial(), label = "group-expansion",
     )
     Row(

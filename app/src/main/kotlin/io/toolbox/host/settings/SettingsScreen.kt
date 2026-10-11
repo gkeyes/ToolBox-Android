@@ -82,6 +82,7 @@ internal fun SettingsContent(
     onRetryBackground: () -> Unit = {},
 ) {
     val entrance = rememberToolBoxEntrance("settings")
+    io.toolbox.core.ui.component.ToolBoxTitleCollapseSource(listState)
     LazyColumn(
         state = listState,
         modifier = Modifier

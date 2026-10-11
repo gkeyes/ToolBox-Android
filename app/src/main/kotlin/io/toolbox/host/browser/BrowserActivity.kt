@@ -79,6 +79,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.component.ToolBoxActionSheet
+import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.component.ToolBoxActionSheetHeader
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIcon
@@ -910,16 +911,35 @@ class BrowserActivity : ComponentActivity() {
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     webView?.let { page -> key(page) { AndroidView(factory = { page }, modifier = Modifier.fillMaxSize()) } }
-                    error?.let { message ->
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = error != null,
+                        enter = androidx.compose.animation.fadeIn(io.toolbox.core.ui.component.ToolBoxMotion.effects()),
+                        exit = androidx.compose.animation.fadeOut(io.toolbox.core.ui.component.ToolBoxMotion.effects()),
+                    ) {
+                        // Keep the last message while fading out after a successful reload.
+                        val message = remember { mutableStateOf("") }.also { last -> error?.let { last.value = it } }.value
                         Column(
-                            Modifier.fillMaxSize().background(colors.background).padding(24.dp).verticalScroll(rememberScrollState()),
+                            Modifier.fillMaxSize().background(colors.background)
+                                .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.lg)
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            ToolBoxText(message)
-                            Spacer(Modifier.height(12.dp))
-                            ToolBoxTextButton("重新加载", ::reload, enabled = !clearing && !interaction.restarting)
-                            ToolBoxTextButton("使用系统浏览器", ::openSystemBrowser, enabled = !clearing, outlined = false)
+                            io.toolbox.core.ui.component.ToolBoxStatusState(
+                                title = "无法打开此网页",
+                                message = message,
+                                icon = ToolBoxIconKey.Globe,
+                                tone = io.toolbox.core.ui.component.ToolBoxStatusTone.Error,
+                            )
+                            Column(
+                                Modifier.widthIn(max = 360.dp).fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs),
+                            ) {
+                                io.toolbox.core.ui.component.ToolBoxPrimaryButton(
+                                    "重新加载", ::reload, Modifier.fillMaxWidth(), enabled = !clearing && !interaction.restarting,
+                                )
+                                ToolBoxTextButton("使用系统浏览器", ::openSystemBrowser, Modifier.fillMaxWidth(), enabled = !clearing, outlined = false)
+                            }
                         }
                     }
                 }
@@ -1024,7 +1044,7 @@ class BrowserActivity : ComponentActivity() {
                     }
                     Column(
                         Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
+                            .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button))
                             .background(colors.surface)
                             .padding(12.dp),
                     ) {
@@ -1135,7 +1155,7 @@ class BrowserActivity : ComponentActivity() {
                         ) {
                             Box(
                                 Modifier.size(36.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control))
                                     .background(colors.softPrimary),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -1170,7 +1190,7 @@ class BrowserActivity : ComponentActivity() {
                             }
                             Box(
                                 Modifier.size(36.dp)
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control))
                                     .background(colors.surfaceMuted)
                                     .clickable(
                                         role = Role.Button,
@@ -1193,7 +1213,7 @@ class BrowserActivity : ComponentActivity() {
                     Spacer(Modifier.height(8.dp))
                     Column(
                         Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface))
                             .background(colors.surface)
                             .padding(horizontal = 14.dp, vertical = 13.dp),
                     ) {
@@ -1313,7 +1333,7 @@ class BrowserActivity : ComponentActivity() {
             BrowserToolbarButton(ToolBoxIconKey.Close, "关闭浏览器", ::finish, compact = true)
             Row(
                 Modifier.weight(1f).height(42.dp)
-                    .clip(RoundedCornerShape(17.dp))
+                    .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button))
                     .background(colors.surface)
                     .testTag("browser_address"),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1377,12 +1397,15 @@ class BrowserActivity : ComponentActivity() {
         val colors = ToolBoxThemeTokens.colors
         val background = if (highlighted) colors.softPrimary else colors.surface
         val tint = if (highlighted) colors.primary else colors.textPrimary
+        val interaction = remember { MutableInteractionSource() }
+        val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button)
         Row(
             modifier
-                .height(52.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .height(ToolBoxThemeTokens.sizes.primaryButton)
+                .toolBoxPressFeedback(interaction, shape = shape)
+                .clip(shape)
                 .background(background)
-                .clickable(role = Role.Button, onClick = onClick)
+                .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
@@ -1453,7 +1476,7 @@ class BrowserActivity : ComponentActivity() {
             Modifier.fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 3.dp)
                 .height(54.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface))
                 .background(ToolBoxThemeTokens.colors.surface),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1520,10 +1543,13 @@ class BrowserActivity : ComponentActivity() {
             highlighted -> colors.primary
             else -> colors.textSecondary
         }
+        val interaction = remember { MutableInteractionSource() }
+        val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control)
         Column(
             modifier.height(48.dp)
-                .clip(RoundedCornerShape(15.dp))
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape)
+                .clip(shape)
+                .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
                 .padding(horizontal = 2.dp, vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -1534,9 +1560,9 @@ class BrowserActivity : ComponentActivity() {
                 label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                    fontSize = 9.5.sp,
-                    lineHeight = 11.sp,
+                style = ToolBoxThemeTokens.textStyles.label.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = tint,
                 ),
@@ -1555,9 +1581,13 @@ class BrowserActivity : ComponentActivity() {
     ) {
         val tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent
         val size = if (compact) 40.dp else 44.dp
+        val interaction = remember { MutableInteractionSource() }
+        val shape = io.toolbox.core.ui.component.toolBoxShape(if (compact) ToolBoxThemeTokens.radii.control else ToolBoxThemeTokens.radii.button)
         Box(
-            Modifier.size(size).clip(RoundedCornerShape(if (compact) 14.dp else 16.dp))
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            Modifier.size(size)
+                .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape)
+                .clip(shape)
+                .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
                 .semantics { contentDescription = label },
             contentAlignment = Alignment.Center,
         ) {
@@ -1576,7 +1606,7 @@ class BrowserActivity : ComponentActivity() {
         val selected = userAgentMode == mode
         Row(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.button))
                 .background(if (selected) colors.softPrimary else androidx.compose.ui.graphics.Color.Transparent)
                 .clickable(
                     enabled = !clearing && !interaction.restarting,
@@ -1588,7 +1618,7 @@ class BrowserActivity : ComponentActivity() {
         ) {
             Box(
                 Modifier.size(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.control))
                     .background(if (selected) colors.primary.copy(alpha = 0.12f) else colors.surfaceMuted),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1649,10 +1679,13 @@ class BrowserActivity : ComponentActivity() {
             destructive -> colors.onSoftDanger
             else -> colors.textPrimary
         }
+        val interaction = remember { MutableInteractionSource() }
+        val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface)
         Row(
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            modifier = Modifier.fillMaxWidth().height(ToolBoxThemeTokens.sizes.denseRow)
+                .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape, scale = io.toolbox.core.ui.component.ToolBoxMotion.RowPressScale)
+                .clip(shape)
+                .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

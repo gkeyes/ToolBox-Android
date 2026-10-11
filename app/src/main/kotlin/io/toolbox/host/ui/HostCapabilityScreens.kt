@@ -150,7 +150,7 @@ internal fun RuntimeSaveDialog(
                 AppText(
                     saving.error ?: if (waiting) "正在等待保存完成" else if (saving.slow) "仍在保存" else "正在保存",
                     modifier = Modifier.weight(1f),
-                    textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontWeight = FontWeight.SemiBold),
+                    textStyle = ToolBoxThemeTokens.textStyles.headline,
                 )
                 if (saving.error == null) ToolBoxBusyIndicator()
             }
@@ -235,15 +235,14 @@ private fun RuntimeCenteredState(title: String, detail: String) {
         Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally) {
             // The runtime exposes readiness, not a measurable percentage. Do not invent progress.
-            Box(Modifier.size(24.dp).progressSemantics(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(ToolBoxThemeTokens.sizes.emptyStateIcon).progressSemantics(), contentAlignment = Alignment.Center) {
                 ToolBoxBusyIndicator()
             }
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             AppText(
                 title,
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-                weight = FontWeight.Bold,
+                textStyle = ToolBoxThemeTokens.textStyles.headline,
                 align = TextAlign.Center,
             )
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.compact))
@@ -296,7 +295,7 @@ private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)
             if (onRetry != null || details != null) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Box(
-                        Modifier.size(48.dp).clip(CircleShape).background(ToolBoxThemeTokens.colors.softDanger),
+                        Modifier.size(ToolBoxThemeTokens.sizes.emptyStateIcon).clip(CircleShape).background(ToolBoxThemeTokens.colors.softDanger),
                         contentAlignment = Alignment.Center,
                     ) {
                         ToolBoxIcon(ToolBoxIconKey.Refresh, null, tint = ToolBoxThemeTokens.colors.onSoftDanger)
@@ -307,8 +306,7 @@ private fun HostStatusCard(title: String, message: String, onRetry: (() -> Unit)
             AppText(
                 title,
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
-                weight = FontWeight.Bold,
+                textStyle = ToolBoxThemeTokens.textStyles.headline,
                 align = TextAlign.Center,
             )
             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
