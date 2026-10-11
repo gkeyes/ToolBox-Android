@@ -230,9 +230,9 @@ internal fun PermissionCenterContent(
                     item("after-message") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
                 }
                 when (val loadState = state.loadState) {
-                    PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限") }
+                    PermissionLoadState.Loading -> item("loading") { CatalogStatusState("正在读取权限", loading = true) }
                     PermissionLoadState.NotInstalled -> item("not-installed") {
-                        SurfaceCard { AppText("工具已不存在。") }
+                        CatalogStatusState("工具已不存在。", icon = io.toolbox.core.ui.component.ToolBoxIconKey.Tools)
                     }
                     is PermissionLoadState.Failed -> item("load-failed") {
                         SurfaceCard {
@@ -243,7 +243,9 @@ internal fun PermissionCenterContent(
                         }
                     }
                     PermissionLoadState.Ready -> if (state.items.isEmpty()) {
-                        item("empty") { SurfaceCard { AppText("这个工具没有声明权限。") } }
+                        item("empty") {
+                            CatalogStatusState("这个工具没有声明权限。", icon = io.toolbox.core.ui.component.ToolBoxIconKey.Shield)
+                        }
                     } else permissionGroups.forEachIndexed { groupIndex, (title, items) ->
                         item("permission-title:$title") { SectionHeader("$title · ${items.size}") }
                         item("permission-title-gap:$title") {

@@ -615,7 +615,14 @@ private fun PanelDivider() { Spacer(Modifier.fillMaxWidth().height(1.dp).backgro
 
 @Composable
 private fun PanelEmpty(message: String) {
-    ToolBoxText(message, Modifier.fillMaxWidth().padding(vertical = 24.dp), style = ToolBoxThemeTokens.textStyles.body.copy(color = ToolBoxThemeTokens.colors.textSecondary))
+    ToolBoxText(
+        message,
+        Modifier.fillMaxWidth().padding(vertical = 24.dp),
+        style = ToolBoxThemeTokens.textStyles.body.copy(
+            color = ToolBoxThemeTokens.colors.textSecondary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        ),
+    )
 }
 
 @Composable

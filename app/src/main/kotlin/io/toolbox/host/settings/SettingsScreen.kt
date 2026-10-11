@@ -30,6 +30,8 @@ import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.core.ui.component.rememberToolBoxEntrance
+import io.toolbox.core.ui.component.toolBoxEntrance
 import io.toolbox.host.BuildConfig
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
@@ -79,6 +81,7 @@ internal fun SettingsContent(
     listState: LazyListState = rememberLazyListState(),
     onRetryBackground: () -> Unit = {},
 ) {
+    val entrance = rememberToolBoxEntrance()
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -88,7 +91,7 @@ internal fun SettingsContent(
         overscrollEffect = null,
     ) {
         state.error?.let {
-            item("error") { SurfaceCard { AppText(it, color = ToolBoxThemeTokens.colors.danger) } }
+            item("error") { SurfaceCard { AppText(it, color = ToolBoxThemeTokens.colors.onSoftDanger) } }
             item("after-error") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
         if (state.backgroundError != null) {
@@ -96,7 +99,7 @@ internal fun SettingsContent(
             item("after-background-error") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf)) }
         }
         item("appearance") {
-            ToolBoxGroupedSurface {
+            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 0)) {
                 ToolBoxSettingRow(
                     title = "外观",
                     modifier = Modifier.testTag(HostTestTags.SettingsAppearance),
@@ -107,11 +110,11 @@ internal fun SettingsContent(
                 )
             }
         }
-        item("between-groups") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-        item("operation-title") { SectionHeader("运行与权限") }
+        item("between-groups") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
+        item("operation-title") { Box(Modifier.toolBoxEntrance(entrance, 1)) { SectionHeader("运行与权限") } }
         item("before-operation") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("operation") {
-            ToolBoxGroupedSurface {
+            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2)) {
                 ToolBoxSwitchSettingRow(
                     title = "后台保障", summary = state.backgroundProgressSummary ?: "允许已启动的任务持续运行",
                     checked = state.settings.backgroundEnabled, onCheckedChange = onBackgroundEnabledChange,
@@ -131,16 +134,16 @@ internal fun SettingsContent(
                 )
             }
         }
-        item("backup-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-        item("backup") { ToolBoxGroupedSurface {
+        item("backup-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.stack)) }
+        item("backup") { ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 3)) {
             ToolBoxSettingRow("备份与恢复", summary = "导出本地备份，或从文件恢复", icon = ToolBoxIconKey.Folder,
                 onClick = onBackupRestore, enabled = state.loaded, modifier = Modifier.testTag("settings_backup_restore"))
         } }
-        item("support-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.two)) }
-        item("support-title") { SectionHeader("支持") }
+        item("support-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
+        item("support-title") { Box(Modifier.toolBoxEntrance(entrance, 4)) { SectionHeader("支持") } }
         item("before-support") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
         item("support") {
-            ToolBoxGroupedSurface {
+            ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 5)) {
                 ToolBoxSettingRow(
                     title = "开发者帮助",
                     summary = "调试状态、离线手册与四个范例",

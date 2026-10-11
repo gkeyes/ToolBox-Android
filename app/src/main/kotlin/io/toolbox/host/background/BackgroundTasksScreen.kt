@@ -188,14 +188,11 @@ internal fun BackgroundTasksContent(
             }
             if (page.isEmpty) {
                 item("empty") {
-                    SurfaceCard {
-                        AppText("没有后台任务")
-                        AppText(
-                            "工具注册的任务会显示在这里。",
-                            color = ToolBoxThemeTokens.colors.textSecondary,
-                            textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        )
-                    }
+                    io.toolbox.host.ui.CatalogStatusState(
+                        "没有后台任务",
+                        icon = io.toolbox.core.ui.component.ToolBoxIconKey.Clock,
+                        detail = "工具注册的任务会显示在这里。",
+                    )
                 }
             } else {
                 if (page.runtimeSessions.isNotEmpty()) {
