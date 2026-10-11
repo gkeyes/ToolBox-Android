@@ -7,6 +7,9 @@ import { router } from "@/routes/index.jsx";
 import { RouterProvider } from "react-router";
 import SplashScreen from "@/components/SplashScreen";
 import { Toaster } from "sonner";
+import { isModalOpen } from "@/stores/modalStore.js";
+import { imageGalleryActive } from "@/stores/articlesStore.js";
+import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import {
   Info,
   CircleCheck,
@@ -17,6 +20,9 @@ import {
 
 // 初始化主题
 initTheme();
+// Release any floating layer left over the page after its close path was
+// interrupted (see overlayJanitor.js); never while an overlay is meant to be open.
+installOverlayJanitor({ isOverlayExpected: () => isModalOpen.get() || imageGalleryActive.get() });
 // Reduced-motion preference must be on <html> before the first frame so CSS tokens snap.
 if (settingsState.get().reduceMotion) document.documentElement.dataset.reduceMotion = "true";
 

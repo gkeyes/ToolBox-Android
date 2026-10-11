@@ -544,3 +544,51 @@ test("read-aloud stops while it is playing and the page stays interactive", asyn
   await expectSpeechStopped(page);
   expect(await page.evaluate(() => [...window.speechAudios].every((audio) => !audio.getAttribute("src")))).toBe(true);
 });
+
+// Overlay janitor: a layer left over the page after its close path broke is
+// released, a stale inert root is restored, and a legitimately open sheet is
+// never touched.
+test("the overlay janitor releases a stranded layer and a stale inert root", async ({ page }) => {
+  const warnings = [];
+  page.on("console", (message) => { if (message.type() === "warning") warnings.push(message.text()); });
+  await open(page, 393);
+  await page.evaluate(() => {
+    const layer = document.createElement("div");
+    layer.className = "stranded-fixture-layer";
+    layer.style.cssText = "position:fixed;inset:0;z-index:9999;background:transparent";
+    document.body.append(layer);
+    document.getElementById("root").inert = true;
+  });
+  // The symptom: a tap lands on the stranded layer and nothing happens.
+  await page.mouse.click(200, 400);
+  await expect.poll(() => page.evaluate(() => ({
+    released: document.querySelector(".stranded-fixture-layer")?.dataset.nextfluxReleased ?? null,
+    inert: document.getElementById("root").inert,
+  }))).toEqual({ released: "true", inert: false });
+  expect(warnings.join("\n")).toContain("released a stranded overlay");
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+
+  // A stale inert root alone is restored on the next route change.
+  await page.evaluate(() => { document.getElementById("root").inert = true; location.hash = "#/feed/1/article/42?janitor=1"; });
+  await expect.poll(() => page.evaluate(() => document.getElementById("root").inert)).toBe(false);
+});
+
+test("the overlay janitor never touches an open sheet", async ({ page }) => {
+  await open(page, 393);
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  await page.mouse.click(200, 40); // a tap on the live backdrop closes the sheet
+  await expect(sheet).toHaveCount(0);
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await expect(sheet).toBeVisible();
+  expect(await page.evaluate(() => window.__nextfluxOverlayJanitor.check())).toEqual([]);
+  await page.waitForTimeout(1500);
+  await expect(sheet).toBeVisible();
+  expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);
+  await sheet.getByRole("button", { name: "全文适配", exact: true }).click();
+  await expect(page.getByRole("dialog").filter({ hasText: "AI 全文适配" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectUncovered(page);
+});

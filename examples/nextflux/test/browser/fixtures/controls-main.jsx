@@ -11,6 +11,7 @@ import CustomAlertDialog from "@/components/ui/CustomAlertDialog.jsx";
 import { aiSummaries } from "@/stores/aiStore.js";
 import { settingsState as appSettings } from "@/stores/settingsStore.js";
 import { speechState } from "@/stores/speechStore.js";
+import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
 import { calls, currentThemeMode, hasIntegrations, loadingOriginContent, settingsModalOpen, settingsState } from "./controls-state.js";
 import "../../../src/index.css";
 import "../../../src/compact-controls.css";
@@ -80,5 +81,8 @@ function ControlsFixture() {
       })} />
   </>;
 }
+
+// Same janitor as the app (render.jsx); the fixture's only store-driven overlay is Settings.
+installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
 
 createRoot(document.getElementById("root")).render(<HashRouter><ControlsFixture /></HashRouter>);
