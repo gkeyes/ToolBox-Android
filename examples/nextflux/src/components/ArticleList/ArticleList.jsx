@@ -13,7 +13,6 @@ import { lastSync } from "@/stores/syncStore.js";
 import { useParams } from "react-router-dom";
 import ArticleListHeader from "./components/ArticleListHeader";
 import ArticleListContent from "./components/ArticleListContent";
-import ArticleListFooter from "./components/ArticleListFooter";
 import { settingsState } from "@/stores/settingsStore.js";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
 import Indicator from "@/components/ArticleList/components/Indicator.jsx";
@@ -107,7 +106,6 @@ const ArticleList = () => {
             visibleRange.set(range);
           }}
         />
-        <ArticleListFooter />
         <div className="nextflux-list-transition-cover" aria-hidden="true" />
       </div>
       <ArticleView />

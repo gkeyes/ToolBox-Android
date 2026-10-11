@@ -12,7 +12,11 @@ import {
   CloudUpload,
   ArrowRight,
   Sparkles,
+  Ellipsis,
+  Funnel,
+  WandSparkles,
 } from "lucide-react";
+import MobileSheet from "@/components/ui/MobileSheet.jsx";
 import {
   handleMarkStatus,
   handleMarkRead,
@@ -55,6 +59,22 @@ export default function ActionButtons() {
   const { aiApiKey, floatingSidebar } = useStore(settingsState);
   const $aiSummaries = useStore(aiSummaries);
   const currentSummaryState = $aiSummaries[$activeArticle?.id];
+  const [moreOpen, setMoreOpen] = useState(false);
+  const rootRef = useRef(null);
+  const [hasTitleFilter, setHasTitleFilter] = useState(false);
+  useEffect(() => {
+    // The title filter control renders only when the article has a usable source.
+    setHasTitleFilter(Boolean(rootRef.current?.querySelector(".reader-secondary .nf-title-filter-trigger")));
+  });
+
+  // Close the sheet first, then press the real control so only one dialog is
+  // ever open and the control keeps its own dialog/notice state.
+  const pressAfterSheet = (selector) => {
+    setMoreOpen(false);
+    setTimeout(() => {
+      rootRef.current?.querySelector(`.reader-secondary ${selector}`)?.click();
+    }, 260);
+  };
 
   // 获取当前文章在列表中的索引
   const currentIndex = $articles.findIndex((a) => a.id === $activeArticle?.id);
@@ -154,12 +174,13 @@ export default function ActionButtons() {
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         "action-buttons reader-topbar py-2 standalone:pt-safe-or-2.5 px-2 sticky top-0 z-50",
         floatingSidebar ? "" : "reader-topbar-card",
       )}
     >
-      <div className="flex flex-nowrap items-center gap-0 overflow-hidden">
+      <div className="reader-topbar-row flex flex-nowrap items-center gap-0 overflow-hidden">
         <Tooltip
           content={t("common.close")}
           classNames={{ content: "shadow-custom!" }}
@@ -207,37 +228,10 @@ export default function ActionButtons() {
           </Tooltip>
         </div>
         <div className="nextflux-toolbar-groups ml-auto min-w-0 flex-1">
-          <div className="nextflux-toolbar-group nextflux-toolbar-group-ai" aria-label="AI 功能">
-            <ArticleSpeechButton article={$activeArticle} />
-            {aiApiKey && (
-              <Tooltip delay={0}>
-                <Button
-                  className="nextflux-toolbar-button"
-                  onPress={handleAISummarize}
-                  variant="ghost"
-                  isIconOnly
-                  size="sm"
-                  aria-label={currentSummaryState?.loading ? "停止 AI 摘要" : "AI 摘要"}
-                >
-                  {currentSummaryState?.loading ? (
-                    <Spinner color="current" size="sm" />
-                  ) : (
-                    <Sparkles
-                      className={`size-4 ${currentSummaryState?.summary ? "text-accent" : "text-muted"}`}
-                    />
-                  )}
-                </Button>
-                <Tooltip.Content showArrow>
-                  <Tooltip.Arrow />
-                  {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
-                </Tooltip.Content>
-              </Tooltip>
-            )}
-          </div>
-
-          <span className="nextflux-toolbar-separator" aria-hidden="true" />
-
-          <div className="nextflux-toolbar-group nextflux-toolbar-group-native" aria-label="默认功能">
+          {/* Lower-frequency actions: inline on wide screens; on phones these
+              buttons are hidden and reached through the "More" sheet, which
+              presses them so their own dialogs and notices keep working. */}
+          <div className="reader-secondary nextflux-toolbar-group" aria-label="更多功能">
             <Tooltip delay={0}>
               <Button
                 className="nextflux-toolbar-button"
@@ -258,59 +252,6 @@ export default function ActionButtons() {
                 {$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
               </Tooltip.Content>
             </Tooltip>
-
-            <Tooltip delay={0}>
-              <Button
-                className="nextflux-toolbar-button"
-                aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
-                ref={buttonRef}
-                variant="ghost"
-                isIconOnly
-                size="sm"
-                onPress={() => {
-                  $activeArticle?.starred === 0 && Confetti(buttonRef);
-                  handleToggleStar($activeArticle);
-                }}
-              >
-                <Star className={`size-4 text-muted ${$activeArticle?.starred === 1 ? "fill-current" : ""}`} />
-              </Button>
-              <Tooltip.Content showArrow>
-                <Tooltip.Arrow />
-                {$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
-              </Tooltip.Content>
-            </Tooltip>
-
-            <Tooltip delay={0}>
-              <Button
-                className="nextflux-toolbar-button"
-                aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
-                onPress={() => handleToggleContent($activeArticle)}
-                variant="ghost"
-                isIconOnly
-                size="sm"
-                isPending={fetchLoading}
-              >
-                {fetchLoading ? (
-                  <Spinner color="current" size="sm" />
-                ) : (
-                  <FileText
-                    className={cn(
-                      "size-4",
-                      $activeArticle?.shownOriginal ? "text-accent" : "text-muted",
-                    )}
-                  />
-                )}
-              </Button>
-              <Tooltip.Content showArrow>
-                <Tooltip.Arrow />
-                {$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
-              </Tooltip.Content>
-            </Tooltip>
-          </div>
-
-          <span className="nextflux-toolbar-separator" aria-hidden="true" />
-
-          <div className="nextflux-toolbar-group nextflux-toolbar-group-system" aria-label="系统功能">
             <ArticleTitleFilterButton />
             <FullTextAdaptButton />
             {$hasIntegrations && (
@@ -336,26 +277,177 @@ export default function ActionButtons() {
                 </Tooltip.Content>
               </Tooltip>
             )}
-            <Tooltip delay={0}>
-              <Button
-                className="nextflux-toolbar-button"
-                aria-label={t("common.share")}
-                variant="ghost"
-                isIconOnly
-                size="sm"
-                onPress={handleShare}
-              >
-                <Share className="size-4 text-muted" />
-              </Button>
-              <Tooltip.Content showArrow>
-                <Tooltip.Arrow />
-                {t("common.share")}
-              </Tooltip.Content>
-            </Tooltip>
           </div>
         </div>
       </div>
-      <ArticleSpeechBar article={$activeArticle} />
+      {/* Reader dock: the six high-frequency actions. On phones it floats at
+          the bottom with text labels; on wide screens it sits in this bar. */}
+      <div className="reader-dock" role="toolbar" aria-label="文章操作">
+        <div className="nextflux-toolbar-group nextflux-toolbar-group-native" aria-label="默认功能">
+          <Tooltip delay={0}>
+            <Button
+              className="nextflux-toolbar-button"
+              aria-label={$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
+              onPress={() => handleToggleContent($activeArticle)}
+              variant="ghost"
+              isIconOnly
+              size="sm"
+              isPending={fetchLoading}
+            >
+              {fetchLoading ? (
+                <Spinner color="current" size="sm" />
+              ) : (
+                <FileText
+                  className={cn(
+                    "size-4",
+                    $activeArticle?.shownOriginal ? "text-accent" : "text-muted",
+                  )}
+                />
+              )}
+            </Button>
+            <Tooltip.Content showArrow>
+              <Tooltip.Arrow />
+              {$activeArticle?.shownOriginal ? t("articleView.showSummary") : t("articleView.getFullText")}
+            </Tooltip.Content>
+          </Tooltip>
+
+          <Tooltip delay={0}>
+            <Button
+              className="nextflux-toolbar-button"
+              aria-label={$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
+              ref={buttonRef}
+              variant="ghost"
+              isIconOnly
+              size="sm"
+              onPress={() => {
+                $activeArticle?.starred === 0 && Confetti(buttonRef);
+                handleToggleStar($activeArticle);
+              }}
+            >
+              <Star className={`size-4 ${$activeArticle?.starred === 1 ? "fill-current text-accent" : "text-muted"}`} />
+            </Button>
+            <Tooltip.Content showArrow>
+              <Tooltip.Arrow />
+              {$activeArticle?.starred === 1 ? t("common.unstar") : t("common.star")}
+            </Tooltip.Content>
+          </Tooltip>
+        </div>
+
+        <div className="nextflux-toolbar-group nextflux-toolbar-group-ai" aria-label="AI 功能">
+          {aiApiKey && (
+            <Tooltip delay={0}>
+              <Button
+                className="nextflux-toolbar-button"
+                onPress={handleAISummarize}
+                variant="ghost"
+                isIconOnly
+                size="sm"
+                aria-label={currentSummaryState?.loading ? "停止 AI 摘要" : "AI 摘要"}
+              >
+                {currentSummaryState?.loading ? (
+                  <Spinner color="current" size="sm" />
+                ) : (
+                  <Sparkles
+                    className={`size-4 ${currentSummaryState?.summary ? "text-accent" : "text-muted"}`}
+                  />
+                )}
+              </Button>
+              <Tooltip.Content showArrow>
+                <Tooltip.Arrow />
+                {currentSummaryState?.loading ? "停止 AI 摘要" : t("articleView.aiSummarize")}
+              </Tooltip.Content>
+            </Tooltip>
+          )}
+          <ArticleSpeechButton article={$activeArticle} />
+        </div>
+
+        <div className="nextflux-toolbar-group nextflux-toolbar-group-system" aria-label="系统功能">
+          <Tooltip delay={0}>
+            <Button
+              className="nextflux-toolbar-button"
+              aria-label={t("common.share")}
+              variant="ghost"
+              isIconOnly
+              size="sm"
+              onPress={handleShare}
+            >
+              <Share className="size-4 text-muted" />
+            </Button>
+            <Tooltip.Content showArrow>
+              <Tooltip.Arrow />
+              {t("common.share")}
+            </Tooltip.Content>
+          </Tooltip>
+          <Button
+            className="nextflux-toolbar-button reader-more-button"
+            aria-label="更多"
+            aria-haspopup="dialog"
+            variant="ghost"
+            isIconOnly
+            size="sm"
+            onPress={() => setMoreOpen(true)}
+          >
+            <Ellipsis className="size-4 text-muted" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="reader-speech-slot">
+        <ArticleSpeechBar article={$activeArticle} />
+      </div>
+      <MobileSheet
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        title="这篇文章"
+        closeLabel={t("common.close")}
+      >
+        <div className="reader-more-grid">
+          <MoreItem
+            label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
+            icon={$activeArticle?.status === "unread" ? <CircleDot className="fill-current p-0.5" /> : <Circle className="p-0.5" />}
+            onPress={() => { handleMarkStatus($activeArticle); setMoreOpen(false); }}
+          />
+          {hasTitleFilter && (
+            <MoreItem label="标题过滤" icon={<Funnel />} onPress={() => pressAfterSheet(".nf-title-filter-trigger")} />
+          )}
+          <MoreItem label="全文适配" icon={<WandSparkles />} onPress={() => pressAfterSheet('[aria-label="全文适配"]')} />
+          {$hasIntegrations && (
+            <MoreItem
+              label={t("articleView.saveToThirdParty")}
+              icon={saveLoading ? <Spinner color="current" size="sm" /> : <CloudUpload />}
+              onPress={() => { handleSaveToThirdParty(); setMoreOpen(false); }}
+            />
+          )}
+          <MoreItem
+            label={t("common.previous")}
+            icon={<ArrowLeft />}
+            isDisabled={currentIndex <= 0}
+            onPress={() => { setMoreOpen(false); handlePrevious(); }}
+          />
+          <MoreItem
+            label={t("common.next")}
+            icon={<ArrowRight />}
+            isDisabled={currentIndex >= $articles.length - 1}
+            onPress={() => { setMoreOpen(false); handleNext(); }}
+          />
+        </div>
+      </MobileSheet>
     </div>
   );
 }
+
+function MoreItem({ label, icon, onPress, isDisabled = false }) {
+  return (
+    <Button
+      variant="ghost"
+      className="reader-more-item"
+      aria-label={label}
+      onPress={onPress}
+      isDisabled={isDisabled}
+    >
+      <span className="reader-more-icon" aria-hidden="true">{icon}</span>
+      <span className="reader-more-label">{label}</span>
+    </Button>
+  );
+}
+

@@ -260,18 +260,36 @@ const ArticleView = () => {
     setReadingPaused(false);
   }, [reduceMotion]);
 
-  // Top bar hairline fades in once the reader is scrolled (DOM attribute, no re-render).
+  // Top bar hairline fades in once the reader is scrolled, and on phones the
+  // bars tuck away while reading down (DOM attributes, no re-render). Scrolling
+  // up by a little, or reaching the top or the end, brings them back.
   useEffect(() => {
     const area = scrollAreaRef.current;
     if (!area) return;
+    let anchor = area.scrollTop;
+    area.dataset.chrome = "shown";
     const update = () => {
-      const scrolled = area.scrollTop > 4 ? "true" : "false";
+      const top = area.scrollTop;
+      const scrolled = top > 4 ? "true" : "false";
       if (area.dataset.scrolled !== scrolled) area.dataset.scrolled = scrolled;
+      const atEnd = top + area.clientHeight >= area.scrollHeight - 32;
+      let chrome = area.dataset.chrome;
+      if (top < 64 || atEnd) chrome = "shown";
+      else if (top - anchor > 12) chrome = "hidden";
+      else if (anchor - top > 12) chrome = "shown";
+      if (chrome !== area.dataset.chrome) area.dataset.chrome = chrome;
+      // Direction is measured from the last turning point, so slow scrolls count.
+      if ((chrome === "hidden" && top > anchor) || (chrome === "shown" && top < anchor) || Math.abs(top - anchor) > 12) anchor = top;
     };
     update();
     area.addEventListener("scroll", update, { passive: true });
     return () => area.removeEventListener("scroll", update);
   }, [isArticleVisible]);
+
+  // A new article always opens with its bars visible.
+  useEffect(() => {
+    if (scrollAreaRef.current) scrollAreaRef.current.dataset.chrome = "shown";
+  }, [articleId]);
 
   const handleBack = useCallback(() => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];

@@ -22,8 +22,18 @@ const open = async (page, route = "/category/17/article/900") => {
   await expect(page.getByRole("heading", { name: "真实源码过滤入口" })).toBeVisible();
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 };
+
+// Phones reach low-frequency reader actions through the dock's "More" sheet;
+// wide screens show them inline. Press whichever surface the layout offers.
+async function readerAction(page, name) {
+  const direct = page.getByRole("button", { name, exact: true });
+  if (await direct.isVisible().catch(() => false)) return direct.click();
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
+}
 const editor = async page => {
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect(page.getByLabel("屏蔽关键词", { exact: true })).toBeVisible();
   return page.getByRole("dialog");
 };
@@ -81,7 +91,7 @@ for (const [width, dark, scale] of [[320, false, 1], [393, false, 1], [393, true
 test("late reader request cannot show an old editor or write another source", async ({ page }) => {
   await open(page);
   await page.evaluate(() => filterFixture.mode("slowRead"));
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect.poll(() => page.evaluate(() => filterFixture.calls.length)).toBe(1);
   await page.evaluate(() => filterFixture.go("/article/901", { id: 901, feedId: 43, title: "另一篇", status: "read", starred: 1 }));
   await page.evaluate(() => filterFixture.release());
@@ -98,7 +108,7 @@ test("cancel and denied reads never save or claim success", async ({ page }) => 
   await page.getByRole("dialog").getByRole("button", { name: "取消", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.evaluate(() => filterFixture.mode("denied"));
-  await page.getByRole("button", { name: "标题过滤", exact: true }).click();
+  await readerAction(page, "标题过滤");
   await expect(page.getByRole("alert")).toContainText("服务器拒绝访问");
   await expect(page.getByRole("dialog").getByRole("button", { name: "保存", exact: true })).toBeDisabled();
   expect(await page.evaluate(() => filterFixture.calls.filter(call => call.method === "PUT"))).toEqual([]);

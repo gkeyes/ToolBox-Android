@@ -29,6 +29,16 @@ async function open(page, width = 393, theme = "light", scale = 1) {
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 }
 
+// Phones reach low-frequency reader actions through the dock's "More" sheet;
+// wide screens show them inline. Press whichever surface the layout offers.
+async function readerAction(page, name) {
+  const direct = page.getByRole("button", { name, exact: true });
+  if (await direct.isVisible().catch(() => false)) return direct.click();
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
+}
+
 async function closeGeometry(button) {
   await expect(button).toBeVisible();
   // HeroUI dialogs briefly scale during entrance. Visibility alone does not
@@ -80,7 +90,14 @@ for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393,
     await open(page, width, theme, scale);
     await closeGeometry(page.locator(".action-buttons .nextflux-close-button"));
     await bounds(page);
-    await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
+    if (width < 768) {
+      await page.getByRole("button", { name: "更多", exact: true }).click();
+      await expect(page.getByRole("dialog").getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    } else {
+      await expect(page.getByRole("button", { name: "全文适配", exact: true })).toBeVisible();
+    }
     await closeGeometry(page.locator(".ai-summary .nextflux-close-button"));
     if (width === 393 && scale === 1) await info.attach(`toolbar-${theme}.png`, {
       body: await page.screenshot(), contentType: "image/png",
@@ -105,7 +122,7 @@ test("all optional controls fit one row without clipping and loading does not gr
 
 test("toolbar actions and AI close still dispatch their existing behavior", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "Unread", exact: true }).click();
+  await readerAction(page, "Unread");
   await page.getByRole("button", { name: "Share", exact: true }).click();
   expect(await page.evaluate(() => window.controlsFixture.calls.map(([name]) => name))).toEqual(["status", "share"]);
   await page.locator(".ai-summary .nextflux-close-button").click();

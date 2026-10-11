@@ -44,7 +44,7 @@ const ArticleItem = memo(({ article, index, staggerUntil }) => {
 ArticleItem.displayName = "ArticleItem";
 
 const ListHeader = () => (
-  <div className="vlist-header h-1" aria-hidden="true">
+  <div className="vlist-header" aria-hidden="true">
   </div>
 );
 const ListEmpty = ({ context: { t } }) => (
@@ -104,8 +104,23 @@ export default function ArticleListContent({
     collapsedRef.current = value;
     onCollapsedChange?.(value);
   }, [onCollapsedChange]);
+  const chromeAnchor = useRef(0);
   const handleScroll = useCallback(() => {
-    reportCollapsed((listScroller.current?.scrollTop ?? 0) > COLLAPSE_AT);
+    const scroller = listScroller.current;
+    const top = scroller?.scrollTop ?? 0;
+    reportCollapsed(top > COLLAPSE_AT);
+    // Immersive list: reading down tucks the header away; a short scroll up,
+    // or the top of the list, brings it back. DOM attribute, no re-render.
+    const page = scroller?.closest?.(".nextflux-article-list-page");
+    if (!page) return;
+    let chrome = page.dataset.chrome || "shown";
+    if (top < 48) chrome = "shown";
+    else if (top - chromeAnchor.current > 12) chrome = "hidden";
+    else if (chromeAnchor.current - top > 12) chrome = "shown";
+    if (page.dataset.chrome !== chrome) page.dataset.chrome = chrome;
+    if (Math.abs(top - chromeAnchor.current) > 12 || (chrome === "hidden" && top > chromeAnchor.current) || (chrome === "shown" && top < chromeAnchor.current)) {
+      chromeAnchor.current = top;
+    }
   }, [reportCollapsed]);
   const setListScroller = useCallback((element) => {
     listScroller.current?.removeEventListener?.("scroll", handleScroll);
@@ -120,8 +135,13 @@ export default function ArticleListContent({
   }
 
   useEffect(() => {
-    // A new source starts at the top with the expanded large title.
-    if ($loading) reportCollapsed(false);
+    // A new source starts at the top with its header visible.
+    if ($loading) {
+      reportCollapsed(false);
+      const page = listScroller.current?.closest?.(".nextflux-article-list-page");
+      if (page) page.dataset.chrome = "shown";
+      chromeAnchor.current = 0;
+    }
   }, [$loading, reportCollapsed]);
 
   useEffect(() => {

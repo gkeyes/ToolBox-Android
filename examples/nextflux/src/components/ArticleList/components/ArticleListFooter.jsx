@@ -9,7 +9,7 @@ export default function ArticleListFooter() {
   const $filter = useStore(filter);
 
   return (
-    <div className="article-list-footer pointer-events-none absolute bottom-0 w-full bg-transparent flex flex-col items-center justify-center pb-4 standalone:pb-safe-or-4 *:pointer-events-auto">
+    <div className="article-list-tabs px-3">
       <Tabs
         selectedKey={$filter}
         onSelectionChange={(value) => {

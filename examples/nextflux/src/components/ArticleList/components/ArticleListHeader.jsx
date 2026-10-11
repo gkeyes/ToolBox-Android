@@ -14,6 +14,8 @@ import {
 } from "@/stores/feedsStore.js";
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
+import ArticleListTabs from "./ArticleListFooter.jsx";
+import { useEffect, useRef } from "react";
 
 /** Title and status line shared by the collapsed top bar and the large title. */
 export function useArticleListTitle() {
@@ -108,8 +110,21 @@ export function ArticleListLargeTitle() {
 // the list scrolls under the bar.
 export default function ArticleListHeader({ collapsed = false }) {
   const { feedId, title, status, hasError } = useArticleListTitle();
+  const wrapRef = useRef(null);
+  // The header floats over the list (so it can slide away without relayout);
+  // publish its height so the list reserves exactly that much space on top.
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const page = wrap?.closest(".nextflux-article-list-page");
+    if (!wrap || !page) return undefined;
+    const apply = () => page.style.setProperty("--list-header-h", `${wrap.offsetHeight}px`);
+    apply();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
+    observer?.observe(wrap);
+    return () => observer?.disconnect();
+  }, []);
   return (
-    <div className="article-list-header-wrap z-10 standalone:pt-safe">
+    <div ref={wrapRef} className="article-list-header-wrap z-10 standalone:pt-safe">
       <div
         className="article-list-header ds-topbar w-full"
         data-collapsed={collapsed ? "true" : "false"}
@@ -131,6 +146,7 @@ export default function ArticleListHeader({ collapsed = false }) {
           <MenuButton />
         </div>
       </div>
+      <ArticleListTabs />
     </div>
   );
 }

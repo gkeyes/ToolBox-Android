@@ -14,13 +14,24 @@
     padding-inline-start: 2px;
   }
   .article-list-title h1 {
-    font-size: 1.0625rem;
-    font-weight: 650;
+    font-size: 1.25rem;
+    font-weight: 700;
     line-height: 1.25;
     letter-spacing: -0.01em;
     color: var(--ds-text-primary);
   }
   .article-list-title .ds-topbar-subtitle { margin-block-start: 1px; }
+
+  /* ---------- Editorial type: serif headlines, sans meta ---------- */
+  :root { --nf-serif: "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif; }
+  .article-card .card-title {
+    font-family: var(--nf-serif);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.42;
+    letter-spacing: 0;
+  }
+  .article-list-title h1 { font-family: var(--nf-serif); font-size: 1.25rem; font-weight: 700; }
 
   /* ---------- Article rows ---------- */
   .card-unread-dot {
@@ -42,9 +53,57 @@
   .article-card[data-read="true"] .card-image { opacity: 0.6; }
   .article-card .card-image { border-radius: 8px; }
 
-  /* Filter pill: smaller and lower so it covers less of the list. */
-  .article-list-footer .tabs__list { padding: 2px; }
-  .article-list-footer .tabs__tab { block-size: 32px; padding-inline: 12px; }
+  /* Header floats over the list so it can slide away on a compositor
+     transform; the list reserves exactly its measured height. */
+  .article-list-header-wrap {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 0;
+    background: var(--ds-reader);
+    transition: transform var(--ds-dur-spatial) var(--ds-ease-spatial);
+  }
+  .article-list-header-wrap::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    block-size: 1px;
+    background: var(--ds-hairline);
+    transform: scaleY(0.5);
+    transform-origin: bottom;
+    pointer-events: none;
+  }
+  .article-list-header.ds-topbar::after { display: none; }
+  .nextflux-article-list-page[data-chrome="hidden"] .article-list-header-wrap {
+    transform: translate3d(0, calc(-100% - 1px), 0);
+  }
+  .vlist-header { block-size: var(--list-header-h, 84px); }
+  .article-list-loading { padding-block-start: var(--list-header-h, 84px); }
+
+  /* Filter: text tabs with an accent underline, under the title bar. */
+  .article-list-tabs .tabs__list {
+    gap: 20px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .article-list-tabs .tabs__tab {
+    block-size: 34px;
+    padding-inline: 0;
+    background: transparent;
+    font-size: 0.84375rem;
+    font-weight: 500;
+    color: var(--ds-text-tertiary);
+  }
+  .article-list-tabs .tabs__tab[data-selected="true"] { color: var(--ds-text-primary); }
+  .article-list-tabs .tabs__tab svg { display: none; }
+  .article-list-tabs .tabs__indicator {
+    inset-block: auto 0 !important;
+    block-size: 2px !important;
+    border-radius: 2px;
+    background: var(--accent) !important;
+  }
 
   /* ---------- Sidebar: a plain source list, not stacked cards ---------- */
   .sidebar-panel,
@@ -76,4 +135,174 @@
 
   /* ---------- Sheets: content gets the height, chrome stays thin ---------- */
   .nextflux-mobile-sheet .nextflux-close-header { min-block-size: 40px; }
+}
+
+/* ---------- Reader toolbar: top bar + floating dock + "More" sheet ---------- */
+.reader-dock { display: flex; align-items: center; }
+.reader-dock > .nextflux-toolbar-group { display: contents; }
+.reader-secondary { display: flex; align-items: center; }
+
+@media (min-width: 768px) {
+  /* Wide screens: one bar — back, prev/next, secondary actions, then the dock. */
+  .action-buttons.reader-topbar { display: flex; flex-wrap: wrap; align-items: center; }
+  .action-buttons .reader-topbar-row { flex: 1 1 0; min-inline-size: 0; }
+  .action-buttons .reader-speech-slot { flex: 1 0 100%; }
+  .reader-more-button { display: none !important; }
+  .nextflux-toolbar-groups { justify-content: flex-end; }
+}
+
+@media (max-width: 767px) {
+  /* Phones: the dock floats at the bottom with text labels; the top bar keeps
+     only "back". Secondary actions live in the More sheet. */
+  .action-buttons .reader-dock {
+    position: fixed;
+    z-index: 45;
+    inset-inline: 12px;
+    inset-block-end: calc(10px + env(safe-area-inset-bottom, 0px));
+    block-size: 60px;
+    padding-inline: 6px;
+    justify-content: space-around;
+    border-radius: 30px;
+    background: color-mix(in srgb, var(--ds-raised) 94%, transparent);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.14), 0 0 0 0.5px var(--ds-hairline);
+    transition:
+      transform var(--ds-dur-spatial) var(--ds-ease-spatial),
+      opacity var(--ds-dur-effects) var(--ds-ease-effects);
+  }
+  @supports (backdrop-filter: blur(1px)) {
+    .action-buttons .reader-dock {
+      background: color-mix(in srgb, var(--ds-raised) 82%, transparent);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      backdrop-filter: blur(20px) saturate(1.4);
+    }
+  }
+  .dark .action-buttons .reader-dock { box-shadow: 0 0 0 0.5px var(--ds-hairline); }
+  .action-buttons .reader-dock .nextflux-toolbar-button {
+    inline-size: 48px;
+    min-inline-size: 48px;
+    max-inline-size: 48px;
+    flex: 0 0 48px;
+    block-size: 48px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0;
+    color: var(--ds-text-primary);
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button > svg,
+  .action-buttons .reader-dock .nextflux-toolbar-button > [data-slot="spinner"] {
+    inline-size: 20px;
+    block-size: 20px;
+    color: inherit;
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button > svg.text-muted { color: var(--ds-text-primary); }
+  .action-buttons .reader-dock .nextflux-toolbar-button::after {
+    content: attr(aria-label);
+    max-inline-size: 56px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--ds-text-tertiary);
+  }
+  /* Secondary buttons stay mounted (their dialogs and notices live with them)
+     but are reached through the sheet. */
+  .action-buttons .reader-secondary .nextflux-toolbar-button { display: none; }
+
+  /* Speech player docks just above the toolbar. */
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+    position: fixed;
+    z-index: 44;
+    inset-inline: 12px;
+    inset-block-end: calc(78px + env(safe-area-inset-bottom, 0px));
+    border-radius: 22px;
+    background: var(--ds-raised);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 0 0 0.5px var(--ds-hairline);
+    padding-inline: 6px;
+  }
+
+  /* Immersive reading: scrolling down tucks the bars away; scrolling up or
+     reaching either end brings them back. */
+  /* The sticky bar itself carries no filter/transform (that would become the
+     containing block of the fixed dock); its row is the visible, hideable bar. */
+  .action-buttons.reader-topbar {
+    padding: 0;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .action-buttons .reader-topbar-row {
+    padding: 6px 8px;
+    background: color-mix(in srgb, var(--ds-reader, var(--background)) 92%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    backdrop-filter: blur(20px) saturate(1.4);
+    transition: transform var(--ds-dur-spatial) var(--ds-ease-spatial);
+  }
+  .article-scroll-area[data-chrome="hidden"] .reader-topbar-row { transform: translate3d(0, -100%, 0); }
+  .article-scroll-area[data-chrome="hidden"] .reader-topbar::after { opacity: 0; }
+  .article-scroll-area[data-chrome="hidden"] .reader-dock,
+  .article-scroll-area[data-chrome="hidden"] .reader-speech-slot {
+    transform: translate3d(0, calc(100% + 24px), 0);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* More sheet: a grid of labelled actions. */
+.reader-more-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 6px;
+  padding: 4px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.button.reader-more-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  block-size: auto;
+  min-block-size: 84px;
+  padding: 4px 0;
+  border-radius: 14px;
+  background: transparent;
+  white-space: normal;
+}
+.reader-more-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 52px;
+  block-size: 52px;
+  border-radius: 16px;
+  background: var(--surface-secondary);
+  color: var(--ds-text-primary);
+}
+.reader-more-icon svg { inline-size: 22px; block-size: 22px; }
+.reader-more-label {
+  font-size: var(--ds-text-caption);
+  line-height: 1.25;
+  color: var(--ds-text-secondary);
+  text-align: center;
+}
+
+/* Title and count share one baseline in the bar. */
+.article-list-header .ds-topbar-title.article-list-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.article-list-title h1 { flex: none; max-inline-size: 60%; }
+.article-list-title .ds-topbar-subtitle { margin: 0; min-inline-size: 0; }
+
+/* Very narrow phones: six 44px targets still fit without overlap. */
+@media (max-width: 360px) {
+  .action-buttons .reader-dock { inset-inline: 8px; padding-inline: 2px; }
+  .action-buttons .reader-dock .nextflux-toolbar-button {
+    inline-size: 44px;
+    min-inline-size: 44px;
+    max-inline-size: 44px;
+    flex-basis: 44px;
+  }
+  .action-buttons .reader-dock .nextflux-toolbar-button::after { max-inline-size: 50px; }
 }
