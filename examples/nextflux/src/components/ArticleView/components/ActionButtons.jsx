@@ -12,8 +12,8 @@ import {
   CloudUpload,
   ArrowRight,
   Sparkles,
-  Ellipsis,
-  Funnel,
+  MoreHorizontal as Ellipsis,
+  Filter as Funnel,
   WandSparkles,
 } from "lucide-react";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
