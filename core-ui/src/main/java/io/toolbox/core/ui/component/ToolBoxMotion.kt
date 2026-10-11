@@ -33,65 +33,88 @@ import androidx.compose.ui.unit.dp
  * - [Effects]: opacity / colour; no bounce.
  */
 object ToolBoxMotion {
-    /** Kept for callers that still need a time-based curve (for example drawing a progress bar). */
+    /** Kept for callers that still need a time-based curve. */
     const val PageDurationMillis = 300
 
-    /** Stagger between list items on first appearance; only the first [StaggerMaxItems] animate. */
+    /** First-appearance stagger: first 8 blocks, 26ms apart, rising 16dp with a spatial spring. */
     const val StaggerStepMillis = 26
     const val StaggerMaxItems = 8
-    const val EntranceDurationMillis = 360
+    const val EntranceDurationMillis = 620
+    val EntranceOffset = 16.dp
 
-    /** Vertical travel of a list item as it fades in on first appearance. */
-    val EntranceOffset = 14.dp
+    /** Shared X-axis page motion: 30dp travel plus fade. */
+    val PageShift = 30.dp
 
-    /** Press feedback: card/button scale target and the brightness drop applied on press. */
+    /** Press feedback: cards/buttons 0.965, full-width rows 0.985; 6% state layer. */
     const val PressScale = 0.965f
     const val RowPressScale = 0.985f
     const val PressDimAlpha = 0.06f
+
+    /** Sheet / dialog exit: 220ms accelerate curve (0.3, 0, 1, 1). */
+    const val ExitDurationMillis = 220
+    const val ScrimFadeMillis = 220
+    val ExitEasing = CubicBezierEasing(0.3f, 0f, 1f, 1f)
 
     val EmphasizedEasing = CubicBezierEasing(0.20f, 0.0f, 0.0f, 1.0f)
     val EmphasizedDecelerateEasing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f)
     val StandardEasing = CubicBezierEasing(0.20f, 0.0f, 0.2f, 1.0f)
 
-    private const val SpatialDamping = 0.85f
-    private const val PressInStiffness = 2_200f
+    const val SpatialDamping = 0.86f
+    const val SpatialStiffness = 380f
+    const val EffectsStiffness = 600f
 
+    /** Position / size: spring(0.86, 380). */
     fun <T> spatial(): FiniteAnimationSpec<T> =
-        spring(dampingRatio = SpatialDamping, stiffness = Spring.StiffnessMediumLow)
+        spring(dampingRatio = SpatialDamping, stiffness = SpatialStiffness)
 
+    /** Colour / opacity: spring(1.0, 600). */
     fun <T> effects(): FiniteAnimationSpec<T> =
-        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+        spring(dampingRatio = 1f, stiffness = EffectsStiffness)
 
-    /** Page pushes and pops. [distance] is accepted for pager jumps across several tabs. */
+    /** Page push / pop: spring(1.0, 380). [distance] kept for multi-tab pager jumps. */
     fun pageSpec(distance: Int = 1): FiniteAnimationSpec<Float> =
-        spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = if (distance.coerceAtLeast(1) > 1) 300f else 420f,
-        )
+        spring(dampingRatio = 1f, stiffness = if (distance.coerceAtLeast(1) > 1) 300f else 380f)
 
+    /** Press in spring(1.0, 1500); release spring(0.62, 420) with a slight rebound. */
     fun pressSpec(pressed: Boolean): AnimationSpec<Float> =
-        if (pressed) {
-            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = PressInStiffness)
-        } else {
-            spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessMediumLow)
-        }
+        if (pressed) spring(dampingRatio = 1f, stiffness = 1500f) else spring(dampingRatio = 0.62f, stiffness = 420f)
 
-    /** Dialogs and bottom sheets entering from below. */
-    val SheetEnter: FiniteAnimationSpec<Float> =
-        spring(dampingRatio = SpatialDamping, stiffness = Spring.StiffnessMediumLow)
+    /** Bottom sheet entering from below: spring(0.9, 380). */
+    val SheetEnter: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.9f, stiffness = 380f)
 
-    val ScrimFade: TweenSpec<Float> = tween(durationMillis = 220, easing = StandardEasing)
+    /** Centred dialog: scale 0.94 -> 1 with fade, spring(0.9, 500). */
+    val DialogEnter: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.9f, stiffness = 500f)
 
-    /** Expand / collapse of inline content (disclosure rows, error details, banners). */
+    val ScrimFade: TweenSpec<Float> = tween(durationMillis = ScrimFadeMillis, easing = StandardEasing)
+
+    /** Expand / collapse of inline content: expandVertically + fade on the spatial spring. */
     val ExpandIn: EnterTransition =
-        fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-            expandVertically(spring(dampingRatio = SpatialDamping, stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold))
+        fadeIn(spring(dampingRatio = 1f, stiffness = EffectsStiffness)) +
+            expandVertically(spring(dampingRatio = SpatialDamping, stiffness = SpatialStiffness, visibilityThreshold = IntSize.VisibilityThreshold))
 
     val CollapseOut: ExitTransition =
-        fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
-            shrinkVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold))
+        fadeOut(spring(dampingRatio = 1f, stiffness = EffectsStiffness)) +
+            shrinkVertically(spring(dampingRatio = SpatialDamping, stiffness = SpatialStiffness, visibilityThreshold = IntSize.VisibilityThreshold))
 
     /** Placement spring for LazyList `animateItem()`. */
     val ItemPlacement: FiniteAnimationSpec<IntOffset> =
-        spring(dampingRatio = SpatialDamping, stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold)
+        spring(dampingRatio = SpatialDamping, stiffness = SpatialStiffness, visibilityThreshold = IntOffset.VisibilityThreshold)
+
+    /**
+     * Closed-form step response of a unit-mass spring (0 -> 1) at [timeMillis]; used where many
+     * items share one clock and each item evaluates its own delayed spring in the draw phase.
+     */
+    fun springProgress(timeMillis: Float, dampingRatio: Float, stiffness: Float): Float {
+        if (timeMillis <= 0f) return 0f
+        val t = timeMillis / 1000f
+        val omega = kotlin.math.sqrt(stiffness)
+        return if (dampingRatio >= 1f) {
+            1f - kotlin.math.exp(-omega * t) * (1f + omega * t)
+        } else {
+            val damped = omega * kotlin.math.sqrt(1f - dampingRatio * dampingRatio)
+            val decay = kotlin.math.exp(-dampingRatio * omega * t)
+            1f - decay * (kotlin.math.cos(damped * t) +
+                dampingRatio / kotlin.math.sqrt(1f - dampingRatio * dampingRatio) * kotlin.math.sin(damped * t))
+        }
+    }
 }

@@ -145,7 +145,7 @@ internal fun ToolManagerContent(
             onExpireImportSuccess(importState.feedbackId)
         }
     }
-    val entrance = rememberToolBoxEntrance()
+    val entrance = rememberToolBoxEntrance(if (home) "home" else "tools")
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val direction = LocalLayoutDirection.current
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
@@ -323,7 +323,7 @@ internal fun ToolDetailScreen(
 ) {
     val tool = state.tools.firstOrNull { it.toolId == toolId }
     val confirmation = state.uninstallConfirmation?.takeIf { it.toolId == toolId }
-    val entrance = rememberToolBoxEntrance()
+    val entrance = rememberToolBoxEntrance("tool-detail")
 
     DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
         LazyColumn(

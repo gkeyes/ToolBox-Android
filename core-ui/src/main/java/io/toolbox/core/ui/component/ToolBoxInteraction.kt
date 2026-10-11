@@ -13,7 +13,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -66,6 +65,7 @@ class ToolBoxHaptics internal constructor(private val perform: (HapticFeedbackTy
     fun confirm() = perform(HapticFeedbackType.Confirm)
     fun tick() = perform(HapticFeedbackType.SegmentTick)
     fun longPress() = perform(HapticFeedbackType.LongPress)
+    fun reject() = perform(HapticFeedbackType.Reject)
 }
 
 @Composable
@@ -75,25 +75,27 @@ fun rememberToolBoxHaptics(): ToolBoxHaptics {
 }
 
 /**
- * One clock per screen for the first-appearance list stagger. Items read the shared clock in
- * their layer block, so scrolling an item back into view never replays the animation, and
- * only the first [ToolBoxMotion.StaggerMaxItems] items move at all. The played flag survives
- * configuration changes; with animations disabled the tween completes immediately.
+ * One clock per screen for the first-appearance stagger. Each block evaluates its own delayed
+ * spatial spring (offset) and effects spring (alpha) from the shared clock in its layer block,
+ * so nothing recomposes per frame, scrolling never replays it, and only the first
+ * [ToolBoxMotion.StaggerMaxItems] blocks move. A screen plays it once per process
+ * ([key]); with animations disabled the clock completes immediately.
  */
 @Stable
 class ToolBoxEntrance internal constructor(internal val clock: State<Float>)
 
+private val playedEntrances = java.util.Collections.synchronizedSet(HashSet<String>())
+
 @Composable
-fun rememberToolBoxEntrance(): ToolBoxEntrance {
+fun rememberToolBoxEntrance(key: String): ToolBoxEntrance {
     val total = (ToolBoxMotion.StaggerMaxItems * ToolBoxMotion.StaggerStepMillis +
         ToolBoxMotion.EntranceDurationMillis).toFloat()
-    var played by rememberSaveable { mutableStateOf(false) }
-    val clock = remember { Animatable(if (played) total else 0f) }
+    val clock = remember(key) { Animatable(if (key in playedEntrances) total else 0f) }
     LaunchedEffect(clock) {
+        playedEntrances += key
         if (clock.value < total) {
             clock.animateTo(total, tween(total.toInt(), easing = LinearEasing))
         }
-        played = true
     }
     return remember(clock) { ToolBoxEntrance(clock.asState()) }
 }
@@ -101,12 +103,12 @@ fun rememberToolBoxEntrance(): ToolBoxEntrance {
 fun Modifier.toolBoxEntrance(entrance: ToolBoxEntrance, index: Int): Modifier {
     if (index < 0 || index >= ToolBoxMotion.StaggerMaxItems) return this
     return graphicsLayer {
-        val local = ((entrance.clock.value - index * ToolBoxMotion.StaggerStepMillis) /
-            ToolBoxMotion.EntranceDurationMillis).coerceIn(0f, 1f)
-        if (local < 1f) {
-            val eased = ToolBoxMotion.EmphasizedDecelerateEasing.transform(local)
-            alpha = eased
-            translationY = (1f - eased) * ToolBoxMotion.EntranceOffset.toPx()
+        val local = entrance.clock.value - index * ToolBoxMotion.StaggerStepMillis
+        if (local < ToolBoxMotion.EntranceDurationMillis) {
+            val move = ToolBoxMotion.springProgress(local, ToolBoxMotion.SpatialDamping, ToolBoxMotion.SpatialStiffness)
+            val fade = ToolBoxMotion.springProgress(local, 1f, ToolBoxMotion.EffectsStiffness)
+            alpha = fade.coerceIn(0f, 1f)
+            translationY = (1f - move) * ToolBoxMotion.EntranceOffset.toPx()
         }
     }
 }

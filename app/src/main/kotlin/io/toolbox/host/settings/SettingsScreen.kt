@@ -81,7 +81,7 @@ internal fun SettingsContent(
     listState: LazyListState = rememberLazyListState(),
     onRetryBackground: () -> Unit = {},
 ) {
-    val entrance = rememberToolBoxEntrance()
+    val entrance = rememberToolBoxEntrance("settings")
     LazyColumn(
         state = listState,
         modifier = Modifier
