@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ArticleCard from "./ArticleCard";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   filter,
   hasMore,
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils.js";
 import { createArticleRequestGate } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 import { claimStagger, STAGGER_LIMIT } from "@/design/motion.js";
+import { navigateWithSharedArticleTitle } from "@/motion/sharedElement.mjs";
 
 // The large title collapses into the top bar once it has scrolled under it.
 const COLLAPSE_AT = 40;
@@ -30,14 +31,14 @@ const COLLAPSE_AT = 40;
 // once-per-process stagger; later virtualised mounts appear immediately.
 const STAGGER_WINDOW_MS = 600;
 
-const ArticleItem = memo(({ article, index, staggerUntil }) => {
+const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen }) => {
   const [stagger] = useState(() => index < STAGGER_LIMIT && performance.now() < staggerUntil);
   return (
     <div
       className={cn("article-list-item", stagger && "ds-stagger-item")}
       style={stagger ? { animationDelay: `calc(var(--ds-stagger-step) * ${index})` } : undefined}
     >
-      <ArticleCard article={article} />
+      <ArticleCard article={article} active={active} onOpen={onOpen} />
     </div>
   );
 });
@@ -85,6 +86,8 @@ export default function ArticleListContent({
 }) {
   const { t } = useTranslation();
   const { feedId, categoryId, articleId } = useParams();
+  const navigate = useNavigate();
+  const activeId = parseInt(articleId);
   const $filter = useStore(filter);
   const $isSyncing = useStore(isSyncing);
   const { isMedium } = useIsMobile();
@@ -94,6 +97,26 @@ export default function ArticleListContent({
   const $loading = useStore(loading);
   const $loadingMore = useStore(loadingMore);
   const { reduceMotion } = useStore(settingsState);
+  const openContext = useRef(null);
+  useLayoutEffect(() => {
+    openContext.current = { navigate, isMedium, reduceMotion };
+  });
+  // Stable for the list's lifetime so memoised rows never re-render for it.
+  const openArticle = useCallback((article, source) => {
+    const { navigate: go, isMedium: medium, reduceMotion: reduced } = openContext.current;
+    const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
+    const toUrl =
+      basePath === "/"
+        ? `/article/${article.id}`
+        : `${basePath}/article/${article.id}`;
+    navigateWithSharedArticleTitle({
+      articleId: article.id,
+      to: toUrl,
+      navigate: go,
+      source,
+      enabled: !medium && !reduced,
+    });
+  }, []);
   const pageRequests = useRef(null);
   const listScroller = useRef(null);
   if (!pageRequests.current) pageRequests.current = createArticleRequestGate();
@@ -229,6 +252,8 @@ export default function ArticleListContent({
                 article={article}
                 index={index}
                 staggerUntil={staggerUntil.current}
+                active={article.id === activeId}
+                onOpen={openArticle}
               />
             )}
           />

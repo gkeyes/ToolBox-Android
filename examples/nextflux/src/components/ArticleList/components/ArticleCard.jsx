@@ -1,4 +1,3 @@
-import { useNavigate, useParams } from "react-router-dom";
 import { Clock, ArrowUpFromLine, Star, Circle, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPublishDate } from "@/lib/format";
@@ -15,16 +14,15 @@ import { feeds } from "@/stores/feedsStore";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
 import { useTranslation } from "react-i18next";
 import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
-import { useIsMobile } from "@/hooks/use-mobile.jsx";
-import { navigateWithSharedArticleTitle } from "@/motion/sharedElement.mjs";
 
-export default function ArticleCard({ article }) {
+// Cards deliberately subscribe to no router or viewport state: opening or
+// closing an article changes the route, and every mounted card re-rendering
+// at that moment delays the page motion. The list passes `active` (only the
+// two affected rows change) and a stable `onOpen` that owns navigation.
+export default function ArticleCard({ article, active = false, onOpen }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const { articleId } = useParams();
   const cardRef = useRef(null);
   const $feeds = useStore(feeds);
-  const { isMedium } = useIsMobile();
   const {
     markAsReadOnScroll,
     cardImageSize,
@@ -32,7 +30,6 @@ export default function ArticleCard({ article }) {
     showReadingTime,
     textPreviewLines,
     titleLines,
-    reduceMotion,
   } = useStore(settingsState);
   const hasBeenVisible = useRef(false);
   const [contextMenu, setContextMenu] = useState({
@@ -89,18 +86,7 @@ export default function ArticleCard({ article }) {
   }, [article, markAsReadOnScroll]);
 
   const handleArticleClick = async (article) => {
-    const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
-    const toUrl =
-      basePath === "/"
-        ? `/article/${article.id}`
-        : `${basePath}/article/${article.id}`;
-    navigateWithSharedArticleTitle({
-      articleId: article.id,
-      to: toUrl,
-      navigate,
-      source: cardRef.current?.querySelector(".card-title"),
-      enabled: !isMedium && !reduceMotion,
-    });
+    onOpen?.(article, cardRef.current?.querySelector(".card-title"));
     if (article.status !== "read") {
       await handleMarkRead(article);
     }
@@ -129,7 +115,7 @@ export default function ArticleCard({ article }) {
         className={cn(
           "article-card ds-state ds-press-row cursor-pointer select-none overflow-hidden",
           "relative contain-content",
-          parseInt(articleId) === article.id && "is-active",
+          active && "is-active",
         )}
         data-article-id={article.id}
         data-read={article.status === "read" ? "true" : undefined}
