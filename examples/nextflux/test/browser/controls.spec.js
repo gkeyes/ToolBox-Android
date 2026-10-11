@@ -442,3 +442,25 @@ test("mobile sidebar closes from its scrim and leaves the page tappable", async 
   await page.mouse.click(370, 400);
   await expect(panel).toHaveAttribute("data-open", "false");
 });
+
+test("the full-text adapter can be cancelled while it is still reading", async ({ page }) => {
+  await open(page, 393);
+  // Hold both reads so the adapter stays in its first, server-neutral phase.
+  await page.evaluate(() => {
+    window.holdFullTextRead = true;
+    window.ToolBox = { network: { request: () => new Promise(() => {}) } };
+  });
+  await openFromMore(page, "全文适配", "AI 全文适配");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("status")).toContainText("正在读取");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expectUncovered(page);
+
+  await openFromMore(page, "全文适配", "AI 全文适配");
+  await expect(dialog.getByRole("status")).toContainText("正在读取");
+  await dragSheetDown(page);
+  await expect(dialog).toHaveCount(0);
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+});

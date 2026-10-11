@@ -50,27 +50,43 @@ export default function FullTextAdaptButton() {
   useEffect(()=>()=>{controller.current?.abort();if(stream.current.raf)cancelAnimationFrame(stream.current.raf);},[]);
   if (!Number.isSafeInteger(feedId)||feedId<=0) return null;
   const busy=["loading","ai","testing","applying"].includes(phase);
-  const close=()=>{ if(!busy){controller.current?.abort();setOpen(false);} };
+  // Reading the rule/page and streaming the AI suggestion change nothing on the
+  // server, so they can always be cancelled. Only a test (temporary write and
+  // rollback) or an apply must finish before the sheet may close; otherwise a
+  // slow or stalled AI stream would trap the reader behind an uncloseable sheet.
+  const locked=phase==="testing"||phase==="applying";
+  const close=()=>{
+    if(locked)return;
+    controller.current?.abort();
+    if(phase==="loading"||phase==="ai"){flushStream();setPhase("idle");}
+    setOpen(false);
+  };
 
   async function start(previousTest=null){
     setOpen(true); setError(""); setTested(null); setCandidate(null); resetStream(); setPhase("loading");
-    controller.current?.abort(); controller.current=new AbortController();
+    controller.current?.abort();
+    const run=new AbortController(); controller.current=run;
+    // A cancelled (closed) run must never touch a later run's state.
+    const cancelled=()=>{ if(run.signal.aborted) throw {code:"CANCELLED"}; };
     try{
       if(!settings.aiApiKey) throw new Error("请先在 NextFlux 设置中配置 AI API Key。");
       const [remote,source]=await Promise.all([minifluxAPI.getFeed(feedId),fetchSourceSnapshot(article.url)]);
+      cancelled();
       if(Number(activeArticle.get()?.id)!==Number(article.id)) throw new Error("文章已切换，请重新打开全文适配。");
       setBaseline(remote); setPhase("ai");
       const suggestion=await suggestScraperRule({
         article,feed:remote,structure:source.structure,settings,
-        signal:controller.current.signal,previousTest,
-        onReasoning:(chunk)=>appendStream("reasoning",chunk),
-        onOutput:(chunk)=>appendStream("output",chunk),
+        signal:run.signal,previousTest,
+        onReasoning:(chunk)=>{ if(!run.signal.aborted) appendStream("reasoning",chunk); },
+        onOutput:(chunk)=>{ if(!run.signal.aborted) appendStream("output",chunk); },
       });
+      cancelled();
       flushStream();
       const local=inspectSelector(source.html,suggestion.rule);
       if(!local.matches) throw new Error("AI 规则在原网页中没有匹配到内容，请重新生成。");
       setCandidate({...suggestion,local}); setPhase("candidate");
     }catch(e){
+      if(run.signal.aborted) return;
       flushStream();
       if(e?.code!=="CANCELLED"){setError(e.message||"全文适配未完成。");setPhase("error");}
     }
@@ -97,7 +113,7 @@ export default function FullTextAdaptButton() {
   const miniMax=isMiniMaxProvider(settings);
   const footer=phase==="done"
     ? <Button fullWidth onPress={close}>完成</Button>
-    : <><Button variant="tertiary" fullWidth onPress={close} isDisabled={busy}>取消</Button>
+    : <><Button variant="tertiary" fullWidth onPress={close} isDisabled={locked}>取消</Button>
       {phase==="error"&&<Button fullWidth onPress={()=>start()}>重新生成</Button>}
       {phase==="candidate"&&<Button fullWidth onPress={test}>测试全文抓取</Button>}
       {phase==="tested"&&<Button fullWidth onPress={apply}>应用此规则</Button>}</>;
