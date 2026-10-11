@@ -31,6 +31,7 @@ const ArticleList = () => {
     showHiddenFeeds,
     showIndicator,
     floatingSidebar,
+    articleListStyle,
   } = useStore(settingsState);
   const virtuosoRef = useRef(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
@@ -95,6 +96,7 @@ const ArticleList = () => {
           "nextflux-article-list-page bg-background w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
           floatingSidebar ? "md:border-r" : "",
         )}
+        data-list-style={articleListStyle === "cards" ? "cards" : "lines"}
       >
         <ArticleListHeader collapsed={headerCollapsed} />
         {showIndicator && <Indicator virtuosoRef={virtuosoRef} />}

@@ -16,6 +16,7 @@ const defaultValue = {
   showHiddenFeeds: false,
   markAsReadOnScroll: false,
   cardImageSize: "large", // none, small, large
+  articleListStyle: "lines", // lines (style 1: hairlines + day headers), cards (style 2: paper cards)
   showFavicon: true,
   titleLines: 2,
   textPreviewLines: 2,

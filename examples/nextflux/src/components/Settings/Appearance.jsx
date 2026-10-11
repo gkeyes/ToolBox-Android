@@ -30,6 +30,7 @@ export default function Appearance() {
     feedIconShape,
     useGrayIcon,
     cardImageSize,
+    articleListStyle,
     showFavicon,
     showReadingTime,
     reduceMotion,
@@ -148,6 +149,20 @@ export default function Appearance() {
           max={5}
           min={0}
           step={1}
+        />
+        <SelItem
+          label={t("settings.appearance.listStyle")}
+          icon={
+            <SettingIcon variant="green">
+              <LayoutList />
+            </SettingIcon>
+          }
+          settingName="articleListStyle"
+          settingValue={articleListStyle}
+          options={[
+            { value: "lines", label: t("settings.appearance.listStyleLines") },
+            { value: "cards", label: t("settings.appearance.listStyleCards") },
+          ]}
         />
         <SelItem
           label={t("settings.appearance.imagePreviews")}

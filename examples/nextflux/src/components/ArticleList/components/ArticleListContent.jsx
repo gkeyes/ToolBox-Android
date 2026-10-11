@@ -37,13 +37,33 @@ const COLLAPSE_AT = 40;
 // once-per-process stagger; later virtualised mounts appear immediately.
 const STAGGER_WINDOW_MS = 600;
 
-const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen }) => {
+// Local calendar day of an article, for day headers between list items.
+const dayKey = (value) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+};
+function dayLabel(value, t, language) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  const start = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((start(today) - start(date)) / 86400000);
+  if (diff === 0) return t("settings.appearance.today");
+  if (diff === 1) return t("settings.appearance.yesterday");
+  return date.toLocaleDateString(language || undefined, {
+    month: "long", day: "numeric", weekday: "short",
+    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day }) => {
   const [stagger] = useState(() => index < STAGGER_LIMIT && performance.now() < staggerUntil);
   return (
     <div
-      className={cn("article-list-item", stagger && "ds-stagger-item")}
+      className={cn("article-list-item", day && "has-day", stagger && "ds-stagger-item")}
       style={stagger ? { animationDelay: `calc(var(--ds-stagger-step) * ${index})` } : undefined}
     >
+      {day && <div className="article-day" role="heading" aria-level={2}><span>{day}</span></div>}
       <ArticleCard article={article} active={active} onOpen={onOpen} />
     </div>
   );
@@ -90,7 +110,7 @@ export default function ArticleListContent({
   virtuosoRef,
   onCollapsedChange,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { feedId, categoryId, articleId } = useParams();
   const navigate = useNavigate();
   const activeId = parseInt(articleId);
@@ -257,6 +277,9 @@ export default function ArticleListContent({
                 key={article.id}
                 article={article}
                 index={index}
+                day={index === 0 || dayKey(articles[index - 1]?.published_at) !== dayKey(article.published_at)
+                  ? dayLabel(article.published_at, t, i18n.language)
+                  : ""}
                 staggerUntil={staggerUntil.current}
                 active={article.id === activeId}
                 onOpen={openArticle}

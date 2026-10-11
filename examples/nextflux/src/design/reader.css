@@ -316,3 +316,105 @@
 .sidebar-row:not([data-active="true"]) .sidebar-row-icon { color: var(--ds-text-secondary); }
 /* The feed fallback badge: ink-dot RSS on a soft accent tile. */
 .feed-icon-fallback { background: color-mix(in srgb, var(--accent) 14%, transparent) !important; color: var(--accent) !important; }
+
+/* ---------- Article list styles (Settings › Appearance › List style) ---------- */
+/* Shared: day headers between items. */
+.article-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px var(--ds-space-md) 6px;
+  font-size: var(--ds-text-caption);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ds-text-primary);
+}
+
+/* Style 1 · Lines: one paper surface, 1px inset rules, ruled day headers. */
+[data-list-style="lines"] .article-card::after {
+  inset-inline: var(--ds-space-md);
+  block-size: 1px;
+  transform: none;
+  background: var(--ds-hairline);
+}
+[data-list-style="lines"] .article-day::after {
+  content: "";
+  flex: 1;
+  block-size: 1px;
+  background: var(--ds-hairline);
+}
+/* No rule directly above a day header. */
+[data-list-style="lines"] .article-list-item:has(+ .article-list-item.has-day) .article-card::after { opacity: 0; }
+
+/* Style 2 · Cards: each entry a small paper card on a tinted ground; read
+   entries drop to an outline so unread ones stand out. */
+[data-list-style="cards"] {
+  --nf-list-ground: #F1EFEA;
+  --nf-card: #FFFFFF;
+}
+.dark [data-list-style="cards"],
+[data-theme="dark"] [data-list-style="cards"] {
+  --nf-list-ground: #000000;
+  --nf-card: #161616;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) [data-list-style="cards"] { --nf-list-ground: #000000; --nf-card: #161616; }
+}
+[data-list-style="cards"] .article-list-body .v-list,
+[data-list-style="cards"] .article-list-body [data-virtuoso-scroller],
+[data-list-style="cards"] .article-list-header-wrap,
+[data-list-style="cards"] .article-list-header.ds-topbar { background: var(--nf-list-ground); }
+[data-list-style="cards"].nextflux-article-list-page { background: var(--nf-list-ground); }
+[data-list-style="cards"] .article-list-item { padding: 0 12px 8px; }
+[data-list-style="cards"] .article-day { padding: 12px 12px 8px; color: var(--ds-text-secondary); }
+[data-list-style="cards"] .article-card {
+  padding: 12px 14px 13px;
+  border-radius: 14px;
+  background: var(--nf-card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 0 0 0.5px var(--ds-hairline);
+}
+[data-list-style="cards"] .article-card::after { display: none; }
+[data-list-style="cards"] .article-card[data-read="true"] {
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--ds-hairline);
+}
+[data-list-style="cards"] .article-card.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--nf-card));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ---------- Speech player: one surface, hairline track, a clean playhead ---------- */
+.reader-speech-slot .nextflux-speech-bar,
+.nextflux-speech-bar {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+@media (max-width: 767px) {
+  .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
+    border-radius: 24px;
+    padding: 4px 6px;
+    background: var(--ds-raised);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.12), 0 0 0 0.5px var(--ds-hairline);
+  }
+  .dark .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) { box-shadow: 0 0 0 0.5px var(--ds-hairline); }
+}
+.nextflux-speech-bar .slider__track {
+  block-size: 3px !important;
+  border-radius: 2px;
+  background: var(--ds-hairline);
+}
+.nextflux-speech-bar .slider__fill { border-radius: 2px; background: var(--accent); }
+.nextflux-speech-bar .slider__thumb {
+  inline-size: 12px !important;
+  block-size: 12px !important;
+  border-radius: 50%;
+  background: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--ds-raised) !important;
+}
+.nextflux-speech-bar .slider__thumb::after { display: none !important; }
+.nextflux-speech-bar [aria-label="切换播放速度"] {
+  border-radius: 9px;
+  background: var(--surface-secondary);
+  font-variant-numeric: tabular-nums;
+}

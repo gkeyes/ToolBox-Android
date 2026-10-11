@@ -127,9 +127,9 @@ export function ArticleSpeechBar({ article }) {
           onChange={(value) => speechController.seekTo(Number(value[0]))}
           className="w-full"
         >
-          <Slider.Track className="h-1.5">
+          <Slider.Track>
             <Slider.Fill />
-            <Slider.Thumb className="bg-transparent after:rounded-full" />
+            <Slider.Thumb />
           </Slider.Track>
         </Slider>
       </div>
