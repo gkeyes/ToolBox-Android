@@ -193,7 +193,7 @@ private fun LazyListScope.homeToolGrid(
  */
 private fun Modifier.homeItemMotion(scope: LazyItemScope, editing: Boolean): Modifier =
     if (editing) this else with(scope) {
-        animateItem(
+        this@homeItemMotion.animateItem(
             fadeInSpec = ToolBoxMotion.effects(),
             placementSpec = ToolBoxMotion.ItemPlacement,
             fadeOutSpec = ToolBoxMotion.effects(),
