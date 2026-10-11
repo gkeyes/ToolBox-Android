@@ -348,17 +348,23 @@
 
 /* Style 2 · Cards: each entry a small paper card on a tinted ground; read
    entries drop to an outline so unread ones stand out. */
+/* Ground and card are derived from the active theme (any palette, light or
+   dark): the card is the theme's own background, the ground is that same
+   colour nudged a few percent toward the text colour. */
 [data-list-style="cards"] {
-  --nf-list-ground: #F1EFEA;
-  --nf-card: #FFFFFF;
+  --nf-card: var(--background);
+  --nf-list-ground: color-mix(in srgb, var(--foreground) 5%, var(--background));
 }
 .dark [data-list-style="cards"],
 [data-theme="dark"] [data-list-style="cards"] {
-  --nf-list-ground: #000000;
-  --nf-card: #161616;
+  --nf-list-ground: var(--background);
+  --nf-card: color-mix(in srgb, var(--foreground) 7%, var(--background));
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) [data-list-style="cards"] { --nf-list-ground: #000000; --nf-card: #161616; }
+  :root:not([data-theme]) [data-list-style="cards"] {
+    --nf-list-ground: var(--background);
+    --nf-card: color-mix(in srgb, var(--foreground) 7%, var(--background));
+  }
 }
 [data-list-style="cards"] .article-list-body .v-list,
 [data-list-style="cards"] .article-list-body [data-virtuoso-scroller],

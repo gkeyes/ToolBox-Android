@@ -125,7 +125,7 @@
   --ds-tone-neutral-bg: #26282D; --ds-tone-neutral-fg: #C4C8CF;
 }
 
-/* Reader palette — light: paper-neutral surfaces, ink text, RSS-orange accent.
+/* Reader palette — light: white page, neutral grey surfaces, ink text, RSS-orange accent.
    NextFlux is a reader, so it no longer mirrors the ToolBox host palette. */
 :root:not([data-theme]),
 [data-theme="light"] {
@@ -134,21 +134,21 @@
   --ds-reader: #FFFFFF;
   --background: #FFFFFF;
   --foreground: rgb(28 27 25 / 0.92);
-  --surface: #F6F5F2;
+  --surface: #F5F5F7;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #EFEEEA;
+  --surface-secondary: #EEEEF1;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #E7E5E0;
+  --surface-tertiary: #E6E6EA;
   --surface-tertiary-foreground: var(--foreground);
   --overlay: #FFFFFF;
   --overlay-foreground: var(--foreground);
   --muted: rgb(28 27 25 / 0.60);
   --scrollbar: rgb(28 27 25 / 0.20);
-  --default: #F0EFEB;
+  --default: #F0F0F3;
   --default-foreground: rgb(28 27 25 / 0.92);
   --accent: #C2410C;
   --accent-foreground: #FFFFFF;
-  --field-background: #F3F2EE;
+  --field-background: #F2F2F5;
   --field-foreground: var(--foreground);
   --field-placeholder: rgb(28 27 25 / 0.42);
   --field-border: transparent;
