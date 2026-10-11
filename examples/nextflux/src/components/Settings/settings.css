@@ -346,7 +346,7 @@
   .nf-set-nav .nf-set-row[data-active="true"] .nf-set-row-title { color: var(--ds-accent); font-weight: 600; }
   .nf-set-rail { display: flex; flex-direction: column; inline-size: 15rem; flex: none; background: var(--ds-page); }
   .nf-set-rail-title { padding: var(--ds-space-lg) var(--ds-space-md) var(--ds-space-xs) calc(var(--ds-space-md) + var(--ds-space-xs)); font-size: var(--ds-text-title); line-height: 1.3; font-weight: 600; color: var(--ds-text-primary); }
-  .nf-set-pane { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-inline-size: 0; background: var(--ds-raised); }
+  .nf-set-pane { display: flex; flex: 1 1 auto; flex-direction: column; min-inline-size: 0; background: var(--ds-raised); }
   .nf-set-pane-header { display: flex; align-items: center; padding: var(--ds-space-xs) var(--ds-space-md); }
 
   /* ---------- Buttons placed in a stack ---------- */
