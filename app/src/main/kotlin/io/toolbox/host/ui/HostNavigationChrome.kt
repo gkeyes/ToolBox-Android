@@ -63,6 +63,9 @@ import io.toolbox.core.ui.component.toolBoxGlassEffect
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import kotlin.math.absoluteValue
 import kotlin.math.abs
 
@@ -79,6 +82,13 @@ internal fun PrimaryScreen(
     content: @Composable (MainDestination, PaddingValues, HostRouteLayout) -> Unit,
 ) {
     val glassState = rememberToolBoxGlassState()
+    // Miuix: the large title collapses into the small bar as the page scrolls.
+    val topBarScroll = MiuixScrollBehavior()
+    LaunchedEffect(selected) {
+        // Each tab keeps its own list position; start each tab with the title expanded.
+        topBarScroll.state.heightOffset = 0f
+        topBarScroll.state.contentOffset = 0f
+    }
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -87,12 +97,14 @@ internal fun PrimaryScreen(
     ) {
         val layout = hostRouteLayoutFor(maxWidth)
         val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+        val collapseModifier = if (isGlass) Modifier else Modifier.nestedScroll(topBarScroll.nestedScrollConnection)
         if (layout.isCompact) {
             ToolBoxAppScaffold(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
                     TopBar(title, subtitle, onImport, glassState = glassState,
                         compact = selected == MainDestination.Home,
+                        scrollBehavior = topBarScroll.takeUnless { isGlass },
                         organizeEditing = organizeEditing, onOrganize = onOrganize, onCreateGroup = onCreateGroup)
                 },
                 bottomBar = { DestinationBar(selected, onDestination, compact = true, glassState = glassState) },
@@ -100,6 +112,7 @@ internal fun PrimaryScreen(
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .then(collapseModifier)
                         .toolBoxBackdropSource(glassState)
                         .then(if (isGlass) Modifier else Modifier.padding(scaffoldPadding))
                         .consumeWindowInsets(scaffoldPadding),
@@ -133,6 +146,7 @@ internal fun PrimaryScreen(
                         defaultWindowInsetsPadding = false,
                         glassState = glassState,
                         compact = selected == MainDestination.Home,
+                        scrollBehavior = topBarScroll.takeUnless { isGlass },
                         organizeEditing = organizeEditing,
                         onOrganize = onOrganize,
                         onCreateGroup = onCreateGroup,
@@ -140,6 +154,7 @@ internal fun PrimaryScreen(
                     Box(
                         Modifier
                             .weight(1f)
+                            .then(collapseModifier)
                             .toolBoxBackdropSource(glassState)
                             .widthIn(max = ToolBoxThemeTokens.sizes.contentMaxWidth)
                             .align(Alignment.CenterHorizontally),
@@ -381,6 +396,7 @@ private fun TopBar(
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState,
     compact: Boolean = false,
+    scrollBehavior: ScrollBehavior? = null,
     organizeEditing: Boolean = false,
     onOrganize: (() -> Unit)? = null,
     onCreateGroup: (() -> Unit)? = null,
@@ -391,6 +407,7 @@ private fun TopBar(
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
         glassState = glassState,
         compact = compact,
+        scrollBehavior = scrollBehavior,
         actions = {
             if (onOrganize != null) {
                 if (organizeEditing) {

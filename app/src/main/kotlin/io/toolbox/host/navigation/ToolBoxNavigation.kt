@@ -2,6 +2,8 @@ package io.toolbox.host.navigation
 
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import kotlinx.coroutines.CancellationException
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,6 +71,9 @@ import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
 private val RetainedPageMotion = ToolBoxMotion.pageSpec()
+
+/** Fraction of the page width the predictive-back gesture may drag the page before commit. */
+private const val PredictiveBackTravel = 0.4f
 
 @Composable
 internal fun ToolBoxNavigation(
@@ -403,7 +408,20 @@ private fun RetainedSecondaryPage(
         }
     }
 
-    BackHandler(enabled = isTop, onBack = requestBack)
+    // Predictive back: the page follows the system back gesture and either springs away on
+    // commit or springs back on cancel. A plain Back press delivers no progress events and
+    // takes the same commit path as the on-screen back button.
+    PredictiveBackHandler(enabled = isTop && !leaving) { events ->
+        try {
+            events.collect { event ->
+                progress.snapTo(PredictiveBackTravel * event.progress)
+            }
+            requestBack()
+        } catch (cancelled: CancellationException) {
+            coroutineScope.launch { progress.animateTo(0f, animationSpec = RetainedPageMotion) }
+            throw cancelled
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
