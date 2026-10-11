@@ -54,6 +54,9 @@ test("list and reader share server rules; clear removes only the managed line", 
   await save(page);
   await expect(page.locator(".nf-title-filter-toast")).toContainText("已保存 2");
   await page.evaluate(() => filterFixture.go("/category/17/article/900"));
+  // Wait for the reader to replace the list header before reaching its controls.
+  await expect(page.locator(".action-buttons")).toBeVisible();
+  await expect(page.locator("header.article-list-header")).toHaveCount(0);
   await editor(page);
   await expect(page.getByLabel("屏蔽关键词", { exact: true })).toHaveValue("广告|C++");
   await page.getByRole("dialog").getByRole("button", { name: "清空", exact: true }).click();
