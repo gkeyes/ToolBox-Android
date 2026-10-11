@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { startTransition, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
 
 // Release motion: settle back on the sheet spring, dismiss on the 220ms
@@ -13,9 +13,14 @@ function resolveEasing(element, easing) {
   return value || easing.slice(easing.indexOf(",") + 1, -1).trim();
 }
 
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)
+    || document.documentElement.dataset.reduceMotion === "true";
+}
+
 function animateTranslate(element, from, to, duration, onDone, easing = SETTLE_EASING) {
   // Only used to settle back to rest; dismissal uses HeroUI's exit transition.
-  if (!element?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+  if (!element?.animate || prefersReducedMotion()) {
     if (element) {
       element.style.translate = "";
       element.style.transition = "";
@@ -61,6 +66,24 @@ export default function MobileSheet({
 }) {
   const dialogRef = useRef(null);
   const dragRef = useRef(null);
+  // A drag dismissal parks the sheet off-screen before asking the owner to
+  // close. The owner may refuse (a pending save or AI run), or reopen the
+  // sheet while its exit is still running (React Aria then reuses the same
+  // element). Either way the sheet must come back: an off-screen sheet over a
+  // live backdrop looks like nothing is open while every tap is swallowed.
+  const dismissRef = useRef(null);
+  const [dismissCheck, setDismissCheck] = useState(0);
+
+  useLayoutEffect(() => {
+    const pending = dismissRef.current;
+    if (!open || !pending) return;
+    dismissRef.current = null;
+    pending.animation?.cancel();
+    const dialog = dialogRef.current;
+    if (!dialog || dialog !== pending.dialog || !dialog.isConnected) return;
+    dialog.style.transition = "";
+    animateTranslate(dialog, pending.offscreen, 0, 440, () => { dialog.style.willChange = ""; });
+  }, [open, dismissCheck]);
 
   const onPointerDown = (event) => {
     if (event.button !== 0) return;
@@ -110,12 +133,17 @@ export default function MobileSheet({
       // transition firing after inline style changes: if the overlay's exit
       // never completes, its backdrop stays mounted and swallows every tap.
       const offscreen = dialog.getBoundingClientRect().height + 32;
+      const pending = { dialog, offscreen, animation: null };
+      dismissRef.current = pending;
       const close = () => {
+        if (dismissRef.current !== pending) return;
         dialog.style.willChange = "";
         onOpenChange(false);
+        // Re-check after the owner's update has rendered (a transition renders
+        // after ordinary and store updates). Still open means it refused.
+        startTransition(() => setDismissCheck((value) => value + 1));
       };
-      if (!dialog.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
-        || document.documentElement.dataset.reduceMotion === "true") {
+      if (!dialog.animate || prefersReducedMotion()) {
         dialog.style.transition = "";
         dialog.style.translate = `0 ${offscreen}px`;
         close();
@@ -127,6 +155,7 @@ export default function MobileSheet({
         [{ translate: `0 ${from}px` }, { translate: `0 ${offscreen}px` }],
         { duration: 220, easing: "cubic-bezier(0.3, 0, 1, 1)", fill: "forwards" },
       );
+      pending.animation = animation;
       let done = false;
       const finish = () => { if (!done) { done = true; close(); } };
       animation.onfinish = finish;
@@ -157,6 +186,7 @@ export default function MobileSheet({
               onPointerMove={onPointerMove}
               onPointerUp={(event) => finishDrag(event)}
               onPointerCancel={(event) => finishDrag(event, true)}
+              onLostPointerCapture={(event) => finishDrag(event, true)}
             >
               <Drawer.Handle className="p-1" />
             </div>
