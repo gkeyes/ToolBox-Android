@@ -116,6 +116,20 @@ object ToolBoxMotion {
         (1f - coverage / FadeThroughSplit).coerceIn(0f, 1f)
 
     /**
+     * Alpha of a page with push progress [motion] (1 hidden .. 0 shown) under a page above it
+     * whose visibility is [coverage]. A settled, uncovered page is unconditionally opaque, so
+     * no transition arithmetic can ever leave the destination invisible.
+     */
+    fun pageLayerAlpha(motion: Float, coverage: Float): Float {
+        val m = motion.coerceIn(0f, 1f)
+        val c = coverage.coerceIn(0f, 1f)
+        if (m <= SettledEpsilon && c <= SettledEpsilon) return 1f
+        return fadeThroughIncomingAlpha(1f - m) * fadeThroughOutgoingAlpha(c)
+    }
+
+    private const val SettledEpsilon = 0.001f
+
+    /**
      * Closed-form step response of a unit-mass spring (0 -> 1) at [timeMillis]; used where many
      * items share one clock and each item evaluates its own delayed spring in the draw phase.
      */

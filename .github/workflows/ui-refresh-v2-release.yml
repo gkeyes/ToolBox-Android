@@ -116,3 +116,53 @@ jobs:
       - name: Remove signing material
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/toolbox-signing"
+
+  ui-tests:
+    # Emulator checks that navigate through the real app, so a blank or covered page fails CI.
+    if: ${{ github.repository == 'gkeyes/ToolBox-Android' && github.ref == 'refs/heads/ui-refresh-v2' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Build app and instrumentation APKs
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Enable accelerated emulator
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run navigation, secondary page and design behavior tests
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb shell svc power stayon true
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.SecondaryPageVisibilityTest,io.toolbox.host.SecondaryPageBehaviorTest,io.toolbox.host.DesignPolishBehaviorTest,io.toolbox.host.permissions.PermissionCleanupBehaviorTest
+      - name: Retain instrumentation reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ui-refresh-v2-android-tests-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/connected/
+            app/build/reports/androidTests/connected/
+          if-no-files-found: warn
+          retention-days: 14

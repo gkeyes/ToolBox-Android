@@ -226,11 +226,12 @@ internal fun ToolBoxNavigation(
                     } else {
                         0f
                     }
+                    // This layer also hosts the retained secondary pages, so only the runtime
+                    // transition may fade it. Covering by a secondary page fades the primary
+                    // screen alone (inner box below), never the pages stacked above it.
                     val runtimeDepth = maxOf(enteringDepth, sourceReturnProgress.value).coerceIn(0f, 1f)
-                    val pageCoverage = firstRetainedProgress?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
-                    // Shared X axis: the covered page drifts 30dp back and fades through.
-                    translationX = -trailingDirection * maxOf(runtimeDepth, pageCoverage) * PageShiftPx
-                    alpha = (1f - runtimeDepth) * ToolBoxMotion.fadeThroughOutgoingAlpha(pageCoverage)
+                    translationX = -trailingDirection * runtimeDepth * PageShiftPx
+                    alpha = 1f - runtimeDepth
                 }
                 .then(
                     if (runtimeRoute != null && !sourceAboveRuntime) {
@@ -246,6 +247,13 @@ internal fun ToolBoxNavigation(
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            // Shared X axis: the primary screen drifts back and fades through
+                            // while the first secondary page comes in above it.
+                            val coverage = firstRetainedProgress?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
+                            translationX = -trailingDirection * coverage * PageShiftPx
+                            alpha = ToolBoxMotion.fadeThroughOutgoingAlpha(coverage)
+                        }
                         .then(
                             if (retainedRoutes.isEmpty() && runtimeRoute == null) {
                                 Modifier
@@ -455,9 +463,8 @@ private fun RetainedSecondaryPage(
                 // Shared X axis: 30dp of travel, fading through the page beneath.
                 val motion = progress.value.coerceIn(0f, 1f)
                 val coverage = coveredBy?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
-                translationX = trailingDirection * motion * PageShiftPx - trailingDirection * coverage * PageShiftPx
-                alpha = ToolBoxMotion.fadeThroughIncomingAlpha(1f - motion) *
-                    ToolBoxMotion.fadeThroughOutgoingAlpha(coverage)
+                translationX = trailingDirection * (motion - coverage) * PageShiftPx
+                alpha = ToolBoxMotion.pageLayerAlpha(motion, coverage)
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
