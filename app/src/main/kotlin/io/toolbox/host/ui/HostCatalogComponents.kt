@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -42,7 +43,7 @@ internal fun ToolGlyph(
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.badge))
+            .clip(io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.badge))
             .background(if (imageResource == null && imageBitmap == null) accent else Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
@@ -85,7 +86,11 @@ internal fun SurfaceCard(
 
 @Composable
 internal fun SectionHeader(title: String, action: String = "") {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // Inset to line up with the text inside the grouped surface below it.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ToolBoxThemeTokens.spacing.two),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         AppText(
             title,
             color = ToolBoxThemeTokens.colors.textSecondary,

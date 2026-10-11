@@ -11,6 +11,7 @@ import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
@@ -106,13 +107,14 @@ internal fun LazyListScope.catalogHomeSections(
         val expanded = group.expanded && !drag.collapsingGroups
         item("group:" + group.id, contentType = "group-header") {
             GroupHeader(group, members.size, expanded, editing, index, state.layout.groups.size, drag,
+                modifier = Modifier.homeItemMotion(this, editing),
                 onExpand = { onAction(CatalogAction.SetGroupExpanded(group.id, !group.expanded)) },
                 onEdit = { onEditGroup(group.id) },
                 onMove = { onAction(CatalogAction.MoveGroup(group.id, it)) })
         }
         if (expanded) {
             if (members.isEmpty()) item("empty-group:" + group.id) {
-                Box(Modifier.groupSurface(bottom = true).padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+                Box(Modifier.homeItemMotion(this, editing).groupSurface(bottom = true).padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
                     ToolBoxTextButton("添加工具", { onEditGroup(group.id) }, outlined = false)
                 }
             }
@@ -149,7 +151,7 @@ private fun LazyListScope.homeToolGrid(
         val cellGap = if (compact || grouped) 8.dp else 12.dp
         val horizontalPadding = if (compact || grouped) 12.dp else 16.dp
         Row(
-            Modifier.fillMaxWidth()
+            Modifier.homeItemMotion(this, editing).fillMaxWidth()
                 .then(if (grouped) Modifier.groupSurface(bottom = row == rows - 1) else Modifier)
                 .padding(
                     start = horizontalPadding,
@@ -185,6 +187,19 @@ private fun LazyListScope.homeToolGrid(
     }
 }
 
+/**
+ * Expanding / collapsing a group fades its rows in and springs the content below into place.
+ * Disabled while organizing: the drag controller measures item positions directly.
+ */
+private fun Modifier.homeItemMotion(scope: LazyItemScope, editing: Boolean): Modifier =
+    if (editing) this else with(scope) {
+        animateItem(
+            fadeInSpec = ToolBoxMotion.effects(),
+            placementSpec = ToolBoxMotion.ItemPlacement,
+            fadeOutSpec = ToolBoxMotion.effects(),
+        )
+    }
+
 @Composable
 private fun Modifier.groupSurface(top: Boolean = false, bottom: Boolean = false): Modifier {
     val radius = ToolBoxThemeTokens.radii.card
@@ -200,15 +215,16 @@ private fun GroupHeader(
     group: CatalogGroup, count: Int, expanded: Boolean, editing: Boolean,
     index: Int, total: Int, drag: CatalogHomeDragState,
     onExpand: () -> Unit, onEdit: () -> Unit, onMove: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val collapsedRotation = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 0f else collapsedRotation,
-        animationSpec = tween(160, easing = LinearOutSlowInEasing), label = "group-expansion",
+        animationSpec = ToolBoxMotion.spatial(), label = "group-expansion",
     )
     Row(
-        Modifier.groupSurface(top = true, bottom = !expanded)
+        modifier.groupSurface(top = true, bottom = !expanded)
             .indication(interactionSource, LocalIndication.current)
             .catalogDragTarget(drag, "group:" + group.id, "groups", index, total, group.name,
                 enabled = editing, onMove = onMove)
@@ -276,7 +292,7 @@ internal fun CatalogHomeTile(
                 scaleX = pressScale
                 scaleY = pressScale
             }
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .semantics(mergeDescendants = true) {
                 contentDescription = tool.name
                 customActions = buildList {
