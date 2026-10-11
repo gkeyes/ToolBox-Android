@@ -1,46 +1,118 @@
+import "@/components/Settings/settings.css";
 import { updateSettings } from "@/stores/settingsStore.js";
-import {
-  Button,
-  Dropdown,
-  Label,
-  Kbd,
-  Slider,
-  Switch,
-  Tabs,
-  Tooltip,
-} from "@heroui/react";
+import { Button, cn, Dropdown, Kbd, Label, Slider, Switch, Tabs } from "@heroui/react";
+import { ChevronsUpDown } from "lucide-react";
 
-import { ChevronsUpDown, Info } from "lucide-react";
+// Design system v2 settings primitives: SectionHeader + GroupCard (no inner
+// dividers), ≥56px rows with a 36px tonal tile, title / subtitle and a trailing
+// value, switch or segmented control. Whole rows are the press target.
 
-const bgColor = "bg-default/60 dark:bg-default/30";
-
-const DescriptionTip = ({ description }) => {
-  if (!description) return null;
+function RowText({ label, description }) {
   return (
-    <Tooltip delay={0}>
-      <Button
-        isIconOnly
-        variant="ghost"
-        size="sm"
-        className="size-5 min-w-5 p-0 bg-transparent hover:bg-transparent border-none shadow-none"
-      >
-        <Info className="size-3.5 text-muted opacity-60 shrink-0" />
+    <span className="nf-set-row-text">
+      <span className="nf-set-row-title">{label}</span>
+      {description && <span className="nf-set-row-sub">{description}</span>}
+    </span>
+  );
+}
+
+export const ItemWrapper = ({ title, footer, children }) => {
+  return (
+    <section className="settings-group nf-set-group">
+      {title && <h3 className="ds-section-header">{title}</h3>}
+      <div className="ds-group-card">{children}</div>
+      {footer && <p className="nf-set-footnote">{footer}</p>}
+    </section>
+  );
+};
+
+/** Static (or link / button) row. Pass `as="a"` / `as="button"` plus `pressable` for actions. */
+export function SettingRow({
+  as: Tag = "div",
+  icon,
+  label,
+  description,
+  trailing,
+  pressable = false,
+  className,
+  children,
+  ...props
+}) {
+  return (
+    <Tag
+      className={cn("nf-set-row", pressable && "is-pressable", className)}
+      data-static={pressable ? undefined : "true"}
+      {...props}
+    >
+      {icon}
+      {children ?? <RowText label={label} description={description} />}
+      {trailing}
+    </Tag>
+  );
+}
+
+/** Row that opens a single-selection menu; the whole row is the trigger. */
+export function MenuRow({
+  label,
+  icon,
+  description,
+  value,
+  valueStyle,
+  ariaLabel,
+  selectedKeys,
+  onSelectionChange,
+  disallowEmptySelection,
+  popoverClassName,
+  children,
+}) {
+  return (
+    <Dropdown>
+      <Button variant="ghost" className="nf-set-row is-pressable">
+        {icon}
+        <RowText label={label} description={description} />
+        <span className="nf-set-row-value">
+          <span style={valueStyle}>{value}</span>
+          <ChevronsUpDown className="nf-set-row-chevron" aria-hidden="true" />
+        </span>
       </Button>
-      <Tooltip.Content>
-        <p>{description}</p>
-      </Tooltip.Content>
-    </Tooltip>
+      <Dropdown.Popover placement="bottom end" className={popoverClassName}>
+        <Dropdown.Menu
+          aria-label={ariaLabel || (typeof label === "string" ? label : undefined)}
+          selectedKeys={selectedKeys}
+          selectionMode="single"
+          disallowEmptySelection={disallowEmptySelection}
+          onSelectionChange={onSelectionChange}
+        >
+          {children}
+        </Dropdown.Menu>
+      </Dropdown.Popover>
+    </Dropdown>
   );
-};
+}
 
-export const ItemWrapper = ({ title, children }) => {
+/** Segmented control with a spring-driven sliding indicator. */
+export function Segmented({ ariaLabel, selectedKey, onSelectionChange, options, block = false, className }) {
   return (
-    <div className="settings-group">
-      <div className="text-xs text-muted font-medium ml-2.5 mb-1">{title}</div>
-      <div className="rounded-xl overflow-hidden shadow-custom">{children}</div>
-    </div>
+    <Tabs
+      aria-label={ariaLabel}
+      className={cn("nf-segmented", block && "is-block", className)}
+      selectedKey={selectedKey}
+      onSelectionChange={onSelectionChange}
+    >
+      <Tabs.ListContainer>
+        <Tabs.List aria-label={ariaLabel}>
+          {options.map((option) => (
+            <Tabs.Tab key={option.value} id={option.value} aria-label={option.ariaLabel}>
+              {option.icon}
+              {option.label && <span>{option.label}</span>}
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs.ListContainer>
+    </Tabs>
   );
-};
+}
 
 export const SliderItem = ({
   label,
@@ -53,29 +125,24 @@ export const SliderItem = ({
   description,
 }) => {
   return (
-    <div className={`grid gap-2 ${bgColor} px-2.5 py-2`}>
-      <div className="flex items-center gap-2">
-        {icon}
-        <Slider
-          aria-label="slider"
-          className="w-full"
-          value={[settingValue]}
-          onChange={(value) => updateSettings({ [settingName]: value[0] })}
-          maxValue={max}
-          minValue={min}
-          step={step}
-        >
-          <div className="flex items-center gap-1">
-            <div className="text-sm text-foreground line-clamp-1">{label}</div>
-            <DescriptionTip description={description} />
-          </div>
-          <Slider.Output className="text-muted" />
-          <Slider.Track className="h-1.5 mt-0.5">
-            <Slider.Fill />
-            <Slider.Thumb className="bg-transparent after:rounded-full" />
-          </Slider.Track>
-        </Slider>
-      </div>
+    <div className="nf-set-row nf-slider-row" data-static="true">
+      {icon}
+      <Slider
+        aria-label={typeof label === "string" ? label : settingName}
+        className="nf-slider"
+        value={[settingValue]}
+        onChange={(value) => updateSettings({ [settingName]: value[0] })}
+        maxValue={max}
+        minValue={min}
+        step={step}
+      >
+        <RowText label={label} description={description} />
+        <Slider.Output className="ds-tnum" />
+        <Slider.Track>
+          <Slider.Fill />
+          <Slider.Thumb />
+        </Slider.Track>
+      </Slider>
     </div>
   );
 };
@@ -89,27 +156,18 @@ export const SwitchItem = ({
   description,
 }) => {
   return (
-    <div
-      className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-3`}
+    <Switch
+      className="nf-set-row is-pressable"
+      isSelected={settingValue}
+      isDisabled={disabled}
+      onChange={(value) => updateSettings({ [settingName]: value })}
     >
-      <div className="flex items-center gap-2">
-        {icon}
-        <div className="flex items-center gap-1">
-          <div className="text-sm text-foreground line-clamp-1">{label}</div>
-          <DescriptionTip description={description} />
-        </div>
-      </div>
-      <Switch
-        size="lg"
-        isSelected={settingValue}
-        isDisabled={disabled}
-        onChange={(value) => updateSettings({ [settingName]: value })}
-      >
-        <Switch.Control className="rounded-full">
-          <Switch.Thumb className="rounded-full" />
-        </Switch.Control>
-      </Switch>
-    </div>
+      {icon}
+      <RowText label={label} description={description} />
+      <Switch.Control className="nf-switch">
+        <Switch.Thumb />
+      </Switch.Control>
+    </Switch>
   );
 };
 
@@ -121,47 +179,24 @@ export function SelItem({
   options,
   description,
 }) {
+  const current = settingValue.toString();
   return (
-    <div
-      className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-2`}
+    <MenuRow
+      label={label}
+      icon={icon}
+      description={description}
+      value={options.find((opt) => opt.value === current)?.label || settingValue}
+      ariaLabel={typeof label === "string" ? label : "Single selection"}
+      selectedKeys={new Set([current])}
+      onSelectionChange={(values) => updateSettings({ [settingName]: values.currentKey })}
     >
-      <div className="flex items-center gap-2">
-        {icon}
-        <div className="flex items-center gap-1">
-          <div className="text-sm text-foreground line-clamp-1">{label}</div>
-          <DescriptionTip description={description} />
-        </div>
-      </div>
-      <Dropdown>
-        <Button variant="tertiary" size="sm" className="text-muted h-8">
-          {options.find((opt) => opt.value === settingValue.toString())
-            ?.label || settingValue}
-          <ChevronsUpDown className="size-4 shrink-0 text-muted opacity-60" />
-        </Button>
-
-        <Dropdown.Popover>
-          <Dropdown.Menu
-            aria-label="Single selection"
-            selectedKeys={new Set([settingValue.toString()])}
-            selectionMode="single"
-            onSelectionChange={(values) =>
-              updateSettings({ [settingName]: values.currentKey })
-            }
-          >
-            {options.map((option) => (
-              <Dropdown.Item
-                id={option.value.toString()}
-                key={option.value}
-                textValue={option.label}
-              >
-                <Dropdown.ItemIndicator />
-                <Label>{option.label}</Label>
-              </Dropdown.Item>
-            ))}
-          </Dropdown.Menu>
-        </Dropdown.Popover>
-      </Dropdown>
-    </div>
+      {options.map((option) => (
+        <Dropdown.Item id={option.value.toString()} key={option.value} textValue={option.label}>
+          <Dropdown.ItemIndicator />
+          <Label>{option.label}</Label>
+        </Dropdown.Item>
+      ))}
+    </MenuRow>
   );
 }
 
@@ -174,61 +209,29 @@ export function GroupItem({
   description,
 }) {
   return (
-    <div
-      className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 h-12`}
-    >
-      <div className="flex items-center gap-2">
-        {icon}
-        <div className="flex items-center gap-1">
-          <div className="text-sm text-foreground">{label}</div>
-          <DescriptionTip description={description} />
-        </div>
-      </div>
-      <Tabs
-        aria-label={settingName}
-        variant="primary"
+    <div className="nf-set-row" data-static="true">
+      {icon}
+      <RowText label={label} description={description} />
+      <Segmented
+        ariaLabel={typeof label === "string" ? label : settingName}
         selectedKey={settingValue}
-        onSelectionChange={(value) => {
-          updateSettings({ [settingName]: value });
-        }}
-      >
-        <Tabs.ListContainer>
-          <Tabs.List
-            aria-label={settingName}
-            className="bg-default-100/90 backdrop-blur-md shadow-custom-inner p-px gap-0 rounded-small overflow-visible"
-          >
-            {options.map((option) => (
-              <Tabs.Tab
-                key={option.value}
-                id={option.value}
-                className="py-1 h-7"
-              >
-                <div className="flex items-center space-x-2">
-                  {option.icon}
-                  {option.label && <span>{option.label}</span>}
-                </div>
-                <Tabs.Indicator />
-              </Tabs.Tab>
-            ))}
-          </Tabs.List>
-        </Tabs.ListContainer>
-      </Tabs>
+        onSelectionChange={(value) => updateSettings({ [settingName]: value })}
+        options={options.map((option) => ({ ...option, ariaLabel: option.label ? undefined : option.value }))}
+      />
     </div>
   );
 }
 
 export function KeyboardItem({ desc, kbdKey, keyStr }) {
   return (
-    <div
-      className={`flex justify-between items-center gap-2 ${bgColor} px-2.5 py-3`}
-    >
-      <div className="flex items-center gap-2">
-        <div className="text-sm text-foreground">{desc}</div>
-      </div>
-      <Kbd>
-        {kbdKey && <Kbd.Abbr keyValue={kbdKey} />}
-        <Kbd.Content>{keyStr}</Kbd.Content>
-      </Kbd>
-    </div>
+    <SettingRow
+      label={desc}
+      trailing={
+        <Kbd className="nf-kbd">
+          {kbdKey && <Kbd.Abbr keyValue={kbdKey} />}
+          <Kbd.Content>{keyStr}</Kbd.Content>
+        </Kbd>
+      }
+    />
   );
 }
