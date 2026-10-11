@@ -433,6 +433,9 @@
   padding: 0;
 }
 .nextflux-close-button { border-radius: 50%; }
+/* Dialog close triggers are absolutely positioned before the content; keep them
+   above sticky / tinted pane headers that come later in the DOM. */
+:is(.modal__close-trigger, .drawer__close-trigger, .alert-dialog__close-trigger).nextflux-close-button { z-index: 30; }
 .nextflux-toolbar-button > svg,
 .nextflux-toolbar-button > [data-slot="spinner"],
 .nextflux-close-button > svg {
