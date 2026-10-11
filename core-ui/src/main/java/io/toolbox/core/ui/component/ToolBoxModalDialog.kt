@@ -36,12 +36,17 @@ fun ToolBoxModalDialog(
         val window = (view.parent as DialogWindowProvider).window
         val colors = ToolBoxThemeTokens.colors
         val materials = ToolBoxThemeTokens.materials
-        val radius = ToolBoxThemeTokens.radii.card
+        val radius = ToolBoxThemeTokens.radii.dialog
         val density = LocalDensity.current
         val cornerPx = with(density) { radius.toPx() }
         val blurPx = with(density) { materials.blurRadius.roundToPx() }
         val shape = RoundedCornerShape(radius)
 
+        DisposableEffect(window) {
+            val previousAnimations = window.attributes.windowAnimations
+            window.setWindowAnimations(io.toolbox.core.ui.R.style.ToolBox_DialogWindowAnimation)
+            onDispose { window.setWindowAnimations(previousAnimations) }
+        }
         DisposableEffect(window, colors.surface, materials.realBlurEnabled, cornerPx, blurPx) {
             val manager = window.context.getSystemService(WindowManager::class.java)
             val previousBackground = window.decorView.background

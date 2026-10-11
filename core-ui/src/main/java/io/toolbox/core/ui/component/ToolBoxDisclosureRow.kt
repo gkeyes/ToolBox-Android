@@ -41,16 +41,10 @@ fun ToolBoxDisclosureRow(
     val rotation = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -90f else 90f
     val angle = animateFloatAsState(
         targetValue = if (expanded) rotation else 0f,
-        animationSpec = tween(180, easing = ToolBoxMotion.StandardEasing),
+        animationSpec = ToolBoxMotion.spatial(),
         label = "disclosure direction",
     )
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.985f else 1f,
-        animationSpec = ToolBoxMotion.pressSpec(pressed),
-        label = "disclosure press",
-    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -59,10 +53,7 @@ fun ToolBoxDisclosureRow(
                 stateDescription = if (expanded) "已展开" else "已折叠"
                 if (sectionHeading) heading()
             }
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
+            .toolBoxPressFeedback(interactionSource, scale = ToolBoxMotion.RowPressScale)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -70,7 +61,7 @@ fun ToolBoxDisclosureRow(
                 onClickLabel = if (expanded) "收起$title" else "展开$title",
                 onClick = onClick,
             )
-            .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
+            .padding(horizontal = spacing.two, vertical = spacing.one),
         horizontalArrangement = Arrangement.spacedBy(spacing.one),
         verticalAlignment = Alignment.CenterVertically,
     ) {

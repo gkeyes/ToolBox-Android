@@ -1,6 +1,6 @@
 package io.toolbox.core.ui.component
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -67,12 +67,17 @@ fun ToolBoxSearchField(
     val keyboard = LocalSoftwareKeyboardController.current
     val colors = ToolBoxThemeTokens.colors
     val spacing = ToolBoxThemeTokens.spacing
-    val shape = RoundedCornerShape(ToolBoxThemeTokens.radii.control)
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.control)
     var focused by remember { mutableStateOf(false) }
+    val focusColor = animateColorAsState(
+        targetValue = if (focused) colors.primary.copy(alpha = 0.55f) else colors.primary.copy(alpha = 0f),
+        animationSpec = ToolBoxMotion.effects(),
+        label = "search focus ring",
+    )
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = toolBoxSearchFieldMinHeight())
             .toolBoxOpenDesignSurface(shape)
-            .border(1.dp, if (focused) colors.primary.copy(alpha = 0.55f) else Color.Transparent, shape)
+            .border(1.dp, focusColor.value, shape)
             .padding(start = spacing.oneHalf, end = spacing.half),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -131,18 +136,13 @@ fun ToolBoxSettingRow(
     val spacing = ToolBoxThemeTokens.spacing
     val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (enabled && pressed) 0.985f else 1f,
-        animationSpec = ToolBoxMotion.pressSpec(pressed),
-        label = "setting row press",
-    )
     Row(
         modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 72.dp)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
+            .toolBoxPressFeedback(
+                interactionSource,
+                enabled = enabled && onClick != null,
+                scale = ToolBoxMotion.RowPressScale,
+            )
             .then(
                 if (onClick != null) {
                     Modifier.clickable(
@@ -156,7 +156,7 @@ fun ToolBoxSettingRow(
                     Modifier
                 },
             )
-            .padding(horizontal = spacing.oneHalf, vertical = spacing.row),
+            .padding(horizontal = spacing.two, vertical = spacing.row),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.let {
@@ -194,9 +194,13 @@ fun ToolBoxSwitchSettingRow(
 ) {
     val sizes = ToolBoxThemeTokens.sizes
     val spacing = ToolBoxThemeTokens.spacing
+    val haptics = rememberToolBoxHaptics()
     SwitchPreference(
         checked = checked,
-        onCheckedChange = onCheckedChange,
+        onCheckedChange = {
+            haptics.toggle(it)
+            onCheckedChange(it)
+        },
         title = title,
         summary = summary,
         startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
@@ -214,7 +218,7 @@ fun ToolBoxSwitchSettingRow(
                 toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
                 if (!enabled) disabled()
             },
-        insideMargin = PaddingValues(horizontal = spacing.oneHalf, vertical = spacing.one),
+        insideMargin = PaddingValues(horizontal = spacing.two, vertical = spacing.one),
         enabled = enabled,
     )
 }
@@ -233,7 +237,7 @@ fun ToolBoxValueRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = if (summary.isNullOrBlank()) ToolBoxThemeTokens.sizes.denseRow else 64.dp)
-            .padding(horizontal = spacing.oneHalf, vertical = spacing.one),
+            .padding(horizontal = spacing.two, vertical = spacing.one),
         contentAlignment = Alignment.CenterStart,
     ) {
         val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.3f
@@ -284,7 +288,7 @@ private fun ToolBoxPreferenceIcon(icon: ToolBoxIconKey, enabled: Boolean = true)
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+            .clip(toolBoxShape(ToolBoxThemeTokens.radii.badge))
             .background(if (enabled) ToolBoxThemeTokens.colors.softPrimary else ToolBoxThemeTokens.colors.surfaceMuted),
         contentAlignment = Alignment.Center,
     ) {
@@ -305,9 +309,15 @@ fun ToolBoxRadioSettingRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val haptics = rememberToolBoxHaptics()
     RadioButtonPreference(
-        title = title, selected = selected, onClick = onClick, enabled = enabled,
+        title = title, selected = selected,
+        onClick = {
+            if (!selected) haptics.tick()
+            onClick()
+        },
+        enabled = enabled,
         modifier = modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
-        insideMargin = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
+        insideMargin = PaddingValues(horizontal = ToolBoxThemeTokens.spacing.two, vertical = ToolBoxThemeTokens.spacing.row),
     )
 }

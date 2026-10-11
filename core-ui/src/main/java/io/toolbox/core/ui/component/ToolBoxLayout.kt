@@ -80,6 +80,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
@@ -249,6 +250,7 @@ fun ToolBoxLargeTopBar(
     defaultWindowInsetsPadding: Boolean = true,
     glassState: ToolBoxGlassState? = null,
     compact: Boolean = false,
+    scrollBehavior: ScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
@@ -302,6 +304,7 @@ fun ToolBoxLargeTopBar(
         largeTitleColor = ToolBoxThemeTokens.colors.textPrimary,
         subtitleColor = ToolBoxThemeTokens.colors.textSecondary,
         actions = actions,
+        scrollBehavior = scrollBehavior,
         defaultWindowInsetsPadding = defaultWindowInsetsPadding,
     )
 }
@@ -317,11 +320,16 @@ fun ToolBoxNavigationBar(
     val usesIconOnlyLayout = LocalDensity.current.fontScale >= 1.5f
     val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val navigationShape = RoundedCornerShape(25.dp)
+    val haptics = rememberToolBoxHaptics()
+    val select: (ToolBoxNavigationItem) -> Unit = { item ->
+        if (item.id != selectedId) haptics.tick()
+        onItemSelected(item)
+    }
     if (isGlass) {
         LiquidGlassNavigationBar(
             items = items,
             selectedId = selectedId,
-            onItemSelected = onItemSelected,
+            onItemSelected = select,
             modifier = modifier,
             navigationShape = navigationShape,
         )
@@ -347,7 +355,7 @@ fun ToolBoxNavigationBar(
             key(item.id) {
                 NavigationBarItem(
                     selected = item.id == selectedId,
-                    onClick = { onItemSelected(item) },
+                    onClick = { select(item) },
                     icon = item.icon.asImageVector(),
                     label = item.label,
                     modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
@@ -387,7 +395,7 @@ private fun LiquidGlassNavigationBar(
         val selectedIndex = items.indexOfFirst { it.id == selectedId }
         val selectionOffset = animateDpAsState(
             targetValue = itemWidth * selectedIndex.coerceAtLeast(0),
-            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+            animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
             label = "navigation selection lens",
         )
         val materials = ToolBoxThemeTokens.materials
@@ -550,11 +558,13 @@ fun ToolBoxGroupDivider(
     startPadding: Dp = 60.dp,
     endPadding: Dp = 0.dp,
 ) {
+    // Miuix groups rows by surface and spacing alone; Liquid Glass keeps the iOS-style inset hairline.
+    if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.Miuix) return
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = startPadding, end = endPadding)
-            .height(ToolBoxThemeTokens.sizes.divider)
+            .height(0.5.dp)
             .background(ToolBoxThemeTokens.colors.divider),
     )
 }
@@ -643,8 +653,9 @@ private fun ToolBoxActionButton(
     val shape = if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
         RoundedCornerShape(percent = 50)
     } else {
-        RoundedCornerShape(16.dp)
+        toolBoxShape(ToolBoxThemeTokens.radii.button)
     }
+    val haptics = rememberToolBoxHaptics()
 
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -654,7 +665,7 @@ private fun ToolBoxActionButton(
         label = "toolbox-action-press",
     )
     // A state layer tinted by the label color reads in both themes, unlike a grey wash.
-    val pressedOverlay = palette.content.copy(alpha = (if (filled && emphasized) 0.14f else 0.10f) * press)
+    val pressedOverlay = palette.content.copy(alpha = (if (filled && emphasized) 0.14f else 0.10f) * press.coerceIn(0f, 1f))
     val background = if (filled) pressedOverlay.compositeOver(palette.container) else pressedOverlay
 
     val labelStyle = if (compact) {
@@ -673,7 +684,7 @@ private fun ToolBoxActionButton(
             .sizeIn(minWidth = 48.dp)
             .heightIn(min = if (compact) 40.dp else ToolBoxThemeTokens.sizes.touchTarget)
             .graphicsLayer {
-                val scale = 1f - 0.03f * press
+                val scale = 1f - (1f - ToolBoxMotion.PressScale) * press
                 scaleX = scale
                 scaleY = scale
                 alpha = if (enabled) 1f else 0.42f
@@ -685,7 +696,10 @@ private fun ToolBoxActionButton(
                 role = Role.Button,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    if (emphasized) haptics.confirm()
+                    onClick()
+                },
             )
             .padding(
                 horizontal = if (compact) 12.dp else if (filled) 20.dp else 16.dp,

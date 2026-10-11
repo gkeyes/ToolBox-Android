@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -54,7 +55,8 @@ fun ToolBoxActionSheet(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
-    val shape = RoundedCornerShape(topStart = if (glass) 28.dp else 24.dp, topEnd = if (glass) 28.dp else 24.dp)
+    val sheetRadius = ToolBoxThemeTokens.radii.sheet
+    val shape = toolBoxTopShape(sheetRadius)
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
@@ -80,6 +82,10 @@ fun ToolBoxActionSheet(
         var settleJob by remember { mutableStateOf<Job?>(null) }
         val scope = rememberCoroutineScope()
         val dismiss by rememberUpdatedState(onDismissRequest)
+        // Springs up from below on first show; the scrim fades with it. With animations
+        // disabled the spring completes on the first frame, so nothing waits on it.
+        val entrance = remember { Animatable(0f) }
+        LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.SheetEnter) }
         val headerDrag = Modifier.pointerInput(dismissDistance, dismissVelocity) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
@@ -121,7 +127,10 @@ fun ToolBoxActionSheet(
             }
         }
         Box(Modifier.fillMaxSize()) {
-            Box(Modifier.matchParentSize().background(MiuixTheme.colorScheme.windowDimming)
+            val scrim = MiuixTheme.colorScheme.windowDimming
+            Box(Modifier.matchParentSize()
+                .graphicsLayer { alpha = entrance.value.coerceIn(0f, 1f) }
+                .background(scrim)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() }, indication = null,
                     role = Role.Button, onClick = onDismissRequest,
@@ -135,6 +144,10 @@ fun ToolBoxActionSheet(
                 Column(
                     modifier.widthIn(max = 560.dp).fillMaxWidth()
                         .offset { IntOffset(0, dragOffset.roundToInt()) }
+                        .graphicsLayer {
+                            // Never overshoot upward: that would open a gap under the sheet.
+                            translationY = ((1f - entrance.value) * size.height).coerceAtLeast(0f)
+                        }
                         .clip(shape)
                         .background(containerColor ?: if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.surface)
                         .then(if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape) else Modifier)
