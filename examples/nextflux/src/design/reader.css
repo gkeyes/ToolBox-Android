@@ -348,22 +348,24 @@
 
 /* Style 2 · Cards: each entry a small paper card on a tinted ground; read
    entries drop to an outline so unread ones stand out. */
-/* Ground and card are derived from the active theme (any palette, light or
-   dark): the card is the theme's own background, the ground is that same
-   colour nudged a few percent toward the text colour. */
+/* Pure page: ground and card are both the theme background (white in light,
+   black in dark). Cards lift off it with a soft two-layer shadow and a
+   hairline edge — never by tinting the ground. */
 [data-list-style="cards"] {
   --nf-card: var(--background);
-  --nf-list-ground: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  --nf-list-ground: var(--background);
+  --nf-card-edge: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --nf-card-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 6px 18px -6px rgb(0 0 0 / 0.10);
 }
 .dark [data-list-style="cards"],
 [data-theme="dark"] [data-list-style="cards"] {
-  --nf-list-ground: var(--background);
-  --nf-card: color-mix(in srgb, var(--foreground) 7%, var(--background));
+  --nf-card-edge: color-mix(in srgb, var(--foreground) 14%, transparent);
+  --nf-card-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.04);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) [data-list-style="cards"] {
-    --nf-list-ground: var(--background);
-    --nf-card: color-mix(in srgb, var(--foreground) 7%, var(--background));
+    --nf-card-edge: color-mix(in srgb, var(--foreground) 14%, transparent);
+    --nf-card-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.04);
   }
 }
 [data-list-style="cards"] .article-list-body .v-list,
@@ -377,12 +379,12 @@
   padding: 12px 14px 13px;
   border-radius: 14px;
   background: var(--nf-card);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 0 0 0.5px var(--ds-hairline);
+  box-shadow: 0 0 0 1px var(--nf-card-edge), var(--nf-card-shadow);
 }
 [data-list-style="cards"] .article-card::after { display: none; }
+/* Read entries settle flat: edge only, no lift. */
 [data-list-style="cards"] .article-card[data-read="true"] {
-  background: transparent;
-  box-shadow: 0 0 0 1px var(--ds-hairline);
+  box-shadow: 0 0 0 1px var(--nf-card-edge);
 }
 [data-list-style="cards"] .article-card.is-active {
   background: color-mix(in srgb, var(--accent) 10%, var(--nf-card));
