@@ -14,20 +14,18 @@
     <meta content="yes" name="apple-touch-fullscreen"/>
     <meta content="width=device-width,initial-scale=1,viewport-fit=cover"
           name="viewport"/>
-    <meta content="#f4f4f5" media="(prefers-color-scheme: light)" name="theme-color"/>
-    <meta content="#27272a" media="(prefers-color-scheme: dark)" name="theme-color"/>
-    <meta content="#FFFFFF" media="(prefers-color-scheme: light)" name="background-color"/>
+    <meta content="#F5F6F8" media="(prefers-color-scheme: light)" name="theme-color"/>
+    <meta content="#000000" media="(prefers-color-scheme: dark)" name="theme-color"/>
+    <meta content="#F5F6F8" media="(prefers-color-scheme: light)" name="background-color"/>
     <meta content="#000000" media="(prefers-color-scheme: dark)" name="background-color"/>
     <meta content="A Simple but Powerful RSS Reader for Miniflux" name="description"/>
     <!-- Fonts are loaded on demand via fontLoader.js -->
     <title>Nextflux</title>
 </head>
 <body class="bg-background">
-  <div id="splash-screen" class="fixed z-50 inset-0 flex items-center justify-center bg-overlay [&.fade-out]:opacity-0 transition-opacity duration-400">
-    <div class="flex flex-col items-center gap-4">
-      <div class="splash-logo animate-in fade-in zoom-in duration-400">
-        <div class="loading-spinner w-6 h-6 border-3 border-accent border-t-default rounded-full animate-spin"></div>
-      </div>
+  <div id="splash-screen" class="fixed z-50 inset-0 flex items-center justify-center bg-background [&.fade-out]:opacity-0 transition-opacity duration-200">
+    <div class="splash-logo">
+      <div class="loading-spinner ds-spinner"></div>
     </div>
   </div>
   <div id="root"></div>

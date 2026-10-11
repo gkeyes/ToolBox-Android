@@ -15,6 +15,7 @@ import { checkIntegrations } from "@/stores/basicInfoStore.js";
 import { useZoom } from "@/hooks/useZoom.js";
 import { useBorderRadius } from "@/hooks/useBorderRadius.js";
 import FontLoader from "@/components/FontLoader.jsx";
+import { useReducedMotionAttribute } from "@/design/motion.js";
 
 function App() {
   const { syncInterval } = useStore(settingsState);
@@ -43,6 +44,7 @@ function App() {
 
   useHotkeys();
   useZoom();
+  useReducedMotionAttribute();
   useBorderRadius();
   return (
     <SidebarProvider>

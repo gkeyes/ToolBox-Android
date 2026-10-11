@@ -1,5 +1,6 @@
 import "./i18n";
 import { initTheme } from "@/stores/themeStore";
+import { settingsState } from "@/stores/settingsStore.js";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { router } from "@/routes/index.jsx";
@@ -16,23 +17,28 @@ import {
 
 // 初始化主题
 initTheme();
+// Reduced-motion preference must be on <html> before the first frame so CSS tokens snap.
+if (settingsState.get().reduceMotion) document.documentElement.dataset.reduceMotion = "true";
 
 createRoot(document.getElementById("root")).render(
   <>
     <SplashScreen />
     <Toaster
+      position="bottom-center"
+      offset={{ bottom: "calc(16px + env(safe-area-inset-bottom))" }}
+      mobileOffset={{ bottom: "calc(16px + env(safe-area-inset-bottom))" }}
       icons={{
         loading: <Loader2 className="size-4! animate-spin! text-accent!" />,
-        success: <CircleCheck className="size-4! text-green-500" />,
-        info: <Info className="size-4! text-blue-500" />,
-        warning: <TriangleAlert className="size-4! text-yellow-500" />,
-        error: <CircleX className="size-4! text-red-500" />,
+        success: <CircleCheck className="size-4! nextflux-toast-icon-success" />,
+        info: <Info className="size-4! nextflux-toast-icon-info" />,
+        warning: <TriangleAlert className="size-4! nextflux-toast-icon-warning" />,
+        error: <CircleX className="size-4! nextflux-toast-icon-danger" />,
       }}
       toastOptions={{
         classNames: {
-          toast: "rounded-2xl! bg-overlay! shadow-custom-md! p-4! border-none!",
-          title: "text-foreground!",
-          description: "text-default!",
+          toast: "nextflux-toast",
+          title: "nextflux-toast-title",
+          description: "nextflux-toast-description",
         },
       }}
     />

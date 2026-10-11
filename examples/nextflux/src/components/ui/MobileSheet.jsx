@@ -1,11 +1,24 @@
 import { useRef } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
 
-const SHEET_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
+// Release motion: settle back on the sheet spring, dismiss on the 220ms
+// accelerate curve (design system v2). Durations come from spring.mjs.
+const SETTLE_EASING = "var(--ds-ease-sheet, cubic-bezier(0.32, 0.72, 0, 1))";
+const DISMISS_EASING = "cubic-bezier(0.3, 0, 1, 1)";
 
-function animateTranslate(element, from, to, duration, onDone) {
+function resolveEasing(element, easing) {
+  if (!easing.startsWith("var(")) return easing;
+  const name = easing.slice(4, easing.indexOf(","));
+  const value = getComputedStyle(element).getPropertyValue(name).trim();
+  return value || easing.slice(easing.indexOf(",") + 1, -1).trim();
+}
+
+function animateTranslate(element, from, to, duration, onDone, easing = SETTLE_EASING) {
   if (!element?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
-    if (element) element.style.translate = "";
+    if (element) {
+      element.style.translate = "";
+      element.style.transition = "";
+    }
     onDone?.();
     return;
   }
@@ -17,17 +30,19 @@ function animateTranslate(element, from, to, duration, onDone) {
   element.style.translate = "";
   const animation = element.animate(
     [{ translate: `0 ${from}px` }, { translate: `0 ${to}px` }],
-    { duration, easing: SHEET_EASING, fill: "none" },
+    { duration, easing: resolveEasing(element, easing), fill: "none" },
   );
   let finished = false;
   animation.onfinish = () => {
     if (finished) return;
     finished = true;
     element.style.translate = "";
+    element.style.transition = "";
     onDone?.();
   };
   animation.oncancel = () => {
     element.style.translate = "";
+    element.style.transition = "";
   };
 }
 
@@ -59,6 +74,8 @@ export default function MobileSheet({
       distance: 0,
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    // The finger owns the position: no CSS transition may lag behind it.
+    dialog.style.transition = "none";
     dialog.style.willChange = "translate";
   };
 
@@ -86,12 +103,16 @@ export default function MobileSheet({
     const dismiss = !cancelled && (drag.distance >= threshold || drag.velocity >= 720);
     const from = drag.distance;
     if (dismiss) {
-      animateTranslate(dialog, from, dialog.getBoundingClientRect().height + 32, 180, () => {
+      const target = dialog.getBoundingClientRect().height + 32;
+      animateTranslate(dialog, from, target, 220, () => {
+        // Stay off-screen while HeroUI unmounts; never jump back to the resting position.
+        dialog.style.transition = "none";
+        dialog.style.translate = `0 ${target}px`;
         dialog.style.willChange = "";
         onOpenChange(false);
-      });
+      }, DISMISS_EASING);
     } else {
-      animateTranslate(dialog, from, 0, 220, () => { dialog.style.willChange = ""; });
+      animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });
     }
   };
 
