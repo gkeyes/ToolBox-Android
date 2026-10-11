@@ -4,7 +4,7 @@ import { Tabs } from "@heroui/react";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
 
-export default function ArticleListFooter() {
+export default function ArticleListFooter({ activeCount = null }) {
   const { t } = useTranslation();
   const $filter = useStore(filter);
 
@@ -28,6 +28,7 @@ export default function ArticleListFooter() {
               <div className="flex items-center space-x-1.5">
                 <Star className="size-3 fill-current" />
                 <span>{t("articleList.starred")}</span>
+                {$filter === "starred" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="unread">
@@ -35,6 +36,7 @@ export default function ArticleListFooter() {
               <div className="flex items-center space-x-1.5">
                 <CircleDot className="size-3 p-px fill-current" />
                 <span>{t("articleList.unread")}</span>
+                {$filter === "unread" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
             <Tabs.Tab id="all">
@@ -42,6 +44,7 @@ export default function ArticleListFooter() {
               <div className="flex items-center space-x-1.5">
                 <Text strokeWidth={4} className="size-3" />
                 <span>{t("articleList.all")}</span>
+                {$filter === "all" && activeCount != null && <span className="article-tab-count ds-tnum">{activeCount}</span>}
               </div>
             </Tabs.Tab>
           </Tabs.List>

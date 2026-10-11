@@ -19,6 +19,8 @@ export const loadingOriginContent = atom(false);
 export const error = atom(null);
 export const filter = atom("all");
 export const imageGalleryActive = atom(false);
+// Total entries of the current list query (current source + filter), for the tab count.
+export const queryTotal = atom(null);
 export const hasMore = atom(true);
 export const currentPage = atom(1);
 export const pageSize = atom(30);
@@ -59,6 +61,7 @@ export function resetArticleState() {
   activeArticle.set(null);
   articleContentRevision.set({});
   imageGalleryActive.set(false);
+  queryTotal.set(null);
   hasMore.set(true);
   currentPage.set(1);
   loading.set(false);
@@ -121,7 +124,10 @@ export async function loadArticles(sourceId = null, type = "feed", page = 1, app
         const existing = filteredArticles.get();
         const seen = new Set(existing.map((article) => article.id));
         filteredArticles.set([...existing, ...articles.filter((article) => !seen.has(article.id))]);
-      } else filteredArticles.set(articles);
+      } else {
+        filteredArticles.set(articles);
+        queryTotal.set(Number.isFinite(result.total) ? result.total : null);
+      }
       hasMore.set(result.hasMore);
       currentPage.set(page);
       session.nextPage = page + 1;

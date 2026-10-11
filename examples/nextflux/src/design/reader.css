@@ -418,3 +418,31 @@
   background: var(--surface-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Header: tabs are the title in smart views ---------- */
+.article-list-inline-tabs { display: flex; align-items: stretch; align-self: stretch; padding-inline-start: 4px; }
+.article-list-inline-tabs .article-list-tabs { padding: 0; display: flex; align-items: stretch; }
+.article-list-inline-tabs .tabs,
+.article-list-inline-tabs [data-slot="tabs"] { display: flex; align-items: stretch; }
+.article-list-inline-tabs .article-list-tabs .tabs__tab {
+  block-size: 48px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.article-list-inline-tabs .article-list-tabs .tabs__tab[data-selected="true"] {
+  font-family: var(--nf-serif);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+.article-tab-count {
+  margin-inline-start: 5px;
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent);
+}
+.article-list-caption {
+  font-size: var(--ds-text-caption);
+  color: var(--ds-text-tertiary);
+}
+.article-list-caption-row { padding: 0 var(--ds-space-md) 6px; }
