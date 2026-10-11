@@ -25,7 +25,7 @@ function ArticleCardCover({ imageUrl, imageSources }) {
           "card-image bg-default overflow-hidden",
           cardImageSize === "large"
             ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
-            : "w-16 h-16 shrink-0 rounded-[var(--ds-radius-small)]",
+            : "w-14 h-14 shrink-0 self-center rounded-[var(--ds-radius-small)]",
         )}
       >
         <div className="flex flex-col items-center justify-center h-full gap-1 text-muted">
@@ -44,7 +44,7 @@ function ArticleCardCover({ imageUrl, imageSources }) {
         loading && "animate-pulse!",
         cardImageSize === "large"
           ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
-          : "w-16 h-16 shrink-0 rounded-[var(--ds-radius-small)]",
+          : "w-14 h-14 shrink-0 self-center rounded-[var(--ds-radius-small)]",
       )}
     >
       {url && <img
@@ -59,7 +59,7 @@ function ArticleCardCover({ imageUrl, imageSources }) {
           "object-cover",
           cardImageSize === "large"
             ? "aspect-video w-full"
-            : "aspect-square w-16",
+            : "aspect-square w-14",
         )}
       />}
     </div>

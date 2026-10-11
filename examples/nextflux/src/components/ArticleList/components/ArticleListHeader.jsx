@@ -103,8 +103,11 @@ export function ArticleListLargeTitle() {
   );
 }
 
+// Reader layout: the compact bar always carries the title and the live sync
+// status; there is no large title above the list. The hairline appears once
+// the list scrolls under the bar.
 export default function ArticleListHeader({ collapsed = false }) {
-  const { feedId, title, status } = useArticleListTitle();
+  const { feedId, title, status, hasError } = useArticleListTitle();
   return (
     <div className="article-list-header-wrap z-10 standalone:pt-safe">
       <div
@@ -112,9 +115,15 @@ export default function ArticleListHeader({ collapsed = false }) {
         data-collapsed={collapsed ? "true" : "false"}
       >
         <SidebarTrigger className="nextflux-toolbar-button" />
-        <div className="ds-topbar-title grid text-left" aria-hidden={!collapsed}>
-          <span className="truncate">{title}</span>
-          <span className="ds-topbar-subtitle ds-tnum truncate">{status}</span>
+        <div className="ds-topbar-title article-list-title grid text-left">
+          <h1 className="truncate">{title}</h1>
+          <span
+            className={hasError ? "ds-topbar-subtitle ds-tnum truncate text-danger" : "ds-topbar-subtitle ds-tnum truncate"}
+            role="status"
+            aria-live="polite"
+          >
+            {status}
+          </span>
         </div>
         <div className="ml-auto flex shrink-0">
           {feedId && <FeedTitleFilterButton feedId={feedId} feedTitle={title} />}

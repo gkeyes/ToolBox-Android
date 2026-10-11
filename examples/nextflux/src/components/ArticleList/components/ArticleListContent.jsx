@@ -22,7 +22,6 @@ import { settingsState } from "@/stores/settingsStore.js";
 import { cn } from "@/lib/utils.js";
 import { createArticleRequestGate } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
-import { ArticleListLargeTitle } from "./ArticleListHeader.jsx";
 import { claimStagger, STAGGER_LIMIT } from "@/design/motion.js";
 
 // The large title collapses into the top bar once it has scrolled under it.
@@ -45,8 +44,7 @@ const ArticleItem = memo(({ article, index, staggerUntil }) => {
 ArticleItem.displayName = "ArticleItem";
 
 const ListHeader = () => (
-  <div className="vlist-header">
-    <ArticleListLargeTitle />
+  <div className="vlist-header h-1" aria-hidden="true">
   </div>
 );
 const ListEmpty = ({ context: { t } }) => (
@@ -177,7 +175,6 @@ export default function ArticleListContent({
     <div className="article-list-body min-h-0 flex-1">
       {$loading ? (
         <div className="article-list-loading h-full">
-          <ArticleListLargeTitle />
           <div className="flex justify-center pt-6" role="progressbar" aria-label={t("common.loading")}>
             <span className="ds-spinner" />
           </div>

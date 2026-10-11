@@ -125,31 +125,32 @@
   --ds-tone-neutral-bg: #26282D; --ds-tone-neutral-fg: #C4C8CF;
 }
 
-/* Host palette — light (ToolBox LightToolBoxColors). Overrides HeroUI's default theme. */
+/* Reader palette — light: paper-neutral surfaces, ink text, RSS-orange accent.
+   NextFlux is a reader, so it no longer mirrors the ToolBox host palette. */
 :root:not([data-theme]),
 [data-theme="light"] {
   color-scheme: light;
-  --ds-on-surface: #0B0C0E;
+  --ds-on-surface: #1C1B19;
   --ds-reader: #FFFFFF;
-  --background: #F5F6F8;
-  --foreground: rgb(11 12 14 / 0.92);
-  --surface: #FFFFFF;
+  --background: #FFFFFF;
+  --foreground: rgb(28 27 25 / 0.92);
+  --surface: #F6F5F2;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #EEF0F3;
+  --surface-secondary: #EFEEEA;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #E8EAEE;
+  --surface-tertiary: #E7E5E0;
   --surface-tertiary-foreground: var(--foreground);
   --overlay: #FFFFFF;
   --overlay-foreground: var(--foreground);
-  --muted: rgb(11 12 14 / 0.62);
-  --scrollbar: rgb(11 12 14 / 0.20);
-  --default: #EEF0F3;
-  --default-foreground: rgb(11 12 14 / 0.92);
-  --accent: #3478F6;
+  --muted: rgb(28 27 25 / 0.60);
+  --scrollbar: rgb(28 27 25 / 0.20);
+  --default: #F0EFEB;
+  --default-foreground: rgb(28 27 25 / 0.92);
+  --accent: #C2410C;
   --accent-foreground: #FFFFFF;
-  --field-background: #F5F6F8;
+  --field-background: #F3F2EE;
   --field-foreground: var(--foreground);
-  --field-placeholder: rgb(11 12 14 / 0.42);
+  --field-placeholder: rgb(28 27 25 / 0.42);
   --field-border: transparent;
   --success: #1B6B34;
   --success-foreground: #FFFFFF;
@@ -161,38 +162,38 @@
   --segment-foreground: var(--foreground);
   --border: rgb(0 0 0 / 0.08);
   --separator: rgb(0 0 0 / 0.08);
-  --focus: #3478F6;
-  --link: #3478F6;
+  --focus: #C2410C;
+  --link: #C2410C;
   --backdrop: rgb(0 0 0 / 0.32);
   --surface-shadow: none;
   --field-shadow: none;
   --overlay-shadow: 0 12px 32px rgb(0 0 0 / 0.12), 0 0 0 0.5px rgb(0 0 0 / 0.08);
 }
 
-/* Host palette — dark (ToolBox DarkToolBoxColors). */
+/* Reader palette — dark: soft charcoal (not pure black) for long reading. */
 [data-theme="dark"] {
   color-scheme: dark;
-  --ds-on-surface: #FFFFFF;
-  --ds-reader: #000000;
-  --background: #000000;
-  --foreground: rgb(255 255 255 / 0.92);
-  --surface: #16171A;
+  --ds-on-surface: #F2F0EC;
+  --ds-reader: #141414;
+  --background: #141414;
+  --foreground: rgb(242 240 236 / 0.90);
+  --surface: #1C1C1B;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #212226;
+  --surface-secondary: #252524;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #26282D;
+  --surface-tertiary: #2D2D2B;
   --surface-tertiary-foreground: var(--foreground);
-  --overlay: #212226;
+  --overlay: #1F1F1E;
   --overlay-foreground: var(--foreground);
-  --muted: rgb(255 255 255 / 0.62);
-  --scrollbar: rgb(255 255 255 / 0.20);
-  --default: #26282D;
-  --default-foreground: rgb(255 255 255 / 0.92);
-  --accent: #5A93FF;
-  --accent-foreground: #FFFFFF;
-  --field-background: #000000;
+  --muted: rgb(242 240 236 / 0.60);
+  --scrollbar: rgb(242 240 236 / 0.20);
+  --default: #2A2A28;
+  --default-foreground: rgb(242 240 236 / 0.90);
+  --accent: #FF8A3D;
+  --accent-foreground: #1A0D03;
+  --field-background: #1C1C1B;
   --field-foreground: var(--foreground);
-  --field-placeholder: rgb(255 255 255 / 0.42);
+  --field-placeholder: rgb(242 240 236 / 0.42);
   --field-border: transparent;
   --success: #8FD9A8;
   --success-foreground: #17351F;
@@ -200,12 +201,12 @@
   --warning-foreground: #3A2B10;
   --danger: #F4A7A3;
   --danger-foreground: #3B1A1A;
-  --segment: #3A3C42;
+  --segment: #3A3936;
   --segment-foreground: var(--foreground);
   --border: rgb(255 255 255 / 0.10);
   --separator: rgb(255 255 255 / 0.10);
-  --focus: #5A93FF;
-  --link: #5A93FF;
+  --focus: #FF8A3D;
+  --link: #FF9A52;
   --backdrop: rgb(0 0 0 / 0.50);
   --surface-shadow: none;
   --field-shadow: none;
@@ -217,27 +218,27 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --ds-on-surface: #FFFFFF;
-    --ds-reader: #000000;
-    --background: #000000;
-    --foreground: rgb(255 255 255 / 0.92);
-    --surface: #16171A;
+    --ds-on-surface: #F2F0EC;
+    --ds-reader: #141414;
+    --background: #141414;
+    --foreground: rgb(242 240 236 / 0.90);
+    --surface: #1C1C1B;
     --surface-foreground: var(--foreground);
-    --surface-secondary: #212226;
+    --surface-secondary: #252524;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: #26282D;
+    --surface-tertiary: #2D2D2B;
     --surface-tertiary-foreground: var(--foreground);
-    --overlay: #212226;
+    --overlay: #1F1F1E;
     --overlay-foreground: var(--foreground);
-    --muted: rgb(255 255 255 / 0.62);
-    --scrollbar: rgb(255 255 255 / 0.20);
-    --default: #26282D;
-    --default-foreground: rgb(255 255 255 / 0.92);
-    --accent: #5A93FF;
-    --accent-foreground: #FFFFFF;
-    --field-background: #000000;
+    --muted: rgb(242 240 236 / 0.60);
+    --scrollbar: rgb(242 240 236 / 0.20);
+    --default: #2A2A28;
+    --default-foreground: rgb(242 240 236 / 0.90);
+    --accent: #FF8A3D;
+    --accent-foreground: #1A0D03;
+    --field-background: #1C1C1B;
     --field-foreground: var(--foreground);
-    --field-placeholder: rgb(255 255 255 / 0.42);
+    --field-placeholder: rgb(242 240 236 / 0.42);
     --field-border: transparent;
     --success: #8FD9A8;
     --success-foreground: #17351F;
@@ -245,12 +246,12 @@
     --warning-foreground: #3A2B10;
     --danger: #F4A7A3;
     --danger-foreground: #3B1A1A;
-    --segment: #3A3C42;
+    --segment: #3A3936;
     --segment-foreground: var(--foreground);
     --border: rgb(255 255 255 / 0.10);
     --separator: rgb(255 255 255 / 0.10);
-    --focus: #5A93FF;
-    --link: #5A93FF;
+    --focus: #FF8A3D;
+    --link: #FF9A52;
     --backdrop: rgb(0 0 0 / 0.50);
     --surface-shadow: none;
     --field-shadow: none;

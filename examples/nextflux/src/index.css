@@ -3,6 +3,7 @@
 @import "./design/tokens.css";
 @import "./design/components.css";
 @import "./design/views.css";
+@import "./design/reader.css";
 
 @config '../tailwind.config.js';
 
@@ -393,7 +394,7 @@
   will-change: auto;
 }
 .nextflux-sheet-handle-zone {
-  min-block-size: 28px;
+  min-block-size: 20px;
   display: grid;
   place-items: center;
   touch-action: none;

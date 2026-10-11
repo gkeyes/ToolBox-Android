@@ -105,16 +105,34 @@ export default function MobileSheet({
     const dismiss = !cancelled && (drag.distance >= threshold || (drag.velocity >= 720 && drag.distance >= FLICK_MIN_DISTANCE));
     const from = drag.distance;
     if (dismiss) {
-      // Hand the exit to HeroUI's own transition (220ms accelerate, see
-      // components.css) so its exit completes and the sheet unmounts. The
-      // inline translate holds the finger position until the exiting state
-      // is applied, then releases so the sheet continues down from there.
-      dialog.style.transition = "";
-      onOpenChange(false);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        dialog.style.translate = "";
+      // Finish the slide ourselves from the finger position, then close with
+      // the sheet already off-screen. Closing must never depend on a CSS
+      // transition firing after inline style changes: if the overlay's exit
+      // never completes, its backdrop stays mounted and swallows every tap.
+      const offscreen = dialog.getBoundingClientRect().height + 32;
+      const close = () => {
         dialog.style.willChange = "";
-      }));
+        onOpenChange(false);
+      };
+      if (!dialog.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+        || document.documentElement.dataset.reduceMotion === "true") {
+        dialog.style.transition = "";
+        dialog.style.translate = `0 ${offscreen}px`;
+        close();
+        return;
+      }
+      dialog.style.translate = "";
+      dialog.style.transition = "";
+      const animation = dialog.animate(
+        [{ translate: `0 ${from}px` }, { translate: `0 ${offscreen}px` }],
+        { duration: 220, easing: "cubic-bezier(0.3, 0, 1, 1)", fill: "forwards" },
+      );
+      let done = false;
+      const finish = () => { if (!done) { done = true; close(); } };
+      animation.onfinish = finish;
+      animation.oncancel = finish;
+      // Watchdog: a throttled WebView may never deliver onfinish.
+      setTimeout(finish, 400);
     } else {
       animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });
     }
@@ -143,7 +161,7 @@ export default function MobileSheet({
               <Drawer.Handle className="p-1" />
             </div>
             <Drawer.CloseTrigger className="nextflux-close-button" aria-label={closeLabel} />
-            <Drawer.Header className="nextflux-close-header px-4 pt-1 pb-4 flex flex-row items-center gap-2">
+            <Drawer.Header className="nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2">
               {headerStart}
               <Drawer.Heading>{title}</Drawer.Heading>
             </Drawer.Header>

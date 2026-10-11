@@ -40,8 +40,8 @@ test("framer-motion springs convert damping ratio with unit mass", () => {
   assert.ok(Math.abs(damping / (2 * Math.sqrt(380)) - 0.86) < 1e-9);
 });
 
-test("host palettes use the ToolBox surfaces and accents", () => {
-  for (const value of ["#F5F6F8", "#16171A", "#212226", "#3478F6", "#5A93FF", "rgb(11 12 14 / 0.92)", "rgb(255 255 255 / 0.62)"]) {
+test("reader palettes use paper-neutral surfaces and the RSS accent", () => {
+  for (const value of ["#FFFFFF", "#F6F5F2", "#141414", "#1C1C1B", "#C2410C", "#FF8A3D", "rgb(28 27 25 / 0.92)", "rgb(242 240 236 / 0.60)"]) {
     assert.ok(css.includes(value), value);
   }
   assert.match(css, /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme\]\)/, "first frame follows host scheme");

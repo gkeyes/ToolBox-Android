@@ -392,18 +392,19 @@
   to { transform: rotate(360deg); }
 }
 
-/* Reduced motion (system setting or NextFlux preference): every animation snaps. */
+/* Reduced motion (system setting or NextFlux preference): every animation snaps.
+   Overlay durations are 1ms rather than 0 so their exit events still fire. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --ds-dur-spatial: 0ms; --ds-dur-effects: 0ms; --ds-dur-press-in: 0ms; --ds-dur-press-release: 0ms;
-    --ds-dur-page: 0ms; --ds-dur-sheet: 0ms; --ds-dur-dialog: 0ms; --ds-dur-exit: 0ms; --ds-dur-scrim: 0ms;
+    --ds-dur-page: 1ms; --ds-dur-sheet: 1ms; --ds-dur-dialog: 1ms; --ds-dur-exit: 1ms; --ds-dur-scrim: 1ms;
     --ds-press-scale: 1; --ds-press-scale-row: 1; --ds-stagger-step: 0ms;
   }
   .ds-stagger > *, .ds-stagger-item { animation: none; }
 }
 html[data-reduce-motion="true"] {
   --ds-dur-spatial: 0ms; --ds-dur-effects: 0ms; --ds-dur-press-in: 0ms; --ds-dur-press-release: 0ms;
-  --ds-dur-page: 0ms; --ds-dur-sheet: 0ms; --ds-dur-dialog: 0ms; --ds-dur-exit: 0ms; --ds-dur-scrim: 0ms;
+  --ds-dur-page: 1ms; --ds-dur-sheet: 1ms; --ds-dur-dialog: 1ms; --ds-dur-exit: 1ms; --ds-dur-scrim: 1ms;
   --ds-press-scale: 1; --ds-press-scale-row: 1; --ds-stagger-step: 0ms;
 }
 html[data-reduce-motion="true"] :is(.ds-stagger > *, .ds-stagger-item) { animation: none; }

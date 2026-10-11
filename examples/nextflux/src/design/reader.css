@@ -1,0 +1,79 @@
+/*
+ * Reader layout layer. NextFlux is an RSS reader, not a settings-style tool:
+ * content first, chrome quiet, many items per screen, unread state legible at
+ * a glance. Loaded after views.css so it has the final say on list, header
+ * and sidebar geometry.
+ */
+
+@layer components {
+  /* ---------- Top bar: always compact, title + live status ---------- */
+  .article-list-header.ds-topbar { min-block-size: 48px; }
+  .article-list-header .ds-topbar-title.article-list-title {
+    opacity: 1;
+    transform: none;
+    padding-inline-start: 2px;
+  }
+  .article-list-title h1 {
+    font-size: 1.0625rem;
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--ds-text-primary);
+  }
+  .article-list-title .ds-topbar-subtitle { margin-block-start: 1px; }
+
+  /* ---------- Article rows ---------- */
+  .card-unread-dot {
+    flex: none;
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-inline-end: 1px;
+  }
+  .article-card .card-source-title {
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  /* Read rows recede by colour, not by fading images and meta into mush. */
+  .article-card .card-content.is-read { opacity: 1; }
+  .article-card[data-read="true"] .card-title { color: var(--ds-text-tertiary); font-weight: 500; }
+  .article-card[data-read="true"] .card-preview { color: var(--ds-text-tertiary); }
+  .article-card[data-read="true"] .card-image { opacity: 0.6; }
+  .article-card .card-image { border-radius: 8px; }
+
+  /* Filter pill: smaller and lower so it covers less of the list. */
+  .article-list-footer .tabs__list { padding: 2px; }
+  .article-list-footer .tabs__tab { block-size: 32px; padding-inline: 12px; }
+
+  /* ---------- Sidebar: a plain source list, not stacked cards ---------- */
+  .sidebar-panel,
+  .sidebar-mobile-panel { background: var(--surface); }
+  [data-sidebar="group"] > [data-sidebar="menu"],
+  [data-sidebar="group"] > [data-sidebar="group-content"] {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-sidebar="group-label"] {
+    min-block-size: 24px;
+    padding-inline: var(--ds-space-sm);
+    font-size: var(--ds-text-caption);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ds-text-tertiary);
+  }
+  .sidebar-row { border-radius: 8px; }
+  .sidebar-row[data-active="true"] {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--ds-text-primary);
+  }
+  .sidebar-row[data-active="true"] .sidebar-row-icon { color: var(--accent); }
+  .sidebar-badge { color: var(--ds-text-tertiary); font-size: var(--ds-text-caption); }
+  .sidebar-pref,
+  .sidebar-profile { background: var(--background) !important; }
+
+  /* ---------- Sheets: content gets the height, chrome stays thin ---------- */
+  .nextflux-mobile-sheet .nextflux-close-header { min-block-size: 40px; }
+}

@@ -40,7 +40,7 @@
   }
   .article-card .card-preview { font-size: var(--ds-text-subhead); line-height: 1.45; color: var(--ds-text-secondary); }
   .article-card .card-source-title { color: var(--ds-text-secondary); }
-  .article-card .card-source-content > :is(img, span) { inline-size: 16px; block-size: 16px; }
+  .article-card .card-source-content > :is(img, span):not(.card-source-title) { inline-size: 16px; block-size: 16px; }
   .article-card .card-content.is-read { opacity: 0.55; }
   .article-card .card-title.is-read { color: var(--ds-text-secondary); font-weight: 500; }
   .article-card .card-image { margin-block-start: 2px; }

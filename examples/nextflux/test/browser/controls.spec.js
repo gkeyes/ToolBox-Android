@@ -263,3 +263,45 @@ test("sidebar hidden feeds reports a native persistence failure and remains usab
   await expect(hidden).not.toBeChecked();
   await expect.poll(() => page.evaluate(() => window.controlsSidebarFixture.persistedHidden())).toBe(false);
 });
+
+// Regression: after a sheet closes, nothing may be left covering the page.
+// A backdrop stranded in its exit state swallows every tap ("UI frozen").
+async function expectPageInteractive(page) {
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    const hit = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    const covered = Boolean(hit?.closest(".drawer__backdrop, .modal__backdrop, .nextflux-modal-backdrop, [data-slot='backdrop']"));
+    const inertRoot = Boolean(document.querySelector("#root[inert], #root[aria-hidden='true']"));
+    return { covered, inertRoot, bodyBlocked: getComputedStyle(document.body).pointerEvents === "none" };
+  })).toEqual({ covered: false, inertRoot: false, bodyBlocked: false });
+  // A real tap must still reach the page: reopening proves it.
+  await page.getByRole("button", { name: "Open modal", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+}
+
+for (const reduced of [false, true]) {
+  test(`page stays interactive after every sheet close path${reduced ? " (reduced motion)" : ""}`, async ({ page }) => {
+    if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, 393);
+    const openButton = page.getByRole("button", { name: "Open modal", exact: true });
+
+    await openButton.click();
+    await page.getByRole("dialog").locator(".nextflux-close-button").click();
+    await expectPageInteractive(page);
+
+    await openButton.click();
+    await page.keyboard.press("Escape");
+    await expectPageInteractive(page);
+
+    await openButton.click();
+    const handle = page.getByRole("dialog").locator(".nextflux-sheet-handle-zone");
+    const box = await handle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 260, { steps: 4 });
+    await page.mouse.up();
+    await expectPageInteractive(page);
+  });
+}
