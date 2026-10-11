@@ -58,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -855,7 +856,18 @@ class BrowserActivity : ComponentActivity() {
             if (chromeLocked) showBrowserChrome()
         }
         val chromeVisible = !browserChromeHidden || chromeLocked
-        val chromeEasing = CubicBezierEasing(0.2f, 0.75f, 0.2f, 1f)
+        // Toolbars follow scroll direction with a critically damped spring: quick to respond,
+        // retargets mid-flight without a jolt, and never overshoots into the page.
+        val chromeSizeSpring = androidx.compose.animation.core.spring(
+            dampingRatio = 1f,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+            visibilityThreshold = androidx.compose.ui.unit.IntSize(1, 1),
+        )
+        val chromeOffsetSpring = androidx.compose.animation.core.spring(
+            dampingRatio = 1f,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+            visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1),
+        )
 
         Box(Modifier.fillMaxSize().background(colors.background)) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
@@ -863,25 +875,35 @@ class BrowserActivity : ComponentActivity() {
                     visible = chromeVisible,
                     enter = expandVertically(
                         expandFrom = Alignment.Top,
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeSizeSpring,
                     ) + slideInVertically(
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeOffsetSpring,
                         initialOffsetY = { -it },
                     ),
                     exit = shrinkVertically(
                         shrinkTowards = Alignment.Top,
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeSizeSpring,
                     ) + slideOutVertically(
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeOffsetSpring,
                         targetOffsetY = { -it },
                     ),
                 ) {
                     Column {
                         BrowserToolbar()
                         Box(Modifier.fillMaxWidth().height(2.dp)) {
-                            if (interaction.loading && loadProgress in 0..99) {
-                                Box(Modifier.fillMaxWidth((loadProgress / 100f).coerceAtLeast(0.02f))
-                                    .fillMaxHeight().background(colors.primary))
+                            val showProgress = interaction.loading && loadProgress in 0..99
+                            // Progress glides between WebView updates instead of jumping in steps.
+                            val progress = androidx.compose.animation.core.animateFloatAsState(
+                                targetValue = if (showProgress) (loadProgress / 100f).coerceAtLeast(0.02f) else 0f,
+                                animationSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
+                                label = "browser load progress",
+                            )
+                            if (showProgress) {
+                                Box(Modifier.fillMaxSize().drawBehind {
+                                    val filled = size.width * progress.value.coerceIn(0f, 1f)
+                                    val start = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) size.width - filled else 0f
+                                    drawRect(colors.primary, topLeft = androidx.compose.ui.geometry.Offset(start, 0f), size = size.copy(width = filled))
+                                })
                             }
                         }
                     }
@@ -905,16 +927,16 @@ class BrowserActivity : ComponentActivity() {
                     visible = chromeVisible,
                     enter = expandVertically(
                         expandFrom = Alignment.Bottom,
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeSizeSpring,
                     ) + slideInVertically(
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeOffsetSpring,
                         initialOffsetY = { it },
                     ),
                     exit = shrinkVertically(
                         shrinkTowards = Alignment.Bottom,
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeSizeSpring,
                     ) + slideOutVertically(
-                        animationSpec = tween(durationMillis = 220, easing = chromeEasing),
+                        animationSpec = chromeOffsetSpring,
                         targetOffsetY = { it },
                     ),
                 ) {
