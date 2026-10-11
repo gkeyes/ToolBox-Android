@@ -1,5 +1,4 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { Ripple } from "m3-ripple";
 import { Clock, ArrowUpFromLine, Star, Circle, CircleDot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPublishDate } from "@/lib/format";
@@ -128,54 +127,49 @@ export default function ArticleCard({ article }) {
       <div
         ref={cardRef}
         className={cn(
-          "cursor-pointer select-none overflow-hidden p-2 rounded-xl",
-          "relative transform-gpu transition-background duration-200",
-          "bg-transparent contain-content",
-          "hover:bg-overlay/70",
-          parseInt(articleId) === article.id && "bg-overlay/70 shadow-custom",
+          "article-card ds-state ds-press-row cursor-pointer select-none overflow-hidden",
+          "relative contain-content",
+          parseInt(articleId) === article.id && "is-active",
         )}
         data-article-id={article.id}
+        data-read={article.status === "read" ? "true" : undefined}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
       >
-        <Ripple hoverOpacity={0} pressedOpacity={0.05} duration={100} />
         <div
           className={cn(
-            "card-content flex flex-col gap-1 transition-opacity",
-            article.status === "read" && article.starred === 0 && "opacity-50",
+            "card-content flex flex-col gap-1.5",
+            article.status === "read" && article.starred === 0 && "is-read",
           )}
         >
-          <div className="card-header flex flex-col gap-1">
-            <div className="card-meta flex items-start justify-between gap-1">
-              <div className="card-source flex items-center flex-1 gap-1 min-w-0">
-                <div className="card-source-content flex gap-1 items-center min-w-0">
+          <div className="card-header flex flex-col gap-1.5">
+            <div className="card-meta flex items-center justify-between gap-2">
+              <div className="card-source flex items-center flex-1 gap-1.5 min-w-0">
+                <div className="card-source-content flex gap-1.5 items-center min-w-0">
                   {showFavicon && <FeedIcon feedId={article.feedId} />}
-                  <span className="card-source-title text-muted font-bold text-xs line-clamp-1">
+                  <span className="card-source-title ds-caption font-medium line-clamp-1">
                     {feedTitle}
                   </span>
                 </div>
               </div>
-              <div className="card-time-wrapper flex items-center gap-1 text-xs text-muted">
-                <span className="card-star">
-                  <Star
-                    className="size-3 fill-current"
-                    style={{ opacity: article.starred === 1 ? 1 : 0 }}
-                  />
-                </span>
+              <div className="card-time-wrapper flex items-center gap-1 ds-caption ds-text-tertiary ds-tnum">
+                {article.starred === 1 && (
+                  <span className="card-star text-warning">
+                    <Star className="size-3 fill-current" />
+                  </span>
+                )}
                 <span className="card-time whitespace-nowrap">
                   {formatPublishDate(article.published_at)}
                 </span>
               </div>
             </div>
-            <div className="card-content-body flex gap-2">
-              <div className="flex flex-col gap-1 flex-1">
+            <div className="card-content-body flex gap-3">
+              <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                 <h3
                   data-shared-article-title={article.id}
                   className={cn(
-                    "card-title text-base font-semibold text-wrap break-words",
-                    article.status === "read"
-                      ? "text-muted"
-                      : "text-foreground",
+                    "card-title ds-headline text-wrap break-words",
+                    article.status === "read" && "is-read",
                   )}
                   style={{
                     wordBreak: "break-word",
@@ -187,21 +181,9 @@ export default function ArticleCard({ article }) {
                 >
                   {article.titleText ?? article.title}
                 </h3>
-                {showReadingTime && (
-                  <div className="text-xs text-muted flex items-center gap-1">
-                    <Clock className="size-3 shrink-0" />
-                    <span className="line-clamp-1">
-                      {article.reading_time === 0
-                        ? t("common.lessThanAMinute")
-                        : `${article.reading_time} ${t("common.minute")}`}
-                    </span>
-                  </div>
-                )}
-                {textPreviewLines !== 0 && (
+                {textPreviewLines !== 0 && previewContent && (
                   <span
-                    className={cn(
-                      "text-sm text-muted text-wrap break-words w-full max-w-full overflow-hidden",
-                    )}
+                    className="card-preview ds-subhead text-wrap break-words w-full max-w-full overflow-hidden"
                     style={{
                       wordBreak: "break-word",
                       overflow: "hidden",
@@ -212,6 +194,16 @@ export default function ArticleCard({ article }) {
                   >
                     {previewContent}
                   </span>
+                )}
+                {showReadingTime && (
+                  <div className="card-reading-time ds-caption ds-text-tertiary ds-tnum flex items-center gap-1">
+                    <Clock className="size-3 shrink-0" />
+                    <span className="line-clamp-1">
+                      {article.reading_time === 0
+                        ? t("common.lessThanAMinute")
+                        : `${article.reading_time} ${t("common.minute")}`}
+                    </span>
+                  </div>
                 )}
                 {cardImageSize === "large" && (
                   <ArticleCardCover imageUrl={imageUrl} imageSources={imageSources} />

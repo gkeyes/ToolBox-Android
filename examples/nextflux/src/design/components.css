@@ -264,8 +264,9 @@
   .ds-setting-row :is(.text-sm.text-foreground) { font-size: var(--ds-text-body); }
 
   /* Stagger entrance (first 8 blocks, 26ms apart, rise 16px, spatial spring). */
-  .ds-stagger > * {
-    animation: ds-rise var(--ds-dur-spatial) var(--ds-ease-spatial) both;
+  .ds-stagger > *,
+  .ds-stagger-item {
+    animation: ds-rise var(--ds-dur-spatial) var(--ds-ease-spatial) backwards;
   }
   .ds-stagger > :nth-child(2) { animation-delay: calc(var(--ds-stagger-step) * 1); }
   .ds-stagger > :nth-child(3) { animation-delay: calc(var(--ds-stagger-step) * 2); }
@@ -398,14 +399,14 @@
     --ds-dur-page: 0ms; --ds-dur-sheet: 0ms; --ds-dur-dialog: 0ms; --ds-dur-exit: 0ms; --ds-dur-scrim: 0ms;
     --ds-press-scale: 1; --ds-press-scale-row: 1; --ds-stagger-step: 0ms;
   }
-  .ds-stagger > * { animation: none; }
+  .ds-stagger > *, .ds-stagger-item { animation: none; }
 }
 html[data-reduce-motion="true"] {
   --ds-dur-spatial: 0ms; --ds-dur-effects: 0ms; --ds-dur-press-in: 0ms; --ds-dur-press-release: 0ms;
   --ds-dur-page: 0ms; --ds-dur-sheet: 0ms; --ds-dur-dialog: 0ms; --ds-dur-exit: 0ms; --ds-dur-scrim: 0ms;
   --ds-press-scale: 1; --ds-press-scale-row: 1; --ds-stagger-step: 0ms;
 }
-html[data-reduce-motion="true"] .ds-stagger > * { animation: none; }
+html[data-reduce-motion="true"] :is(.ds-stagger > *, .ds-stagger-item) { animation: none; }
 
 /* Toasts (sonner): raised surface, 16px radius, hairline instead of a heavy
    shadow, semantic icon colours. Sonner animates transform/opacity only. */

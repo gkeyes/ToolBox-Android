@@ -9,7 +9,7 @@ export default function ArticleListFooter() {
   const $filter = useStore(filter);
 
   return (
-    <div className="article-list-footer absolute bottom-0 w-full bg-transparent flex flex-col items-center justify-center pb-4 standalone:pb-safe-or-4">
+    <div className="article-list-footer pointer-events-none absolute bottom-0 w-full bg-transparent flex flex-col items-center justify-center pb-4 standalone:pb-safe-or-4 *:pointer-events-auto">
       <Tabs
         selectedKey={$filter}
         onSelectionChange={(value) => {
@@ -21,7 +21,7 @@ export default function ArticleListFooter() {
         <Tabs.ListContainer>
           <Tabs.List
             aria-label="filter"
-            className="bg-background/90 backdrop-blur-md shadow-custom w-fit *:h-6 *:w-fit *:px-3 *:text-xs *:font-normal *:data-[selected=true]:text-accent-foreground"
+            className="w-fit *:w-fit"
           >
             <Tabs.Tab id="starred">
               <Tabs.Indicator className="bg-accent" />

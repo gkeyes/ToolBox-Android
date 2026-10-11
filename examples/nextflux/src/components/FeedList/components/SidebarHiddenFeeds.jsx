@@ -25,10 +25,10 @@ export default function SidebarHiddenFeeds() {
   };
 
   return (
-    <div className="px-1">
-      <div className="flex min-h-12 items-center gap-2 rounded-xl bg-default/45 px-3 py-2">
-        <Eye className="size-4 shrink-0 text-muted" />
-        <div className="min-w-0 flex-1 truncate text-sm font-medium">{title}</div>
+    <div className="sidebar-pref-wrap">
+      <div className="sidebar-pref ds-row">
+        <span className="ds-icon-badge ds-tone-neutral"><Eye /></span>
+        <div className="min-w-0 flex-1 truncate ds-body font-medium">{title}</div>
         <Switch
           aria-label={title}
           size="sm"

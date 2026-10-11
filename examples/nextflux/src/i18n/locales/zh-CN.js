@@ -127,6 +127,9 @@ export default {
     importOPML: "导入 OPML",
   },
   articleList: {
+    emptyListTitle: "这里还没有文章",
+    emptyListText: "同步后，新文章会出现在这里。",
+    selectHint: "从列表中选择一篇文章开始阅读。",
     emptyPlaceholder: "请选择文章",
     markAllRead: "全部标记为已读",
     starred: "收藏",

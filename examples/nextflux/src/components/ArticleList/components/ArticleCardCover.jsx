@@ -22,10 +22,10 @@ function ArticleCardCover({ imageUrl, imageSources }) {
       <div
         ref={containerRef}
         className={cn(
-          "card-image bg-default rounded-lg shadow-custom overflow-hidden",
+          "card-image bg-default overflow-hidden",
           cardImageSize === "large"
-            ? "aspect-video w-full"
-            : "w-20 h-20 shrink-0",
+            ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
+            : "w-20 h-20 shrink-0 rounded-[var(--ds-radius-small)]",
         )}
       >
         <div className="flex flex-col items-center justify-center h-full gap-2 text-muted">
@@ -40,11 +40,11 @@ function ArticleCardCover({ imageUrl, imageSources }) {
     <div
       ref={containerRef}
       className={cn(
-        "card-image bg-default rounded-lg shadow-custom overflow-hidden",
+        "card-image bg-default overflow-hidden",
         loading && "animate-pulse!",
         cardImageSize === "large"
-          ? "aspect-video w-full"
-          : "w-20 h-20 shrink-0",
+          ? "aspect-video w-full rounded-[var(--ds-radius-control)] mt-1"
+          : "w-20 h-20 shrink-0 rounded-[var(--ds-radius-small)]",
       )}
     >
       {url && <img

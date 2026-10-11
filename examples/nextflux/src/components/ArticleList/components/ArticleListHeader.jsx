@@ -15,7 +15,8 @@ import {
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
 
-export default function ArticleListHeader() {
+/** Title and status line shared by the collapsed top bar and the large title. */
+export function useArticleListTitle() {
   const { feedId, categoryId } = useParams();
   const $filter = useStore(filter);
   const $feeds = useStore(feeds);
@@ -28,18 +29,16 @@ export default function ArticleListHeader() {
   const $getCategoryCount = useStore(getCategoryCount);
   const $getFeedCount = useStore(getFeedCount);
   const { t } = useTranslation();
-  // 获取标题文本
+
   const getTitleText = () => {
     if (feedId) {
       const feed = $feeds.find((f) => f.id === parseInt(feedId));
       return feed?.title || "";
     }
-
     if (categoryId) {
       const category = $categories.find((c) => c.id === parseInt(categoryId));
       return category?.title || "";
     }
-
     switch ($filter) {
       case "unread":
         return t("articleList.unread");
@@ -80,22 +79,47 @@ export default function ArticleListHeader() {
     }
   };
 
+  return {
+    feedId,
+    title: getTitleText(),
+    status: $isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || getFilteredCount(),
+    hasError: !$isSyncing && Boolean($syncError?.message),
+  };
+}
+
+/** Expanded 30px title. It scrolls with the list, so collapsing never re-lays out the list. */
+export function ArticleListLargeTitle() {
+  const { title, status, hasError } = useArticleListTitle();
   return (
-    <div className="px-2 z-10">
-      <div className="article-list-header w-full border-b py-2 standalone:pt-safe-or-2">
-        <div className="flex items-center gap-2">
-          <SidebarTrigger />
-          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-            <span className="truncate font-semibold">{getTitleText()}</span>
-            <span role="status" className="line-clamp-2 text-xs text-muted opacity-60">
-              {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || getFilteredCount()}
-            </span>
-          </div>
-          <div className="ml-auto flex shrink-0 gap-1">
-            {feedId && <FeedTitleFilterButton feedId={feedId} feedTitle={getTitleText()} />}
-            <MarkAllReadButton />
-            <MenuButton />
-          </div>
+    <div className="ds-large-title-block article-list-large-title">
+      <h1 className="ds-large-title line-clamp-2 break-words">{title}</h1>
+      <p
+        role="status"
+        className={hasError ? "ds-subhead ds-tnum mt-0.5 line-clamp-2 text-danger" : "ds-subhead ds-tnum mt-0.5 line-clamp-2"}
+      >
+        {status}
+      </p>
+    </div>
+  );
+}
+
+export default function ArticleListHeader({ collapsed = false }) {
+  const { feedId, title, status } = useArticleListTitle();
+  return (
+    <div className="article-list-header-wrap z-10 standalone:pt-safe">
+      <div
+        className="article-list-header ds-topbar w-full"
+        data-collapsed={collapsed ? "true" : "false"}
+      >
+        <SidebarTrigger className="nextflux-toolbar-button" />
+        <div className="ds-topbar-title grid text-left" aria-hidden={!collapsed}>
+          <span className="truncate">{title}</span>
+          <span className="ds-topbar-subtitle ds-tnum truncate">{status}</span>
+        </div>
+        <div className="ml-auto flex shrink-0">
+          {feedId && <FeedTitleFilterButton feedId={feedId} feedTitle={title} />}
+          <MarkAllReadButton />
+          <MenuButton />
         </div>
       </div>
     </div>

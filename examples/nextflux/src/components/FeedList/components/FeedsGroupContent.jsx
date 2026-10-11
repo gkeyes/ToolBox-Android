@@ -76,9 +76,7 @@ const FeedsGroupContent = ({ category }) => {
     >
       <SidebarMenuItem key={`menu-${category.id}`}>
         <SidebarMenuButton
-          className={cn(
-            categoryId === category.id && "bg-default/60 rounded-xl",
-          )}
+          isActive={String(categoryId) === String(category.id)}
           asChild
         >
           <Link
@@ -86,16 +84,16 @@ const FeedsGroupContent = ({ category }) => {
             onClick={() => isMobile && setOpenMobile(false)}
             onContextMenu={handleContextMenu}
           >
-            <span className={"pl-6 font-medium"}>{category.title}</span>
+            <span className="pl-8 font-medium">{category.title}</span>
           </Link>
         </SidebarMenuButton>
 
         <CollapsibleTrigger asChild>
-          <SidebarMenuAction className="left-2 hover:bg-default/60 text-muted data-[state=open]:rotate-90">
+          <SidebarMenuAction className="sidebar-disclosure left-0 right-auto text-muted" aria-label={category.title}>
             <ChevronRight />
           </SidebarMenuAction>
         </CollapsibleTrigger>
-        <SidebarMenuBadge className="justify-end">
+        <SidebarMenuBadge>
           {$getCategoryCount(category.id) !== 0 &&
             $getCategoryCount(category.id)}
         </SidebarMenuBadge>

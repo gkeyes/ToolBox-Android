@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import {
   filter,
@@ -34,6 +34,7 @@ const ArticleList = () => {
     floatingSidebar,
   } = useStore(settingsState);
   const virtuosoRef = useRef(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
 
   const lastSyncTime = useRef(null);
   const lastQuery = useRef(null);
@@ -92,15 +93,16 @@ const ArticleList = () => {
     <div className="main-content flex">
       <div
         className={cn(
-          "nextflux-article-list-page w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
+          "nextflux-article-list-page bg-background w-full relative max-w-screen md:w-84 md:max-w-[30%] md:min-w-[18rem] h-dvh flex flex-col",
           floatingSidebar ? "md:border-r" : "",
         )}
       >
-        <ArticleListHeader />
+        <ArticleListHeader collapsed={headerCollapsed} />
         {showIndicator && <Indicator virtuosoRef={virtuosoRef} />}
         <ArticleListContent
           articles={$filteredArticles}
           virtuosoRef={virtuosoRef}
+          onCollapsedChange={setHeaderCollapsed}
           setVisibleRange={(range) => {
             visibleRange.set(range);
           }}

@@ -2,15 +2,19 @@ import { ArrowUp } from "lucide-react";
 import { visibleRange } from "@/stores/articlesStore.js";
 import { useStore } from "@nanostores/react";
 import { AnimatePresence, motion } from "framer-motion";
+import { settingsState } from "@/stores/settingsStore.js";
+import { exitTween, spring, useReducedMotionPreference } from "@/design/motion.js";
 
 export default function Indicator({ virtuosoRef }) {
   const $visibleRange = useStore(visibleRange);
+  const { reduceMotion } = useStore(settingsState);
+  const reduced = useReducedMotionPreference(reduceMotion);
 
   const handleClick = () => {
     virtuosoRef.current?.scrollToIndex({
       index: 0,
       align: "start",
-      behavior: "smooth",
+      behavior: reduced ? "auto" : "smooth",
     });
   };
 
@@ -18,15 +22,15 @@ export default function Indicator({ virtuosoRef }) {
     <AnimatePresence initial={false} mode="wait">
       {$visibleRange.startIndex !== 0 && (
         <motion.div
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0 }}
-          transition={{ duration: 0.2 }}
+          initial={reduced ? false : { opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1, transition: reduced ? { duration: 0 } : spring.spatial }}
+          exit={{ opacity: 0, scale: 0.8, transition: reduced ? { duration: 0 } : exitTween }}
+          whileTap={reduced ? undefined : { scale: 0.965, transition: spring.pressIn }}
           onClick={handleClick}
-          className="indicator absolute cursor-pointer select-none right-2 mt-14 standalone:mt-safe-offset-14 rounded-full bg-overlay/70 backdrop-blur-2xl z-10 shadow-custom py-1 px-2 flex gap-0.5 items-center font-mono text-xs font-medium text-muted"
+          className="indicator article-list-indicator absolute cursor-pointer select-none right-4 mt-16 standalone:mt-safe-offset-16 rounded-full z-10 min-h-8 py-1.5 px-3 flex gap-1 items-center ds-tnum text-xs font-semibold"
         >
           {$visibleRange.startIndex}
-          <ArrowUp strokeWidth={3} className="size-3 text-muted opacity-60" />
+          <ArrowUp strokeWidth={3} className="size-3 opacity-70" />
         </motion.div>
       )}
     </AnimatePresence>

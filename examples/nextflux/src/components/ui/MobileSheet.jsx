@@ -5,6 +5,7 @@ import { Button, Drawer, cn } from "@heroui/react";
 // accelerate curve (design system v2). Durations come from spring.mjs.
 const SETTLE_EASING = "var(--ds-ease-sheet, cubic-bezier(0.32, 0.72, 0, 1))";
 const DISMISS_EASING = "cubic-bezier(0.3, 0, 1, 1)";
+const FLICK_MIN_DISTANCE = 56;
 
 function resolveEasing(element, easing) {
   if (!easing.startsWith("var(")) return easing;
@@ -100,7 +101,8 @@ export default function MobileSheet({
     dragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     const threshold = Math.min(140, dialog.getBoundingClientRect().height * 0.22);
-    const dismiss = !cancelled && (drag.distance >= threshold || drag.velocity >= 720);
+    // A flick dismisses only after a deliberate travel; tiny fast drags settle back.
+    const dismiss = !cancelled && (drag.distance >= threshold || (drag.velocity >= 720 && drag.distance >= FLICK_MIN_DISTANCE));
     const from = drag.distance;
     if (dismiss) {
       const target = dialog.getBoundingClientRect().height + 32;
@@ -110,6 +112,12 @@ export default function MobileSheet({
         dialog.style.translate = `0 ${target}px`;
         dialog.style.willChange = "";
         onOpenChange(false);
+        // If the owner keeps the sheet open, hand the position back to HeroUI.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!dialog.isConnected || dialog.closest("[data-exiting='true']")) return;
+          dialog.style.transition = "";
+          dialog.style.translate = "";
+        }));
       }, DISMISS_EASING);
     } else {
       animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });

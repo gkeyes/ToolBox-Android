@@ -128,6 +128,9 @@ export default {
     importOPML: "Import OPML",
   },
   articleList: {
+    emptyListTitle: "No articles here",
+    emptyListText: "New articles will appear here after syncing.",
+    selectHint: "Pick an article from the list to start reading.",
     emptyPlaceholder: "No articles selected",
     markAllRead: "Mark all as read",
     starred: "Starred",

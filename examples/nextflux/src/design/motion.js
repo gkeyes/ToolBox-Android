@@ -1,8 +1,8 @@
 // framer-motion presets for design system v2. Values come from spring.mjs so
 // CSS (linear() easings) and JS animations share one source of truth.
+// Deliberately store-free: callers pass NextFlux's own reduceMotion setting, so
+// the module can be imported anywhere (including isolated test fixtures).
 import { useEffect, useSyncExternalStore } from "react";
-import { useStore } from "@nanostores/react";
-import { settingsState } from "@/stores/settingsStore.js";
 import { SPRINGS, framerSpring } from "./spring.mjs";
 
 export const spring = Object.freeze({
@@ -72,15 +72,13 @@ function subscribeMedia(callback) {
 const mediaSnapshot = () => Boolean(window.matchMedia?.(QUERY)?.matches);
 
 /** True when either the system or NextFlux's own "reduce motion" preference is on. */
-export function useReducedMotionPreference() {
-  const { reduceMotion } = useStore(settingsState);
+export function useReducedMotionPreference(reduceMotion = false) {
   const system = useSyncExternalStore(subscribeMedia, mediaSnapshot, () => false);
   return Boolean(reduceMotion || system);
 }
 
 /** Mirrors the preference onto <html> so CSS tokens snap as well. */
-export function useReducedMotionAttribute() {
-  const { reduceMotion } = useStore(settingsState);
+export function useReducedMotionAttribute(reduceMotion = false) {
   useEffect(() => {
     const root = document.documentElement;
     if (reduceMotion) root.dataset.reduceMotion = "true";

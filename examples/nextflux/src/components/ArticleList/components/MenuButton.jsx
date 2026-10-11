@@ -26,7 +26,7 @@ export default function MenuButton() {
 
   return (
     <Dropdown>
-      <Button size="sm" variant="ghost" isIconOnly isDisabled={isDisabled}>
+      <Button className="nextflux-toolbar-button" aria-label={t("common.more", { defaultValue: "More" })} size="sm" variant="ghost" isIconOnly isDisabled={isDisabled}>
         <EllipsisVertical className="size-4 text-muted" />
       </Button>
 

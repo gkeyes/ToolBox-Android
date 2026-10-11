@@ -29,8 +29,8 @@ export default function AddFeedButton() {
   return (
     <>
       <Dropdown>
-        <Button className="nextflux-compact-touch-target" aria-label="添加订阅" size="sm" variant="ghost" isIconOnly>
-          <CirclePlus className="size-4 text-muted" />
+        <Button className="nextflux-toolbar-button" aria-label="添加订阅" size="sm" variant="ghost" isIconOnly>
+          <CirclePlus className="size-5 text-muted" />
         </Button>
         <Dropdown.Popover>
           <Dropdown.Menu

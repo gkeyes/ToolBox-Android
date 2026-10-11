@@ -17,7 +17,7 @@ const SyncButton = () => {
 
   return (
     <Button
-      className="nextflux-compact-touch-target"
+      className="nextflux-toolbar-button"
       aria-label="立即同步"
       onPress={handleForceSync}
       isDisabled={$isSyncing || !$isOnline}
@@ -29,7 +29,7 @@ const SyncButton = () => {
       {$isSyncing ? (
         <Spinner color="current" size="sm" />
       ) : (
-        <RefreshCw className="size-4 text-muted" />
+        <RefreshCw className="size-5 text-muted" />
       )}
     </Button>
   );

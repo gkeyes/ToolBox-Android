@@ -2,6 +2,7 @@
 @import "@heroui/styles";
 @import "./design/tokens.css";
 @import "./design/components.css";
+@import "./design/views.css";
 
 @config '../tailwind.config.js';
 

@@ -18,7 +18,7 @@ import FontLoader from "@/components/FontLoader.jsx";
 import { useReducedMotionAttribute } from "@/design/motion.js";
 
 function App() {
-  const { syncInterval } = useStore(settingsState);
+  const { syncInterval, reduceMotion } = useStore(settingsState);
   const [backgroundReady, setBackgroundReady] = useState(false);
   useEffect(() => {
     let mounted = true;
@@ -44,7 +44,7 @@ function App() {
 
   useHotkeys();
   useZoom();
-  useReducedMotionAttribute();
+  useReducedMotionAttribute(reduceMotion);
   useBorderRadius();
   return (
     <SidebarProvider>

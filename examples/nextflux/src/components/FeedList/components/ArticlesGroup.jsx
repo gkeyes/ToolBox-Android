@@ -45,18 +45,19 @@ const ArticlesGroup = () => {
     }
   };
 
-  const { text, count } = getDisplayInfo();
+  const { icon, text, count } = getDisplayInfo();
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t("common.article")}</SidebarGroupLabel>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton asChild isActive={!feedId && !categoryId}>
+          <SidebarMenuButton asChild size="lg" isActive={!feedId && !categoryId}>
             <Link to="/" onClick={() => isMobile && setOpenMobile(false)}>
+              <span className="ds-icon-badge sidebar-row-icon">{icon}</span>
               <span className="font-semibold">{text}</span>
             </Link>
           </SidebarMenuButton>
-          <SidebarMenuBadge className="text-muted! opacity-60!">
+          <SidebarMenuBadge className="h-14">
             {count !== 0 && count}
           </SidebarMenuBadge>
         </SidebarMenuItem>
