@@ -471,3 +471,34 @@ test("browser-delivered touch input pulls the next article and swipes back", asy
   await input.detach();
   expect(errors).toEqual([]);
 });
+
+// Cheap performance guard: once the article is mounted, scrolling it (which
+// drives the immersive bars through a scroll listener) must not produce long
+// main-thread tasks. A forced-layout or re-render-per-scroll regression on a
+// 240-paragraph article shows up here long before it is visible on a phone.
+test("reading scroll stays within a long-task budget and still toggles the bars", async ({ page }) => {
+  const errors = await openArticle(page);
+  const area = page.locator(".article-scroll-area");
+  await page.evaluate(() => {
+    window.longTasks = [];
+    try {
+      new PerformanceObserver((list) => { for (const entry of list.getEntries()) window.longTasks.push(Math.round(entry.duration)); })
+        .observe({ type: "longtask", buffered: false });
+    } catch { /* longtask unsupported: the budget below is then vacuous */ }
+  });
+  const box = await area.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let step = 0; step < 24; step += 1) {
+    await page.mouse.wheel(0, 240);
+    await page.waitForTimeout(16);
+  }
+  await expect(area).toHaveAttribute("data-chrome", "hidden");
+  for (let step = 0; step < 4; step += 1) {
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(16);
+  }
+  await expect(area).toHaveAttribute("data-chrome", "shown");
+  const tasks = await page.evaluate(() => window.longTasks);
+  expect(Math.max(0, ...tasks), `long tasks during reading scroll: ${tasks.join(", ")}`).toBeLessThan(200);
+  expect(errors).toEqual([]);
+});

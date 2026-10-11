@@ -324,3 +324,143 @@ for (const reduced of [false, true]) {
     await expectPageInteractive(page);
   });
 }
+
+// Nothing may cover the page at any of several points, and no ancestor of the
+// hit target may be inert: a stranded backdrop, scrim or React Aria inert root
+// swallows every tap while the page looks idle ("UI frozen").
+async function expectUncovered(page) {
+  await expect.poll(() => page.evaluate(() => {
+    const points = [
+      [innerWidth / 2, innerHeight / 2], [24, 120], [innerWidth - 24, 120],
+      [24, innerHeight - 140], [innerWidth - 24, innerHeight / 3],
+    ];
+    const blocked = [];
+    for (const [x, y] of points) {
+      const hit = document.elementFromPoint(x, y);
+      const cover = hit?.closest(".drawer__backdrop, .modal__backdrop, .alert-dialog__backdrop, .nextflux-modal-backdrop, [data-slot='backdrop'], .sidebar-scrim.is-open, [inert], [role='dialog']");
+      if (!hit || cover) blocked.push(`${Math.round(x)},${Math.round(y)}:${cover?.className || "none"}`);
+    }
+    return {
+      blocked,
+      inertRoot: Boolean(document.querySelector("#root[inert], #root[aria-hidden='true']")),
+      bodyBlocked: getComputedStyle(document.body).pointerEvents === "none",
+    };
+  })).toEqual({ blocked: [], inertRoot: false, bodyBlocked: false });
+}
+
+async function dragSheetDown(page, distance = 260) {
+  const handle = page.getByRole("dialog").locator(".nextflux-sheet-handle-zone");
+  const box = await handle.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 4 });
+  await page.mouse.up();
+}
+
+async function openFromMore(page, name, heading) {
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  // The second sheet opens only after the More sheet has gone.
+  await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
+  await expect(page.getByRole("dialog").filter({ hasText: heading })).toBeVisible();
+}
+
+for (const reduced of [false, true]) {
+  test(`More sheet hand-off to a second sheet leaves the page interactive${reduced ? " (reduced motion)" : ""}`, async ({ page }) => {
+    if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, 393);
+
+    // The full-text adapter fails fast in this fixture (no server), so its
+    // sheet is closable; the title filter path is covered in title-filter.spec.
+    await openFromMore(page, "全文适配", "AI 全文适配");
+    await page.getByRole("dialog").locator(".nextflux-close-button").click();
+    await expectUncovered(page);
+
+    await openFromMore(page, "全文适配", "AI 全文适配");
+    await dragSheetDown(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expectUncovered(page);
+
+    await openFromMore(page, "全文适配", "AI 全文适配");
+    await page.keyboard.press("Escape");
+    await expectUncovered(page);
+    await expectPageInteractive(page);
+  });
+}
+
+test("a route change with the More sheet open releases the page", async ({ page }) => {
+  await open(page, 393);
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.evaluate(() => { location.hash = "#/feed/1"; });
+  await expect(page.getByTestId("article-list")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+  // And back into the reader: the dock and its sheet still work.
+  await page.evaluate(() => { location.hash = "#/feed/1/article/42"; });
+  await page.getByRole("button", { name: "更多", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectUncovered(page);
+});
+
+test("rapid open and close of sheets never strands a backdrop", async ({ page }) => {
+  await open(page, 393);
+  const more = page.getByRole("button", { name: "更多", exact: true });
+  for (let round = 0; round < 3; round += 1) {
+    await more.click();
+    await page.keyboard.press("Escape");
+  }
+  await expectUncovered(page);
+  // Close by tapping the backdrop while the sheet is still entering.
+  await more.click();
+  await page.mouse.click(200, 40);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expectUncovered(page);
+  // Open a sheet, then another one from the page before the first finished closing.
+  await page.getByRole("button", { name: "Open modal", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Open settings", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").locator(".nextflux-close-button").first().click();
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+});
+
+test("mobile sidebar closes from its scrim and leaves the page tappable", async ({ page }) => {
+  await openSidebarPreferences(page, 393);
+  const panel = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+  await expect(panel).toHaveAttribute("data-open", "true");
+  await page.mouse.click(370, 400);
+  await expect(panel).toHaveAttribute("data-open", "false");
+  await expect.poll(() => panel.evaluate((element) => element.getBoundingClientRect().right <= 0)).toBe(true);
+  await expectUncovered(page);
+  // A real tap on the page reaches its control again.
+  await page.locator("main [data-sidebar='trigger']").click();
+  await expect(panel).toHaveAttribute("data-open", "true");
+  await page.mouse.click(370, 400);
+  await expect(panel).toHaveAttribute("data-open", "false");
+});
+
+test("the full-text adapter can be cancelled while it is still reading", async ({ page }) => {
+  await open(page, 393);
+  // Hold both reads so the adapter stays in its first, server-neutral phase.
+  await page.evaluate(() => {
+    window.holdFullTextRead = true;
+    window.ToolBox = { network: { request: () => new Promise(() => {}) } };
+  });
+  await openFromMore(page, "全文适配", "AI 全文适配");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("status")).toContainText("正在读取");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expectUncovered(page);
+
+  await openFromMore(page, "全文适配", "AI 全文适配");
+  await expect(dialog.getByRole("status")).toContainText("正在读取");
+  await dragSheetDown(page);
+  await expect(dialog).toHaveCount(0);
+  await expectUncovered(page);
+  await expectPageInteractive(page);
+});

@@ -19,4 +19,8 @@ export const handleToggleStar = (article) => calls.push(["star", article.id]);
 export const handleToggleContent = (article) => calls.push(["content", article.id]);
 export const shareText = async (text) => calls.push(["share", text]);
 export const summarizeArticleStream = (_, { onChunk, onDone }) => { onChunk("Fixture summary."); onDone(); };
-export default { saveToThirdParty: async (id) => calls.push(["save", id]) };
+export default {
+  saveToThirdParty: async (id) => calls.push(["save", id]),
+  // No server here: the full-text adapter fails fast unless a test holds the read.
+  getFeed: () => globalThis.holdFullTextRead ? new Promise(() => {}) : Promise.reject(new Error("Fixture has no server")),
+};
