@@ -60,7 +60,21 @@ MEDIA_RUNTIME_UNIT = {
 MEDIA_ANDROID = {"io.toolbox.host.RuntimeMediaStreamingBehaviorTest"}
 WEBVIEW_DEBUG_UNIT = {"tool-runtime=io.toolbox.tool.runtime.RuntimeWebViewDebuggingPolicyTest"}
 WEBVIEW_DEBUG_ANDROID = {"io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest"}
-UNIT_RE = re.compile(r"^(app|core-data|tool-package|tool-runtime)=([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?:#([A-Za-z_]\w*))?$")
+# Shared design-system components and navigation: every class renders both looks, and the
+# visibility test drives the real app into a secondary page and checks its pixels.
+HOST_UI_ANDROID = {
+    "io.toolbox.host.ActionButtonBehaviorTest",
+    "io.toolbox.host.SecondaryPageBehaviorTest",
+    "io.toolbox.host.SecondaryPageVisibilityTest",
+    "io.toolbox.host.DesignPolishBehaviorTest",
+    "io.toolbox.host.CatalogPanelBehaviorTest",
+    "io.toolbox.host.permissions.PermissionCleanupBehaviorTest",
+}
+NAVIGATION_ANDROID = {
+    "io.toolbox.host.SecondaryPageBehaviorTest",
+    "io.toolbox.host.SecondaryPageVisibilityTest",
+}
+UNIT_RE = re.compile(r"^(app|core-data|core-ui|tool-package|tool-runtime)=([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?:#([A-Za-z_]\w*))?$")
 ANDROID_RE = re.compile(r"^(?:(app|tool-runtime)=)?(io\.toolbox\.[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:#([A-Za-z_]\w*))?$")
 NODE_RE = re.compile(r"^scripts/tests/browser-[A-Za-z0-9-]+\.test\.cjs$")
 EVIDENCE_FILE = Path("build/ci-evidence/targeted-selection.json")
@@ -245,6 +259,19 @@ def classify(paths):
             }
             android.add("tool-runtime=io.toolbox.tool.runtime.RuntimeBridgeLifecycleInstrumentationTest#readyOnceEarlyEventsStateRevisionsCloseAndNewGeneration")
             android |= RUNTIME_ADMISSION_ANDROID
+        elif path.startswith("core-ui/src/test/java/") and Path(path).stem.endswith("Test"):
+            unit.add("core-ui=" + path.removeprefix("core-ui/src/test/java/").removesuffix(".kt").replace("/", "."))
+        elif path.startswith("core-ui/"):
+            android |= HOST_UI_ANDROID
+            android |= RUNTIME_SAVE_DIALOG_ANDROID
+        elif path == "app/src/main/AndroidManifest.xml" or path.startswith("app/src/main/kotlin/io/toolbox/host/navigation/"):
+            android |= NAVIGATION_ANDROID
+        elif path.startswith("app/src/main/kotlin/io/toolbox/host/settings/") or path == "app/src/main/kotlin/io/toolbox/host/permissions/ToolPermissionsScreen.kt":
+            android |= NAVIGATION_ANDROID
+        elif path in {"app/compact-debug.pro", "app/compact-debug-test.pro"}:
+            # Only used by the opt-in compact WebView debug build; keep its debugging checks.
+            unit |= WEBVIEW_DEBUG_UNIT
+            android |= WEBVIEW_DEBUG_ANDROID
         elif path == "tool-package/src/test/kotlin/io/toolbox/tool/packagekit/fixtures/InMemoryCoreData.kt":
             unit |= {
                 "tool-package=io.toolbox.tool.packagekit.lifecycle.PackageImportCancellationTest",
