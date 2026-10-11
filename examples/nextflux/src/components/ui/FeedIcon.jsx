@@ -52,11 +52,11 @@ const FeedIcon = ({ feedId }) => {
     return (
       <span
         className={cn(
-          "flex items-center shrink-0 justify-center w-5 h-5 p-0.5 bg-white transition-opacity duration-300 ease-in-out animate-in fade-in shadow-custom",
-          feedIconShape === "circle" ? "rounded-full" : "rounded-sm",
+          "flex items-center shrink-0 justify-center w-5 h-5 p-0.5 bg-[var(--ds-tone-warning-bg)] text-[var(--ds-tone-warning-fg)]",
+          feedIconShape === "circle" ? "rounded-full" : "rounded-[6px]",
         )}
       >
-        <Rss strokeWidth={3} className="size-3 text-black/60" />
+        <Rss strokeWidth={3} className="size-3" />
       </span>
     );
   }
@@ -66,9 +66,9 @@ const FeedIcon = ({ feedId }) => {
       alt="Feed icon"
       src={iconData}
       className={cn(
-        "size-5 p-0.5 bg-white shadow-custom transition-opacity duration-300 ease-in-out animate-in fade-in",
+        "size-5 shrink-0 p-0.5 bg-white shadow-custom transition-opacity duration-150 ease-out",
         useGrayIcon ? "grayscale" : "",
-        feedIconShape === "circle" ? "rounded-full" : "rounded-sm",
+        feedIconShape === "circle" ? "rounded-full" : "rounded-[6px]",
         isLoading && "opacity-0",
       )}
       onError={handleError}

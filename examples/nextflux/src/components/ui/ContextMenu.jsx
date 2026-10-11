@@ -69,9 +69,8 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     <div
       ref={menuRef}
       className={cn(
-        "fixed z-[9999] min-w-[200px] rounded-3xl",
-        "shadow-custom-md bg-overlay/90 backdrop-blur-sm",
-        "p-2 animate-in fade-in-0 zoom-in-95 duration-200",
+        "nextflux-context-menu fixed z-[9999] min-w-[220px]",
+        "p-1.5",
       )}
       style={{
         left: position?.x || 0,
@@ -96,11 +95,9 @@ const ContextMenuItem = ({ onClick, children, className, startContent }) => {
       onClick={handleClick}
       onTouchEnd={handleClick}
       className={cn(
-        "px-2 py-2 cursor-pointer rounded-2xl text-sm",
-        "hover:bg-default hover:text-default-foreground active:scale-99",
-        "transition-transform duration-150",
+        "ds-state ds-press-row min-h-12 px-3 cursor-pointer rounded-[var(--ds-radius-small)] text-[length:var(--ds-text-body)]",
         "select-none",
-        "flex gap-2 items-center",
+        "flex gap-3 items-center",
         className,
       )}
     >

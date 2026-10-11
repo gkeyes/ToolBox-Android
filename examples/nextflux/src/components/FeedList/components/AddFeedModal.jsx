@@ -401,7 +401,7 @@ export default function AddFeedModal() {
                   >
                     {t("feed.advancedOptions")}
                     <ChevronDown
-                      className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                      className={`size-4 transition-transform duration-[var(--ds-dur-spatial)] ease-[var(--ds-ease-spatial)] ${advancedOpen ? "rotate-180" : ""}`}
                     />
                   </Button>
                 </CollapsibleTrigger>

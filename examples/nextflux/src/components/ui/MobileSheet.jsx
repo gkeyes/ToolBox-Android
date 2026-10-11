@@ -4,7 +4,6 @@ import { Button, Drawer, cn } from "@heroui/react";
 // Release motion: settle back on the sheet spring, dismiss on the 220ms
 // accelerate curve (design system v2). Durations come from spring.mjs.
 const SETTLE_EASING = "var(--ds-ease-sheet, cubic-bezier(0.32, 0.72, 0, 1))";
-const DISMISS_EASING = "cubic-bezier(0.3, 0, 1, 1)";
 const FLICK_MIN_DISTANCE = 56;
 
 function resolveEasing(element, easing) {
@@ -15,6 +14,7 @@ function resolveEasing(element, easing) {
 }
 
 function animateTranslate(element, from, to, duration, onDone, easing = SETTLE_EASING) {
+  // Only used to settle back to rest; dismissal uses HeroUI's exit transition.
   if (!element?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
     if (element) {
       element.style.translate = "";
@@ -100,25 +100,21 @@ export default function MobileSheet({
     if (!drag || drag.pointerId !== event.pointerId || !dialog) return;
     dragRef.current = null;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
-    const threshold = Math.min(140, dialog.getBoundingClientRect().height * 0.22);
+    const threshold = Math.max(FLICK_MIN_DISTANCE, Math.min(140, dialog.getBoundingClientRect().height * 0.22));
     // A flick dismisses only after a deliberate travel; tiny fast drags settle back.
     const dismiss = !cancelled && (drag.distance >= threshold || (drag.velocity >= 720 && drag.distance >= FLICK_MIN_DISTANCE));
     const from = drag.distance;
     if (dismiss) {
-      const target = dialog.getBoundingClientRect().height + 32;
-      animateTranslate(dialog, from, target, 220, () => {
-        // Stay off-screen while HeroUI unmounts; never jump back to the resting position.
-        dialog.style.transition = "none";
-        dialog.style.translate = `0 ${target}px`;
+      // Hand the exit to HeroUI's own transition (220ms accelerate, see
+      // components.css) so its exit completes and the sheet unmounts. The
+      // inline translate holds the finger position until the exiting state
+      // is applied, then releases so the sheet continues down from there.
+      dialog.style.transition = "";
+      onOpenChange(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        dialog.style.translate = "";
         dialog.style.willChange = "";
-        onOpenChange(false);
-        // If the owner keeps the sheet open, hand the position back to HeroUI.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (!dialog.isConnected || dialog.closest("[data-exiting='true']")) return;
-          dialog.style.transition = "";
-          dialog.style.translate = "";
-        }));
-      }, DISMISS_EASING);
+      }));
     } else {
       animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });
     }

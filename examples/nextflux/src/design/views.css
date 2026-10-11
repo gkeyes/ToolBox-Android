@@ -126,4 +126,23 @@
   .sidebar-profile { border-radius: var(--ds-radius-card) !important; background: var(--ds-card); }
   [data-sidebar="footer"] { padding: var(--ds-space-xs) var(--ds-space-sm) var(--ds-space-sm); }
   [data-sidebar="header"] { padding: var(--ds-space-xs) var(--ds-space-sm); }
+
+  /* ---------- Search ---------- */
+  .search-result-row.is-selected { background: var(--ds-accent-tonal); }
+  .search-result-row.no-hover::after { display: none; }
+  .search-field-group { background: var(--ds-field); }
+  .search-scope { background: var(--ds-field); }
+
+  /* ---------- Context menu (long-press / right click) ---------- */
+  .nextflux-context-menu {
+    border-radius: var(--ds-radius-row);
+    background: var(--ds-raised);
+    box-shadow: var(--overlay-shadow);
+    transform-origin: top left;
+    animation: ds-menu-in var(--ds-dur-dialog) var(--ds-ease-dialog) backwards;
+  }
+}
+
+@keyframes ds-menu-in {
+  from { opacity: 0; transform: scale(0.94); }
 }
