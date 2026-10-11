@@ -30,20 +30,45 @@ RUNTIME_PERFORMANCE_TOOLS = {"stock-monitor", "notification-lab", "kegel-trainer
 TEST_FILES = {
     "nextflux": {
         "unit": {
-            "test/auto-sync-deadline.test.mjs", "test/background-policy.test.mjs",
-            "test/background-preemption.test.mjs", "test/foreground-gate.test.mjs",
-            "test/sync-priority.test.mjs", "test/sync-pagination.test.mjs",
-            "test/cache-metadata.test.mjs", "test/cover-cache-upgrade.test.mjs",
-            "test/fulltext-extraction.test.mjs", "test/image-dimensions.test.mjs",
-            "test/image-sources.test.mjs", "test/media-mime.test.mjs",
-            "test/native-hls-loader.test.mjs", "test/reading-pipeline.test.mjs",
+            "test/article-swipe-back.test.mjs",
+            "test/auto-sync-deadline.test.mjs",
+            "test/background-policy.test.mjs",
+            "test/background-preemption.test.mjs",
+            "test/cache-core.test.mjs",
+            "test/cache-metadata.test.mjs",
+            "test/continuous-reading-motion.test.mjs",
+            "test/cover-cache-upgrade.test.mjs",
+            "test/design-tokens.test.mjs",
+            "test/foreground-gate.test.mjs",
+            "test/fulltext-adapter.test.mjs",
+            "test/fulltext-extraction.test.mjs",
+            "test/image-dimensions.test.mjs",
+            "test/image-sources.test.mjs",
+            "test/list-render-isolation.test.mjs",
+            "test/media-mime.test.mjs",
+            "test/native-hls-loader.test.mjs",
+            "test/navigation-transition.test.mjs",
+            "test/overlay-janitor.test.mjs",
+            "test/reading-client.test.mjs",
+            "test/reading-motion.test.mjs",
+            "test/reading-pipeline.test.mjs",
             "test/source-document.test.mjs",
+            "test/speech.test.mjs",
+            "test/swipe-gesture.test.mjs",
+            "test/sync-pagination.test.mjs",
+            "test/sync-priority.test.mjs",
+            "test/title-filter-rules.test.mjs",
+            "test/title-filter-scope.test.mjs",
+            "test/title-filter-server-rules.test.mjs",
         },
         "browser": {
-            "test/browser/reading.spec.js", "test/browser/article-navigation.spec.js",
-            "test/browser/controls.spec.js", "test/browser/media-compat.spec.js",
-            "test/browser/startup.spec.js",
+            "test/browser/article-navigation.spec.js",
+            "test/browser/controls.spec.js",
+            "test/browser/media-compat.spec.js",
             "test/browser/packaged-startup.spec.js",
+            "test/browser/reading.spec.js",
+            "test/browser/startup.spec.js",
+            "test/browser/title-filter.spec.js",
         },
     },
     "socialcoach": {
@@ -158,7 +183,9 @@ def selected_tests(name, changed, requested_filter, full):
                 selected.add(full_path)
             elif relative in {"manifest.json", "package.json", "package-lock.json", "README.md", "package.sh", "THIRD_PARTY_NOTICES.txt"}:
                 continue
-            elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")):
+            elif name == "nextflux" and (relative.startswith("src/") or relative.startswith("test/browser/fixtures/")
+                                         or relative.startswith("public/")
+                                         or relative in {"index.html", "tailwind.config.js", "postcss.config.js", "vite.config.js"}):
                 selected |= allowed
             elif name == "nextflux" and relative in {"test/browser/playwright.config.js", "test/browser/vite.config.js"}:
                 selected |= browser_files
