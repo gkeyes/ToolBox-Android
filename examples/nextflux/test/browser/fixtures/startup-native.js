@@ -14,6 +14,7 @@ export const STORED_SETTINGS = {
   showHiddenFeeds: false,
   markAsReadOnScroll: false,
   cardImageSize: "large",
+  articleListStyle: "lines",
   showFavicon: true,
   titleLines: 2,
   textPreviewLines: 2,
