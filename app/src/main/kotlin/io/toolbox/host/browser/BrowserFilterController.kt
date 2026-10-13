@@ -10,16 +10,24 @@ import androidx.compose.runtime.setValue
 import java.io.ByteArrayInputStream
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Only native-initiated evaluateJavascript callbacks cross the boundary. Pages get no native API. */
-class BrowserFilterController(context: Context) {
+/** Only native-initiated evaluateJavascript callbacks cross the boundary. Pages get no native API.
+ * [scope] runs on the main thread; stored rules and the picker script are read on Dispatchers.IO. */
+class BrowserFilterController(context: Context, private val scope: CoroutineScope) {
     private val store = BrowserFilterStore(context)
-    private val script by lazy { context.applicationContext.assets.open("browser/element-picker.js").bufferedReader().use { it.readText() } }
-    var snapshot by mutableStateOf(store.read())
+    private val script = scope.async(Dispatchers.IO) {
+        context.applicationContext.assets.open("browser/element-picker.js").bufferedReader().use { it.readText() }
+    }
+    var snapshot by mutableStateOf(BrowserFilterSnapshot())
         private set
-    @Volatile private var engine = snapshot
+    private val engine = BrowserFilterEngine()
     private data class RequestPage(val host: String, val blocked: AtomicInteger = AtomicInteger())
     @Volatile private var requestPage = RequestPage("")
     @Volatile private var page: WebView? = null
@@ -84,11 +92,29 @@ class BrowserFilterController(context: Context) {
         requestPage = RequestPage("")
     }
 
-    fun refresh() { snapshot = store.read(); engine = snapshot; applyToPage() }
+    init { refresh() }
+
+    /** Re-reads stored rules off the main thread; a local [change] made meanwhile wins over the read. */
+    fun refresh() {
+        val token = engine.revision()
+        scope.launch {
+            try {
+                val (revision, read) = withContext(Dispatchers.IO) {
+                    val stored = runCatching { store.read() }.getOrNull()
+                    engine.offer(token, stored) to stored
+                }
+                if (read == null || revision == null || !engine.isCurrent(revision)) return@launch
+                snapshot = read
+                applyToPage()
+            } finally {
+                engine.release()
+            }
+        }
+    }
 
     fun change(transform: (BrowserFilterSnapshot) -> BrowserFilterSnapshot) {
         snapshot = transform(store.read())
-        engine = snapshot
+        engine.replace(snapshot)
         store.write(snapshot)
         stopPicker()
         applyToPage()
@@ -97,8 +123,10 @@ class BrowserFilterController(context: Context) {
     fun intercept(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         if (page !== view) return null
         val current = requestPage
-        if (!engine.active(current.host)) return null
-        if (!engine.blocks(current.host, request.url.toString(), request.isForMainFrame)) return null
+        // Runs on a WebView network thread; the first page waits for stored rules instead of skipping them.
+        val rules = engine.awaitLoaded()
+        if (!rules.active(current.host)) return null
+        if (!rules.blocks(current.host, request.url.toString(), request.isForMainFrame)) return null
         current.blocked.incrementAndGet()
         return WebResourceResponse("text/plain", "UTF-8", 200, "OK", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(ByteArray(0)))
     }
@@ -128,10 +156,15 @@ class BrowserFilterController(context: Context) {
         }
 
         val values = JSONArray(selectors).toString()
-        view.evaluateJavascript("($script)(${JSONObject.quote(key)},$values,${JSONObject.quote(host)})") { value ->
-            val applied = page === view && generation == expected && value == "true"
-            if (applied) filterEngineInstalled = true
-            after?.invoke(applied)
+        // Runs synchronously once the script has loaded; only the first use can wait for the asset read.
+        scope.launch(Dispatchers.Main.immediate) {
+            val source = script.await()
+            if (page !== view || generation != expected) { after?.invoke(false); return@launch }
+            view.evaluateJavascript("($source)(${JSONObject.quote(key)},$values,${JSONObject.quote(host)})") { value ->
+                val applied = page === view && generation == expected && value == "true"
+                if (applied) filterEngineInstalled = true
+                after?.invoke(applied)
+            }
         }
     }
     fun startPicker() {

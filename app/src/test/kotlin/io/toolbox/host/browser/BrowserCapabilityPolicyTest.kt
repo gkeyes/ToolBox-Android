@@ -71,4 +71,14 @@ class BrowserCapabilityPolicyTest {
         assertFalse(BrowserCapabilityPolicy.acceptsContentUri("content", null, false))
         assertTrue(BrowserCapabilityPolicy.acceptsContentUri("content", "com.android.providers.media.documents", false))
     }
+
+    @Test fun uploadSelectionIsAllOrNothingAndHonoursSingleMode() {
+        val safe = { uri: String -> uri.startsWith("content://") }
+        assertEquals(listOf("content://a/1", "content://a/2"),
+            BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "content://a/2", "content://a/1"), true, safe))
+        assertEquals(listOf("content://a/1"),
+            BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "content://a/2"), false, safe))
+        assertNull(BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "file:///x"), true, safe))
+        assertNull(BrowserCapabilityPolicy.acceptedUploads(emptyList(), true, safe))
+    }
 }

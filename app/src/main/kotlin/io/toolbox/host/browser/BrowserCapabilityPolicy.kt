@@ -34,6 +34,10 @@ internal object BrowserCapabilityPolicy {
         .filter { it.matches(Regex("(?:[a-z0-9!#$&^_.+-]+|\\*)/(?:[a-z0-9!#$&^_.+-]+|\\*)")) }
         .distinct().ifEmpty { listOf("*/*") }
 
+    /** Picker results are all-or-nothing: one item outside the content boundary rejects the whole selection. */
+    fun <T> acceptedUploads(returned: List<T>, multiple: Boolean, isSafe: (T) -> Boolean): List<T>? =
+        returned.distinct().takeIf { it.isNotEmpty() && it.all(isSafe) }?.let { if (multiple) it else it.take(1) }
+
     fun acceptsContentUri(scheme: String?, authority: String?, ownedByHost: Boolean): Boolean =
         scheme == "content" && !authority.isNullOrBlank() && '@' !in authority && !ownedByHost
 }

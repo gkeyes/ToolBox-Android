@@ -24,11 +24,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Construct as an Activity field, before STARTED; result launchers must never be registered lazily.
@@ -100,25 +104,31 @@ internal class BrowserCapabilityController(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         val id = fileLaunchId
-        fileLaunchId = null
         val entry = id?.let(queue::take)
         val upload = entry?.value as? Upload
-        if (upload != null) {
-            val uris = if (result.resultCode == Activity.RESULT_OK && isCurrentPage(upload.page)) {
-                val data = result.data
-                val returned = buildList {
-                    data?.data?.let(::add)
-                    data?.clipData?.let { clip ->
-                        for (index in 0 until clip.itemCount) add(clip.getItemAt(index).uri)
-                    }
-                }.distinct()
-                // Reject the whole result if any item is outside the picker content boundary.
-                returned.takeIf { it.isNotEmpty() && it.all(::safeUploadUri) }
-                    ?.let { if (upload.multiple) it else it.take(1) }?.toTypedArray()
-            } else null
-            runCatching { upload.callback.onReceiveValue(uris) }
+        if (upload == null || result.resultCode != Activity.RESULT_OK || !isCurrentPage(upload.page)) {
+            fileLaunchId = null
+            upload?.let { runCatching { it.callback.onReceiveValue(null) } }
+            advance()
+            return@registerForActivityResult
         }
-        advance()
+        val data = result.data
+        val returned = buildList {
+            data?.data?.let(::add)
+            data?.clipData?.let { clip ->
+                for (index in 0 until clip.itemCount) add(clip.getItemAt(index).uri)
+            }
+        }
+        // Provider lookups and opening each file block on I/O. fileLaunchId stays set while they run,
+        // so no other prompt or picker starts before this upload settles on the main thread.
+        activity.lifecycleScope.launch {
+            val uris = withContext(Dispatchers.IO) {
+                BrowserCapabilityPolicy.acceptedUploads(returned, upload.multiple, ::safeUploadUri)
+            }?.takeIf { isCurrentPage(upload.page) }?.toTypedArray()
+            if (fileLaunchId == id) fileLaunchId = null
+            runCatching { upload.callback.onReceiveValue(uris) }
+            advance()
+        }
     }
 
     fun handleWebPermission(page: WebView, request: PermissionRequest) {
