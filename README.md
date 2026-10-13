@@ -55,3 +55,11 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 ## 版本
 
 当前版本为 ToolBox 0.8.32 / 65，与 NextFlux 1.0.50 / 71 一同发布。版本历史见 [CHANGELOG](CHANGELOG.md)。
+
+## 授权
+
+ToolBox 主程序以 [MIT 许可证](LICENSE) 发布，APK 内附该许可证（`assets/licenses/ToolBox-LICENSE.txt`）。以下第三方代码保留各自的许可证，不属于 MIT 授权范围：
+
+- `core-ui/src/main/java/io/toolbox/core/ui/liquid/`：取自 Kyant0/AndroidLiquidGlass，Apache License 2.0；
+- [第三方声明](app/src/main/assets/licenses/THIRD_PARTY_NOTICES.md) 记录 HyperNotification focus-api、AndroidSVG 和 AndroidLiquidGlass，同样随 APK 附带；其余 Gradle 依赖（AndroidX、Compose、OkHttp、Miuix 等）沿用各自上游许可证，这份声明不是完整的依赖清单；
+- `examples/` 下随附的第三方小工具使用各自目录中的许可证（如 `examples/nextflux/LICENSE`、`examples/socialcoach/LICENSE`）。
