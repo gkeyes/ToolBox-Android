@@ -6,7 +6,7 @@ import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -37,7 +37,8 @@ class ToolBoxGlassState internal constructor(
     val backdrop: LayerBackdrop,
 )
 
-private val LocalToolBoxGlassActive = staticCompositionLocalOf { true }
+// Dynamic: toggling it at the end of a transition recomposes only the glass readers, not the page.
+private val LocalToolBoxGlassActive = compositionLocalOf { true }
 
 @Composable
 fun ToolBoxGlassActivity(

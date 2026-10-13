@@ -1,10 +1,8 @@
 package io.toolbox.host.browser
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,7 +10,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -61,63 +62,43 @@ internal fun BrowserScreen(
     val chromeVisible = !state.chrome.hidden || chromeLocked
     // Toolbars follow scroll direction with a critically damped spring: quick to respond,
     // retargets mid-flight without a jolt, and never overshoots into the page.
-    val chromeSizeSpring = androidx.compose.animation.core.spring(
-        dampingRatio = 1f,
-        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-        visibilityThreshold = androidx.compose.ui.unit.IntSize(1, 1),
+    val chromeShown by animateFloatAsState(
+        targetValue = if (chromeVisible) 1f else 0f,
+        animationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow, visibilityThreshold = 0.001f),
+        label = "browserChrome",
     )
-    val chromeOffsetSpring = androidx.compose.animation.core.spring(
-        dampingRatio = 1f,
-        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-        visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1),
-    )
+    // The bars slide over the page on their own layers; the page is resized once per toggle
+    // (at once when the bars return, after they are gone when they leave), never per frame.
+    val reserveChrome by remember { derivedStateOf { chromeVisible || chromeShown > 0.001f } }
+    var topBarHeight by remember { mutableIntStateOf(0) }
+    var bottomBarHeight by remember { mutableIntStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-            AnimatedVisibility(
-                visible = chromeVisible,
-                enter = expandVertically(
-                    expandFrom = Alignment.Top,
-                    animationSpec = chromeSizeSpring,
-                ) + slideInVertically(
-                    animationSpec = chromeOffsetSpring,
-                    initialOffsetY = { -it },
-                ),
-                exit = shrinkVertically(
-                    shrinkTowards = Alignment.Top,
-                    animationSpec = chromeSizeSpring,
-                ) + slideOutVertically(
-                    animationSpec = chromeOffsetSpring,
-                    targetOffsetY = { -it },
+        Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().clipToBounds()) {
+            Box(
+                Modifier.fillMaxSize().padding(
+                    top = with(density) { if (reserveChrome) topBarHeight.toDp() else 0.dp },
+                    bottom = with(density) { if (reserveChrome) bottomBarHeight.toDp() else 0.dp },
                 ),
             ) {
-                Column {
-                    BrowserToolbar(state, filters, actions)
-                    BrowserLoadProgress(state)
-                }
-            }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
                 state.webView?.let { page -> key(page) { AndroidView(factory = { page }, modifier = Modifier.fillMaxSize()) } }
                 BrowserErrorOverlay(state, actions)
             }
-            AnimatedVisibility(
-                visible = chromeVisible,
-                enter = expandVertically(
-                    expandFrom = Alignment.Bottom,
-                    animationSpec = chromeSizeSpring,
-                ) + slideInVertically(
-                    animationSpec = chromeOffsetSpring,
-                    initialOffsetY = { it },
-                ),
-                exit = shrinkVertically(
-                    shrinkTowards = Alignment.Bottom,
-                    animationSpec = chromeSizeSpring,
-                ) + slideOutVertically(
-                    animationSpec = chromeOffsetSpring,
-                    targetOffsetY = { it },
-                ),
-            ) {
-                Column {
+            if (reserveChrome) {
+                Column(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .onSizeChanged { topBarHeight = it.height }
+                        .graphicsLayer { translationY = -size.height * (1f - chromeShown) },
+                ) {
+                    BrowserToolbar(state, filters, actions)
+                    BrowserLoadProgress(state)
+                }
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .onSizeChanged { bottomBarHeight = it.height }
+                        .graphicsLayer { translationY = size.height * (1f - chromeShown) },
+                ) {
                     BrowserFilterControls(filters, state.resumed)
                     if (state.fullScreenView == null) BrowserBottomBar(state, filters, actions)
                 }

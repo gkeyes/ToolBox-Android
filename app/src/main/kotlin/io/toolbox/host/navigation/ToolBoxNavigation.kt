@@ -11,6 +11,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -472,6 +473,9 @@ private fun RetainedSecondaryPage(
             throw cancelled
         }
     }
+    // Read the push progress only for its settled edge, so a running transition does not
+    // recompose the page on every frame.
+    val settled by remember(progress) { derivedStateOf { progress.value <= 0.001f } }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -497,7 +501,7 @@ private fun RetainedSecondaryPage(
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         NavigationInputBlocker()
-        ToolBoxGlassActivity(active = isTop && !leaving && progress.value <= 0.001f) {
+        ToolBoxGlassActivity(active = isTop && !leaving && settled) {
             content(requestBack) { contentReady = true }
         }
     }
