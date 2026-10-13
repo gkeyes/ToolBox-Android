@@ -12,9 +12,10 @@
     <form id="editor" class="editor" novalidate>
       <label class="sr-only" for="note-input">笔记内容</label>
       <textarea id="note-input" placeholder="写下一件要记住的事…" required></textarea>
-      <div class="editor-actions"><span id="editor-state" aria-live="polite">新笔记</span><button type="submit">保存笔记</button></div>
+      <div class="editor-actions"><span id="editor-state" aria-live="polite">新笔记</span><span class="editor-buttons"><button id="cancel-edit" class="cancel" type="button" hidden>取消</button><button type="submit">保存笔记</button></span></div>
     </form>
     <p id="save-error" role="alert"></p>
+    <div id="undo-bar" class="undo-bar" role="status" hidden><span id="undo-text">笔记已删除</span><button id="undo" class="text-button" type="button">撤销</button></div>
     <p id="empty" class="empty">还没有笔记，先写下一条吧。</p>
     <section id="notes" class="notes" aria-label="已保存的笔记"></section>
   </main>

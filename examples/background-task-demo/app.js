@@ -7,6 +7,7 @@
   const formatTime = (value) => value ? new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "暂无结果";
   const showError = (error) => error?.message || "任务操作失败，请检查后台、网络和通知权限。";
   let loadSequence = 0;
+  const cancelling = new Set();
 
   async function requireBackground() {
     if (!toolbox()?.background) throw new Error("当前宿主尚未提供后台任务 API");
@@ -30,7 +31,10 @@
   }
   function taskOperationLabel(key) { return key.startsWith("github-repo-") ? "HTTP GET · GitHub 仓库信息" : "通知 · ToolBox 后台任务"; }
   async function resultText(taskId) {
-    const result = await toolbox().background.getResult(taskId);
+    let result;
+    // One unreadable result must not hide the rest of the list.
+    try { result = await toolbox().background.getResult(taskId); }
+    catch (error) { return `结果读取失败：${error?.code ? `${error.code} · ` : ""}${error?.message || "未知错误"}`; }
     if (!result) return "尚未产生执行结果";
     if (result.outcome === "SUCCEEDED") return `最近成功：${formatTime(result.completedAt)}${result.status ? ` · HTTP ${result.status}` : ""}`;
     return `最近结果：${result.outcome} · ${formatTime(result.completedAt)}${result.error?.message ? ` · ${result.error.message}` : ""}`;
@@ -52,7 +56,8 @@
         fragment.querySelector(".task-type").textContent = taskOperationLabel(task.key);
         fragment.querySelector(".task-result").textContent = await resultText(task.taskId);
         const cancel = fragment.querySelector(".cancel");
-        cancel.disabled = task.state === "COMPLETED" || task.state === "CANCELLED";
+        cancel.disabled = task.state === "COMPLETED" || task.state === "CANCELLED" || cancelling.has(task.taskId);
+        if (cancelling.has(task.taskId)) cancel.textContent = "正在取消…";
         return fragment;
       }));
       if (sequence !== loadSequence) return;
@@ -63,13 +68,36 @@
   async function cancel(event) {
     const button = event.target.closest(".cancel");
     const task = event.target.closest(".task");
-    if (!button || !task) return;
-    try { await toolbox().background.cancel(task.dataset.id); setStatus("任务已取消"); await loadTasks(); }
-    catch (error) { setStatus(showError(error)); }
+    const taskId = task?.dataset.id;
+    if (!button || !task || button.disabled || cancelling.has(taskId)) return;
+    cancelling.add(taskId);
+    button.disabled = true;
+    button.textContent = "正在取消…";
+    try { await toolbox().background.cancel(taskId); cancelling.delete(taskId); setStatus("任务已取消"); await loadTasks(); }
+    catch (error) {
+      cancelling.delete(taskId);
+      // The list may have re-rendered while the cancel was pending; re-enable the row that is shown now.
+      const row = Array.from($("tasks").children).find((candidate) => candidate.dataset.id === taskId);
+      const current = row?.querySelector(".cancel") || button;
+      const state = row?.querySelector(".task-state")?.textContent;
+      if (state !== "COMPLETED" && state !== "CANCELLED") { current.disabled = false; current.textContent = "取消任务"; }
+      setStatus(showError(error));
+    }
+  }
+  function watchForeground() {
+    let foreground = true;
+    try {
+      toolbox()?.runtime?.onStateChanged?.((snapshot) => {
+        const visible = Boolean(snapshot?.foreground && !snapshot?.closing);
+        if (visible && !foreground) loadTasks();
+        foreground = visible;
+      });
+    } catch (_) {}
   }
   $("enqueue-http").addEventListener("click", createHttpTask);
   $("enqueue-notification").addEventListener("click", createNotificationTask);
   $("refresh").addEventListener("click", loadTasks);
   $("tasks").addEventListener("click", cancel);
+  watchForeground();
   loadTasks();
 })();

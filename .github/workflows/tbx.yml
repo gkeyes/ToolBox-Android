@@ -11,6 +11,7 @@ on:
       - "scripts/ci/tbx-targets.json"
       - "scripts/tests/watcher-reliability.test.cjs"
       - "scripts/tests/tool-runtime-performance.test.cjs"
+      - "scripts/tests/bundled-tools.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -35,6 +36,7 @@ on:
       - "scripts/ci/tbx-targets.json"
       - "scripts/tests/watcher-reliability.test.cjs"
       - "scripts/tests/tool-runtime-performance.test.cjs"
+      - "scripts/tests/bundled-tools.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
       - "sdk/**"
@@ -157,6 +159,11 @@ jobs:
         env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/tool-runtime-performance.test.cjs
+      - name: Bundled tool behaviour regressions
+        if: ${{ matrix.full_tests && (matrix.tool == 'position-calculator' || matrix.tool == 'quick-notes' || matrix.tool == 'notification-lab' || matrix.tool == 'background-task-demo') }}
+        env:
+          TBX_TOOL: ${{ matrix.tool }}
+        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/bundled-tools.test.cjs
       - name: 2048 game core and save tests
         if: ${{ matrix.tool == 'game-2048' && matrix.full_tests }}
         run: python3 scripts/ci/tbx.py test-unit --tool game-2048 --test-filter tests/game-core.test.cjs,tests/game-save.test.cjs

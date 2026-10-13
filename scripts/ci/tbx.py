@@ -27,6 +27,11 @@ SHARED_PATHS = (
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
 RUNTIME_PERFORMANCE_TEST = "scripts/tests/tool-runtime-performance.test.cjs"
 RUNTIME_PERFORMANCE_TOOLS = {"stock-monitor", "notification-lab", "kegel-trainer"}
+BUNDLED_TOOLS_TEST = "scripts/tests/bundled-tools.test.cjs"
+BUNDLED_TOOLS_PATTERNS = {
+    "position-calculator": "^position calculator ", "quick-notes": "^quick notes ",
+    "notification-lab": "^notification lab ", "background-task-demo": "^background task ",
+}
 TEST_FILES = {
     "nextflux": {
         "unit": {
@@ -95,7 +100,9 @@ TEST_FILES = {
         "unit": {"scripts/tests/watcher-reliability.test.cjs"},
         "browser": {"examples/github-actions-watcher/tests/layout.py"},
     },
-    **{name: {"unit": {RUNTIME_PERFORMANCE_TEST}, "browser": set()} for name in RUNTIME_PERFORMANCE_TOOLS},
+    **{name: {"unit": ({RUNTIME_PERFORMANCE_TEST} if name in RUNTIME_PERFORMANCE_TOOLS else set())
+                       | ({BUNDLED_TOOLS_TEST} if name in BUNDLED_TOOLS_PATTERNS else set()), "browser": set()}
+       for name in RUNTIME_PERFORMANCE_TOOLS | set(BUNDLED_TOOLS_PATTERNS)},
     "game-2048": {"unit": {"tests/game-core.test.cjs", "tests/game-save.test.cjs"}, "browser": set()},
 }
 
@@ -118,7 +125,8 @@ def select_targets(registry, selection, changed=()):
         return sorted(name for name in registry
                       if any(path.startswith(f"examples/{name}/") for path in changed)
                       or (name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed)
-                      or (name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed))
+                      or (name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed)
+                      or (name in BUNDLED_TOOLS_PATTERNS and BUNDLED_TOOLS_TEST in changed))
     requested = selection.split(",")
     requested = [name.strip() for name in requested]
     unknown = [name for name in requested if name not in registry]
@@ -215,9 +223,9 @@ def selected_tests(name, changed, requested_filter, full):
                 selected |= allowed
             elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:
                 selected |= allowed
-            elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".js", ".html", ".css")):
+            elif (name in RUNTIME_PERFORMANCE_TOOLS or name in BUNDLED_TOOLS_PATTERNS) and relative.endswith((".js", ".html", ".css")):
                 selected |= allowed
-            elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".png", ".svg", ".ogg")):
+            elif (name in RUNTIME_PERFORMANCE_TOOLS or name in BUNDLED_TOOLS_PATTERNS) and relative.endswith((".png", ".svg", ".ogg")):
                 continue
             elif name == "game-2048" and relative.endswith((".js", ".html", ".css")):
                 selected |= allowed
@@ -232,6 +240,8 @@ def selected_tests(name, changed, requested_filter, full):
             selected.add("scripts/tests/watcher-reliability.test.cjs")
         if name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed:
             selected.add(RUNTIME_PERFORMANCE_TEST)
+        if name in BUNDLED_TOOLS_PATTERNS and BUNDLED_TOOLS_TEST in changed:
+            selected.add(BUNDLED_TOOLS_TEST)
     if name == "github-actions-watcher":
         result["watcher_reliability"] = "scripts/tests/watcher-reliability.test.cjs" in selected
         result["watcher_layout"] = "examples/github-actions-watcher/tests/layout.py" in selected
@@ -301,6 +311,8 @@ def run_selected_tests(name, test_filter, browser=False):
             command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test"]
             if path == RUNTIME_PERFORMANCE_TEST and name in RUNTIME_PERFORMANCE_TOOLS:
                 command += ["--test-name-pattern", {"stock-monitor": "^stock ", "notification-lab": "^notification lab ", "kegel-trainer": "^Kegel "}[name]]
+            if path == BUNDLED_TOOLS_TEST and name in BUNDLED_TOOLS_PATTERNS:
+                command += ["--test-name-pattern", BUNDLED_TOOLS_PATTERNS[name]]
             command.append(path)
             completed = subprocess.run(command, cwd=source, text=True, capture_output=True)
             sys.stdout.write(completed.stdout)
