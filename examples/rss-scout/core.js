@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.5 — independently implemented, no remote code execution. */
+/* RSS Scout 1.4.6 — independently implemented, no remote code execution. */
 (function (root) {
   'use strict';
   const PROLOG_DOCTYPE = /^((?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->)*)<!DOCTYPE\b((?:[^>\['"]|"[^"]*"|'[^']*')*)([>[])/i;

@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.5 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.6 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -1413,7 +1413,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.5\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.6\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })

@@ -4,7 +4,7 @@
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
   // Keep in sync with manifest.json "version" (checked by watcher-reliability tests).
-  const TOOL_VERSION = "1.1.9";
+  const TOOL_VERSION = "1.1.10";
   const USER_AGENT = `ToolBox-GitHub-Actions-Watcher/${TOOL_VERSION}`;
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
