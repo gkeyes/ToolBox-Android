@@ -182,6 +182,24 @@ test('quick notes delete can be undone', async () => {
   assert.equal(tool.$('notes').children.length, 2);
 });
 
+test('quick notes deleting the note being edited clears the editor and its draft', async () => {
+  const tool = quickNotes({ notes: [{ id: 'a', text: 'keep me', updatedAt: 2 }, { id: 'b', text: 'other', updatedAt: 1 }] });
+  await settle();
+  await noteButton(tool, 0, 'edit').fire('click');
+  tool.$('note-input').value = 'keep me, edited';
+  await tool.flush();
+  assert.equal(tool.store.has('draft'), true);
+  await noteButton(tool, 0, 'delete').fire('click');
+  assert.equal(tool.$('note-input').value, '');
+  assert.equal(tool.$('cancel-edit').hidden, true);
+  assert.equal(tool.store.has('draft'), false);
+  await tool.$('undo').fire('click');
+  await tool.$('editor').fire('submit');
+  assert.deepEqual(tool.store.get('notes').map((note) => note.text), ['keep me', 'other']);
+  await tool.flush();
+  assert.equal(tool.store.has('draft'), false);
+});
+
 test('quick notes editing can be cancelled without changing the note', async () => {
   const tool = quickNotes({ notes: [{ id: 'a', text: 'original', updatedAt: 1 }] });
   await settle();
@@ -285,6 +303,24 @@ test('notification lab live ticks do not write storage; flush does', async () =>
   assert.equal(lab.calls.set, writes);
   await lab.listeners.flush();
   assert.equal(lab.calls.set, writes + 1);
+});
+
+test('notification lab checkpoints the background tick at most every 30 seconds', async () => {
+  const lab = notificationLab();
+  await lab.api.bootWork;
+  await lab.api.startLive();
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    const writes = lab.calls.set;
+    for (let i = 0; i < 14; i += 1) { now += 2000; await lab.api.updateLive(); }
+    assert.equal(lab.calls.set, writes, 'no write within the first 30 seconds of updates');
+    now += 2000; await lab.api.updateLive();
+    assert.equal(lab.calls.set, writes + 1, 'a process death after this loses at most 30 seconds of ticks');
+    for (let i = 0; i < 14; i += 1) { now += 2000; await lab.api.updateLive(); }
+    assert.equal(lab.calls.set, writes + 1);
+  } finally { Date.now = realNow; }
 });
 
 test('notification lab re-acquires the session after SESSION_ENDED', async () => {

@@ -5,6 +5,8 @@
   const TIMER_KEY = "notification-lab-live";
   const STORAGE_KEY = "notification-lab-state";
   const MAX_EVENTS = 200;
+  // Background ticks are checkpointed at most this often, so a restore after process death resumes close to the live count.
+  const TICK_CHECKPOINT_MS = 30000;
   const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/g;
 
   const state = {
@@ -29,6 +31,7 @@
   let restoreWork = null;
   let bootWork = null;
   let writeChain = Promise.resolve();
+  let lastPersistAt = 0;
   const userActions = new Set();
   let restorePending = false;
   let restoreReason = "unknown";
@@ -159,6 +162,7 @@
         live: state.live,
         auto: state.auto
       };
+    lastPersistAt = Date.now();
     const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
     writeChain = work;
     try {
@@ -329,7 +333,9 @@
         result = await startLiveIn(await reacquireSession(error, sessionId));
       }
       applyLiveResult(result);
-      // The tick lives in memory; it is saved on flush, on leaving the page and with other state changes.
+      // The tick lives in memory; it is saved on flush, on leaving the page, with other state changes and
+      // by a throttled checkpoint, because process death skips the flush and restore would republish an old tick.
+      if (Date.now() - lastPersistAt >= TICK_CHECKPOINT_MS) await persist();
       return result;
     } finally {
       updateInFlight = false;

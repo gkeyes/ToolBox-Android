@@ -166,8 +166,9 @@
       saving = true;
       try {
         await persist(notes.filter((candidate) => candidate.id !== note.id));
-        if (editingId === note.id) setEditing(null);
         render(); showUndo(note);
+        // The editor no longer has a note to save into; drop its text and draft so Undo + Save cannot duplicate it.
+        if (editingId === note.id) { resetEditor(); await clearDraft(); }
       } catch (_) { showError("删除失败，原笔记已保留；请检查数据大小、存储权限或可用空间后重试。"); }
       finally { saving = false; }
     }
