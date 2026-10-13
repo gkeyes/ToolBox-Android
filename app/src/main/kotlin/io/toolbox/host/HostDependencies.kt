@@ -100,6 +100,8 @@ internal class HostDependencies(
         backupService, io.toolbox.host.backup.AndroidBackupDocumentIO(application.contentResolver),
     )
 
+    val updates by lazy { io.toolbox.host.update.UpdateRepository(application) }
+
     val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         io.toolbox.host.backup.SerializedPackageOperations(packageOperationsFactory(runtimeDataCleaner, backgroundOperations), packageMutations, catalogLayout::reconcile)
     }
@@ -338,6 +340,11 @@ internal class HostFeatureViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
         io.toolbox.host.backup.BackupViewModel::class.java.isAssignableFrom(modelClass) -> dependencies.backupViewModel() as T
+        io.toolbox.host.update.UpdateViewModel::class.java.isAssignableFrom(modelClass) -> io.toolbox.host.update.UpdateViewModel(
+            repository = dependencies.updates,
+            catalog = dependencies.repositories.catalog,
+            packages = dependencies.packageOperations,
+        ) as T
         RunningToolsViewModel::class.java.isAssignableFrom(modelClass) -> RunningToolsViewModel(
             sessions = dependencies.runtimeSessions.sessions,
             stopSession = dependencies.runtimeSessions::stopSession,

@@ -27,6 +27,7 @@ import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.browser.BrowserAppearance
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.importflow.ImportViewModel
+import io.toolbox.host.update.launchUpdateHint
 import io.toolbox.host.navigation.ToolBoxNavigation
 import io.toolbox.host.settings.SettingsUiState
 import io.toolbox.host.settings.SettingsViewModel
@@ -86,6 +87,12 @@ class MainActivity : ComponentActivity() {
                                 state.dependencies.startupNotice.value = null
                             }
                         }
+                    }
+                    LaunchedEffect(state.dependencies) {
+                        // Let the first frames and startup maintenance go first; the check itself runs off the main thread.
+                        kotlinx.coroutines.delay(3_000)
+                        state.dependencies.updates.launchUpdateHint(state.dependencies.repositories.catalog)
+                            ?.let { android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show() }
                     }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)

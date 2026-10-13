@@ -70,7 +70,7 @@ jobs:
             adb shell svc power stayon true
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
-            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }}
+            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }} > build/webview-debugging/connected-test.log 2>&1 || (adb logcat -d -b crash > build/webview-debugging/logcat-crash.txt; adb logcat -d -v brief > build/webview-debugging/logcat.txt; tail -n 120 build/webview-debugging/connected-test.log; exit 1)
       - name: Require all twelve scenarios to run and pass
         run: |
           python3 - <<'PY'
@@ -83,6 +83,37 @@ jobs:
           assert len(cases) == 12, f'Expected 12 executed cases, got {len(cases)}'
           assert not any(case.find(tag) is not None for case in cases for tag in ('failure', 'error', 'skipped'))
           print('Verified 12 executed scenarios with no failures, errors, or skips.')
+          PY
+      - name: Report failed scenarios as annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for path in Path('app/build/outputs/androidTest-results/connected').rglob('TEST-*.xml'):
+              for case in ET.parse(path).getroot().iter('testcase'):
+                  for tag in ('failure', 'error'):
+                      node = case.find(tag)
+                      if node is not None:
+                          text = (node.get('message') or '') + ' ' + (node.text or '')
+                          text = ' '.join(text.split())[:1500].replace('%', '%25')
+                          print(f"::error title={case.get('name')}::{text}")
+          # Without test results the run stopped earlier: surface which setup step got that far.
+          evidence = Path('build/webview-debugging')
+          print('::error title=Evidence files::' + (', '.join(sorted(p.name for p in evidence.glob('*'))) or 'none'))
+          log = evidence / 'connected-test.log'
+          if log.exists():
+              lines = [line for line in log.read_text(errors='replace').splitlines()
+                       if any(key in line for key in ('FAILED', 'Exception', 'Error', 'error:', 'Crash', 'crash', 'Tests on', 'BUILD'))]
+              print('::error title=Connected test log::' + ' | '.join(lines[-25:]).replace('%', '%25')[:3500])
+          crash = evidence / 'logcat-crash.txt'
+          if crash.exists() and crash.read_text(errors='replace').strip():
+              print('::error title=Crash buffer::' + ' | '.join(crash.read_text(errors='replace').splitlines()[:60]).replace('%', '%25')[:3800])
+          full = evidence / 'logcat.txt'
+          if full.exists():
+              lines = [line for line in full.read_text(errors='replace').splitlines()
+                       if any(key in line for key in ('FATAL', 'AndroidRuntime', 'DEBUG', 'libc', 'chromium', 'cr_', 'TestRunner'))]
+              print('::error title=Logcat::' + ' | '.join(lines[-40:]).replace('%', '%25')[:3800])
           PY
       - name: Retain behavior reports and environment evidence
         if: always()

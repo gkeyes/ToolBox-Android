@@ -1,6 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="30" fill="#1769e8"/>
-  <path d="M25 88 47 64l17 14 38-42" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M82 36h20v20" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="47" cy="64" r="6" fill="#fff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#4FE08A"/><stop offset="0.55" stop-color="#2CB85C"/><stop offset="1" stop-color="#178A3A"/></linearGradient>
+<radialGradient id="sheen" cx="0.22" cy="0.04" r="0.85"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="shade" cx="0.62" cy="1.08" r="0.75"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+<linearGradient id="glyph" x1="0" y1="0.18" x2="0" y2="0.86" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EAF8EF"/></linearGradient>
+
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect width="1024" height="1024" fill="url(#sheen)"/>
+<path d="M226,800H798" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity="0.22"/>
+<path d="M284,600H300A22,22 0 0 1 322,622V778A22,22 0 0 1 300,800H284A22,22 0 0 1 262,778V622A22,22 0 0 1 284,600Z" fill="#FFFFFF" opacity="0.2"/>
+<path d="M414,650H430A22,22 0 0 1 452,672V778A22,22 0 0 1 430,800H414A22,22 0 0 1 392,778V672A22,22 0 0 1 414,650Z" fill="#FFFFFF" opacity="0.2"/>
+<path d="M544,700H560A22,22 0 0 1 582,722V778A22,22 0 0 1 560,800H544A22,22 0 0 1 522,778V722A22,22 0 0 1 544,700Z" fill="#FFFFFF" opacity="0.2"/>
+<path d="M674,560H690A22,22 0 0 1 712,582V778A22,22 0 0 1 690,800H674A22,22 0 0 1 652,778V582A22,22 0 0 1 674,560Z" fill="#FFFFFF" opacity="0.2"/>
+<g opacity="0.07" transform="translate(0 30)">
+<path d="M226,700L420,506L548,620L742,420" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M812,342L800,520L626,358Z" fill="#000000"/>
+<path d="M812,342L800,520L626,358Z" fill="none" stroke="#000000" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.09" transform="translate(0 20)">
+<path d="M226,700L420,506L548,620L742,420" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M812,342L800,520L626,358Z" fill="#000000"/>
+<path d="M812,342L800,520L626,358Z" fill="none" stroke="#000000" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.12" transform="translate(0 11)">
+<path d="M226,700L420,506L548,620L742,420" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M812,342L800,520L626,358Z" fill="#000000"/>
+<path d="M812,342L800,520L626,358Z" fill="none" stroke="#000000" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.1" transform="translate(0 5)">
+<path d="M226,700L420,506L548,620L742,420" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M812,342L800,520L626,358Z" fill="#000000"/>
+<path d="M812,342L800,520L626,358Z" fill="none" stroke="#000000" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M226,700L420,506L548,620L742,420" fill="none" stroke="url(#glyph)" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M812,342L800,520L626,358Z" fill="url(#glyph)"/>
+<path d="M812,342L800,520L626,358Z" fill="none" stroke="url(#glyph)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="10"/>
 </svg>

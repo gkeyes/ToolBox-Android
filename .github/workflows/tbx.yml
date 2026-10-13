@@ -143,6 +143,7 @@ jobs:
           name: watcher-layout-${{ github.sha }}
           path: build/watcher-layout/
           if-no-files-found: warn
+          retention-days: 14
       - name: Health records model and AI validator tests
         if: ${{ matrix.tool == 'health-records' && matrix.full_tests }}
         run: python3 scripts/ci/tbx.py test-unit --tool health-records --test-filter test/model.test.mjs,test/ai.test.mjs
@@ -195,6 +196,7 @@ jobs:
           name: nextflux-reading-checks-${{ github.sha }}
           path: examples/nextflux/test/browser/test-results/reading-results.json
           if-no-files-found: warn
+          retention-days: 14
       - name: Build and verify registered TBX
         env:
           TBX_TOOL: ${{ matrix.tool }}
@@ -219,8 +221,37 @@ jobs:
           name: socialcoach-browser-${{ github.sha }}
           path: examples/socialcoach/test-results/
           if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.tool }}-${{ github.sha }}
           path: build/tbx/${{ matrix.tool }}/delivery/
           if-no-files-found: error
+          retention-days: 14
+
+  publish-test:
+    name: Publish TBX to the in-app test channel
+    needs: [select, package]
+    # Tools that passed are published even if another tool in the matrix failed.
+    if: ${{ always() && needs.select.result == 'success' && needs.select.outputs.count != '0' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: tbx-test-channel
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Publish the packages built by this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --pattern "*-$GITHUB_SHA" -D "$RUNNER_TEMP/artifacts" || true
+          mkdir -p "$RUNNER_TEMP/tbx"
+          find "$RUNNER_TEMP/artifacts" -name '*.tbx' -exec cp {} "$RUNNER_TEMP/tbx/" \; 2>/dev/null || true
+          bash scripts/ci/publish-test-release.sh tools "$RUNNER_TEMP/tbx"

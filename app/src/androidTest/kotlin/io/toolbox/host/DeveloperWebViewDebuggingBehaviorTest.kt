@@ -6,6 +6,7 @@ import android.webkit.WebView
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -47,6 +48,7 @@ import java.nio.file.Files
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -60,9 +62,10 @@ class DeveloperWebViewDebuggingBehaviorTest(
 ) {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun compiledModeIsFixedForExistingAndNewRuntimeDebugging() {
+    @Test fun releaseOverrideReachesExistingAndNewRuntimesWhileDebugStaysOn() {
         val status = RuntimeWebViewDebugging.status(compose.activity)
         assertEquals(BuildConfig.DEBUG, status.enabledByBuild)
+        assertFalse("The in-memory override must start off", status.enabledByUser)
         val root = File(compose.activity.filesDir, "debug-toggle-${UUID.randomUUID()}")
         val views = mutableListOf<WebView>()
         try {
@@ -73,54 +76,95 @@ class DeveloperWebViewDebuggingBehaviorTest(
                 }
             }
             val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
-            toggle.assertIsDisplayed().assertIsNotEnabled()
-            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
-            awaitDebugEndpoint(status.enabled)
-            toggle.performTouchInput { click() }
-            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
-            views += createRuntime(root, "new")
-            assertEquals(status, RuntimeWebViewDebugging.status(compose.activity))
-            awaitDebugEndpoint(status.enabled)
+            if (status.userToggleable) {
+                toggle.assertIsDisplayed().assertIsEnabled().assertIsOff()
+                compose.onNodeWithText(ReleaseOffSummary).assertIsDisplayed()
+                awaitDebugEndpoint(false)
 
-            compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
-            compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
-            toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
-            if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
-            compose.onNodeWithText(
-                when {
-                    status.forcedByPlatform -> "当前系统强制开启接口；应用内不可切换。"
-                    status.enabledByBuild -> "调试版：编译时开启，应用内无法关闭。"
-                    else -> "正式版：编译时关闭，应用内无法开启。"
-                },
-            ).assertIsDisplayed()
-            awaitDebugEndpoint(status.enabled)
+                toggle.performTouchInput { click() }
+                toggle.assertIsOn()
+                compose.onNodeWithText(ReleaseOnSummary).assertIsDisplayed()
+                compose.onNodeWithText(InspectHint).assertIsDisplayed()
+                compose.runOnIdle {
+                    val enabled = RuntimeWebViewDebugging.status(compose.activity)
+                    assertTrue(enabled.enabledByUser)
+                    assertTrue(enabled.appliedEnabled)
+                }
+                awaitDebugEndpoint(true)
+                views += createRuntime(root, "new")
+                awaitDebugEndpoint(true)
+
+                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
+                compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
+                toggle.assertIsDisplayed().assertIsEnabled().assertIsOn().performTouchInput { click() }
+                toggle.assertIsOff()
+                compose.onNodeWithText(ReleaseOffSummary).assertIsDisplayed()
+                compose.runOnIdle { assertFalse(RuntimeWebViewDebugging.status(compose.activity).appliedEnabled) }
+                awaitDebugEndpoint(false)
+                views += createRuntime(root, "after-off")
+                awaitDebugEndpoint(false)
+            } else {
+                toggle.assertIsDisplayed().assertIsNotEnabled()
+                if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
+                awaitDebugEndpoint(status.enabled)
+                toggle.performTouchInput { click() }
+                if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
+                views += createRuntime(root, "new")
+                assertEquals(status, RuntimeWebViewDebugging.status(compose.activity))
+                awaitDebugEndpoint(status.enabled)
+
+                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
+                compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
+                toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
+                if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
+                compose.onNodeWithText(
+                    if (status.forcedByPlatform) ForcedSummary else DebugSummary,
+                ).assertIsDisplayed()
+                awaitDebugEndpoint(status.enabled)
+            }
         } finally {
             compose.runOnIdle {
+                RuntimeWebViewDebugging.setEnabledByUser(compose.activity, false)
                 views.forEach(HardenedRuntimeWebView::release)
             }
             root.deleteRecursively()
         }
     }
 
-    @Test fun manualLoadingAndFailureKeepTheCompiledStateVisibleAndLocked() {
+    @Test fun manualLoadingAndFailureKeepTheDebuggingSwitchUsable() {
         val load = mutableStateOf<HelpLoadState>(HelpLoadState.Loading)
+        val enabled = mutableStateOf(BuildConfig.DEBUG)
+        val toggleable = !BuildConfig.DEBUG
         var retries = 0
         compose.activity.setContent {
             ToolBoxTheme(mode = mode, style = style) {
                 DeveloperHelpPage(
                     state = load.value, onBack = {}, onInstallExamples = {},
                     onRetry = { retries++ },
-                    webViewDebuggingEnabled = BuildConfig.DEBUG,
+                    webViewDebuggingEnabled = enabled.value,
+                    webViewDebuggingToggleable = toggleable,
+                    onWebViewDebuggingChange = { enabled.value = it },
                 )
             }
         }
         val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
         compose.onNodeWithText("正在读取离线手册…").assertIsDisplayed()
-        toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
-        if (BuildConfig.DEBUG) toggle.assertIsOn() else toggle.assertIsOff()
-        compose.runOnIdle { load.value = HelpLoadState.Failed }
-        toggle.assertIsNotEnabled().performTouchInput { click() }
-        if (BuildConfig.DEBUG) toggle.assertIsOn() else toggle.assertIsOff()
+        if (toggleable) {
+            toggle.assertIsDisplayed().assertIsEnabled().assertIsOff().performTouchInput { click() }
+            toggle.assertIsOn()
+            compose.onNodeWithText(ReleaseOnSummary).assertIsDisplayed()
+            compose.runOnIdle { load.value = HelpLoadState.Failed }
+            toggle.assertIsEnabled().assertIsOn().performTouchInput { click() }
+            toggle.assertIsOff()
+            compose.onNodeWithText(ReleaseOffSummary).assertIsDisplayed()
+        } else {
+            toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
+            toggle.assertIsOn()
+            compose.runOnIdle { load.value = HelpLoadState.Failed }
+            toggle.assertIsNotEnabled().performTouchInput { click() }
+            toggle.assertIsOn()
+            compose.onNodeWithText(DebugSummary).assertIsDisplayed()
+        }
         compose.onNodeWithText("重新读取").performClick()
         compose.runOnIdle { assertEquals(1, retries) }
     }
@@ -137,7 +181,7 @@ class DeveloperWebViewDebuggingBehaviorTest(
         compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
             .assertIsDisplayed().assertIsOn().assertIsNotEnabled().performTouchInput { click() }
             .assertIsOn()
-        compose.onNodeWithText("当前系统强制开启接口；应用内不可切换。")
+        compose.onNodeWithText(ForcedSummary)
             .assertIsDisplayed()
     }
 
@@ -195,6 +239,12 @@ class DeveloperWebViewDebuggingBehaviorTest(
     }
 
     companion object {
+        private const val ForcedSummary = "当前系统强制开启接口；应用内不可切换。"
+        private const val DebugSummary = "调试版：编译时开启，应用内无法关闭。"
+        private const val ReleaseOffSummary = "默认关闭；开启后电脑 Chrome 可检查小工具页面，应用重启后自动关闭。"
+        private const val ReleaseOnSummary = "已开启：连接电脑的人可读取小工具页面数据，应用重启后自动关闭。"
+        private const val InspectHint = "电脑 Chrome 打开 chrome://inspect/#devices，选择小工具页面的 Inspect。"
+
         @JvmStatic @Parameterized.Parameters(name = "{0}/{1}")
         fun themes() = ToolBoxThemeStyle.entries.flatMap { style ->
             listOf(ToolBoxThemeMode.Light, ToolBoxThemeMode.Dark).map { mode -> arrayOf(style, mode) }
