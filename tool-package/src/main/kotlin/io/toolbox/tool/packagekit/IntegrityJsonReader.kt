@@ -68,12 +68,7 @@ internal class IntegrityJsonReader(private val input: Reader, private val resour
         'u' -> {
             var code = 0
             repeat(4) {
-                val digit = when (val hex = take().toChar()) {
-                    in '0'..'9' -> hex - '0'
-                    in 'a'..'f' -> hex - 'a' + 10
-                    in 'A'..'F' -> hex - 'A' + 10
-                    else -> fail("Invalid Unicode escape")
-                }
+                val digit = jsonHexDigit(take().toChar()) ?: fail("Invalid Unicode escape")
                 code = code * 16 + digit
             }
             code.toChar()
