@@ -9,7 +9,9 @@
   let draftStored = false;
   let saveWork = null;
   let draftChain = Promise.resolve();
-  // Draft writes/clears run one at a time, after any in-flight note save, so a just-saved text is never kept as a draft.
+  // Notes writes (save, delete, undo) are tracked so draft steps and the flush handler wait for them and see the editor they leave behind.
+  const track = (work) => { saveWork = work; work.finally(() => { if (saveWork === work) saveWork = null; }); return work; };
+  // Draft writes/clears run one at a time, after any in-flight notes write, so a just-saved or just-deleted text is never kept as a draft.
   const queueDraft = (step) => (draftChain = draftChain.catch(() => {}).then(async () => { await saveWork?.catch(() => {}); return step(); }));
   const toolbox = () => window.ToolBox;
   let readyWork = null;
@@ -66,7 +68,6 @@
       }
     }
     render();
-    try { toolbox()?.runtime?.registerFlushHandler?.(writeDraft); } catch (_) {}
   }
   function formatTime(timestamp) {
     return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp));
@@ -123,9 +124,7 @@
       catch (_) { showError("保存失败，输入已保留；请检查数据大小、存储权限或可用空间后重试。"); }
       finally { saving = false; }
     })();
-    saveWork = work;
-    await work;
-    if (saveWork === work) saveWork = null;
+    await track(work);
     if (!saved) return;
     if (!$("note-input").value) await clearDraft();
     await notify("笔记已保存");
@@ -145,12 +144,16 @@
     const note = lastDeleted;
     if (!note || saving) return;
     saving = true;
-    try {
-      const next = [...notes.filter((candidate) => candidate.id !== note.id), note].sort((a, b) => b.updatedAt - a.updatedAt);
-      await persist(next);
-      hideUndo(); render(); await notify("已恢复笔记");
-    } catch (_) { showError("恢复失败；请检查数据大小、存储权限或可用空间后重试。"); }
-    finally { saving = false; }
+    let restored = false;
+    await track((async () => {
+      try {
+        const next = [...notes.filter((candidate) => candidate.id !== note.id), note].sort((a, b) => b.updatedAt - a.updatedAt);
+        await persist(next);
+        hideUndo(); render(); restored = true;
+      } catch (_) { showError("恢复失败；请检查数据大小、存储权限或可用空间后重试。"); }
+      finally { saving = false; }
+    })());
+    if (restored) await notify("已恢复笔记");
   }
   async function act(event) {
     const button = event.target.closest("button");
@@ -164,18 +167,25 @@
     if (button.classList.contains("copy")) { await copy(note.text); return; }
     if (button.classList.contains("delete")) {
       saving = true;
-      try {
-        await persist(notes.filter((candidate) => candidate.id !== note.id));
-        render(); showUndo(note);
-        // The editor no longer has a note to save into; drop its text and draft so Undo + Save cannot duplicate it.
-        if (editingId === note.id) { resetEditor(); await clearDraft(); }
-      } catch (_) { showError("删除失败，原笔记已保留；请检查数据大小、存储权限或可用空间后重试。"); }
-      finally { saving = false; }
+      let clearedEditor = false;
+      await track((async () => {
+        try {
+          await persist(notes.filter((candidate) => candidate.id !== note.id));
+          render(); showUndo(note);
+          // The editor no longer has a note to save into; drop its text and draft so Undo + Save cannot duplicate it.
+          if (editingId === note.id) { resetEditor(); clearedEditor = true; }
+        } catch (_) { showError("删除失败，原笔记已保留；请检查数据大小、存储权限或可用空间后重试。"); }
+        finally { saving = false; }
+      })());
+      // Queued after the tracked work settles (a draft step waits for it), so a flush meanwhile sees the cleared editor and removes the draft itself.
+      if (clearedEditor) await clearDraft();
     }
   }
   $("editor").addEventListener("submit", save);
   $("cancel-edit").addEventListener("click", cancelEdit);
   $("undo").addEventListener("click", undoDelete);
   $("notes").addEventListener("click", act);
-  restore();
+  const restoring = restore();
+  // Registered before restoration settles so a close during startup still waits for it and keeps what was typed meanwhile.
+  try { toolbox()?.runtime?.registerFlushHandler?.(async () => { await restoring; await writeDraft(); }); } catch (_) {}
 })();

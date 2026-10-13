@@ -151,14 +151,14 @@ test('position calculator rejects absurd exponents with the validation error', a
 const NOTE_TEMPLATE = ['article', 'note', [['p', 'note-body'], ['p', 'note-time'], ['div', 'note-actions', [
   ['button', 'text-button edit'], ['button', 'text-button copy'], ['button', 'text-button danger delete']]]]];
 
-function quickNotes(initial = {}, { beforeSet } = {}) {
+function quickNotes(initial = {}, { beforeSet, ready } = {}) {
   const store = new Map(Object.entries(initial));
   const writes = [];
-  let flush = null;
+  const handlers = new Set();
   const toolbox = {
-    ready: async () => ({}),
+    ready: ready || (async () => ({})),
     ui: { toast: async () => {} },
-    runtime: { registerFlushHandler: (handler) => { flush = handler; return () => {}; } },
+    runtime: { registerFlushHandler: (handler) => { handlers.add(handler); return () => handlers.delete(handler); } },
     storage: {
       get: async (key) => store.has(key) ? structuredClone(store.get(key)) : null,
       set: async (key, value) => { if (beforeSet) await beforeSet(key); writes.push(key); store.set(key, structuredClone(value)); },
@@ -166,7 +166,12 @@ function quickNotes(initial = {}, { beforeSet } = {}) {
     },
   };
   const tool = loadTool('quick-notes', toolbox, { templates: { 'note-template': NOTE_TEMPLATE } });
-  return { ...tool, store, writes, flush: () => flush() };
+  // Like the injected SDK: the handler set is snapshotted when the close starts, and the close fails if any handler rejects.
+  const flush = () => Promise.allSettled([...handlers].map((handler) => Promise.resolve().then(handler))).then((results) => {
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
+  });
+  return { ...tool, store, writes, flush };
 }
 const noteButton = (tool, index, kind) => tool.$('notes').children[index].querySelector(`.${kind}`);
 
@@ -245,6 +250,46 @@ test('quick notes flush during a save does not keep the saved text as a draft', 
   await Promise.all([saving, flushing]);
   assert.deepEqual(tool.store.get('notes').map((note) => note.text), ['saved then closed']);
   assert.equal(draftAtFlush, null);
+});
+
+test('quick notes closing while startup is still restoring keeps what was typed', async () => {
+  const ready = defer();
+  const tool = quickNotes({ notes: [{ id: 'a', text: 'original', updatedAt: 1 }] }, { ready: () => ready.promise });
+  await settle();
+  tool.$('note-input').value = 'typed during startup';
+  let draftAtFlush = null;
+  const flushing = tool.flush().then(() => { draftAtFlush = tool.store.get('draft') ?? null; });
+  await settle();
+  ready.resolve({});
+  await flushing;
+  assert.deepEqual(draftAtFlush, { text: 'typed during startup', editingId: null });
+  assert.equal(tool.$('note-input').value, 'typed during startup');
+});
+
+test('quick notes closing while deleting the edited note does not keep its text as a draft', async () => {
+  let gate = null;
+  const tool = quickNotes({ notes: [{ id: 'a', text: 'secret', updatedAt: 2 }, { id: 'b', text: 'other', updatedAt: 1 }] },
+    { beforeSet: (key) => key === 'notes' ? gate?.promise : undefined });
+  await settle();
+  await noteButton(tool, 0, 'edit').fire('click');
+  tool.$('note-input').value = 'secret, edited';
+  await tool.flush();
+  assert.equal(tool.store.has('draft'), true);
+  gate = defer();
+  const deleting = noteButton(tool, 0, 'delete').fire('click');
+  await tick();
+  // The host tears the page down as soon as the flush handler settles; what is stored then is what survives.
+  let draftAtFlush = 'unset';
+  const flushing = tool.flush().then(() => { draftAtFlush = tool.store.get('draft') ?? null; });
+  await settle();
+  gate.resolve();
+  await Promise.all([deleting, flushing]);
+  assert.equal(draftAtFlush, null);
+  assert.deepEqual(tool.store.get('notes').map((note) => note.id), ['b']);
+
+  const reopened = quickNotes(Object.fromEntries(tool.store));
+  await settle();
+  assert.equal(reopened.$('note-input').value, '');
 });
 
 // ---------- notification-lab ----------
