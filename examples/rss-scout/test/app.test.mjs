@@ -109,6 +109,28 @@ test('subscribing a URL without credentials does not ask', async () => {
   assert.equal(log.requests.filter(r => r.method === 'POST').length, 1);
 });
 
+for (const name of ['api_key', 'password', 'secret']) {
+  test(`subscribing a URL with a ${name} parameter asks first`, async () => {
+    const feedUrl = `https://example.com/feed.xml?${name}=s3cret`;
+    const { window, $, log } = await boot({
+      storage: { 'rss-scout.settings.v1': { useRadar: false, checkHome: false } },
+      secure: { 'rss-scout.miniflux.v1': { base: MINIFLUX, token: 'tok' } },
+      responses: {
+        ['GET ' + feedUrl]: { body: FEED },
+        ['GET ' + MINIFLUX + '/v1/feeds']: { body: [] },
+        ['POST ' + MINIFLUX + '/v1/feeds']: { status: 201, body: { feed_id: 4 } }
+      }
+    });
+    $('url').value = feedUrl;
+    $('search-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+    await settle(window);
+    $('results').querySelector('button.subscribe').click();
+    await settle(window);
+    assert.equal($('confirm-modal').hidden, false);
+    assert.equal(log.requests.some(r => r.url.startsWith(MINIFLUX)), false);
+  });
+}
+
 test('index.html declares a CSP that its own markup satisfies', () => {
   const html = source('index.html');
   const csp = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/)?.[1] || '';

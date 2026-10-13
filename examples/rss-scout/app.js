@@ -13,7 +13,9 @@
   // Instance-only Radar cache written by early versions. Its rules lack private rules and RSSWorker targets,
   // and its key can never match the current R.sourceKey(), so it is not migrated; it is only deleted.
   const OBSOLETE_RULES_KEY = 'rss-scout.radar.v1';
-  const AUTH_PARAM = /^(?:key|code|token|auth|access_token)$/i;
+  const AUTH_NAMES = 'key|code|token|api_key|apikey|access_token|password|auth|secret';
+  const AUTH_PARAM = new RegExp(`^(?:${AUTH_NAMES})$`, 'i');
+  const AUTH_QUERY = new RegExp(`[?&](?:${AUTH_NAMES})=`, 'i');
   const LEGACY_PRIVATE_RULE_URL =
     'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/codex/refactor-lightweight-v2/examples/rss-scout/private-rules.json';
   const defaults = {
@@ -98,7 +100,7 @@
     let text = String(value || '');
     for (const secret of [state.account?.token, $('miniflux-token').value, state.hubAuth?.key, $('hub-key').value])
       if (secret) text = text.split(secret).join('[已隐藏]').split(encodeURIComponent(secret)).join('[已隐藏]');
-    return text.replace(/([?&](?:key|code|token|api_key|access_token|password|auth)=)[^\s&#]+/gi, '$1[已隐藏]');
+    return text.replace(new RegExp(`([?&](?:${AUTH_NAMES})=)[^\\s&#]+`, 'gi'), '$1[已隐藏]');
   }
   function safeError(error) {
     let text = C.cleanText(redact(error?.message || String(error)), 650);
@@ -1091,7 +1093,7 @@
   async function copyFeed(f) {
     await state.api.clipboard.writeText(f.url);
     toast(
-      /[?&](key|code|token|auth|access_token)=/i.test(f.url) ? '已复制；链接含鉴权参数，请勿公开分享' : '已复制订阅链接'
+      AUTH_QUERY.test(f.url) ? '已复制；链接含鉴权参数，请勿公开分享' : '已复制订阅链接'
     );
   }
   function showFeedActions(f) {
@@ -1102,7 +1104,7 @@
     list.append(button('在内置浏览器打开', () => nativeAction(() => state.api.browser.open(f.url))));
     list.append(
       button('分享链接', () => {
-        if (/[?&](key|code|token|auth|access_token)=/i.test(f.url)) {
+        if (AUTH_QUERY.test(f.url)) {
           confirmAction(
             '分享含鉴权参数的链接？',
             '完整链接可能包含你的实例密钥或订阅 Token。请仅分享给可信接收方。',
@@ -1392,7 +1394,7 @@
     $('url').focus();
   });
   $('export').addEventListener('click', () => {
-    if (validRecords().some(f => /[?&](key|code|token|auth|access_token)=/i.test(f.url)))
+    if (validRecords().some(f => AUTH_QUERY.test(f.url)))
       confirmAction(
         '导出含鉴权参数的链接？',
         'OPML 中将保留完整订阅地址，可能包含访问密钥，请妥善保存。',
