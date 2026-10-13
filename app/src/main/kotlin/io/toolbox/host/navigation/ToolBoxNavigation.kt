@@ -1,5 +1,8 @@
 package io.toolbox.host.navigation
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithContent
 import android.content.ContentResolver
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
@@ -74,10 +77,15 @@ import io.toolbox.host.ui.ToolDetailScreen
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
-private val RetainedPageMotion = ToolBoxMotion.pageSpec()
+// Full-width travel needs a finer settle threshold than the default 1% to avoid a final jump.
+private val RetainedPageMotion = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 380f, visibilityThreshold = 0.0005f)
 
 /** Fraction of the page width the predictive-back gesture may drag the page before commit. */
 private const val PredictiveBackTravel = 1f
+/** UINavigationController geometry: the covered page moves back by 30% and dims slightly. */
+private const val IosParallax = 0.3f
+private const val IosDim = 0.12f
+private val PushShadowElevation = 18.dp
 
 /** Shared-axis travel, read inside graphics layers (Density receiver). */
 private val androidx.compose.ui.graphics.GraphicsLayerScope.PageShiftPx: Float
@@ -248,11 +256,15 @@ internal fun ToolBoxNavigation(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            // Shared X axis: the primary screen drifts back and fades through
-                            // while the first secondary page comes in above it.
+                            // iOS push: the primary screen parallaxes back by a third under the
+                            // first secondary page and dims instead of fading out.
                             val coverage = firstRetainedProgress?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
-                            translationX = -trailingDirection * coverage * PageShiftPx
-                            alpha = ToolBoxMotion.fadeThroughOutgoingAlpha(coverage)
+                            translationX = -trailingDirection * coverage * IosParallax * size.width
+                        }
+                        .drawWithContent {
+                            drawContent()
+                            val coverage = firstRetainedProgress?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
+                            if (coverage > 0f) drawRect(Color.Black.copy(alpha = IosDim * coverage))
                         }
                         .then(
                             if (retainedRoutes.isEmpty() && runtimeRoute == null) {
@@ -460,11 +472,18 @@ private fun RetainedSecondaryPage(
                 }
             }
             .graphicsLayer {
-                // Shared X axis: 30dp of travel, fading through the page beneath.
+                // iOS push: the page slides the full width over the one beneath, which parallaxes
+                // back by a third and dims. Predictive back drags the page with the finger.
                 val motion = progress.value.coerceIn(0f, 1f)
                 val coverage = coveredBy?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
-                translationX = trailingDirection * (motion - coverage) * PageShiftPx
-                alpha = ToolBoxMotion.pageLayerAlpha(motion, coverage)
+                translationX = trailingDirection * (motion - coverage * IosParallax) * size.width
+                shadowElevation = if (motion > 0.001f && motion < 0.999f) PushShadowElevation.toPx() else 0f
+                clip = false
+            }
+            .drawWithContent {
+                drawContent()
+                val coverage = coveredBy?.let { 1f - it.value.coerceIn(0f, 1f) } ?: 0f
+                if (coverage > 0f) drawRect(Color.Black.copy(alpha = IosDim * coverage))
             }
             .then(if (isTop) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
