@@ -11,3 +11,7 @@ externalNativeBuild/
 **/test-results/
 **/__pycache__/
 .DS_Store
+output/
+playwright-report/
+*.jks
+*.keystore

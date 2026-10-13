@@ -1,85 +1,62 @@
 name: Android CI
 
+# Every push and pull request runs the contract checks, lint, both APK builds and every JVM unit test.
+# Emulator behavior tests are opt-in from a manual run. Pushes to the default branch also build the
+# signed release and cold-start it on an emulator before uploading it.
 on:
   push:
     branches: ["main"]
     paths:
       - "**"
-      - "!README.md"
+      - "!**.md"
+      - "sdk/help/manual.md"
       - "!docs/**"
       - "!core-data/schemas/**"
-      - "!scripts/tests/watcher-reliability.test.cjs"
-      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
       - "examples/background-task-demo/**"
       - "examples/notification-lab/**"
       - "!.github/workflows/tbx.yml"
-      - "!scripts/ci/**"
-      - "scripts/ci/verify_release.py"
-      - "scripts/ci/verify-host-contract.mjs"
-      - "scripts/ci/targeted-checks.py"
-      - "scripts/ci/reuse-host-verification.py"
-      - "scripts/ci/run-android-behavior.sh"
-      - "scripts/ci/release-startup-smoke.py"
-      - "scripts/tests/test_release_startup.py"
-      - "scripts/tests/test_reuse_host_verification.py"
+      - "!.github/workflows/release.yml"
+      - "!.github/workflows/webview-debugging.yml"
+      - "!scripts/ci/tbx.py"
+      - "!scripts/ci/tbx-targets.json"
+      - "!scripts/tests/watcher-reliability.test.cjs"
+      - "!scripts/tests/tool-runtime-performance.test.cjs"
   pull_request:
     branches: ["main"]
     paths:
       - "**"
-      - "!README.md"
+      - "!**.md"
+      - "sdk/help/manual.md"
       - "!docs/**"
       - "!core-data/schemas/**"
-      - "!scripts/tests/watcher-reliability.test.cjs"
-      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
       - "examples/background-task-demo/**"
       - "examples/notification-lab/**"
       - "!.github/workflows/tbx.yml"
-      - "!scripts/ci/**"
-      - "scripts/ci/verify_release.py"
-      - "scripts/ci/verify-host-contract.mjs"
-      - "scripts/ci/targeted-checks.py"
-      - "scripts/ci/reuse-host-verification.py"
-      - "scripts/ci/run-android-behavior.sh"
-      - "scripts/ci/release-startup-smoke.py"
-      - "scripts/tests/test_release_startup.py"
-      - "scripts/tests/test_reuse_host_verification.py"
+      - "!.github/workflows/release.yml"
+      - "!.github/workflows/webview-debugging.yml"
+      - "!scripts/ci/tbx.py"
+      - "!scripts/ci/tbx-targets.json"
+      - "!scripts/tests/watcher-reliability.test.cjs"
+      - "!scripts/tests/tool-runtime-performance.test.cjs"
   workflow_dispatch:
     inputs:
       run_android_ui_tests:
-        description: "Explicitly run Android emulator behavior and signed-startup checks"
+        description: "Run the Android emulator behavior tests"
         type: boolean
         default: false
-      validation_scope:
-        description: "Checks to run: full, performance, selected cases, or reuse a completed run"
-        type: choice
-        options: [full, performance, targeted, reuse]
-        default: full
-      unit_test_filter:
-        description: "For targeted runs: module=fully.qualified.TestClass#method, comma separated"
-        type: string
-        required: false
       android_test_filter:
-        description: "For targeted runs: app or tool-runtime=class#method, comma separated; bare class means app"
-        type: string
-        required: false
-      node_test_path:
-        description: "For targeted runs: scripts/tests/browser-*.test.cjs paths, comma separated"
-        type: string
-        required: false
-      reuse_verified_run:
-        description: "Optional completed host-check run whose source is merged and unchanged; preserves its verification scope"
+        description: "Optional: only these emulator tests, as module=Class or module=Class#method (module is app or tool-runtime; bare class means app), comma separated"
         type: string
         required: false
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: android-${{ github.event_name }}-${{ github.ref }}
@@ -87,130 +64,63 @@ concurrency:
 
 jobs:
   verify:
-    name: ${{ inputs.android_test_filter && 'Verify selected Android test' || 'Build APK and verify host behavior' }}
+    name: Build APKs and verify host behavior
     runs-on: ubuntu-24.04
     outputs:
-      verification_scope: ${{ steps.baseline.outputs.scope }}
-      verification_run: ${{ steps.baseline.outputs.source_run }}
-      verification_attempt: ${{ steps.baseline.outputs.source_attempt }}
-      verification_commit: ${{ steps.baseline.outputs.base_commit }}
-      verification_checks: ${{ steps.android_ui.outputs.enabled == 'false' && 'build_and_unit_only' || steps.baseline.outputs.checks }}
-      unit_filter: ${{ steps.baseline.outputs.unit_filter }}
-      android_filter: ${{ steps.baseline.outputs.android_filter }}
-      node_filter: ${{ steps.baseline.outputs.node_filter }}
-      android_ui_enabled: ${{ steps.android_ui.outputs.enabled }}
+      checks: ${{ steps.scope.outputs.checks }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      - name: Select focused checks for known source changes
-        id: targeted
+      - name: Select emulator scope
+        id: scope
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          VALIDATION_SCOPE: ${{ inputs.validation_scope || 'full' }}
-          UNIT_TEST_FILTER: ${{ inputs.unit_test_filter || '' }}
+          RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
           ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
-          NODE_TEST_PATH: ${{ inputs.node_test_path || '' }}
-          RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
-          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run || '' }}
-        run: python3 scripts/ci/targeted-checks.py plan
-      - name: Apply selected Android test filter
-        run: echo "TARGET_ANDROID_TEST=${{ steps.targeted.outputs.android }}" >> "$GITHUB_ENV"
-      - name: Select Android emulator test policy
-        id: android_ui
-        env:
-          RUN_ANDROID_UI: ${{ inputs.run_android_ui_tests == true }}
         run: |
-          run_ui=false
-          reason=''
-          if [ -n "$TARGET_ANDROID_TEST" ]; then
-            run_ui=true
-            reason="Only the requested test will run: $TARGET_ANDROID_TEST"
+          set -euo pipefail
+          if [ -n "$ANDROID_TEST_FILTER" ]; then
+            printf '%s\n' "$ANDROID_TEST_FILTER" | grep -Eq '^((app|tool-runtime)=)?io\.toolbox\.[A-Za-z0-9_.#]+(,((app|tool-runtime)=)?io\.toolbox\.[A-Za-z0-9_.#]+)*$' \
+              || { echo "Unexpected android_test_filter: $ANDROID_TEST_FILTER" >&2; exit 1; }
+            checks=selected
           elif [ "$RUN_ANDROID_UI" = true ]; then
-            run_ui=true
-            reason='Manual Android emulator request.'
-          fi
-          echo "enabled=$run_ui" >> "$GITHUB_OUTPUT"
-          if [ "$run_ui" = true ]; then
-            printf '## Android emulator checks: ENABLED\n%s\n' "$reason" >> "$GITHUB_STEP_SUMMARY"
+            checks=full
           else
-            printf '%s\n' '## Android emulator checks: NOT RUN' \
-              'No Android test filter or manual emulator run was requested.' \
-              'Neither Android behavior nor signed-startup checks ran; no full-device validation is claimed.' \
-              'Manual workflow runs can explicitly enable run_android_ui_tests.' >> "$GITHUB_STEP_SUMMARY"
+            checks=build_and_unit_only
           fi
-      - name: Select current or unchanged host verification evidence
-        id: baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REUSE_VERIFIED_RUN: ${{ inputs.reuse_verified_run || '' }}
-          VALIDATION_SCOPE: ${{ steps.targeted.outputs.scope }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          if [ '${{ steps.targeted.outputs.scope }}' = targeted ]; then
-            printf '%s\n' 'scope=current_run' 'checks=targeted' \
-              "source_run=$GITHUB_RUN_ID" "source_attempt=$GITHUB_RUN_ATTEMPT" \
-              "base_commit=$(git rev-parse HEAD)" \
-              "unit_filter=${{ steps.targeted.outputs.unit }}" \
-              "android_filter=${{ steps.targeted.outputs.android }}" \
-              "node_filter=${{ steps.targeted.outputs.node }}" >> "$GITHUB_OUTPUT"
-          elif [ '${{ steps.targeted.outputs.scope }}' = docs_only ]; then
-            printf '%s\n' 'scope=docs_only' 'checks=docs_only' \
-              "source_run=$GITHUB_RUN_ID" "base_commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          else
-            python3 scripts/ci/reuse-host-verification.py
-          fi
+          echo "checks=$checks" >> "$GITHUB_OUTPUT"
+          echo "Android emulator behavior checks: \`$checks\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           node-version: "22"
       - name: Verify API contract, embedded SDK, and security entry points
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         run: node scripts/ci/verify-host-contract.mjs
-      - name: Verify browser picker selection and restore regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
-        run: node --test scripts/tests/browser-picker.test.cjs
-      - name: Verify browser media layout recovery regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
-        run: node --test scripts/tests/browser-media-layout.test.cjs
-      - name: Verify browser media layout in real Chromium
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
-        run: node --test scripts/tests/browser-media-layout-chromium.test.cjs
-      - name: Verify watcher polling and stopped-session regressions
-        if: ${{ env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks != 'targeted' }}
-        run: node --test scripts/tests/watcher-reliability.test.cjs
-      - name: Verify selected browser Node cases
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.targeted.outputs.node != '' }}
-        env:
-          NODE_TEST_PATH: ${{ steps.targeted.outputs.node }}
-        run: python3 scripts/ci/targeted-checks.py node --filters "$NODE_TEST_PATH"
-      - name: Verify release evidence and baseline reuse guards
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        run: |
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_reuse_host_verification.py' -v
-          if [ '${{ steps.baseline.outputs.scope }}' = current_run ]; then
-            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_startup.py' -v
-            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_release_scope.py' -v
-          fi
+      - name: Verify browser scripts
+        run: node --test scripts/tests/browser-picker.test.cjs scripts/tests/browser-media-layout.test.cjs scripts/tests/browser-media-layout-chromium.test.cjs
+      - name: Verify CI and packaging scripts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
+      - name: Lint, build APKs and compile emulator tests
+        run: >-
+          ./gradlew --no-daemon :app:lint :app:assembleDebug :app:assembleRelease
+          :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
+      - name: Run all JVM unit tests
+        run: >-
+          ./gradlew --no-daemon :core-data:testDebugUnitTest :core-ui:testDebugUnitTest
+          :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
       - name: Generate actual Room v1 schema from the fixed installed baseline
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
+        if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         run: |
           set -euo pipefail
+          git fetch --no-tags --depth=1 origin 06cd8ec7899f139f974c4c72b565af59a3f91118
           baseline_dir="$RUNNER_TEMP/toolbox-room-v1"
           mkdir -p "$baseline_dir"
           git archive 06cd8ec7899f139f974c4c72b565af59a3f91118 | tar -x -C "$baseline_dir"
@@ -233,61 +143,18 @@ jobs:
           test -s "$schema"
           mkdir -p app/src/androidTest/assets/room-v1
           cp "$schema" app/src/androidTest/assets/room-v1/1.json
-      - name: Lint the complete Android app
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        run: ./gradlew --no-daemon :app:lint
-      - name: Verify Wasm binary packaging
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'full' }}
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_package_tool.py' -v
-      - name: ${{ steps.baseline.outputs.checks == 'targeted' && 'Build debug and release APKs for selected checks' || (steps.android_ui.outputs.enabled == 'false' && 'Build APKs (Android UI tests disabled)' || (steps.baseline.outputs.checks == 'performance' && 'Compile performance test APK' || 'Build APKs and behavioral test APKs')) }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' }}
-        env:
-          VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
-          SKIP_ANDROID_UI: ${{ steps.android_ui.outputs.enabled == 'false' }}
-        run: |
-          if [ "$VALIDATION_SCOPE" = targeted ]; then
-            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
-            if [ "$SKIP_ANDROID_UI" != true ]; then
-              python3 scripts/ci/targeted-checks.py android-compile --filters "$TARGET_ANDROID_TEST"
-            fi
-          elif [ "$SKIP_ANDROID_UI" = true ]; then
-            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
-          elif [ "$VALIDATION_SCOPE" = performance ]; then
-            ./gradlew --no-daemon :app:assembleDebug :app:compileDebugAndroidTestKotlin
-          else
-            ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
-          fi
-      - name: ${{ steps.baseline.outputs.checks == 'performance' && 'Verify performance unit regressions' || 'Verify installation, catalog, network, runtime and cancellation regressions' }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && env.TARGET_ANDROID_TEST == '' && steps.baseline.outputs.checks != 'targeted' }}
-        env:
-          VALIDATION_SCOPE: ${{ steps.baseline.outputs.checks }}
-        run: |
-          if [ "$VALIDATION_SCOPE" = performance ]; then
-            ./gradlew --no-daemon :app:testDebugUnitTest \
-              --tests 'io.toolbox.host.catalog.*' --tests 'io.toolbox.host.icons.*' \
-              --tests 'io.toolbox.host.HostRootStateTest' --tests 'io.toolbox.host.background.*Network*Test' \
-              :tool-runtime:testDebugUnitTest
-          else
-            ./gradlew --no-daemon :core-data:testDebugUnitTest :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
-          fi
-      - name: Verify selected unit cases
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.targeted.outputs.unit != '' }}
-        env:
-          UNIT_TEST_FILTER: ${{ steps.targeted.outputs.unit }}
-        run: python3 scripts/ci/targeted-checks.py unit --filters "$UNIT_TEST_FILTER"
-      - name: Enable accelerated behavior test emulator
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
+      - name: Enable accelerated emulator
+        if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: ${{ env.TARGET_ANDROID_TEST != '' && format('Verify {0}', env.TARGET_ANDROID_TEST) || (steps.baseline.outputs.checks == 'performance' && 'Verify performance behavior on Android' || 'Verify catalog, backup, execution identity, dialogs and Wasm on Android') }}
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
-        id: runtime_emulator
+      - name: Run Android behavior tests on the emulator
+        if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
+        id: emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         env:
-          TOOLBOX_BEHAVIOR_SCOPE: ${{ steps.baseline.outputs.checks }}
-          TOOLBOX_ANDROID_TEST_FILTER: ${{ env.TARGET_ANDROID_TEST }}
+          TOOLBOX_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
         with:
           api-level: 36
           target: google_apis
@@ -296,68 +163,37 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
-            mkdir -p build/wasm-emulator
-            adb shell getprop ro.build.version.release > build/wasm-emulator/android-version.txt
-            adb shell dumpsys webviewupdate > build/wasm-emulator/webview-provider.txt
+            mkdir -p build/emulator-evidence
+            adb shell getprop ro.build.version.release > build/emulator-evidence/android-version.txt
+            adb shell dumpsys webviewupdate > build/emulator-evidence/webview-provider.txt
             bash scripts/ci/run-android-behavior.sh
-      - name: Confirm selected Android cases actually ran
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' && steps.android_ui.outputs.enabled == 'true' }}
-        env:
-          ANDROID_TEST_FILTER: ${{ steps.targeted.outputs.android }}
-        run: python3 scripts/ci/targeted-checks.py android-results --filters "$ANDROID_TEST_FILTER"
-      - name: Verify targeted selection evidence
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' }}
-        run: python3 scripts/ci/targeted-checks.py evidence-verify
-      - name: Save targeted check evidence
-        if: ${{ steps.baseline.outputs.scope == 'current_run' && steps.baseline.outputs.checks == 'targeted' }}
+      - name: Retain unit test reports
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: android-targeted-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/ci-evidence/targeted-selection.json
-          if-no-files-found: error
-          retention-days: 30
-      - name: Retain host unit test reports
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && (env.TARGET_ANDROID_TEST == '' || steps.targeted.outputs.unit != '') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: wasm-unit-tests-${{ github.sha }}
+          name: unit-tests-${{ github.sha }}
           path: |
-            core-data/build/test-results/
-            core-data/build/reports/tests/
-            tool-package/build/test-results/
-            tool-package/build/reports/tests/
-            tool-runtime/build/test-results/
-            tool-runtime/build/reports/tests/
-            app/build/test-results/
-            app/build/reports/tests/
+            */build/test-results/
+            */build/reports/tests/
+            app/build/reports/lint-results-*.html
           if-no-files-found: ignore
           retention-days: 14
-      - name: Retain Android behavior and WebView evidence
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' && steps.runtime_emulator.outcome != 'skipped' }}
+      - name: Retain Android behavior evidence
+        if: ${{ always() && steps.emulator.outcome != 'skipped' && steps.emulator.outcome != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: wasm-webview-${{ github.sha }}
+          name: android-behavior-${{ github.sha }}
           path: |
             tool-runtime/build/outputs/androidTest-results/connected/
             tool-runtime/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
             app/build/outputs/**/button-preview-*.png
-            build/wasm-emulator/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Retain Room migration schemas
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' && steps.android_ui.outputs.enabled == 'true' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: room-schemas-${{ github.sha }}
-          path: |
-            app/src/androidTest/assets/room-v1/1.json
-            core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/2.json
+            build/emulator-evidence/
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: ${{ always() && steps.baseline.outputs.scope == 'current_run' }}
+        if: ${{ always() }}
         with:
           name: apk-${{ github.sha }}
           path: app/build/outputs/apk/
@@ -366,8 +202,8 @@ jobs:
   delivery:
     name: Package stable signed release
     needs: verify
-    # PRs never receive the signing key; a merged unchanged targeted run may supply verification evidence.
-    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (needs.verify.outputs.verification_scope == 'current_run' || (needs.verify.outputs.verification_scope == 'reused_unchanged_host' && needs.verify.outputs.android_ui_enabled == 'true')) && (needs.verify.outputs.verification_checks == 'full' || needs.verify.outputs.verification_checks == 'targeted') }}
+    # PRs never receive the signing key.
+    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
@@ -417,13 +253,11 @@ jobs:
             unzip -p "$apk" "assets/$example.tbx" | cmp - "build/bundled-examples/$example.tbx"
           done
       - name: Enable accelerated release startup emulator
-        if: ${{ needs.verify.outputs.android_ui_enabled == 'true' }}
         run: |
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Cold-start the signed release and verify its initial home
-        if: ${{ needs.verify.outputs.android_ui_enabled == 'true' }}
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 35
@@ -436,15 +270,13 @@ jobs:
       - name: Verify release certificate identity and optimization then assemble delivery
         env:
           VERIFY_JOB_RESULT: ${{ needs.verify.result }}
-          ALLOW_UNTESTED_STARTUP: ${{ needs.verify.outputs.android_ui_enabled == 'false' && 'true' || 'false' }}
-          HOST_VERIFICATION_SCOPE: ${{ needs.verify.outputs.verification_scope }}
-          HOST_VERIFICATION_RUN: ${{ needs.verify.outputs.verification_run }}
-          HOST_VERIFICATION_ATTEMPT: ${{ needs.verify.outputs.verification_attempt }}
-          HOST_VERIFICATION_COMMIT: ${{ needs.verify.outputs.verification_commit }}
-          HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.verification_checks }}
-          HOST_UNIT_TEST_FILTER: ${{ needs.verify.outputs.unit_filter }}
-          HOST_ANDROID_TEST_FILTER: ${{ needs.verify.outputs.android_filter }}
-          HOST_NODE_TEST_PATH: ${{ needs.verify.outputs.node_filter }}
+          ALLOW_UNTESTED_STARTUP: "false"
+          HOST_VERIFICATION_SCOPE: current_run
+          HOST_VERIFICATION_RUN: ${{ github.run_id }}
+          HOST_VERIFICATION_ATTEMPT: ${{ github.run_attempt }}
+          HOST_VERIFICATION_COMMIT: ${{ github.sha }}
+          HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.checks }}
+          HOST_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"

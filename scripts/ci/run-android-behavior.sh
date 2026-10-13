@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Run the requested Android scope on the shared emulator and retain a failing result.
+# Run Android behavior tests on the shared emulator and keep going after a failing module.
+# TOOLBOX_ANDROID_TEST_FILTER optionally selects module=Class[#method] entries (bare class means app).
 set -uo pipefail
 result=0
-evidence_dir=build/wasm-emulator
+evidence_dir=build/emulator-evidence
 mkdir -p "$evidence_dir"
 
 prepare_visible_emulator() {
@@ -18,19 +19,35 @@ prepare_visible_emulator() {
   adb shell dumpsys window windows > "$evidence_dir/$suite-windows-ready.txt" || return 1
 }
 
-prepare_visible_emulator app || exit 1
-if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = targeted ]; then
-  test -n "${TOOLBOX_ANDROID_TEST_FILTER:-}" || exit 2
-  python3 scripts/ci/targeted-checks.py android-run --filters "$TOOLBOX_ANDROID_TEST_FILTER"
-  exit "$?"
-fi
-if [ "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = performance ]; then
-  ./gradlew --no-daemon :app:connectedDebugAndroidTest \
-    -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.CatalogNameSortTest,io.toolbox.host.icons.ToolIconCompatibilityTest,io.toolbox.host.icons.CatalogToolIconBehaviorTest || result=1
+run_module() {
+  local module="$1" classes="${2:-}"
+  prepare_visible_emulator "$module" || return 1
+  if [ -n "$classes" ]; then
+    ./gradlew --no-daemon ":$module:connectedDebugAndroidTest" \
+      "-Pandroid.testInstrumentationRunnerArguments.class=$classes"
+  else
+    ./gradlew --no-daemon ":$module:connectedDebugAndroidTest"
+  fi
+}
+
+if [ -z "${TOOLBOX_ANDROID_TEST_FILTER:-}" ]; then
+  run_module app || result=1
+  run_module tool-runtime || result=1
   exit "$result"
 fi
-test "${TOOLBOX_BEHAVIOR_SCOPE:-full}" = full || exit 2
-./gradlew --no-daemon :app:connectedDebugAndroidTest || result=1
-prepare_visible_emulator runtime || exit 1
-./gradlew --no-daemon :tool-runtime:connectedDebugAndroidTest || result=1
+
+app_classes=()
+runtime_classes=()
+IFS=',' read -ra entries <<< "$TOOLBOX_ANDROID_TEST_FILTER"
+for entry in "${entries[@]}"; do
+  entry="${entry// /}"
+  case "$entry" in
+    tool-runtime=*) runtime_classes+=("${entry#tool-runtime=}") ;;
+    app=*) app_classes+=("${entry#app=}") ;;
+    ?*) app_classes+=("$entry") ;;
+  esac
+done
+join() { local IFS=','; echo "$*"; }
+if [ "${#app_classes[@]}" -gt 0 ]; then run_module app "$(join "${app_classes[@]}")" || result=1; fi
+if [ "${#runtime_classes[@]}" -gt 0 ]; then run_module tool-runtime "$(join "${runtime_classes[@]}")" || result=1; fi
 exit "$result"
