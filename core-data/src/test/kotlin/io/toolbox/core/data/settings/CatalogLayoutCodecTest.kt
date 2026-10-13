@@ -35,4 +35,26 @@ class CatalogLayoutCodecTest {
         assertEquals(listOf("b"), next.favorites)
         assertEquals(next, next.moveGroup("missing", -1).moveFavorite("b", Int.MAX_VALUE))
     }
+
+    @Test fun groupStyleRoundTripsAndLegacyGroupsStillDecode() {
+        val styled = CatalogLayout(groups = listOf(
+            CatalogGroup("s", "阅读", listOf("a"), color = "orange", icon = "Note"),
+            CatalogGroup("d", "默认"),
+        ))
+        val encoded = CatalogLayoutCodec.encode(styled)
+        assertEquals(styled, CatalogLayoutCodec.decode(encoded))
+        // A default group keeps the original four keys.
+        assertFalse(encoded.substringAfter("\"id\":\"d\"").contains("color"))
+        val legacy = CatalogLayoutCodec.decode(
+            """{"version":1,"favorites":[],"groups":[{"id":"g","name":"组","members":["a"],"expanded":false}],"sort":"NAME"}""",
+        )
+        assertEquals(CatalogGroup("g", "组", listOf("a"), false), legacy.groups.single())
+        assertNull(legacy.groups.single().color)
+        assertNull(legacy.groups.single().icon)
+        listOf(
+            """{"version":1,"favorites":[],"groups":[{"id":"g","name":"组","members":[],"expanded":true,"color":" "}],"sort":"NAME"}""",
+            """{"version":1,"favorites":[],"groups":[{"id":"g","name":"组","members":[],"expanded":true,"shape":"x"}],"sort":"NAME"}""",
+            """{"version":1,"favorites":[],"groups":[{"id":"g","name":"组","members":[],"expanded":true,"icon":3}],"sort":"NAME"}""",
+        ).forEach { assertTrue(it, runCatching { CatalogLayoutCodec.decode(it) }.isFailure) }
+    }
 }

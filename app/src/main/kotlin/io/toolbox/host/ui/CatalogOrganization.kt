@@ -1,37 +1,47 @@
 package io.toolbox.host.ui
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.indication
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.data.CatalogSort
 import io.toolbox.core.ui.component.*
+import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.*
 
@@ -41,11 +51,88 @@ internal val CatalogSort.label: String get() = when (this) {
     CatalogSort.LAST_OPENED -> "最后打开"
 }
 
+// ---------------------------------------------------------------------------------------------
+// Group style: a palette colour and an icon, stored on CatalogGroup as stable string keys.
+// ---------------------------------------------------------------------------------------------
+
+internal data class CatalogGroupColor(val key: String, val label: String, val top: Color, val bottom: Color)
+
+internal data class CatalogGroupGlyph(val icon: ToolBoxIconKey, val label: String) {
+    val key: String get() = icon.name
+}
+
+internal val CatalogGroupColors = listOf(
+    CatalogGroupColor("blue", "蓝色", Color(0xFF4A9BFF), Color(0xFF0A5BD6)),
+    CatalogGroupColor("indigo", "靛蓝", Color(0xFF7C82FF), Color(0xFF4B4FD6)),
+    CatalogGroupColor("purple", "紫色", Color(0xFFB07CFF), Color(0xFF7B3FD0)),
+    CatalogGroupColor("orange", "橙色", Color(0xFFFF8A3D), Color(0xFFE8590C)),
+    CatalogGroupColor("red", "红色", Color(0xFFFF6B5E), Color(0xFFD7261B)),
+    CatalogGroupColor("pink", "粉色", Color(0xFFFF7AA8), Color(0xFFE0306A)),
+    CatalogGroupColor("green", "绿色", Color(0xFF3DD17A), Color(0xFF1E8E3E)),
+    CatalogGroupColor("teal", "青色", Color(0xFF2ECBCB), Color(0xFF0B8A8A)),
+)
+
+internal val CatalogGroupGlyphs = listOf(
+    CatalogGroupGlyph(ToolBoxIconKey.Folder, "文件夹"),
+    CatalogGroupGlyph(ToolBoxIconKey.Tools, "工具"),
+    CatalogGroupGlyph(ToolBoxIconKey.Star, "星标"),
+    CatalogGroupGlyph(ToolBoxIconKey.Code, "代码"),
+    CatalogGroupGlyph(ToolBoxIconKey.Calculator, "计算"),
+    CatalogGroupGlyph(ToolBoxIconKey.Note, "笔记"),
+    CatalogGroupGlyph(ToolBoxIconKey.Globe, "网络"),
+    CatalogGroupGlyph(ToolBoxIconKey.Notifications, "通知"),
+    CatalogGroupGlyph(ToolBoxIconKey.Clock, "时间"),
+    CatalogGroupGlyph(ToolBoxIconKey.Shield, "安全"),
+    CatalogGroupGlyph(ToolBoxIconKey.Palette, "设计"),
+    CatalogGroupGlyph(ToolBoxIconKey.Device, "设备"),
+)
+
+/** Unknown or missing keys (groups saved before styles existed) use the default folder style. */
+internal fun catalogGroupColor(key: String?): CatalogGroupColor =
+    CatalogGroupColors.firstOrNull { it.key == key } ?: CatalogGroupColors.first()
+
+internal fun catalogGroupGlyph(key: String?): CatalogGroupGlyph =
+    CatalogGroupGlyphs.firstOrNull { it.key == key } ?: CatalogGroupGlyphs.first()
+
 @Composable
-internal fun HomeSectionHeader(title: String, action: String? = null, onAction: () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        AppText(title, Modifier.weight(1f).semantics { heading() },
-            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold))
+internal fun CatalogGroupStyleIcon(
+    colorKey: String?,
+    iconKey: String?,
+    size: Dp,
+    iconSize: Dp = size * 0.55f,
+    modifier: Modifier = Modifier,
+) {
+    val color = catalogGroupColor(colorKey)
+    Box(
+        modifier.size(size)
+            .clip(toolBoxShape(size * 0.27f))
+            .background(Brush.verticalGradient(listOf(color.top, color.bottom))),
+        contentAlignment = Alignment.Center,
+    ) {
+        ToolBoxIcon(catalogGroupGlyph(iconKey).icon, null, Modifier.size(iconSize), tint = Color.White)
+    }
+}
+
+@Composable
+internal fun CatalogGroupStyleIcon(group: CatalogGroup, size: Dp, iconSize: Dp = size * 0.55f, modifier: Modifier = Modifier) =
+    CatalogGroupStyleIcon(group.color, group.icon, size, iconSize, modifier)
+
+// ---------------------------------------------------------------------------------------------
+// Home sections
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+internal fun HomeSectionHeader(title: String, action: String? = null, onAction: () -> Unit = {}, trailing: String? = null) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppText(title, Modifier.weight(1f).semantics { heading() }, maxLines = 1,
+            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold))
+        if (trailing != null) {
+            AppText(trailing, color = ToolBoxThemeTokens.colors.textSecondary,
+                textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp))
+        }
         if (action != null) ToolBoxTextButton(action, onAction, outlined = false)
     }
 }
@@ -53,85 +140,101 @@ internal fun HomeSectionHeader(title: String, action: String? = null, onAction: 
 internal fun homeGridColumnCount(availableWidth: Float, fontScale: Float): Int =
     ((availableWidth + 12f) / (72f * fontScale.coerceAtLeast(1f) + 12f)).toInt().coerceAtLeast(1)
 
+/** App Library style folders: two per row on phones, more on wide windows. */
+internal fun homeFolderColumnCount(availableWidth: Float, fontScale: Float): Int =
+    ((availableWidth + FOLDER_GAP) / (150f * fontScale.coerceAtLeast(1f) + FOLDER_GAP)).toInt().coerceIn(2, 6)
+
+private const val FOLDER_GAP = 14f
+
 internal fun LazyListScope.catalogHomeSections(
     state: CatalogUiState,
     toolsById: Map<String, CatalogTool>,
     editing: Boolean,
     columns: Int,
+    folderColumns: Int,
     drag: CatalogHomeDragState,
     onAction: (CatalogAction) -> Unit,
     onEditGroup: (String) -> Unit,
+    onOpenGroup: (String) -> Unit,
     onAddFavorites: () -> Unit,
     onOptions: (String) -> Unit,
     runningContent: @Composable () -> Unit = {},
 ) {
+    // Running tools first, as compact capsules; they render nothing while no session runs.
+    item("running-tools", contentType = "running-tools") { runningContent() }
+
     val favorites = state.layout.favorites.mapNotNull(toolsById::get)
     if (editing) {
-        item("favorites-heading") {
-            HomeSectionHeader("快捷工具", "添加", onAddFavorites)
-        }
+        item("favorites-heading") { HomeSectionHeader("常用", "添加", onAddFavorites) }
         if (favorites.isEmpty()) item("favorites-empty") {
             HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
         }
         homeToolGrid(
             favorites, "favorite", "favorites", columns, editing, drag, onAction, onOptions,
-            showLabels = true, compact = true,
+            surface = true,
+            onRemove = { tool -> onAction(CatalogAction.SetFavorite(tool.toolId, false)) },
             onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) },
         )
     } else {
         val shortcuts = (favorites + state.recentTools)
             .distinctBy(CatalogTool::toolId)
             .take(HOME_SHORTCUT_LIMIT)
-        item("shortcuts-heading") { HomeSectionHeader("快捷工具") }
+        item("shortcuts-heading") { HomeSectionHeader("常用") }
         if (shortcuts.isEmpty()) item("favorites-empty") {
             HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
         }
         homeToolGrid(
             shortcuts, "favorite", "shortcuts", columns, false, drag, onAction, onOptions,
-            showLabels = true, compact = true,
+            surface = true,
             onMove = { _, _ -> },
         )
     }
 
-    item("running-tools", contentType = "running-tools") { runningContent() }
-
-    if (state.layout.groups.isNotEmpty() || editing) item("groups-heading") {
-        Spacer(Modifier.height(12.dp))
-        HomeSectionHeader("分组")
+    val groups = state.layout.groups
+    if (groups.isNotEmpty() || editing) item("groups-heading") {
+        Column(Modifier.homeItemMotion(this, editing)) {
+            Spacer(Modifier.height(20.dp))
+            HomeSectionHeader("分组", trailing = if (groups.isNotEmpty()) "${groups.size} 个" else null)
+        }
     }
-    if (editing && state.layout.groups.isEmpty()) item("groups-empty") {
+    if (editing && groups.isEmpty()) item("groups-empty") {
         HomeEmptySection("按用途整理工具", "新建分组", { onEditGroup("") })
     }
-    state.layout.groups.forEachIndexed { index, group ->
-        val members = group.members.mapNotNull(toolsById::get)
-        val expanded = group.expanded && !drag.collapsingGroups
-        item("group:" + group.id, contentType = "group-header") {
-            GroupHeader(group, members.size, expanded, editing, index, state.layout.groups.size, drag,
-                modifier = Modifier.homeItemMotion(this, editing),
-                onExpand = { onAction(CatalogAction.SetGroupExpanded(group.id, !group.expanded)) },
-                onEdit = { onEditGroup(group.id) },
-                onMove = { onAction(CatalogAction.MoveGroup(group.id, it)) })
-        }
-        if (expanded) {
-            if (members.isEmpty()) item("empty-group:" + group.id) {
-                Box(Modifier.homeItemMotion(this, editing).groupSurface(bottom = true).padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
-                    ToolBoxTextButton("添加工具", { onEditGroup(group.id) }, outlined = false)
+    val cells = if (groups.isEmpty()) 0 else groups.size + if (editing) 1 else 0
+    val rows = (cells + folderColumns - 1) / folderColumns
+    items(rows, key = { "group-row:$it" }, contentType = { "group-row" }) { row ->
+        Row(
+            Modifier.homeItemMotion(this, editing).fillMaxWidth()
+                .padding(bottom = if (row < rows - 1) FOLDER_GAP.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(FOLDER_GAP.dp),
+        ) {
+            repeat(folderColumns) { column ->
+                val index = row * folderColumns + column
+                val group = groups.getOrNull(index)
+                when {
+                    group != null -> key(group.id) {
+                        CatalogGroupFolder(
+                            group = group,
+                            members = group.members.mapNotNull(toolsById::get),
+                            editing = editing, index = index, total = groups.size, drag = drag,
+                            onOpen = { onOpenGroup(group.id) },
+                            onEdit = { onEditGroup(group.id) },
+                            onMove = { onAction(CatalogAction.MoveGroup(group.id, it)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    editing && index == groups.size -> NewGroupFolder({ onEditGroup("") }, Modifier.weight(1f))
+                    else -> Spacer(Modifier.weight(1f))
                 }
             }
-            homeToolGrid(
-                members, "member:" + group.id, "members:" + group.id, columns, editing, drag, onAction, onOptions,
-                grouped = true, compact = true,
-                onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) },
-            )
         }
-        item("after-group:" + group.id) { Spacer(Modifier.height(8.dp)) }
     }
 }
 
 private const val HOME_SHORTCUT_LIMIT = 8
 
-/** Lazy rows retain one continuous group surface without nesting another vertical scroll container. */
-private fun LazyListScope.homeToolGrid(
+/** Lazy rows retain one continuous card surface without nesting another vertical scroll container. */
+internal fun LazyListScope.homeToolGrid(
     tools: List<CatalogTool>,
     prefix: String,
     collection: String,
@@ -140,25 +243,27 @@ private fun LazyListScope.homeToolGrid(
     drag: CatalogHomeDragState,
     onAction: (CatalogAction) -> Unit,
     onOptions: (String) -> Unit,
-    showLabels: Boolean = true,
-    grouped: Boolean = false,
-    compact: Boolean = false,
+    surface: Boolean = false,
+    iconSize: Dp = 56.dp,
+    onOpen: (CatalogTool) -> Unit = { onAction(CatalogAction.RequestRuntimeLaunch(it.toolId)) },
+    onRemove: ((CatalogTool) -> Unit)? = null,
     onMove: (CatalogTool, Int) -> Unit,
 ) {
     val rows = ((tools.size.toLong() + columns - 1) / columns).toInt()
     val rowPrefix = if (prefix == "favorite") "favorite-row" else "member-row:" + prefix.removePrefix("member:")
     items(rows, key = { rowPrefix + ":" + it }, contentType = { "home-grid-row" }) { row ->
-        val cellGap = if (compact || grouped) 8.dp else 12.dp
-        val horizontalPadding = if (compact || grouped) 12.dp else 16.dp
+        val first = row == 0
+        val last = row == rows - 1
         Row(
             Modifier.homeItemMotion(this, editing).fillMaxWidth()
-                .then(if (grouped) Modifier.groupSurface(bottom = row == rows - 1) else Modifier)
+                .then(if (surface) Modifier.groupSurface(top = first, bottom = last) else Modifier)
                 .padding(
-                    start = horizontalPadding,
-                    end = horizontalPadding,
-                    bottom = if (row < rows - 1) cellGap else if (grouped) 8.dp else 0.dp,
+                    start = if (surface) 8.dp else 0.dp,
+                    end = if (surface) 8.dp else 0.dp,
+                    top = if (surface && first) 16.dp else 0.dp,
+                    bottom = if (!last) 12.dp else if (surface) 12.dp else 0.dp,
                 ),
-            horizontalArrangement = Arrangement.spacedBy(cellGap),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             repeat(columns) { column ->
                 val index = row * columns + column
@@ -167,14 +272,14 @@ private fun LazyListScope.homeToolGrid(
                 else key(tool.toolId) {
                     CatalogHomeTile(
                         tool, editing,
-                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                        onOpen = { onOpen(tool) },
                         onOptions = { onOptions(tool.toolId) },
-                        showLabel = showLabels,
-                        labelMaxLines = if (compact) 1 else 2,
-                        iconSize = if (compact) 46.dp else 52.dp,
-                        labelFontSize = if (compact) 12.sp else 13.sp,
-                        labelLineHeight = if (compact) 16.sp else 18.sp,
-                        labelSpacing = if (compact) 4.dp else 6.dp,
+                        labelMaxLines = 1,
+                        iconSize = iconSize,
+                        labelFontSize = 12.sp,
+                        labelLineHeight = 16.sp,
+                        labelSpacing = 6.dp,
+                        onRemove = onRemove?.let { remove -> { remove(tool) } },
                         modifier = Modifier.weight(1f).testTag(prefix + ":" + tool.toolId)
                             .catalogDragTarget(drag, prefix + ":" + tool.toolId, collection, index, tools.size, tool.name, tool,
                                 enabled = editing, onMove = { onMove(tool, it) }),
@@ -188,7 +293,7 @@ private fun LazyListScope.homeToolGrid(
 }
 
 /**
- * Expanding / collapsing a group fades its rows in and springs the content below into place.
+ * Inserted and removed rows fade and the content below springs into place.
  * Disabled while organizing: the drag controller measures item positions directly.
  */
 private fun Modifier.homeItemMotion(scope: LazyItemScope, editing: Boolean): Modifier =
@@ -210,57 +315,324 @@ private fun Modifier.groupSurface(top: Boolean = false, bottom: Boolean = false)
     return fillMaxWidth().clip(shape).background(ToolBoxThemeTokens.colors.surface, shape)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Folders
+// ---------------------------------------------------------------------------------------------
+
 @Composable
-private fun GroupHeader(
-    group: CatalogGroup, count: Int, expanded: Boolean, editing: Boolean,
-    index: Int, total: Int, drag: CatalogHomeDragState,
-    onExpand: () -> Unit, onEdit: () -> Unit, onMove: (Int) -> Unit,
+private fun CatalogGroupFolder(
+    group: CatalogGroup,
+    members: List<CatalogTool>,
+    editing: Boolean,
+    index: Int,
+    total: Int,
+    drag: CatalogHomeDragState,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onMove: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = ToolBoxThemeTokens.colors
+    val style = catalogGroupColor(group.color)
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.card)
     val interactionSource = remember { MutableInteractionSource() }
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = ToolBoxMotion.spatial(), label = "group-expansion",
-    )
-    Row(
-        modifier.groupSurface(top = true, bottom = !expanded)
-            .indication(interactionSource, LocalIndication.current)
+    val editLabel = "编辑分组" + group.name
+    Column(
+        modifier
             .catalogDragTarget(drag, "group:" + group.id, "groups", index, total, group.name,
                 enabled = editing, onMove = onMove)
             .testTag("group:" + group.id),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            Modifier.weight(1f).heightIn(min = 48.dp).testTag("catalog_group:" + group.id)
-                .semantics {
-                    stateDescription = if (expanded) "已展开" else "已收起"
-                    customActions = buildList {
-                        add(CustomAccessibilityAction("编辑分组" + group.name) { onEdit(); true })
-                        if (editing && index > 0) add(CustomAccessibilityAction("前移") { onMove(-1); true })
-                        if (editing && index < total - 1) add(CustomAccessibilityAction("后移") { onMove(1); true })
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Box(
+                Modifier.matchParentSize()
+                    .toolBoxPressFeedback(interactionSource, shape = shape)
+                    .clip(shape)
+                    .background(lerp(colors.surface, style.bottom, 0.06f))
+                    .testTag("catalog_group:" + group.id)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "分组${group.name}，${members.size} 个工具"
+                        customActions = buildList {
+                            add(CustomAccessibilityAction(editLabel) { onEdit(); true })
+                            if (editing && index > 0) add(CustomAccessibilityAction("前移") { onMove(-1); true })
+                            if (editing && index < total - 1) add(CustomAccessibilityAction("后移") { onMove(1); true })
+                        }
+                    }
+                    .then(
+                        if (editing) Modifier.clickable(interactionSource = interactionSource, indication = null,
+                            role = Role.Button, onClickLabel = "打开分组", onClick = onOpen)
+                        else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
+                            role = Role.Button, onClickLabel = "打开分组", onClick = onOpen,
+                            onLongClick = onEdit, onLongClickLabel = editLabel),
+                    )
+                    .padding(14.dp),
+            ) {
+                CatalogGroupFolderPreview(group, members)
+            }
+            if (editing) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(44.dp)
+                        .clickable(role = Role.Button, onClick = onEdit)
+                        .semantics { contentDescription = editLabel },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(26.dp).clip(CircleShape).background(colors.surfaceMuted)
+                            .border(0.5.dp, colors.divider, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(16.dp), tint = colors.textPrimary)
                     }
                 }
-                .then(if (editing) Modifier.clickable(interactionSource = interactionSource, indication = null,
-                        role = Role.Button, onClick = onExpand)
-                    else Modifier.combinedClickable(interactionSource = interactionSource, indication = null,
-                        role = Role.Button, onClick = onExpand, onLongClick = onEdit,
-                        onLongClickLabel = "编辑分组" + group.name))
-                .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AppText(group.name, Modifier.weight(1f), maxLines = 1,
-                textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold))
-            AppText(count.toString(), color = ToolBoxThemeTokens.colors.textSecondary,
-                modifier = Modifier.semantics { contentDescription = count.toString() + " 个工具" },
-                textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 12.sp))
-            ToolBoxIcon(ToolBoxIconKey.ChevronDown, null, Modifier.rotate(arrowRotation),
-                tint = ToolBoxThemeTokens.colors.textSecondary)
+            }
         }
-        if (editing) ToolBoxIconButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit)
-        else Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.height(6.dp))
+        Row(
+            Modifier.fillMaxWidth().clearAndSetSemantics { },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            CatalogGroupStyleIcon(group, 16.dp, 11.dp)
+            Spacer(Modifier.width(6.dp))
+            AppText(group.name, Modifier.weight(1f, fill = false), maxLines = 1,
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold))
+            Spacer(Modifier.width(6.dp))
+            AppText("${members.size} 个", color = colors.textSecondary, maxLines = 1,
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
+        }
     }
 }
+
+/** 2x2 preview: up to four tools, or three plus a cluster of the next four; empty shows the group style. */
+@Composable
+private fun CatalogGroupFolderPreview(group: CatalogGroup, members: List<CatalogTool>) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (members.isEmpty()) {
+            CatalogGroupStyleIcon(group, maxWidth * 0.5f)
+            return@BoxWithConstraints
+        }
+        val gap = 12.dp
+        val cell = (minOf(maxWidth, maxHeight) - gap) / 2
+        val big = if (members.size > 4) members.take(3) else members.take(4)
+        val cluster = if (members.size > 4) members.drop(3).take(4) else emptyList()
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            repeat(2) { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    repeat(2) { column ->
+                        val slot = row * 2 + column
+                        Box(Modifier.size(cell), contentAlignment = Alignment.Center) {
+                            when {
+                                slot < big.size -> PreviewGlyph(big[slot], cell)
+                                slot == big.size && cluster.isNotEmpty() -> PreviewCluster(cluster, cell)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewGlyph(tool: CatalogTool, size: Dp) {
+    CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode,
+        visual = tool.visual(ToolBoxThemeTokens.colors.primary), size = size)
+}
+
+@Composable
+private fun PreviewCluster(tools: List<CatalogTool>, size: Dp) {
+    val gap = 5.dp
+    val tiny = (size - 6.dp - gap) / 2
+    Column(Modifier.size(size).padding(3.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+        repeat(2) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                repeat(2) { column ->
+                    Box(Modifier.size(tiny)) { tools.getOrNull(row * 2 + column)?.let { PreviewGlyph(it, tiny) } }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = ToolBoxThemeTokens.colors
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.card)
+    val interactionSource = remember { MutableInteractionSource() }
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.fillMaxWidth().aspectRatio(1f)
+                .toolBoxPressFeedback(interactionSource, shape = shape)
+                .clip(shape)
+                .border(1.5.dp, colors.primary.copy(alpha = 0.45f), shape)
+                .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
+                .testTag("catalog_home_new_group_tile"),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ToolBoxIcon(ToolBoxIconKey.Add, null, Modifier.size(26.dp), tint = colors.primary)
+            AppText("新建分组", color = colors.primary, maxLines = 1,
+                textStyle = ToolBoxThemeTokens.textStyles.body.copy(fontSize = 15.sp, lineHeight = 20.sp))
+        }
+    }
+}
+
+/** App Library style glass overlay listing one group's tools; organizing reorders them here. */
+@Composable
+internal fun CatalogGroupFolderOverlay(
+    group: CatalogGroup,
+    members: List<CatalogTool>,
+    editing: Boolean,
+    onAction: (CatalogAction) -> Unit,
+    onOptions: (String) -> Unit,
+    onEdit: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val liveBlur = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass && ToolBoxThemeTokens.materials.realBlurEnabled
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(window, liveBlur) {
+            if (window == null) return@DisposableEffect onDispose { }
+            val previousDim = window.attributes.dimAmount
+            val previousFlags = window.attributes.flags
+            val previousBlur = window.attributes.blurBehindRadius
+            window.setDimAmount(0f)
+            if (liveBlur) {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.attributes = window.attributes.apply { blurBehindRadius = FOLDER_BLUR_RADIUS_PX }
+            }
+            onDispose {
+                window.setDimAmount(previousDim)
+                if (liveBlur) {
+                    if ((previousFlags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) == 0) {
+                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    }
+                    window.attributes = window.attributes.apply { blurBehindRadius = previousBlur }
+                }
+            }
+        }
+        val entrance = remember { Animatable(0f) }
+        LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
+        val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+        Box(
+            Modifier.fillMaxSize()
+                .background(colors.background.copy(alpha = if (liveBlur) 0.35f else 0.9f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                    onClickLabel = "关闭分组", onClick = onDismiss)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                    .graphicsLayer {
+                        val progress = entrance.value
+                        alpha = progress.coerceIn(0f, 1f)
+                        val scale = 0.6f + 0.4f * progress
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    // Taps on the panel itself must not reach the dismissing scrim.
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .semantics { paneTitle = "分组 " + group.name }
+                    .testTag("catalog_group_folder"),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CatalogGroupStyleIcon(group, 30.dp, 18.dp)
+                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 1,
+                        textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold))
+                    FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
+                    FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
+                }
+                Box(
+                    Modifier.fillMaxWidth()
+                        .clip(toolBoxShape(ToolBoxThemeTokens.radii.sheet))
+                        .background(colors.surface.copy(alpha = if (liveBlur) 0.72f else 1f))
+                        .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
+                ) {
+                    if (members.isEmpty()) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CatalogGroupStyleIcon(group, 64.dp, 32.dp)
+                            AppText("这个分组还没有工具", color = colors.textSecondary, align = TextAlign.Center,
+                                textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                            ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
+                        }
+                    } else {
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val columns = homeGridColumnCount(maxWidth.value, LocalDensity.current.fontScale).coerceIn(1, 3)
+                            val listState = rememberLazyListState()
+                            val drag = rememberCatalogHomeDragState(editing, listState, PaddingValues(0.dp))
+                            Box(Modifier.fillMaxWidth()) {
+                                LazyColumn(
+                                    state = listState,
+                                    userScrollEnabled = drag.active == null,
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = maxListHeight)
+                                        .testTag("catalog_group_folder_list")
+                                        .catalogDragSurface(drag, editing),
+                                ) {
+                                    homeToolGrid(
+                                        members, "member:" + group.id, "members:" + group.id, columns, editing, drag,
+                                        onAction, onOptions,
+                                        iconSize = 60.dp,
+                                        onOpen = { tool ->
+                                            onDismiss()
+                                            onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId))
+                                        },
+                                        onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) },
+                                    )
+                                }
+                                CatalogDragPreview(drag)
+                            }
+                        }
+                    }
+                }
+                AppText(
+                    if (editing) "长按拖动排序，点击工具可收藏、分组与管理" else "长按工具可收藏、分组与管理",
+                    Modifier.fillMaxWidth(), color = colors.textSecondary, align = TextAlign.Center,
+                    textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                )
+            }
+        }
+    }
+}
+
+private const val FOLDER_BLUR_RADIUS_PX = 60
+
+@Composable
+private fun FolderRoundButton(icon: ToolBoxIconKey, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = ToolBoxThemeTokens.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier.size(44.dp)
+            .toolBoxPressFeedback(interactionSource, shape = CircleShape)
+            .clip(CircleShape)
+            .background(colors.surface.copy(alpha = 0.7f))
+            .border(0.5.dp, colors.divider, CircleShape)
+            .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        ToolBoxIcon(icon, null, Modifier.size(18.dp), tint = colors.textPrimary)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tiles
+// ---------------------------------------------------------------------------------------------
 
 @Composable
 internal fun CatalogHomeTile(
@@ -269,19 +641,21 @@ internal fun CatalogHomeTile(
     onOpen: () -> Unit,
     onOptions: () -> Unit,
     showLabel: Boolean = true,
-    labelMaxLines: Int = 2,
-    iconSize: Dp = 52.dp,
-    labelFontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
-    labelLineHeight: androidx.compose.ui.unit.TextUnit = 18.sp,
+    labelMaxLines: Int = 1,
+    iconSize: Dp = 56.dp,
+    labelFontSize: androidx.compose.ui.unit.TextUnit = 12.sp,
+    labelLineHeight: androidx.compose.ui.unit.TextUnit = 16.sp,
     labelSpacing: Dp = 6.dp,
     modifier: Modifier = Modifier,
     onMoveBefore: (() -> Unit)? = null,
     onMoveAfter: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
 ) {
+    val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.95f else 1f,
+        targetValue = if (pressed) 0.92f else 1f,
         animationSpec = ToolBoxMotion.pressSpec(pressed),
         label = "home tool press",
     )
@@ -291,11 +665,11 @@ internal fun CatalogHomeTile(
                 scaleX = pressScale
                 scaleY = pressScale
             }
-            .clip(RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
             .semantics(mergeDescendants = true) {
                 contentDescription = tool.name
                 customActions = buildList {
                     add(CustomAccessibilityAction("收藏、分组与管理") { onOptions(); true })
+                    onRemove?.let { add(CustomAccessibilityAction("移出常用") { it(); true }) }
                     onMoveBefore?.let { add(CustomAccessibilityAction("前移") { it(); true }) }
                     onMoveAfter?.let { add(CustomAccessibilityAction("后移") { it(); true }) }
                 }
@@ -326,10 +700,23 @@ internal fun CatalogHomeTile(
     ) {
         Box(Modifier.testTag("catalog_home_icon:" + tool.toolId)) {
             CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode,
-                visual = tool.visual(ToolBoxThemeTokens.colors.primary), size = iconSize)
-            if (editing) Box(Modifier.align(Alignment.TopEnd).size(20.dp)
-                .background(ToolBoxThemeTokens.colors.surfaceMuted, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(16.dp))
+                visual = tool.visual(colors.primary), size = iconSize)
+            if (editing) {
+                val remove = onRemove
+                Box(
+                    Modifier.align(if (remove != null) Alignment.TopStart else Alignment.TopEnd)
+                        .offset(x = if (remove != null) (-6).dp else 6.dp, y = (-6).dp)
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(colors.surfaceMuted)
+                        .border(0.5.dp, colors.divider, CircleShape)
+                        .then(if (remove != null) Modifier.clickable(role = Role.Button, onClickLabel = "移出常用", onClick = remove)
+                            .semantics { contentDescription = "移出常用" } else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (remove != null) Box(Modifier.size(width = 10.dp, height = 2.dp).background(colors.textPrimary, CircleShape))
+                    else ToolBoxIcon(ToolBoxIconKey.More, null, Modifier.size(15.dp), tint = colors.textPrimary)
+                }
             }
         }
         if (showLabel) {
@@ -345,8 +732,8 @@ internal fun CatalogHomeTile(
 
 @Composable
 private fun HomeEmptySection(message: String, action: String, onAction: () -> Unit) {
-    Row(Modifier.fillMaxWidth().background(ToolBoxThemeTokens.colors.surface, RoundedCornerShape(ToolBoxThemeTokens.radii.card))
-        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+    Row(Modifier.fillMaxWidth().clip(toolBoxShape(ToolBoxThemeTokens.radii.card)).background(ToolBoxThemeTokens.colors.surface)
+        .heightIn(min = 56.dp).padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         AppText(message, Modifier.weight(1f), color = ToolBoxThemeTokens.colors.textSecondary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata)

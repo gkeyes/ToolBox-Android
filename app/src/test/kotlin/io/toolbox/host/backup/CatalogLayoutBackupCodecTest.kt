@@ -8,7 +8,7 @@ import org.junit.Test
 
 class CatalogLayoutBackupCodecTest {
     private val original = HostSettings(catalogLayout = CatalogLayout(favorites = listOf("a", "b"),
-        groups = listOf(CatalogGroup("g", "工作", listOf("a"), false)), sort = CatalogSort.NAME))
+        groups = listOf(CatalogGroup("g", "工作", listOf("a"), false, color = "green", icon = "Code")), sort = CatalogSort.NAME))
 
     @Test fun newBackupRoundTripsLayoutIncludingOrderAndExpansion() {
         val json = BackupJson.encode(BackupDataCodec.settings(original))

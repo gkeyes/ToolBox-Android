@@ -87,6 +87,26 @@ class CatalogLayoutWriteTest {
         assertNull(viewModel.state.value.feedback)
     }
 
+    @Test fun savingAStyleKeepsItAndLegacySavesKeepTheExistingStyle() = layoutTest {
+        val settings = ControlledLayoutSettings(original)
+        val viewModel = loadedViewModel(settings)
+        viewModel.dispatch(CatalogAction.SaveGroup("first", "阅读", emptyList(), "styled", color = "orange", icon = "Note"))
+        val styled = settings.attempts.receive()
+        assertEquals("orange", styled.next.catalogLayout.groups.first().color)
+        assertEquals("Note", styled.next.catalogLayout.groups.first().icon)
+        styled.complete()
+        viewModel.awaitStatus("styled", CatalogLayoutWriteStatus.Succeeded)
+        viewModel.state.first { it.layout.groups.first().color == "orange" }
+
+        viewModel.dispatch(CatalogAction.SaveGroup("first", "改名", emptyList(), "renamed"))
+        val renamed = settings.attempts.receive()
+        assertEquals("orange", renamed.next.catalogLayout.groups.first().color)
+        assertEquals("Note", renamed.next.catalogLayout.groups.first().icon)
+        assertNull(renamed.next.catalogLayout.groups.last().color)
+        renamed.complete()
+        viewModel.awaitStatus("renamed", CatalogLayoutWriteStatus.Succeeded)
+    }
+
     @Test fun failedSavePreservesDataAndCanRetryUsingTheSameEditorId() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)

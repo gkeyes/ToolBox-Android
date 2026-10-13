@@ -40,6 +40,25 @@ class CatalogHomeDragTest {
         assertTrue(homeGridColumnCount(680f, 1f) > 4)
     }
 
+    @Test fun folderColumnsKeepAtLeastTwoSquareFoldersAndGrowOnWideWindows() {
+        assertEquals(2, homeFolderColumnCount(358f, 1f))
+        assertEquals(2, homeFolderColumnCount(358f, 2f))
+        assertEquals(2, homeFolderColumnCount(90f, 1f))
+        assertEquals(4, homeFolderColumnCount(680f, 1f))
+        assertEquals(6, homeFolderColumnCount(1600f, 1f))
+    }
+
+    @Test fun unknownOrLegacyGroupStylesFallBackToTheDefaultSwatchAndIcon() {
+        assertEquals(CatalogGroupColors.first(), catalogGroupColor(null))
+        assertEquals(CatalogGroupColors.first(), catalogGroupColor("no-such-colour"))
+        assertEquals("green", catalogGroupColor("green").key)
+        assertEquals(CatalogGroupGlyphs.first(), catalogGroupGlyph(null))
+        assertEquals(CatalogGroupGlyphs.first(), catalogGroupGlyph("NoSuchIcon"))
+        assertEquals("Code", catalogGroupGlyph("Code").key)
+        assertEquals(CatalogGroupColors.size, CatalogGroupColors.map { it.key }.toSet().size)
+        assertEquals(CatalogGroupGlyphs.size, CatalogGroupGlyphs.map { it.key }.toSet().size)
+    }
+
     @Test fun edgeScrollStopsAtTheEndOfItsOwnCollection() {
         val drag = CatalogHomeDragState().apply { listBounds = Rect(0f, 0f, 400f, 700f) }
         drag.targets["a"] = HomeDragTarget("a", "favorites", 0, "A", null, Rect(0f, 0f, 80f, 100f), {}, 2)
