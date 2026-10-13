@@ -1,5 +1,6 @@
 package io.toolbox.host.update
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,8 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
@@ -23,10 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,7 +52,6 @@ import io.toolbox.host.settings.SettingsIconTint
 import io.toolbox.host.settings.SettingsNavRow
 import io.toolbox.host.settings.SettingsRowSeparator
 import io.toolbox.host.settings.SettingsSwitchRow
-import io.toolbox.host.settings.SettingsValueRow
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
@@ -282,42 +282,30 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
     val downloading = AppProgressKey in state.progress
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         ToolBoxGroupedSurface {
-            // Version on the right, build number underneath: the long run id beside the title
-            // squeezed it into a one-character column on phones.
-            SettingsValueRow(
-                "当前版本", state.installed.versionName, ToolBoxIconKey.Tools, SettingsIconTint.Graphite,
-                summary = state.installed.runId.takeIf { it > 0 }?.let(::buildLabel),
+            VersionRow(
+                title = "当前版本",
+                value = state.installed.describe(),
+                icon = ToolBoxIconKey.Tools,
+                tint = SettingsIconTint.Graphite,
             )
             if (app != null) {
                 SettingsRowSeparator()
-                SettingsNavRow(
+                VersionRow(
                     title = if (state.channel == UpdateChannel.TEST) "最新测试版" else "最新正式版",
+                    value = app.describe(),
                     icon = ToolBoxIconKey.Refresh,
                     tint = SettingsIconTint.Blue,
-                    summary = listOfNotNull(
-                        app.runId?.let(::buildLabel),
-                        when (state.appState) {
-                            AppUpdateState.NEWER -> "有新版本"
-                            AppUpdateState.CURRENT -> "已是最新"
-                            AppUpdateState.OTHER_BUILD -> "与当前版本号相同的另一个构建"
-                            AppUpdateState.DOWNGRADE -> "版本号低于当前版本，需先卸载才能安装"
-                            null -> null
-                        },
-                    ).joinToString(" · ").ifEmpty { null },
-                    trailing = {
-                        ToolBoxText(
-                            app.versionName,
-                            modifier = Modifier.widthIn(max = 140.dp),
-                            style = ToolBoxThemeTokens.textStyles.body.copy(
-                                color = if (state.appState == AppUpdateState.NEWER) {
-                                    ToolBoxThemeTokens.colors.primary
-                                } else {
-                                    ToolBoxThemeTokens.colors.textSecondary
-                                },
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    summary = when (state.appState) {
+                        AppUpdateState.NEWER -> "有新版本"
+                        AppUpdateState.CURRENT -> "已是最新"
+                        AppUpdateState.OTHER_BUILD -> "与当前版本号相同的另一个构建"
+                        AppUpdateState.DOWNGRADE -> "版本号低于当前版本，需先卸载才能安装"
+                        null -> null
+                    },
+                    valueColor = if (state.appState == AppUpdateState.NEWER) {
+                        ToolBoxThemeTokens.colors.primary
+                    } else {
+                        ToolBoxThemeTokens.colors.textSecondary
                     },
                 )
             }
@@ -372,4 +360,53 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
     )
 }
 
-private fun buildLabel(runId: Long): String = "构建 $runId"
+/**
+ * Version row: the title always shows in full, and the version with its build number sits in
+ * the remaining width as one line that scrolls sideways when it does not fit. The status note
+ * runs under the title across the whole row.
+ */
+@Composable
+private fun VersionRow(
+    title: String,
+    value: String,
+    icon: ToolBoxIconKey,
+    tint: SettingsIconTint,
+    summary: String? = null,
+    valueColor: Color = ToolBoxThemeTokens.colors.textSecondary,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val textStyles = ToolBoxThemeTokens.textStyles
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = if (summary == null) 52.dp else 60.dp)
+            .padding(start = 16.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SettingsIconTile(icon, tint)
+            ToolBoxText(title, style = textStyles.body.copy(color = colors.textPrimary), maxLines = 1)
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                ToolBoxText(
+                    value,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    style = textStyles.body.copy(color = valueColor),
+                    maxLines = 1,
+                )
+            }
+        }
+        summary?.let {
+            ToolBoxText(
+                it,
+                modifier = Modifier.padding(start = 42.dp),
+                style = textStyles.sectionTitle.copy(color = colors.textSecondary),
+            )
+        }
+    }
+}
+
+private fun InstalledBuild.describe(): String =
+    if (runId > 0) "$versionName（构建 $runId）" else versionName
+
+private fun AppPackage.describe(): String =
+    if (runId != null) "$versionName（构建 $runId）" else versionName
