@@ -6,6 +6,11 @@
   const TIMER_KEY = "quote-poll";
   const DEFAULT_INTERVAL_MS = 300000;
   const VALID_INTERVALS = new Set([60000, 300000, 900000, 1800000]);
+  // Generous per-request deadline: a quote response is a few KB, so a request that has
+  // produced nothing for this long is hung. Without it one stuck request would hold the
+  // shared refresh promise forever and silently stop every later poll.
+  const REQUEST_TIMEOUT_MS = 60000;
+  const CHINA_OFFSET_MS = 8 * 60 * 60 * 1000;
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
 
@@ -21,6 +26,10 @@
   let monitorAction = null;
   let toastTimer = null;
   let ready = false;
+  let stateLoaded = false;
+  let savedStateUnreadable = false;
+  let markStateLoaded = null;
+  const stateLoadedWork = new Promise((resolve) => { markStateLoaded = resolve; });
   let liveAvailable = true;
   let runtimeForeground = false;
   let runtimeClosing = false;
@@ -96,19 +105,22 @@
     };
   }
 
-  function persistedState() {
+  function persistedState(source = state) {
     return {
       version: 1,
-      intervalMs: state.intervalMs,
-      monitoring: state.monitoring,
-      sessionId: state.sessionId,
-      lastRefreshAt: state.lastRefreshAt,
-      items: state.items.map(({ error, ...item }) => item)
+      intervalMs: source.intervalMs,
+      monitoring: source.monitoring,
+      sessionId: source.sessionId,
+      lastRefreshAt: source.lastRefreshAt,
+      items: source.items.map(({ error, ...item }) => item)
     };
   }
 
-  function persist() {
-    const snapshot = persistedState();
+  function persist(source = state) {
+    // While the saved watchlist could not be read, never write: the in-memory fallback
+    // would otherwise replace the user's real list.
+    if (savedStateUnreadable) return Promise.resolve();
+    const snapshot = persistedState(source);
     const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
     writeChain = work;
     return work;
@@ -145,11 +157,38 @@
   }
 
   function chinaMarketIsOpen(now = new Date()) {
-    const china = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
-    const day = china.getDay();
+    const china = new Date(now.getTime() + CHINA_OFFSET_MS);
+    const day = china.getUTCDay();
     if (day === 0 || day === 6) return false;
-    const minutes = china.getHours() * 60 + china.getMinutes();
+    const minutes = china.getUTCHours() * 60 + china.getUTCMinutes();
     return (minutes >= 570 && minutes <= 690) || (minutes >= 780 && minutes <= 900);
+  }
+
+  // Start of the current closed period (11:31 lunch break, 15:01 close, or the previous
+  // weekday's 15:01 overnight / at weekends), or null while the market is open.
+  function chinaMarketClosedSince(now = new Date()) {
+    if (chinaMarketIsOpen(now)) return null;
+    const china = new Date(now.getTime() + CHINA_OFFSET_MS);
+    const minutes = china.getUTCHours() * 60 + china.getUTCMinutes();
+    const weekday = china.getUTCDay() >= 1 && china.getUTCDay() <= 5;
+    const at = (dayOffset, hour, minute) => Date.UTC(
+      china.getUTCFullYear(), china.getUTCMonth(), china.getUTCDate() + dayOffset, hour, minute
+    ) - CHINA_OFFSET_MS;
+    if (weekday && minutes > 690 && minutes < 780) return at(0, 11, 31);
+    if (weekday && minutes > 900) return at(0, 15, 1);
+    let offset = -1;
+    while (true) {
+      const day = (china.getUTCDay() + 7 + offset) % 7;
+      if (day >= 1 && day <= 5) return at(offset, 15, 1);
+      offset -= 1;
+    }
+  }
+
+  // A-share quotes do not move while the market is closed; polling them all night only
+  // costs battery. One refresh after the close is still taken so the closing price lands.
+  function skipWhileClosed(item, closedSince) {
+    return item.provider === "tencent" && closedSince !== null
+      && Number.isFinite(item.fetchedAt) && item.fetchedAt >= closedSince;
   }
 
   function quoteTimeLabel(item) {
@@ -199,7 +238,21 @@
       liveAvailable = true;
       return true;
     } catch (error) {
-      if (mode === "update" && error?.code === "NOT_FOUND") {
+      if (error?.code === "SESSION_ENDED" || error?.code === "INVALID_SESSION") {
+        // The background session behind this sessionId is gone; ask the host which
+        // session (if any) is current instead of reusing the stale id.
+        try {
+          await reconcileMonitoring();
+          renderSummary();
+          if (!state.monitoring) {
+            setStatus("后台监控已结束。", "warning");
+            return true;
+          }
+          await toolbox().notifications.live.start(liveRequest(loading));
+          liveAvailable = true;
+          return true;
+        } catch (_) {}
+      } else if (mode === "update" && error?.code === "NOT_FOUND") {
         try {
           await toolbox().notifications.live.start(request);
           liveAvailable = true;
@@ -237,6 +290,7 @@
       return "宿主系统权限未开启，请在后台保障或系统设置中授权。";
     }
     if (error?.code === "NETWORK_BLOCKED") return "行情地址被网络策略阻止。";
+    if (error?.code === "NETWORK_TIMEOUT") return `行情请求超时（${REQUEST_TIMEOUT_MS / 1000} 秒无响应），下次刷新会重试。`;
     const message = typeof error?.message === "string" ? error.message.trim() : "";
     return message || fallback;
   }
@@ -342,18 +396,35 @@
     return Number.isFinite(timestamp) ? timestamp : null;
   }
 
-  async function requestJson(request) {
-    const response = await toolbox().network.request({
-      method: "GET",
-      ...request
+  function withRequestDeadline(work) {
+    // Host-side timeoutMs covers the HTTP exchange; this guard also settles the call if the
+    // bridge itself never answers, so the shared refresh promise always completes.
+    let timer = null;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error("timed out"), { code: "NETWORK_TIMEOUT" })),
+        REQUEST_TIMEOUT_MS + 5000);
     });
+    return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  }
+
+  async function requestJson(request) {
+    const response = await withRequestDeadline(toolbox().network.request({
+      method: "GET",
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      ...request
+    }));
+    const ok = response.status >= 200 && response.status < 300;
+    if (!ok) {
+      let message = "";
+      if (response.bodyEncoding === "text") {
+        try { message = JSON.parse(response.body)?.message; } catch (_) {}
+      }
+      throw new Error(typeof message === "string" && message ? message : `行情服务返回 HTTP ${response.status}`);
+    }
     if (response.bodyEncoding !== "text") throw new Error("行情响应不是文本 JSON。");
     let data;
     try { data = JSON.parse(response.body); }
     catch (_) { throw new Error("行情数据格式无法解析。"); }
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(typeof data?.message === "string" ? data.message : `行情服务返回 HTTP ${response.status}`);
-    }
     if (data?.status === "error") throw new Error(typeof data.message === "string" ? data.message : "行情服务返回错误。");
     return data;
   }
@@ -448,12 +519,18 @@
     if (runtimeClosing) return;
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
-      const enabled = state.items.filter((item) => item.enabled);
-      if (!enabled.length) {
+      const active = state.items.filter((item) => item.enabled);
+      if (!active.length) {
         setStatus(
           liveAvailable ? "没有启用的股票。" : "实时展示不可用；没有启用的股票，后台环境仍在运行。",
           "warning"
         );
+        return;
+      }
+      const closedSince = options.force ? null : chinaMarketClosedSince();
+      const enabled = active.filter((item) => !skipWhileClosed(item, closedSince));
+      if (!enabled.length) {
+        setStatus("A 股休市中，已保留收盘行情；开盘后自动恢复刷新。");
         return;
       }
       if (runtimeForeground) $("refresh").setAttribute("aria-busy", "true");
@@ -661,15 +738,26 @@
         aboveLatched: existing?.upper === upper ? existing.aboveLatched : false,
         belowLatched: existing?.lower === lower ? existing.belowLatched : false
       });
-      if (existingIndex >= 0) state.items.splice(existingIndex, 1, updated);
+      const nextItems = state.items.slice();
+      if (existingIndex >= 0) nextItems.splice(existingIndex, 1, updated);
+      else nextItems.push(updated);
+      const intervalChanged = intervalMs !== state.intervalMs;
+      // Only show the change once it is saved; a failed write keeps the old list.
+      await persist({ ...state, items: nextItems, intervalMs });
+      const currentIndex = state.items.findIndex((item) => item.id === editingId);
+      if (currentIndex >= 0) state.items.splice(currentIndex, 1, updated);
       else state.items.push(updated);
       state.intervalMs = intervalMs;
-      if (state.monitoring) await toolbox().background.setTimer(TIMER_KEY, intervalMs);
-      await persist();
+      let timerError = null;
+      if (state.monitoring && intervalChanged) {
+        try { await toolbox().background.setTimer(TIMER_KEY, intervalMs); }
+        catch (error) { timerError = error; }
+      }
       closeEditor();
       render();
       showToast(existing ? "监控设置已更新" : "股票已添加");
-      await refreshAll();
+      await refreshAll({ force: true });
+      if (timerError) setStatus(errorMessage(timerError, "设置已保存，但监控间隔更新失败。"), "warning");
     } catch (error) {
       showFormError(errorMessage(error, "保存失败，请检查存储或后台权限。"));
     }
@@ -678,13 +766,13 @@
   async function deleteEditingStock() {
     const item = state.items.find((candidate) => candidate.id === editingId);
     if (!item) return;
-    state.items = state.items.filter((candidate) => candidate.id !== editingId);
-    for (const kind of ["above", "below"]) {
-      const id = `${item.id}-${kind}`;
-      try { await toolbox().notifications.cancel(id); } catch (_) {}
-    }
     try {
-      await persist();
+      await persist({ ...state, items: state.items.filter((candidate) => candidate.id !== item.id) });
+      state.items = state.items.filter((candidate) => candidate.id !== item.id);
+      for (const kind of ["above", "below"]) {
+        const id = `${item.id}-${kind}`;
+        try { await toolbox().notifications.cancel(id); } catch (_) {}
+      }
       closeEditor();
       render();
       showToast("股票已删除");
@@ -719,11 +807,38 @@
     render();
   }
 
+  async function loadSavedState() {
+    try {
+      state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
+      savedStateUnreadable = false;
+    } catch (_) {
+      // Keep the in-memory list so quotes still work, but refuse to persist over the
+      // saved list until a later read succeeds.
+      savedStateUnreadable = true;
+    }
+    stateLoaded = true;
+    try {
+      const savedToken = await toolbox().storage.secure.get(TOKEN_KEY);
+      tokenValue = typeof savedToken === "string" ? savedToken : "";
+      tokenPresent = Boolean(tokenValue);
+    } catch (_) {
+      tokenValue = "";
+      tokenPresent = false;
+    }
+  }
+
+  // Timer events and user refreshes can arrive before boot has read the saved watchlist;
+  // running them earlier would fetch and persist the default list over the user's own.
+  function afterStateLoaded(run) {
+    return stateLoadedWork.then(() => (stateLoaded && !runtimeClosing ? run() : undefined));
+  }
+
   async function boot() {
     render();
     if (!toolbox()?.ready) {
       setStatus("ToolBox 宿主 API 不可用。", "error");
       $("runtime-caption").textContent = "宿主 API 不可用";
+      markStateLoaded();
       return;
     }
     try {
@@ -745,15 +860,8 @@
       });
       ready = true;
       $("runtime-caption").textContent = `ToolBox ${host.hostVersion} · API ${host.apiVersion}`;
-      state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
-      try {
-        const savedToken = await toolbox().storage.secure.get(TOKEN_KEY);
-        tokenValue = typeof savedToken === "string" ? savedToken : "";
-        tokenPresent = Boolean(tokenValue);
-      } catch (_) {
-        tokenValue = "";
-        tokenPresent = false;
-      }
+      await loadSavedState();
+      markStateLoaded();
       try {
         await reconcileMonitoring();
       } catch (error) {
@@ -762,11 +870,13 @@
         state.sessionId = null;
       }
       render();
-      setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
+      if (savedStateUnreadable) setStatus("读取已保存的自选列表失败，当前修改不会保存，重新打开后重试。", "warning");
+      else setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
       if (runtimeClosing) return;
       if (state.monitoring) await publishLiveState("start");
       await refreshAll();
     } catch (error) {
+      markStateLoaded();
       setStatus(errorMessage(error, "初始化失败，请检查工具权限。"), "error");
       render();
     }
@@ -774,7 +884,9 @@
 
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {
-      if (!runtimeClosing && event?.key === TIMER_KEY) refreshAll({ background: true }).catch(() => {});
+      if (!runtimeClosing && event?.key === TIMER_KEY) {
+        afterStateLoaded(() => refreshAll({ background: true })).catch(() => {});
+      }
     });
   }
   function resumeRestore() {
@@ -783,10 +895,8 @@
     const work = (async () => { try {
         await bootWork;
         if (runtimeClosing) { restorePending = true; return; }
-        state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
-        const savedToken = await toolbox().storage.secure.get(TOKEN_KEY);
-        tokenValue = typeof savedToken === "string" ? savedToken : "";
-        tokenPresent = Boolean(tokenValue);
+        if (!ready) return;
+        await loadSavedState();
         if (runtimeClosing) { restorePending = true; return; }
         await reconcileMonitoring();
         if (runtimeClosing) { restorePending = true; return; }
@@ -810,7 +920,14 @@
     });
   }
 
-  $("refresh").addEventListener("click", () => refreshAll({ announce: true }));
+  $("refresh").addEventListener("click", () => {
+    if (runtimeClosing) return;
+    if (bootWork && !stateLoaded) showToast("正在读取自选列表…");
+    trackUserAction(afterStateLoaded(() => {
+      if (!ready) { showToast("ToolBox 尚未连接"); return undefined; }
+      return refreshAll({ announce: true, force: true });
+    }).catch(() => {}));
+  });
   $("add-stock").addEventListener("click", () => openEditor());
   $("toggle-monitor").addEventListener("click", () => {
     if (monitorAction || runtimeClosing) return;
