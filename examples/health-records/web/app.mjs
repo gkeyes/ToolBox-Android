@@ -1,5 +1,5 @@
-import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize } from "./model.mjs";
-import { createStore } from "./store.mjs";
+import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize, draftRecord } from "./model.mjs";
+import { createStore, createDraftSlot } from "./store.mjs";
 import { h, icon, button, iconButton, field, sectionHeading, emptyState } from "./dom.mjs";
 import { createChoice } from "./choice.mjs";
 import { trendChart, monthlyChart } from "./charts.mjs";
@@ -10,9 +10,12 @@ import { AI_MODES, AI_PROVIDERS, MINIMAX_MODELS, getAiConfig, aiPayload, request
 import { aiStreamConsent, createAiProgress } from "./ai-progress.mjs";
 import { buildHistoryPlan, createHistoryRun, runHistory } from "./history.mjs";
 import { buildNameCatalog, alignRecordNames, applyNameSuggestions, assertNameSuggestionGraph } from "./names.mjs";
+import { APP_VERSION } from "./version.mjs";
 
 const main = document.getElementById("main"), nav = document.getElementById("navigation"), dialog = document.getElementById("dialog");
 const api = window.ToolBox;
+const DRAFT_KEY = "health.v1.draft";
+let flushRegistered = false, draftSlot = null;
 let store, archive = emptyArchive(), index = buildIndex([]), page = "overview", lastTab = "overview", detailId = null;
 let filter = "all", query = "", recordLimit = 24, selectedMetric = null, metricQuery = "", trendLimit = 30;
 let trendReturn = { page: "overview", lastTab: "overview", detailId: null };
@@ -73,7 +76,7 @@ async function persist(mutator, expectedRevision) {
 function header(title, subtitle = "", back = null) {
   return h("header", { class: `page-header${back ? " form-header" : ""}` },
     back && iconButton("返回", "back", back),
-    h("div", { class: back ? "" : "brand" }, !back && page === "overview" && h("img", { src: "icon-v1.0.3.png", class: "brand-icon", alt: "", width: 44, height: 44 }), h("div", {}, h("h1", {}, title), subtitle && h("p", { class: "page-subtitle" }, subtitle))),
+    h("div", { class: back ? "" : "brand" }, !back && page === "overview" && h("img", { src: "icon.png", class: "brand-icon", alt: "", width: 44, height: 44 }), h("div", {}, h("h1", {}, title), subtitle && h("p", { class: "page-subtitle" }, subtitle))),
     !back && page === "overview" && iconButton("设置与个人档案", "settings", () => go("mine")));
 }
 
@@ -93,6 +96,8 @@ function navigate(next, preserveScroll = false) {
   viewGeneration++;
   if (next === "trends" && page !== "trends" && page !== "editor") trendReturn = { page, lastTab, detailId };
   if (Object.hasOwn(tabLabels, page)) scrollPositions.set(page, window.scrollY);
+  // Leaving the editor (saved or abandoned) drops a draft flushed by a close the user then cancelled.
+  if (page === "editor") draftSlot?.clear();
   page = next; editor = null;
   if (Object.hasOwn(tabLabels, next)) lastTab = next;
   document.body.classList.remove("editing"); nav.hidden = !Object.hasOwn(tabLabels, page);
@@ -186,7 +191,7 @@ function editSingle(recordId, itemIndex) {
   openBatch(metric, page === "trends" ? "trends" : "detail");
 }
 
-function openEditor(record = null, notice = "", nameReview = null) {
+function openEditor(record = null, notice = "", nameReview = null, resumed = false) {
   viewGeneration++;
   const openedRevision = store.revision;
   const returnPage = record && page === "detail" ? "detail" : lastTab;
@@ -194,7 +199,8 @@ function openEditor(record = null, notice = "", nameReview = null) {
   const editing = archive.records.some((r) => r.id === current.id);
   page = "editor"; nav.hidden = true; document.body.classList.add("editing");
   editor = createRecordEditor(current, {
-    editing, notice, nameReview,
+    // A passed-in record that is not in the archive (OCR result, resumed draft) is unsaved work.
+    editing, notice, nameReview, startDirty: resumed || (Boolean(record) && !editing),
     cancel: (dirty) => { if (dirty) ask("放弃未保存的修改？", "当前输入尚未保存，原记录不会改变。", "放弃修改", () => { editor = null; navigate(returnPage); }, true); else navigate(returnPage); },
     history: openHistoryPicker,
     save: async (next, aliases) => {
@@ -295,7 +301,7 @@ function minePage() {
       settingsRow("记录天数", "按年查看每月记录天数，同一天不重复计数", "calendar", () => navigate("calendar"))),
     sectionHeading("辅助整理"), h("div", { class: "surface" }, settingsRow("AI 资料助手", "识别、摘要、追溯；每次发送前由你确认", "spark", () => navigate("ai")), settingsRow("AI 设置", "MiniMax / Gemini；密钥单独安全保存", "settings", () => navigate("ai-settings"))),
     sectionHeading("外观"), themes,
-    h("p", { class: "privacy-note" }, "健康档案 1.0.12 · 记录工具，不提供医学诊断。", h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} KiB。卸载工具会删除本机记录，请定期备份。`),
+    h("p", { class: "privacy-note" }, `健康档案 ${APP_VERSION} · 记录工具，不提供医学诊断。`, h("br"), `本机档案 ${Math.ceil(byteSize(archive) / 1024)} KiB。卸载工具会删除本机记录，请定期备份。`),
     button("清空健康记录", () => ask("清空所有健康记录？", "将清空检验记录、个人档案、摘要和指标库。AI 密钥与外观设置保留。此操作不可撤销，请先备份。", "确认清空", async () => { await persist((draft) => ({ ...emptyArchive(), settings: draft.settings })); render(); toast("健康记录已清空，已有导出备份不受影响"); }, true), "button danger full"));
 }
 
@@ -581,7 +587,7 @@ async function chooseOcr() {
     const image = await reportImage(file.bytes, file.mimeType);
     if (viewGeneration !== generation || dialog.open) return;
     const preview = h("img", { src: `data:${image.mimeType};base64,${image.data}`, alt: "实际发送的报告图片", class: "report-image-preview" });
-    const imageInfo = h("p", { class: "notice", role: "status" }, `原图 ${(image.originalBytes / 1024 / 1024).toFixed(2)} MiB → 实际发送 ${Math.ceil(image.outputBytes / 1024)} KiB · ${image.width} × ${image.height} 像素。${image.compressed ? "已在本机压缩为 JPEG，原文件未改动。请检查下方文字是否清晰。" : "保留原图编码和清晰度，原文件未改动。"}`);
+    const imageInfo = h("p", { class: "notice", role: "status" }, `原图 ${(image.originalBytes / 1024 / 1024).toFixed(2)} MiB → 实际发送 ${Math.ceil(image.outputBytes / 1024)} KiB · ${image.width} × ${image.height} 像素。${image.compressed ? `原图超过 AI 服务可接收的大小，已在本机转为 JPEG${image.width !== image.originalWidth ? `并缩小（原 ${image.originalWidth} × ${image.originalHeight}）` : ""}，原文件未改动。请检查下方文字是否清晰。` : image.reencoded ? "已在本机按原分辨率重新编码，去除拍摄位置、设备等附带信息，原文件未改动。" : "当前环境无法在本机重新编码，将按原文件发送（可能包含拍摄位置等附带信息），原文件未改动。"}`);
     const status = h("p", { class: "notice", role: "status", hidden: true });
     const progressSlot = h("div");
     const isCurrent = () => viewGeneration === generation && dialog.open && dialog.contains(confirm);
@@ -610,18 +616,38 @@ async function chooseOcr() {
         progress.dispose(); dialog.close(); openEditor(aligned.record, `${notice}${matching}${unresolved ? ` ${unresolved} 项名称未自动对齐，原因见各指标下方。` : " 名称已与本地目录核对，仍请检查识别结果。"}`, aligned);
       } catch (e) { if (isCurrent()) { status.textContent = errorText(e); status.hidden = false; status.scrollIntoView({ block: "nearest" }); } } finally { progress.dispose(); progressSlot.replaceChildren(); aiBusy = false; confirm.disabled = false; }
     }, "button primary full");
-    showDialog("确认发送报告图片", [h("p", { class: "notice warning pre-wrap" }, `将把下方完整图片及其附带信息发送到 ${config.label}（${config.host}）。模型：${config.model}。图片可能包含姓名等敏感信息，建议先遮挡无关个人信息、移除照片的位置等附带信息。${catalog.candidates.length ? `识别后自动对齐本地名称：先使用已确认的对应，其余仅发送识别名称、标本、单位及同组候选目录，不再次发图，不发送历史结果、参考范围、日期或病史。名称匹配按实际名称分组追加调用，可能产生额外 API 费用或消耗套餐额度。` : "当前没有本地标准目录，本次仅识别图片，可能产生 API 费用或消耗套餐额度。"}`),
+    showDialog("确认发送报告图片", [h("p", { class: "notice warning pre-wrap" }, `将把下方完整图片及其附带信息发送到 ${config.label}（${config.host}）。模型：${config.model}。图片可能包含姓名等敏感信息，建议先遮挡无关个人信息。${image.reencoded ? "照片的位置等附带信息已在本机去除。" : "建议先移除照片的位置等附带信息。"}${catalog.candidates.length ? `识别后自动对齐本地名称：先使用已确认的对应，其余仅发送识别名称、标本、单位及同组候选目录，不再次发图，不发送历史结果、参考范围、日期或病史。名称匹配按实际名称分组追加调用，可能产生额外 API 费用或消耗套餐额度。` : "当前没有本地标准目录，本次仅识别图片，可能产生 API 费用或消耗套餐额度。"}`),
       catalog.candidates.length > 0 && h("details", {}, h("summary", {}, `查看本地标准目录（${catalog.candidates.length} 项）`), h("p", { class: "small muted" }, "发送同标本的完整候选目录。单位差异不直接排除候选；方法与数量/比例差异只作核对提示，由 AI 建议、你确认。未注明标本的指标库条目仅供手工选择。"), h("pre", {}, catalog.candidates.map((entry) => `${entry.name} · ${entry.specimen || "标本未标注"} · ${entry.unit || "单位未注明"}`).join("\n"))),
       imageInfo, preview, h("p", { class: "small muted" }, `${aiStreamConsent(api, config)}关闭弹窗后不再填入本次结果；尚未发出的匹配请求也会停止，但无法撤回已经发送的资料。`), confirm, progressSlot, status]);
   } catch (e) { toast(errorText(e)); } finally { operationBusy = false; }
+}
+
+// ToolBox 0.8.28+ calls this before it really closes or reloads the page.
+async function flushDraft() {
+  await store?.idle();
+  if (page === "editor" && editor?.snapshot && editor.isDirty()) await draftSlot.write({ savedAt: new Date().toISOString(), draft: editor.snapshot() });
+}
+
+async function offerDraft() {
+  let saved;
+  try { saved = await api.storage.get(DRAFT_KEY); } catch { return; }
+  if (saved === null) return;
+  const discard = () => api.storage.remove(DRAFT_KEY).catch(() => {});
+  const record = draftRecord(saved);
+  if (!record || page !== "overview" || dialog.open) { if (!record) discard(); return; }
+  showDialog("继续未保存的记录？", [h("p", { class: "small pre-wrap" }, `上次关闭工具时有一份未保存的${TYPES[record.type]}（${record.date} · ${record.items.length} 项）。草稿只在本机，尚未写入档案。`),
+    h("div", { class: "actions" }, button("丢弃草稿", async () => { await discard(); dialog.close(); }, "button danger"),
+      button("继续编辑", async () => { await discard(); dialog.close(); openEditor(record, "这是上次关闭前未保存的草稿，请核对后保存。", null, true); }, "button primary"))]);
 }
 
 async function start() {
   try {
     if (!api?.ready || !api?.storage?.set) throw new HealthError("请将 health-records.tbx 导入 ToolBox 后打开。普通浏览器不能直接保存 ToolBox 数据。", "HOST_REQUIRED");
     await api.ready();
-    store = createStore(api.storage); archive = await store.load(); index = buildIndex(archive.records);
+    store = createStore(api.storage); draftSlot ??= createDraftSlot(api.storage, DRAFT_KEY); archive = await store.load(); index = buildIndex(archive.records);
     setTheme(archive.settings.theme); buildNavigation(); navigate("overview");
+    if (!flushRegistered && typeof api.runtime?.registerFlushHandler === "function") { api.runtime.registerFlushHandler(flushDraft); flushRegistered = true; }
+    await offerDraft();
   } catch (e) {
     main.setAttribute("aria-busy", "false"); main.replaceChildren(emptyState("暂时无法打开档案", errorText(e), button("重新读取", start, "button outline")));
   }

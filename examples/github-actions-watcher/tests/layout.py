@@ -67,10 +67,10 @@ FIXTURE = r"""(longNames) => {
     run_started_at: new Date(now - 120000).toISOString()
   };
   const names = [
-    'Enable accelerated behavior test emulator',
-    'Verify catalog, backup, execution identity, dialogs and Wasm on Android',
-    'Retain host unit test reports',
-    'Retain Android behavior and WebView evidence',
+    'Set up job',
+    'Run ./gradlew connectedDebugAndroidTest',
+    'Run actions/setup-java@v4',
+    'Upload test reports',
     'Run actions/upload-artifact@' + sha,
     'Post Run gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37',
     'Post Run actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961',
@@ -176,7 +176,7 @@ def main():
                 assert not page.locator('#job-list details').first.evaluate('e => e.open')
                 expect(page.locator('#active-section')).to_be_hidden()
                 expect(page.locator('.recent-row')).to_have_count(3)
-                expect(page.locator('#current-step')).to_have_text('验证 Android 行为')
+                expect(page.locator('#current-step')).to_have_text('./gradlew connectedDebugAndroidTest')
                 result['bounds'] = page.evaluate(BOUNDS)
                 assert not result['bounds']['failures'], result['bounds']
                 page.screenshot(path=str(OUTPUT / f'{name}-overview.png'))
@@ -282,7 +282,7 @@ def main():
                         expect(page.locator('#hero-state')).to_have_text(label)
                         expect(page.locator('#progress-caption')).to_have_text('本次已结束')
                         if conclusion == 'failure':
-                            expect(page.locator('#current-step')).to_have_text('失败步骤：验证 Android 行为')
+                            expect(page.locator('#current-step')).to_have_text('失败步骤：./gradlew connectedDebugAndroidTest')
                         page.screenshot(path=str(OUTPUT / f'{name}-{conclusion}.png'))
                     page.evaluate(FIXTURE, False)
                     page.evaluate("""() => {

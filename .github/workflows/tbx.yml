@@ -141,6 +141,9 @@ jobs:
           name: watcher-layout-${{ github.sha }}
           path: build/watcher-layout/
           if-no-files-found: warn
+      - name: Health records model and AI validator tests
+        if: ${{ matrix.tool == 'health-records' && matrix.full_tests }}
+        run: python3 scripts/ci/tbx.py test-unit --tool health-records --test-filter test/model.test.mjs,test/ai.test.mjs
       - name: SocialCoach unit and corpus regressions
         if: ${{ matrix.tool == 'socialcoach' && matrix.full_tests }}
         working-directory: examples/socialcoach

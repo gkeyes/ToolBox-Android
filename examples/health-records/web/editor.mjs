@@ -1,11 +1,11 @@
 import { h, button, iconButton, field, sectionHeading } from "./dom.mjs";
-import { TYPES, referenceDraft, formatReference, normalizeRecord, assertNoNewDuplicateMetrics, specimen, canonicalUnit } from "./model.mjs";
+import { TYPES, restoreReferenceDraft, formatReference, normalizeRecord, assertNoNewDuplicateMetrics, specimen, canonicalUnit } from "./model.mjs";
 import { createChoice } from "./choice.mjs";
 import { createDatePicker } from "./date-picker.mjs";
 import { manualNameCandidates, confirmedNameAliases } from "./names.mjs";
 
-export function referenceEditor(raw = "", onDirty = () => {}) {
-  const draft = referenceDraft(raw), controls = h("div", { class: "reference-inputs" }), modes = h("div", { class: "reference-mode", role: "group", "aria-label": "参考范围输入方式" });
+export function referenceEditor(raw = "", onDirty = () => {}, saved = null) {
+  const draft = restoreReferenceDraft(saved, raw), controls = h("div", { class: "reference-inputs" }), modes = h("div", { class: "reference-mode", role: "group", "aria-label": "参考范围输入方式" });
   function input(key, label, placeholder) {
     return field(label, h("input", { class: "input", type: "text", inputmode: "decimal", value: draft[key], placeholder, "aria-label": label, onInput: (e) => { draft[key] = e.target.value; onDirty(); } }));
   }
@@ -28,7 +28,9 @@ export function referenceEditor(raw = "", onDirty = () => {}) {
     }
   }
   render();
-  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft) };
+  // draft(): best-effort text for an unsaved draft; an incomplete range keeps the original text.
+  const readDraft = () => { try { return formatReference(draft); } catch { return String(raw ?? ""); } };
+  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft), draft: readDraft, state: () => ({ ...draft }) };
 }
 
 function itemFields(item, onDirty) {
@@ -36,10 +38,11 @@ function itemFields(item, onDirty) {
   const value = h("input", { class: "input", value: item.value ?? "", required: true, placeholder: "数值或文字结果", onInput: onDirty });
   const unit = h("input", { class: "input", value: item.unit || "", placeholder: "按报告填写", onInput: onDirty });
   const nameLabel = field("指标名称", name); nameLabel.classList.add("wide");
-  const reference = referenceEditor(item.normal, onDirty);
+  const reference = referenceEditor(item.normal, onDirty, item.referenceDraft);
   return {
     element: h("div", { class: "editor-fields" }, nameLabel, field("结果", value), field("单位", unit), reference.element),
     read: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.read() }),
+    draft: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.draft(), referenceDraft: reference.state() }),
     name, unit, nameLabel,
   };
 }
@@ -80,8 +83,8 @@ function createNameReview(entry, fields, getType, catalog, onDirty) {
   refresh(); return { element, contextChanged };
 }
 
-export function createRecordEditor(record, { save, cancel, history, editing = false, notice = "", nameReview = null }) {
-  let dirty = false, saving = false;
+export function createRecordEditor(record, { save, cancel, history, editing = false, notice = "", nameReview = null, startDirty = false }) {
+  let dirty = startDirty, saving = false;
   const rows = [], items = h("div", { id: "editor-items" });
   const date = createDatePicker(record.date, () => { dirty = true; });
   const type = createChoice("检验类型", Object.entries(TYPES).map(([value, label]) => ({ value, label })), { value: record.type, onChange: () => rows.forEach((row) => row.reviewControl?.contextChanged()) });
@@ -127,7 +130,9 @@ export function createRecordEditor(record, { save, cancel, history, editing = fa
     } catch (e) { error.textContent = e.message || "保存失败，输入内容仍然保留"; error.hidden = false; error.scrollIntoView({ block: "nearest" }); }
     finally { saving = false; controls.disabled = false; form.setAttribute("aria-busy", "false"); saveButton.disabled = false; saveButton.textContent = editing ? "保存修改" : "保存记录"; }
   });
-  return { element: form, isDirty: () => dirty };
+  // Unvalidated copy of the current input, kept only if ToolBox closes the page mid-edit.
+  const snapshot = () => ({ id: record.id, date: date.value, type: type.value, items: rows.map((row) => row.fields.draft()) });
+  return { element: form, isDirty: () => dirty, snapshot };
 }
 
 export function createBatchEditor(metric, { save, cancel, backLabel = "返回趋势" }) {

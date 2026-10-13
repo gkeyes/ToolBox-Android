@@ -87,6 +87,10 @@ TEST_FILES = {
         },
         "browser": set(),
     },
+    "health-records": {
+        "unit": {"test/model.test.mjs", "test/ai.test.mjs"},
+        "browser": set(),
+    },
     "github-actions-watcher": {
         "unit": {"scripts/tests/watcher-reliability.test.cjs"},
         "browser": {"examples/github-actions-watcher/tests/layout.py"},
@@ -206,6 +210,8 @@ def selected_tests(name, changed, requested_filter, full):
             elif name == "nextflux" and relative in {"test/browser/playwright.config.js", "test/browser/vite.config.js"}:
                 selected |= browser_files
             elif name == "socialcoach" and (relative.startswith("platform/") or relative.startswith("src/")):
+                selected |= allowed
+            elif name == "health-records" and relative.startswith("web/"):
                 selected |= allowed
             elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:
                 selected |= allowed

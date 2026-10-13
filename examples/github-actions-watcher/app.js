@@ -3,7 +3,9 @@
 
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
-  const USER_AGENT = "ToolBox-GitHub-Actions-Watcher/1.1.8";
+  // Keep in sync with manifest.json "version" (checked by watcher-reliability tests).
+  const TOOL_VERSION = "1.1.9";
+  const USER_AGENT = `ToolBox-GitHub-Actions-Watcher/${TOOL_VERSION}`;
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
   const POLL_TIMER = "github-actions-watcher-poll";
@@ -22,6 +24,17 @@
   let lastActiveSweepAt = 0;
   let lastFrontPageAt = 0;
   let activeCursor = 0;
+  // Anonymous quota is 60 requests/hour: alternate polls only re-read tracked runs.
+  let anonymousPollCount = 0;
+  // Anonymous full polls have one list page: alternate front page and discovery queue.
+  let lastAnonymousListRead = null;
+  // Requests actually spent by the last anonymous full and light polls. Large runs
+  // page their jobs (100 per request), so the interval adapts to the measured cost.
+  const ANONYMOUS_HOURLY_BUDGET = 50;
+  const anonymousCost = { full: 3, light: 1 };
+  let requestCount = 0;
+  // Consecutive secondary-limit responses without Retry-After back off exponentially.
+  let secondaryLimitStrikes = 0;
   let generation = 0;
   const discoveryVisited = new Set();
   let clockSessionId = null;
@@ -53,6 +66,10 @@
     lastDiscoveryAt = 0;
     lastActiveSweepAt = 0;
     lastFrontPageAt = 0;
+    lastAnonymousListRead = null;
+    anonymousCost.full = 3;
+    anonymousCost.light = 1;
+    secondaryLimitStrikes = 0;
     clockSessionId = null;
   }
 
@@ -103,6 +120,7 @@
   let dirtyRevision = 0;
   let savedRevision = 0;
   let writeInFlight = null;
+  let lastSavedSnapshot = null;
   let liveSignature = null;
   let loadingView = { visible: false, title: "", detail: "" };
   function trackUserAction(run) {
@@ -139,7 +157,7 @@
   }
 
   function errorLabel(error) {
-    if (error?.kind === "invalid_token") return "Token 无效，请检查后重试";
+    if (error?.kind === "invalid_token") return error.message?.includes("未保存") ? error.message : "Token 无效，请检查后重试";
     if (error?.kind === "permission") return "Token 缺少目标仓库的 Actions: read 权限";
     if (error?.kind === "not_found") return "仓库不存在，或当前 Token 无权读取";
     if (error?.kind === "rate_limit") return "GitHub API 额度已用尽，正在等待恢复";
@@ -168,9 +186,12 @@
   function setBusy(value) {
     state.busy = value;
     if (!runtimeForeground) return;
-    document.querySelectorAll("button").forEach((button) => {
+    // Busy only locks setup and session controls; viewing controls on the
+    // dashboard keep their own state (refresh also waits for an in-flight poll).
+    document.querySelectorAll("#setup-screen button, #stop-watching").forEach((button) => {
       button.disabled = value || button.dataset.forceDisabled === "true";
     });
+    $("refresh-now").disabled = value || state.pollInFlight;
     $("branch-select").disabled = value || document.querySelector('input[name="branch-mode"]:checked')?.value === "all";
     updateStartButton();
   }
@@ -292,7 +313,13 @@
           const work = (async () => {
             while (savedRevision < dirtyRevision) {
               const revision = dirtyRevision;
-              await toolbox().storage.set(STORAGE_KEY, persistableState());
+              const snapshot = persistableState();
+              const serialized = JSON.stringify(snapshot);
+              // Clock ticks and quiet polls often change nothing durable; skip the write.
+              if (serialized !== lastSavedSnapshot) {
+                await toolbox().storage.set(STORAGE_KEY, snapshot);
+                lastSavedSnapshot = serialized;
+              }
               savedRevision = revision;
             }
           })();
@@ -330,6 +357,23 @@
     state.nextPollAt = Number.isFinite(saved.nextPollAt) ? saved.nextPollAt : null;
     state.rateRemaining = Number.isFinite(saved.rateRemaining) ? saved.rateRemaining : null;
     state.rateResetAt = Number.isFinite(saved.rateResetAt) ? saved.rateResetAt : null;
+    // Older versions saved raw GitHub objects and never pruned per-run maps.
+    state.runs = state.runs.map(model.slimRun);
+    state.jobsByRun = Object.fromEntries(Object.entries(state.jobsByRun)
+      .filter(([, jobs]) => Array.isArray(jobs)).map(([key, jobs]) => [key, jobs.map(model.slimJob)]));
+    pruneRunState();
+  }
+
+  // Drop per-run data for runs no longer listed; nothing can display or update them again.
+  function pruneRunState() {
+    const runKeys = new Set(state.runs.map(model.runKey));
+    const timingKeys = new Set(state.runs.map(timingKey));
+    const keep = (map, keys) => Object.fromEntries(Object.entries(map).filter(([key]) => keys.has(key)));
+    state.progressByRun = keep(state.progressByRun, runKeys);
+    state.jobsByRun = keep(state.jobsByRun, runKeys);
+    state.terminalStates = keep(state.terminalStates, runKeys);
+    state.timingModels = keep(state.timingModels, timingKeys);
+    state.trackedRunKeys = state.trackedRunKeys.filter((key) => runKeys.has(key));
   }
 
   async function loadToken() {
@@ -358,9 +402,29 @@
   async function saveEnteredToken() {
     const token = $("token-input").value.trim();
     if (!token) return false;
+    // Verify the new token before it can replace a working saved one. /rate_limit
+    // does not consume quota and answers 401 for a mistyped or revoked token.
+    const previousRate = { remaining: state.rateRemaining, resetAt: state.rateResetAt };
+    const restoreRate = () => {
+      state.rateRemaining = previousRate.remaining;
+      state.rateResetAt = previousRate.resetAt;
+    };
+    state.rateRemaining = null;
+    state.rateResetAt = null;
+    try {
+      await apiRequest(`${API_ROOT}/rate_limit`, token);
+    } catch (error) {
+      restoreRate();
+      if (error?.kind === "invalid_token") {
+        throw createError("invalid_token", "Token 无效，未保存；已保存的 Token 保持不变", error.status);
+      }
+      throw error;
+    }
+    const verifiedRate = { remaining: state.rateRemaining, resetAt: state.rateResetAt };
     try {
       await toolbox().storage.secure.set(TOKEN_KEY, token);
     } catch (error) {
+      restoreRate();
       state.tokenError = error?.code === "PERMISSION_DENIED"
         ? "Token 未保存：请在小工具权限中开启安全存储后重试"
         : "Token 未保存：安全存储写入失败，请重试";
@@ -370,8 +434,8 @@
     state.token = token;
     state.hasToken = true;
     state.tokenError = "";
-    state.rateRemaining = null;
-    state.rateResetAt = null;
+    state.rateRemaining = verifiedRate.remaining;
+    state.rateResetAt = verifiedRate.resetAt;
     $("token-input").value = "";
     renderTokenState();
     await persist();
@@ -403,6 +467,7 @@
     if (token) headers.Authorization = `Bearer ${token}`;
     let response;
     try {
+      requestCount += 1;
       response = await bounded(toolbox().network.request({
         url,
         method: "GET",
@@ -417,26 +482,46 @@
     updateRateState(response.headers);
     const remainingHeader = headerValue(response.headers, "x-ratelimit-remaining");
     const responseRemaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
-    const retryHeader = headerValue(response.headers, "retry-after");
-    const retryAfterSeconds = retryHeader === null ? Number.NaN : Number(retryHeader);
-    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-      state.rateResetAt = Date.now() + retryAfterSeconds * 1000;
-    }
-    const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds);
+    const retryAfterSeconds = model.parseRetryAfter(headerValue(response.headers, "retry-after"));
+    const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds, errorMessage(response));
     if (failure === "invalid_token") throw createError(failure, "GitHub Token 无效", response.status);
     if (failure === "rate_limit") {
+      // Polls stay blocked until rateResetAt. Retry-After is authoritative; the hourly
+      // x-ratelimit-reset applies only when this response reports 0 remaining. Otherwise
+      // it is a secondary limit: wait at least 1 minute, doubling on repeated hits.
+      const resetSeconds = Number(headerValue(response.headers, "x-ratelimit-reset"));
+      const primaryResetAt = responseRemaining === 0 && Number.isFinite(resetSeconds) ? resetSeconds * 1000 : 0;
+      let blockedUntil;
+      if (retryAfterSeconds !== null) {
+        blockedUntil = Date.now() + retryAfterSeconds * 1000;
+      } else if (primaryResetAt > Date.now()) {
+        blockedUntil = primaryResetAt;
+      } else {
+        blockedUntil = Date.now() + 60_000 * 2 ** Math.min(secondaryLimitStrikes, 4);
+        secondaryLimitStrikes += 1;
+      }
       state.rateRemaining = 0;
-      state.rateResetAt = Math.max(state.rateResetAt || 0, Date.now() + 60_000);
+      state.rateResetAt = blockedUntil;
       throw createError(failure, "GitHub API rate limit exceeded", response.status);
     }
     if (failure === "permission") throw createError(failure, "GitHub Actions read permission required", response.status);
     if (failure === "not_found") throw createError(failure, "Repository or Actions resource not found", response.status);
     if (failure) throw createError(failure, `GitHub API 返回 ${response.status}`, response.status);
+    secondaryLimitStrikes = 0;
     if (!response.body) return {};
     try {
       return { data: JSON.parse(response.body), headers: response.headers };
     } catch (_error) {
       throw createError("github", "GitHub API 返回了无法解析的数据", response.status);
+    }
+  }
+
+  function errorMessage(response) {
+    if (!response.status || response.status < 400 || !response.body) return "";
+    try {
+      return String(JSON.parse(response.body)?.message || "");
+    } catch (_error) {
+      return String(response.body).slice(0, 500);
     }
   }
 
@@ -624,7 +709,11 @@
 
   function currentPollInterval() {
     const active = state.runs.some(isActiveRun);
-    return model.pollInterval(state.hasToken, active);
+    const base = model.pollInterval(state.hasToken, active);
+    if (state.hasToken) return base;
+    // Polls alternate full/light: keep (full + light) requests per pair under the hourly budget.
+    const pairCost = anonymousCost.full + anonymousCost.light;
+    return Math.max(base, Math.ceil(pairCost * 3_600_000 / 2 / ANONYMOUS_HOURLY_BUDGET));
   }
 
   async function configureTimers(lease) {
@@ -647,7 +736,7 @@
 
   async function ensureSession() {
     if (state.sessionId) {
-      const status = await toolbox().background.status(state.sessionId);
+      const status = await bounded(toolbox().background.status(state.sessionId), null, 5_000);
       if (status) return state.sessionId;
     }
     const session = await toolbox().background.start({
@@ -706,13 +795,14 @@
         branchMode,
         branch: branchMode === "branch" ? branch : ""
       };
-      state.runs = model.selectedRuns(state.discoveryRuns, workflowIds, branchMode, branch);
+      state.runs = model.selectedRuns(state.discoveryRuns, workflowIds, branchMode, branch).map(model.slimRun);
       state.lastPollAt = null;
       state.monitoring = true;
       liveSignature = null;
       state.watchStartedAt = Date.now();
       state.trackedRunKeys = state.discoveryRuns.filter(isActiveRun).map(model.runKey);
       state.terminalStates = {};
+      pruneRunState();
       state.warning = null;
       state.warningMessage = "";
       await ensureSession();
@@ -743,7 +833,7 @@
       "jobs", undefined, lease, 10
     );
     lease?.assert();
-    state.jobsByRun[key] = jobs;
+    state.jobsByRun[key] = jobs.map(model.slimJob);
     const terminal = state.terminalStates[key];
     if (run.status === "completed" && terminal) {
       terminal.jobsSynced = jobs.every((job) => job.status === "completed"
@@ -829,13 +919,15 @@
 
   function acceptRuns(runs, lease) {
     lease.assert();
-    const selected = model.selectedRuns(runs, state.config.selectedWorkflowIds, state.config.branchMode, state.config.branch);
+    const selected = model.selectedRuns(runs, state.config.selectedWorkflowIds, state.config.branchMode, state.config.branch)
+      .map(model.slimRun);
     state.runs = reliability.mergeRuns(state.runs, selected);
     trackDiscoveredRuns(selected);
     registerTerminalRuns();
     // Keep active/unannounced runs, plus a bounded recent-history view.
     state.runs = state.runs.filter((run, index) => index < 100 || isActiveRun(run) ||
       (state.terminalStates[model.runKey(run)] && !state.terminalStates[model.runKey(run)].posted));
+    pruneRunState();
   }
 
   function queueDiscovery() {
@@ -892,6 +984,12 @@
     state.lastAttemptAt = state.pollStartedAt = Date.now();
     renderDashboard();
     let detailError = null;
+    // Anonymous quota is 60/hour. Every other automatic anonymous poll only re-reads
+    // tracked runs; discovery and job details wait for the next full poll.
+    const lightPoll = !state.hasToken && !manual && (anonymousPollCount++ % 2 === 1);
+    const requestsBefore = requestCount;
+    let skipExtras = false;
+    let pollCompleted = false;
     try {
       // Current run IDs first: completion cannot disappear behind a newer history page.
       const tracked = state.runs.filter((run) => (unavailableRuns.get(run.id) || 0) <= Date.now() &&
@@ -899,6 +997,8 @@
       const ordered = tracked.length ? [...tracked.slice(activeCursor % tracked.length), ...tracked.slice(0, activeCursor % tracked.length)] : [];
       const batch = ordered.slice(0, state.hasToken ? 6 : 1);
       activeCursor += batch.length;
+      // A light poll with nothing to re-read still discovers new runs.
+      skipExtras = lightPoll && batch.length > 0;
       for (const run of batch) {
         let latest;
         try {
@@ -921,23 +1021,44 @@
       // Always refresh the front page periodically, even if old cursors are still
       // draining. Otherwise a large backlog could hide builds started more recently.
       let freshPageReads = 0;
-      if (Date.now() - lastFrontPageAt >= (state.hasToken ? 60_000 : 300_000) && lease.remaining() > 5_000) {
+      if (!skipExtras) queueDiscovery();
+      // With a single anonymous page, a due front page must not starve the discovery
+      // queue: after a front-page read, the next full poll reads a queued page instead.
+      const yieldToDiscovery = !state.hasToken && discoveryQueue.length > 0 && lastAnonymousListRead === "front";
+      if (!skipExtras && !yieldToDiscovery && Date.now() - lastFrontPageAt >= (state.hasToken ? 60_000 : 300_000) && lease.remaining() > 5_000) {
         const branch = state.config.branchMode === "branch" ? `&branch=${encodeURIComponent(state.config.branch)}` : "";
         const front = (await apiRequest(repoUrl(`/actions/runs?per_page=100${branch}`), undefined, lease)).data;
         if (!Array.isArray(front?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
         acceptRuns(front.workflow_runs, lease);
         state.lastPollAt = lastFrontPageAt = Date.now();
         freshPageReads = 1;
+        lastAnonymousListRead = "front";
       }
-      queueDiscovery();
-      const pageBudget = (state.hasToken ? 4 : 1) - freshPageReads;
+      const pageBudget = skipExtras ? 0 : (state.hasToken ? 4 : 1) - freshPageReads;
+      const failedPages = new Set();
       for (let page = 0; page < pageBudget && discoveryQueue.length && lease.remaining() > 5_000; page += 1) {
         const url = discoveryQueue[0];
-        const response = await apiRequest(url, undefined, lease);
+        if (failedPages.has(url)) break;
+        let response;
+        try {
+          response = await apiRequest(url, undefined, lease);
+        } catch (error) {
+          lease.assert();
+          if (error?.code || ["rate_limit", "offline", "invalid_token"].includes(error?.kind)) throw error;
+          // A failing cursor (e.g. a deleted workflow) must not pin the queue head or keep
+          // the anonymous front page skipped: drop it when gone, otherwise retry it last.
+          discoveryQueue.shift();
+          if (![404, 410].includes(error?.status)) discoveryQueue.push(url);
+          failedPages.add(url);
+          lastAnonymousListRead = "discovery";
+          detailError = error;
+          continue;
+        }
         if (!Array.isArray(response.data?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
         acceptRuns(response.data.workflow_runs, lease);
         discoveryQueue.shift();
         discoveryVisited.add(url);
+        lastAnonymousListRead = "discovery";
         const next = model.parseNextLink(headerValue(response.headers, "link"));
         if (next && !discoveryVisited.has(next) && !discoveryQueue.includes(next)) discoveryQueue.push(next);
         state.lastPollAt = Date.now();
@@ -951,7 +1072,7 @@
       const primary = chooseDisplayedRun();
       const jobs = [...new Map([primary, ...batch, ...state.runs.filter(isActiveRun)].filter(Boolean)
         .map((run) => [run.id, state.runs.find((current) => current.id === run.id) || run])).values()]
-        .filter((run) => isActiveRun(run) || finalJobsPending(run)).slice(0, state.hasToken ? 6 : 1);
+        .filter((run) => isActiveRun(run) || finalJobsPending(run)).slice(0, skipExtras ? 0 : state.hasToken ? 6 : 1);
       for (const run of jobs) {
         if (lease.remaining() < 5_000) break;
         try { await fetchJobs(run, lease); }
@@ -962,6 +1083,7 @@
       if (detailError) state.warningMessage = `部分构建或任务详情稍后重试：${errorLabel(detailError)}`;
       await bounded(updateLiveNotification(), lease, 5_000);
       await updateBackgroundStatus();
+      pollCompleted = true;
     } catch (error) {
       if (activePoll !== lease || !state.monitoring || runtimeClosing) return;
       state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
@@ -973,6 +1095,9 @@
         if (activePoll === lease) {
           // Retire before cleanup; cleanup is bounded separately and cannot mutate a new run.
           lease.invalidate();
+          // A poll cut short by an error only raises the estimate, never lowers it.
+          const spent = requestCount - requestsBefore, kind = skipExtras ? "light" : "full";
+          if (!state.hasToken && spent > 0 && (pollCompleted || spent > anonymousCost[kind])) anonymousCost[kind] = spent;
           const cleanup = new reliability.Lease(8_000);
           try {
             if (state.monitoring) await configureTimers(cleanup);
@@ -1140,7 +1265,6 @@
         if (terminalPosts.get(key) === postOwner) terminalPosts.delete(key);
       }
     }
-    if (ownerGeneration !== generation || !state.monitoring) return;
   }
 
   async function clockTick(background) {
@@ -1210,10 +1334,6 @@
     const aliases = [
       [/^Set up job$/i, "准备构建环境"],
       [/^Complete job$/i, "完成任务"],
-      [/^Enable accelerated behavior test emulator$/i, "启动测试模拟器"],
-      [/^Verify catalog, backup, execution identity, dialogs and Wasm on Android$/i, "验证 Android 行为"],
-      [/^Retain host unit test reports$/i, "保存单元测试报告"],
-      [/^Retain Android behavior and WebView evidence$/i, "保存行为验证结果"],
       [/^Post (?:Run )?gradle\/actions\/setup-gradle$/i, "Gradle 环境收尾"],
       [/^Post (?:Run )?actions\/setup-java$/i, "Java 环境收尾"],
       [/^Post (?:Run )?actions\/checkout$/i, "清理工作目录"],

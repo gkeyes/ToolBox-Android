@@ -15,7 +15,7 @@ const run = (id = 17, status = 'in_progress', attempt = 1) => ({
 const response = (body, headers = {}) => ({ status: 200, body: JSON.stringify(body), headers });
 
 function harness(request) {
-  const calls = [], posts = [], lives = [], timers = [];
+  const calls = [], posts = [], lives = [], timers = [], writes = [], secureWrites = [];
   const element = () => ({
     value: '', hidden: false, dataset: {}, style: {}, disabled: false,
     addEventListener() {}, setAttribute() {}, focus() {}, replaceChildren() {}, append() {},
@@ -27,7 +27,8 @@ function harness(request) {
     getElementById(id) { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); },
   };
   const toolbox = {
-    storage: { set: async () => {}, get: async () => null, secure: { get: async () => null } },
+    storage: { set: async (key, value) => { writes.push([key, JSON.parse(JSON.stringify(value))]); }, get: async () => null,
+      secure: { get: async () => null, set: async (key, value) => { secureWrites.push([key, value]); } } },
     background: { onTimer() {}, onRestore() {}, setTimer: async (...args) => { timers.push(args); }, cancelTimer: async () => {}, stop: async () => {} },
     network: { request: async (options) => {
       calls.push(options);
@@ -50,9 +51,11 @@ function harness(request) {
     renderAll = function () {};
     showToast = function () {};
     window.testApi = { state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
+      saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
+      ageFrontPage: () => { lastFrontPageAt = 0; },
       setForeground: (value) => { runtimeForeground = value; }, clockPaints: () => clockPaints,
       expire: () => activePoll?.invalidate(reliability.timeoutError()),
-      pendingPages: () => discoveryQueue.length };
+      pendingPages: () => discoveryQueue.length, pollInterval: () => currentPollInterval() };
   `);
   vm.runInContext(source, context, { filename: 'watcher/app.js' });
   const api = window.testApi;
@@ -62,7 +65,7 @@ function harness(request) {
   });
   // Use the production model's exact key format.
   api.state.trackedRunKeys = [model.runKey(api.state.runs[0])];
-  return { ...api, calls, posts, lives, timers, toolbox, close() { api.state.monitoring = false; api.retireWork(); } };
+  return { ...api, calls, posts, lives, timers, writes, secureWrites, toolbox, node: (id) => document.getElementById(id), close() { api.state.monitoring = false; api.retireWork(); } };
 }
 
 test('bridge deadline expires and a late value cannot become a successful result', async () => {
@@ -222,4 +225,206 @@ test('a clock continuation after stop must not send a result notification', asyn
   await h.processTerminalResults();
   assert.equal(h.posts.length, 0);
   assert.equal(h.state.terminalStates[model.runKey(h.state.runs[0])].posted, false);
+});
+
+
+test('a mistyped token is rejected by a test request and never replaces the saved token', async () => {
+  const h = harness((o) => o.url.endsWith('/rate_limit')
+    ? { status: 401, body: '{"message":"Bad credentials"}', headers: {} }
+    : response({ workflow_runs: [] }));
+  try {
+    Object.assign(h.state, { token: 'good-token', hasToken: true, rateRemaining: 4000, rateResetAt: null });
+    h.node('token-input').value = 'typo-token';
+    await assert.rejects(h.saveEnteredToken(), { kind: 'invalid_token' });
+    assert.equal(h.secureWrites.length, 0);
+    assert.equal(h.state.token, 'good-token');
+    assert.equal(h.state.rateRemaining, 4000);
+    const probe = h.calls.find((o) => o.url.endsWith('/rate_limit'));
+    assert.equal(probe.headers.Authorization, 'Bearer typo-token');
+  } finally { h.close(); }
+});
+
+test('a token is saved only after GitHub accepts it', async () => {
+  const h = harness((o) => response({ resources: {} }, { 'x-ratelimit-remaining': '4999', 'x-ratelimit-reset': '9999999999' }));
+  try {
+    h.node('token-input').value = ' new-token ';
+    assert.equal(await h.saveEnteredToken(), true);
+    assert.deepEqual(h.secureWrites, [['github-actions-watcher-token', 'new-token']]);
+    assert.equal(h.state.token, 'new-token');
+    assert.equal(h.state.rateRemaining, 4999);
+  } finally { h.close(); }
+});
+
+test('HTTP 429 is rate limiting and waits for Retry-After before any further request', async () => {
+  const h = harness(() => ({ status: 429, body: '{}', headers: { 'retry-after': '300' } }));
+  try {
+    await h.pollGitHub(false); const count = h.calls.length;
+    assert.equal(h.state.warning, 'rate_limit');
+    assert.ok(h.state.rateResetAt >= Date.now() + 290_000);
+    await h.pollGitHub(true); await h.clockTick(true);
+    assert.equal(h.calls.length, count);
+    assert.ok(h.state.nextPollAt >= Date.now() + 290_000);
+  } finally { h.close(); }
+  assert.equal(model.classifyApiStatus(429, null, null), 'rate_limit');
+  assert.equal(model.classifyApiStatus(403, 4000, null, 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.'), 'rate_limit');
+  assert.equal(model.classifyApiStatus(403, 4000, null, 'Resource not accessible by integration'), 'permission');
+  assert.equal(model.parseRetryAfter('120'), 120);
+  assert.ok(Math.abs(model.parseRetryAfter(new Date(Date.now() + 60_000).toUTCString()) - 60) < 2);
+  assert.equal(model.parseRetryAfter(null), null);
+});
+
+test('anonymous polling alternates full and run-only cycles to stay under 60 requests/hour', async () => {
+  const h = harness();
+  try {
+    await h.pollGitHub(false);
+    const full = h.calls.length;
+    assert.ok(h.calls.some((o) => o.url.includes('/jobs?')));
+    await h.pollGitHub(false);
+    const light = h.calls.slice(full);
+    assert.deepEqual(light.map((o) => new URL(o.url).pathname), ['/repos/fixture/fixture/actions/runs/17']);
+    const before = h.calls.length;
+    await h.pollGitHub(false);
+    assert.ok(h.calls.slice(before).some((o) => o.url.includes('/jobs?')));
+    // Worst case per hour at the active anonymous interval stays well under GitHub's 60.
+    const pollsPerHour = 3_600_000 / model.pollInterval(false, true);
+    assert.ok(pollsPerHour / 2 * full + pollsPerHour / 2 * light.length < 60);
+  } finally { h.close(); }
+});
+
+test('per-run maps are pruned to listed runs and only compact fields are kept', () => {
+  const h = harness();
+  try {
+    const raw = { ...run(17), actor: { login: 'x', avatar_url: 'https://example.invalid/a' }, repository: { full_name: 'a/b' }, html_url: 'u' };
+    h.state.jobsByRun = { '17:1': [], '5:1': [{ id: 1 }] };
+    h.state.progressByRun = { '17:1': 40, '5:1': 90 };
+    h.state.terminalStates = { '5:1': { posted: true } };
+    h.state.timingModels = { '9:main:': { sampleCount: 1 }, '3:old:push': { sampleCount: 2 } };
+    h.state.trackedRunKeys = ['17:1', '5:1'];
+    h.state.runs = [];
+    h.acceptRuns([raw], new reliability.Lease(5_000));
+    assert.equal(h.state.runs[0].actor, undefined);
+    assert.equal(h.state.runs[0].repository, undefined);
+    assert.equal(h.state.runs[0].head_sha, 'abc123');
+    assert.deepEqual(Object.keys(h.state.progressByRun), ['17:1']);
+    assert.deepEqual(Object.keys(h.state.jobsByRun), ['17:1']);
+    assert.deepEqual(Object.keys(h.state.terminalStates), []);
+    assert.deepEqual(Object.keys(h.state.timingModels), ['9:main:']);
+    assert.deepEqual([...h.state.trackedRunKeys], ['17:1']);
+    const job = model.slimJob({ id: 1, name: 'b', status: 'completed', runner_name: 'r', url: 'u', steps: [{ name: 's', number: 1, status: 'completed', extra: 1 }] });
+    assert.deepEqual(job, { id: 1, name: 'b', status: 'completed', steps: [{ name: 's', number: 1, status: 'completed' }] });
+  } finally { h.close(); }
+});
+
+test('unchanged state is not rewritten to storage', async () => {
+  const h = harness();
+  try {
+    await h.persist(); await h.persist(); await h.persist();
+    assert.equal(h.writes.length, 1);
+    h.state.lastPollAt = Date.now();
+    await h.persist();
+    assert.equal(h.writes.length, 2);
+  } finally { h.close(); }
+});
+
+test('User-Agent version comes from one constant that matches the manifest', () => {
+  const h = harness();
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    assert.equal(h.userAgent, `ToolBox-GitHub-Actions-Watcher/${manifest.version}`);
+  } finally { h.close(); }
+});
+
+
+test('a short Retry-After is not stretched to the hourly primary reset', async () => {
+  const hourly = Math.floor(Date.now() / 1000) + 3_000;
+  const h = harness(() => ({ status: 403, body: '{"message":"secondary rate limit"}',
+    headers: { 'retry-after': '30', 'x-ratelimit-remaining': '40', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await h.pollGitHub(false);
+    assert.equal(h.state.warning, 'rate_limit');
+    assert.ok(h.state.rateResetAt <= Date.now() + 31_000, `reset ${h.state.rateResetAt - Date.now()}ms away`);
+    assert.ok(h.state.rateResetAt >= Date.now() + 29_000);
+  } finally { h.close(); }
+});
+
+test('anonymous full polls alternate the due front page with queued discovery pages', async () => {
+  const h = harness();
+  const lists = (from) => h.calls.slice(from).map((o) => new URL(o.url)).filter((u) => !/\/runs\/\d+/.test(u.pathname))
+    .map((u) => u.pathname.includes('/workflows/') || u.searchParams.has('status') ? 'discovery' : u.pathname.endsWith('/actions/runs') ? 'front' : 'other');
+  try {
+    const kinds = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      h.ageFrontPage(); // simulate the 6-minute gap between anonymous full polls
+      const full = h.calls.length; await h.pollGitHub(false); kinds.push(...lists(full));
+      const light = h.calls.length; await h.pollGitHub(false);
+      assert.equal(h.calls.length - light, 1, 'light polls only re-read the tracked run');
+    }
+    assert.deepEqual(kinds, ['front', 'discovery', 'front', 'discovery']);
+    // Per hour: 10 full polls x (run + one list page + jobs) + 10 light polls x run.
+    const fullCost = 3, pollsPerHour = 3_600_000 / model.pollInterval(false, true);
+    assert.ok(pollsPerHour / 2 * fullCost + pollsPerHour / 2 < 60);
+  } finally { h.close(); }
+});
+
+test('a secondary limit with quota remaining ignores the hourly reset and backs off from 1 minute', async () => {
+  const hourly = Math.floor(Date.now() / 1000) + 3_000;
+  const h = harness(() => ({ status: 429, body: '{"message":"secondary rate limit"}',
+    headers: { 'x-ratelimit-remaining': '40', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await h.pollGitHub(false);
+    assert.equal(h.state.warning, 'rate_limit');
+    let wait = h.state.rateResetAt - Date.now();
+    assert.ok(wait >= 59_000 && wait <= 61_000, `first wait ${wait}ms`);
+    h.state.rateResetAt = Date.now() - 1; // the minute passes; the limit is hit again
+    await h.pollGitHub(false);
+    wait = h.state.rateResetAt - Date.now();
+    assert.ok(wait >= 119_000 && wait <= 121_000, `second wait ${wait}ms`);
+  } finally { h.close(); }
+  const exhausted = harness(() => ({ status: 403, body: '{}',
+    headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await exhausted.pollGitHub(false);
+    assert.equal(exhausted.state.rateResetAt, hourly * 1000);
+  } finally { exhausted.close(); }
+});
+
+test('anonymous poll interval adapts to runs whose jobs span several pages', async () => {
+  const jobsPage = (o) => {
+    const page = Number(new URL(o.url).searchParams.get('page') || 1);
+    const next = page < 3 ? { link: `<${o.url.replace(/&page=\d+/, '')}&page=${page + 1}>; rel="next"` } : {};
+    return response({ total_count: 250, jobs: Array.from({ length: page < 3 ? 100 : 50 }, (_, i) => ({ id: page * 1000 + i, status: 'in_progress', steps: [] })) }, next);
+  };
+  const h = harness((o) => o.url.includes('/jobs?') ? jobsPage(o)
+    : response(o.url.includes('/actions/runs/17') ? run() : { workflow_runs: [] }));
+  try {
+    await h.pollGitHub(false);
+    const full = h.calls.length;
+    assert.equal(h.calls.filter((o) => o.url.includes('/jobs?')).length, 3);
+    assert.equal(h.state.jobsByRun[model.runKey(run())].length, 250, 'every job is still fetched');
+    await h.pollGitHub(false);
+    const light = h.calls.length - full;
+    const pollsPerHour = 3_600_000 / h.pollInterval();
+    assert.ok(h.pollInterval() > model.pollInterval(false, true));
+    assert.ok(pollsPerHour / 2 * (full + light) <= 50, `${pollsPerHour / 2 * (full + light)} requests/hour`);
+  } finally { h.close(); }
+});
+
+test('a failing discovery page rotates out and the next full poll reads the front page', async () => {
+  const h = harness((o) => o.url.includes('/workflows/9/runs')
+    ? { status: 404, body: '{"message":"Not Found"}', headers: {} }
+    : response(o.url.includes('/jobs?') ? { jobs: [] } : o.url.includes('/actions/runs/17') ? run() : { workflow_runs: [] }));
+  const lists = (from) => h.calls.slice(from).map((o) => new URL(o.url)).filter((u) => !/\/runs\/\d+/.test(u.pathname))
+    .map((u) => u.pathname.includes('/workflows/') ? 'workflow' : u.searchParams.has('status') ? 'status' : 'front');
+  try {
+    const kinds = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      h.ageFrontPage();
+      const full = h.calls.length; await h.pollGitHub(false); kinds.push(...lists(full));
+      await h.pollGitHub(false);
+    }
+    // front, then the failing workflow page (dropped), then front again rather than a stuck head.
+    assert.deepEqual(kinds.slice(0, 3), ['front', 'workflow', 'front']);
+    assert.equal(h.calls.filter((o) => o.url.includes('/workflows/9/runs')).length, 1);
+    assert.notEqual(h.state.warning, 'not_found');
+  } finally { h.close(); }
 });
