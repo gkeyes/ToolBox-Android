@@ -28,14 +28,23 @@ WEBVIEW_PATHS = {
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt",
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt",
 }
-VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*\d+|versionName\s*=\s*"[^"]*")\s*$')
+VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*(?P<code>\d{1,10})|versionName\s*=\s*"\d+\.\d+\.\d+")\s*$')
+# Google Play's ceiling for versionCode, well inside the Int that Gradle assigns it to.
+MAX_VERSION_CODE = 2_100_000_000
 
 
 def version_only(base_text, head_text):
     """True when two build files differ only in their versionCode / versionName lines."""
     if base_text is None or head_text is None:
         return False
-    strip = lambda text: [line for line in text.splitlines() if not VERSION_LINE.match(line)]
+    def strip(text):
+        kept = []
+        for line in text.splitlines():
+            match = VERSION_LINE.match(line)
+            # An out-of-range code is not exempted: only a build would show the failure.
+            if not match or (match["code"] and not 0 < int(match["code"]) <= MAX_VERSION_CODE):
+                kept.append(line)
+        return kept
     return strip(base_text) == strip(head_text)
 
 
@@ -47,6 +56,8 @@ def needs_gradle(path, bundled):
         return False
     if path.startswith(".github/workflows/"):
         return path == ".github/workflows/android.yml"
+    if path == REGISTRY:
+        return True  # app/build.gradle.kts reads it to choose the bundled examples.
     if path.startswith(("scripts/ci/", "scripts/tests/")):
         return False
     if path.startswith("examples/"):
