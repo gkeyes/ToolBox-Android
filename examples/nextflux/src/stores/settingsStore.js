@@ -20,6 +20,7 @@ const defaultValue = {
   showFavicon: true,
   titleLines: 2,
   textPreviewLines: 2,
+  listFontScale: 1, // 文章列表字号倍数（0.85–1.3）
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "15", // 添加同步间隔设置，默认15分钟

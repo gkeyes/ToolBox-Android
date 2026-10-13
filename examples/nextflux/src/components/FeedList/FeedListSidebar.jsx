@@ -20,7 +20,7 @@ import SyncButton from "@/components/FeedList/components/SyncButton.jsx";
 import ProfileButton from "@/components/FeedList/components/ProfileButton.jsx";
 import SidebarBackgroundSync from "@/components/FeedList/components/SidebarBackgroundSync.jsx";
 import SidebarHiddenFeeds from "@/components/FeedList/components/SidebarHiddenFeeds.jsx";
-import logo from "@/assets/logo.png";
+import logo from "@/assets/app-icon.svg";
 import { getLastSyncTime } from "@/db/storage.js";
 import AddFeedButton from "@/components/FeedList/components/AddFeedButton.jsx";
 import { useTranslation } from "react-i18next";
@@ -84,7 +84,7 @@ const FeedListSidebar = () => {
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center gap-2 pl-1">
-              <img src={logo} alt="" className="size-9 rounded-[var(--ds-radius-small)]" />
+              <img src={logo} alt="" className="nf-app-icon size-9" />
               <div className="grid min-w-0 flex-1 text-left leading-tight">
                 <span className="ds-title truncate">Nextflux</span>
                 <SyncStatusLine />

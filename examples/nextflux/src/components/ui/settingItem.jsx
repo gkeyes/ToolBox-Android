@@ -124,6 +124,7 @@ export const SliderItem = ({
   min,
   step,
   description,
+  formatOptions,
 }) => {
   // Dragging only moves this slider; the setting (and every subscriber of the
   // settings store) changes once when the drag or key press ends.
@@ -144,6 +145,7 @@ export const SliderItem = ({
         maxValue={max}
         minValue={min}
         step={step}
+        formatOptions={formatOptions}
       >
         <RowText label={label} description={description} />
         <Slider.Output className="ds-tnum" />

@@ -40,8 +40,8 @@ test("framer-motion springs convert damping ratio with unit mass", () => {
   assert.ok(Math.abs(damping / (2 * Math.sqrt(380)) - 0.86) < 1e-9);
 });
 
-test("reader palettes use paper-neutral surfaces and the RSS accent", () => {
-  for (const value of ["#FFFFFF", "#F5F5F7", "#000000", "#121212", "#C2410C", "#FF8A3D", "rgb(28 27 25 / 0.92)", "rgb(242 240 236 / 0.60)"]) {
+test("palettes follow the iOS 27 host: grouped grey page, white cards, system blue", () => {
+  for (const value of ["#F2F2F7", "#FFFFFF", "#000000", "#1C1C1E", "#0064D2", "#0A84FF", "rgb(60 60 67 / 0.22)", "rgb(84 84 88 / 0.65)"]) {
     assert.ok(css.includes(value), value);
   }
   assert.match(css, /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme\]\)/, "first frame follows host scheme");

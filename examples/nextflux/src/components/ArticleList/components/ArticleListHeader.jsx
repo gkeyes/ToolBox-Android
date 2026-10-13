@@ -138,7 +138,7 @@ export default function ArticleListHeader({ collapsed = false }) {
     return () => observer?.disconnect();
   }, []);
   const actions = (
-    <div className="ml-auto flex shrink-0">
+    <div className="article-list-actions ml-auto flex shrink-0">
       {feedId && <FeedTitleFilterButton feedId={feedId} feedTitle={title} />}
       <MarkAllReadButton />
       <MenuButton />

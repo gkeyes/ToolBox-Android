@@ -421,16 +421,18 @@ export default function ActionButtons() {
           <MoreItem
             label={$activeArticle?.status === "read" ? t("common.unread") : t("common.read")}
             icon={$activeArticle?.status === "unread" ? <CircleDot /> : <Circle />}
+            tone="accent"
             onPress={() => { handleMarkStatus($activeArticle); setMoreOpen(false); }}
           />
           {hasTitleFilter && (
-            <MoreItem label="标题过滤" icon={<Funnel />} onPress={() => pressAfterSheet(".nf-title-filter-trigger")} />
+            <MoreItem label="标题过滤" icon={<Funnel />} tone="warning" onPress={() => pressAfterSheet(".nf-title-filter-trigger")} />
           )}
-          <MoreItem label="全文适配" icon={<WandSparkles />} onPress={() => pressAfterSheet('[aria-label="全文适配"]')} />
+          <MoreItem label="全文适配" icon={<WandSparkles />} tone="purple" onPress={() => pressAfterSheet('[aria-label="全文适配"]')} />
           {$hasIntegrations && (
             <MoreItem
               label={t("articleView.saveToThirdParty")}
               icon={saveLoading ? <Spinner color="current" size="sm" /> : <CloudUpload />}
+              tone="success"
               onPress={() => { handleSaveToThirdParty(); setMoreOpen(false); }}
             />
           )}
@@ -452,7 +454,7 @@ export default function ActionButtons() {
   );
 }
 
-function MoreItem({ label, icon, onPress, isDisabled = false }) {
+function MoreItem({ label, icon, onPress, isDisabled = false, tone = "neutral" }) {
   return (
     <Button
       variant="ghost"
@@ -461,7 +463,7 @@ function MoreItem({ label, icon, onPress, isDisabled = false }) {
       onPress={onPress}
       isDisabled={isDisabled}
     >
-      <span className="reader-more-icon" aria-hidden="true">{icon}</span>
+      <span className="reader-more-icon nf-tile" data-tone={tone} aria-hidden="true">{icon}</span>
       <span className="reader-more-label">{label}</span>
     </Button>
   );

@@ -17,6 +17,7 @@ import {
   MonitorCog,
   WrapText,
   LetterText,
+  ALargeSmall,
   SquareArrowUp,
   PanelLeft,
   SquareRoundCorner,
@@ -38,6 +39,7 @@ export default function Appearance() {
     interfaceFontSize,
     textPreviewLines,
     titleLines,
+    listFontScale,
     showIndicator,
     floatingSidebar,
   } = useStore(settingsState);
@@ -123,6 +125,20 @@ export default function Appearance() {
           }
           settingName="showIndicator"
           settingValue={showIndicator}
+        />
+        <SliderItem
+          label={t("settings.appearance.listFontSize")}
+          icon={
+            <SettingIcon variant="blue">
+              <ALargeSmall />
+            </SettingIcon>
+          }
+          settingName="listFontScale"
+          settingValue={listFontScale}
+          max={1.3}
+          min={0.85}
+          step={0.05}
+          formatOptions={{ style: "percent" }}
         />
         <SliderItem
           label={t("settings.appearance.titleLines")}
