@@ -42,7 +42,6 @@ import io.toolbox.tool.runtime.RuntimeSessionIdentity
 import io.toolbox.tool.runtime.RuntimeBatchStorageHandler
 import io.toolbox.tool.runtime.RuntimeStorageMutation
 import io.toolbox.tool.runtime.RuntimeStorageSet
-import io.toolbox.tool.runtime.RuntimeStorageHandler
 import io.toolbox.tool.runtime.RuntimeToastHandler
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -180,7 +179,7 @@ internal suspend fun clearRuntimeSecureStorage(
 ): Boolean = withContext(Dispatchers.IO) {
     ToolRuntimeStorageLocks.mutexFor(toolId, ToolStorageNamespace.Secure).withLock {
         try {
-            when (RuntimeSecureEnvelopeStorage(toolId, repository).clear()) {
+            when (RuntimeSecureStore(toolId, repository, AndroidKeyStoreCipher(toolId)).clearRows()) {
                 is DataResult.Success,
                 is DataResult.Failure.NotFound,
                 -> Unit
@@ -277,7 +276,7 @@ internal enum class ToolStorageNamespace(val documentKey: String) {
     Secure("toolbox.runtime.v1.secure.values"),
 }
 
-/** Ordinary values use bounded rows; secure values keep their encrypted document. */
+/** Ordinary values use bounded rows; secure values use encrypted per-key rows (RuntimeSecureStorage.kt). */
 internal class StandardToolKvStorageHandler(
     private val toolId: String,
     private val repository: ToolKvRepository,
@@ -462,13 +461,11 @@ internal class StandardToolKvStorageHandler(
         if (key.isBlank() || key.any(Char::isISOControl)) {
             throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid storage key")
         }
-        // UTF-16 code units preserve every accepted JS key, including lone surrogates.
-        return ROW_PREFIX + key.map { it.code.toString(16).padStart(4, '0') }.joinToString("")
+        return ROW_PREFIX + encodeRuntimeStorageKey(key)
     }
 
     private fun decodeKey(encoded: String): String {
-        if (encoded.isEmpty() || encoded.length % 4 != 0) unreadable()
-        val key = encoded.chunked(4).map { (it.toIntOrNull(16) ?: unreadable()).toChar() }.joinToString("")
+        val key = decodeRuntimeStorageKey(encoded) ?: unreadable()
         if (physicalKey(key) != ROW_PREFIX + encoded) unreadable()
         return key
     }
@@ -495,16 +492,7 @@ internal class StandardToolKvStorageHandler(
     }
 }
 
-internal fun createRuntimeSecureStorageHandler(
-    toolId: String,
-    repository: ToolKvRepository,
-    nowMillis: () -> Long,
-    canAccess: suspend () -> Boolean,
-): RuntimeStorageHandler = JsonToolKvStorageHandler(
-    toolId, repository, ToolStorageNamespace.Secure, nowMillis, AndroidKeyStoreCipher(toolId), canAccess,
-)
-
-/** Stores only the encrypted envelope. Callers hold the secure namespace lock. */
+/** Reads the pre-v2 single encrypted document for migration. Callers hold the secure namespace lock. */
 internal class RuntimeSecureEnvelopeStorage(
     private val toolId: String,
     private val repository: ToolKvRepository,
@@ -529,27 +517,6 @@ internal class RuntimeSecureEnvelopeStorage(
         }
     }
 
-    suspend fun write(encryptedEnvelope: String, updatedAt: Long): DataResult<Unit> {
-        require(encryptedEnvelope.isNotEmpty())
-        val chunks = encryptedEnvelope.chunked(CHUNK_CHARS)
-        val rows = linkedMapOf(
-            ROOT_KEY to RuntimeValueJson.encodeObject(mapOf(
-                "format" to RpcValue.StringValue(FORMAT),
-                "v" to RpcValue.Number(1.0),
-                "chunks" to RpcValue.Number(chunks.size.toDouble()),
-                "length" to RpcValue.Number(encryptedEnvelope.length.toDouble()),
-            )),
-        )
-        chunks.forEachIndexed { index, chunk -> rows["$CHUNK_PREFIX$index"] = chunk }
-        return repository.replace(toolId, physicalRows(), rows, updatedAt)
-    }
-
-    suspend fun clear(): DataResult<Unit> = repository.replace(toolId, physicalRows(), emptyMap(), 0)
-
-    private suspend fun physicalRows(): Set<String> = repository.keys(toolId).filterTo(linkedSetOf(ROOT_KEY)) {
-        it.startsWith(CHUNK_PREFIX)
-    }
-
     private fun positiveInt(value: RpcValue?): Int {
         val number = (value as? RpcValue.Number)?.value ?: unreadable()
         if (!number.isFinite() || number < 1 || number > Int.MAX_VALUE || number != number.toInt().toDouble()) unreadable()
@@ -566,88 +533,6 @@ internal class RuntimeSecureEnvelopeStorage(
         const val FORMAT = "toolbox.secure.chunks"
         const val CHUNK_CHARS = 128 * 1024
     }
-}
-
-private class JsonToolKvStorageHandler(
-    private val toolId: String,
-    private val repository: ToolKvRepository,
-    private val namespace: ToolStorageNamespace,
-    private val nowMillis: () -> Long,
-    private val cipher: AndroidKeyStoreCipher,
-    private val canAccess: suspend () -> Boolean = { true },
-) : RuntimeStorageHandler {
-    private val encryptedStorage = RuntimeSecureEnvelopeStorage(toolId, repository)
-    override suspend fun get(key: String): RpcValue? = withAccess {
-        validateLogicalKey(key)
-        loadDocument()[key]
-    }
-
-    override suspend fun set(key: String, value: RpcValue) = withAccess {
-        validateLogicalKey(key)
-        val document = loadDocument()
-        document[key] = value
-        saveDocument(document)
-    }
-
-    override suspend fun remove(key: String) = withAccess {
-        validateLogicalKey(key)
-        val document = loadDocument()
-        if (document.remove(key) != null) saveDocument(document)
-    }
-
-    override suspend fun keys(): List<String> = withAccess { loadDocument().keys.toList() }
-
-    override suspend fun clear() = withAccess {
-        checkWriteResult(encryptedStorage.clear())
-    }
-
-    private suspend fun <T> withAccess(action: suspend () -> T): T = withContext(Dispatchers.IO) {
-        withRuntimeStorageAccess(toolId, namespace, canAccess, action)
-    }
-
-    private suspend fun loadDocument(): LinkedHashMap<String, RpcValue> {
-        val encoded = encryptedStorage.read() ?: return linkedMapOf()
-        val json = cipher.decrypt(encoded)
-        val document = RuntimeValueJson.decodeObject(json)
-            ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values cannot be read")
-        if (document.keys.any { !isValidLogicalKey(it) }) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Stored values are invalid")
-        }
-        return LinkedHashMap(document)
-    }
-
-    private suspend fun saveDocument(document: Map<String, RpcValue>) {
-        if (document.keys.any { !isValidLogicalKey(it) }) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Storage index is invalid")
-        }
-        val json = RuntimeValueJson.encodeObject(document)
-        checkWriteResult(encryptedStorage.write(cipher.encrypt(json), nowMillis()))
-    }
-
-    private fun checkWriteResult(result: DataResult<Unit>) {
-        when (result) {
-            is DataResult.Success -> Unit
-            is DataResult.Failure.NotFound -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.NOT_FOUND,
-                "Tool was removed",
-            )
-
-            is DataResult.Failure -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.INTERNAL_ERROR,
-                "无法写入工具数据，请检查手机剩余空间后重试",
-            )
-        }
-    }
-
-    private fun validateLogicalKey(key: String) {
-        if (!isValidLogicalKey(key)) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "Invalid storage key")
-        }
-    }
-
-    private fun isValidLogicalKey(key: String): Boolean =
-        key.isNotBlank() && key.none(Char::isISOControl)
-
 }
 
 internal suspend fun <T> withRuntimeStorageAccess(
@@ -670,40 +555,63 @@ internal object ToolRuntimeStorageLocks {
 
 internal class AndroidKeyStoreCipher(
     private val toolId: String,
-) {
+) : SecureValueCipher {
     private val alias = aliasFor(toolId)
 
     fun hasKey(): Boolean = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }.containsAlias(alias)
 
-    fun encrypt(plaintext: String): String = try {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key(createIfMissing = true))
-        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
-        JSONObject()
-            .put("v", FORMAT_VERSION)
-            .put("iv", encoder.encodeToString(cipher.iv))
-            .put("ciphertext", encoder.encodeToString(ciphertext))
-            .toString()
+    override fun encrypt(plaintext: String, associatedData: ByteArray?): String = try {
+        withKey(createIfMissing = true) { key ->
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, key)
+            associatedData?.let(cipher::updateAAD)
+            val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+            JSONObject()
+                .put("v", formatVersion(associatedData))
+                .put("iv", encoder.encodeToString(cipher.iv))
+                .put("ciphertext", encoder.encodeToString(ciphertext))
+                .toString()
+        }
     } catch (failure: RuntimeHandlerException) {
         throw failure
     } catch (_: Exception) {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "Secure storage is unavailable")
     }
 
-    fun decrypt(encoded: String): String = try {
+    override fun decrypt(encoded: String, associatedData: ByteArray?): String = try {
         val value = JSONTokener(encoded).nextValue() as? JSONObject
             ?: throw IllegalArgumentException("ciphertext")
-        require(value.optInt("v", -1) == FORMAT_VERSION)
+        require(value.optInt("v", -1) == formatVersion(associatedData))
         val iv = decoder.decode(value.getString("iv"))
         val ciphertext = decoder.decode(value.getString("ciphertext"))
         require(iv.size == GCM_IV_BYTES && ciphertext.isNotEmpty())
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key(createIfMissing = false), GCMParameterSpec(GCM_TAG_BITS, iv))
-        String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+        withKey(createIfMissing = false) { key ->
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
+            associatedData?.let(cipher::updateAAD)
+            String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+        }
     } catch (failure: RuntimeHandlerException) {
         throw failure
     } catch (_: Exception) {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "Secure storage data cannot be read")
+    }
+
+    /** Reuses the loaded key; a stale handle (for example after deletion) is reloaded once. */
+    private fun <T> withKey(createIfMissing: Boolean, use: (SecretKey) -> T): T {
+        val cached = keys[alias]
+        if (cached != null) {
+            try {
+                return use(cached)
+            } catch (_: java.security.GeneralSecurityException) {
+                keys.remove(alias, cached)
+            } catch (_: java.security.ProviderException) {
+                keys.remove(alias, cached)
+            }
+        }
+        val loaded = key(createIfMissing)
+        keys[alias] = loaded
+        return use(loaded)
     }
 
     private fun key(createIfMissing: Boolean): SecretKey {
@@ -731,17 +639,21 @@ internal class AndroidKeyStoreCipher(
     companion object {
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val FORMAT_VERSION = 1
+        /** 1: legacy whole document; 2: one value bound to its row key as associated data. */
+        private fun formatVersion(associatedData: ByteArray?): Int = if (associatedData == null) 1 else 2
         private const val GCM_IV_BYTES = 12
         private const val GCM_TAG_BITS = 128
         private val encoder = Base64.getUrlEncoder().withoutPadding()
         private val decoder = Base64.getUrlDecoder()
+        // Process-wide, so deleting a tool's key also drops the handle every session holds.
+        private val keys = ConcurrentHashMap<String, SecretKey>()
 
         fun isAvailable(): Boolean = runCatching {
             KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
         }.isSuccess
 
         fun deleteForTool(toolId: String): Boolean = runCatching {
+            keys.remove(aliasFor(toolId))
             KeyStore.getInstance(ANDROID_KEY_STORE).apply {
                 load(null)
                 if (containsAlias(aliasFor(toolId))) deleteEntry(aliasFor(toolId))
@@ -752,7 +664,7 @@ internal class AndroidKeyStoreCipher(
     }
 }
 
-private object RuntimeValueJson {
+internal object RuntimeValueJson {
     fun encode(value: RpcValue): String = io.toolbox.tool.runtime.RuntimeRpcJson.encodeValue(value)
     fun decode(encoded: String): RpcValue? = runCatching {
         io.toolbox.tool.runtime.RuntimeRpcJson.parseValue(encoded)

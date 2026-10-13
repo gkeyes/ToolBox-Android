@@ -8,7 +8,8 @@ import io.toolbox.core.data.*
 import io.toolbox.core.data.backup.BackupDatabase
 import io.toolbox.host.*
 import io.toolbox.host.runtime.AndroidKeyStoreCipher
-import io.toolbox.host.runtime.RuntimeSecureEnvelopeStorage
+import io.toolbox.host.runtime.RuntimeSecureStore
+import io.toolbox.host.runtime.RuntimeValueJson
 import io.toolbox.host.runtime.withRuntimeStorageQuiescent
 import io.toolbox.tool.packagekit.*
 import io.toolbox.tool.packagekit.backup.*
@@ -125,9 +126,9 @@ internal class HostBackupService(
         if (secureBytes > 0) {
             if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
             else try {
-                val encrypted = RuntimeSecureEnvelopeStorage(id, repositories.keyValues).read()
-                if (encrypted != null) {
-                    val plaintext = AndroidKeyStoreCipher(id).decrypt(encrypted)
+                val document = RuntimeSecureStore(id, repositories.keyValues, AndroidKeyStoreCipher(id)).readAll()
+                if (document != null) {
+                    val plaintext = RuntimeValueJson.encodeObject(document)
                     J.obj(J.parse(plaintext.toByteArray()))
                     File(target, "data/secure.json").writeText(plaintext)
                 }
@@ -295,10 +296,12 @@ internal class HostBackupService(
             if (manifest?.manifest?.permissions?.any { it.capability == "storage.secure" } == true && granted) {
                 val plaintext = secure.readText()
                 J.obj(J.parse(plaintext.toByteArray()))
-                BackupDataCodec.requireSuccess(RuntimeSecureEnvelopeStorage(plan.id, repositories.keyValues).write(AndroidKeyStoreCipher(plan.id).encrypt(plaintext), System.currentTimeMillis()))
+                val document = RuntimeValueJson.decodeObject(plaintext) ?: throw BackupException("INDEX")
+                val store = RuntimeSecureStore(plan.id, repositories.keyValues, AndroidKeyStoreCipher(plan.id))
+                BackupDataCodec.requireSuccess(store.replaceAll(store.encryptRows(document), System.currentTimeMillis()))
             } else warnings += "${plan.name}：当前未授权安全存储，本机安全数据未覆盖；开启权限后可再次恢复。"
         } else if (opaqueSecure) warnings += "${plan.name}：加密记录仍在原备份中，但缺少可迁移密钥，本机安全数据未覆盖；可能需要重新登录。"
-        else BackupDataCodec.requireSuccess(RuntimeSecureEnvelopeStorage(plan.id, repositories.keyValues).clear())
+        else BackupDataCodec.requireSuccess(RuntimeSecureStore(plan.id, repositories.keyValues, AndroidKeyStoreCipher(plan.id)).clearRows())
         val metadata = J.read(File(folder, "metadata.json"))
         database.restorePresentation(plan.id, J.long(metadata["installedAt"]), J.long(metadata["versionInstalledAt"]), metadata["lastOpenedAt"]?.let(J::long), metadata["pinnedOrder"]?.let(J::int), metadata["categoryId"]?.let(J::string))
         BackupDataCodec.requireSuccess(repositories.backgroundTasks.deleteForTool(plan.id))
