@@ -1480,6 +1480,9 @@ class RuntimeRpcDispatcher(
             require(raw.value.length <= maxBytes)
             raw.value.toByteArray(StandardCharsets.UTF_8)
         }
+        // Current SDK: { base64 } decoded once.
+        is RpcValue.ObjectValue -> decodeRuntimeBase64Bytes(raw, maxBytes) ?: throw IllegalArgumentException(name)
+        // Older SDK copies sent one JSON number per byte; still accepted.
         is RpcValue.ArrayValue -> {
             require(raw.value.size <= maxBytes)
             ByteArray(raw.value.size) { index ->
@@ -1520,6 +1523,19 @@ class RuntimeRpcDispatcher(
         const val MAX_NETWORK_TIMEOUT_MS = Int.MAX_VALUE.toLong()
         const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
         const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
+    }
+}
+
+/** Decodes a `{ base64 }` byte wrapper, or returns null when the value is not one. */
+internal fun decodeRuntimeBase64Bytes(value: RpcValue.ObjectValue, maxBytes: Int): ByteArray? {
+    if (value.value.keys != setOf("base64")) return null
+    val text = (value.value["base64"] as? RpcValue.StringValue)?.value ?: return null
+    // Check the decoded size before allocating it.
+    if (text.length / 4L * 3L > maxBytes.toLong() + 2L) return null
+    return try {
+        Base64.getDecoder().decode(text)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }
 

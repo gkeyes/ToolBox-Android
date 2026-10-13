@@ -641,14 +641,30 @@ class RuntimeBridgeSession internal constructor(
                 ensureReady().catch(reportError);
                 return () => stateListeners.delete(listener);
               };
-              const bytes = value => value instanceof Uint8Array ? Array.from(value) : value;
+              // Bytes cross the bridge as one base64 string each way, never as a per-byte array.
+              const toBase64 = value => {
+                if (typeof value.toBase64 === 'function') return value.toBase64();
+                let binary = '';
+                for (let offset = 0; offset < value.length; offset += 0x8000) {
+                  binary += String.fromCharCode.apply(null, value.subarray(offset, offset + 0x8000));
+                }
+                return btoa(binary);
+              };
+              const fromBase64 = text => {
+                if (typeof Uint8Array.fromBase64 === 'function') return Uint8Array.fromBase64(text);
+                const binary = atob(text);
+                const decoded = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index++) decoded[index] = binary.charCodeAt(index);
+                return decoded;
+              };
+              const bytes = value => value instanceof Uint8Array ? { base64: toBase64(value) } : value;
               const networkRequest = request => {
                 if (request?.maxResponseBytes !== undefined &&
                     (!Number.isSafeInteger(request.maxResponseBytes) || request.maxResponseBytes < 1)) {
                   throw Object.assign(new TypeError('maxResponseBytes must be a positive safe integer'), { code: 'INVALID_REQUEST' });
                 }
                 return request && request.body instanceof Uint8Array
-                  ? { ...request, body: Array.from(request.body), bodyEncoding: 'bytes' } : request;
+                  ? { ...request, body: bytes(request.body), bodyEncoding: 'bytes' } : request;
               };
               const streams = new Map();
               const streamCancelled = () => Object.assign(new Error('Network stream cancelled'), { code: 'CANCELLED' });
@@ -695,7 +711,7 @@ class RuntimeBridgeSession internal constructor(
                   const chunk = await call('network.readStream', { streamId, ...(expectedChunkBytes === undefined ? {} : { expectedChunkBytes }) });
                   if (state?.cancelled) throw streamCancelled();
                   if (chunk.done) forgetStream(streamId);
-                  return { ...chunk, data: Uint8Array.from(atob(chunk.data), character => character.charCodeAt(0)) };
+                  return { ...chunk, data: fromBase64(chunk.data) };
                 } catch (error) {
                   if (error.code !== 'BUSY') cancelStream(streamId).catch(() => undefined);
                   throw error;
@@ -834,10 +850,7 @@ class RuntimeBridgeSession internal constructor(
                 files: {
                   open: mimeTypes => call('files.open', mimeTypes === undefined ? {} : { mimeTypes }),
                   save: (suggestedName, mimeType, content) => call('files.save', { suggestedName, mimeType, content: bytes(content) }),
-                  read: token => call('files.read', { token }).then(result => {
-                    const binary = atob(result.base64);
-                    return Uint8Array.from(binary, character => character.charCodeAt(0));
-                  })
+                  read: token => call('files.read', { token }).then(result => fromBase64(result.base64))
                 },
                 shortcuts: { pin: name => call('shortcuts.pin', name === undefined ? {} : { name }) },
                 camera: { capture: () => call('camera.capture') },
