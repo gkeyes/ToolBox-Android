@@ -70,6 +70,7 @@ import io.toolbox.core.ui.liquid.LiquidToggle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun ToolBoxSearchField(
@@ -303,6 +304,9 @@ private fun ToolBoxSwitchControl(
 private class SwitchGestureState {
     /** Set when the glass knob itself reported a tap or drag during the current gesture. */
     var knobHandled = false
+
+    /** Set once the gesture crossed touch slop mostly vertically: it is a list scroll, not a toggle. */
+    var verticalDrag = false
 }
 
 /** After a knob gesture, wait this long for the owner to adopt the value before snapping back. */
@@ -332,26 +336,46 @@ private fun ToolBoxLiquidSwitch(
             .graphicsLayer { alpha = if (enabledState.value) 1f else 0.45f }
             .semantics { role = Role.Switch }
             .pointerInput(Unit) {
-                // Runs after the knob in the main pass: taps on the bare track toggle here, and every
-                // change is consumed so the row does not toggle a second time.
+                // Runs after the knob in the main pass. Taps on the bare track toggle here and the
+                // release is consumed so the row does not toggle a second time. Nothing is consumed
+                // until the pointer crosses touch slop: a mostly horizontal drag then belongs to the
+                // switch (consumed so the row and list ignore it), while a mostly vertical one is left
+                // to the enclosing list to scroll and never toggles.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     gesture.knobHandled = false
-                    down.consume()
-                    var moved = false
+                    gesture.verticalDrag = false
+                    var horizontalDrag = false
                     var released = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (!pointer.pressed) {
                             released = true
-                            pointer.consume()
+                            if (!gesture.verticalDrag && !pointer.isConsumed) pointer.consume()
                             break
                         }
-                        if ((pointer.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
-                        pointer.consume()
+                        if (gesture.verticalDrag) continue
+                        if (pointer.isConsumed && !horizontalDrag) {
+                            // Someone else (the list) claimed the gesture.
+                            gesture.verticalDrag = true
+                            continue
+                        }
+                        if (!horizontalDrag) {
+                            val delta = pointer.position - down.position
+                            if (delta.getDistance() > viewConfiguration.touchSlop) {
+                                if (abs(delta.y) > abs(delta.x)) {
+                                    gesture.verticalDrag = true
+                                    continue
+                                }
+                                horizontalDrag = true
+                            }
+                        }
+                        if (horizontalDrag) pointer.consume()
                     }
-                    if (released && !moved && !gesture.knobHandled && enabledState.value) {
+                    if (released && !horizontalDrag && !gesture.verticalDrag &&
+                        !gesture.knobHandled && enabledState.value
+                    ) {
                         latestChange.value(!checkedState.value)
                     }
                 }
@@ -362,6 +386,11 @@ private fun ToolBoxLiquidSwitch(
             selected = selected,
             onSelect = { value ->
                 gesture.knobHandled = true
+                if (gesture.verticalDrag) {
+                    // The gesture scrolled the list; spring the knob back without toggling.
+                    if (checkedState.value != value) resyncKey++
+                    return@LiquidToggle
+                }
                 if (enabledState.value && value != checkedState.value) latestChange.value(value)
                 scope.launch {
                     delay(SwitchResyncDelayMillis)
