@@ -282,8 +282,8 @@ fun ToolBoxSwitchSettingRow(
 
 /**
  * Trailing switch. With live glass it is the vendored Kyant [LiquidToggle] (a glass knob that
- * refracts the track and stretches while dragged); otherwise an iOS solid switch (51x31, green
- * when on). Either way the owning row carries the switch semantics and handles taps outside it.
+ * refracts the track and stretches while dragged); otherwise the flat iOS 26 solid switch (64x28 track,
+ * capsule knob, green when on). Either way the owning row carries the switch semantics and handles taps outside it.
  */
 @Composable
 private fun ToolBoxSwitchControl(
@@ -392,7 +392,7 @@ private fun ToolBoxSolidSwitch(checked: Boolean, enabled: Boolean) {
         label = "switch track",
     )
     val knobOffset = animateDpAsState(
-        targetValue = if (checked) 22.dp else 2.dp,
+        targetValue = if (checked) 22.dp else 2.dp, // 64 - 40 - 2
         animationSpec = ToolBoxMotion.spatial(),
         label = "switch knob",
     )
@@ -400,7 +400,7 @@ private fun ToolBoxSolidSwitch(checked: Boolean, enabled: Boolean) {
         Modifier
             .semantics { role = Role.Switch }
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
-            .size(51.dp, 31.dp)
+            .size(64.dp, 28.dp)
             .drawBehind {
                 drawRoundRect(track.value, cornerRadius = CornerRadius(size.height / 2f))
             },
@@ -408,7 +408,7 @@ private fun ToolBoxSolidSwitch(checked: Boolean, enabled: Boolean) {
         Box(
             Modifier
                 .offset { IntOffset(knobOffset.value.roundToPx(), 2.dp.roundToPx()) }
-                .size(27.dp)
+                .size(40.dp, 24.dp)
                 .shadow(3.dp, CircleShape)
                 .background(Color.White, CircleShape),
         )
