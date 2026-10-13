@@ -1,16 +1,16 @@
-"use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Clock, MessageSquare, Timer } from "lucide-react";
 import { clsx } from "clsx";
-import { Avatar, BottomBar, Button, Marginalia, Stages, Switch } from "@/components/ui";
+import { Avatar, BottomBar, Button, Marginalia, ModelSetupButton, Stages, Switch } from "@/components/ui";
 import { PracticeJourney } from "./PracticeJourney";
 import { SkillTag } from "@/components/SkillBits";
 import { ScenarioCover } from "@/components/ScenarioCover";
+import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_PATIENCE, useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
-import { schedule } from "@/lib/client-api";
+import { isModelNotConfigured, schedule } from "@/lib/client-api";
 import { historyFor, npcsOf } from "@/lib/session-utils";
 import type { Session } from "@/lib/types";
 import { contextById } from "@/data/taxonomy";
@@ -21,8 +21,9 @@ import { arenaReturnPath } from "@/lib/arena-location";
 export function Briefing({ session }: { session: Session }) {
   const lang = useLang();
   const router = useRouter();
-  const { profile, proficiency, sessions, updateSession, settings, setSettings } = useApp();
+  const { profile, proficiency, updateSession, settings, setSettings } = useApp(useShallow((s) => ({ profile: s.profile, proficiency: s.proficiency, updateSession: s.updateSession, settings: s.settings, setSettings: s.setSettings })));
   const [err, setErr] = useState<string | null>(null);
+  const [needsModel, setNeedsModel] = useState(false);
   const inflight = useRef(false);
   const [attempt, setAttempt] = useState(0);
   const sc = session.scenario;
@@ -31,9 +32,9 @@ export function Briefing({ session }: { session: Session }) {
   useEffect(() => {
     if (!adapting || !profile || inflight.current) return;
     inflight.current = true;
-    schedule({ profile, proficiency, history: historyFor(sessions, lang), lang, scenario: sc })
+    schedule({ profile, proficiency, history: historyFor(useApp.getState().sessions, lang), lang, scenario: sc })
       .then((res) => updateSession(session.id, { adaptation: res.adaptation, learnerCharacterId: res.adaptation.learnerCharacterId }))
-      .catch((e) => setErr(e instanceof Error ? e.message : t(lang, "error_generic")))
+      .catch((e) => { setNeedsModel(isModelNotConfigured(e)); setErr(isModelNotConfigured(e) ? t(lang, "model_required") : e instanceof Error ? e.message : t(lang, "error_generic")); })
       .finally(() => { inflight.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adapting, profile, attempt]);
@@ -82,6 +83,7 @@ export function Briefing({ session }: { session: Session }) {
             <p className="text-[16px] leading-relaxed text-ink">{session.adaptation?.briefing ?? sc.background[lang]}</p>
             {err && <div role="alert" className="rounded-[var(--radius)] bg-danger-soft p-4 flex flex-col gap-2">
               <p className="text-[13px] text-danger">{err}</p>
+              {needsModel && <ModelSetupButton />}
               <Button variant="secondary" onClick={() => { setErr(null); setAttempt((v) => v + 1); }}>{t(lang, "pr_preparation_retry")}</Button>
             </div>}
           </>

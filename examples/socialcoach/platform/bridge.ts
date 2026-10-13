@@ -7,7 +7,7 @@ export interface Host {
     registerFlushHandler(handler: () => Promise<void>): () => void;
   };
   storage: {
-    get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; remove(key: string): Promise<void>;
+    get(key: string): Promise<unknown>; getMany?(keys: readonly string[]): Promise<unknown[]>; set(key: string, value: unknown): Promise<void>; remove(key: string): Promise<void>;
     secure: {get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; remove(key: string): Promise<void>};
   };
   network: {

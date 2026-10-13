@@ -1,11 +1,12 @@
-"use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
-import { Button, Spinner } from "@/components/ui";
+import { Button, ModelSetupButton, Spinner } from "@/components/ui";
 import { useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
-import { pattern as patternApi } from "@/lib/client-api";
+import { isModelNotConfigured, pattern as patternApi } from "@/lib/client-api";
+import { isReady, useByok } from "@/lib/byok";
 import { skillById } from "@/data/taxonomy";
 import type { PatternSession } from "@/lib/tasks/types";
 import type { Session } from "@/lib/types";
@@ -44,17 +45,23 @@ function toInput(s: Session): PatternSession {
  * the one thing in that document with no implementation: every report was
  * per-session, and Growth showed totals.
  *
- * It runs on the smart model over the whole history, so it is cached against the
- * set of session ids it read and only offered again when there is new material.
+ * It runs on the smart model over the whole history, so it never starts on its
+ * own: it is cached against the session ids it read, and a new reading is an
+ * explicit tap.
  */
 export function PatternCard() {
   const lang = useLang();
-  const { sessions, profile, patternInsight, setPatternInsight } = useApp();
+  const { sessions, profile, patternInsight, setPatternInsight } = useApp(useShallow((s) => ({ sessions: s.sessions, profile: s.profile, patternInsight: s.patternInsight, setPatternInsight: s.setPatternInsight })));
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<{ text: string; needsModel: boolean } | null>(null);
   const inflight = useRef(false);
+  // Once a model is configured, drop the "needs a model" prompt so the run button comes back.
+  const modelReady = useByok((s) => isReady(s));
+  useEffect(() => {
+    if (modelReady) setErr((current) => (current?.needsModel ? null : current));
+  }, [modelReady]);
 
-  const done = sessions.filter((s) => s.status === "assessed" && s.report);
+  const done = useMemo(() => sessions.filter((s) => s.status === "assessed" && s.report), [sessions]);
   const ids = done.map((s) => s.id);
   const cached = patternInsight;
   const stale = !cached || ids.some((id) => !cached.from.includes(id));
@@ -67,22 +74,14 @@ export function PatternCard() {
     setErr(null);
     try {
       const res = await patternApi({ lang, goals: profile.goals, sessions: done.map(toInput) });
-      setPatternInsight(res, ids);
+      setPatternInsight(res, done.map((s) => s.id));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : t(lang, "error_generic"));
+      setErr({ text: isModelNotConfigured(e) ? t(lang, "model_required") : e instanceof Error ? e.message : t(lang, "error_generic"), needsModel: isModelNotConfigured(e) });
     } finally {
       inflight.current = false;
       setBusy(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang, profile, done.length, setPatternInsight]);
-
-  // Read it once when there is new material, then leave it alone.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- kick off an async request on mount
-    if (enough && stale && !busy && !err) void run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enough, stale]);
+  }, [lang, profile, done, setPatternInsight]);
 
   if (!enough) {
     return (
@@ -96,13 +95,12 @@ export function PatternCard() {
   }
 
   const r = cached?.result;
-  const showing = r && !stale;
 
   return (
     <div className="bg-slab text-slab-ink rounded-[var(--radius)] p-5 flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <p className="eyebrow text-slab-ink/60">{t(lang, "pg_pattern_title")}</p>
-        {showing && (
+        {cached && !busy && (
           <button
             type="button"
             onClick={() => void run()}
@@ -117,15 +115,21 @@ export function PatternCard() {
 
       {err ? (
         <div className="flex flex-col gap-3 items-start">
-          <p className="text-[14px] leading-relaxed">{err}</p>
-          <Button variant="secondary" size="sm" onClick={() => { setErr(null); void run(); }}>{t(lang, "retry")}</Button>
+          <p className="text-[14px] leading-relaxed">{err.text}</p>
+          {err.needsModel ? <ModelSetupButton /> : <Button variant="secondary" size="sm" onClick={() => { setErr(null); void run(); }}>{t(lang, "retry")}</Button>}
         </div>
-      ) : busy || !cached ? (
+      ) : busy ? (
         <p className="inline-flex items-center gap-2 text-[14px] text-slab-ink/70"><Spinner />{t(lang, "pg_pattern_reading")}</p>
+      ) : !cached ? (
+        <div className="flex flex-col gap-3 items-start">
+          <p className="text-[14px] leading-relaxed text-slab-ink/80">{t(lang, "pg_pattern_offer", { n: done.length })}</p>
+          <Button variant="secondary" size="sm" onClick={() => void run()}>{t(lang, "pg_pattern_run")}</Button>
+        </div>
       ) : !r?.found ? (
         <p className="text-[14px] leading-relaxed text-slab-ink/80">{t(lang, "pg_pattern_none")}</p>
       ) : (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-4">
+          {stale && <p className="text-[12px] text-slab-ink/60">{t(lang, "pg_pattern_stale")}</p>}
           <p className="display text-[21px] leading-snug lg:text-[24px]">{r.pattern}</p>
           {r.why && <p className="text-[14px] leading-relaxed text-slab-ink/80 lg:max-w-[var(--measure)]">{r.why}</p>}
 

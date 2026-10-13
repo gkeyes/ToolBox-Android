@@ -1,23 +1,22 @@
-"use client";
 import {abortRequests, trackAbortableTask} from "@platform/network";
 import {useRuntimeForeground} from "@platform/runtime";
 import {flushStorage} from "@platform/storage";
+import { holdSessionWrites, releaseSessionWrites } from "@/store/persistence";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { clsx } from "clsx";
-import { ArrowUp, ArrowDown, ChevronDown, Lightbulb, Mic, MicOff, Timer, LogOut } from "lucide-react";
-import { Avatar, Button, IconButton, Marginalia, Sheet, Spinner, Switch } from "@/components/ui";
+import { ArrowUp, ArrowDown, ChevronDown, Lightbulb, Timer, LogOut } from "lucide-react";
+import { Avatar, Button, IconButton, Marginalia, ModelSetupButton, Sheet, Spinner, Switch } from "@/components/ui";
 import { DEFAULT_PATIENCE, useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
-import { hint as hintApi, parseRoleplay, roleplayStream } from "@/lib/client-api";
+import { hint as hintApi, isModelNotConfigured, parseRoleplay, roleplayStream } from "@/lib/client-api";
 import { lastSpoken, npcsOf, silenceStreak } from "@/lib/session-utils";
 import { goalOutcome, supportedClosure } from "@/lib/practice-policy";
 import { uid } from "@/lib/format";
 import type { ChatMessage, Session } from "@/lib/types";
 import type { Character } from "@/data/corpus/types";
 import type { Lang } from "@/data/taxonomy";
-import { canListen, recognitionError, speak, stopSpeaking, unlockSpeech } from "@/lib/speech";
 import { PracticeJourney } from "./PracticeJourney";
 import { useSessionDraft } from "@/lib/use-session-draft";
 import { Stance } from "./Stance";
@@ -63,14 +62,11 @@ export function Chat({ session }: { session: Session }) {
   }, [session.messages, streamPreview]);
   const [ending, setEnding] = useState(false);
   const [speaking, setSpeaking] = useState<string | null>(null);
-  const [err, setErr] = useState<{ text: string; from: "send" | "lapse" | "other" } | null>(null);
+  const [err, setErr] = useState<{ text: string; from: "send" | "lapse" | "other"; needsModel?: boolean } | null>(null);
   const [hintBusy, setHintBusy] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
-  const [listening, setListening] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const [voiceNote, setVoiceNote] = useState<string | null>(null);
-  const [voiceNotice, setVoiceNotice] = useState(false);
   /**
    * The other side has stopped waiting, and there is nothing of the learner's
    * to review yet. Two silences with no words between them would end the scene;
@@ -80,8 +76,6 @@ export function Chat({ session }: { session: Session }) {
   const [floor, setFloor] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const recRef = useRef<{ stop: () => void } | null>(null);
-  const spokenRef = useRef<Set<string>>(new Set());
   const busyRef = useRef(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; abortRequests(); }, []);
@@ -133,51 +127,6 @@ export function Chat({ session }: { session: Session }) {
     if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 132) + "px"; }
   }, [input]);
 
-  // Lines already on screen when this mounted are history — a resumed session
-  // must not read its whole transcript aloud. The opening line is appended by
-  // the effect above, after this ref is initialised, so it still gets read.
-  const historyRef = useRef<Set<string>>(new Set(session.messages.filter((m) => m.role === "npc").map((m) => m.id)));
-
-  // TTS for completed NPC lines. Every unspoken line is queued, in order: a turn
-  // can contain more than one character speaking.
-  useEffect(() => {
-    if (!settings.tts) {
-      stopSpeaking();
-      return;
-    }
-    if (busy) return;
-    for (const m of session.messages) {
-      if (m.role !== "npc" || !m.text) continue;
-      if (historyRef.current.has(m.id) || spokenRef.current.has(m.id)) continue;
-      spokenRef.current.add(m.id);
-      speak(m.text, lang);
-    }
-  }, [session.messages, busy, settings.tts, lang]);
-
-  // ── fix: leaving mid-sentence used to keep talking, and the mic could stay open ──
-  useEffect(
-    () => () => {
-      stopSpeaking();
-      try {
-        recRef.current?.stop();
-      } catch {}
-    },
-    [],
-  );
-
-  // iOS blocks speech until a gesture has unlocked it; spend the first one here
-  // so the opening line of a resumed session can play.
-  useEffect(() => {
-    if (!settings.tts) return;
-    const prime = () => unlockSpeech();
-    window.addEventListener("pointerdown", prime, { once: true });
-    window.addEventListener("keydown", prime, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", prime);
-      window.removeEventListener("keydown", prime);
-    };
-  }, [settings.tts]);
-
   /**
    * On a desktop the cursor starts in the composer, and returns there after each
    * reply. Sending with the button moves focus to the button, and the next thing
@@ -188,10 +137,10 @@ export function Chat({ session }: { session: Session }) {
    * separates a laptop from an iPad in landscape, which `min-width` alone does not.
    */
   useEffect(() => {
-    if (busy || endOpen || clockOpen || voiceNotice) return;
+    if (busy || endOpen || clockOpen) return;
     if (typeof window === "undefined" || !window.matchMedia("(min-width: 1024px) and (pointer: fine)").matches) return;
     taRef.current?.focus();
-  }, [busy, endOpen, clockOpen, voiceNotice]);
+  }, [busy, endOpen, clockOpen]);
 
   const finish = useCallback(
     (objectiveDone: boolean[], outcome: "success" | "partial" | "failure", noteText?: string) => {
@@ -251,6 +200,8 @@ export function Chat({ session }: { session: Session }) {
         setSpeaking(lines.at(-1)?.characterId ?? null);
       };
       showLatestPreview.current = preview;
+      // Checkpoints stay in memory until the turn ends; a close flush still writes them.
+      holdSessionWrites(session.id);
       try {
         const full = await roleplayStream(
           { scenario: sc, learnerCharacterId: session.learnerCharacterId, messages: history, lang, learnerName },
@@ -310,12 +261,13 @@ export function Chat({ session }: { session: Session }) {
         await flushStorage().catch(() => {});
         if (alive.current) {
           if (foregroundRef.current) setStreamPreview([]);
-          setErr({ text: e instanceof Error ? e.message : t(lang, "pr_error"), from });
+          setErr({ text: e instanceof Error ? e.message : t(lang, "pr_error"), from, needsModel: isModelNotConfigured(e) });
         }
       } finally {
         if (previewTimer) clearTimeout(previewTimer);
         if (checkpointTimer) clearTimeout(checkpointTimer);
         showLatestPreview.current = null;
+        releaseSessionWrites(session.id);
         busyRef.current = false;
         if (alive.current && foregroundRef.current) { setBusy(false); setSpeaking(null); }
       }
@@ -381,10 +333,9 @@ export function Chat({ session }: { session: Session }) {
     enabled: timed && !floor,
     budgetMs: patience * 1000,
     armed,
-    // Sheets, the mic and a hint on its way are not the learner's thinking.
-    paused: !foreground || endOpen || clockOpen || voiceNotice || hintBusy || listening,
+    // Sheets and a hint on its way are not the learner's thinking.
+    paused: !foreground || endOpen || clockOpen || hintBusy,
     turnKey: armed ? last.id : null,
-    waitForSpeech: settings.tts,
     onStage,
     onLapse: lapse,
   });
@@ -409,58 +360,12 @@ export function Chat({ session }: { session: Session }) {
       const { hint } = await hintApi({ scenario: sc, learnerCharacterId: session.learnerCharacterId, messages: session.messages, lang, learnerName });
       appendMessage(session.id, { id: uid(), role: "coach", text: hint, ts: Date.now(), kind: "hint" });
     } catch (e) {
-      setErr({ text: e instanceof Error ? e.message : t(lang, "error_generic"), from: "other" });
+      setErr({ text: e instanceof Error ? e.message : t(lang, "error_generic"), from: "other", needsModel: isModelNotConfigured(e) });
     } finally {
       setHintBusy(false);
     }
   };
 
-  const startListening = () => {
-    type SR = new () => { lang: string; interimResults: boolean; continuous: boolean; onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void; onend: () => void; onerror: (e: { error?: string }) => void; start: () => void; stop: () => void };
-    const w = window as unknown as { SpeechRecognition?: SR; webkitSpeechRecognition?: SR };
-    const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!Ctor) return;
-    const rec = new Ctor();
-    rec.lang = lang === "zh" ? "zh-CN" : "en-US";
-    rec.interimResults = true;
-    rec.continuous = false;
-    const base = input;
-    rec.onresult = (e) => {
-      const txt = Array.from(e.results as ArrayLike<ArrayLike<{ transcript: string }>>).map((r) => r[0].transcript).join("");
-      setInput((base ? base + " " : "") + txt);
-    };
-    rec.onend = () => setListening(false);
-    rec.onerror = (e) => {
-      setListening(false);
-      setVoiceNote(recognitionError(e?.error, lang));
-    };
-    recRef.current = rec;
-    setVoiceNote(null);
-    setListening(true);
-    try {
-      rec.start();
-    } catch {
-      setListening(false);
-      setVoiceNote(recognitionError(undefined, lang));
-    }
-  };
-
-  const toggleVoice = () => {
-    if (listening) {
-      try {
-        recRef.current?.stop();
-      } catch {}
-      return;
-    }
-    // The browser sends the audio to its vendor to transcribe. Say so once,
-    // because everything else in this app stays on the device.
-    if (!settings.voiceNoticeSeen) {
-      setVoiceNotice(true);
-      return;
-    }
-    startListening();
-  };
-  const voiceSupported = canListen();
 
   const endEarly = () => {
     const n = session.objectiveDone.filter(Boolean).length;
@@ -582,6 +487,7 @@ export function Chat({ session }: { session: Session }) {
         {err && (
           <div role="alert" className="self-stretch flex flex-wrap items-center justify-between gap-2 text-[13px] text-danger bg-danger-soft rounded-[var(--radius-sm)] px-4 py-2">
             {err.text}
+            {err.needsModel && <ModelSetupButton />}
             <button onClick={retry} className="press min-h-11 px-2 underline font-medium">{t(lang, err.from === "send" ? "retry" : "pr_resume_dialogue")}</button>
           </div>
         )}
@@ -621,12 +527,11 @@ export function Chat({ session }: { session: Session }) {
             )}
           </AnimatePresence>
         </div>
-        {voiceNote && <p className="text-[12px] text-ink-3 px-1 pb-1.5">{voiceNote}</p>}
         <div className="flex items-end gap-2">
           <button onClick={askHint} disabled={busy || hintBusy || ending || session.status !== "active"} aria-label={t(lang, "pr_hint")} title={t(lang, "pr_hint")} className="press h-11 w-11 shrink-0 rounded-full border border-line-strong inline-flex items-center justify-center text-ink-2 disabled:opacity-40">
             {hintBusy ? <Spinner /> : <Lightbulb size={19} />}
           </button>
-          <div className={clsx("flex-1 min-w-0 flex items-end gap-1 writing-field border bg-card pl-3 pr-1 py-1", listening || attention >= 2 ? "border-accent" : "border-line focus-within:border-ink")}>
+          <div className={clsx("flex-1 min-w-0 flex items-end gap-1 writing-field border bg-card pl-3 pr-1 py-1", attention >= 2 ? "border-accent" : "border-line focus-within:border-ink")}>
             <textarea
               ref={taRef}
               value={input}
@@ -635,16 +540,11 @@ export function Chat({ session }: { session: Session }) {
               rows={1}
               aria-label={t(lang, "pr_input_ph")}
               aria-describedby="composer-hint"
-              placeholder={listening ? t(lang, "pr_listening") : t(lang, "pr_input_ph")}
+              placeholder={t(lang, "pr_input_ph")}
               className="flex-1 min-w-0 bg-transparent outline-none text-base leading-[1.5] py-2.5 max-h-[132px] placeholder:text-ink-3"
               disabled={busy || ending || session.status !== "active"}
               enterKeyHint="send"
             />
-            {voiceSupported && (
-              <button onClick={toggleVoice} aria-label={t(lang, "pr_voice")} className={clsx("press h-11 w-11 rounded-full inline-flex items-center justify-center shrink-0", listening ? "bg-accent text-accent-ink" : "text-ink-3")}>
-                {listening ? <MicOff size={17} /> : <Mic size={17} />}
-              </button>
-            )}
           </div>
           <button onClick={() => send(input)} disabled={!input.trim() || busy || ending || session.status !== "active"} aria-label={t(lang, "rp_send")} className="press h-11 w-11 shrink-0 rounded-full bg-ink text-paper inline-flex items-center justify-center disabled:opacity-30">
             <ArrowUp size={20} />
@@ -693,23 +593,6 @@ export function Chat({ session }: { session: Session }) {
         </div>
       </Sheet>
 
-      <Sheet open={voiceNotice} onClose={() => setVoiceNotice(false)} title={t(lang, "pr_voice_notice_title")}>
-        <div className="flex flex-col gap-3 pt-2">
-          <p className="text-[14px] text-ink-2 leading-relaxed">{t(lang, "pr_voice_notice")}</p>
-          <Button
-            block
-            variant="ink"
-            onClick={() => {
-              setSettings({ voiceNoticeSeen: true });
-              setVoiceNotice(false);
-              startListening();
-            }}
-          >
-            {t(lang, "pr_voice_notice_ok")}
-          </Button>
-          <Button block variant="ghost" onClick={() => setVoiceNotice(false)}>{t(lang, "cancel")}</Button>
-        </div>
-      </Sheet>
 
       <Sheet open={endOpen} onClose={() => setEndOpen(false)} title={t(lang, "pr_leave_options")}>
         <div className="flex flex-col gap-3 pt-2">

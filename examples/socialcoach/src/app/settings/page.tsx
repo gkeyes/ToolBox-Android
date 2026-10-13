@@ -1,6 +1,5 @@
 import {exportBackup,chooseBackup,restoreBackup,type Backup} from "@platform/backup";
 import {keyStorage,flushStorage} from "@platform/storage";
-"use client";
 import { useState } from "react";
 import { clsx } from "clsx";
 import { Check, Download, Monitor, Moon, Pencil, Sun, Trash2, ChevronRight, HardDrive, SlidersHorizontal } from "lucide-react";
@@ -8,7 +7,7 @@ import { SkillTag } from "@/components/SkillBits";
 import { Shell } from "@/components/Shell";
 import { Button, Chip, Page, SectionTitle, Sheet, Switch, useToast } from "@/components/ui";
 import { isReady, STORAGE_KEY, useByok } from "@/lib/byok";
-import { stopSpeaking, unlockSpeech } from "@/lib/speech";
+import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_PATIENCE, useApp, useLang } from "@/store/useApp";
 import { t, pick } from "@/lib/i18n";
 import { clockMarks, PatiencePicker } from "@/components/practice/ReplyClock";
@@ -19,33 +18,20 @@ import { AvatarPicker } from "@/components/AvatarPicker";
 
 export default function Settings() {
   const lang = useLang();
-  const {
-    profile,
-    proficiency,
-    sessions,
-    settings,
-    setSettings,
-    setLang,
-    updateProfile,
-    setProficiency,
-    reset,
-    customScenarios,
-    bookmarks,
-    practiceDays,
-  } = useApp();
+  const { profile, proficiency, settings, setSettings, setLang, updateProfile, setProficiency, reset } = useApp(useShallow((s) => ({ profile: s.profile, proficiency: s.proficiency, settings: s.settings, setSettings: s.setSettings, setLang: s.setLang, updateProfile: s.updateProfile, setProficiency: s.setProficiency, reset: s.reset })));
   const toast = useToast((s) => s.show);
   const [edit, setEdit] = useState(false);
   const [restore,setRestore] = useState<Backup|null>(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const byok = useByok();
-  const ownModel = isReady(byok);
+  const byok = useByok(useShallow((s) => ({ openSheet: s.openSheet, fastModel: s.fastModel, clear: s.clear })));
+  const ownModel = useByok((s) => isReady(s));
   const [name, setName] = useState(profile?.name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   if (!profile) return null;
 
-  const exportData = async () => {try {if(await exportBackup()) toast(lang === 'zh' ? '备份已导出，不包含 API Key。' : 'Backup exported without API keys.');} catch(e) {toast((e as Error).message,'error');}};
+  const exportData = async () => {try {const result=await exportBackup(); if(result) toast(result.saved ? (lang === 'zh' ? '备份已导出，不包含 API Key。' : 'Backup exported without API keys.') : (lang === 'zh' ? '备份已按当前内容导出（不含 API Key）。最新修改尚未写入本机存储，请保留这份备份。' : 'Backup exported from what is on screen (no API keys). The latest changes are not yet saved on this device; keep this backup.'), result.saved ? 'info' : 'error');} catch(e) {toast((e as Error).message,'error');}};
   const importData = async () => {try {setRestore(await chooseBackup());} catch(e) {toast((e as Error).message,'error');}};
 
   const toggleGoal = (id: SkillId) => {

@@ -1,4 +1,3 @@
-"use client";
 import type { Case, Theory } from "@/data/corpus/types";
 import { useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";

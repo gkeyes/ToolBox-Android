@@ -1,4 +1,3 @@
-"use client";
 import { useState } from "react";
 import { clsx } from "clsx";
 import { t, type TKey } from "@/lib/i18n";

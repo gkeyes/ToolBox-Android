@@ -1,4 +1,3 @@
-"use client";
 import { clsx } from "clsx";
 import { COMPETENCIES, type CompetencyId, type Lang } from "@/data/taxonomy";
 import { t } from "@/lib/i18n";

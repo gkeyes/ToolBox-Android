@@ -32,6 +32,7 @@ export function workSnapshot() {
   })) as Record<WorkKind, { count: number; utf16Bytes: number; totalMs: number; maxMs: number; recentP95Ms: number; sampleCount: number }>;
 }
 
-if (typeof window !== 'undefined') {
+// Diagnostics hook for development builds only; production pages expose nothing.
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
   Object.defineProperty(window, '__socialcoachPerf', { configurable: true, get: workSnapshot });
 }

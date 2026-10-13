@@ -1,4 +1,3 @@
-"use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, BookOpen, Check, MessageCircle, Plus } from "lucide-react";
@@ -9,6 +8,7 @@ import { Footprint } from "@/components/Footprint";
 import { PatternCard } from "@/components/PatternCard";
 import { Level } from "@/components/SkillBits";
 import { ScenarioCover } from "@/components/ScenarioCover";
+import { useShallow } from "zustand/react/shallow";
 import { computeStreak, useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
 import { competencyValues, sessionMinutes } from "@/lib/session-utils";
@@ -17,7 +17,7 @@ import { compColor, relDate } from "@/lib/format";
 
 export default function Progress() {
   const lang = useLang();
-  const { profile, proficiency, sessions, practiceDays, updateProfile, setProficiency } = useApp();
+  const { profile, proficiency, sessions, practiceDays, updateProfile, setProficiency } = useApp(useShallow((s) => ({ profile: s.profile, proficiency: s.proficiency, sessions: s.sessions, practiceDays: s.practiceDays, updateProfile: s.updateProfile, setProficiency: s.setProficiency })));
   const streak = computeStreak(practiceDays);
   const [addOpen, setAddOpen] = useState(false);
   const done = useMemo(() => sessions.filter((s) => s.status === "assessed"), [sessions]);
