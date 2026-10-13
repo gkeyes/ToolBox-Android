@@ -148,6 +148,15 @@ class VersionBumpTest(unittest.TestCase):
         problems, _ = run(["examples/game-2048/manifest.json"], head=tree(tools={"game-2048": ("1.0.5", 5)}))
         self.assertTrue(problems)
 
+    def test_a_bump_that_landed_on_main_does_not_fail_an_untouched_pr(self):
+        fork = tree()
+        base = tree(tools={"nextflux": ("1.0.55", 76)})
+        problems, _ = version_bump.check(["CHANGELOG.md"], base.get, fork.get, fork.get)
+        self.assertEqual([], problems)
+        older = tree(tools={"nextflux": ("1.0.53", 74)})
+        problems, _ = version_bump.check(["CHANGELOG.md"], base.get, older.get, fork.get)
+        self.assertTrue(problems)
+
     def test_new_or_removed_tools_have_nothing_to_compare(self):
         base = tree()
         del base["examples/game-2048/manifest.json"]

@@ -226,8 +226,14 @@ def regression_problem(label, version_file, base, head):
     return None
 
 
-def check(changed, read_base, read_head):
-    """Returns (problems, notes). read_base/read_head map a repository path to its text, or None if absent."""
+def check(changed, read_base, read_head, read_fork=None):
+    """Returns (problems, notes). read_base/read_head map a repository path to its text, or None if absent.
+
+    read_fork reads the commit the PR branched from. A version the PR did not touch is compared with
+    that commit, so a bump that landed on the base branch meanwhile does not fail a PR that never
+    changed that app or tool; merging the base branch in brings the bump along.
+    """
+    read_fork = read_fork or read_base
     base_registry = json.loads(read_base(REGISTRY) or "{}")
     head_registry = json.loads(read_head(REGISTRY) or "{}")
     modules = gradle_modules(read_base("settings.gradle.kts")) | gradle_modules(read_head("settings.gradle.kts"))
@@ -235,9 +241,11 @@ def check(changed, read_base, read_head):
     problems = []
 
     base_app, head_app = app_version(read_base(APP_BUILD)), app_version(read_head(APP_BUILD))
+    fork_app = app_version(read_fork(APP_BUILD))
     if base_app and head_app:
         problem = (bump_problem("ToolBox app (APK)", APP_BUILD, base_app, head_app, shipped["app"], "app")
-                   if "app" in shipped else regression_problem("ToolBox app (APK)", APP_BUILD, base_app, head_app))
+                   if "app" in shipped else
+                   fork_app and regression_problem("ToolBox app (APK)", APP_BUILD, fork_app, head_app))
         if problem:
             problems.append(problem)
 
@@ -248,8 +256,9 @@ def check(changed, read_base, read_head):
         if not base_tool or not head_tool:
             continue  # A new or removed tool has no earlier version to compare with.
         label = f"Mini-tool {name}"
+        fork_tool = tool_version(read_fork(base_path))
         problem = (bump_problem(label, head_path, base_tool, head_tool, shipped[name], "tool")
-                   if name in shipped else regression_problem(label, head_path, base_tool, head_tool))
+                   if name in shipped else fork_tool and regression_problem(label, head_path, fork_tool, head_tool))
         if problem:
             problems.append(problem)
     return problems, notes
@@ -277,7 +286,8 @@ def main(argv=None):
         # branch itself, so a PR must also be above a bump that landed on main meanwhile.
         changed = [path for path in git("diff", "--name-only", "-z", "--no-renames", f"{args.base}...{args.head}", "--")
                    .decode("utf-8").split("\0") if path]
-        problems, notes = check(changed, reader(args.base), reader(args.head))
+        fork = git("merge-base", args.base, args.head).decode("utf-8").strip()
+        problems, notes = check(changed, reader(args.base), reader(args.head), reader(fork))
     except (ValueError, subprocess.CalledProcessError) as failure:
         detail = getattr(failure, "stderr", b"") or b""
         print(f"Version check could not run: {failure} {detail.decode('utf-8', 'replace')}".strip(), file=sys.stderr)
