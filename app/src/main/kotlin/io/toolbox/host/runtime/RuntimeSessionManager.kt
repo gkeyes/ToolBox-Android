@@ -1149,7 +1149,8 @@ internal class RuntimeSessionManager(
         val open = PendingIntent.getActivity(
             appContext,
             sessionId.hashCode(),
-            MainActivity.openToolIntent(appContext, toolId),
+            MainActivity.openToolIntent(appContext, toolId)
+                .setData(RuntimeForegroundService.actionUri(toolId, sessionId, "reminder")),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
@@ -1169,7 +1170,9 @@ internal class RuntimeSessionManager(
         val open = PendingIntent.getActivity(
             appContext,
             alarm.alarmId.hashCode(),
-            MainActivity.openToolIntent(appContext, toolId),
+            // Two tools may use the same alarm id; the tool id in the data keeps their intents apart.
+            MainActivity.openToolIntent(appContext, toolId)
+                .setData(RuntimeForegroundService.actionUri(toolId, alarm.alarmId, "alarm")),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
