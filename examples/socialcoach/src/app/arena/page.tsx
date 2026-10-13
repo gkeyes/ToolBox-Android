@@ -1,8 +1,7 @@
 import {Select} from "@platform/Select";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link, { useRouter, useSearchParams } from "@platform/navigation";
 import { Search, ArrowRight, ArrowUpRight, ChevronDown, PenLine, SlidersHorizontal, X } from "lucide-react";
-import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Button, Chip, Empty, IconButton, Page } from "@/components/ui";
 import { SkillTag } from "@/components/SkillBits";

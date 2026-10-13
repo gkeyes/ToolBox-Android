@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link, { useRouter } from "@platform/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowUpRight, Check, Clock3, PenLine, RefreshCw } from "lucide-react";
 import { Shell } from "@/components/Shell";

@@ -1,4 +1,4 @@
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter } from "@platform/navigation";
 import { useEffect, useState } from "react";
 import { useApp } from "@/store/useApp";
 import { Briefing } from "@/components/practice/Briefing";

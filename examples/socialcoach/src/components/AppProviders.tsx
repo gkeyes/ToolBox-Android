@@ -1,6 +1,6 @@
 import { MotionConfig } from "framer-motion";
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "@platform/navigation";
 import { useApp, useLang } from "@/store/useApp";
 import { useByok } from "@/lib/byok";
 import { ModelSheet } from "@platform/ModelSheet";

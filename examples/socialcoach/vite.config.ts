@@ -16,6 +16,6 @@ export default defineConfig({
     writeFileSync(path('./dist/THIRD_PARTY_LICENSES.txt'),texts.join('\n'));
 
   }}],
-  resolve:{alias:{'@':path('./src'),'@platform':path('./platform'),'next/link':path('./platform/navigation.tsx'),'next/navigation':path('./platform/navigation.tsx')}},
+  resolve:{alias:{'@':path('./src'),'@platform':path('./platform')}},
   build:{target:'es2022',modulePreload:false,sourcemap:false},
 });
