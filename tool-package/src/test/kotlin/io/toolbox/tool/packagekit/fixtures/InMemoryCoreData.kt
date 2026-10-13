@@ -10,6 +10,7 @@ import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.CommitInstallOutcome
 import io.toolbox.core.data.CommittedInstall
 import io.toolbox.core.data.CoreDataRepositories
+import io.toolbox.core.data.DataMutationLock
 import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.DeleteToolCatalogOutcome
 import io.toolbox.core.data.HostSettings
@@ -48,6 +49,7 @@ internal object InMemoryCoreData {
             installs = InMemoryInstallTransactionRepository(state),
             backgroundTasks = InMemoryBackgroundTaskRepository(state),
             settings = InMemoryHostSettingsRepository(initialSettings),
+            mutations = DataMutationLock(),
         )
     }
 }

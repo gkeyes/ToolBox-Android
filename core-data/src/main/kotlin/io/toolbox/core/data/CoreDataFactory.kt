@@ -65,6 +65,8 @@ object CoreDataFactory {
                 installs = RoomInstallTransactionRepository(database),
                 backgroundTasks = RoomBackgroundTaskRepository(database),
                 settings = DataStoreHostSettingsRepository(settings),
+                // The only inner repository lock in the process; the host owns the outer one.
+                mutations = DataMutationLock(),
             ).withMutationLock(),
             database = database,
         )
