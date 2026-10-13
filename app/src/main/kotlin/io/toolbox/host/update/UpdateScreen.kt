@@ -1,43 +1,56 @@
 package io.toolbox.host.update
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxBanner
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
-import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
+import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
+import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
-import io.toolbox.core.ui.component.ToolBoxSegmentedControl
-import io.toolbox.core.ui.component.ToolBoxSettingRow
-import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxTone
-import io.toolbox.core.ui.component.ToolBoxValueRow
+import io.toolbox.core.ui.component.rememberToolBoxHaptics
+import io.toolbox.core.ui.component.toolBoxPressFeedback
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.settings.SettingsFooter
+import io.toolbox.host.settings.SettingsIconTile
+import io.toolbox.host.settings.SettingsIconTint
+import io.toolbox.host.settings.SettingsNavRow
+import io.toolbox.host.settings.SettingsRowSeparator
+import io.toolbox.host.settings.SettingsSwitchRow
+import io.toolbox.host.settings.SettingsValueRow
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
@@ -101,30 +114,34 @@ internal fun UpdateContent(
             state = rememberTitleBoundListState(),
             modifier = Modifier.fillMaxSize().testTag("update_page"),
             contentPadding = mergePadding(padding, PaddingValues(spacing.md)),
-            verticalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
+            item("channel-title") { GroupHeader("更新渠道", first = true) }
             item("channel") {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-                    ToolBoxSegmentedControl(
-                        options = UpdateChannel.entries.map { it.label },
-                        selectedIndex = state.channel.ordinal,
-                        onSelect = { onSelectChannel(UpdateChannel.entries[it]) },
-                        segmentTestTags = listOf("update_channel_stable", "update_channel_test"),
-                    )
-                    AppText(
-                        when (state.channel) {
-                            UpdateChannel.STABLE -> "来自 GitHub 发布的正式版本。"
-                            UpdateChannel.TEST -> "来自 main 分支最新一次通过 CI 的构建，可能不稳定。"
-                        },
-                        modifier = Modifier.padding(horizontal = spacing.md),
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.textSecondary,
-                    )
+                ToolBoxGroupedSurface(Modifier.selectableGroup()) {
+                    UpdateChannel.entries.forEachIndexed { index, channel ->
+                        if (index > 0) SettingsRowSeparator()
+                        ChannelRow(
+                            channel = channel,
+                            selected = channel == state.channel,
+                            onSelect = { onSelectChannel(channel) },
+                            modifier = Modifier.testTag(
+                                if (channel == UpdateChannel.STABLE) "update_channel_stable" else "update_channel_test",
+                            ),
+                        )
+                    }
                 }
+            }
+            item("channel-footer") {
+                SettingsFooter(
+                    when (state.channel) {
+                        UpdateChannel.STABLE -> "来自 GitHub 发布的正式版本。"
+                        UpdateChannel.TEST -> "来自 main 分支最新一次通过 CI 的构建，可能不稳定。"
+                    },
+                )
             }
             state.message?.let { message ->
                 item("message") {
-                    Column {
+                    Column(Modifier.padding(top = 16.dp)) {
                         ToolBoxBanner(message, ToolBoxTone.Info, icon = ToolBoxIconKey.Check)
                         ToolBoxTextButton("知道了", onDismissMessage, outlined = false)
                     }
@@ -132,7 +149,7 @@ internal fun UpdateContent(
             }
             state.error?.let { error ->
                 item("error") {
-                    Column {
+                    Column(Modifier.padding(top = 16.dp)) {
                         ToolBoxBanner(error, ToolBoxTone.Danger)
                         ToolBoxTextButton("重试", onRefresh, outlined = false)
                     }
@@ -140,19 +157,21 @@ internal fun UpdateContent(
             }
             if (state.loading && state.feed == null) {
                 item("loading") {
-                    Box(Modifier.fillMaxWidth().padding(spacing.lg)) { ToolBoxBusyIndicator(Modifier.size(24.dp)) }
+                    Box(Modifier.fillMaxWidth().padding(spacing.lg), contentAlignment = Alignment.Center) {
+                        ToolBoxBusyIndicator(Modifier.size(24.dp))
+                    }
                 }
             }
-            item("app-title") { SectionHeader("ToolBox") }
+            item("app-title") { GroupHeader("ToolBox") }
             item("app") { AppSection(state, canInstallApk, onInstallApp, onGrantInstall) }
             state.feed?.let {
                 val updatable = state.updatableTools
-                item("tools-title") { SectionHeader("小工具") }
+                item("tools-title") { GroupHeader("小工具") }
                 if (updatable.isNotEmpty()) {
                     item("update-all") {
                         ToolBoxPrimaryButton(
                             "全部更新（${updatable.size}）", onUpdateAll,
-                            Modifier.fillMaxWidth().testTag("update_all_tools"),
+                            Modifier.fillMaxWidth().padding(bottom = spacing.sm).testTag("update_all_tools"),
                             enabled = updatable.any { row -> row.available.slug !in state.progress },
                         )
                     }
@@ -162,39 +181,94 @@ internal fun UpdateContent(
                 item("installed-tools") {
                     ToolBoxGroupedSurface {
                         if (installed.isEmpty()) {
-                            ToolBoxSettingRow("没有可对照的已安装小工具", summary = "此渠道发布的小工具都尚未安装")
+                            SettingsNavRow(
+                                "没有可对照的已安装小工具", ToolBoxIconKey.Tools, SettingsIconTint.Gray,
+                                summary = "此渠道发布的小工具都尚未安装",
+                            )
                         }
                         installed.forEachIndexed { index, row ->
-                            if (index > 0) ToolBoxGroupDivider()
+                            if (index > 0) SettingsRowSeparator()
                             ToolRow(row, state.progress, onInstallTool)
                         }
                     }
                 }
                 if (available.isNotEmpty()) {
-                    item("available-title") { SectionHeader("未安装") }
+                    item("available-title") { GroupHeader("未安装") }
                     item("available-tools") {
                         ToolBoxGroupedSurface {
                             available.forEachIndexed { index, row ->
-                                if (index > 0) ToolBoxGroupDivider()
+                                if (index > 0) SettingsRowSeparator()
                                 ToolRow(row, state.progress, onInstallTool)
                             }
                         }
                     }
                 }
             }
-            item("options-gap") { Spacer(Modifier.height(spacing.xs)) }
+            item("options-title") { GroupHeader("自动检查") }
             item("options") {
                 ToolBoxGroupedSurface {
-                    ToolBoxSwitchSettingRow(
+                    SettingsSwitchRow(
                         title = "启动时检查更新",
                         summary = "最多每 6 小时检查一次，有更新时提示",
                         checked = state.checkOnLaunch,
                         onCheckedChange = onCheckOnLaunchChange,
                         icon = ToolBoxIconKey.Refresh,
+                        tint = SettingsIconTint.Aqua,
                         modifier = Modifier.testTag("update_check_on_launch"),
                     )
                 }
             }
+        }
+    }
+}
+
+/** Section title spaced like the other settings pages (26dp above, 7dp to the card). */
+@Composable
+private fun GroupHeader(title: String, first: Boolean = false) {
+    Box(Modifier.padding(top = if (first) 4.dp else 26.dp, bottom = 7.dp)) { SectionHeader(title) }
+}
+
+/** iOS Settings choice row: coloured tile, title and summary, accent checkmark when chosen. */
+@Composable
+private fun ChannelRow(channel: UpdateChannel, selected: Boolean, onSelect: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = ToolBoxThemeTokens.colors
+    val haptics = rememberToolBoxHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val stable = channel == UpdateChannel.STABLE
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .toolBoxPressFeedback(interactionSource, scale = ToolBoxMotion.RowPressScale)
+            .selectable(
+                selected = selected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.RadioButton,
+                onClick = {
+                    if (!selected) {
+                        haptics.tick()
+                        onSelect()
+                    }
+                },
+            )
+            .padding(start = 16.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SettingsIconTile(
+            if (stable) ToolBoxIconKey.Shield else ToolBoxIconKey.Code,
+            if (stable) SettingsIconTint.Green else SettingsIconTint.Orange,
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            ToolBoxText(channel.label, style = ToolBoxThemeTokens.textStyles.body.copy(color = colors.textPrimary))
+            ToolBoxText(
+                if (stable) "GitHub 发布" else "main 分支 CI 构建",
+                style = ToolBoxThemeTokens.textStyles.sectionTitle.copy(color = colors.textSecondary),
+            )
+        }
+        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+            if (selected) ToolBoxIcon(ToolBoxIconKey.Check, null, Modifier.size(22.dp), tint = colors.primary)
         }
     }
 }
@@ -207,12 +281,13 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
     val downloading = AppProgressKey in state.progress
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         ToolBoxGroupedSurface {
-            ToolBoxValueRow("当前版本", state.installed.describe(), icon = ToolBoxIconKey.Tools)
+            SettingsValueRow("当前版本", state.installed.describe(), ToolBoxIconKey.Tools, SettingsIconTint.Graphite)
             if (app != null) {
-                ToolBoxGroupDivider()
-                ToolBoxValueRow(
+                SettingsRowSeparator()
+                SettingsNavRow(
                     title = if (state.channel == UpdateChannel.TEST) "最新测试版" else "最新正式版",
-                    value = app.describe(),
+                    icon = ToolBoxIconKey.Refresh,
+                    tint = SettingsIconTint.Blue,
                     summary = when (state.appState) {
                         AppUpdateState.NEWER -> "有新版本"
                         AppUpdateState.CURRENT -> "已是最新"
@@ -220,8 +295,20 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
                         AppUpdateState.DOWNGRADE -> "版本号低于当前版本，需先卸载才能安装"
                         null -> null
                     },
-                    icon = ToolBoxIconKey.Refresh,
-                    valueColor = if (state.appState == AppUpdateState.NEWER) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.colors.textSecondary,
+                    trailing = {
+                        ToolBoxText(
+                            app.describe(),
+                            style = ToolBoxThemeTokens.textStyles.body.copy(
+                                color = if (state.appState == AppUpdateState.NEWER) {
+                                    ToolBoxThemeTokens.colors.primary
+                                } else {
+                                    ToolBoxThemeTokens.colors.textSecondary
+                                },
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                 )
             }
         }
@@ -250,8 +337,14 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
 @Composable
 private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall: (String) -> Unit) {
     val slug = row.available.slug
-    ToolBoxSettingRow(
+    SettingsNavRow(
         title = row.name,
+        icon = ToolBoxIconKey.Tools,
+        tint = when (row.state) {
+            ToolRowState.UPDATE -> SettingsIconTint.Blue
+            ToolRowState.CURRENT -> SettingsIconTint.Green
+            ToolRowState.NOT_INSTALLED -> SettingsIconTint.Gray
+        },
         summary = when (row.state) {
             ToolRowState.UPDATE -> "${row.installedVersion} → ${row.available.version}"
             ToolRowState.CURRENT -> "${row.installedVersion} · 已是最新"
