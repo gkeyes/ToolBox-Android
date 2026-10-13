@@ -29,13 +29,18 @@ boundaries are separate and unchanged. A webpage never receives the tool-native 
 requests; delayed Android activity results retain one-shot request identities so they cannot
 fulfil another page's request. Only one host decision dialog is shown at a time.
 
+The Activity itself is wiring: UI state lives in `BrowserUiState` (a plain holder, not a ViewModel,
+so the WebView is never retained across Activity recreation), `BrowserWebViewFactory` creates the
+WebView and installs its clients, and the Compose UI is split into `BrowserScreen`,
+`BrowserToolbar` and `BrowserMenus`. Toolbar show/hide on scroll is `BrowserChromeGesture`.
+
 The browser also keeps its own cookie store, UA modes, media layout recovery, fullscreen
 player and optional content filtering.
 
 ## Verification scope
 
 JVM tests cover URL classification, SSL queue/navigation lifecycle, capability request identity,
-origin display and file selection policy. Android tests exercise real WebView network, DOM,
+origin display, file selection policy and toolbar scroll thresholds. Android tests exercise real WebView network, DOM,
 touch, cookie POST, image loading and generated-document navigation. `BrowserLiveSitesTest`
 loads real third-party pages and runs only with the `liveSites=true` instrumentation argument.
 Passing emulator tests does not establish performance or compatibility on a particular phone.
