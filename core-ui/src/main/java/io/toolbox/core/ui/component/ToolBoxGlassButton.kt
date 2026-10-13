@@ -2,6 +2,7 @@ package io.toolbox.core.ui.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -42,6 +43,9 @@ fun ToolBoxGlassIconButton(
             backdrop = glassState.backdrop,
             modifier = described,
             surfaceColor = ToolBoxThemeTokens.materials.glassTint,
+            // A round icon button centres its glyph; the default 16dp text padding would leave
+            // only 12dp of a 44dp button for a 20dp icon.
+            contentPadding = PaddingValues(0.dp),
         ) {
             ToolBoxIcon(icon = icon, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(iconSize))
         }
