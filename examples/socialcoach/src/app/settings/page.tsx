@@ -31,7 +31,7 @@ export default function Settings() {
   const [bio, setBio] = useState(profile?.bio ?? "");
   if (!profile) return null;
 
-  const exportData = async () => {try {if(await exportBackup()) toast(lang === 'zh' ? '备份已导出，不包含 API Key。' : 'Backup exported without API keys.');} catch(e) {toast((e as Error).message,'error');}};
+  const exportData = async () => {try {const result=await exportBackup(); if(result) toast(result.saved ? (lang === 'zh' ? '备份已导出，不包含 API Key。' : 'Backup exported without API keys.') : (lang === 'zh' ? '备份已按当前内容导出（不含 API Key）。最新修改尚未写入本机存储，请保留这份备份。' : 'Backup exported from what is on screen (no API keys). The latest changes are not yet saved on this device; keep this backup.'), result.saved ? 'info' : 'error');} catch(e) {toast((e as Error).message,'error');}};
   const importData = async () => {try {setRestore(await chooseBackup());} catch(e) {toast((e as Error).message,'error');}};
 
   const toggleGoal = (id: SkillId) => {

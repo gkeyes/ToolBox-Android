@@ -25,12 +25,16 @@ export function backupText(){
   if(!s.profile)throw new Error('请先完成个人练习设置。');
   return JSON.stringify({schemaVersion:1,tool:'io.toolbox.socialcoach',profile:s.profile,proficiency:s.proficiency,sessions:s.sessions,customScenarios:s.customScenarios,bookmarks:s.bookmarks,practiceDays:s.practiceDays,settings:s.settings,exportedAt:new Date().toISOString()},null,2);
 }
-export async function exportBackup(){
-  await flushStorage();
+/**
+ * Export from memory. A failing storage write must not block the export (that
+ * is when it matters most); the result says whether the latest data is also saved on the device.
+ */
+export async function exportBackup():Promise<{saved:boolean}|null>{
+  const saved=await flushStorage().then(()=>true,()=>false);
   const text=backupText(),name=`socialcoach-${new Date().toISOString().slice(0,10)}.json`,api=host();
-  if(api)return (await api.files.save(name,'application/json',text))!==null;
+  if(api)return (await api.files.save(name,'application/json',text))!==null?{saved}:null;
   const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));
-  const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return true;
+  const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {saved};
 }
 export async function chooseBackup():Promise<Backup|null>{
   const api=host();

@@ -14,7 +14,16 @@ import { useApp, type AppState, type Settings } from "./useApp";
 export const LEGACY_KEY = "socialcoach.v1";
 export const INDEX_KEY = "socialcoach.v2.index";
 const SESSION_PREFIX = "socialcoach.v2.session.";
-export const sessionKey = (id: string) => SESSION_PREFIX + encodeURIComponent(id);
+/**
+ * Existing keys use encodeURIComponent. An id it cannot encode (a lone UTF-16
+ * surrogate, possible in a restored backup) uses UTF-16 code-unit hex under a
+ * separate prefix, so every string has a stable key and no two ids collide.
+ */
+const SESSION_HEX_PREFIX = "socialcoach.v2.session-u16.";
+export const sessionKey = (id: string) => {
+  try { return SESSION_PREFIX + encodeURIComponent(id); }
+  catch { return SESSION_HEX_PREFIX + Array.from({ length: id.length }, (_, i) => id.charCodeAt(i).toString(16).padStart(4, "0")).join(""); }
+};
 
 const DEBOUNCE_MS = 500;
 const MAX_WAIT_MS = 2000;

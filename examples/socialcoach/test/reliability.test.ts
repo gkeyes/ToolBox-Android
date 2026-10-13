@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {request,requestScope,abortRequests,setIdleTimeout} from '../platform/network';
 import {makeByokLLM,keyOrigin} from '../platform/llm';
 import {flushStorage,appStorage,storageFailure,storageReadFailure} from '../platform/storage';
-import {validateBackup,backupText} from '../platform/backup';
+import {validateBackup,backupText,exportBackup,restoreBackup} from '../platform/backup';
 import {useApp} from '../src/store/useApp';
 import {hydrateApp,holdSessionWrites,releaseSessionWrites,INDEX_KEY,LEGACY_KEY,sessionKey} from '../src/store/persistence';
 import {repairScenario,runRehearse} from '../src/lib/tasks/rehearse';
@@ -252,4 +252,32 @@ test('browser preview: an idle timeout after the headers is reported as timed ou
     await assert.rejects(res.text(),(e:Error)=>e.name==='TimeoutError'&&/超时/.test(e.message));
     scope.dispose();
   }finally{globalThis.fetch=realFetch;}
+});
+
+test('session ids encodeURIComponent cannot encode still get a stable, distinct key and round-trip',async()=>{
+  assert.equal(sessionKey('s-1'),'socialcoach.v2.session.s-1');
+  const odd='\ud800x';
+  assert.doesNotThrow(()=>sessionKey(odd));
+  assert.notEqual(sessionKey(odd),sessionKey('\ud801x'));
+  const host=mockHost();
+  await hydrateApp();
+  const session={...buildSession(SCENARIOS[0],'arena','zh'),id:odd};
+  useApp.setState({profile,sessions:[]});
+  await restoreBackup(validateBackup(JSON.stringify({...JSON.parse(backupText()),sessions:[session]})));
+  assert.ok(host.ordinary.has(sessionKey(odd)));
+  useApp.setState({sessions:[]});
+  await hydrateApp();
+  assert.deepEqual(useApp.getState().sessions.map(s=>s.id),[odd]);
+});
+
+test('export still saves the in-memory backup when storage writes are failing',async()=>{
+  const host=mockHost();
+  const saved:string[]=[];
+  (host.api as any).files={save:async(_n:string,_m:string,content:string)=>{saved.push(content);return {token:'t'};}};
+  await hydrateApp();
+  host.api.storage.set=async()=>{throw new Error('disk full');};
+  useApp.setState({profile,sessions:sessionsOf(2)});
+  const result=await exportBackup();
+  assert.deepEqual(result,{saved:false});
+  assert.equal(JSON.parse(saved[0]).sessions.length,2);
 });

@@ -28,6 +28,7 @@ export function Debrief({ session }: { session: Session }) {
   const router = useRouter();
   const { profile, applyReport, addSession, updateSession } = useApp(useShallow((s) => ({ profile: s.profile, applyReport: s.applyReport, addSession: s.addSession, updateSession: s.updateSession })));
   const [err, setErr] = useState<string | null>(null);
+  const [needsModel, setNeedsModel] = useState(false);
   const [partial, setPartial] = useState<Partial<Report> | null>(null);
   const inflight = useRef(false);
   const sc = session.scenario;
@@ -53,6 +54,7 @@ export function Debrief({ session }: { session: Session }) {
       applyReport(session.id, final);
       setPartial(null);
     } catch (e) {
+      setNeedsModel(isModelNotConfigured(e));
       const raw = e instanceof Error ? e.message : "";
       const friendly = isModelNotConfigured(e) ? t(lang, "model_required") : /JSON|position|Unexpected|garbled|unexpectedly/i.test(raw) ? t(lang, "rp_failed") : raw || t(lang, "error_generic");
       setErr(friendly);
@@ -94,6 +96,7 @@ export function Debrief({ session }: { session: Session }) {
         objectivesMet={n}
         ready={!!report || hasPartial}
         err={err}
+        needsModel={needsModel}
         onRetry={() => { setErr(null); void run(); }}
         onDone={() => updateSession(session.id, { revealSeen: true })}
       />
@@ -116,7 +119,7 @@ export function Debrief({ session }: { session: Session }) {
               {err ? (
                 <div className="flex flex-col gap-3">
                   <p className="text-[14px] text-danger">{err}</p>
-                  {err === t(lang, "model_required") && <ModelSetupButton />}
+                  {needsModel && <ModelSetupButton />}
                   <Button variant="secondary" onClick={() => { setErr(null); void run(); }}>{t(lang, "retry")}</Button>
                 </div>
               ) : (
@@ -162,6 +165,7 @@ function HiddenReveal({
   objectivesMet,
   ready,
   err,
+  needsModel,
   onRetry,
   onDone,
 }: {
@@ -171,6 +175,7 @@ function HiddenReveal({
   objectivesMet: number;
   ready: boolean;
   err: string | null;
+  needsModel?: boolean;
   onRetry: () => void;
   onDone: () => void;
 }) {
@@ -223,6 +228,7 @@ function HiddenReveal({
         {err ? (
           <div className="flex flex-col gap-2">
             <p className="text-[13px] text-danger">{err}</p>
+            {needsModel && <ModelSetupButton size="md" />}
             <Button block variant="secondary" onClick={onRetry}>{t(lang, "retry")}</Button>
           </div>
         ) : (

@@ -312,3 +312,18 @@ test('a failed migration write opens the app with the storage warning instead of
   await expect(page.getByRole('alert').filter({hasText:'数据尚未保存'})).toBeVisible();
   await expect(page.getByRole('button',{name:'重试保存',exact:true})).toBeVisible();
 });
+
+test('an unassessed scene with a hidden reveal offers model setup when no model is configured',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/arena');
+  const ended={id:'ended-no-model',scenario:scene,learnerCharacterId:'you',messages:[{id:'m1',role:'learner',text:learnerLine,ts:1}],objectiveDone:scene.objectives.map(()=>false),status:'ended',outcome:'partial',startedAt:1,endedAt:2,reflections:[],origin:'arena'};
+  await page.evaluate(({ended})=>{
+    const storageKey='test.native.ordinary';const outer=JSON.parse(localStorage.getItem(storageKey)||'{}');
+    const index=JSON.parse(outer['socialcoach.v2.index']);index.sessionIds=[ended.id];
+    outer['socialcoach.v2.session.'+ended.id]=JSON.stringify(ended);outer['socialcoach.v2.index']=JSON.stringify(index);
+    localStorage.setItem(storageKey,JSON.stringify(outer));
+  },{ended});
+  await page.goto('/#/practice/ended-no-model');await page.reload();
+  await page.getByRole('button',{name:'配置模型',exact:true}).first().click();
+  await expect(page.getByLabel('API Key',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
