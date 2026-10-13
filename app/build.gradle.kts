@@ -58,6 +58,11 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     commandLine("bash", rootProject.layout.projectDirectory.file("scripts/package-examples.sh").asFile.absolutePath)
 }
 
+// BundledExamplesRegistryTest reads the registry at run time, so a registry change must re-run unit tests.
+tasks.withType<Test>().configureEach {
+    inputs.file(tbxTargetsFile).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("tbxTargets")
+}
+
 android {
     namespace = "io.toolbox.host"
     compileSdk = 37

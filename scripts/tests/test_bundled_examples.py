@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -40,6 +41,13 @@ def workflow_includes(patterns, path):
     return included
 
 
+def load_tbx():
+    spec = importlib.util.spec_from_file_location("tbx", ROOT / "scripts/ci/tbx.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def registry():
     return json.loads((ROOT / "scripts/ci/tbx-targets.json").read_text(encoding="utf-8"))
 
@@ -80,6 +88,22 @@ class BundledExamplesTest(unittest.TestCase):
                 included = {path for path in filters[event] if re.fullmatch(r"examples/[^/*]+/\*\*", path)}
                 self.assertEqual(bundled, included,
                                  f"android.yml {event} paths must re-include exactly the bundled examples")
+
+    def test_shared_browser_test_change_selects_its_tool(self):
+        tbx = load_tbx()
+        fake = {"alpha": {"tests": {"browser": ["scripts/tests/shared.spec.js"]}}, "beta": {}}
+        self.assertEqual(["alpha"], tbx.select_targets(fake, "changed", ["scripts/tests/shared.spec.js"]))
+
+    def test_browser_tests_are_registered_only_for_tools_with_a_browser_step(self):
+        tbx = load_tbx()
+        workflow = (ROOT / ".github/workflows/tbx.yml").read_text(encoding="utf-8")
+        for name, config in registry().items():
+            if config.get("tests", {}).get("browser"):
+                with self.subTest(name=name):
+                    self.assertIn(name, tbx.BROWSER_TEST_RUNNERS)
+        for name in tbx.BROWSER_TEST_RUNNERS:
+            with self.subTest(runner=name):
+                self.assertIn(f"matrix.tool == '{name}'", workflow)
 
 
 if __name__ == "__main__":

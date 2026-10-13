@@ -16,6 +16,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "scripts/ci/tbx-targets.json"
+# tbx.yml has a browser-test step only for these tools; registering browser tests elsewhere would be silently skipped.
+BROWSER_TEST_RUNNERS = {"github-actions-watcher", "nextflux", "socialcoach"}
 SHARED_PATHS = (
     ".github/workflows/tbx.yml", "scripts/ci/tbx.py", "scripts/ci/tbx-targets.json",
     "scripts/package-tool.py", "scripts/package-examples.sh", "sdk/*",
@@ -47,7 +49,8 @@ def available_tests(name, kind, registry=None):
 
 def shared_tests(name, registry):
     """Registered host tests under scripts/ that also cover this tool; a change to one selects the tool."""
-    return {path for path in registry[name].get("tests", {}).get("unit", []) if path.startswith("scripts/")}
+    tests = registry[name].get("tests", {})
+    return {path for kind in ("unit", "browser") for path in tests.get(kind, []) if path.startswith("scripts/")}
 
 
 def targets():
@@ -199,6 +202,10 @@ def plan(selection, validation_scope="full", test_filter=""):
         raise ValueError("Targeted TBX dispatch needs a test path")
     if validation_scope == "build" and selection == "changed":
         raise ValueError("Build-only dispatch needs an explicitly selected tool")
+    unsupported = sorted(name for name, config in registry.items()
+                         if config.get("tests", {}).get("browser") and name not in BROWSER_TEST_RUNNERS)
+    if unsupported:
+        raise ValueError(f"Browser tests are registered for {', '.join(unsupported)}, but tbx.yml has no browser-test step for them")
     for name in selected:
         metadata(name, registry[name])
     matrix = {"include": [
