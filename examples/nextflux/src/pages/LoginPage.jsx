@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {useNavigate} from "react-router";
 import {authState, login} from "@/stores/authStore";
 import {
     Button,
@@ -25,13 +25,14 @@ import {useTranslation} from "react-i18next";
 import {Segmented} from "@/components/ui/settingItem.jsx";
 import {claimStagger} from "@/design/motion.js";
 import "@/components/Settings/settings.css";
+import { SERVER_URL } from "@/toolbox/server.mjs";
 
 export default function LoginPage() {
     const navigate = useNavigate();
     const $auth = useStore(authState);
     const {t} = useTranslation();
     const [authType, setAuthType] = useState("token");
-    const [serverUrl, setServerUrl] = useState("https://miniflux.xiaochen.win");
+    const [serverUrl, setServerUrl] = useState(SERVER_URL);
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [token, setToken] = useState("");

@@ -6,16 +6,19 @@ const learnerLine='我会在明天下午三点前给出反馈。';
 const npcLine='谢谢你说明时间。不过文档缺什么信息，我们现在能先确定吗？';
 const profile={name:'练习者',bio:'产品团队成员',goals:scene.skills,contexts:[scene.context],lang:'zh',createdAt:1780000000000};
 const key='mock-test-key-never-use-in-production';
-async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{withProfile?:boolean;withKey?:boolean;minimax?:boolean}={}){
-  await page.addInitScript(({profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax})=>{
+async function setup(page:Page,{withProfile=true,withKey=true,minimax=false,failWrites=false}:{withProfile?:boolean;withKey?:boolean;minimax?:boolean;failWrites?:boolean}={}){
+  await page.addInitScript(({profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax,failWrites})=>{
     const w=window as any;
     const saved=(name:string,initial:unknown)=>{const text=localStorage.getItem(name);return text?JSON.parse(text):initial;};
     const ordinary=saved('test.native.ordinary',withProfile?{'socialcoach.v1':JSON.stringify({state:{profile,proficiency:{},sessions:[],customScenarios:[],bookmarks:[],practiceDays:[],settings:{tts:false,telemetry:false,theme:'light'},todayDate:null,todaySessionId:null,patternInsight:null},version:0})}:{});
     const secure=saved('test.native.secure',withKey?{'socialcoach.llm.v1':JSON.stringify({state:{enabled:true,provider:'openai',baseUrl:minimax?'https://api.minimax.io/v1':'https://mock.invalid/v1',apiKey:key,fastModel:minimax?'MiniMax-M3':'mock-chat',smartModel:minimax?'MiniMax-M3':'mock-assess',tokenParam:'max_tokens'},version:0})}:{});
-    w.__testHost={ordinary,secure,calls:[],cancelled:0,exports:[],hold:false,onlyReasoning:false,finishReply:false,endedWrites:[],leaks:[]};
+    w.__testHost={ordinary,secure,calls:[],cancelled:0,exports:[],hold:false,onlyReasoning:false,finishReply:false,endedWrites:[],leaks:[],
+      // Sessions are stored one per key since 1.0.7; the fixture above still seeds the v1 blob to exercise migration.
+      session:(i=0)=>{const index=JSON.parse(ordinary['socialcoach.v2.index']);return JSON.parse(ordinary['socialcoach.v2.session.'+encodeURIComponent(index.sessionIds[i])]);}};
     if(minimax)new MutationObserver(records=>{for(const r of records){for(const n of Array.from(r.addedNodes)){if(/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(n.textContent||''))w.__testHost.leaks.push('added-node');}if(r.type==='characterData'&&/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(r.target.textContent||''))w.__testHost.leaks.push('text-change');}}).observe(document,{subtree:true,childList:true,characterData:true});
     const storage=(data:any,name:string)=>({get:async(k:string)=>data[k]??null,set:async(k:string,v:unknown)=>{
-      if(name==='test.native.ordinary'&&k==='socialcoach.v1'&&typeof v==='string'&&JSON.parse(v).state.sessions[0]?.status==='ended')w.__testHost.endedWrites.push(JSON.parse(v));
+      if(failWrites&&name==='test.native.ordinary')throw new Error('disk full');
+      if(name==='test.native.ordinary'&&k.startsWith('socialcoach.v2.session.')&&typeof v==='string'&&JSON.parse(v).status==='ended')w.__testHost.endedWrites.push(JSON.parse(v));
       data[k]=v;localStorage.setItem(name,JSON.stringify(data));
     },remove:async(k:string)=>{delete data[k];localStorage.setItem(name,JSON.stringify(data));}});
     const streams=new Map<string,{bytes:Uint8Array;offset:number;hold:boolean}>();let seq=0;
@@ -45,7 +48,7 @@ async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{wi
       files:{save:async(name:string,mime:string,content:string)=>{w.__testHost.exports.push({name,mime,content});return {token:'saved'};},open:async()=>null,read:async()=>new Uint8Array()},
       share:{text:async(text:string)=>{w.__testHost.shared=text;}},browser:{open:async(url:string)=>{w.__testHost.external=url;}}
     };
-  },{profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax});
+  },{profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax,failWrites});
   await page.route('https://**/*',route=>route.abort());
 }
 function consoleCheck(page:Page){const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});return errors;}
@@ -57,9 +60,9 @@ test('fresh install has a working Chinese onboarding screen',async({page})=>{awa
 
 test('offline corpus browsing, filtering and hash navigation work without a model',async({page})=>{await setup(page,{withKey:false});const errors=consoleCheck(page);await arena(page);await screenshot(page,'arena');await page.getByRole('searchbox').fill(scene.title.zh);await expect(page).toHaveURL(/#\/arena\?q=/);await expect(page.getByText(scene.title.zh,{exact:true}).first()).toBeVisible();await page.getByRole('combobox').first().click();await expect(page.getByRole('listbox')).toBeVisible();await page.evaluate(()=>history.back());await expect(page.getByRole('listbox')).not.toBeVisible();await expect(page).toHaveURL(/#\/arena\?q=/);await page.getByRole('button',{name:'清空搜索',exact:true}).click();await expect(page.getByRole('searchbox')).toHaveValue('');expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);});
 
-test('full API key typing, model list selection, save and modal Back',async({page})=>{await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();await page.getByLabel('API Key',{exact:true}).pressSequentially(key,{delay:2});await expect(page.getByLabel('API Key',{exact:true})).toHaveValue(key);await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');await page.getByRole('button',{name:'读取模型',exact:true}).click();await expect(page.getByText(/已读取 2 个模型/)).toBeVisible();await page.getByRole('button',{name:'从模型列表选择',exact:true}).first().click();await page.getByRole('button',{name:'mock-chat',exact:true}).click();await page.getByRole('button',{name:'两个用途使用同一模型',exact:true}).click();await page.getByRole('button',{name:'测试并保存',exact:true}).click();await expect(page.getByText('两个模型均已验证，配置已保存。',{exact:true})).toBeVisible();await screenshot(page,'model-settings');await page.evaluate(()=>history.back());await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page).toHaveURL(/#\/settings$/);expect(await page.evaluate(()=>(window as any).__testHost.ordinary['socialcoach.v1'].includes('mock-test-key'))).toBe(false);expect(errors).toEqual([]);});
+test('full API key typing, model list selection, save and modal Back',async({page})=>{await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');await page.getByLabel('API Key',{exact:true}).pressSequentially(key,{delay:2});await expect(page.getByLabel('API Key',{exact:true})).toHaveValue(key);await page.getByRole('button',{name:'读取模型',exact:true}).click();await expect(page.getByText(/已读取 2 个模型/)).toBeVisible();await page.getByRole('button',{name:'从模型列表选择',exact:true}).first().click();await page.getByRole('button',{name:'mock-chat',exact:true}).click();await page.getByRole('button',{name:'两个用途使用同一模型',exact:true}).click();await page.getByRole('button',{name:'测试并保存',exact:true}).click();await expect(page.getByText('两个模型均已验证，配置已保存。',{exact:true})).toBeVisible();await screenshot(page,'model-settings');await page.evaluate(()=>history.back());await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page).toHaveURL(/#\/settings$/);expect(await page.evaluate(()=>Object.values((window as any).__testHost.ordinary).some(v=>String(v).includes('mock-test-key')))).toBe(false);expect(errors).toEqual([]);});
 
-test('scene preparation -> streamed dialogue -> grounded report -> backup and reopen',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();await screenshot(page,'conversation');await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'review');const hash=new URL(page.url()).hash;await page.reload();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(hash);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'导出'}).first().click();const exported=await page.evaluate(()=>(window as any).__testHost.exports[0]);expect(exported.content).not.toContain(key);expect(JSON.parse(exported.content).sessions[0].report.scoringVersion).toBe(2);expect(errors).toEqual([]);});
+test('scene preparation -> streamed dialogue -> grounded report -> backup and reopen',async({page})=>{await setup(page);const errors=consoleCheck(page);await startScene(page);await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();await screenshot(page,'conversation');await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.session().status)).toBe('assessed');const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'review');const hash=new URL(page.url()).hash;await page.reload();await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();expect(new URL(page.url()).hash).toBe(hash);await page.goto('/#/settings');await page.getByRole('button').filter({hasText:'导出'}).first().click();const exported=await page.evaluate(()=>(window as any).__testHost.exports[0]);expect(exported.content).not.toContain(key);expect(JSON.parse(exported.content).sessions[0].report.scoringVersion).toBe(2);expect(errors).toEqual([]);});
 
 test('automatic ending saves the final line and ended state before close flush',async({page})=>{
   await setup(page);
@@ -69,9 +72,9 @@ test('automatic ending saves the final line and ended state before close flush',
   await page.getByRole('button',{name:'发送',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>(window as unknown as {__testHost:{endedWrites:unknown[]}}).__testHost.endedWrites.length)).toBeGreaterThan(0);
   const finalWrite=await page.evaluate(async()=>{
-    const host=(window as unknown as {__testHost:{endedWrites:Array<{state:{sessions:Array<{status:string;endedAt?:number;messages:Array<{role:string;text:string}>}>}}>;flush:()=>Promise<void>}}).__testHost;
+    const host=(window as unknown as {__testHost:{endedWrites:Array<{status:string;endedAt?:number;messages:Array<{role:string;text:string}>}>;flush:()=>Promise<void>}}).__testHost;
     await host.flush();
-    return host.endedWrites[0].state.sessions[0];
+    return host.endedWrites[0];
   });
   expect(finalWrite.status).toBe('ended');
   expect(finalWrite.endedAt).toBeGreaterThan(0);
@@ -91,7 +94,7 @@ test('cancel and edit-resend release the stream and retain one learner message',
   await expect(page.getByRole('alert')).toContainText('请求已取消');
   await expect(page.getByRole('button',{name:'停止生成',exact:true})).not.toBeVisible();
   await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.cancelled)).toBeGreaterThan(baseline.cancelled);
-  const learnerCount=()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].messages.filter((m:any)=>m.role==='learner').length);
+  const learnerCount=()=>page.evaluate(()=>(window as any).__testHost.session().messages.filter((m:any)=>m.role==='learner').length);
   expect(await learnerCount()).toBe(1);
   await page.evaluate(()=>{(window as any).__testHost.hold=false;});
   await page.getByRole('button',{name:'重试',exact:true}).click();
@@ -132,10 +135,10 @@ test('MiniMax reasoning never flashes in hint, role dialogue, report or saved hi
   await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);
   await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.session().status)).toBe('assessed');
   const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();
   await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();await screenshot(page,'minimax-review');
-  const state=await page.evaluate(()=>{const h=(window as any).__testHost;return {stored:h.ordinary['socialcoach.v1'],calls:h.calls,leaks:h.leaks};});
+  const state=await page.evaluate(()=>{const h=(window as any).__testHost;return {stored:JSON.stringify(h.ordinary),calls:h.calls,leaks:h.leaks};});
   expect(state.stored).not.toMatch(/PRIVATE_MINIMAX_TRACE|<\/?think/i);expect(state.leaks).toEqual([]);
   const hint=state.calls.find((c:any)=>JSON.stringify(c.body?.messages).includes('Give the hint.'));
   const assess=state.calls.find((c:any)=>JSON.stringify(c.body?.messages).includes('Produce the assessment JSON.'));
@@ -150,7 +153,7 @@ test('MiniMax reasoning-only hint shows an error and cannot become a saved coach
   await page.evaluate(()=>{(window as any).__testHost.onlyReasoning=true;});
   await page.getByRole('button',{name:'提示',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('模型未返回最终答案');
-  const state=await page.evaluate(()=>{const h=(window as any).__testHost;return {session:JSON.parse(h.ordinary['socialcoach.v1']).state.sessions[0],leaks:h.leaks};});
+  const state=await page.evaluate(async()=>{const h=(window as any).__testHost;await h.flush();return {session:h.session(),leaks:h.leaks};});
   expect(state.session.messages.filter((m:any)=>m.role==='coach')).toHaveLength(0);expect(state.leaks).toEqual([]);
   await page.evaluate(()=>{(window as any).__testHost.onlyReasoning=false;});
   await page.getByRole('button',{name:'提示',exact:true}).click();
@@ -184,7 +187,7 @@ test('phone journey is compact and review section buttons preserve the SPA route
   const compact=await page.locator('.practice-journey-compact').boundingBox();expect(compact?.width??0).toBeGreaterThan(100);
   await page.getByRole('textbox',{name:'说点什么…',exact:true}).fill(learnerLine);await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByText(npcLine,{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'暂停或结束练习',exact:true}).click();await page.getByRole('button',{name:'结束并复盘',exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v1']).state.sessions[0].status)).toBe('assessed');
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testHost.session().status)).toBe('assessed');
   const see=page.getByRole('button',{name:'看复盘',exact:true});if(await see.count())await see.click();
   await expect(page.getByText('测试复盘：表达了明确时间。',{exact:true})).toBeVisible();
   const before=new URL(page.url()).hash;
@@ -199,7 +202,7 @@ test('phone journey is compact and review section buttons preserve the SPA route
 test('model settings stack primary actions on a narrow phone',async({page})=>{
   await setup(page,{withKey:false});const errors=consoleCheck(page);await page.setViewportSize({width:320,height:568});await page.goto('/#/settings');
   await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();
-  await page.getByLabel('API Key',{exact:true}).fill(key);await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');
+  await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');await page.getByLabel('API Key',{exact:true}).fill(key);
   await page.getByLabel('对话模型',{exact:true}).fill('mock-chat');await page.getByLabel('复盘模型',{exact:true}).fill('mock-assess');
   const load=page.getByRole('button',{name:'读取模型',exact:true}), save=page.getByRole('button',{name:'测试并保存',exact:true});
   const [a,b]=await Promise.all([load.boundingBox(),save.boundingBox()]);
@@ -218,9 +221,10 @@ test('today recommendation cover aligns badges with notebook content and leaves 
   };
   await page.evaluate(({scheduled})=>{
     const storageKey='test.native.ordinary';const outer=JSON.parse(localStorage.getItem(storageKey)||'{}');
-    const root=JSON.parse(outer['socialcoach.v1']);const d=new Date();const p=(n:number)=>String(n).padStart(2,'0');
-    root.state.sessions=[scheduled];root.state.todaySessionId=scheduled.id;root.state.todayDate=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-    outer['socialcoach.v1']=JSON.stringify(root);localStorage.setItem(storageKey,JSON.stringify(outer));
+    const index=JSON.parse(outer['socialcoach.v2.index']);const d=new Date();const p=(n:number)=>String(n).padStart(2,'0');
+    index.sessionIds=[scheduled.id];index.todaySessionId=scheduled.id;index.todayDate=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+    outer['socialcoach.v2.session.'+encodeURIComponent(scheduled.id)]=JSON.stringify(scheduled);
+    outer['socialcoach.v2.index']=JSON.stringify(index);localStorage.setItem(storageKey,JSON.stringify(outer));
   },{scheduled});
   // Hash navigation keeps the same document; reload once so the simulated
   // ToolBox bridge rehydrates from the storage fixture we just changed.
@@ -242,4 +246,84 @@ test('today recommendation cover aligns badges with notebook content and leaves 
   expect(geometry.quoteBottom).toBeLessThanOrEqual(geometry.coverHeight-12);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
+});
+
+test('home never starts a paid planning call by itself and offers model setup inline',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/');
+  await expect(page.getByText('还没有配置模型。',{exact:false}).first()).toBeVisible();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await page.getByRole('button',{name:'配置模型',exact:true}).click();
+  await expect(page.getByLabel('API Key',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('home with a configured model waits for an explicit planning tap',async({page})=>{
+  await setup(page);const errors=consoleCheck(page);await page.goto('/#/');
+  await expect(page.getByRole('button',{name:'为我安排今天的练习',exact:true})).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('migrated data is stored per session and the v1 blob is retired',async({page})=>{
+  await setup(page);await arena(page);
+  await expect.poll(()=>page.evaluate(()=>Object.keys((window as any).__testHost.ordinary).sort())).toEqual(expect.arrayContaining(['socialcoach.v2.index']));
+  expect(await page.evaluate(()=>'socialcoach.v1' in (window as any).__testHost.ordinary)).toBe(false);
+  const index=await page.evaluate(()=>JSON.parse((window as any).__testHost.ordinary['socialcoach.v2.index']));
+  expect(index.profile.name).toBe(profile.name);expect(index.settings).toEqual({theme:'light'});
+});
+
+test('changing the API address to another host clears the saved key',async({page})=>{
+  await setup(page);const errors=consoleCheck(page);await page.goto('/#/settings');
+  await page.getByRole('button').filter({hasText:'mock-chat'}).first().click();
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue(key);
+  await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v2');
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue(key);
+  await page.getByLabel('API 地址',{exact:true}).fill('https://other.invalid/v1');
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  await expect(page.getByText(/已清空原来的 API Key/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('a key typed in the sheet is cleared when the provider or address moves to another host',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');
+  await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();
+  await page.getByLabel('API 地址',{exact:true}).fill('https://mock.invalid/v1');
+  await page.getByLabel('API Key',{exact:true}).fill('typed-key');
+  await page.getByLabel('API 地址',{exact:true}).fill('https://other.invalid/v1');
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  await page.getByLabel('API Key',{exact:true}).fill('typed-key');
+  await page.getByRole('button',{name:'Anthropic',exact:true}).click();
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('a key typed while the address is malformed is cleared once the address resolves',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');
+  await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();
+  await page.getByLabel('API 地址',{exact:true}).fill('not a url');
+  await page.getByLabel('API Key',{exact:true}).fill('typed-key');
+  await page.getByLabel('API 地址',{exact:true}).fill('https://other.invalid/v1');
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('a failed migration write opens the app with the storage warning instead of a fatal screen',async({page})=>{
+  await setup(page,{failWrites:true});await arena(page);
+  await expect(page.getByRole('alert').filter({hasText:'数据尚未保存'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'重试保存',exact:true})).toBeVisible();
+});
+
+test('an unassessed scene with a hidden reveal offers model setup when no model is configured',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/arena');
+  const ended={id:'ended-no-model',scenario:scene,learnerCharacterId:'you',messages:[{id:'m1',role:'learner',text:learnerLine,ts:1}],objectiveDone:scene.objectives.map(()=>false),status:'ended',outcome:'partial',startedAt:1,endedAt:2,reflections:[],origin:'arena'};
+  await page.evaluate(({ended})=>{
+    const storageKey='test.native.ordinary';const outer=JSON.parse(localStorage.getItem(storageKey)||'{}');
+    const index=JSON.parse(outer['socialcoach.v2.index']);index.sessionIds=[ended.id];
+    outer['socialcoach.v2.session.'+ended.id]=JSON.stringify(ended);outer['socialcoach.v2.index']=JSON.stringify(index);
+    localStorage.setItem(storageKey,JSON.stringify(outer));
+  },{ended});
+  await page.goto('/#/practice/ended-no-model');await page.reload();
+  await page.getByRole('button',{name:'配置模型',exact:true}).first().click();
+  await expect(page.getByLabel('API Key',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
 });

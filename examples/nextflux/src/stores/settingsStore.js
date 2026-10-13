@@ -1,5 +1,5 @@
 import { persistentAtom } from "@nanostores/persistent";
-import { flushPreferences } from "../toolbox/preferences.js";
+import { deferPreferenceWrites, flushPreferences } from "../toolbox/preferences.js";
 
 const defaultValue = {
   lineHeight: 1.8,
@@ -46,6 +46,15 @@ const defaultValue = {
     "You are a helpful assistant that summarizes articles concisely. Provide a clear, structured summary in the same language as the article. Format: just plain text, no markdown.",
 };
 
+// A damaged stored value must not stop the app from starting: fall back to the
+// defaults for anything that is not a plain JSON object.
+export function decodeSettings(str) {
+  let storedValue;
+  try { storedValue = JSON.parse(str); } catch { return { ...defaultValue }; }
+  if (!storedValue || typeof storedValue !== "object" || Array.isArray(storedValue)) return { ...defaultValue };
+  return { ...defaultValue, ...storedValue };
+}
+
 export const settingsState = persistentAtom("settings", defaultValue, {
   encode: (value) => {
     const filteredValue = Object.keys(value).reduce((acc, key) => {
@@ -56,14 +65,18 @@ export const settingsState = persistentAtom("settings", defaultValue, {
     }, {});
     return JSON.stringify(filteredValue);
   },
-  decode: (str) => {
-    const storedValue = JSON.parse(str);
-    return { ...defaultValue, ...storedValue };
-  },
+  decode: decodeSettings,
 });
 
-export const updateSettings = (settingsChanges) => {
-  settingsState.set({ ...settingsState.get(), ...settingsChanges });
+// immediate: false batches the write with other deferred changes for a short
+// pause (rapid slider commits); otherwise the returned promise is the write.
+export const updateSettings = (settingsChanges, { immediate = true } = {}) => {
+  const apply = () => settingsState.set({ ...settingsState.get(), ...settingsChanges });
+  if (!immediate) {
+    deferPreferenceWrites(apply);
+    return Promise.resolve();
+  }
+  apply();
   return flushPreferences();
 };
 

@@ -1,5 +1,4 @@
 import {Select} from "@platform/Select";
-"use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, ArrowRight, ArrowUpRight, ChevronDown, PenLine, SlidersHorizontal, X } from "lucide-react";
@@ -11,6 +10,7 @@ import { ScenarioCover } from "@/components/ScenarioCover";
 import { SCENARIOS } from "@/data/corpus";
 import type { Scenario } from "@/data/corpus/types";
 import { CONTEXTS, SKILLS, contextById, skillById, type ContextId, type SkillId } from "@/data/taxonomy";
+import { useShallow } from "zustand/react/shallow";
 import { useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
 import { buildSession } from "@/lib/session-utils";
@@ -22,7 +22,7 @@ export default function Arena() {
   const router = useRouter();
   const params = useSearchParams();
   useEffect(() => { rememberArenaLocation(params.toString()); }, [params]);
-  const { profile, sessions, customScenarios, addSession } = useApp();
+  const { profile, sessions, customScenarios, addSession } = useApp(useShallow((s) => ({ profile: s.profile, sessions: s.sessions, customScenarios: s.customScenarios, addSession: s.addSession })));
   // The URL keeps the collection intact when returning from a scene.
   const q = params.get("q") ?? "";
   const contextParam = params.get("context");

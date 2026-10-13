@@ -43,10 +43,10 @@ internal class HostDependencies(
     private val runtimePreparerFactory: () -> ToolRuntimePreparer,
     private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
     private val runtimeBridgeProviderFactory: (
-        HostRuntimeM2HandlerFactory,
+        HostRuntimeServiceHandlerFactory,
         (io.toolbox.tool.runtime.PreparedToolRuntime) -> io.toolbox.host.runtime.HostRuntimeContinuityHandlers,
     ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
-    private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
+    private val runtimeServiceHandlerFactory: HostRuntimeServiceHandlerFactory,
     private val backupDatabase: io.toolbox.core.data.backup.BackupDatabase? = null,
 ) {
     val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
@@ -77,7 +77,7 @@ internal class HostDependencies(
     }
 
     val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runtimeBridgeProviderFactory(runtimeM2HandlerFactory, runtimeSessions::handlers)
+        runtimeBridgeProviderFactory(runtimeServiceHandlerFactory, runtimeSessions::handlers)
     }
 
     val runtimeSessions: RuntimeSessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -112,9 +112,12 @@ internal class HostDependencies(
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
         deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
 
+    /** One-shot message from startup maintenance; the UI shows it once and clears it. */
+    val startupNotice = MutableStateFlow<String?>(null)
+
     suspend fun recoverPendingPackageMutations() {
         packageMutations.run {
-            (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+            (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()?.let { startupNotice.value = it }
             check(catalogLayout.reconcile() is io.toolbox.core.data.DataResult.Success) { "CATALOG_LAYOUT_WRITE" }
         }
     }
@@ -125,11 +128,11 @@ internal class HostDependencies(
 }
 
 internal fun interface HostDependenciesFactory {
-    fun create(application: Application, stores: CoreDataStores): HostDependencies
+    suspend fun create(application: Application, stores: CoreDataStores): HostDependencies
 }
 
 internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
-    override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+    override suspend fun create(application: Application, stores: CoreDataStores): HostDependencies {
         val memory = application.getSystemService(android.app.ActivityManager::class.java)
         io.toolbox.host.background.NetworkResources.configureSystemAvailability {
             runCatching {
@@ -139,7 +142,7 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
             }.getOrDefault(false)
         }
 
-        kotlinx.coroutines.runBlocking(Dispatchers.IO) { io.toolbox.host.backup.HostBackupService.recover(application, stores) }
+        io.toolbox.host.backup.HostBackupService.recover(application, stores)
         val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
         lateinit var dependencies: HostDependencies
         dependencies = HostDependencies(
@@ -158,15 +161,15 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
             permissionSideEffects = backgroundOperations,
             runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir, BuildConfig.VERSION_NAME) },
             runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
-            runtimeBridgeProviderFactory = { m2Handlers, continuityHandlers ->
+            runtimeBridgeProviderFactory = { serviceHandlers, continuityHandlers ->
                 io.toolbox.host.runtime.HostRuntimeBridgeProvider(
                     context = application,
                     repositories = stores.repositories,
-                    m2HandlerFactory = m2Handlers,
+                    serviceHandlerFactory = serviceHandlers,
                     continuityHandlerFactory = continuityHandlers,
                 )
             },
-            runtimeM2HandlerFactory = backgroundOperations,
+            runtimeServiceHandlerFactory = backgroundOperations,
             backupDatabase = stores.backup,
         )
         backgroundOperations.attachRuntimeSessions(dependencies.runtimeSessions)
@@ -255,9 +258,7 @@ internal class HostDependenciesViewModel(
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
                     if (app is ToolBoxApplication && dependenciesFactory === ProductionHostDependenciesFactory) {
-                        return@withContext HostTrace.bestEffortSection("coreData.create") {
-                            app.hostDependencies()
-                        }
+                        return@withContext app.hostDependencies()
                     }
                     val createdStores = HostTrace.bestEffortSection("coreData.create") { CoreDataFactory.create(app) }
                     openedStores = createdStores
@@ -300,8 +301,11 @@ internal class HostDependenciesViewModel(
                 runtimeMaintenance.run(dependencies)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                return@launch
+            } catch (failure: Exception) {
+                android.util.Log.w("ToolBoxStartup", "Startup maintenance failed", failure)
+                if (dependencies.startupNotice.value == null) {
+                    dependencies.startupNotice.value = "启动维护未完成，部分中断的安装或清理将在下次启动时重试。"
+                }
             }
         }
     }

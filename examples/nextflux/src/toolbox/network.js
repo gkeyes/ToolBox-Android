@@ -1,5 +1,6 @@
 // Account API traffic is bound to this server so credentials cannot leak to media origins.
-export const SERVER_URL = "https://miniflux.xiaochen.win";
+import { SERVER_URL, SERVER_HOST } from "./server.mjs";
+export { SERVER_URL };
 
 export function assertServerUrl(value) {
   let url;
@@ -9,7 +10,7 @@ export function assertServerUrl(value) {
     throw new Error("服务器地址无效。");
   }
   if (url.origin !== SERVER_URL || url.username || url.password) {
-    throw new Error("此小工具仅连接 miniflux.xiaochen.win。");
+    throw new Error(`此小工具仅连接 ${SERVER_HOST}。`);
   }
   return url;
 }

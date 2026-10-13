@@ -15,7 +15,8 @@ const subscribe = (listener: () => void) => { listeners.add(listener); return ()
 export const useLocation = () => useSyncExternalStore(subscribe, snapshot, () => '/');
 export const usePathname = () => useLocation().split('?')[0];
 export function useSearchParams() { const loc = useLocation(); return useMemo(()=>new URLSearchParams(loc.split('?')[1] || ''),[loc]); }
-export function useParams<T = {id: string}>(): T { const loc = usePathname(); return {id:decodeURIComponent(loc.split('/')[2] || '')} as T; }
+const decode = (value: string) => { try { return decodeURIComponent(value); } catch { return value; } };
+export function useParams<T = {id: string}>(): T { const loc = usePathname(); return {id:decode(loc.split('/')[2] || '')} as T; }
 function navigate(to: string, replace = false) {
   if (!to.startsWith('/') || to.startsWith('//')) throw new Error('无效的应用内路径。');
   if (snapshot() === to) return;

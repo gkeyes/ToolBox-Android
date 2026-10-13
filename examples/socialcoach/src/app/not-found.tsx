@@ -1,4 +1,3 @@
-"use client";
 import Link from "next/link";
 import { useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";

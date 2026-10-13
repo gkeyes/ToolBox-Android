@@ -1,7 +1,7 @@
 import { removeCachedFeed } from "@/stores/syncStore.js";
 import { unsubscribeModalOpen, currentFeedId } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { feeds } from "@/stores/feedsStore";
 import CustomAlertDialog from "@/components/ui/CustomAlertDialog.jsx";
 import { useTranslation } from "react-i18next";

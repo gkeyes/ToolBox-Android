@@ -1,4 +1,3 @@
-"use client";
 import type { ReactNode } from "react";
 import { ArrowLeft, Check } from "lucide-react";
 import { clsx } from "clsx";

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; media-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>RSS 探测</title>
   <link rel="stylesheet" href="style.css">
   <script src="core.js" defer></script><script src="network.js" defer></script>
@@ -35,7 +36,7 @@
     <div id="empty" class="empty"><svg class="empty-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 12c13 0 24 11 24 24M12 22c8 0 14 6 14 14"/><circle cx="13" cy="35" r="2"/></svg><h3>等待一个网址</h3><p>粘贴网页链接即可开始。<br>没有原生 RSS，也可以寻找 RSSHub / RSSWorker 路由。</p></div>
   </section>
   <details id="diagnostics" class="diagnostics"><summary>查看探测记录</summary><p class="caption">记录仅在本次打开期间保留；不会记录 API Token。</p><pre id="log"></pre><button id="copy-log" class="text-button" type="button">复制诊断信息</button></details>
-  <footer>RSS Scout 1.4.4 · 按需运行</footer>
+  <footer>RSS Scout 1.4.5 · 按需运行</footer>
 </main>
 <section id="settings-view" class="view" hidden aria-labelledby="settings-title">
   <header class="page-header"><button type="button" id="close-settings" class="text-button back-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>发现</button><h1 id="settings-title">设置</h1><span class="header-spacer"></span></header>
@@ -51,7 +52,7 @@
     <button id="edit-preferences" class="row" type="button"><span class="row-copy"><span class="row-title">探测偏好</span><span id="preferences-summary" class="row-value">首页补查 · 20 秒超时</span></span><svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
   </div>
   <p class="settings-footnote">设置保存在本工具内。Token 与实例密钥使用安全存储；关闭安全存储权限可能清除凭据。</p>
-  <footer>RSS Scout 1.4.4</footer>
+  <footer>RSS Scout 1.4.5</footer>
 </section>
 </div>
 <div id="modal-root">
@@ -65,11 +66,12 @@
   <div id="category-modal" class="modal" hidden><section class="sheet category-sheet" role="dialog" aria-modal="true" aria-labelledby="category-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="category-title">选择分类</h2><button id="refresh-categories" class="text-button" type="button">刷新</button></header><div class="sheet-body"><label class="sr-only" for="category-search">搜索分类</label><input id="category-search" type="search" placeholder="搜索分类名称" autocomplete="off"><p id="category-status" class="status-line" role="status"></p><div id="category-list" role="group" aria-label="订阅分类"></div></div><div class="sheet-bottom"><p id="category-hint" class="caption">选择后立即保存。</p></div></section></div>
   <div id="hub-modal" class="modal" hidden><section class="sheet tall-sheet" role="dialog" aria-modal="true" aria-labelledby="hub-title" tabindex="-1"><header class="sheet-header"><button class="text-button" type="button" data-close>取消</button><h2 id="hub-title">RSS 服务与规则</h2><button id="save-hub" form="hub-form" class="text-button strong" type="submit">保存</button></header><div class="sheet-body"><form id="hub-form" novalidate>
     <label class="switch-line"><span>启用 RSS 路由匹配</span><input id="use-radar" type="checkbox" role="switch" checked></label>
-    <label for="rsshub-base">RSSHub 地址</label><input id="rsshub-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://rsshub.app"><p class="help">留空时使用官方 https://rsshub.app；RSSHub Radar 与支持 RSSHub 的私人规则使用此地址。</p>\n    <label for="rssworker-base">RSSWorker 地址（可选）</label><input id="rssworker-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://worker.example.com"><p class="help">填写后，会同时探测私人规则中定义的 Worker 路由；留空则不探测 Worker。</p>
+    <label for="rsshub-base">RSSHub 地址</label><input id="rsshub-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://rsshub.app"><p class="help">留空时使用官方 https://rsshub.app；RSSHub Radar 与支持 RSSHub 的私人规则使用此地址。</p>
+    <label for="rssworker-base">RSSWorker 地址（可选）</label><input id="rssworker-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://worker.example.com"><p class="help">填写后，会同时探测私人规则中定义的 Worker 路由；留空则不探测 Worker。</p>
     <label>规则来源</label><div id="rule-mode" class="radio-group" role="radiogroup" aria-label="规则来源"><label><input type="radio" name="rule-mode" value="auto" checked><span>自动<span class="help">官方 GitHub → 备用镜像 → 当前实例</span></span></label><label><input type="radio" name="rule-mode" value="instance"><span>仅当前实例</span></label><label><input type="radio" name="rule-mode" value="custom"><span>自定义 JSON 地址</span></label></div>
     <div id="custom-rule-field" hidden><label for="rule-url">公开 JSON 地址</label><input id="rule-url" type="url" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://example.com/radar-rules.json"></div>
     <div class="private-rule-box"><label class="switch-line compact-switch"><span><strong>私人规则订阅</strong><span class="help">与上面的 Radar 规则叠加，不会替换官方规则。</span></span><input id="use-private-rules" type="checkbox" role="switch"></label><div id="private-rule-field"><label for="private-rule-url">规则 Repo JSON 地址</label><input id="private-rule-url" type="url" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://raw.githubusercontent.com/user/repo/main/rss-scout-rules.json"><p class="help">只读取声明式 RSS Scout Rules v1 JSON，不执行远程 JavaScript。规则可分别声明 RSSHub / RSSWorker 路径；探测时按上面的两个服务地址并行验证。</p></div></div>
-    <details class="form-details"><summary>实例鉴权（可选）</summary><label for="hub-key">RSSHub 访问密钥</label><input id="hub-key" type="password" autocomplete="off" spellcheck="false" placeholder="实例未启用鉴权时留空"><p class="help">使用 RSSHub 的 key 鉴权。密钥只用于本实例，不发往公共规则源；生成的订阅 URL 将携带密钥，分享时注意接收方。</p></details>
+    <details class="form-details"><summary>实例鉴权（可选）</summary><label for="hub-key">RSSHub 访问密钥</label><input id="hub-key" type="password" autocomplete="off" spellcheck="false" placeholder="实例未启用鉴权时留空"><p class="help">使用 RSSHub 的 key 鉴权。密钥只用于本实例，不发往公共规则源；生成的订阅 URL 将携带密钥，分享时注意接收方；订阅到 Miniflux 前会再次确认，因为完整地址会保存在服务器上。</p></details>
     <div class="pair-actions"><button id="sync-rules" type="button" class="secondary">同步规则</button><button id="stop-sync" type="button" class="secondary" hidden>停止同步</button></div>
     <p id="rule-status" class="status-line" role="status">尚未同步</p><p id="hub-save-status" class="status-line" role="status"></p>
     <details id="rule-diagnostics" class="form-details"><summary>同步详情</summary><pre id="rule-log"></pre><p class="help">403 表示服务拒绝访问，不是手机存储权限。同步失败不会删除旧缓存；私人规则和 Radar 都只解析声明式字符串规则，不执行远程脚本或函数规则。</p></details>

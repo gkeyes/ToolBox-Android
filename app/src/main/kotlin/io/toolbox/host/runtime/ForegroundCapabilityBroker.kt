@@ -28,7 +28,7 @@ import io.toolbox.tool.runtime.RuntimeFilesHandler
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeLocationHandler
 import io.toolbox.tool.runtime.RuntimeLocationResult
-import io.toolbox.tool.runtime.RuntimeM3Handlers
+import io.toolbox.tool.runtime.RuntimeSystemHandlers
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import io.toolbox.tool.runtime.RuntimeSessionCleanupHandler
 import io.toolbox.tool.runtime.RuntimeShareTextHandler
@@ -492,9 +492,9 @@ internal class ForegroundCapabilityBroker private constructor(
             authorizeBrowserLaunch: suspend () -> Unit = {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "Browser launch is not authorized")
             },
-        ): RuntimeM3Handlers {
+        ): RuntimeSystemHandlers {
             val files = ToolFilesHandler(context.applicationContext, requireForegroundRuntime)
-            return RuntimeM3Handlers(
+            return RuntimeSystemHandlers(
                 clipboardRead = RuntimeClipboardReadHandler { withForeground(requireForegroundRuntime) { it.readClipboardText() } },
                 shareText = RuntimeShareTextHandler { text -> withForeground(requireForegroundRuntime) { it.shareText(text) } },
                 browserOpen = RuntimeBrowserOpenHandler { url, beforeLaunch ->

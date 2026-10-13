@@ -11,6 +11,12 @@ let pending = Promise.resolve();
 let lastWrite = pending;
 let savedAiKey = "";
 let savedSpeechKey = "";
+let persistTimer = null;
+let deferring = false;
+// Changes made inside deferPreferenceWrites() (slider commits, which can repeat
+// quickly from the keyboard) share one write after a short pause. Every other
+// change, and the host flush handler, writes immediately as before.
+const PERSIST_DELAY_MS = 400;
 
 function reportFailure() {
   globalThis.dispatchEvent?.(new CustomEvent("nextflux:storage-error"));
@@ -54,20 +60,35 @@ function persist() {
   pending = operation.catch(reportFailure);
 }
 
+function persistNow() {
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = null;
+  persist();
+}
+
+function schedulePersist() {
+  if (!deferring) { persistNow(); return; }
+  if (persistTimer !== null) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persist();
+  }, PERSIST_DELAY_MS);
+}
+
 const engine = new Proxy(values, {
   set(target, key, value) {
     if (!KEYS.has(key) || typeof value !== "string") return true;
     if (target[key] !== value) {
       const unchanged = key === "settings" && sameSettings(target[key], value);
       target[key] = value;
-      if (storage && !unchanged) persist();
+      if (storage && !unchanged) schedulePersist();
     }
     return true;
   },
   deleteProperty(target, key) {
     if (KEYS.has(key) && key in target) {
       delete target[key];
-      if (storage) persist();
+      if (storage) schedulePersist();
     }
     return true;
   },
@@ -109,4 +130,19 @@ export function initializePreferences(api = globalThis.ToolBox) {
 
 export const getPreference = (key) => values[key];
 export const setPreference = (key, value) => { engine[key] = value; };
-export const flushPreferences = () => lastWrite;
+export function deferPreferenceWrites(change) {
+  deferring = true;
+  try { change(); } finally { deferring = false; }
+}
+
+// Writes any scheduled change now and resolves (or rejects) with that write.
+export const flushPreferences = () => {
+  if (persistTimer !== null) persistNow();
+  return lastWrite;
+};
+
+// A tool being hidden may be closed without a flush callback; do not lose the tail.
+globalThis.addEventListener?.("pagehide", () => { void flushPreferences().catch(() => {}); });
+globalThis.document?.addEventListener?.("visibilitychange", () => {
+  if (globalThis.document.visibilityState === "hidden") void flushPreferences().catch(() => {});
+});

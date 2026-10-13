@@ -50,6 +50,22 @@ async function bodyDigest(value) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+// Miniflux purges read, unstarred entries oldest-first and never reports them
+// as changed. oldestServerReadId is the smallest such ID the server still has
+// (Infinity when it has none); local read, unstarred rows below it no longer
+// exist on the server. Rows the user changed during this sync are kept.
+export function pruneServerPurged(articles, oldestServerReadId, confirmed = new Map()) {
+  if (!(oldestServerReadId === Infinity || validId(oldestServerReadId))) return 0;
+  let removed = 0;
+  for (const [id, row] of articles) {
+    if (id < oldestServerReadId && row.status === "read" && row.starred !== 1 && !confirmed.has(id)) {
+      articles.delete(id);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 export function createArticleCache(storage, options = {}) {
   if (!storage?.getMany || !storage?.apply || !storage?.keys) {
     throw fail("当前运行环境不支持阅读缓存所需的批量存储接口。", "UNSUPPORTED");
@@ -851,6 +867,7 @@ export function createArticleCache(storage, options = {}) {
         if (row) maps.articles.set(id, overlayFields(row, stage.confirmed.get(id))); else maps.articles.delete(id);
       }
       for (const [id, row] of maps.articles) if (!maps.feeds.has(row.feedId) || row.status === "removed") maps.articles.delete(id);
+      pruneServerPurged(maps.articles, catalog.oldestServerReadId, stage.confirmed);
       maps.feedIcons = new Map([...maps.feedIcons].filter(([id]) => maps.feeds.has(id)));
       const delta = await buildDelta(stage, maps);
       checkStage(stage);

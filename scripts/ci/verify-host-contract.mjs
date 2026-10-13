@@ -25,10 +25,11 @@ const shim = body.replaceAll("${'$'}", '$').replaceAll('${identity.versionCode}'
 const sent = [];
 const bridge = { postMessage(encoded) {
   const message = JSON.parse(encoded); sent.push(message);
-  const result = message.method === 'network.readStream' ? { data: 'AQID', done: true, receivedBytes: 3 } : {};
+  const result = message.method === 'network.readStream' ? { data: 'AQID', done: true, receivedBytes: 3 }
+    : message.method === 'files.read' ? { base64: 'AQID' } : {};
   queueMicrotask(() => bridge.onmessage({ data: JSON.stringify({ id: message.id, ok: true, result }) }));
 }};
-const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
+const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, btoa, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
 assert.deepEqual([...source.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
 const runtimeRpc = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt');
@@ -69,6 +70,19 @@ const chunk = await context.ToolBox.network.readStream('stream-fixture', { expec
 assert.equal(sent.findLast(request => request.method === 'network.readStream')?.params.expectedChunkBytes, 131072);
 assert.deepEqual([...chunk.data], [1, 2, 3]);
 await assert.rejects(context.ToolBox.network.readStream('stream-fixture', { expectedChunkBytes: Number.MAX_SAFE_INTEGER + 1 }));
+// Bytes travel as one base64 string each way; the public API still takes and returns Uint8Array.
+await context.ToolBox.crypto.sha256(new Uint8Array([1, 2, 3]));
+assert.deepEqual(sent.findLast(request => request.method === 'crypto.sha256')?.params.value, { base64: 'AQID' });
+await context.ToolBox.crypto.sha256('text');
+assert.equal(sent.findLast(request => request.method === 'crypto.sha256')?.params.value, 'text');
+await context.ToolBox.files.save('a.bin', 'application/octet-stream', new Uint8Array(70000).fill(255));
+const savedContent = sent.findLast(request => request.method === 'files.save')?.params.content;
+assert.equal(typeof savedContent?.base64, 'string');
+assert.equal(Buffer.from(savedContent.base64, 'base64').length, 70000);
+await context.ToolBox.network.request({ url: 'https://example.test/', method: 'POST', body: new Uint8Array([1, 2, 3]) });
+const sentBody = sent.findLast(request => request.method === 'network.request')?.params;
+assert.deepEqual({ body: sentBody.body, bodyEncoding: sentBody.bodyEncoding }, { body: { base64: 'AQID' }, bodyEncoding: 'bytes' });
+assert.deepEqual([...await context.ToolBox.files.read('token-fixture')], [1, 2, 3]);
 
 function runtimeHarness(respond = () => ({ ok: true, result: {} })) {
   const sent = [];
@@ -91,6 +105,7 @@ function runtimeHarness(respond = () => ({ ok: true, result: {} })) {
     __toolboxNative: native,
     Uint8Array,
     atob,
+    btoa,
     queueMicrotask,
     performance: { now: () => (measured += performanceStep) },
     setTimeout: (callback, delay = 0) => {

@@ -1,4 +1,5 @@
 import { safeContentUrl } from "../toolbox/content.js";
+import { SERVER_BASE } from "../toolbox/server.mjs";
 
 export function isMediaPlaylist({ url, type = "" }) {
   return /(?:mpegurl|vnd\.apple\.mpegurl|dash\+xml)/i.test(type) || /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(url || "");
@@ -12,7 +13,7 @@ export function mediaSourceCandidates(attributes = {}, sources = [], baseUrl) {
   const candidates = [];
   for (const source of [attributes, ...sources].slice(0, 33)) {
     const value = source?.src || source?.["data-src"] || source?.["data-lazy-src"] || source?.url;
-    const url = safeContentUrl(value, /^\/(?:proxy\/|media\/v1\/)/.test(value || "") ? "https://miniflux.xiaochen.win/" : baseUrl);
+    const url = safeContentUrl(value, /^\/(?:proxy\/|media\/v1\/)/.test(value || "") ? SERVER_BASE : baseUrl);
     if (!url?.startsWith("https:") || candidates.some((item) => item.url === url)) continue;
     const type = typeof source.type === "string" ? source.type.trim().slice(0, 256) : "";
     candidates.push({ url, type });

@@ -213,6 +213,5 @@ let installed = null;
 export function installOverlayJanitor(options) {
   installed?.dispose();
   installed = createOverlayJanitor(options);
-  if (typeof window !== "undefined") window.__nextfluxOverlayJanitor = installed;
   return installed;
 }

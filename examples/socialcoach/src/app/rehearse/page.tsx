@@ -1,17 +1,17 @@
 import {draftStorage} from "@platform/storage";
-"use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Clock3, PenLine } from "lucide-react";
 import { motion } from "framer-motion";
 import { Shell } from "@/components/Shell";
-import { Button, Page, Stages, Avatar } from "@/components/ui";
+import { Button, ModelSetupButton, Page, Stages, Avatar } from "@/components/ui";
 import { SkillTag } from "@/components/SkillBits";
 import { ScenarioCover } from "@/components/ScenarioCover";
+import { useShallow } from "zustand/react/shallow";
 import { useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
-import { rehearse } from "@/lib/client-api";
+import { isModelNotConfigured, rehearse } from "@/lib/client-api";
 import { buildSession } from "@/lib/session-utils";
 import type { Scenario } from "@/data/corpus/types";
 import { contextById } from "@/data/taxonomy";
@@ -19,7 +19,7 @@ import { contextById } from "@/data/taxonomy";
 export default function Rehearse() {
   const lang = useLang();
   const router = useRouter();
-  const { profile, customScenarios, addCustomScenario, addSession } = useApp();
+  const { profile, customScenarios, addCustomScenario, addSession } = useApp(useShallow((s) => ({ profile: s.profile, customScenarios: s.customScenarios, addCustomScenario: s.addCustomScenario, addSession: s.addSession })));
   const [text, setText] = useState(() => {
     try {
       return draftStorage.getItem("socialcoach.rehearsal-draft") ?? "";
@@ -49,6 +49,7 @@ export default function Rehearse() {
   };
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [needsModel, setNeedsModel] = useState(false);
   const [preview, setPreview] = useState<Scenario | null>(null);
   const previewHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -69,7 +70,8 @@ export default function Rehearse() {
       addCustomScenario(scenario);
       setPreview(scenario);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : t(lang, "error_generic"));
+      setNeedsModel(isModelNotConfigured(e));
+      setErr(isModelNotConfigured(e) ? t(lang, "model_required") : e instanceof Error ? e.message : t(lang, "error_generic"));
     } finally {
       setBusy(false);
       inflight.current = false;
@@ -169,8 +171,9 @@ export default function Rehearse() {
                     </div>
                   )}
                   {err && (
-                    <div role="alert" className="rounded-[var(--radius-sm)] p-4 bg-danger-soft text-[13px] text-danger leading-relaxed">
+                    <div role="alert" className="rounded-[var(--radius-sm)] p-4 bg-danger-soft text-[13px] text-danger leading-relaxed flex flex-col items-start gap-3">
                       {err}
+                      {needsModel && <ModelSetupButton />}
                     </div>
                   )}
                   {busy ? (

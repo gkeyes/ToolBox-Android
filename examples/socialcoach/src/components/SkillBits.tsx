@@ -1,4 +1,3 @@
-"use client";
 import { clsx } from "clsx";
 import { competencyById, skillById, type Lang, type SkillId } from "@/data/taxonomy";
 import { compColor, compSoft } from "@/lib/format";

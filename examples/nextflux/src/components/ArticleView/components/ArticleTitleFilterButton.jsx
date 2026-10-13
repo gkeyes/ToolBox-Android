@@ -1,5 +1,5 @@
 import React from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { activeArticle } from "@/stores/articlesStore.js";
 import FeedTitleFilterButton from "@/components/ArticleList/components/FeedTitleFilterButton.jsx";
 import { createArticleTitleFilterControl } from "@/toolbox/title-filter/article-title-filter.mjs";

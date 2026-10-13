@@ -810,8 +810,6 @@ internal class CatalogBehaviorFixture {
                 if (action.groupId == null) current.copy(groups = current.groups + value)
                 else current.copy(groups = current.groups.map { if (it.id == action.groupId) value.copy(expanded = it.expanded) else it })
             }
-            is CatalogAction.CreateGroup -> current.copy(groups = current.groups + CatalogGroup("new", action.name))
-            is CatalogAction.RenameGroup -> current.copy(groups = current.groups.map { if (it.id == action.groupId) it.copy(name = action.name) else it })
             is CatalogAction.DeleteGroup -> current.copy(groups = current.groups.filterNot { it.id == action.groupId })
             is CatalogAction.RequestRuntimeLaunch -> { opened += action.toolId; current }
             is CatalogAction.RequestUninstall -> {
@@ -827,9 +825,7 @@ internal class CatalogBehaviorFixture {
 private fun CatalogAction.operationId(): String? = when (this) {
     is CatalogAction.SetSort -> operationId
     is CatalogAction.SetFavorite -> operationId
-    is CatalogAction.CreateGroup -> operationId
     is CatalogAction.SaveGroup -> operationId
-    is CatalogAction.RenameGroup -> operationId
     is CatalogAction.DeleteGroup -> operationId
     is CatalogAction.SetGroupMembership -> operationId
     is CatalogAction.SetGroupExpanded -> operationId

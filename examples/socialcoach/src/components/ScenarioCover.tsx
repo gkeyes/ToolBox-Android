@@ -1,4 +1,3 @@
-"use client";
 import { clsx } from "clsx";
 import type { Scenario } from "@/data/corpus/types";
 import { AvatarFigure } from "@/data/avatars";

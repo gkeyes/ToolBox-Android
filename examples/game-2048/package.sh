@@ -2,8 +2,9 @@
 set -euo pipefail
 
 package_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "${package_dir}/../.." && pwd)"
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "${package_dir}/manifest.json")"
-output_path="${1:-${package_dir}/../packages/game-2048-v${version}.tbx}"
+output_path="${1:-${repo_root}/build/examples/game-2048-v${version}.tbx}"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-game-2048.XXXXXX")"
 entries=(manifest.json index.html style.css game.js app.js icon.svg)
 trap 'rm -rf -- "${stage_dir}"' EXIT
@@ -13,5 +14,5 @@ for entry in "${entries[@]}"; do
   cp -- "${package_dir}/${entry}" "${stage_dir}/${entry}"
 done
 
-python3 "${package_dir}/../../scripts/package-tool.py" "${stage_dir}" "${output_path}"
+python3 "${repo_root}/scripts/package-tool.py" "${stage_dir}" "${output_path}" --overwrite
 unzip -tqq "${output_path}"

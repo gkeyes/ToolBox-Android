@@ -255,7 +255,7 @@ class RuntimeNetworkMediaRpcTest {
         network: RuntimeNetworkHandler,
         policy: RuntimeAuthorizationPolicy = authorization,
         lifecycle: RuntimeLifecycleHandler? = null,
-    ) = RuntimeRpcDispatcher(identity, policy, RuntimeM1Handlers(), RuntimeM2Handlers(network = network), lifecycle = lifecycle)
+    ) = RuntimeRpcDispatcher(identity, policy, RuntimeCoreHandlers(), RuntimeServiceHandlers(network = network), lifecycle = lifecycle)
     private fun text(value: String) = RpcValue.StringValue(value)
     private fun openParams(): Map<String, RpcValue> = mapOf("sessionId" to text(sessionId), "url" to text(sourceUrl))
     private fun request(method: String, params: Map<String, RpcValue>) = RuntimeRpcRequest("request-id", method,

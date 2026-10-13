@@ -42,3 +42,15 @@ export const clearSummary = (articleId) => {
   delete current[articleId];
   aiSummaries.set(current);
 };
+
+// A cancelled stream is not an error. A user-stopped summary keeps the text it
+// already has; one abandoned by switching articles (or with no text) is removed
+// so the entry neither lingers as "loading" nor shows a stale error.
+export const finishCancelledSummary = (articleId, { keepPartial = false } = {}) => {
+  const prev = aiSummaries.get()[articleId];
+  if (!prev) return;
+  if (keepPartial && prev.summary) setSummaryDone(articleId);
+  else clearSummary(articleId);
+};
+
+export const clearAllSummaries = () => aiSummaries.set({});
