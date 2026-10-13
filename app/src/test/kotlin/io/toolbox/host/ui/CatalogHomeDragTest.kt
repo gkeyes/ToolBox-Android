@@ -41,19 +41,22 @@ class CatalogHomeDragTest {
         assertTrue(homeGridColumnCount(680f, 1f) > 4)
     }
 
-    @Test fun groupCapsulesTakeAPhoneRowAndShareWideWindows() {
-        assertEquals(1, homeFolderColumnCount(358f, 1f))
-        assertEquals(1, homeFolderColumnCount(358f, 2f))
+    @Test fun groupCapsulesPairUpOnPhonesAndShareWideWindows() {
+        assertEquals(2, homeFolderColumnCount(358f, 1f))
+        assertEquals(2, homeFolderColumnCount(358f, 2f))
+        assertEquals(1, homeFolderColumnCount(288f, 1f))
         assertEquals(1, homeFolderColumnCount(90f, 1f))
-        assertEquals(2, homeFolderColumnCount(680f, 1f))
+        assertEquals(4, homeFolderColumnCount(680f, 1f))
         assertEquals(4, homeFolderColumnCount(1600f, 1f))
     }
 
     @Test fun groupCapsuleSlotsStayBetweenSmallAndFullIconSize() {
-        assertEquals(72f, groupCapsuleMetrics(358.dp).slot.value, 0.01f)
-        assertEquals(44f, groupCapsuleMetrics(120.dp).slot.value, 0.01f)
-        val phone = groupCapsuleMetrics(288.dp)
-        assertEquals(phone.slot.value + 24f, phone.height.value, 0.01f)
+        // Half of a 358dp phone row: about 44dp icons, as on an iOS home-screen widget.
+        assertEquals(44.33f, groupCapsuleMetrics(173.dp).slot.value, 0.01f)
+        assertEquals(56f, groupCapsuleMetrics(288.dp).slot.value, 0.01f)
+        assertEquals(36f, groupCapsuleMetrics(120.dp).slot.value, 0.01f)
+        val phone = groupCapsuleMetrics(173.dp)
+        assertEquals(phone.slot.value + 20f, phone.height.value, 0.01f)
     }
 
     @Test fun unknownOrLegacyGroupStylesFallBackToTheDefaultSwatchAndIcon() {

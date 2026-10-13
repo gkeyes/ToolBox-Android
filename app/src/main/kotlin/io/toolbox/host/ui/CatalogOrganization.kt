@@ -144,13 +144,14 @@ internal fun homeGridColumnCount(availableWidth: Float, fontScale: Float): Int =
     ((availableWidth + 12f) / (72f * fontScale.coerceAtLeast(1f) + 12f)).toInt().coerceAtLeast(1)
 
 /**
- * Groups are one-line capsules (two full icons, then a 2x2 cluster); a phone fits one per row,
- * wider windows fit more. Icon sizes do not follow the font scale, so neither does the count.
+ * Groups are one-line capsules (two full icons, then a 2x2 cluster); a phone fits two per row
+ * like iOS home-screen widgets, a narrow phone one, wider windows up to four. Icon sizes do not
+ * follow the font scale, so neither does the count.
  */
 internal fun homeFolderColumnCount(availableWidth: Float, @Suppress("UNUSED_PARAMETER") fontScale: Float): Int =
     ((availableWidth + FOLDER_GAP) / (GROUP_CAPSULE_MIN_WIDTH + FOLDER_GAP)).toInt().coerceIn(1, 4)
 
-private const val GROUP_CAPSULE_MIN_WIDTH = 260f
+private const val GROUP_CAPSULE_MIN_WIDTH = 150f
 private const val FOLDER_GAP = 12f
 
 internal fun LazyListScope.catalogHomeSections(
@@ -418,13 +419,13 @@ internal class GroupCapsuleMetrics(val slot: Dp, val padding: Dp, val height: Dp
 
 /** Three equal slots (two icons and the 2x2 cluster) inside a capsule of the given width. */
 internal fun groupCapsuleMetrics(width: Dp): GroupCapsuleMetrics {
-    val padding = 12.dp
-    val slot = ((width - padding * 2 - GROUP_SLOT_GAP * 2) / 3).coerceIn(44.dp, 72.dp)
+    val padding = 10.dp
+    val slot = ((width - padding * 2 - GROUP_SLOT_GAP * 2) / 3).coerceIn(36.dp, 56.dp)
     val height = slot + padding * 2
     return GroupCapsuleMetrics(slot, padding, height, height * 0.32f)
 }
 
-private val GROUP_SLOT_GAP = 14.dp
+private val GROUP_SLOT_GAP = 10.dp
 
 /**
  * One line: the first two tools as full icons that open the tool, then tools three onward as
