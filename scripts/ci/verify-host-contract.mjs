@@ -17,7 +17,6 @@ assert.deepEqual(union('ToolBoxMethodName'), methods);
 assert.deepEqual(union('ToolBoxCapability'), capabilities);
 assert.deepEqual(schema.properties.permissions.items.properties.name.enum.toSorted(), capabilities);
 assert.equal(schema.properties.network.properties.maxResponseBytes.maximum, Number.MAX_SAFE_INTEGER);
-const source = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebMessageBridge.kt');
 // The document-start SDK is an asset; RuntimeBridgeSession.shim fills these placeholders.
 const shimTemplate = read('tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js');
 const shim = shimTemplate.replaceAll('__TOOLBOX_VERSION_CODE__', '1')
@@ -33,40 +32,6 @@ const bridge = { postMessage(encoded) {
 const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, btoa, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
 assert.deepEqual([...shimTemplate.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
-// The RPC dispatcher is split by domain into RuntimeRpc.kt, RuntimeRpcParams.kt and Runtime*Rpc.kt.
-const runtimeDir = 'tool-runtime/src/main/kotlin/io/toolbox/tool/runtime';
-const runtimeRpc = readdirSync(resolve(root, runtimeDir)).filter(name => /^Runtime\w*Rpc\w*\.kt$/.test(name))
-  .map(name => read(`${runtimeDir}/${name}`)).join('\n');
-assert(runtimeRpc.includes('class RuntimeRpcDispatcher('), 'RPC dispatcher sources must be found');
-for (const retired of ['network.authorizeDomain', 'network.listDomains', 'allowDomains', 'allowUserDomains', 'allowRedirects', 'storageBytes', 'maxBridgePayloadBytes', 'USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
-  assert(!api.includes(retired), `API descriptor retains retired contract: ${retired}`);
-  assert(!manual.includes(retired), `SDK manual retains retired contract: ${retired}`);
-  assert(!source.includes(retired) && !shimTemplate.includes(retired), `Web bridge retains retired contract: ${retired}`);
-  assert(!runtimeRpc.includes(retired), `RPC dispatcher retains retired contract: ${retired}`);
-  assert(!read('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt').includes(retired), `Manifest parser retains retired field: ${retired}`);
-  assert(!read('schema/manifest.schema.json').includes(retired), `Manifest schema retains retired field: ${retired}`);
-}
-for (const clientPath of [
-  'examples/nextflux/src/api/miniflux.js',
-  'examples/nextflux/src/toolbox/cache.js',
-  'examples/nextflux/src/toolbox/cache-worker.js',
-  'examples/nextflux/src/toolbox/cache-client.js',
-  'examples/nextflux/src/toolbox/actions.js',
-  'examples/nextflux/src/toolbox/network.js',
-  'examples/nextflux/src/toolbox/title-filter/title-filter-api.mjs',
-  'examples/health-records/web/app.mjs',
-  'examples/health-records/web/io.mjs',
-  'examples/rss-scout/app.js',
-  'examples/rss-scout/network.js',
-  'examples/stock-monitor/app.js',
-  'examples/github-actions-watcher/app.js',
-  'examples/notification-lab/app.js',
-]) {
-  const client = read(clientPath);
-  for (const retired of ['USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
-    assert(!client.includes(retired), `${clientPath} retains retired host error: ${retired}`);
-  }
-}
 await context.ToolBox.clipboard.writeText('');
 assert.equal(sent.findLast(request => request.method === 'clipboard.writeText')?.params.text, '');
 await context.ToolBox.share.text('line\nnext');

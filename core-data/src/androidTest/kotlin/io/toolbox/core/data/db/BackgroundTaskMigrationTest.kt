@@ -1,6 +1,7 @@
-package io.toolbox.host.background
+package io.toolbox.core.data.db
 
 import android.database.sqlite.SQLiteDatabase
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.CoreDataFactory
@@ -14,12 +15,22 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.json.JSONObject
 
+/**
+ * Builds a version 1 database from the committed core-data/schemas export, then opens it through
+ * [CoreDataFactory] so the real migration path runs before the background task repository reads it.
+ */
 @RunWith(AndroidJUnit4::class)
 class BackgroundTaskMigrationTest {
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        ToolBoxDatabase::class.java,
+    )
+
     @Test
     fun versionOneRowsSurviveIndexMigrationAndHistoryUsesStableKeyset() = runBlocking(Dispatchers.IO) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -27,20 +38,18 @@ class BackgroundTaskMigrationTest {
         val path = context.getDatabasePath(name)
         path.parentFile?.mkdirs()
         try {
-            SQLiteDatabase.openOrCreateDatabase(path, null).use { old ->
-                createVersionOneSchema(old)
+            helper.createDatabase(name, 1).use { old ->
                 old.execSQL("INSERT INTO tools (id, name, securityProfile, installedAt) VALUES ('tool', 'Tool', ?, 1)",
-                    arrayOf(SecurityProfile.STRICT.name))
+                    arrayOf<Any?>(SecurityProfile.STRICT.name))
                 repeat(52) { index ->
                     old.execSQL(
                         "INSERT INTO background_tasks (taskId, toolId, versionCode, `key`, operation, specJson, periodic, state, createdAt, updatedAt, runAttempt) VALUES (?, 'tool', 1, ?, 'NOTIFY', '{}', 0, 'COMPLETED', 100, 100, 1)",
-                        arrayOf("task-%03d".format(index), "key-$index"),
+                        arrayOf<Any?>("task-%03d".format(index), "key-$index"),
                     )
                 }
                 old.execSQL("INSERT INTO background_tasks (taskId, toolId, versionCode, `key`, operation, specJson, periodic, state, createdAt, updatedAt, runAttempt) VALUES ('active', 'tool', 1, 'active', 'NOTIFY', '{}', 0, 'QUEUED', 101, 101, 0)")
                 old.execSQL("INSERT INTO task_results (taskId, outcome, completedAt, attemptCount) VALUES ('task-000', ?, 100, 1)",
-                    arrayOf(RunOutcome.SUCCEEDED.name))
-                old.version = 1
+                    arrayOf<Any?>(RunOutcome.SUCCEEDED.name))
             }
 
             CoreDataFactory.create(context, name, "settings-$name").use { stores ->
@@ -110,24 +119,5 @@ class BackgroundTaskMigrationTest {
         } finally {
             context.deleteDatabase(name)
         }
-    }
-
-    private fun createVersionOneSchema(db: SQLiteDatabase) {
-        val testContext = InstrumentationRegistry.getInstrumentation().context
-        val schema = JSONObject(testContext.assets.open("room-v1/1.json").bufferedReader().use { it.readText() })
-            .getJSONObject("database")
-        val entities = schema.getJSONArray("entities")
-        repeat(entities.length()) { index ->
-            val entity = entities.getJSONObject(index)
-            val tableName = entity.getString("tableName")
-            db.execSQL(entity.getString("createSql").replace("${'$'}{TABLE_NAME}", tableName))
-            entity.optJSONArray("indices")?.let { indices ->
-                repeat(indices.length()) { item ->
-                    db.execSQL(indices.getJSONObject(item).getString("createSql").replace("${'$'}{TABLE_NAME}", tableName))
-                }
-            }
-        }
-        val setup = schema.getJSONArray("setupQueries")
-        repeat(setup.length()) { index -> db.execSQL(setup.getString(index)) }
     }
 }
