@@ -29,7 +29,10 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.net.URI
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 data class RuntimeWebViewCallbacks(
     val onMainEntryLoaded: () -> Unit,
@@ -63,7 +66,10 @@ object HardenedRuntimeWebView {
     internal fun forgetProfile(profileName: String) { synchronized(hardeningLock) { hardenedProfiles.remove(profileName) } }
 
     fun release(webView: WebView) {
-        (webView.webViewClient as? RuntimeWebViewClient)?.endFirstMainFrameTrace()
+        (webView.webViewClient as? RuntimeWebViewClient)?.let { client ->
+            client.endFirstMainFrameTrace()
+            client.releaseMediaRequests()
+        }
         RuntimeWebViewLifecycle.destroyAndUnregister(webView)
     }
 
@@ -353,6 +359,12 @@ private class RuntimeWebViewClient(
     private var rendererGone = false
     private var firstMainFrameTraceOpen = false
     private val firstMainFrameTraceCookie = System.identityHashCode(this)
+    // Media requests waited on by WebView loader threads; cancelled when the WebView is released.
+    private val mediaRequests = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun releaseMediaRequests() {
+        mediaRequests.cancel()
+    }
 
     fun beginFirstMainFrameTrace() {
         if (firstMainFrameTraceOpen) return
@@ -373,7 +385,7 @@ private class RuntimeWebViewClient(
         if (request.url.path?.startsWith(RuntimeNetworkMediaRoute.PREFIX) == true) {
             if (request.isForMainFrame) return RuntimePolicy.blockedResponse()
             return try {
-                val response = runBlocking {
+                val response = awaitInterceptResult<RuntimeNetworkMediaResponse?>(mediaRequests, discard = { it?.body?.close() }) {
                     network?.interceptMedia(request.url.toString(), request.method, request.requestHeaders)
                 } ?: return RuntimePolicy.blockedResponse(404, "Not Found")
                 try {
