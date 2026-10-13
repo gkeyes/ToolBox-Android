@@ -280,6 +280,7 @@ private class AssetPackageInput(
 internal class ProductionHostBackgroundOperations(
     context: Context,
     private val repositories: CoreDataRepositories,
+    private val runtimeSessions: RuntimeSessionManager,
 ) : HostBackgroundOperations,
     HostPermissionSideEffects,
     HostBackgroundMaintenance,
@@ -296,14 +297,8 @@ internal class ProductionHostBackgroundOperations(
         notifications = notifications,
     )
     private val delegate = BackgroundHostOperations(coordinator)
-    private var runtimeSessions: RuntimeSessionManager? = null
     private val runtimeCancellation = BackgroundRuntimeCancellation { toolId ->
-        runtimeSessions?.stopTool(toolId, removeAlarms = false)
-    }
-
-    fun attachRuntimeSessions(sessions: RuntimeSessionManager) {
-        check(runtimeSessions == null)
-        runtimeSessions = sessions
+        runtimeSessions.stopTool(toolId, removeAlarms = false)
     }
 
     override fun observeActiveTasks(toolId: String) = delegate.observeActiveTasks(toolId)
@@ -323,18 +318,18 @@ internal class ProductionHostBackgroundOperations(
     override suspend fun cancelTool(toolId: String) {
         completeBackgroundCancellation(
             { delegate.cancelTool(toolId) },
-            { runtimeSessions?.stopTool(toolId) },
+            { runtimeSessions.stopTool(toolId) },
         )
     }
 
     override suspend fun releaseRuntime(toolId: String) {
-        runtimeSessions?.releaseTool(toolId)
+        runtimeSessions.releaseTool(toolId)
     }
 
     override suspend fun cancelAll(toolIds: Collection<String>) {
         completeBackgroundCancellation(
             { delegate.cancelAll(toolIds) },
-            { runtimeCancellation.cancel(runtimeSessions?.backgroundCancellationToolIds().orEmpty()) },
+            { runtimeCancellation.cancel(runtimeSessions.backgroundCancellationToolIds()) },
             { RuntimeForegroundService.stop(applicationContext) },
         )
     }
@@ -346,7 +341,7 @@ internal class ProductionHostBackgroundOperations(
         }
         if (capability == "network") networkRevocationCleanup.clear(toolId)
         delegate.onCapabilityDisabled(toolId, capability)
-        runtimeSessions?.onCapabilityDisabled(toolId, capability)
+        runtimeSessions.onCapabilityDisabled(toolId, capability)
     }
 
     override suspend fun reconcile() = coordinator.reconcile()
@@ -391,27 +386,15 @@ internal class ProductionHostBackgroundOperations(
             }
 
             override suspend fun startLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult {
-                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
-                    RuntimeRpcErrorCode.UNSUPPORTED,
-                    "持续运行环境不可用",
-                )
-                return sessions.startLiveNotification(runtime.toolId, runtime.versionCode, request)
+                return runtimeSessions.startLiveNotification(runtime.toolId, runtime.versionCode, request)
             }
 
             override suspend fun updateLive(request: RuntimeLiveNotificationRequest): RuntimeLiveNotificationResult {
-                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
-                    RuntimeRpcErrorCode.UNSUPPORTED,
-                    "持续运行环境不可用",
-                )
-                return sessions.updateLiveNotification(runtime.toolId, runtime.versionCode, request)
+                return runtimeSessions.updateLiveNotification(runtime.toolId, runtime.versionCode, request)
             }
 
             override suspend fun endLive(sessionId: String) {
-                val sessions = runtimeSessions ?: throw RuntimeHandlerException(
-                    RuntimeRpcErrorCode.UNSUPPORTED,
-                    "持续运行环境不可用",
-                )
-                sessions.endLiveNotification(runtime.toolId, runtime.versionCode, sessionId)
+                runtimeSessions.endLiveNotification(runtime.toolId, runtime.versionCode, sessionId)
             }
         },
         background = RuntimeBackgroundTaskAdapter(runtime, coordinator),
