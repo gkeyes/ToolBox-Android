@@ -189,7 +189,7 @@ function editSingle(recordId, itemIndex) {
   openBatch(metric, page === "trends" ? "trends" : "detail");
 }
 
-function openEditor(record = null, notice = "", nameReview = null) {
+function openEditor(record = null, notice = "", nameReview = null, resumed = false) {
   viewGeneration++;
   const openedRevision = store.revision;
   const returnPage = record && page === "detail" ? "detail" : lastTab;
@@ -197,7 +197,7 @@ function openEditor(record = null, notice = "", nameReview = null) {
   const editing = archive.records.some((r) => r.id === current.id);
   page = "editor"; nav.hidden = true; document.body.classList.add("editing");
   editor = createRecordEditor(current, {
-    editing, notice, nameReview,
+    editing, notice, nameReview, startDirty: resumed,
     cancel: (dirty) => { if (dirty) ask("放弃未保存的修改？", "当前输入尚未保存，原记录不会改变。", "放弃修改", () => { editor = null; navigate(returnPage); }, true); else navigate(returnPage); },
     history: openHistoryPicker,
     save: async (next, aliases) => {
@@ -634,7 +634,7 @@ async function offerDraft() {
   if (!record || page !== "overview" || dialog.open) { if (!record) discard(); return; }
   showDialog("继续未保存的记录？", [h("p", { class: "small pre-wrap" }, `上次关闭工具时有一份未保存的${TYPES[record.type]}（${record.date} · ${record.items.length} 项）。草稿只在本机，尚未写入档案。`),
     h("div", { class: "actions" }, button("丢弃草稿", async () => { await discard(); dialog.close(); }, "button danger"),
-      button("继续编辑", async () => { await discard(); dialog.close(); openEditor(record, "这是上次关闭前未保存的草稿，请核对后保存。"); }, "button primary"))]);
+      button("继续编辑", async () => { await discard(); dialog.close(); openEditor(record, "这是上次关闭前未保存的草稿，请核对后保存。", null, true); }, "button primary"))]);
 }
 
 async function start() {

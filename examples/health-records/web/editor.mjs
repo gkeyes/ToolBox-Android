@@ -83,8 +83,8 @@ function createNameReview(entry, fields, getType, catalog, onDirty) {
   refresh(); return { element, contextChanged };
 }
 
-export function createRecordEditor(record, { save, cancel, history, editing = false, notice = "", nameReview = null }) {
-  let dirty = false, saving = false;
+export function createRecordEditor(record, { save, cancel, history, editing = false, notice = "", nameReview = null, startDirty = false }) {
+  let dirty = startDirty, saving = false;
   const rows = [], items = h("div", { id: "editor-items" });
   const date = createDatePicker(record.date, () => { dirty = true; });
   const type = createChoice("检验类型", Object.entries(TYPES).map(([value, label]) => ({ value, label })), { value: record.type, onChange: () => rows.forEach((row) => row.reviewControl?.contextChanged()) });
