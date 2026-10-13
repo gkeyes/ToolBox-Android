@@ -1867,7 +1867,7 @@
     ({ renderDashboard, renderDashboardClock, renderAll, showToast } = {
       renderDashboard, renderDashboardClock, renderAll, showToast, ...testHook.stubs });
     testHook.api = {
-      state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
+      state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
       saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
       ageFrontPage: () => { lastFrontPageAt = 0; },
       setForeground: (value) => { runtimeForeground = value; },
