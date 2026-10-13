@@ -35,11 +35,15 @@ dependencies {
     api(libs.androidx.compose.ui)
     api(libs.miuix.ui)
     api(libs.miuix.preference)
-    implementation(libs.haze)
+    // Real-time Liquid Glass: AGSL refraction (lens), blur and vibrancy over a recorded layer.
+    api(libs.backdrop)
+    api(libs.kyant.shapes)
     // Predictive back for sheets; the app module already ships the same artifact.
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.compose.material.icons.extended)
+    // Choreographer-aligned awaitFrame for the vendored liquid glass components.
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation("junit:junit:4.13.2")
 

@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import io.toolbox.host.settings.SettingsIconTint
+import io.toolbox.host.settings.SettingsNavRow
+import io.toolbox.host.settings.SettingsRowSeparator
 import io.toolbox.host.ui.*
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -180,9 +183,11 @@ private class BackupStagger(val entrance: ToolBoxEntrance) { var next = 0 }
 
 private fun LazyListScope.backupActions(stagger: BackupStagger, onExport: () -> Unit, onRestore: () -> Unit) {
     backupSection(stagger, "actions") { ToolBoxGroupedSurface {
-        ToolBoxSettingRow("导出备份", summary = "保存为本地 ZIP 文件", icon = ToolBoxIconKey.Share, onClick = onExport, modifier = Modifier.testTag("backup_export"))
-        ToolBoxGroupDivider()
-        ToolBoxSettingRow("从文件恢复", summary = "先检查文件，再确认覆盖", icon = ToolBoxIconKey.Folder, onClick = onRestore, modifier = Modifier.testTag("backup_restore"))
+        SettingsNavRow("导出备份", ToolBoxIconKey.Share, SettingsIconTint.Blue, summary = "保存为本地 ZIP 文件",
+            onClick = onExport, modifier = Modifier.testTag("backup_export"))
+        SettingsRowSeparator()
+        SettingsNavRow("从文件恢复", ToolBoxIconKey.Folder, SettingsIconTint.Mint, summary = "先检查文件，再确认覆盖",
+            onClick = onRestore, modifier = Modifier.testTag("backup_restore"))
     } }
 }
 
@@ -215,7 +220,7 @@ private fun RestorePreviewRow(tool: RestoreToolPlan, first: Boolean, last: Boole
             AppText("${tool.current ?: "未安装"} → ${tool.incoming}", textStyle = ToolBoxThemeTokens.textStyles.metadata,
                 color = ToolBoxThemeTokens.colors.textSecondary)
         }
-        if (!last) ToolBoxGroupDivider(startPadding = 16.dp)
+        if (!last) SettingsRowSeparator(start = 16.dp)
     }
 }
 

@@ -46,6 +46,9 @@ import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.host.settings.SettingsIconTint
+import io.toolbox.host.settings.SettingsRowSeparator
+import io.toolbox.host.settings.SettingsSwitchRow
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
@@ -252,7 +255,7 @@ internal fun PermissionCenterContent(
                             ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2 + groupIndex * 2)) {
                                 items.forEachIndexed { index, item ->
                                     val busy = item.capability in state.busyCapabilities
-                                    ToolBoxSwitchSettingRow(
+                                    SettingsSwitchRow(
                                         title = item.title,
                                         summary = if (item.capability == "alarms" && !exactAlarmsAllowed) {
                                             "${item.reason}\n系统尚未允许闹钟和提醒。"
@@ -267,6 +270,7 @@ internal fun PermissionCenterContent(
                                             }
                                         },
                                         icon = item.capability.capabilityIcon(),
+                                        tint = item.capability.capabilityTint(),
                                         modifier = Modifier.testTag(HostTestTags.PermissionRowPrefix + item.capability),
                                     )
                                     if (item.capability in state.cleanupRetries) {
@@ -294,7 +298,7 @@ internal fun PermissionCenterContent(
                                     if (item.capability == "alarms" && item.enabled && !exactAlarmsAllowed) {
                                         ToolBoxTextButton("允许闹钟和提醒", onOpenExactAlarmSettings)
                                     }
-                                    if (index != items.lastIndex) ToolBoxGroupDivider()
+                                    if (index != items.lastIndex) SettingsRowSeparator()
                                 }
                             }
                         }
@@ -338,4 +342,20 @@ private fun String.capabilityIcon(): ToolBoxIconKey = when (this) {
     "location", "location.background" -> ToolBoxIconKey.Location
     "background.tasks", "background.runtime", "alarms" -> ToolBoxIconKey.Clock
     else -> ToolBoxIconKey.Shield
+}
+
+private fun String.capabilityTint(): SettingsIconTint = when (this) {
+    "storage", "files.open", "files.save" -> SettingsIconTint.Blue
+    "storage.secure" -> SettingsIconTint.Gray
+    "clipboard.write", "clipboard.read" -> SettingsIconTint.Cyan
+    "share" -> SettingsIconTint.Sky
+    "network", "browser" -> SettingsIconTint.Indigo
+    "device.basic" -> SettingsIconTint.Graphite
+    "haptics" -> SettingsIconTint.Purple
+    "notifications" -> SettingsIconTint.Red
+    "shortcuts" -> SettingsIconTint.Amber
+    "camera" -> SettingsIconTint.Rose
+    "location", "location.background" -> SettingsIconTint.Mint
+    "background.tasks", "background.runtime", "alarms" -> SettingsIconTint.Orange
+    else -> SettingsIconTint.Aqua
 }

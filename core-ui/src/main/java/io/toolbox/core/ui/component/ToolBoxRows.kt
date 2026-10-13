@@ -1,59 +1,76 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import io.toolbox.core.ui.liquid.LiquidToggle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import top.yukonga.miuix.kmp.preference.RadioButtonPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun ToolBoxSearchField(
@@ -125,6 +142,45 @@ fun ToolBoxSearchField(
 
 internal fun toolBoxSearchFieldMinHeight() = ToolBoxThemeTokens.sizes.touchTarget
 
+
+// iOS 27 inset-grouped row metrics: 16dp leading inset, 14dp trailing, 52dp single-line rows and
+// 60dp rows with a subtitle. Separators (ToolBoxGroupDivider) start after the 30dp icon + 12dp gap.
+internal val ToolBoxRowMinHeight = 52.dp
+internal val ToolBoxRowWithSummaryMinHeight = 60.dp
+internal val ToolBoxRowStartPadding = 16.dp
+internal val ToolBoxRowEndPadding = 14.dp
+internal val ToolBoxRowVerticalPadding = 10.dp
+internal val ToolBoxRowIconSize = 30.dp
+internal val ToolBoxRowIconGap = 12.dp
+
+private fun rowMinHeight(summary: String?): Dp =
+    if (summary.isNullOrBlank()) ToolBoxRowMinHeight else ToolBoxRowWithSummaryMinHeight
+
+private fun Modifier.toolBoxRowPadding(): Modifier = padding(
+    start = ToolBoxRowStartPadding,
+    end = ToolBoxRowEndPadding,
+    top = ToolBoxRowVerticalPadding,
+    bottom = ToolBoxRowVerticalPadding,
+)
+
+@Composable
+private fun ToolBoxRowLabels(
+    title: String,
+    summary: String?,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
+            color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
+        summary?.takeIf(String::isNotBlank)?.let {
+            ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.sectionTitle.copy(
+                color = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent))
+        }
+    }
+}
+
 @Composable
 fun ToolBoxSettingRow(
     title: String,
@@ -139,7 +195,7 @@ fun ToolBoxSettingRow(
     val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = if (summary.isNullOrBlank()) 56.dp else 72.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = rowMinHeight(summary))
             .toolBoxPressFeedback(
                 interactionSource,
                 enabled = enabled && onClick != null,
@@ -158,21 +214,14 @@ fun ToolBoxSettingRow(
                     Modifier
                 },
             )
-            .padding(horizontal = spacing.two, vertical = spacing.row),
+            .toolBoxRowPadding(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon?.let {
             ToolBoxPreferenceIcon(it, enabled)
-            Spacer(Modifier.width(spacing.oneHalf))
+            Spacer(Modifier.width(ToolBoxRowIconGap))
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.half)) {
-            ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
-                color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent))
-            summary?.takeIf(String::isNotBlank)?.let {
-                ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                    color = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent))
-            }
-        }
+        ToolBoxRowLabels(title, summary, enabled, Modifier.weight(1f))
         trailing?.let {
             Spacer(Modifier.width(spacing.one))
             it()
@@ -181,8 +230,8 @@ fun ToolBoxSettingRow(
         if (onClick != null) {
             Spacer(Modifier.width(spacing.one))
             ToolBoxIcon(
-                ToolBoxIconKey.ChevronRight, null, Modifier.size(18.dp),
-                tint = if (enabled) colors.textSecondary else ToolBoxThemeTokens.disabledContent,
+                ToolBoxIconKey.ChevronRight, null, Modifier.size(20.dp),
+                tint = if (enabled) colors.textTertiary else ToolBoxThemeTokens.disabledContent,
             )
         }
     }
@@ -198,35 +247,208 @@ fun ToolBoxSwitchSettingRow(
     icon: ToolBoxIconKey? = null,
     enabled: Boolean = true,
 ) {
-    val sizes = ToolBoxThemeTokens.sizes
-    val spacing = ToolBoxThemeTokens.spacing
     val haptics = rememberToolBoxHaptics()
-    SwitchPreference(
-        checked = checked,
-        onCheckedChange = {
-            haptics.toggle(it)
-            onCheckedChange(it)
-        },
-        title = title,
-        summary = summary,
-        startAction = icon?.let { key -> ({ ToolBoxPreferenceIcon(key, enabled) }) },
+    val latestOnCheckedChange by rememberUpdatedState(onCheckedChange)
+    val change: (Boolean) -> Unit = remember(haptics) {
+        { value: Boolean ->
+            haptics.toggle(value)
+            latestOnCheckedChange(value)
+        }
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    // The whole row is the switch for accessibility and touch; the trailing control mirrors it.
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(
-                min = if (summary.isNullOrBlank()) {
-                    maxOf(sizes.denseRow, sizes.touchTarget)
-                } else {
-                    72.dp
+            .heightIn(min = rowMinHeight(summary))
+            .toolBoxPressFeedback(interactionSource, enabled = enabled, scale = ToolBoxMotion.RowPressScale)
+            .toggleable(
+                value = checked,
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = change,
+            )
+            .toolBoxRowPadding(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let {
+            ToolBoxPreferenceIcon(it, enabled)
+            Spacer(Modifier.width(ToolBoxRowIconGap))
+        }
+        ToolBoxRowLabels(title, summary, enabled, Modifier.weight(1f))
+        Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
+        ToolBoxSwitchControl(checked = checked, enabled = enabled, onCheckedChange = change)
+    }
+}
+
+/**
+ * Trailing switch. With live glass it is the vendored Kyant [LiquidToggle] (a glass knob that
+ * refracts the track and stretches while dragged); otherwise the flat iOS 26 solid switch (64x28 track,
+ * capsule knob, green when on). Either way the owning row carries the switch semantics and handles taps outside it.
+ */
+@Composable
+private fun ToolBoxSwitchControl(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    if (glassRendersLive()) {
+        ToolBoxLiquidSwitch(checked, enabled, onCheckedChange)
+    } else {
+        ToolBoxSolidSwitch(checked, enabled)
+    }
+}
+
+private class SwitchGestureState {
+    /** Set when the glass knob itself reported a tap or drag during the current gesture. */
+    var knobHandled = false
+
+    /** Set once the gesture crossed touch slop mostly vertically: it is a list scroll, not a toggle. */
+    var verticalDrag = false
+}
+
+/** After a knob gesture, wait this long for the owner to adopt the value before snapping back. */
+private const val SwitchResyncDelayMillis = 450L
+
+@Composable
+private fun ToolBoxLiquidSwitch(
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val checkedState = rememberUpdatedState(checked)
+    val enabledState = rememberUpdatedState(enabled)
+    val latestChange = rememberUpdatedState(onCheckedChange)
+    // LiquidToggle keeps its own knob position. When an owner declines a change (a confirmation
+    // dialog, a guard, a disabled row), a fresh `selected` lambda restarts its sync effect so the
+    // knob springs back to the real value.
+    var resyncKey by remember { mutableIntStateOf(0) }
+    val selected: () -> Boolean = remember(resyncKey) { { checkedState.value } }
+    val gesture = remember { SwitchGestureState() }
+    val scope = rememberCoroutineScope()
+    val surface = ToolBoxThemeTokens.colors.surface
+    // The knob refracts the row surface it sits on; the row is never a recorded backdrop layer.
+    val backdrop = rememberCanvasBackdrop { drawRect(surface) }
+    Box(
+        Modifier
+            .graphicsLayer { alpha = if (enabledState.value) 1f else 0.45f }
+            .semantics { role = Role.Switch }
+            .pointerInput(Unit) {
+                // Runs after the knob in the main pass. Taps on the bare track toggle here and the
+                // release is consumed so the row does not toggle a second time. Nothing is consumed
+                // until the pointer crosses touch slop: a mostly horizontal drag then belongs to the
+                // switch (consumed so the row and list ignore it), while a mostly vertical one is left
+                // to the enclosing list to scroll and never toggles.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    gesture.knobHandled = false
+                    gesture.verticalDrag = false
+                    var horizontalDrag = false
+                    var released = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!pointer.pressed) {
+                            released = true
+                            if (!gesture.verticalDrag && !pointer.isConsumed) pointer.consume()
+                            break
+                        }
+                        if (gesture.verticalDrag) continue
+                        if (pointer.isConsumed && !horizontalDrag) {
+                            // Someone else (the list) claimed the gesture.
+                            gesture.verticalDrag = true
+                            continue
+                        }
+                        if (!horizontalDrag) {
+                            val delta = pointer.position - down.position
+                            if (delta.getDistance() > viewConfiguration.touchSlop) {
+                                if (abs(delta.y) > abs(delta.x)) {
+                                    gesture.verticalDrag = true
+                                    continue
+                                }
+                                horizontalDrag = true
+                            }
+                        }
+                        if (horizontalDrag) pointer.consume()
+                    }
+                    if (released && !horizontalDrag && !gesture.verticalDrag &&
+                        !gesture.knobHandled && enabledState.value
+                    ) {
+                        latestChange.value(!checkedState.value)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        LiquidToggle(
+            selected = selected,
+            onSelect = { value ->
+                gesture.knobHandled = true
+                if (gesture.verticalDrag) {
+                    // The gesture scrolled the list; spring the knob back without toggling.
+                    if (checkedState.value != value) resyncKey++
+                    return@LiquidToggle
+                }
+                if (enabledState.value && value != checkedState.value) latestChange.value(value)
+                scope.launch {
+                    delay(SwitchResyncDelayMillis)
+                    if (checkedState.value != value) resyncKey++
+                }
+            },
+            backdrop = backdrop,
+            // Follow the app's ToolBox theme, which can differ from the system setting.
+            isLightTheme = ToolBoxThemeTokens.colors.surface.luminance() >= 0.5f,
+        )
+        if (!enabled) {
+            // Drawn above the knob, so a disabled switch cannot be dragged or tapped: as the topmost
+            // sibling it alone is hit, which keeps the knob from seeing the gesture. It consumes
+            // nothing, so a vertical drag that starts here still scrolls the list.
+            Box(
+                Modifier.matchParentSize().pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
+                    }
                 },
             )
-            .semantics {
-                role = Role.Switch
-                toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
-                if (!enabled) disabled()
-            },
-        insideMargin = PaddingValues(horizontal = spacing.two, vertical = spacing.one),
-        enabled = enabled,
+        }
+    }
+}
+
+@Composable
+private fun ToolBoxSolidSwitch(checked: Boolean, enabled: Boolean) {
+    val dark = ToolBoxThemeTokens.colors.surface.luminance() < 0.5f
+    // iOS 26 flat switch: #34C759 on; rgba(120,120,128,0.16) / 0.32 off.
+    val onColor = Color(0xFF34C759)
+    val offColor = Color(0xFF787880).copy(alpha = if (dark) 0.32f else 0.16f)
+    val track = animateColorAsState(
+        targetValue = if (checked) onColor else offColor,
+        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+        label = "switch track",
     )
+    val knobOffset = animateDpAsState(
+        targetValue = if (checked) 22.dp else 2.dp, // 64 - 40 - 2
+        animationSpec = ToolBoxMotion.spatial(),
+        label = "switch knob",
+    )
+    Box(
+        Modifier
+            .semantics { role = Role.Switch }
+            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
+            .size(64.dp, 28.dp)
+            .drawBehind {
+                drawRoundRect(track.value, cornerRadius = CornerRadius(size.height / 2f))
+            },
+    ) {
+        Box(
+            Modifier
+                .offset { IntOffset(knobOffset.value.roundToPx(), 2.dp.roundToPx()) }
+                .size(40.dp, 24.dp)
+                .shadow(3.dp, CircleShape)
+                .background(Color.White, CircleShape),
+        )
+    }
 }
 
 @Composable
@@ -242,23 +464,21 @@ fun ToolBoxValueRow(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = if (summary.isNullOrBlank()) ToolBoxThemeTokens.sizes.denseRow else 64.dp)
-            .padding(horizontal = spacing.two, vertical = spacing.one),
+            .heightIn(min = rowMinHeight(summary))
+            .toolBoxRowPadding(),
         contentAlignment = Alignment.CenterStart,
     ) {
         val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.3f
-        val labelWidth = (maxWidth - if (icon != null) 36.dp + spacing.oneHalf else 0.dp) * 0.4f
+        val labelWidth = (maxWidth - if (icon != null) ToolBoxRowIconSize + ToolBoxRowIconGap else 0.dp) * 0.4f
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             icon?.let {
                 ToolBoxPreferenceIcon(it)
-                Spacer(Modifier.width(spacing.oneHalf))
+                Spacer(Modifier.width(ToolBoxRowIconGap))
             }
             if (stacked) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.half)) {
                     ToolBoxValueLabel(title, summary)
-                    ToolBoxText(value, style = ToolBoxThemeTokens.textStyles.metadata.copy(
-                        color = valueColor, fontWeight = FontWeight.Medium,
-                    ))
+                    ToolBoxText(value, style = ToolBoxThemeTokens.textStyles.body.copy(color = valueColor))
                 }
             } else {
                 ToolBoxValueLabel(title, summary, Modifier.widthIn(max = labelWidth))
@@ -266,9 +486,8 @@ fun ToolBoxValueRow(
                 ToolBoxText(
                     text = value,
                     modifier = Modifier.weight(1f),
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(
+                    style = ToolBoxThemeTokens.textStyles.body.copy(
                         color = valueColor,
-                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.End,
                     ),
                 )
@@ -279,34 +498,59 @@ fun ToolBoxValueRow(
 
 @Composable
 private fun ToolBoxValueLabel(title: String, summary: String?, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.half)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
         ToolBoxText(title, style = ToolBoxThemeTokens.textStyles.title.copy(
-            color = ToolBoxThemeTokens.colors.textPrimary, fontWeight = FontWeight.Medium,
+            color = ToolBoxThemeTokens.colors.textPrimary,
         ))
         summary?.takeIf(String::isNotBlank)?.let {
-            ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
+            ToolBoxText(it, style = ToolBoxThemeTokens.textStyles.sectionTitle.copy(color = ToolBoxThemeTokens.colors.textSecondary))
         }
     }
 }
 
+/** iOS Settings-style glyph tile: a 30dp continuous square with a two-stop gradient and a white glyph. */
 @Composable
 private fun ToolBoxPreferenceIcon(icon: ToolBoxIconKey, enabled: Boolean = true) {
+    val (top, bottom) = preferenceIconGradient(icon, ToolBoxThemeTokens.colors.primary)
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(ToolBoxRowIconSize)
             .clip(toolBoxShape(ToolBoxThemeTokens.radii.badge))
-            .background(if (enabled) ToolBoxThemeTokens.colors.softPrimary else ToolBoxThemeTokens.colors.surfaceMuted),
+            .then(
+                if (enabled) {
+                    Modifier.background(Brush.verticalGradient(listOf(top, bottom)))
+                } else {
+                    Modifier.background(ToolBoxThemeTokens.colors.surfaceMuted)
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(
             icon = icon,
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = if (enabled) ToolBoxThemeTokens.colors.primary else ToolBoxThemeTokens.disabledContent,
+            modifier = Modifier.size(19.dp),
+            tint = if (enabled) Color.White else ToolBoxThemeTokens.disabledContent,
         )
     }
 }
 
+/** Fixed iOS system hues per glyph so a settings list reads like the platform's; unknown glyphs use the accent. */
+private fun preferenceIconGradient(icon: ToolBoxIconKey, accent: Color): Pair<Color, Color> = when (icon) {
+    ToolBoxIconKey.Palette -> Color(0xFFFF7AC6) to Color(0xFFA845E8)
+    ToolBoxIconKey.Lock, ToolBoxIconKey.Shield -> Color(0xFF4CD964) to Color(0xFF1E9E45)
+    ToolBoxIconKey.Clock, ToolBoxIconKey.Stop -> Color(0xFFFFB340) to Color(0xFFFF7A00)
+    ToolBoxIconKey.Notifications -> Color(0xFFFF6B6B) to Color(0xFFE5383B)
+    ToolBoxIconKey.Folder, ToolBoxIconKey.Clipboard, ToolBoxIconKey.Note -> Color(0xFF3FD8E0) to Color(0xFF0E93B8)
+    ToolBoxIconKey.Code -> Color(0xFF7C82FF) to Color(0xFF4B4FD6)
+    ToolBoxIconKey.Globe, ToolBoxIconKey.Location, ToolBoxIconKey.Share -> Color(0xFF5AC8FA) to Color(0xFF007AFF)
+    ToolBoxIconKey.Settings, ToolBoxIconKey.Device, ToolBoxIconKey.Haptics, ToolBoxIconKey.Camera ->
+        Color(0xFFA1A1A8) to Color(0xFF6C6C74)
+    ToolBoxIconKey.Refresh -> Color(0xFF5DE0C8) to Color(0xFF14A38B)
+    ToolBoxIconKey.Star, ToolBoxIconKey.StarFilled -> Color(0xFFFFD60A) to Color(0xFFFF9F0A)
+    else -> accent.copy(alpha = 0.72f).compositeOver(Color.White) to accent
+}
+
+/** iOS selection row: a plain label with a trailing accent checkmark when selected. */
 @Composable
 fun ToolBoxRadioSettingRow(
     title: String,
@@ -316,14 +560,42 @@ fun ToolBoxRadioSettingRow(
     enabled: Boolean = true,
 ) {
     val haptics = rememberToolBoxHaptics()
-    RadioButtonPreference(
-        title = title, selected = selected,
-        onClick = {
-            if (!selected) haptics.tick()
-            onClick()
-        },
-        enabled = enabled,
-        modifier = modifier.fillMaxWidth().heightIn(min = ToolBoxThemeTokens.sizes.touchTarget),
-        insideMargin = PaddingValues(horizontal = ToolBoxThemeTokens.spacing.two, vertical = ToolBoxThemeTokens.spacing.row),
-    )
+    val colors = ToolBoxThemeTokens.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ToolBoxRowMinHeight)
+            .toolBoxPressFeedback(interactionSource, enabled = enabled, scale = ToolBoxMotion.RowPressScale)
+            .selectable(
+                selected = selected,
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = {
+                    if (!selected) haptics.tick()
+                    onClick()
+                },
+            )
+            .toolBoxRowPadding(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToolBoxText(
+            title,
+            modifier = Modifier.weight(1f),
+            style = ToolBoxThemeTokens.textStyles.title.copy(
+                color = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent,
+            ),
+        )
+        Spacer(Modifier.width(ToolBoxThemeTokens.spacing.one))
+        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+            if (selected) {
+                ToolBoxIcon(
+                    ToolBoxIconKey.Check, null, Modifier.size(22.dp),
+                    tint = if (enabled) colors.primary else ToolBoxThemeTokens.disabledContent,
+                )
+            }
+        }
+    }
 }

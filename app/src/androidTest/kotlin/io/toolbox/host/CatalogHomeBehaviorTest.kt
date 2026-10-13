@@ -93,11 +93,11 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         compose.onNodeWithTag(HostTestTags.BottomTools).performClick()
         compose.onNodeWithText("搜索工具").assertExists()
         compose.onNodeWithText("排序 · ${fixture.layout.value.sort.label}").assertExists()
-        compose.onNodeWithText("快捷工具").assertDoesNotExist()
+        compose.onNode(hasText("常用") and isHeading()).assertDoesNotExist()
         compose.onNodeWithTag("catalog_organize").assertDoesNotExist()
         compose.runOnIdle { assertFalse(isEditing) }
         compose.onNodeWithTag(HostTestTags.BottomHome).performClick()
-        compose.onNodeWithText("快捷工具").assertIsDisplayed()
+        compose.onNode(hasText("常用") and isHeading()).assertIsDisplayed()
         compose.onNodeWithText("搜索工具").assertDoesNotExist()
         enterOrganizing()
         compose.onNodeWithTag(HostTestTags.BottomSettings).performClick()
@@ -281,31 +281,31 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         enterOrganizing()
         moveAccessibly("favorite:a", "后移")
         compose.runOnIdle { assertEquals(listOf("b", "a"), fixture.layout.value.favorites) }
-        homeTile("catalog_group:g1").performClick()
-        compose.waitUntil(5_000) { compose.runOnIdle { fixture.layout.value.groups.single { it.id == "g1" }.expanded } }
-        compose.onNodeWithTag("member:g1:a").assertExists()
+        // Group members live in the folder overlay; organizing reorders them there.
+        openFolder("g1")
+        folderTile("member:g1:a")
         moveAccessibly("member:g1:a", "后移")
-        homeTile("catalog_group:g2").performClick()
-        compose.waitUntil(5_000) { compose.runOnIdle { !fixture.layout.value.groups.single { it.id == "g2" }.expanded } }
         compose.runOnIdle {
-            assertTrue(fixture.layout.value.groups.single { it.id == "g1" }.expanded)
-            assertFalse(fixture.layout.value.groups.single { it.id == "g2" }.expanded)
             assertEquals(listOf("b", "a"), fixture.layout.value.groups.single { it.id == "g1" }.members)
             assertEquals(listOf("a"), fixture.layout.value.groups.single { it.id == "g2" }.members)
         }
-        compose.onNodeWithTag("member:g2:a").assertDoesNotExist()
-        homeTile("catalog_group:g2").performClick()
-        compose.waitUntil(5_000) { compose.runOnIdle { fixture.layout.value.groups.single { it.id == "g2" }.expanded } }
+        closeFolder()
+        compose.onNodeWithTag("member:g1:a").assertDoesNotExist()
         moveAccessibly("catalog_group:g1", "后移")
         compose.runOnIdle {
             assertEquals(listOf("g2", "g1"), fixture.layout.value.groups.map { it.id })
-            assertTrue(fixture.layout.value.groups.all { it.expanded && "a" in it.members })
+            assertTrue(fixture.layout.value.groups.all { "a" in it.members })
+            assertEquals(listOf("b", "a"), fixture.layout.value.favorites)
         }
         compose.onNodeWithTag("catalog_organize").performClick()
-        homeTile("member:g1:a").performTouchInput { click() }
+        compose.waitUntil(5_000) { compose.runOnIdle { !isEditing } }
+        openFolder("g1")
+        folderTile("member:g1:a").performTouchInput { click() }
         compose.waitUntil(5_000) { compose.runOnIdle { fixture.opened.isNotEmpty() } }
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
-        assertLastTileClearsNavigation("member:g1:a")
+        // Opening a tool from a folder closes the overlay.
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_group_folder").fetchSemanticsNodes().isEmpty() }
+        assertLastTileClearsNavigation("group:g1")
     }
 
     @Test fun wholeTileDragUsesBothColumnsAndRows() {
@@ -396,7 +396,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         }
     }
 
-    @Test fun groupHeaderDragTemporarilyFoldsBodiesAndOnlyMovingChangesOrder() {
+    @Test fun groupFolderDragOnlyChangesOrderAfterMovingAndKeepsMembers() {
         fixture.tools.value = fixture.tools.value.map { it.copy(lastOpenedAt = null) }
         fixture.layout.value = CatalogLayout(favorites = listOf("a"), groups = listOf(
             CatalogGroup("g1", "工作", listOf("a"), expanded = true),
@@ -411,8 +411,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             assertTrue(fixture.layout.value.groups.all { it.expanded })
         }
         val list = compose.onNodeWithTag("catalog_home_list")
-        list.performScrollToNode(hasTestTag("member:g1:a"))
-        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
+        list.performScrollToNode(hasTestTag("group:g1"))
+        compose.onNodeWithTag("group:g1").assertIsDisplayed()
 
         holdGroupHeader(moveToOtherGroup = true)
         compose.runOnIdle {
@@ -423,22 +423,23 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             assertEquals(listOf("a"), fixture.layout.value.favorites)
             assertTrue(fixture.opened.isEmpty())
         }
-        list.performScrollToNode(hasTestTag("member:g1:a"))
-        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
-        list.performScrollToNode(hasTestTag("member:g2:b"))
-        compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
+        openFolder("g1")
+        folderTile("member:g1:a")
+        closeFolder()
+        openFolder("g2")
+        folderTile("member:g2:b")
+        closeFolder()
     }
 
     @Test fun shortAndLongGroupNamesKeepCompactRowsAndFullAccessibleName() {
         fixture.tools.value = listOf(CatalogTool("a", "测", 1, "1.0", 1, null))
         fixture.layout.value = CatalogLayout(groups = listOf(CatalogGroup("g1", "工作", listOf("a"))))
         render()
-        val tile = homeTile("member:g1:a").fetchSemanticsNode()
+        openFolder("g1")
+        val tile = folderTile("member:g1:a").fetchSemanticsNode()
         val shortLayout = homeLabelLayout("member:g1:a")
         val shortLabelHeight = homeLabel("member:g1:a").fetchSemanticsNode().size.height
-        val shortRowHeight = compose.runOnIdle {
-            homeListState.layoutInfo.visibleItemsInfo.single { it.key == "member-row:g1:0" }.size
-        }
+        val shortTileHeight = tile.size.height
         assertEquals(1, shortLayout.lineCount)
         val oneLineHeight = shortLayout.getLineBottom(0) - shortLayout.getLineTop(0)
         assertTrue("A one-line name must not reserve an unused second line: $shortLabelHeight / $oneLineHeight",
@@ -449,16 +450,14 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         assertTrue(glyphWidth > 0f)
         val longName = "测".repeat((tile.size.width / glyphWidth).toInt() + 2)
         compose.runOnIdle { fixture.tools.value = fixture.tools.value.map { it.copy(name = longName) } }
-        homeTile("member:g1:a").assertContentDescriptionEquals(longName).assertHasClickAction()
+        folderTile("member:g1:a").assertContentDescriptionEquals(longName).assertHasClickAction()
         val longLayout = homeLabelLayout("member:g1:a")
         assertEquals("Grouped tools use compact single-line labels", 1, longLayout.lineCount)
         assertTrue("The long label must exercise the compact ellipsis", longLayout.isLineEllipsized(0))
-        val longRowHeight = compose.runOnIdle {
-            homeListState.layoutInfo.visibleItemsInfo.single { it.key == "member-row:g1:0" }.size
-        }
-        assertTrue("A long name must not enlarge its compact group row: $shortRowHeight -> $longRowHeight",
-            longRowHeight <= shortRowHeight + 1)
-        homeTile("member:g1:a").performTouchInput { click() }
+        val longTileHeight = compose.onNodeWithTag("member:g1:a").fetchSemanticsNode().size.height
+        assertTrue("A long name must not enlarge its compact tile: $shortTileHeight -> $longTileHeight",
+            longTileHeight <= shortTileHeight + 1)
+        folderTile("member:g1:a").performTouchInput { click() }
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }
 
@@ -469,10 +468,9 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         )
         render()
 
-        data class ColumnGeometry(val left: Float, val width: Int, val iconCenter: Float, val iconWidth: Int)
-        fun measure(prefix: String): List<ColumnGeometry> {
-            homeTile("$prefix:a")
-            return listOf("a", "b").map { id ->
+        fun measure(prefix: String, locate: (String) -> SemanticsNodeInteraction) {
+            locate("$prefix:a")
+            val rows = listOf("a", "b").map { id ->
                 val tileTag = "$prefix:$id"
                 val tile = compose.onNodeWithTag(tileTag).assertIsDisplayed().fetchSemanticsNode()
                 val icon = compose.onNode(
@@ -486,23 +484,15 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
                     1f,
                 )
                 assertEquals("Compact titles must stay on one line", 1, homeLabelLayout(tileTag).lineCount)
-                ColumnGeometry(
-                    tile.positionInRoot.x,
-                    tile.size.width,
-                    icon.positionInRoot.x + icon.size.width / 2f,
-                    icon.size.width,
-                )
+                tile.boundsInRoot
             }
+            assertEquals("$prefix tiles must share a grid row", rows[0].center.y, rows[1].center.y, 1f)
+            assertEquals("$prefix cells must use the same width", rows[0].width, rows[1].width, 1f)
         }
 
-        val shortcuts = measure("favorite")
-        val members = measure("member:g1")
-        members.zip(shortcuts).forEachIndexed { column, (actual, reference) ->
-            assertEquals("member column $column must align with shortcuts", reference.left, actual.left, 1f)
-            assertEquals("member column $column must use the same width", reference.width.toFloat(), actual.width.toFloat(), 1f)
-            assertEquals("member icon $column must align with shortcuts", reference.iconCenter, actual.iconCenter, 1f)
-            assertEquals(reference.iconWidth, actual.iconWidth)
-        }
+        measure("favorite", ::homeTile)
+        openFolder("g1")
+        measure("member:g1", ::folderTile)
     }
 
     @Test fun emptyHomeShowsOnlyTheGlobalEmptyStateAndBothInstallActionsWork() {
@@ -511,7 +501,7 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         render()
         compose.onAllNodesWithTag(HostTestTags.CatalogEmptyState).assertCountEquals(1)
         compose.onNodeWithTag(HostTestTags.CatalogEmptyState).assertIsDisplayed()
-        listOf("快捷工具", "分组", "把常用工具放在首页", "按用途整理工具").forEach { text ->
+        listOf("常用", "分组", "把常用工具放在首页", "按用途整理工具").forEach { text ->
             compose.onNodeWithText(text).assertDoesNotExist()
         }
         compose.onNodeWithText("安装四个范例").performScrollTo().assertIsDisplayed().performTouchInput { click() }
@@ -526,8 +516,11 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         homeTile("favorite:long").assertHasClickAction()
             .assertContentDescriptionEquals(fixture.tools.value.single().name)
         assertEquals(1, homeLabelLayout("favorite:long").lineCount)
-        homeTile("member:last:long").assertContentDescriptionEquals(fixture.tools.value.single().name)
-        assertLastTileClearsNavigation("member:last:long")
+        openFolder("last")
+        folderTile("member:last:long").assertContentDescriptionEquals(fixture.tools.value.single().name)
+        assertEquals(1, homeLabelLayout("member:last:long").lineCount)
+        closeFolder()
+        assertLastTileClearsNavigation("group:last")
     }
 
     @Test fun cancellingAGroupDragKeepsLayoutAndAllowsOpeningAToolAfterwards() {
@@ -549,13 +542,14 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         }
         compose.onNodeWithTag("catalog_organize").assertTextContains("完成")
         val list = compose.onNodeWithTag("catalog_home_list")
-        list.performScrollToNode(hasTestTag("member:g1:a"))
-        compose.onNodeWithTag("member:g1:a").assertIsDisplayed()
-        list.performScrollToNode(hasTestTag("member:g2:b"))
-        compose.onNodeWithTag("member:g2:b").assertIsDisplayed()
+        list.performScrollToNode(hasTestTag("group:g1"))
+        compose.onNodeWithTag("group:g1").assertIsDisplayed()
+        list.performScrollToNode(hasTestTag("group:g2"))
+        compose.onNodeWithTag("group:g2").assertIsDisplayed()
         compose.onNodeWithTag("catalog_organize").performClick()
         compose.waitUntil(5_000) { compose.runOnIdle { !isEditing } }
-        homeTile("member:g1:a").performTouchInput { click() }
+        openFolder("g1")
+        folderTile("member:g1:a").performTouchInput { click() }
         compose.waitUntil(5_000) { compose.runOnIdle { fixture.opened.isNotEmpty() } }
         compose.runOnIdle { assertEquals(listOf("a"), fixture.opened) }
     }
@@ -668,6 +662,20 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
         return target
     }
 
+    private fun openFolder(groupId: String) {
+        homeTile("catalog_group:$groupId").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_group_folder").fetchSemanticsNodes().size == 1 }
+    }
+
+    private fun closeFolder() {
+        compose.onNodeWithTag("catalog_group_folder_close").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_group_folder").fetchSemanticsNodes().isEmpty() }
+    }
+
+    /** A tool tile inside the open folder overlay, scrolled into view within the overlay's list. */
+    private fun folderTile(tag: String): SemanticsNodeInteraction =
+        compose.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
+
     private fun homeLabel(tileTag: String): SemanticsNodeInteraction = compose.onNode(
         SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and hasAnyAncestor(hasTestTag(tileTag)),
         useUnmergedTree = true,
@@ -704,10 +712,9 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
 
     private fun holdGroupHeader(moveToOtherGroup: Boolean, cancelGesture: Boolean = false) {
         val header = homeTile("catalog_group:g1").fetchSemanticsNode().boundsInRoot
-        compose.onNodeWithTag("member:g1:a").assertExists()
         val list = compose.onNodeWithTag("catalog_home_list")
         val origin = list.fetchSemanticsNode().boundsInRoot.topLeft
-        // Stay inside the header's main target and away from its separate edit button.
+        // Stay inside the folder's main target and away from its separate edit badge.
         val source = Offset(header.left + header.width / 3f, header.center.y)
         compose.mainClock.autoAdvance = false
         var pointerDown = false
@@ -715,14 +722,12 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
             list.performTouchInput { down(source - origin) }
             pointerDown = true
             compose.mainClock.advanceTimeBy(700)
-            compose.onNodeWithTag("member:g1:a").assertDoesNotExist()
-            compose.onNodeWithTag("member:g2:b").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(listOf("g1", "g2"), fixture.layout.value.groups.map { it.id })
-                assertTrue("Temporary drag folding must not persist collapsed groups", fixture.layout.value.groups.all { it.expanded })
+                assertTrue("Dragging must not change stored group state", fixture.layout.value.groups.all { it.expanded })
             }
             if (moveToOtherGroup) {
-                // Folding changes the target's location; measure it after the fold has rendered.
+                // Measure the target after the drag has started rendering.
                 val target = compose.onNodeWithTag("catalog_group:g2").assertIsDisplayed().fetchSemanticsNode().boundsInRoot.center
                 val currentOrigin = list.fetchSemanticsNode().boundsInRoot.topLeft
                 list.performTouchInput {

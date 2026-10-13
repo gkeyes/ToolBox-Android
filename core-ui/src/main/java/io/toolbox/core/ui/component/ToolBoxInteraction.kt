@@ -4,7 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,17 +18,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
  * Press feedback shared by every tappable card, button and row: the visual content springs
- * down to [scale] and picks up a faint state layer, then springs back with a little bounce.
+ * down to [scale] and picks up the iOS rgba(118,118,128,0.14) highlight in [shape] only while
+ * pressed, then springs back with a little bounce. Rows inside a card keep the default
+ * rectangle: the card's clip rounds it.
  * Animation values are read only inside the draw/layer lambdas, never during composition.
  * The hit target itself is not resized.
  */
@@ -43,7 +50,7 @@ fun Modifier.toolBoxPressFeedback(
         animationSpec = ToolBoxMotion.pressSpec(pressed),
         label = "toolbox press",
     )
-    val overlay = ToolBoxThemeTokens.colors.textPrimary
+    val overlay = ToolBoxNeutralFill
     return graphicsLayer {
         val amount = progress.value
         val s = 1f - (1f - scale) * amount
@@ -55,6 +62,53 @@ fun Modifier.toolBoxPressFeedback(
         if (alpha > 0.001f) {
             drawOutline(shape.createOutline(size, layoutDirection, this), overlay.copy(alpha = alpha))
         }
+    }
+}
+
+/**
+ * Theme-wide [androidx.compose.foundation.LocalIndication]: the flat iOS highlight,
+ * rgba(118,118,128,0.14) over the pressed element while the finger is down, with no ripple.
+ * It fills the clickable's bounds, so it takes the shape of whatever clip precedes the
+ * clickable (a card, a capsule, a menu item) instead of drawing a rectangle outside it.
+ */
+object ToolBoxPressIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        ToolBoxPressIndicationNode(interactionSource)
+
+    override fun equals(other: Any?): Boolean = other === this
+
+    override fun hashCode(): Int = -0x2b4f1a
+}
+
+private class ToolBoxPressIndicationNode(
+    private val interactionSource: InteractionSource,
+) : Modifier.Node(), DrawModifierNode {
+    private val progress = Animatable(0f)
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            val presses = mutableListOf<PressInteraction.Press>()
+            interactionSource.interactions.collect { interaction ->
+                when (interaction) {
+                    is PressInteraction.Press -> presses += interaction
+                    is PressInteraction.Release -> presses -= interaction.press
+                    is PressInteraction.Cancel -> presses -= interaction.press
+                }
+                val pressed = presses.isNotEmpty()
+                launch {
+                    progress.animateTo(
+                        if (pressed) 1f else 0f,
+                        tween(durationMillis = if (pressed) 60 else 220, easing = LinearEasing),
+                    )
+                }
+            }
+        }
+    }
+
+    override fun ContentDrawScope.draw() {
+        drawContent()
+        val alpha = ToolBoxMotion.PressDimAlpha * progress.value.coerceIn(0f, 1f)
+        if (alpha > 0.001f) drawRect(ToolBoxNeutralFill.copy(alpha = alpha))
     }
 }
 

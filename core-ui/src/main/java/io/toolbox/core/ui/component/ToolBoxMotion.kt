@@ -45,10 +45,10 @@ object ToolBoxMotion {
     /** Shared X-axis page motion: 30dp travel plus fade. */
     val PageShift = 30.dp
 
-    /** Press feedback: cards/buttons 0.965, full-width rows 0.985; 6% state layer. */
+    /** Press feedback: cards/buttons 0.965, full-width rows 0.985; rgba(118,118,128,0.14) state layer. */
     const val PressScale = 0.965f
     const val RowPressScale = 0.985f
-    const val PressDimAlpha = 0.06f
+    const val PressDimAlpha = 0.14f
 
     /** Sheet / dialog exit: 220ms accelerate curve (0.3, 0, 1, 1). */
     const val ExitDurationMillis = 220

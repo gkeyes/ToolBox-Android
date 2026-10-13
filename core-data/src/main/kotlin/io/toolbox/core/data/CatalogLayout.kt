@@ -8,6 +8,9 @@ data class CatalogGroup(
     val name: String,
     val members: List<String> = emptyList(),
     val expanded: Boolean = true,
+    /** Optional presentation keys (palette and icon names). Null keeps the default folder style. */
+    val color: String? = null,
+    val icon: String? = null,
 )
 
 data class CatalogLayout(
@@ -24,6 +27,7 @@ data class CatalogLayout(
         groups.forEach {
             require(it.id.isNotBlank() && it.name.isNotBlank()) { "CATALOG_LAYOUT_INVALID" }
             require(it.members.all(String::isNotBlank) && it.members.distinct().size == it.members.size) { "CATALOG_LAYOUT_INVALID" }
+            require(it.color?.isNotBlank() != false && it.icon?.isNotBlank() != false) { "CATALOG_LAYOUT_INVALID" }
         }
     }
 

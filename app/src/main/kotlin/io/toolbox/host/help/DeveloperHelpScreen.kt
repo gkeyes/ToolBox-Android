@@ -42,7 +42,8 @@ import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSearchField
-import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.host.settings.SettingsIconTint
+import io.toolbox.host.settings.SettingsSwitchRow
 import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
@@ -144,7 +145,7 @@ internal fun DeveloperHelpPage(
         val header: @Composable () -> Unit = {
             Column(verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs)) {
                 ToolBoxGroupedSurface {
-                    ToolBoxSwitchSettingRow(
+                    SettingsSwitchRow(
                         title = "小工具 WebView 调试",
                         summary = when {
                             webViewDebuggingForced -> "当前系统强制开启接口；应用内不可切换。"
@@ -154,6 +155,7 @@ internal fun DeveloperHelpPage(
                             else -> "默认关闭；开启后电脑 Chrome 可检查小工具页面，应用重启后自动关闭。"
                         },
                         icon = ToolBoxIconKey.Code,
+                        tint = SettingsIconTint.Graphite,
                         checked = webViewDebuggingEnabled,
                         onCheckedChange = { if (webViewDebuggingToggleable) onWebViewDebuggingChange(it) },
                         enabled = webViewDebuggingToggleable,

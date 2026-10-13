@@ -134,7 +134,11 @@ internal class CatalogViewModel(
                 val id = action.groupId ?: UUID.randomUUID().toString()
                 changeLayout(action.operationId) { layout, installed ->
                     val existing = layout.groups.firstOrNull { it.id == id }
-                    val next = CatalogGroup(id, action.name.trim(), action.members.filter(installed::contains).distinct(), existing?.expanded ?: true)
+                    val next = CatalogGroup(
+                        id, action.name.trim(), action.members.filter(installed::contains).distinct(), existing?.expanded ?: true,
+                        color = action.color?.takeIf(String::isNotBlank) ?: existing?.color,
+                        icon = action.icon?.takeIf(String::isNotBlank) ?: existing?.icon,
+                    )
                     when {
                         existing != null -> layout.copy(groups = layout.groups.map { if (it.id == id) next else it })
                         action.groupId == null -> layout.copy(groups = layout.groups + next)

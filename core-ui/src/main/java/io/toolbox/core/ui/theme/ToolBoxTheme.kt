@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.toolbox.core.ui.component.ToolBoxPressIndication
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -123,18 +125,18 @@ data class ToolBoxSpacing(
 
 @Immutable
 /**
- * Corner radii (design system v2): card 24, row / button 16, control 14, small 10,
- * sheet / dialog 28, chip fully rounded. Shapes use continuous-curvature corners via
+ * Corner radii (iOS 27): card 26, capsule buttons, control 12, small 8, alert 34, sheet 34. Shapes use continuous-curvature corners via
  * [io.toolbox.core.ui.component.toolBoxShape].
  */
 data class ToolBoxRadii(
-    val control: Dp = 14.dp,
-    val badge: Dp = 10.dp,
+    val control: Dp = 12.dp,
+    val badge: Dp = 8.dp,
     val denseSurface: Dp = 16.dp,
-    val button: Dp = 16.dp,
-    val card: Dp = 24.dp,
-    val sheet: Dp = 28.dp,
-    val dialog: Dp = 28.dp,
+    /** Buttons are capsules: the continuous shape clamps the radius to half the height. */
+    val button: Dp = 999.dp,
+    val card: Dp = 26.dp,
+    val sheet: Dp = 34.dp,
+    val dialog: Dp = 34.dp,
     val full: Dp = 999.dp,
 )
 
@@ -147,8 +149,8 @@ data class ToolBoxSizes(
     val compactChrome: Dp = 56.dp,
     val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
-    /** Primary button height. */
-    val primaryButton: Dp = 52.dp,
+    /** Page and sheet capsule button height (iOS 26 large control). */
+    val primaryButton: Dp = 50.dp,
     /** Collapsed top bar height below the status bar. */
     val topBar: Dp = 56.dp,
     /** Expanded large-title block height. */
@@ -170,9 +172,24 @@ data class ToolBoxMaterialTokens(
     val topEdgeFadeEnabled: Boolean,
     val navigationLensEnabled: Boolean,
     val pressFeedbackEnabled: Boolean,
+    /** Floating glass (tab bar, search circle, top round buttons) tint over the refracted page. */
     val glassTint: Color,
     val glassFallback: Color,
     val glassBorder: Color,
+    /**
+     * Overlay glass (sheets, alerts). [overlayFill] is the DualSim recipe for a surface that refracts
+     * a live in-window backdrop; overlays are their own windows and cannot sample the app's
+     * recorded layer, so they draw [overlayFallback], a denser translucent fill of the same tone.
+     */
+    val overlayFill: Color,
+    val overlayFallback: Color,
+    /** Context-menu glass; [menuFallback] for the popup window, as with [overlayFallback]. */
+    val menuFill: Color,
+    val menuFallback: Color,
+    /** 0.5dp rim around overlay glass. */
+    val overlayBorder: Color,
+    /** Grouped cards placed inside an overlay sheet, translucent so the sheet material still reads. */
+    val sheetCard: Color,
     val navigationSelectionTint: Color,
     val navigationSelectionHighlight: Color,
     val navigationSelectionBorder: Color,
@@ -180,80 +197,81 @@ data class ToolBoxMaterialTokens(
     val noiseFactor: Float,
 )
 
-private val LightOnSurface = Color(0xFF0B0C0E)
-private val DarkOnSurface = Color.White
-
+// iOS 27 system palette. Accent and status colours are the accessible variants so that text
+// in these colours keeps 4.5:1 on grouped surfaces.
 internal val LightToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF3478F6),
+    primary = Color(0xFF0064D2),
     onPrimary = Color.White,
-    background = Color(0xFFF5F6F8),
+    background = Color(0xFFF2F2F7),
     surface = Color.White,
-    surfaceMuted = Color(0xFFEEF0F3),
-    textPrimary = LightOnSurface.copy(alpha = 0.92f),
-    textSecondary = LightOnSurface.copy(alpha = 0.62f),
-    textTertiary = LightOnSurface.copy(alpha = 0.42f),
+    surfaceMuted = Color(0xFFEFEFF0),
+    textPrimary = Color.Black,
+    textSecondary = Color(0xFF6C6C70),
+    textTertiary = Color(0x993C3C43),
     raised = Color.White,
-    success = Color(0xFF1B6B34),
-    warning = Color(0xFF8A5300),
-    danger = Color(0xFFB3261E),
+    success = Color(0xFF248A3D),
+    warning = Color(0xFFC93400),
+    danger = Color(0xFFD70015),
     onDanger = Color.White,
-    divider = Color.Black.copy(alpha = 0.08f),
-    softPrimary = Color(0xFFE5EEFD),
-    softSuccess = Color(0xFFE6F4EA),
-    onSoftSuccess = Color(0xFF1B6B34),
-    softWarning = Color(0xFFFDF1DC),
-    onSoftWarning = Color(0xFF8A5300),
-    softDanger = Color(0xFFFCE8E8),
-    onSoftDanger = Color(0xFFB3261E),
-    softInfo = Color(0xFFE5EEFD),
-    onSoftInfo = Color(0xFF1A57C9),
-    softNeutral = Color(0xFFEEF0F3),
-    onSoftNeutral = Color(0xFF4A4F57),
-    scrim = Color.Black.copy(alpha = 0.32f),
+    divider = Color(0x4A3C3C43),
+    softPrimary = Color(0xFFE0ECFA),
+    softSuccess = Color(0xFFE3F5E8),
+    onSoftSuccess = Color(0xFF248A3D),
+    softWarning = Color(0xFFFFF0DB),
+    onSoftWarning = Color(0xFFC93400),
+    softDanger = Color(0xFFFDE6E8),
+    onSoftDanger = Color(0xFFD70015),
+    softInfo = Color(0xFFE0ECFA),
+    onSoftInfo = Color(0xFF0064D2),
+    softNeutral = Color(0xFFEFEFF0),
+    onSoftNeutral = Color(0xFF48484A),
+    scrim = Color.Black.copy(alpha = 0.18f),
 )
 
 internal val DarkToolBoxColors = ToolBoxColorScheme(
-    primary = Color(0xFF5A93FF),
+    primary = Color(0xFF0A84FF),
     onPrimary = Color.White,
     background = Color.Black,
-    surface = Color(0xFF16171A),
-    surfaceMuted = Color(0xFF26282D),
-    textPrimary = DarkOnSurface.copy(alpha = 0.92f),
-    textSecondary = DarkOnSurface.copy(alpha = 0.62f),
-    textTertiary = DarkOnSurface.copy(alpha = 0.42f),
-    raised = Color(0xFF212226),
-    success = Color(0xFF8FD9A8),
-    warning = Color(0xFFF5C36B),
-    danger = Color(0xFFF4A7A3),
-    onDanger = Color(0xFF3B1A1A),
-    divider = Color.White.copy(alpha = 0.10f),
-    softPrimary = Color(0xFF172947),
-    softSuccess = Color(0xFF17351F),
-    onSoftSuccess = Color(0xFF8FD9A8),
-    softWarning = Color(0xFF3A2B10),
-    onSoftWarning = Color(0xFFF5C36B),
-    softDanger = Color(0xFF3B1A1A),
-    onSoftDanger = Color(0xFFF4A7A3),
-    softInfo = Color(0xFF172947),
-    onSoftInfo = Color(0xFFA9C5FA),
-    softNeutral = Color(0xFF26282D),
-    onSoftNeutral = Color(0xFFC4C8CF),
-    scrim = Color.Black.copy(alpha = 0.50f),
+    surface = Color(0xFF1C1C1E),
+    surfaceMuted = Color(0xFF2C2C2E),
+    textPrimary = Color.White,
+    textSecondary = Color(0xFF98989F),
+    textTertiary = Color(0x99EBEBF5),
+    raised = Color(0xFF2C2C2E),
+    success = Color(0xFF30D158),
+    warning = Color(0xFFFF9F0A),
+    danger = Color(0xFFFF6961),
+    onDanger = Color(0xFF3B0A08),
+    divider = Color(0x99545458),
+    softPrimary = Color(0xFF0D2A4D),
+    softSuccess = Color(0xFF0F3319),
+    onSoftSuccess = Color(0xFF30D158),
+    softWarning = Color(0xFF3A2606),
+    onSoftWarning = Color(0xFFFF9F0A),
+    softDanger = Color(0xFF3D1210),
+    onSoftDanger = Color(0xFFFF6961),
+    softInfo = Color(0xFF0D2A4D),
+    onSoftInfo = Color(0xFF64B0FF),
+    softNeutral = Color(0xFF2C2C2E),
+    onSoftNeutral = Color(0xFFC7C7CC),
+    scrim = Color.Black.copy(alpha = 0.42f),
 )
 
 /** Digits keep a fixed advance so counters, sizes and versions do not jitter as they change. */
 private const val TabularNumbers = "tnum"
 
+// iOS Dynamic Type at the default size: largeTitle 34, title2 22, headline 17, body 17,
+// subheadline 15, footnote 13, caption 12.
 private val DefaultTextStyles = ToolBoxTextStyles(
-    screenTitle = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
-    detailTitle = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, fontFeatureSettings = TabularNumbers),
-    body = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontFeatureSettings = TabularNumbers),
-    metadata = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontFeatureSettings = TabularNumbers),
+    screenTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.37.sp),
+    detailTitle = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.26).sp),
+    sectionTitle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = (-0.08).sp, fontFeatureSettings = TabularNumbers),
+    title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.43).sp, fontFeatureSettings = TabularNumbers),
+    body = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.43).sp, fontFeatureSettings = TabularNumbers),
+    metadata = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.23).sp, fontFeatureSettings = TabularNumbers),
     label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontFeatureSettings = TabularNumbers),
-    headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, fontFeatureSettings = TabularNumbers),
-    collapsedTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.43).sp, fontFeatureSettings = TabularNumbers),
+    collapsedTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.43).sp),
 )
 
 /** Design system v2 unifies metrics across both looks; Liquid Glass differs only in material. */
@@ -275,6 +293,12 @@ private val LocalToolBoxMaterials = staticCompositionLocalOf {
         glassTint = Color.White,
         glassFallback = Color.White,
         glassBorder = Color.Transparent,
+        overlayFill = Color.White,
+        overlayFallback = Color.White,
+        menuFill = Color.White,
+        menuFallback = Color.White,
+        overlayBorder = Color.Transparent,
+        sheetCard = Color.White,
         navigationSelectionTint = Color.Transparent,
         navigationSelectionHighlight = Color.Transparent,
         navigationSelectionBorder = Color.Transparent,
@@ -290,6 +314,10 @@ fun ToolBoxTheme(
     reduceTransparency: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // The iOS 27 redesign has a single look; the legacy Miuix style setting is ignored until its
+    // picker is removed from Appearance.
+    @Suppress("NAME_SHADOWING")
+    val style = ToolBoxThemeStyle.LiquidGlass
     val usesDarkColors = when (mode) {
         ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> true
         ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> isSystemInDarkTheme()
@@ -448,6 +476,8 @@ fun ToolBoxTheme(
             LocalToolBoxThemeStyle provides style,
             LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.Miuix) MiuixRadii else LiquidGlassRadii,
             LocalToolBoxMaterials provides materials,
+            // Flat iOS press highlight, clipped by the pressed element's own shape; never a ripple.
+            LocalIndication provides ToolBoxPressIndication,
             content = content,
         )
     }
@@ -515,25 +545,50 @@ internal fun liquidGlassColors(
     )
 }
 
+/** Dark overlay glass tone, rgb(36,36,40); dark floating glass uses rgb(40,40,44). */
+private val DarkOverlayGlass = Color(0xFF242428)
+private val DarkFloatingGlass = Color(0xFF28282C)
+
 internal fun liquidGlassMaterials(
     colors: ToolBoxColorScheme,
     dark: Boolean,
     enabled: Boolean,
     reduceTransparency: Boolean,
-) = ToolBoxMaterialTokens(
-    realBlurEnabled = enabled && !reduceTransparency,
-    topEdgeFadeEnabled = enabled && !reduceTransparency,
-    navigationLensEnabled = enabled,
-    pressFeedbackEnabled = enabled,
-    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.48f),
-    glassFallback = colors.surface,
-    glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
-    navigationSelectionTint = colors.softPrimary,
-    navigationSelectionHighlight = colors.softPrimary,
-    navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
-    blurRadius = 32.dp,
-    noiseFactor = 0.015f,
-)
+): ToolBoxMaterialTokens {
+    val overlayTone = if (dark) DarkOverlayGlass else Color.White
+    // Reduce Transparency: every material becomes opaque in its own tone.
+    fun overlay(alpha: Float) = overlayTone.copy(alpha = if (reduceTransparency) 1f else alpha)
+    return ToolBoxMaterialTokens(
+        realBlurEnabled = enabled && !reduceTransparency,
+        topEdgeFadeEnabled = enabled && !reduceTransparency,
+        navigationLensEnabled = enabled,
+        pressFeedbackEnabled = enabled,
+        // DualSim floating glass: rgba(255,255,255,0.24) / rgba(40,40,44,0.30).
+        glassTint = when {
+            reduceTransparency -> colors.surface
+            dark -> DarkFloatingGlass.copy(alpha = 0.30f)
+            else -> Color.White.copy(alpha = 0.24f)
+        },
+        glassFallback = colors.surface,
+        glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
+        overlayFill = overlay(if (dark) 0.62f else 0.58f),
+        overlayFallback = overlay(if (dark) 0.84f else 0.86f),
+        menuFill = overlay(if (dark) 0.66f else 0.62f),
+        menuFallback = overlay(if (dark) 0.88f else 0.90f),
+        overlayBorder = if (dark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.60f),
+        sheetCard = when {
+            reduceTransparency -> colors.surface
+            dark -> Color(0xFF767680).copy(alpha = 0.20f)
+            else -> Color.White.copy(alpha = 0.60f)
+        },
+        navigationSelectionTint = colors.softPrimary,
+        navigationSelectionHighlight = colors.softPrimary,
+        navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
+        // Floating glass keeps the page legible: a small blur, the lens does the work.
+        blurRadius = 2.dp,
+        noiseFactor = 0.015f,
+    )
+}
 
 private fun ToolBoxThemeMode.toMiuixMode(): ColorSchemeMode = when (this) {
     ToolBoxThemeMode.System -> ColorSchemeMode.System

@@ -1,6 +1,18 @@
 package io.toolbox.host.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.stateDescription
+import io.toolbox.core.data.CatalogGroup
+import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -19,6 +31,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +42,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -117,17 +131,20 @@ internal fun ToolManagerContent(
     var selectedToolId by rememberSaveable { mutableStateOf<String?>(null) }
     var addingFavorites by rememberSaveable { mutableStateOf(false) }
     var editingGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var previousHome by rememberSaveable { mutableStateOf(home) }
     val toolsById = remember(state.tools) { state.tools.associateBy { it.toolId } }
+    val favoriteIds = remember(state.layout.favorites) { state.layout.favorites.toSet() }
     val selectedTool = selectedToolId?.let(toolsById::get)
     val drag = rememberCatalogHomeDragState(home && editing, listState, contentPadding)
-    BackHandler(home && editing && selectedToolId == null && editingGroupId == null && !addingFavorites && !creatingGroup) {
+    BackHandler(home && editing && selectedToolId == null && editingGroupId == null && openGroupId == null && !addingFavorites && !creatingGroup) {
         onEditingChange(false)
     }
     LaunchedEffect(home) {
         if (previousHome != home) {
             if (!home) onEditingChange(false)
             editingGroupId = null
+            openGroupId = null
             addingFavorites = false
             selectedToolId = null
             previousHome = home
@@ -153,6 +170,7 @@ internal fun ToolManagerContent(
         val contentWidth = maxWidth - contentPadding.calculateStartPadding(direction) - contentPadding.calculateEndPadding(direction)
         val fontScale = LocalDensity.current.fontScale
         val columns = homeGridColumnCount((contentWidth - 32.dp).value, fontScale)
+        val folderColumns = homeFolderColumnCount(contentWidth.value, fontScale)
         LazyColumn(
             userScrollEnabled = drag.active == null,
             state = listState,
@@ -164,8 +182,18 @@ internal fun ToolManagerContent(
             overscrollEffect = null,
         ) {
             if (home && editing) item("organize-help") {
-                AppText("长按拖动排序，点击工具或分组旁的 ··· 编辑", color = ToolBoxThemeTokens.colors.textSecondary,
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata, modifier = Modifier.padding(bottom = 16.dp))
+                Row(
+                    Modifier.padding(bottom = 16.dp).fillMaxWidth()
+                        .clip(toolBoxShape(18.dp))
+                        .background(ToolBoxThemeTokens.colors.softPrimary)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ToolBoxIcon(ToolBoxIconKey.Drag, null, Modifier.size(20.dp), tint = ToolBoxThemeTokens.colors.primary)
+                    Spacer(Modifier.width(10.dp))
+                    AppText("长按拖动排序，点 − 移出常用，点分组可查看和排列工具，点 ··· 编辑分组", color = ToolBoxThemeTokens.colors.primary,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                }
             }
             if (!home) {
                 item("search") {
@@ -218,8 +246,9 @@ internal fun ToolManagerContent(
 
             if (home && state.isLoaded && state.tools.isNotEmpty()) {
                 catalogHomeSections(
-                    state, toolsById, editing, columns, drag, onAction,
-                    onEditGroup = { editingGroupId = it }, onAddFavorites = { addingFavorites = true },
+                    state, toolsById, editing, columns, folderColumns, drag, onAction,
+                    onEditGroup = { editingGroupId = it }, onOpenGroup = { openGroupId = it },
+                    onAddFavorites = { addingFavorites = true },
                     onOptions = { selectedToolId = it },
                     runningContent = runningTools,
                 )
@@ -250,6 +279,9 @@ internal fun ToolManagerContent(
                         tool = tool,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
                         onDetails = { selectedToolId = tool.toolId },
+                        favorite = tool.toolId in favoriteIds,
+                        first = index == 0,
+                        last = index == state.visibleTools.lastIndex,
                         modifier = Modifier
                             .animateItem(
                                 fadeInSpec = ToolBoxMotion.effects(),
@@ -260,15 +292,37 @@ internal fun ToolManagerContent(
                     )
                 }
             }
+            if (!home && state.isLoaded && state.visibleTools.isNotEmpty()) item("tools-footer") {
+                AppText(
+                    "长按工具可收藏、分组与管理；删除工具会一并清除其文件、权限、存储和后台任务。",
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                    color = ToolBoxThemeTokens.colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                )
+            }
         }
         CatalogDragPreview(drag)
     }
 
     ImportReplacementDialog(importState, onConfirmImport, onCancelImport)
+    // The folder overlay sits below the option sheet and editors it can open.
+    val openGroup = openGroupId?.let { id -> state.layout.groups.firstOrNull { it.id == id } }
+    LaunchedEffect(state.isLoaded, openGroupId, openGroup) {
+        if (state.isLoaded && openGroupId != null && openGroup == null) openGroupId = null
+    }
+    if (home && openGroup != null) CatalogGroupFolderOverlay(
+        group = openGroup,
+        members = openGroup.members.mapNotNull(toolsById::get),
+        editing = editing,
+        onAction = onAction,
+        onOptions = { selectedToolId = it },
+        onEdit = { openGroupId = null; editingGroupId = openGroup.id },
+        onDismiss = { openGroupId = null },
+    )
     if (addingFavorites) CatalogFavoritesPicker(state, onAction) { addingFavorites = false }
     if (selectedTool != null) CatalogToolOptions(selectedTool, state, onAction,
         onDismiss = { selectedToolId = null },
-        onManage = { selectedToolId = null; onOpenDetails(selectedTool.toolId) },
+        onManage = { selectedToolId = null; openGroupId = null; onOpenDetails(selectedTool.toolId) },
     )
     if (editingGroupId != null) CatalogGroupEditor(
         group = state.layout.groups.firstOrNull { it.id == editingGroupId },
@@ -326,6 +380,7 @@ internal fun ToolDetailScreen(
     val tool = state.tools.firstOrNull { it.toolId == toolId }
     val confirmation = state.uninstallConfirmation?.takeIf { it.toolId == toolId }
     val entrance = rememberToolBoxEntrance("tool-detail")
+    var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
 
     DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
         LazyColumn(
@@ -352,32 +407,85 @@ internal fun ToolDetailScreen(
                     CatalogStatusState("该工具已不存在", icon = ToolBoxIconKey.Tools, detail = "它可能已被删除或正在更新。")
                 }
             } else {
+                val favorite = tool.toolId in state.layout.favorites
+                val memberOf = state.layout.groups.filter { tool.toolId in it.members }
                 item("identity") {
-                    SurfaceCard(Modifier.toolBoxEntrance(entrance, 0)) {
-                        ToolIdentity(tool)
-                        Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-                        ToolBoxPrimaryButton(
-                            label = "打开工具",
-                            onClick = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                    ToolDetailHero(
+                        tool = tool,
+                        favorite = favorite,
+                        onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
+                        onToggleFavorite = { onAction(CatalogAction.SetFavorite(tool.toolId, !favorite)) },
+                        onGroups = { groupsOpen = !groupsOpen },
+                        modifier = Modifier.toolBoxEntrance(entrance, 0),
+                    )
+                }
+                item("stats") {
+                    ToolDetailStats(tool, memberOf.size, Modifier.padding(top = 20.dp).toolBoxEntrance(entrance, 1))
                 }
                 item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("management-title") { SectionHeader("管理") }
                 item("management-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("management") {
-                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 1)) {
+                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2)) {
                         ToolBoxSettingRow(title = "权限", icon = ToolBoxIconKey.Shield, onClick = { onPermissions(tool.toolId) })
                         ToolBoxGroupDivider()
                         ToolBoxSettingRow(title = "后台任务", icon = ToolBoxIconKey.Clock, onClick = { onBackground(tool.toolId) })
+                    }
+                }
+                item("before-organization") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
+                item("organization-title") { SectionHeader("收藏与分组") }
+                item("organization-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
+                item("organization") {
+                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 3)) {
+                        ToolBoxSwitchSettingRow(
+                            title = "收藏",
+                            checked = favorite,
+                            onCheckedChange = { onAction(CatalogAction.SetFavorite(tool.toolId, it)) },
+                            summary = "显示在首页“常用”",
+                            icon = ToolBoxIconKey.Star,
+                            modifier = Modifier.testTag("tool_detail_favorite"),
+                        )
+                        ToolBoxSettingRow(
+                            title = "加入分组",
+                            summary = when {
+                                state.layout.groups.isEmpty() -> "还没有分组"
+                                memberOf.isEmpty() -> "未加入分组"
+                                else -> memberOf.joinToString("、") { it.name }
+                            },
+                            icon = ToolBoxIconKey.Folder,
+                            onClick = { groupsOpen = !groupsOpen },
+                            modifier = Modifier.testTag("tool_detail_groups").semantics {
+                                stateDescription = if (groupsOpen) "已展开" else "已收起"
+                            },
+                        )
+                        AnimatedVisibility(
+                            visible = groupsOpen,
+                            enter = ToolBoxMotion.ExpandIn,
+                            exit = ToolBoxMotion.CollapseOut,
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(start = 60.dp, bottom = 6.dp)) {
+                                if (state.layout.groups.isEmpty()) {
+                                    AppText("在首页菜单中选择“新建分组”来整理工具。", Modifier.padding(end = 16.dp, top = 4.dp, bottom = 8.dp),
+                                        color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                                }
+                                state.layout.groups.forEach { group ->
+                                    ToolDetailGroupRow(
+                                        group = group,
+                                        selected = tool.toolId in group.members,
+                                        onChecked = { selected ->
+                                            onAction(CatalogAction.SetGroupMembership(group.id, tool.toolId, selected))
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 item("before-information") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("information-title") { SectionHeader("信息") }
                 item("information-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("information") {
-                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2)) {
+                    ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 4)) {
                         ToolBoxValueRow(title = "版本", value = tool.versionName)
                         ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
                         ToolBoxValueRow(title = "工具大小", value = tool.bundleBytes.fileSizeLabel())
@@ -387,11 +495,15 @@ internal fun ToolDetailScreen(
                 }
                 item("before-delete") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
                 item("delete") {
-                    ToolBoxDestructiveButton(
-                        label = "删除工具",
-                        onClick = { onAction(CatalogAction.RequestUninstall(tool.toolId)) },
-                        modifier = Modifier.fillMaxWidth().toolBoxEntrance(entrance, 3),
-                    )
+                    Column(Modifier.toolBoxEntrance(entrance, 5)) {
+                        ToolDetailDeleteRow { onAction(CatalogAction.RequestUninstall(tool.toolId)) }
+                        AppText(
+                            "工具文件、权限、存储和后台任务都会一并删除。",
+                            Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp),
+                            color = ToolBoxThemeTokens.colors.textSecondary,
+                            textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                        )
+                    }
                 }
             }
         }
@@ -414,29 +526,242 @@ internal fun ToolDetailScreen(
     }
 }
 
+/** App Store style hero: large icon, name and summary, with Open / Favorite / Groups capsules below. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ToolDetailHero(
+    tool: CatalogTool,
+    favorite: Boolean,
+    onOpen: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onGroups: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val visual = tool.visual(colors.primary)
+    val presentation = rememberCatalogToolPresentation(tool.toolId, tool.versionCode)
+    Column(modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Box(Modifier.size(96.dp).clip(toolBoxShape(26.dp))) {
+                CatalogToolArtwork(presentation.bitmap, visual, 96.dp)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AppText(
+                    text = tool.name,
+                    modifier = Modifier.semantics { heading() },
+                    maxLines = 2,
+                    textStyle = ToolBoxThemeTokens.textStyles.detailTitle.copy(fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold),
+                )
+                AppText(
+                    text = presentation.description ?: "版本 ${tool.versionName}",
+                    maxLines = 2,
+                    color = colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp),
+                )
+            }
+        }
+        // Full width below the identity row so the capsules never compete with the 96dp icon;
+        // on narrow screens or large font scales they wrap onto a second line.
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DetailCapsule(
+                label = "打开",
+                onClick = onOpen,
+                container = colors.primary,
+                content = colors.onPrimary,
+                modifier = Modifier.semantics { contentDescription = "打开工具" },
+            )
+            DetailCapsule(
+                label = if (favorite) "已收藏" else "收藏",
+                onClick = onToggleFavorite,
+                container = colors.surface,
+                content = if (favorite) colors.warning else colors.textPrimary,
+                icon = if (favorite) ToolBoxIconKey.StarFilled else ToolBoxIconKey.Star,
+                modifier = Modifier.testTag("tool_detail_favorite_capsule").semantics {
+                    stateDescription = if (favorite) "已收藏" else "未收藏"
+                },
+            )
+            DetailCapsule(
+                label = null,
+                onClick = onGroups,
+                container = colors.surface,
+                content = colors.textPrimary,
+                icon = ToolBoxIconKey.Folder,
+                modifier = Modifier.semantics { contentDescription = "加入分组" },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailCapsule(
+    label: String?,
+    onClick: () -> Unit,
+    container: Color,
+    content: Color,
+    modifier: Modifier = Modifier,
+    icon: ToolBoxIconKey? = null,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.full)
+    val haptics = rememberToolBoxHaptics()
+    Row(
+        modifier
+            .heightIn(min = 40.dp)
+            .then(if (label == null) Modifier.width(40.dp) else Modifier)
+            .toolBoxPressFeedback(interactionSource, shape = shape)
+            .clip(shape)
+            .background(container)
+            .clickable(interactionSource = interactionSource, indication = null, role = Role.Button) {
+                haptics.tick()
+                onClick()
+            }
+            .padding(horizontal = if (label == null) 0.dp else 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) ToolBoxIcon(icon, null, Modifier.size(18.dp), tint = content)
+        if (label != null) {
+            AppText(label, color = content, maxLines = 1,
+                textStyle = ToolBoxThemeTokens.textStyles.body.copy(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold))
+        }
+    }
+}
+
+/** Horizontal information strip separated by hairlines, as on an App Store product page. */
+@Composable
+private fun ToolDetailStats(tool: CatalogTool, groupCount: Int, modifier: Modifier = Modifier) {
+    val colors = ToolBoxThemeTokens.colors
+    val stats = listOf(
+        Triple("版本", tool.versionName, "版本号 ${tool.versionCode}"),
+        Triple("大小", tool.bundleBytes.fileSizeLabel(), "工具包"),
+        Triple("分组", groupCount.toString(), "个分组"),
+        Triple("最近打开", tool.lastOpenedAt?.let { DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it)) } ?: "—",
+            if (tool.lastOpenedAt == null) "尚未打开" else "日期"),
+    )
+    Column(modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.divider))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            stats.forEachIndexed { index, (label, value, sub) ->
+                if (index > 0) Box(Modifier.width(0.5.dp).height(40.dp).background(colors.divider))
+                Column(
+                    Modifier.widthIn(min = 88.dp).padding(horizontal = 6.dp).semantics(mergeDescendants = true) { },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    AppText(label, color = colors.textTertiary, maxLines = 1,
+                        textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold))
+                    AppText(value, color = colors.textSecondary, maxLines = 1,
+                        textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold))
+                    AppText(sub, color = colors.textTertiary, maxLines = 1,
+                        textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 12.sp, lineHeight = 15.sp))
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.divider))
+    }
+}
+
+@Composable
+private fun ToolDetailGroupRow(group: CatalogGroup, selected: Boolean, onChecked: (Boolean) -> Unit) {
+    val colors = ToolBoxThemeTokens.colors
+    val haptics = rememberToolBoxHaptics()
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(selected, role = Role.Checkbox) { haptics.toggle(it); onChecked(it) }
+            .testTag("tool_detail_group:" + group.id)
+            .padding(end = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        CatalogGroupStyleIcon(group, 24.dp, 14.dp)
+        AppText(group.name, Modifier.weight(1f), maxLines = 1, textStyle = ToolBoxThemeTokens.textStyles.body)
+        AppText("${group.members.size} 个", color = colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        IosCheckCircle(selected)
+    }
+}
+
+/** iOS selection circle: filled accent with a check, or a hairline ring. */
+@Composable
+internal fun IosCheckCircle(selected: Boolean, size: androidx.compose.ui.unit.Dp = 22.dp) {
+    val colors = ToolBoxThemeTokens.colors
+    val fill = androidx.compose.animation.animateColorAsState(
+        if (selected) colors.primary else Color.Transparent, ToolBoxMotion.effects(), label = "check fill",
+    )
+    Box(
+        Modifier.size(size).clip(CircleShape).drawBehind { drawRect(fill.value) }
+            .then(if (selected) Modifier else Modifier.border(1.5.dp, colors.textTertiary, CircleShape)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) ToolBoxIcon(ToolBoxIconKey.Check, null, Modifier.size(size * 0.7f), tint = colors.onPrimary)
+    }
+}
+
+@Composable
+private fun ToolDetailDeleteRow(onClick: () -> Unit) {
+    val colors = ToolBoxThemeTokens.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = toolBoxShape(ToolBoxThemeTokens.radii.card)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp)
+            .toolBoxPressFeedback(interactionSource, shape = shape, scale = ToolBoxMotion.RowPressScale)
+            .clip(shape)
+            .background(colors.surface)
+            .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(30.dp).clip(toolBoxShape(8.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFFFF6B5E), Color(0xFFD70015)))),
+            contentAlignment = Alignment.Center,
+        ) {
+            ToolBoxIcon(ToolBoxIconKey.Close, null, Modifier.size(18.dp), tint = Color.White)
+        }
+        AppText("删除工具", Modifier.weight(1f), color = colors.danger, textStyle = ToolBoxThemeTokens.textStyles.body)
+    }
+}
+
+/** One row of the inset grouped "all tools" list; [first] / [last] round the card's ends. */
 @Composable
 internal fun CatalogToolRow(
     tool: CatalogTool,
     onOpen: () -> Unit,
     onDetails: () -> Unit,
     modifier: Modifier = Modifier,
+    favorite: Boolean = false,
+    first: Boolean = true,
+    last: Boolean = true,
 ) {
-    val corner = ToolBoxThemeTokens.radii.denseSurface
-    val shape = toolBoxShape(corner)
-    val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
+    val radius = ToolBoxThemeTokens.radii.card
+    val shape = RoundedCornerShape(
+        topStart = if (first) radius else 0.dp, topEnd = if (first) radius else 0.dp,
+        bottomStart = if (last) radius else 0.dp, bottomEnd = if (last) radius else 0.dp,
+    )
+    val colors = ToolBoxThemeTokens.colors
+    val visual = tool.visual(colors.primary)
     val presentation = rememberCatalogToolPresentation(tool.toolId, tool.versionCode)
     val interactionSource = remember { MutableInteractionSource() }
     val haptics = rememberToolBoxHaptics()
-    Column(
-        modifier.fillMaxWidth().padding(bottom = ToolBoxThemeTokens.spacing.one)
-            .toolBoxPressFeedback(interactionSource, shape = shape)
-            .toolBoxOpenDesignSurface(shape)
+    Box(
+        modifier.fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
             .testTag("tool_card:" + tool.toolId),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
                 modifier = Modifier.weight(1f)
-                    .heightIn(min = ToolBoxThemeTokens.sizes.catalogRow)
+                    .heightIn(min = 68.dp)
+                    .toolBoxPressFeedback(interactionSource, scale = ToolBoxMotion.RowPressScale)
                     .testTag("tool_main:" + tool.toolId)
                     .combinedClickable(interactionSource = interactionSource, indication = null,
                         role = Role.Button, onClickLabel = "打开${tool.name}", onClick = onOpen,
@@ -444,20 +769,27 @@ internal fun CatalogToolRow(
                             haptics.longPress()
                             onDetails()
                         })
-                    .padding(start = ToolBoxThemeTokens.spacing.oneHalf, end = ToolBoxThemeTokens.spacing.half,
-                        top = ToolBoxThemeTokens.spacing.one, bottom = ToolBoxThemeTokens.spacing.one),
+                    .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CatalogToolArtwork(presentation.bitmap, visual, ToolBoxThemeTokens.sizes.compactToolGlyph)
-                Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    AppText(tool.name, maxLines = 2, textStyle = ToolBoxThemeTokens.textStyles.title, weight = FontWeight.SemiBold)
+                CatalogToolArtwork(presentation.bitmap, visual, 44.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppText(tool.name, Modifier.weight(1f, fill = false), maxLines = 1,
+                            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 17.sp, lineHeight = 22.sp),
+                            weight = FontWeight.SemiBold)
+                        if (favorite) {
+                            Spacer(Modifier.width(6.dp))
+                            ToolBoxIcon(ToolBoxIconKey.StarFilled, "已收藏", Modifier.size(14.dp), tint = Color(0xFFF2A100))
+                        }
+                    }
                     // Reserve the same one-line summary slot while metadata loads or is absent.
                     AppText(
                         text = presentation.description ?: "版本 ${tool.versionName}",
                         maxLines = 1,
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
-                        color = ToolBoxThemeTokens.colors.textSecondary,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                        color = colors.textSecondary,
                     )
                 }
             }
@@ -469,17 +801,9 @@ internal fun CatalogToolRow(
                 modifier = Modifier.testTag("tool_more:" + tool.toolId),
             )
         }
-    }
-}
-
-@Composable
-private fun ToolIdentity(tool: CatalogTool) {
-    val visual = tool.visual(ToolBoxThemeTokens.colors.primary)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        CatalogToolGlyph(toolId = tool.toolId, versionCode = tool.versionCode, visual = visual)
-        Spacer(Modifier.width(ToolBoxThemeTokens.spacing.oneHalf))
-        AppText(text = tool.name, modifier = Modifier.weight(1f),
-            textStyle = ToolBoxThemeTokens.textStyles.detailTitle, weight = FontWeight.Bold)
+        if (!last) {
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 72.dp).fillMaxWidth().height(0.5.dp).background(colors.divider))
+        }
     }
 }
 
@@ -552,24 +876,53 @@ internal fun FeedbackSurface(
 
 @Composable
 internal fun EmptyCatalogState(onImport: () -> Unit, onInstallExamples: () -> Unit) {
-    // Empty state: 64dp tonal icon disc, headline, one line of subhead, then the actions.
+    // First run: one inset card with a stacked-icon illustration, headline, subhead and actions.
+    val colors = ToolBoxThemeTokens.colors
     Column(
-        Modifier.fillMaxWidth().testTag(HostTestTags.CatalogEmptyState).padding(top = ToolBoxThemeTokens.spacing.lg),
+        Modifier.fillMaxWidth().testTag(HostTestTags.CatalogEmptyState).padding(top = ToolBoxThemeTokens.spacing.oneHalf)
+            .clip(toolBoxShape(ToolBoxThemeTokens.radii.card))
+            .background(colors.surface)
+            .padding(start = 24.dp, end = 24.dp, top = 36.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        ToolBoxStatusState(
-            title = "还没有工具",
-            message = "先安装四个可直接使用的范例，或导入自己的 .tbx。",
-            icon = ToolBoxIconKey.Tools,
-        )
+        Box(Modifier.size(width = 132.dp, height = 96.dp).clearAndSetSemantics { }) {
+            EmptyStateTile(Color(0xFFFFC93C), Color(0xFFF29900), -10f, Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 20.dp))
+            EmptyStateTile(Color(0xFFB07CFF), Color(0xFF7B3FD0), 10f, Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 20.dp))
+            Box(
+                Modifier.align(Alignment.TopCenter).padding(top = 4.dp).size(64.dp)
+                    .clip(toolBoxShape(18.dp))
+                    .background(Brush.verticalGradient(listOf(Color(0xFF4A9BFF), Color(0xFF0A5BD6)))),
+                contentAlignment = Alignment.Center,
+            ) {
+                ToolBoxIcon(ToolBoxIconKey.Tools, null, Modifier.size(32.dp), tint = Color.White)
+            }
+        }
+        AppText("还没有工具", Modifier.semantics { heading() }, align = androidx.compose.ui.text.style.TextAlign.Center,
+            textStyle = ToolBoxThemeTokens.textStyles.detailTitle.copy(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold))
+        AppText("先安装四个可直接使用的范例，或导入自己的 .tbx。", Modifier.widthIn(max = 280.dp),
+            color = colors.textSecondary, align = androidx.compose.ui.text.style.TextAlign.Center,
+            textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 21.sp))
         Column(
-            Modifier.widthIn(max = 360.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xs),
+            Modifier.widthIn(max = 360.dp).fillMaxWidth().padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ToolBoxPrimaryButton("安装四个范例", onInstallExamples, Modifier.fillMaxWidth())
             ToolBoxSecondaryButton("导入工具", onImport, Modifier.fillMaxWidth())
         }
+        AppText("四个范例会随 App 一起安装，可随时删除。", color = colors.textSecondary,
+            align = androidx.compose.ui.text.style.TextAlign.Center,
+            textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
     }
+}
+
+@Composable
+private fun EmptyStateTile(top: Color, bottom: Color, rotation: Float, modifier: Modifier) {
+    Box(
+        modifier.graphicsLayer { rotationZ = rotation }.size(56.dp)
+            .clip(toolBoxShape(16.dp))
+            .background(Brush.verticalGradient(listOf(top, bottom))),
+    )
 }
 
 @Composable

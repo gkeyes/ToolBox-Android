@@ -27,6 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -58,8 +61,12 @@ fun ToolBoxSegmentedControl(
     val haptics = rememberToolBoxHaptics()
     val outer = toolBoxShape(ToolBoxThemeTokens.radii.control)
     val inner = toolBoxShape(ToolBoxThemeTokens.radii.badge)
+    // iOS 26 in-content segmented control: grey fill track, solid white (#636366 dark) pill.
+    val dark = colors.surface.luminance() < 0.5f
+    val trackFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
+    val pillFill = if (dark) Color(0xFF636366) else Color.White
     BoxWithConstraints(
-        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(outer).background(colors.surfaceMuted).padding(3.dp),
+        modifier.fillMaxWidth().heightIn(min = 44.dp).clip(outer).background(trackFill).padding(3.dp),
     ) {
         val segmentWidth = maxWidth / options.size
         val indicatorOffset = animateDpAsState(
@@ -73,8 +80,15 @@ fun ToolBoxSegmentedControl(
                     .offset { IntOffset(indicatorOffset.value.roundToPx(), 0) }
                     .width(segmentWidth)
                     .fillMaxHeight()
+                    .shadow(
+                        elevation = 3.dp,
+                        shape = inner,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                        spotColor = Color.Black.copy(alpha = 0.12f),
+                    )
                     .clip(inner)
-                    .background(colors.raised),
+                    .background(pillFill),
             )
         }
         Row(Modifier.fillMaxSize().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {

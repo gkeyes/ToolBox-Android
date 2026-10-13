@@ -1,5 +1,9 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.runtime.rememberUpdatedState
+import io.toolbox.core.ui.liquid.LiquidBottomTab
+import io.toolbox.core.ui.liquid.LiquidBottomTabs
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -50,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -61,9 +66,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -182,10 +185,22 @@ fun ToolBoxTopBar(
         content = {
             Box {
                 if (navigationIcon != null && onNavigationClick != null) {
-                    ToolBoxIconButton(
-                        navigationIcon, navigationContentDescription, onNavigationClick,
-                        tint = colors.primary,
-                    )
+                    // iOS 27: a round glass button carrying only the chevron.
+                    if (glassState != null) {
+                        ToolBoxGlassIconButton(
+                            icon = navigationIcon,
+                            contentDescription = navigationContentDescription,
+                            onClick = onNavigationClick,
+                            glassState = glassState,
+                            modifier = Modifier.padding(2.dp),
+                        )
+                    } else {
+                        ToolBoxIconButton(
+                            navigationIcon, navigationContentDescription, onNavigationClick,
+                            modifier = Modifier.padding(2.dp).size(44.dp).toolBoxSolidGlass(CircleShape),
+                            tint = colors.textPrimary,
+                        )
+                    }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, content = actions)
@@ -284,6 +299,17 @@ fun ToolBoxNavigationBar(
         if (item.id != selectedId) haptics.tick()
         onItemSelected(item)
     }
+    if (isGlass && glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+        LiquidTabNavigationBar(
+            items = items,
+            selectedId = selectedId,
+            onItemSelected = select,
+            modifier = modifier,
+            glassState = glassState,
+            iconOnly = usesIconOnlyLayout,
+        )
+        return
+    }
     if (isGlass) {
         LiquidGlassNavigationBar(
             items = items,
@@ -319,6 +345,72 @@ fun ToolBoxNavigationBar(
                     label = item.label,
                     modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * iOS 27 floating tab bar: the vendored Kyant [LiquidBottomTabs] capsule refracting the page
+ * behind it, with a draggable lens that morphs between tabs.
+ */
+@Composable
+private fun LiquidTabNavigationBar(
+    items: List<ToolBoxNavigationItem>,
+    selectedId: String,
+    onItemSelected: (ToolBoxNavigationItem) -> Unit,
+    modifier: Modifier,
+    glassState: ToolBoxGlassState,
+    iconOnly: Boolean,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val dark = colors.background.luminance() < 0.5f
+    val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+    val currentItems by rememberUpdatedState(items)
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    LiquidBottomTabs(
+        selectedTabIndex = { currentSelectedIndex },
+        onTabSelected = { index -> currentItems.getOrNull(index)?.let(onItemSelected) },
+        backdrop = glassState.backdrop,
+        tabsCount = items.size,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact)
+            .selectableGroup(),
+        isLightTheme = !dark,
+        accentColor = colors.primary,
+        containerColor = ToolBoxThemeTokens.materials.glassTint,
+    ) {
+        items.forEachIndexed { index, item ->
+            key(item.id) {
+                LiquidBottomTab(
+                    onClick = { onItemSelected(item) },
+                    modifier = Modifier
+                        .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
+                        .semantics {
+                            contentDescription = item.label
+                            this.selected = index == selectedIndex
+                        },
+                ) {
+                    ToolBoxIcon(
+                        icon = item.icon,
+                        contentDescription = null,
+                        tint = colors.textPrimary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (!iconOnly) {
+                        ToolBoxText(
+                            text = item.label,
+                            style = ToolBoxThemeTokens.textStyles.label.copy(
+                                color = colors.textPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -514,11 +606,18 @@ fun ToolBoxGroupedSurface(
 @Composable
 fun ToolBoxGroupDivider(
     modifier: Modifier = Modifier,
-    startPadding: Dp = 60.dp,
+    startPadding: Dp = ToolBoxRowStartPadding + ToolBoxRowIconSize + ToolBoxRowIconGap,
     endPadding: Dp = 0.dp,
 ) {
-    // Design system v2: group cards never draw separators; rows separate by 56dp height and inset.
-    Unit
+    // iOS inset-grouped hairline: inset after the row icon, running to the card's trailing edge.
+    val color = ToolBoxThemeTokens.colors.divider
+    Spacer(
+        modifier
+            .fillMaxWidth()
+            .height(0.5.dp)
+            .padding(start = startPadding, end = endPadding)
+            .drawBehind { drawRect(color) },
+    )
 }
 
 private enum class ToolBoxActionTone { Primary, Tonal, Neutral, Danger, DangerConfirmation }
@@ -526,31 +625,26 @@ private enum class ToolBoxActionTone { Primary, Tonal, Neutral, Danger, DangerCo
 private data class ToolBoxActionColors(val container: Color, val content: Color)
 
 /** WCAG contrast between two opaque colors. */
-private fun actionContrast(a: Color, b: Color): Float {
+internal fun actionContrast(a: Color, b: Color): Float {
     val la = a.luminance()
     val lb = b.luminance()
     return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)
 }
 
 /**
- * Solid fills keep the accent's hue and saturation and only lose brightness until white labels
- * reach 4.5:1, so dark mode gets a deep, saturated button instead of a washed-out tint.
+ * Solid iOS 26 fills carry 17sp semibold labels, which count as large text and need 3:1.
+ * White passes on #0064D2 / #0A84FF accent and light #D70015 destructive; dark #FF6961
+ * destructive is only ~2.8:1 against white, so it (and any very light custom accent) takes
+ * the iOS dark label #1C1C1E (~6:1) instead.
  */
-private fun solidActionColors(fill: Color): ToolBoxActionColors {
-    if (fill.luminance() > 0.45f) return ToolBoxActionColors(fill, Color(0xFF111214))
-    if (actionContrast(fill, Color.White) >= 4.5f) return ToolBoxActionColors(fill, Color.White)
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
-    hsv[1] = (hsv[1] + (1f - hsv[1]) * 0.35f).coerceAtMost(1f)
-    var candidate = fill
-    while (hsv[2] > 0.2f) {
-        hsv[2] -= 0.01f
-        candidate = Color(android.graphics.Color.HSVToColor(hsv))
-        if (actionContrast(candidate, Color.White) >= 4.5f) break
-    }
-    return ToolBoxActionColors(candidate, Color.White)
-}
+private fun solidActionColors(fill: Color): ToolBoxActionColors =
+    ToolBoxActionColors(fill, if (actionContrast(fill, Color.White) >= 3.0f) Color.White else Color(0xFF1C1C1E))
 
+/**
+ * Flat iOS 26 button roles: prominent = solid accent; regular = accent at 10% / 18%;
+ * neutral = rgba(118,118,128,0.12 / 0.24); destructive = danger at 10% / 18%; a destructive
+ * confirmation = solid danger. Translucent fills stay translucent so they sit on glass sheets.
+ */
 @Composable
 private fun toolBoxActionColors(tone: ToolBoxActionTone, contentColorOverride: Color?): ToolBoxActionColors {
     val colors = ToolBoxThemeTokens.colors
@@ -558,23 +652,24 @@ private fun toolBoxActionColors(tone: ToolBoxActionTone, contentColorOverride: C
     val accent = colors.primary
     return when (tone) {
         ToolBoxActionTone.Primary -> solidActionColors(accent)
-        ToolBoxActionTone.DangerConfirmation -> solidActionColors(if (dark) Color(0xFFD13438) else colors.danger)
-        ToolBoxActionTone.Tonal -> {
-            val container = accent.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(colors.surface)
-            val content = contentColorOverride?.takeUnless { it == accent }
-                ?: if (dark) lerp(accent, Color.White, 0.3f) else accent
-            ToolBoxActionColors(container, readableForeground(content, listOf(container)))
-        }
-        ToolBoxActionTone.Neutral -> {
-            val container = if (dark) Color.White.copy(alpha = 0.07f).compositeOver(colors.surfaceMuted) else colors.surfaceMuted
-            ToolBoxActionColors(container, readableForeground(contentColorOverride ?: colors.textPrimary, listOf(container)))
-        }
-        ToolBoxActionTone.Danger -> {
-            val container = colors.softDanger
-            ToolBoxActionColors(container, readableForeground(colors.onSoftDanger, listOf(container)))
-        }
+        ToolBoxActionTone.DangerConfirmation -> solidActionColors(colors.danger)
+        ToolBoxActionTone.Tonal -> ToolBoxActionColors(
+            accent.copy(alpha = if (dark) 0.18f else 0.10f),
+            contentColorOverride ?: accent,
+        )
+        ToolBoxActionTone.Neutral -> ToolBoxActionColors(
+            ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f),
+            contentColorOverride ?: colors.textPrimary,
+        )
+        ToolBoxActionTone.Danger -> ToolBoxActionColors(
+            colors.danger.copy(alpha = if (dark) 0.18f else 0.10f),
+            colors.danger,
+        )
     }
 }
+
+/** iOS tertiarySystemFill base, rgb(118,118,128); callers apply 0.12 light / 0.24 dark. */
+internal val ToolBoxNeutralFill = Color(0xFF767680)
 
 @Composable
 private fun ToolBoxActionButton(
@@ -617,14 +712,10 @@ private fun ToolBoxActionButton(
     val background = if (filled) pressedOverlay.compositeOver(palette.container) else pressedOverlay
 
     val labelStyle = if (compact) {
-        ToolBoxThemeTokens.textStyles.metadata.copy(fontWeight = FontWeight.Medium)
+        ToolBoxThemeTokens.textStyles.metadata.copy(fontWeight = FontWeight.SemiBold)
     } else {
-        ToolBoxThemeTokens.textStyles.body.copy(
-            fontSize = 16.sp,
-            lineHeight = 21.sp,
-            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
-            letterSpacing = 0.1.sp,
-        )
+        // iOS 26 large control label: 17 / SemiBold for every role.
+        ToolBoxThemeTokens.textStyles.headline
     }
 
     Box(
@@ -632,8 +723,10 @@ private fun ToolBoxActionButton(
             .sizeIn(minWidth = 48.dp)
             .heightIn(
                 min = when {
-                    compact -> 40.dp
-                    filled && emphasized -> ToolBoxThemeTokens.sizes.primaryButton
+                    // Small inline capsule, 44 / radius 22.
+                    compact -> 44.dp
+                    // Page and sheet capsules, 50 / radius 25.
+                    filled -> ToolBoxThemeTokens.sizes.primaryButton
                     else -> ToolBoxThemeTokens.sizes.touchTarget
                 },
             )
@@ -656,8 +749,8 @@ private fun ToolBoxActionButton(
                 },
             )
             .padding(
-                horizontal = if (compact) 12.dp else if (filled) 20.dp else 16.dp,
-                vertical = if (compact) 7.dp else 12.dp,
+                horizontal = if (compact) 14.dp else if (filled) 20.dp else 16.dp,
+                vertical = if (compact) 8.dp else 12.dp,
             ),
         contentAlignment = Alignment.Center,
     ) {
