@@ -60,7 +60,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .nf-glass,
 .article-list-header > [data-sidebar="trigger"],
 .article-list-inline-tabs .tabs__list,
-.article-list-header-wrap[data-scoped="true"] > .article-list-tabs .tabs__list,
+.article-list-scoped-tabs .tabs__list,
 .article-list-actions {
   background: var(--nf-glass);
   -webkit-backdrop-filter: var(--nf-glass-filter);
@@ -166,7 +166,30 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   color: var(--accent);
 }
 /* Inside a feed or category: title row, then the filter capsule centred below. */
-.article-list-header-wrap[data-scoped="true"] > .article-list-tabs { display: flex; justify-content: center; padding: 0 16px 8px; }
+.article-list-scoped-tabs { display: flex; justify-content: safe center; min-inline-size: 0; padding: 0 16px 8px; }
+.article-list-scoped-tabs .article-list-tabs { padding-inline: 0; }
+
+/* The filter capsule fits whatever width it gets (narrow phones, large display
+   size or system font): the header measures it and steps down from full, to
+   no icons, to tight padding, to smaller text; if it still does not fit it
+   takes a row of its own and steps down again there, so it never runs under
+   the buttons beside it. */
+.article-list-inline-tabs { justify-content: safe center; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs) :is(.article-list-tabs, .tabs, .tabs__list-container) { min-inline-size: 0; max-inline-size: 100%; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs) .tabs__list { max-inline-size: 100%; overflow: hidden; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs) .tabs__tab { flex: none; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs):is([data-fit="compact"], [data-fit="tight"], [data-fit="small"]) .article-list-tabs .tabs__tab svg { display: none; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="tight"] .article-list-tabs .tabs__tab { padding-inline: 6px; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="tight"] .article-list-tabs .tabs__list { padding: 3px; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-list-tabs .tabs__tab { padding-inline: 4px; font-size: 0.75rem; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-list-tabs .tabs__list { padding: 2px; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-fit="small"] .article-tab-count { font-size: 0.6875rem; }
+/* Still too wide: the capsule takes a row of its own under the buttons. */
+.article-list-header.ds-topbar:has(> .article-list-inline-tabs[data-stacked="true"]) { flex-wrap: wrap; row-gap: 8px; }
+.article-list-inline-tabs[data-stacked="true"] { order: 3; flex: 1 0 100%; }
+@media (max-width: 379px) {
+  .article-list-header.ds-topbar { gap: 6px; padding-inline: 12px; }
+}
 .article-list-title h1 {
   font-family: var(--nf-sans);
   font-size: 1.0625rem;
