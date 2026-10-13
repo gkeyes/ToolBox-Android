@@ -104,11 +104,12 @@ internal class BrowserCapabilityController(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         val id = fileLaunchId
-        val entry = id?.let(queue::take)
-        val upload = entry?.value as? Upload
-        if (upload == null || result.resultCode != Activity.RESULT_OK || !isCurrentPage(upload.page)) {
+        // Peek only: the upload stays queued until it settles, so a navigation, page cancel or
+        // replacement chooser during validation still denies it through cancelPage/cancelMatching.
+        val upload = id?.let(queue::peek)?.value as? Upload
+        if (id == null || upload == null || result.resultCode != Activity.RESULT_OK || !isCurrentPage(upload.page)) {
             fileLaunchId = null
-            upload?.let { runCatching { it.callback.onReceiveValue(null) } }
+            id?.let(queue::take)?.let { runCatching { it.value.deny() } }
             advance()
             return@registerForActivityResult
         }
@@ -122,11 +123,16 @@ internal class BrowserCapabilityController(
         // Provider lookups and opening each file block on I/O. fileLaunchId stays set while they run,
         // so no other prompt or picker starts before this upload settles on the main thread.
         activity.lifecycleScope.launch {
-            val uris = withContext(Dispatchers.IO) {
+            val accepted = withContext(Dispatchers.IO) {
                 BrowserCapabilityPolicy.acceptedUploads(returned, upload.multiple, ::safeUploadUri)
-            }?.takeIf { isCurrentPage(upload.page) }?.toTypedArray()
+            }
             if (fileLaunchId == id) fileLaunchId = null
-            runCatching { upload.callback.onReceiveValue(uris) }
+            // A missing entry was already denied by cancellation; never hand it the selection.
+            val settled = queue.take(id)?.value as? Upload
+            if (settled != null) {
+                val uris = accepted?.takeIf { isCurrentPage(settled.page) }?.toTypedArray()
+                runCatching { settled.callback.onReceiveValue(uris) }
+            }
             advance()
         }
     }

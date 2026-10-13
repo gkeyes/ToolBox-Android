@@ -9,6 +9,7 @@ internal class BrowserCapabilityQueue<T> {
     private val entries = mutableListOf<Entry<T>>()
     val first: Entry<T>? get() = entries.firstOrNull()
     fun add(page: Any, value: T): Entry<T> = Entry(++sequence, page, value).also(entries::add)
+    fun peek(id: Long): Entry<T>? = entries.firstOrNull { it.id == id }
     fun take(id: Long): Entry<T>? {
         val index = entries.indexOfFirst { it.id == id }
         return if (index < 0) null else entries.removeAt(index)
