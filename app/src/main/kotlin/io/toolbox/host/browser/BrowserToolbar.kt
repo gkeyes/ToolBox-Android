@@ -1,5 +1,6 @@
 package io.toolbox.host.browser
 
+import androidx.compose.ui.platform.LocalDensity
 import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -228,19 +229,24 @@ private fun BrowserDockButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = tint)
-        Spacer(Modifier.height(1.dp))
-        ToolBoxText(
-            label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = ToolBoxThemeTokens.textStyles.label.copy(
-                fontSize = 11.sp,
-                lineHeight = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = tint,
-            ),
-        )
+        // Large text: icon only (like the tab bar) so labels never clip in the 48dp button.
+        if (LocalDensity.current.fontScale >= 1.5f) {
+            ToolBoxIcon(icon, contentDescription = label, modifier = Modifier.size(22.dp), tint = tint)
+        } else {
+            ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = tint)
+            Spacer(Modifier.height(1.dp))
+            ToolBoxText(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = ToolBoxThemeTokens.textStyles.label.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = tint,
+                ),
+            )
+        }
     }
 }
 

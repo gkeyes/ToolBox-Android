@@ -572,9 +572,12 @@ internal fun liquidGlassMaterials(
         glassFallback = colors.surface,
         glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
         overlayFill = overlay(if (dark) 0.62f else 0.58f),
-        overlayFallback = overlay(if (dark) 0.84f else 0.86f),
+        // Overlay windows (sheets, dialogs, menus, the group folder) cannot sample the page behind,
+        // so without a real blur their panels are opaque: rows, labels and web pages behind must
+        // never read through the panel's own text.
+        overlayFallback = overlay(1f),
         menuFill = overlay(if (dark) 0.66f else 0.62f),
-        menuFallback = overlay(if (dark) 0.88f else 0.90f),
+        menuFallback = overlay(1f),
         overlayBorder = if (dark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.60f),
         sheetCard = when {
             reduceTransparency -> colors.surface

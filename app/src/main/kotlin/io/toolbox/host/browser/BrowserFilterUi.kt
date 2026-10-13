@@ -1,5 +1,6 @@
 package io.toolbox.host.browser
 
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -49,11 +50,21 @@ fun BrowserFilterControls(filters: BrowserFilterController, resumed: Boolean) {
             if (!collapsed) {
                 if (state.warning.isNotBlank()) ToolBoxText(state.warning, maxLines = 2,
                     style = ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ToolBoxTextButton("缩小", { filters.adjust(-1) }, Modifier.weight(1f), enabled = state.canShrink)
-                    ToolBoxTextButton("扩大", { filters.adjust(1) }, Modifier.weight(1f), enabled = state.canExpand)
-                    ToolBoxTextButton(if (state.preview) "返回" else "预览", filters::preview, Modifier.weight(1f), enabled = state.count > 0)
-                    ToolBoxTextButton("保存", filters::savePicker, Modifier.weight(1f), enabled = state.preview && !filters.saving, outlined = false)
+                // Four buttons in a row leave too little room for their labels on narrow phones or
+                // with large text; there they wrap into two rows of two.
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val perRow = if (maxWidth / LocalDensity.current.fontScale < 360.dp) 2 else 4
+                    val buttons: List<@Composable RowScope.() -> Unit> = listOf(
+                        { ToolBoxTextButton("缩小", { filters.adjust(-1) }, Modifier.weight(1f), enabled = state.canShrink) },
+                        { ToolBoxTextButton("扩大", { filters.adjust(1) }, Modifier.weight(1f), enabled = state.canExpand) },
+                        { ToolBoxTextButton(if (state.preview) "返回" else "预览", filters::preview, Modifier.weight(1f), enabled = state.count > 0) },
+                        { ToolBoxTextButton("保存", filters::savePicker, Modifier.weight(1f), enabled = state.preview && !filters.saving, outlined = false) },
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        buttons.chunked(perRow).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { row.forEach { it() } }
+                        }
+                    }
                 }
                 if (state.selector.isNotBlank()) {
                     ToolBoxTextButton(if (advanced) "收起规则" else "高级编辑", { advanced = !advanced }, outlined = false)

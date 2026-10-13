@@ -260,6 +260,7 @@ internal fun BrowserAddressSheet(state: BrowserUiState, actions: BrowserScreenAc
                         ToolBoxText(
                             connectionLabel,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = ToolBoxThemeTokens.textStyles.label.copy(
                                 color = colors.textSecondary,
                             ),
@@ -472,6 +473,7 @@ private fun BrowserUserAgentOption(
             ToolBoxText(
                 label,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = ToolBoxThemeTokens.textStyles.body.copy(
                     color = colors.textPrimary,
                     fontSize = 15.sp,

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -151,7 +153,14 @@ internal fun SettingsNavRow(
     ) {
         SettingsIconTile(icon, tint, enabled = enabled)
         SettingsRowLabels(title, summary, summaryColor, enabled, Modifier.weight(1f))
-        trailing?.invoke()
+        // An unweighted trailing value is measured first; capped so a long value or chip can
+        // never squeeze the title into a one-character column on narrow phones or large text.
+        trailing?.let {
+            Box(
+                Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * 0.4f).dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) { it() }
+        }
         if (onClick != null) {
             ToolBoxIcon(
                 ToolBoxIconKey.ChevronRight, null, Modifier.size(16.dp),
