@@ -39,11 +39,26 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxAppScaffold
-import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.ToolBoxSettingRow
-import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.core.ui.component.toolBoxShape
+import io.toolbox.host.settings.SettingsFooter
+import io.toolbox.host.settings.SettingsIconTint
+import io.toolbox.host.settings.SettingsNavRow
+import io.toolbox.host.settings.SettingsRowSeparator
+import io.toolbox.host.settings.SettingsSwitchRow
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
@@ -225,15 +240,23 @@ internal fun BackgroundSafeguardsContent(
             if (settings.backgroundError != null) {
                 item("background-error") { BackgroundSettingsFeedback(settings, onRetryBackground) }
             }
+            item("status") {
+                SafeguardStatusCard(
+                    backgroundEnabled = settings.settings.backgroundEnabled,
+                    systemState = systemState,
+                    modifier = Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.one),
+                )
+            }
             item("master-title") { Box(Modifier.toolBoxEntrance(entrance, 0)) { SectionHeader("运行") } }
             item("master") {
                 ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 1)) {
-                    ToolBoxSwitchSettingRow(
+                    SettingsSwitchRow(
                         title = "允许后台运行",
                         summary = settings.backgroundProgressSummary ?: "关闭会停止持续环境、计时器、后台任务和对应通知",
                         checked = settings.settings.backgroundEnabled,
                         onCheckedChange = onSetBackgroundEnabled,
                         icon = ToolBoxIconKey.Clock,
+                        tint = SettingsIconTint.Blue,
                         enabled = settings.canChangeBackground,
                         modifier = Modifier.testTag("safeguards_background_enabled"),
                     )
@@ -260,10 +283,10 @@ internal fun BackgroundSafeguardsContent(
                                     onOpen = null, onStop = { onStopSession(session) },
                                 )
                             }
-                            if (index != sessions.lastIndex) ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                            if (index != sessions.lastIndex) SettingsRowSeparator(start = ToolBoxThemeTokens.spacing.md)
                         }
                         if (sessions.isNotEmpty()) {
-                            ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                            SettingsRowSeparator(start = ToolBoxThemeTokens.spacing.md)
                             Box(Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.oneHalf), contentAlignment = Alignment.CenterEnd) {
                                 ToolBoxDestructiveButton(
                                     label = "全部停止", onClick = onStopAll,
@@ -279,44 +302,51 @@ internal fun BackgroundSafeguardsContent(
                 Column(Modifier.toolBoxEntrance(entrance, 4).padding(top = ToolBoxThemeTokens.spacing.two)) { SectionHeader("系统保障") }
             }
             item("permissions") {
-                ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 5)) {
-                    ToolBoxSettingRow(
-                        title = "通知",
-                        icon = ToolBoxIconKey.Notifications,
-                        onClick = onOpenNotifications,
-                        trailing = { SystemChip(if (systemState.notificationsAllowed) "已允许" else "未允许", systemState.notificationsAllowed) },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
-                        title = "后台定位",
-                        icon = ToolBoxIconKey.Location,
-                        onClick = onOpenBackgroundLocation,
-                        trailing = {
-                            SystemChip(
-                                if (systemState.backgroundLocationAllowed) "已允许始终访问" else "未允许始终访问",
-                                systemState.backgroundLocationAllowed,
-                            )
-                        },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
-                        title = "精确闹钟",
-                        icon = ToolBoxIconKey.Clock,
-                        onClick = onOpenExactAlarms,
-                        trailing = { SystemChip(if (systemState.exactAlarmsAllowed) "已允许" else "未允许", systemState.exactAlarmsAllowed) },
-                    )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
-                        title = "电池优化",
-                        icon = ToolBoxIconKey.Device,
-                        onClick = onOpenBatteryOptimization,
-                        trailing = {
-                            SystemChip(
-                                if (systemState.ignoresBatteryOptimizations) "不受限制" else "受系统限制",
-                                systemState.ignoresBatteryOptimizations,
-                            )
-                        },
-                    )
+                Column(Modifier.toolBoxEntrance(entrance, 5)) {
+                    ToolBoxGroupedSurface {
+                        SettingsNavRow(
+                            title = "通知",
+                            icon = ToolBoxIconKey.Notifications,
+                            tint = SettingsIconTint.Red,
+                            onClick = onOpenNotifications,
+                            trailing = { SystemChip(if (systemState.notificationsAllowed) "已允许" else "未允许", systemState.notificationsAllowed) },
+                        )
+                        SettingsRowSeparator()
+                        SettingsNavRow(
+                            title = "后台定位",
+                            icon = ToolBoxIconKey.Location,
+                            tint = SettingsIconTint.Blue,
+                            onClick = onOpenBackgroundLocation,
+                            trailing = {
+                                SystemChip(
+                                    if (systemState.backgroundLocationAllowed) "已允许始终访问" else "未允许始终访问",
+                                    systemState.backgroundLocationAllowed,
+                                )
+                            },
+                        )
+                        SettingsRowSeparator()
+                        SettingsNavRow(
+                            title = "精确闹钟",
+                            icon = ToolBoxIconKey.Clock,
+                            tint = SettingsIconTint.Orange,
+                            onClick = onOpenExactAlarms,
+                            trailing = { SystemChip(if (systemState.exactAlarmsAllowed) "已允许" else "未允许", systemState.exactAlarmsAllowed) },
+                        )
+                        SettingsRowSeparator()
+                        SettingsNavRow(
+                            title = "电池优化",
+                            icon = ToolBoxIconKey.Device,
+                            tint = SettingsIconTint.Mint,
+                            onClick = onOpenBatteryOptimization,
+                            trailing = {
+                                SystemChip(
+                                    if (systemState.ignoresBatteryOptimizations) "不受限制" else "受系统限制",
+                                    systemState.ignoresBatteryOptimizations,
+                                )
+                            },
+                        )
+                    }
+                    SettingsFooter("工具授权与 Android 系统权限分别生效。返回本页时会重新读取系统状态。")
                 }
             }
 
@@ -325,23 +355,27 @@ internal fun BackgroundSafeguardsContent(
             }
             item("hyperos") {
                 ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 7)) {
-                    ToolBoxSettingRow(
+                    SettingsNavRow(
                         title = "自启动设置",
                         summary = "由系统决定重启后能否自动恢复",
                         icon = ToolBoxIconKey.Refresh,
+                        tint = SettingsIconTint.Aqua,
                         onClick = onOpenHyperOsAutoStart,
                     )
-                    ToolBoxGroupDivider()
-                    ToolBoxSettingRow(
+                    SettingsRowSeparator()
+                    SettingsNavRow(
                         title = "后台省电设置",
                         summary = "允许系统为 ToolBox 调整后台策略",
                         icon = ToolBoxIconKey.Device,
+                        tint = SettingsIconTint.Mint,
                         onClick = onOpenHyperOsBatteryPolicy,
                     )
-                    ToolBoxGroupDivider()
-                    SystemStatusRow(
+                    SettingsRowSeparator()
+                    SettingsNavRow(
                         title = "实时通知与超级岛",
                         summary = focusState.summary(),
+                        icon = ToolBoxIconKey.Notifications,
+                        tint = SettingsIconTint.Purple,
                     )
                 }
             }
@@ -349,6 +383,75 @@ internal fun BackgroundSafeguardsContent(
         }
     }
     RunningToolsStopDialog(runningState, onCancelStop, onConfirmStop)
+}
+
+/** Summary card: a ring of how many system safeguards are ready, and what to do next. */
+@Composable
+private fun SafeguardStatusCard(
+    backgroundEnabled: Boolean,
+    systemState: BackgroundSystemState,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val checks = listOf(
+        systemState.notificationsAllowed,
+        systemState.backgroundLocationAllowed,
+        systemState.exactAlarmsAllowed,
+        systemState.ignoresBatteryOptimizations,
+    )
+    val okCount = checks.count { it }
+    val allOk = okCount == checks.size
+    val attention = checks.size - okCount
+    val title = when {
+        !backgroundEnabled -> "后台运行已关闭"
+        allOk -> "后台保障良好"
+        else -> "有 $attention 项需要处理"
+    }
+    val detail = when {
+        !backgroundEnabled -> "持续环境、计时器和后台任务均已停止。"
+        allOk -> "系统权限均已就绪，后台工具可以稳定运行。"
+        else -> "开启下方系统权限，避免提醒和后台刷新被系统中断。"
+    }
+    val progress by animateFloatAsState(
+        targetValue = okCount / checks.size.toFloat(),
+        animationSpec = io.toolbox.core.ui.component.ToolBoxMotion.spatial(),
+        label = "safeguard ring",
+    )
+    val ringColor = if (allOk) colors.success else colors.warning
+    val track = colors.surfaceMuted
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(toolBoxShape(ToolBoxThemeTokens.radii.card))
+            .background(colors.surface)
+            .semantics(mergeDescendants = true) {}
+            .padding(ToolBoxThemeTokens.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.md),
+    ) {
+        Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 7.dp.toPx()
+                val inset = stroke / 2f
+                val arcSize = Size(size.width - stroke, size.height - stroke)
+                drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+                drawArc(ringColor, -90f, 360f * progress, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+            }
+            if (allOk) {
+                io.toolbox.core.ui.component.ToolBoxIcon(ToolBoxIconKey.Check, null, Modifier.size(28.dp), tint = colors.success)
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AppText("$okCount/${checks.size}", textStyle = ToolBoxThemeTokens.textStyles.headline)
+                    AppText("已就绪", textStyle = ToolBoxThemeTokens.textStyles.label, color = colors.textSecondary)
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xxs)) {
+            SystemChip(if (allOk) "全部就绪" else "需要注意", allOk)
+            AppText(title, textStyle = ToolBoxThemeTokens.textStyles.headline)
+            AppText(detail, textStyle = ToolBoxThemeTokens.textStyles.sectionTitle, color = colors.textSecondary)
+        }
+    }
 }
 
 @Composable
