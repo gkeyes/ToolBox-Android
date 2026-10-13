@@ -18,7 +18,11 @@ internal class RuntimeNetworkStreams(
     private val entries = mutableMapOf<String, Entry>()
     // Complete requests have no caller-visible stream ID. Keep only active controls for revocation.
     private val requests = mutableSetOf<ToolNetworkStreamControl>()
-    private val cancelledBeforeOpen = mutableSetOf<String>()
+    private val cancelledBeforeOpen = linkedSetOf<String>()
+    // Stream IDs are 128-bit random values minted by the runtime SDK, so a retired ID is only consulted
+    // to swallow a late cancel and to reject an accidental reuse. Both happen right after retirement;
+    // the sets are insertion-ordered and keep only the most recent IDs purely as a memory bound. A very
+    // old forgotten ID is treated like an unknown one, which never limits how many streams a tool opens.
     private val retired = linkedSetOf<String>()
     private var active = true
 
@@ -86,6 +90,7 @@ internal class RuntimeNetworkStreams(
             }
             if (!active || streamId in retired || streamId in cancelledBeforeOpen) return@synchronized emptyList()
             cancelledBeforeOpen.add(streamId)
+            trimOldest(cancelledBeforeOpen)
             emptyList()
         }
         controls.forEach { it.cancel() }
@@ -122,6 +127,20 @@ internal class RuntimeNetworkStreams(
     }
 
     private fun retire(streamId: String) {
+        retired.remove(streamId)
         retired.add(streamId)
+        trimOldest(retired)
+    }
+
+    private fun trimOldest(ids: LinkedHashSet<String>) {
+        val iterator = ids.iterator()
+        while (ids.size > REMEMBERED_STREAM_IDS && iterator.hasNext()) {
+            iterator.next()
+            iterator.remove()
+        }
+    }
+
+    internal companion object {
+        internal const val REMEMBERED_STREAM_IDS = 4_096
     }
 }
