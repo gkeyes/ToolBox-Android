@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -281,23 +282,32 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
     val downloading = AppProgressKey in state.progress
     Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         ToolBoxGroupedSurface {
-            SettingsValueRow("当前版本", state.installed.describe(), ToolBoxIconKey.Tools, SettingsIconTint.Graphite)
+            // Version on the right, build number underneath: the long run id beside the title
+            // squeezed it into a one-character column on phones.
+            SettingsValueRow(
+                "当前版本", state.installed.versionName, ToolBoxIconKey.Tools, SettingsIconTint.Graphite,
+                summary = state.installed.runId.takeIf { it > 0 }?.let(::buildLabel),
+            )
             if (app != null) {
                 SettingsRowSeparator()
                 SettingsNavRow(
                     title = if (state.channel == UpdateChannel.TEST) "最新测试版" else "最新正式版",
                     icon = ToolBoxIconKey.Refresh,
                     tint = SettingsIconTint.Blue,
-                    summary = when (state.appState) {
-                        AppUpdateState.NEWER -> "有新版本"
-                        AppUpdateState.CURRENT -> "已是最新"
-                        AppUpdateState.OTHER_BUILD -> "与当前版本号相同的另一个构建"
-                        AppUpdateState.DOWNGRADE -> "版本号低于当前版本，需先卸载才能安装"
-                        null -> null
-                    },
+                    summary = listOfNotNull(
+                        app.runId?.let(::buildLabel),
+                        when (state.appState) {
+                            AppUpdateState.NEWER -> "有新版本"
+                            AppUpdateState.CURRENT -> "已是最新"
+                            AppUpdateState.OTHER_BUILD -> "与当前版本号相同的另一个构建"
+                            AppUpdateState.DOWNGRADE -> "版本号低于当前版本，需先卸载才能安装"
+                            null -> null
+                        },
+                    ).joinToString(" · ").ifEmpty { null },
                     trailing = {
                         ToolBoxText(
-                            app.describe(),
+                            app.versionName,
+                            modifier = Modifier.widthIn(max = 140.dp),
                             style = ToolBoxThemeTokens.textStyles.body.copy(
                                 color = if (state.appState == AppUpdateState.NEWER) {
                                     ToolBoxThemeTokens.colors.primary
@@ -362,8 +372,4 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
     )
 }
 
-private fun InstalledBuild.describe(): String =
-    if (runId > 0) "$versionName（构建 $runId）" else versionName
-
-private fun AppPackage.describe(): String =
-    if (runId != null) "$versionName（构建 $runId）" else versionName
+private fun buildLabel(runId: Long): String = "构建 $runId"

@@ -12,7 +12,10 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 
-internal class UpdateCheckException(message: String) : IOException(message)
+internal open class UpdateCheckException(message: String) : IOException(message)
+
+/** CI replaced the asset after the feed was read: it is gone or has new content, so read the feed again. */
+internal class StaleAssetException(message: String) : UpdateCheckException(message)
 
 /**
  * Reads the public GitHub releases of the host repository: the latest release is the stable
@@ -77,6 +80,7 @@ internal class UpdateRepository(
         partial.delete()
         val digest = MessageDigest.getInstance("SHA-256")
         client.newCall(Request.Builder().url(asset.url).build()).execute().use { response ->
+            if (response.code == 404) throw StaleAssetException("文件已被新构建替换，请重新检查更新。")
             if (!response.isSuccessful) throw UpdateCheckException("下载失败（HTTP ${response.code}）。")
             val body = response.body
             val total = body.contentLength().takeIf { it > 0 } ?: asset.size.takeIf { it > 0 }
@@ -99,7 +103,7 @@ internal class UpdateRepository(
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (asset.sha256 != null && asset.sha256 != actual) {
             partial.delete()
-            throw UpdateCheckException("文件校验失败，请重试。")
+            throw StaleAssetException("文件校验失败，请重新检查更新后再试。")
         }
         if (!partial.renameTo(target)) {
             target.delete()
