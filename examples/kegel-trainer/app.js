@@ -262,7 +262,15 @@
   let storageState = "loading";
   let hostConnected = false;
   let loadWork = null;
-  let unsavedHistory = [];
+  // Preferences as last read from ToolBox.storage (defaults before the first read). Values
+  // that differ from it were chosen while the saved copy was unknown and win over it.
+  let preferencesBase = sanitizePreferences({});
+  // The user cleared history before the saved copy was read: do not bring it back.
+  let historyCleared = false;
+  // The localStorage fallback was used this run, so its copy must be merged on recovery.
+  let legacyUsed = false;
+  // Fallback copy to remove once everything in memory has reached ToolBox.storage.
+  let pendingLegacyDrop = null;
   const dirtyKeys = new Set();
   let writeWork = null;
   let hapticsWarned = false;
@@ -301,6 +309,20 @@
       && Number.isFinite(entry.reps)
       && Number.isFinite(entry.durationMs)
     ));
+  }
+
+  // Union of several history copies, newest first; a session present in more than one copy
+  // (same completion time and contents) is kept once.
+  function mergeHistory(...lists) {
+    const seen = new Set();
+    const merged = [];
+    for (const entry of lists.flatMap(sanitizeHistory)) {
+      const id = `${entry.completedAt}|${entry.mode}|${entry.reps}|${entry.durationMs}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      merged.push(entry);
+    }
+    return merged.sort((a, b) => (a.completedAt < b.completedAt ? 1 : a.completedAt > b.completedAt ? -1 : 0));
   }
 
   // Versions up to 1.0.4 kept data in WebView localStorage, which the host may not keep.
@@ -342,21 +364,38 @@
     return { ...saved, ...edits, custom: { ...saved.custom, ...(edits.custom || {}) } };
   }
 
+  // Returns false when the fallback copy could not be written (quota, blocked storage).
   function writeLegacy() {
     try {
       window.localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify(preferences));
       window.localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  // Adopts loaded data while keeping edits and sessions made during the read.
-  function adoptLoaded(savedPreferences, savedHistory, base) {
-    const edits = preferenceEdits(base, preferences);
+  // The fallback copy can no longer be written: say so instead of claiming it is kept.
+  // Everything stays in memory and is merged into ToolBox.storage once it is enabled.
+  function legacyWriteFailed() {
+    storageState = "unavailable";
+    dirtyKeys.add(STORAGE_KEYS.preferences);
+    dirtyKeys.add(STORAGE_KEYS.history);
+    showToast("网页存储写入失败，训练记录仅保留在本次会话，请开启「存储」权限");
+    renderHistory();
+  }
+
+  // Adopts loaded data while keeping edits and sessions made before it could be read
+  // (during the read, or while ToolBox.storage was unavailable).
+  function adoptLoaded(savedPreferences, savedHistories) {
+    const edits = preferenceEdits(preferencesBase, preferences);
     preferences = applyPreferenceEdits(sanitizePreferences(savedPreferences), edits);
-    history = [...unsavedHistory, ...sanitizeHistory(savedHistory)];
-    const changed = { preferences: Object.keys(edits).length > 0, history: unsavedHistory.length > 0 };
-    unsavedHistory = [];
-    return changed;
+    const before = history.length;
+    history = historyCleared ? mergeHistory(history) : mergeHistory(history, ...savedHistories);
+    return {
+      preferences: Object.keys(edits).length > 0,
+      history: historyCleared || before > 0
+    };
   }
 
   function loadStoredData() {
@@ -366,7 +405,6 @@
 
   async function readStoredData() {
     const api = hostApi();
-    const base = sanitizePreferences(preferences);
     let saved;
     try {
       saved = await api.storage.getMany([STORAGE_KEYS.preferences, STORAGE_KEYS.history]);
@@ -376,27 +414,31 @@
       const legacy = readLegacyStorage();
       const wasLegacy = storageState === "legacy";
       if (legacy) {
-        adoptLoaded(legacy.preferences, legacy.history, base);
+        adoptLoaded(legacy.preferences, [legacy.history]);
         storageState = "legacy";
-        writeLegacy();
+        legacyUsed = true;
+        if (!writeLegacy()) legacyWriteFailed();
       } else {
         storageState = "unavailable";
       }
-      if (!wasLegacy) showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
+      // legacyWriteFailed() already asked to enable storage; keep its warning visible.
+      if (!wasLegacy && (!legacy || storageState === "legacy")) showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
       syncControls();
       if (currentScreen === "setup") renderSetup();
       renderHistory();
       return;
     }
     let [savedPreferences, savedHistory] = saved;
-    const legacy = savedPreferences === null && savedHistory === null ? readLegacyStorage() : null;
-    let imported = false;
-    if (legacy && (legacy.preferences !== null || legacy.history !== null)) {
-      savedPreferences = legacy.preferences;
-      savedHistory = legacy.history;
-      imported = true;
-    }
-    const changed = adoptLoaded(savedPreferences, savedHistory, base);
+    // Sessions recorded in the fallback copy while storage was off are merged even when
+    // ToolBox.storage already holds older data.
+    const legacy = legacyUsed || (savedPreferences === null && savedHistory === null)
+      ? readLegacyStorage() : null;
+    const imported = Boolean(legacy && (legacy.preferences !== null || legacy.history !== null));
+    if (imported && savedPreferences === null) savedPreferences = legacy.preferences;
+    const changed = adoptLoaded(savedPreferences, imported ? [savedHistory, legacy.history] : [savedHistory]);
+    preferencesBase = sanitizePreferences(savedPreferences);
+    historyCleared = false;
+    legacyUsed = false;
     storageState = "ready";
     if (imported) {
       try {
@@ -406,6 +448,8 @@
         ] });
         dropLegacyStorage(legacy);
       } catch (_) {
+        // Remove the fallback copy only once a later write has saved everything.
+        pendingLegacyDrop = legacy;
         dirtyKeys.add(STORAGE_KEYS.preferences);
         dirtyKeys.add(STORAGE_KEYS.history);
       }
@@ -435,24 +479,31 @@
       return false;
     }).then((saved) => {
       writeWork = null;
+      if (saved && dirtyKeys.size === 0 && pendingLegacyDrop) {
+        dropLegacyStorage(pendingLegacyDrop);
+        pendingLegacyDrop = null;
+      }
       return saved && dirtyKeys.size ? writeDirty() : undefined;
     });
     return writeWork;
   }
 
   function persistPreferences() {
-    if (storageState === "legacy") { writeLegacy(); return; }
+    if (storageState === "legacy") { if (!writeLegacy()) legacyWriteFailed(); return; }
     dirtyKeys.add(STORAGE_KEYS.preferences);
     void writeDirty();
   }
 
   function persistHistory() {
-    if (storageState === "legacy") { writeLegacy(); return; }
+    if (storageState === "legacy") { if (!writeLegacy()) legacyWriteFailed(); return; }
     dirtyKeys.add(STORAGE_KEYS.history);
     void writeDirty();
   }
 
   async function flushStorage() {
+    // Closing during the first read: wait for it so edits and sessions made meanwhile are
+    // merged into the saved copy and written, instead of being dropped with the WebView.
+    if (loadWork) await loadWork;
     if (storageState !== "ready") return;
     await writeDirty();
     if (dirtyKeys.size) await writeDirty();
@@ -863,7 +914,6 @@
       durationMs: Math.round(state.elapsedMs)
     };
     history = [entry, ...history];
-    if (storageState === "loading" || storageState === "unavailable") unsavedHistory = [entry, ...unsavedHistory];
     persistHistory();
     if (!runtimeForeground) {
       completionPending = state;
@@ -1012,6 +1062,7 @@
   $("keep-history-button").addEventListener("click", () => clearDialog.close());
   $("confirm-clear-button").addEventListener("click", () => {
     history = [];
+    if (storageState !== "ready") historyCleared = true;
     persistHistory();
     renderHistory();
     clearDialog.close();

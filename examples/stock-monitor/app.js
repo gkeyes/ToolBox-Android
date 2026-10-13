@@ -30,6 +30,7 @@
   let ready = false;
   let stateLoaded = false;
   let savedStateUnreadable = false;
+  let savedStateEverRead = false;
   let markStateLoaded = null;
   const stateLoadedWork = new Promise((resolve) => { markStateLoaded = resolve; });
   let liveAvailable = true;
@@ -833,6 +834,7 @@
     try {
       state = sanitizeState(await toolbox().storage.get(STORAGE_KEY));
       savedStateUnreadable = false;
+      savedStateEverRead = true;
     } catch (_) {
       // Keep the in-memory list so quotes still work, but refuse to persist over the
       // saved list until a later read succeeds.
@@ -874,6 +876,7 @@
           paintTimer = null;
         }
         if (!runtimeClosing && restorePending) resumeRestore();
+        else if (runtimeForeground) retrySavedState();
       });
       toolbox().runtime.registerFlushHandler(async () => {
         await Promise.allSettled([bootWork, restoreWork, monitorWork, ...userActions]);
@@ -884,15 +887,19 @@
       $("runtime-caption").textContent = `ToolBox ${host.hostVersion} · API ${host.apiVersion}`;
       await loadSavedState();
       markStateLoaded();
-      try {
-        await reconcileMonitoring();
-      } catch (error) {
-        if (error?.code !== "PERMISSION_DENIED" && error?.code !== "NOT_DECLARED") throw error;
-        state.monitoring = false;
-        state.sessionId = null;
+      // The interval and session in memory are defaults until the saved state is read;
+      // reconciling now would reset the running timer to them. Retried on resume/timer.
+      if (!savedStateUnreadable) {
+        try {
+          await reconcileMonitoring();
+        } catch (error) {
+          if (error?.code !== "PERMISSION_DENIED" && error?.code !== "NOT_DECLARED") throw error;
+          state.monitoring = false;
+          state.sessionId = null;
+        }
       }
       render();
-      if (savedStateUnreadable) setStatus("读取已保存的自选列表失败，当前修改不会保存，重新打开后重试。", "warning");
+      if (savedStateUnreadable) setStatus("读取已保存的自选列表失败，当前修改不会保存，稍后会自动重试。", "warning");
       else setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
       if (runtimeClosing) return;
       if (state.monitoring) await publishLiveState("start");
@@ -907,10 +914,18 @@
   if (toolbox()?.background?.onTimer) {
     toolbox().background.onTimer((event) => {
       if (!runtimeClosing && event?.key === TIMER_KEY) {
-        afterStateLoaded(() => refreshAll({ background: true })).catch(() => {});
+        afterStateLoaded(() => (savedStateUnreadable ? retrySavedState() : refreshAll({ background: true }))).catch(() => {});
       }
     });
   }
+  // Boot could not read the saved state: read it again (resume or timer) and only then
+  // reconcile the background timer and live notification with it.
+  function retrySavedState() {
+    if (!ready || !stateLoaded || !savedStateUnreadable || runtimeClosing) return;
+    restorePending = true;
+    resumeRestore();
+  }
+
   function resumeRestore() {
     if (runtimeClosing || restoreWork || !restorePending) return;
     restorePending = false;
@@ -918,11 +933,20 @@
         await bootWork;
         if (runtimeClosing) { restorePending = true; return; }
         if (!ready) return;
+        const wasDefaults = !savedStateEverRead;
         await loadSavedState();
         if (runtimeClosing) { restorePending = true; return; }
+        // Memory still holds defaults (never read): do not reconcile with them.
+        if (!savedStateEverRead) {
+          setStatus("读取已保存的自选列表失败，当前修改不会保存，稍后会自动重试。", "warning");
+          return;
+        }
         await reconcileMonitoring();
         if (runtimeClosing) { restorePending = true; return; }
         render();
+        if (wasDefaults) {
+          setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "已读取保存的自选列表。", "success");
+        }
         if (state.monitoring) await publishLiveState("start");
         await refreshAll({ background: true });
       } catch (error) {

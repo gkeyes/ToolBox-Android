@@ -450,3 +450,132 @@ test('Kegel keeps preference edits made while saved preferences are loading', as
   assert.equal(prefs.selectedMode, 'standard');
   assert.equal(prefs.sound, false);
 });
+
+function kegelHost({ getMany }) {
+  const applied = [];
+  const host = { applied, flush: null, stateListener: null };
+  host.toolbox = {
+    ready: async () => ({}),
+    runtime: {
+      onStateChanged(listener) { host.stateListener = listener; listener({ foreground: true, closing: false }); },
+      registerFlushHandler(handler) { host.flush = handler; },
+    },
+    storage: { getMany, apply: async (mutation) => { applied.push(JSON.parse(JSON.stringify(mutation))); } },
+    haptics: { perform: async () => {} },
+  };
+  host.savedHistory = () => {
+    const writes = applied.flatMap((mutation) => mutation.set).filter((entry) => entry.key === 'wenli.history.v1');
+    return writes.at(-1)?.value;
+  };
+  return host;
+}
+
+const settleMany = async (count = 8) => { for (let index = 0; index < count; index += 1) await settle(); };
+
+test('Kegel flush while the first read is pending waits for it and saves edits made meanwhile', async () => {
+  let release;
+  const host = kegelHost({ getMany: () => new Promise((resolve) => { release = resolve; }) });
+  const h = loadKegel({ toolbox: host.toolbox });
+  await settle();
+  for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value: '30' } });
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  let flushed = false;
+  const flushing = host.flush().then(() => { flushed = true; });
+  await settleMany();
+  assert.equal(flushed, false, 'flush waits for the pending read');
+  const old = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  release([{ volume: 80 }, [old]]);
+  await flushing;
+  const prefs = host.applied.flatMap((m) => m.set).filter((e) => e.key === 'wenli.preferences.v1').at(-1).value;
+  assert.equal(prefs.volume, 30);
+  assert.equal(host.savedHistory().length, 2, 'new session saved together with the stored one');
+});
+
+test('Kegel clearing history while the saved copy loads does not bring it back', async () => {
+  let release;
+  const host = kegelHost({ getMany: () => new Promise((resolve) => { release = resolve; }) });
+  const h = loadKegel({ toolbox: host.toolbox });
+  await settle();
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  h.click('confirm-clear-button');
+  const old = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  release([null, [old]]);
+  await settleMany();
+  assert.deepEqual(host.savedHistory(), []);
+  assert.equal(h.nodes.get('history-summary').textContent, '还没有训练记录');
+});
+
+test('Kegel warns when the localStorage fallback cannot be written and keeps sessions for migration', async () => {
+  let denied = true;
+  const hostEntry = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const host = kegelHost({ getMany: async () => {
+    if (denied) throw Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' });
+    return [null, [hostEntry]];
+  } });
+  const localStorage = { getItem: () => null, setItem() { throw new Error('QuotaExceededError'); }, removeItem() {} };
+  const h = loadKegel({ toolbox: host.toolbox, localStorage });
+  await settleMany();
+  assert.doesNotMatch(h.nodes.get('history-summary').textContent, /暂存在网页存储/);
+  assert.match(h.nodes.get('toast').textContent, /写入失败/);
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  assert.match(h.nodes.get('history-summary').textContent, /本次会话已完成 1 次/);
+  denied = false;
+  host.stateListener({ foreground: false, closing: false });
+  host.stateListener({ foreground: true, closing: false });
+  await settleMany();
+  assert.equal(host.savedHistory().length, 2);
+});
+
+test('Kegel merges sessions kept in the fallback while storage was off into existing host data', async () => {
+  let denied = true;
+  const hostEntry = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const host = kegelHost({ getMany: async () => {
+    if (denied) throw Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' });
+    return [{ volume: 80, sound: false }, [hostEntry]];
+  } });
+  const localStorage = legacyStore([]);
+  const h = loadKegel({ toolbox: host.toolbox, localStorage });
+  await settleMany();
+  for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value: '30' } });
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 1);
+  denied = false;
+  host.stateListener({ foreground: false, closing: false });
+  host.stateListener({ foreground: true, closing: false });
+  await settleMany();
+  const history = host.savedHistory();
+  assert.equal(history.length, 2, 'fallback session merged with the host copy');
+  assert.equal(new Set(history.map((entry) => entry.completedAt)).size, 2);
+  const prefs = host.applied.at(-1).set.find((e) => e.key === 'wenli.preferences.v1').value;
+  assert.equal(prefs.volume, 30, 'edit made while storage was off kept');
+  assert.equal(prefs.sound, false, 'untouched host preference kept');
+  assert.equal(localStorage.data.size, 0, 'fallback removed after the host write');
+  assert.match(h.nodes.get('history-summary').textContent, /已保存 2 次/);
+});
+
+test('stock saved-state read failure keeps the background timer until the state is read', async () => {
+  let fail = true;
+  const timers = [];
+  const host = stockHost();
+  host.toolbox.background.setTimer = async (_key, interval) => { timers.push(interval); };
+  host.toolbox.storage.get = async () => {
+    if (fail) throw Object.assign(new Error('busy'), { code: 'BUSY' });
+    return { version: 1, intervalMs: 900000, monitoring: true, sessionId: 'session-1',
+      items: [{ id: 'saved', provider: 'tencent', symbol: '000001', name: '自选' }] };
+  };
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'get state() { return state; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  await settleMany(20);
+  assert.deepEqual(timers, [], 'default interval never replaces the saved schedule');
+  assert.equal(h.api.state.monitoring, false);
+  fail = false;
+  host.listeners.timer({ key: 'quote-poll' });
+  await settleMany(20);
+  assert.deepEqual(timers, [900000]);
+  assert.equal(h.api.state.monitoring, true);
+  assert.deepEqual(h.api.state.items.map((item) => item.symbol), ['000001']);
+});
