@@ -7,9 +7,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** One process-wide admission boundary. Do not launch detached child writers inside run(). */
 class DataRecoveryRequiredException : IllegalStateException("RESTORE_RECOVERY_REQUIRED")
 
+/**
+ * A reentrant admission boundary. Production has exactly one instance per level: the inner
+ * repository write lock ([CoreDataRepositories.mutations], created by CoreDataFactory) and the
+ * outer package lock (HostDependencies.packageMutations). They must stay separate instances,
+ * because work drained under the outer lock still writes through the inner one; take outer first.
+ * Do not launch detached child writers inside run().
+ */
 class DataMutationLock {
     private val mutex = Mutex()
     @Volatile private var blocked = false

@@ -111,6 +111,7 @@ class DataMutationLockTest {
             installs = recording(calls),
             backgroundTasks = recording(calls),
             settings = recording(calls),
+            mutations = DataMutationLock(),
         )
         val repositories = raw.withMutationLock()
         assertSame(raw.mutations, repositories.mutations)
