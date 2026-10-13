@@ -69,6 +69,21 @@ tasks.withType<Test>().configureEach {
         systemProperty("roborazzi.test.record", "true")
         systemProperty("toolbox.screenshots.dir", rootProject.layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
         maxHeapSize = "4g"
+        // Robolectric's interceptors reflect into JDK internals that Java 21 closes by default.
+        jvmArgs(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
+        )
+        testLogging {
+            events("failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showStackTraces = true
+            showCauses = true
+        }
     } else {
         exclude("io/toolbox/host/screenshots/**")
     }

@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
@@ -83,6 +84,7 @@ import java.io.File
  * saves PNGs for review, and fails when text is clipped without an ellipsis or squeezed into a
  * sliver (one or two characters per line). Run with `-Ptoolbox.screenshots=true`.
  */
+@OptIn(ExperimentalRoborazziApi::class)
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36], qualifiers = "w320dp-h1400dp-xxhdpi")
