@@ -88,3 +88,13 @@ export function createStore(storage, makeId = () => crypto.randomUUID()) {
     },
   };
 }
+
+// One close-time draft slot. clear() only removes a draft this session wrote, and runs after any pending write.
+export function createDraftSlot(storage, key) {
+  let written = false, tail = Promise.resolve();
+  const queue = (task) => { const run = tail.then(task, task); tail = run.catch(() => {}); return run; };
+  return {
+    write(value) { written = true; return queue(() => storage.set(key, value)); },
+    clear() { if (!written) return tail; written = false; return queue(() => storage.remove(key)).catch(() => {}); },
+  };
+}

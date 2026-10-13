@@ -1,5 +1,5 @@
 import { TYPES, STATUS_TEXT, HealthError, emptyArchive, normalizeArchive, normalizeRecord, normalizeItem, localDate, newId, buildIndex, outside, specimen, compareReference, mergeArchive, metricKey, assertNoNewDuplicateMetrics, byteSize, draftRecord } from "./model.mjs";
-import { createStore } from "./store.mjs";
+import { createStore, createDraftSlot } from "./store.mjs";
 import { h, icon, button, iconButton, field, sectionHeading, emptyState } from "./dom.mjs";
 import { createChoice } from "./choice.mjs";
 import { trendChart, monthlyChart } from "./charts.mjs";
@@ -15,7 +15,7 @@ import { APP_VERSION } from "./version.mjs";
 const main = document.getElementById("main"), nav = document.getElementById("navigation"), dialog = document.getElementById("dialog");
 const api = window.ToolBox;
 const DRAFT_KEY = "health.v1.draft";
-let flushRegistered = false;
+let flushRegistered = false, draftSlot = null;
 let store, archive = emptyArchive(), index = buildIndex([]), page = "overview", lastTab = "overview", detailId = null;
 let filter = "all", query = "", recordLimit = 24, selectedMetric = null, metricQuery = "", trendLimit = 30;
 let trendReturn = { page: "overview", lastTab: "overview", detailId: null };
@@ -96,6 +96,8 @@ function navigate(next, preserveScroll = false) {
   viewGeneration++;
   if (next === "trends" && page !== "trends" && page !== "editor") trendReturn = { page, lastTab, detailId };
   if (Object.hasOwn(tabLabels, page)) scrollPositions.set(page, window.scrollY);
+  // Leaving the editor (saved or abandoned) drops a draft flushed by a close the user then cancelled.
+  if (page === "editor") draftSlot?.clear();
   page = next; editor = null;
   if (Object.hasOwn(tabLabels, next)) lastTab = next;
   document.body.classList.remove("editing"); nav.hidden = !Object.hasOwn(tabLabels, page);
@@ -622,7 +624,7 @@ async function chooseOcr() {
 // ToolBox 0.8.28+ calls this before it really closes or reloads the page.
 async function flushDraft() {
   await store?.idle();
-  if (page === "editor" && editor?.snapshot && editor.isDirty()) await api.storage.set(DRAFT_KEY, { savedAt: new Date().toISOString(), draft: editor.snapshot() });
+  if (page === "editor" && editor?.snapshot && editor.isDirty()) await draftSlot.write({ savedAt: new Date().toISOString(), draft: editor.snapshot() });
 }
 
 async function offerDraft() {
@@ -641,7 +643,7 @@ async function start() {
   try {
     if (!api?.ready || !api?.storage?.set) throw new HealthError("请将 health-records.tbx 导入 ToolBox 后打开。普通浏览器不能直接保存 ToolBox 数据。", "HOST_REQUIRED");
     await api.ready();
-    store = createStore(api.storage); archive = await store.load(); index = buildIndex(archive.records);
+    store = createStore(api.storage); draftSlot ??= createDraftSlot(api.storage, DRAFT_KEY); archive = await store.load(); index = buildIndex(archive.records);
     setTheme(archive.settings.theme); buildNavigation(); navigate("overview");
     if (!flushRegistered && typeof api.runtime?.registerFlushHandler === "function") { api.runtime.registerFlushHandler(flushDraft); flushRegistered = true; }
     await offerDraft();

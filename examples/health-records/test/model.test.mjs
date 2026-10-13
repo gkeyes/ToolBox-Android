@@ -5,7 +5,7 @@ import {
   HealthError, normalizeArchive, normalizeRecord, emptyArchive, compareReference, numericValue, canonicalUnit, metricKey,
   mergeArchive, buildIndex, assertNoNewDuplicateMetrics, draftRecord, restoreReferenceDraft, monthlyDays, formatReference, referenceDraft,
 } from "../web/model.mjs";
-import { createStore } from "../web/store.mjs";
+import { createStore, createDraftSlot } from "../web/store.mjs";
 import { APP_VERSION } from "../web/version.mjs";
 
 let counter = 0;
@@ -166,4 +166,25 @@ test("a corrupt head is reported without creating a new empty archive", async ()
   storage.data.set("health.v1.head", { format: 1, buckets: ["health.v1.bucket.missing", null, null, null, null, null, null, null], meta: {} });
   await assert.rejects(createStore(storage).load(), { code: "CORRUPT_STORAGE" });
   assert.ok(storage.data.has("health.v1.head"));
+});
+
+test("a draft flushed by a cancelled close is cleared when the editor is later saved or discarded", async () => {
+  const data = new Map(), calls = [];
+  let releaseSet;
+  const storage = {
+    async set(key, value) { calls.push(["set", key]); await new Promise((resolve) => { releaseSet = resolve; }); data.set(key, value); },
+    async remove(key) { calls.push(["remove", key]); data.delete(key); },
+  };
+  const slot = createDraftSlot(storage, "draft");
+  await slot.clear();
+  assert.deepEqual(calls, [], "leaving an editor that was never flushed writes nothing");
+  const writing = slot.write({ draft: 1 });
+  await new Promise((resolve) => setImmediate(resolve));
+  const clearing = slot.clear();
+  releaseSet(); await writing; await clearing;
+  assert.equal(data.has("draft"), false, "clear waits for the in-flight flush, then removes it");
+  assert.deepEqual(calls, [["set", "draft"], ["remove", "draft"]]);
+  const kept = slot.write({ draft: 2 });
+  await new Promise((resolve) => setImmediate(resolve)); releaseSet(); await kept;
+  assert.deepEqual(data.get("draft"), { draft: 2 }, "an actual close keeps the flushed draft");
 });
