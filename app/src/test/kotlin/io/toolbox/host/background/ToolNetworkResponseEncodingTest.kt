@@ -83,8 +83,11 @@ class ToolNetworkResponseEncodingTest {
             withTimeout(2_000) { while (waiting.count > 0) delay(1) }
             assertTrue(resources.reservedBytes >= NetworkResources.OPERATION_BYTES + 12 * 8)
             withTimeout(2_000) { request.cancelAndJoin() }
-            assertEquals(0L, resources.reservedBytes)
             withTimeout(2_000) { while (closed.count > 0) delay(1) }
+            // Cancellation detaches the blocked chunk read; its buffer reservation is released on the body
+            // dispatcher once closing the response makes that read fail, which can land after the join.
+            withTimeout(2_000) { while (resources.reservedBytes != 0L) delay(1) }
+            assertEquals(0L, resources.reservedBytes)
         } finally { closed.countDown(); request.cancelAndJoin() }
     }
 
