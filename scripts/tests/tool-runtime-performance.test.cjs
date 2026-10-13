@@ -209,3 +209,111 @@ test('Kegel training clock stays frozen while paused and resumes from remaining 
   now += 1;
   assert.equal(engine.tick().phase, 'contract');
 });
+
+function loadKegel({ toolbox, localStorage } = {}) {
+  const filename = path.join(examples, 'kegel-trainer', 'app.js');
+  const nodes = new Map();
+  const writes = { text: 0 };
+  let frames = [];
+  let clock = 1000;
+  const element = () => {
+    let text = '';
+    const node = {
+      children: [], dataset: {}, style: {}, hidden: false, listeners: {},
+      get textContent() { return text; },
+      set textContent(value) { writes.text += 1; text = String(value); },
+      get childElementCount() { return this.children.length; },
+      get lastChild() { return node; },
+      classList: { toggle() {}, add() {}, remove() {} },
+      addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
+      setAttribute() {}, closest() { return element(); },
+      append(...items) { this.children.push(...items); },
+      replaceChildren(...items) { this.children = items; },
+      showModal() {}, close() {}, focus() {}, pause() {}, play: async () => {},
+    };
+    return node;
+  };
+  const document = {
+    body: { dataset: {} },
+    getElementById(id) { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); },
+    querySelectorAll() { return []; },
+    createElement: element,
+  };
+  const window = {
+    ToolBox: toolbox,
+    localStorage,
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    requestAnimationFrame(fn) { frames.push(fn); return frames.length; },
+    cancelAnimationFrame() {},
+    scrollTo() {},
+    setTimeout, clearTimeout,
+  };
+  const context = { window, document, navigator: {}, performance: { now: () => clock }, console, Intl, Date, setTimeout, clearTimeout };
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+  return {
+    nodes, writes, window,
+    click(id) { for (const listener of nodes.get(id).listeners.click || []) listener({}); },
+    runFrames(count, step) {
+      for (let index = 0; index < count; index += 1) {
+        clock += step;
+        const pending = frames; frames = [];
+        for (const fn of pending) fn(clock);
+      }
+    },
+  };
+}
+
+test('Kegel trains without a host and only repaints values that change each frame', () => {
+  const h = loadKegel();
+  assert.equal(h.window.WenliTraining, undefined);
+  h.click('start-button');
+  assert.equal(h.nodes.get('countdown').textContent, '5');
+  const before = h.writes.text;
+  h.runFrames(60, 16);
+  assert.ok(h.writes.text - before <= 3, `text writes over 60 frames: ${h.writes.text - before}`);
+  assert.equal(h.nodes.get('countdown').textContent, '5');
+  h.runFrames(10, 16);
+  assert.equal(h.nodes.get('countdown').textContent, '4');
+});
+
+test('Kegel falls back to foreground training when the host handshake fails', async () => {
+  const h = loadKegel({ toolbox: { ready: () => Promise.reject(new Error('no host')) } });
+  await settle();
+  h.click('start-button');
+  assert.equal(h.nodes.get('countdown').textContent, '5');
+});
+
+test('Kegel imports legacy localStorage once into ToolBox storage and uses host haptics', async () => {
+  const legacy = new Map([
+    ['wenli.preferences.v1', JSON.stringify({ selectedMode: 'standard', vibration: true })],
+    ['wenli.history.v1', JSON.stringify([{ completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 }])],
+  ]);
+  const localStorage = {
+    getItem: (key) => legacy.get(key) ?? null,
+    removeItem: (key) => legacy.delete(key),
+  };
+  const applied = [], haptics = [];
+  let flush = null;
+  const toolbox = {
+    ready: async () => ({}),
+    runtime: {
+      onStateChanged(listener) { listener({ foreground: true, closing: false }); },
+      registerFlushHandler(handler) { flush = handler; },
+    },
+    storage: {
+      getMany: async () => [null, null],
+      apply: async (mutation) => { applied.push(JSON.parse(JSON.stringify(mutation))); },
+    },
+    haptics: { perform: async (effect) => { haptics.push(effect); } },
+  };
+  const h = loadKegel({ toolbox, localStorage });
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.equal(applied.length, 1);
+  assert.deepEqual(applied[0].set.map((entry) => entry.key), ['wenli.preferences.v1', 'wenli.history.v1']);
+  assert.equal(applied[0].set[1].value.length, 1);
+  assert.equal(legacy.size, 0, 'legacy keys removed after a successful import');
+  assert.equal(h.nodes.get('summary-title').textContent, '标准训练');
+  h.click('start-button');
+  assert.deepEqual(haptics, ['click']);
+  await flush();
+});
