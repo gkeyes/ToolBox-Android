@@ -38,6 +38,8 @@
   let markStateLoaded = null;
   const stateLoadedWork = new Promise((resolve) => { markStateLoaded = resolve; });
   let liveAvailable = true;
+  // The live notification currently shows the "fetching" placeholder from startMonitoring().
+  let liveLoading = false;
   let runtimeForeground = false;
   let runtimeClosing = false;
   let statusMessage = "";
@@ -261,6 +263,7 @@
       if (mode === "start") await toolbox().notifications.live.start(request);
       else await toolbox().notifications.live.update(request);
       liveAvailable = true;
+      liveLoading = loading;
       return true;
     } catch (error) {
       if (error?.code === "SESSION_ENDED" || error?.code === "INVALID_SESSION") {
@@ -275,12 +278,14 @@
           }
           await toolbox().notifications.live.start(liveRequest(loading));
           liveAvailable = true;
+          liveLoading = loading;
           return true;
         } catch (_) {}
       } else if (mode === "update" && error?.code === "NOT_FOUND") {
         try {
           await toolbox().notifications.live.start(request);
           liveAvailable = true;
+          liveLoading = loading;
           return true;
         } catch (_) {}
       }
@@ -567,6 +572,9 @@
       const closedSince = options.force ? null : chinaMarketClosedSince();
       const enabled = active.filter((item) => !skipWhileClosed(item, closedSince));
       if (!enabled.length) {
+        // Monitoring started during the closed period: show the cached closing quotes
+        // instead of leaving the live notification on its loading text overnight.
+        if (liveLoading && !runtimeClosing) await publishLiveState();
         setStatus("A 股休市中，已保留收盘行情；开盘后自动恢复刷新。");
         return;
       }

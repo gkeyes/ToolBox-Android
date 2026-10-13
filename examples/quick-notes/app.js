@@ -168,12 +168,17 @@
     if (button.classList.contains("delete")) {
       saving = true;
       let clearedEditor = false;
+      const input = $("note-input").value;
       await track((async () => {
         try {
           await persist(notes.filter((candidate) => candidate.id !== note.id));
           render(); showUndo(note);
           // The editor no longer has a note to save into; drop its text and draft so Undo + Save cannot duplicate it.
-          if (editingId === note.id) { resetEditor(); clearedEditor = true; }
+          // Text typed while the delete was saving is kept as a new-note draft instead of being discarded.
+          if (editingId === note.id) {
+            if ($("note-input").value === input) { resetEditor(); clearedEditor = true; }
+            else setEditing(null, "原笔记已删除，保存将新建笔记");
+          }
         } catch (_) { showError("删除失败，原笔记已保留；请检查数据大小、存储权限或可用空间后重试。"); }
         finally { saving = false; }
       })());

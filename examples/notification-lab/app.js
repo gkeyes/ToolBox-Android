@@ -387,8 +387,29 @@
 
   async function stopBackground() {
     liveGeneration += 1;
-    if (state.auto) await setAuto(false);
-    await endLiveNotification();
+    // Inactive before the first await: a queued timer callback must not start an update during the waits
+    // below, and an update already in flight must not reacquire the session this stop is closing.
+    const wasAuto = state.auto;
+    const wasLive = state.live;
+    state.auto = false;
+    state.live = false;
+    try {
+      if (wasAuto) {
+        try { await toolbox().background.cancelTimer(TIMER_KEY); } catch (error) {
+          if (error?.code !== "NOT_FOUND") throw error;
+        }
+      }
+      if (wasLive && state.sessionId) {
+        try { await toolbox().notifications.live.end(state.sessionId); } catch (error) {
+          if (sessionLost(error)) state.sessionId = null;
+          else if (error?.code !== "NOT_FOUND") throw error;
+        }
+      }
+    } catch (error) {
+      state.auto = wasAuto;
+      state.live = wasLive;
+      throw error;
+    }
     if (state.sessionId) {
       try { await toolbox().background.stop(state.sessionId); } catch (error) {
         if (!sessionLost(error) && error?.code !== "NOT_FOUND") throw error;

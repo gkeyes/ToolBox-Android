@@ -261,12 +261,16 @@
   // the pre-1.0.5 localStorage copy until it can be migrated) and unavailable.
   let storageState = "loading";
   let hostConnected = false;
+  // The ToolBox handshake has not settled yet (host haptics may still become usable).
+  let hostPending = false;
   let loadWork = null;
   // Preferences as last read from ToolBox.storage (defaults before the first read). Values
   // that differ from it were chosen while the saved copy was unknown and win over it.
   let preferencesBase = sanitizePreferences({});
-  // The user cleared history before the saved copy was read: do not bring it back.
-  let historyCleared = false;
+  // The user cleared history and no empty-history write to ToolBox.storage has been
+  // confirmed since: do not bring the stored entries back. A fresh token per clear, so a
+  // write that started before the clear cannot settle it.
+  let historyCleared = null;
   // The localStorage fallback was used this run, so its copy must be merged on recovery.
   let legacyUsed = false;
   // Fallback copy to remove once everything in memory has reached ToolBox.storage.
@@ -406,8 +410,14 @@
       storageState = "unavailable";
       return;
     }
-    adoptLoaded(legacy.preferences, [legacy.history]);
+    const changed = adoptLoaded(legacy.preferences, [legacy.history]);
     storageState = "legacy";
+    // Edits or sessions made before this point were only marked dirty: write them now,
+    // since nothing else flushes in legacy mode.
+    if (changed.preferences || changed.history || dirtyKeys.size > 0) {
+      if (writeLegacy()) dirtyKeys.clear();
+      else legacyWriteFailed();
+    }
     syncControls();
     renderSetup();
   }
@@ -421,7 +431,7 @@
     history = historyCleared ? mergeHistory(history) : mergeHistory(history, ...savedHistories);
     return {
       preferences: Object.keys(edits).length > 0,
-      history: historyCleared || before > 0
+      history: Boolean(historyCleared) || before > 0
     };
   }
 
@@ -464,15 +474,18 @@
     if (imported && savedPreferences === null) savedPreferences = legacy.preferences;
     const changed = adoptLoaded(savedPreferences, imported ? [savedHistory, legacy.history] : [savedHistory]);
     preferencesBase = sanitizePreferences(savedPreferences);
-    historyCleared = false;
     legacyUsed = false;
     storageState = "ready";
     if (imported) {
+      const clearing = historyCleared;
+      const savedPreferencesCopy = sanitizePreferences(preferences);
       try {
         await api.storage.apply({ set: [
-          { key: STORAGE_KEYS.preferences, value: preferences },
+          { key: STORAGE_KEYS.preferences, value: savedPreferencesCopy },
           { key: STORAGE_KEYS.history, value: history }
         ] });
+        preferencesBase = savedPreferencesCopy;
+        if (historyCleared === clearing) historyCleared = null;
         dropLegacyStorage(legacy);
       } catch (_) {
         // Remove the fallback copy only once a later write has saved everything.
@@ -497,11 +510,19 @@
     if (storageState !== "ready" || dirtyKeys.size === 0) return Promise.resolve();
     const keys = [...dirtyKeys];
     dirtyKeys.clear();
+    // Snapshot preferences: once saved they become the base that recovery compares against.
+    const savedPreferences = keys.includes(STORAGE_KEYS.preferences) ? sanitizePreferences(preferences) : null;
+    const clearing = keys.includes(STORAGE_KEYS.history) ? historyCleared : null;
     const set = keys.map((key) => ({
       key,
-      value: key === STORAGE_KEYS.preferences ? preferences : history
+      value: key === STORAGE_KEYS.preferences ? savedPreferences : history
     }));
-    writeWork = hostApi().storage.apply({ set }).then(() => true, (error) => {
+    writeWork = hostApi().storage.apply({ set }).then(() => {
+      if (savedPreferences) preferencesBase = savedPreferences;
+      // The stored history now holds only what is in memory: the clear is settled.
+      if (clearing && historyCleared === clearing) historyCleared = null;
+      return true;
+    }, (error) => {
       if (error?.code === "PERMISSION_DENIED" || error?.code === "NOT_DECLARED") {
         storagePermissionRevoked();
         return false;
@@ -658,13 +679,32 @@
 
   const HAPTIC_EFFECTS = Object.freeze({ prepare: "click", contract: "confirm", relax: "click", complete: "confirm" });
 
+  // Browser fallback (standalone page or failed handshake), in milliseconds.
+  const VIBRATION_PATTERNS = Object.freeze({ click: 20, confirm: [40, 60, 40] });
+
+  function hostHaptics() {
+    return hostConnected && typeof hostApi()?.haptics?.perform === "function";
+  }
+
+  function browserVibrationSupported() {
+    return typeof navigator.vibrate === "function";
+  }
+
   function hapticsSupported() {
-    return typeof hostApi()?.haptics?.perform === "function";
+    return hostHaptics() || browserVibrationSupported()
+      || (hostPending && typeof hostApi()?.haptics?.perform === "function");
   }
 
   function vibrate(kind) {
-    if (!preferences.vibration || !hapticsSupported()) return;
-    hostApi().haptics.perform(HAPTIC_EFFECTS[kind] || "click").catch((error) => {
+    if (!preferences.vibration) return;
+    const effect = HAPTIC_EFFECTS[kind] || "click";
+    if (!hostHaptics()) {
+      if (browserVibrationSupported()) {
+        try { navigator.vibrate(VIBRATION_PATTERNS[effect]); } catch (_) {}
+      }
+      return;
+    }
+    hostApi().haptics.perform(effect).catch((error) => {
       if (hapticsWarned || (error?.code !== "PERMISSION_DENIED" && error?.code !== "NOT_DECLARED")) return;
       hapticsWarned = true;
       showToast("震动权限未开启，可在工具权限中打开");
@@ -1093,7 +1133,10 @@
   $("keep-history-button").addEventListener("click", () => clearDialog.close());
   $("confirm-clear-button").addEventListener("click", () => {
     history = [];
-    if (storageState !== "ready") historyCleared = true;
+    // Kept until an empty-history write reaches ToolBox.storage: that write may still fail
+    // (e.g. the storage permission was just switched off) and recovery must not merge the
+    // stored entries back.
+    historyCleared = {};
     persistHistory();
     renderHistory();
     clearDialog.close();
@@ -1137,7 +1180,9 @@
       renderHistory();
       return;
     }
+    hostPending = true;
     api.ready().then(() => {
+      hostPending = false;
       hostConnected = true;
       api.runtime.onStateChanged(handleRuntimeState);
       api.runtime.registerFlushHandler(async () => {
@@ -1149,8 +1194,11 @@
       syncControls();
       return loadStoredData();
     }).catch(() => {
+      hostPending = false;
       runtimeForeground = true;
-      if (storageState === "loading") storageState = "unavailable";
+      // No usable host: run as a plain page on the localStorage copy, as without ToolBox.
+      if (storageState === "loading") useStandaloneStorage();
+      syncControls();
       renderHistory();
       showForegroundTraining();
     });

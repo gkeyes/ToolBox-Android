@@ -34,7 +34,7 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
   };
   const window = { ToolBox: toolbox, ...extraWindow };
   const timers = { setTimeout: options.setTimeout || setTimeout, clearTimeout: options.clearTimeout || clearTimeout };
-  vm.runInNewContext(source, { window, document, URL, Intl, Date, console, ...timers }, { filename });
+  vm.runInNewContext(source, { window, document, URL, Intl, Date: options.Date || Date, console, ...timers }, { filename });
   const dispatch = (id, type, event = {}) => {
     const node = document.getElementById(id);
     domReads -= 1;
@@ -270,7 +270,7 @@ test('Kegel training clock stays frozen while paused and resumes from remaining 
   assert.equal(engine.tick().phase, 'contract');
 });
 
-function loadKegel({ toolbox, localStorage } = {}) {
+function loadKegel({ toolbox, localStorage, navigator = {} } = {}) {
   const filename = path.join(examples, 'kegel-trainer', 'app.js');
   const nodes = new Map();
   const writes = { text: 0 };
@@ -308,7 +308,7 @@ function loadKegel({ toolbox, localStorage } = {}) {
     scrollTo() {},
     setTimeout, clearTimeout,
   };
-  const context = { window, document, navigator: {}, performance: { now: () => clock }, console, Intl, Date, setTimeout, clearTimeout };
+  const context = { window, document, navigator, performance: { now: () => clock }, console, Intl, Date, setTimeout, clearTimeout };
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   return {
     nodes, writes, window,
@@ -657,4 +657,112 @@ test('Kegel switches to the localStorage fallback when storage permission is rev
   assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 1);
   assert.match(h.nodes.get('history-summary').textContent, /存储权限未开启：1 条/);
   await host.flush();
+});
+
+// Host whose storage keeps what was applied, with a switch that revokes the permission.
+function persistentKegelHost(initial) {
+  const store = new Map(Object.entries(initial));
+  const host = kegelHost({ getMany: async (keys) => keys.map((key) => (store.has(key) ? JSON.parse(JSON.stringify(store.get(key))) : null)) });
+  host.denied = false;
+  host.store = store;
+  host.toolbox.storage.apply = async (mutation) => {
+    if (host.denied) throw Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' });
+    for (const entry of mutation.set || []) store.set(entry.key, JSON.parse(JSON.stringify(entry.value)));
+    host.applied.push(JSON.parse(JSON.stringify(mutation)));
+  };
+  host.recover = async () => {
+    host.denied = false;
+    host.stateListener({ foreground: false, closing: false });
+    host.stateListener({ foreground: true, closing: false });
+    await settleMany();
+  };
+  return host;
+}
+
+test('Kegel history cleared while storage is being revoked stays cleared after recovery', async () => {
+  const old = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const host = persistentKegelHost({ 'wenli.history.v1': [old] });
+  const localStorage = legacyStore([]);
+  const h = loadKegel({ toolbox: host.toolbox, localStorage });
+  await settleMany();
+  assert.match(h.nodes.get('history-summary').textContent, /已保存 1 次/);
+  host.denied = true;
+  h.click('confirm-clear-button');
+  await settleMany();
+  assert.deepEqual(JSON.parse(localStorage.data.get('wenli.history.v1')), []);
+  await host.recover();
+  assert.deepEqual(host.store.get('wenli.history.v1'), []);
+  assert.equal(h.nodes.get('history-summary').textContent, '还没有训练记录');
+});
+
+test('Kegel preference changed back while storage is revoked survives recovery', async () => {
+  const host = persistentKegelHost({ 'wenli.preferences.v1': { volume: 80 } });
+  const localStorage = legacyStore([]);
+  const h = loadKegel({ toolbox: host.toolbox, localStorage });
+  await settleMany();
+  const setVolume = (value) => { for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value } }); };
+  setVolume('30');
+  await settleMany();
+  assert.equal(host.store.get('wenli.preferences.v1').volume, 30);
+  host.denied = true;
+  setVolume('80');
+  await settleMany();
+  await host.recover();
+  assert.equal(h.nodes.get('volume-output').textContent, '80%');
+  assert.equal(host.store.get('wenli.preferences.v1').volume, 80);
+});
+
+test('Kegel uses its localStorage records when the host handshake fails', async () => {
+  const old = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const localStorage = legacyStore([['wenli.history.v1', [old]]]);
+  const h = loadKegel({ toolbox: { ready: () => Promise.reject(new Error('no host')) }, localStorage });
+  await settleMany();
+  assert.match(h.nodes.get('history-summary').textContent, /已保存 1 次/);
+  h.click('start-button');
+  h.runFrames(1, 3600000);
+  assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 2);
+});
+
+test('Kegel keeps a setting changed during a handshake that then fails', async () => {
+  let reject;
+  const localStorage = legacyStore([]);
+  const h = loadKegel({ toolbox: { ready: () => new Promise((_resolve, fail) => { reject = fail; }) }, localStorage });
+  for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value: '30' } });
+  reject(new Error('no host'));
+  await settleMany();
+  assert.equal(JSON.parse(localStorage.data.get('wenli.preferences.v1')).volume, 30);
+});
+
+test('Kegel vibrates through the browser when host haptics are unavailable', async () => {
+  const patterns = [];
+  const h = loadKegel({ navigator: { vibrate: (pattern) => { patterns.push(pattern); return true; } } });
+  assert.doesNotMatch(h.nodes.get('vibration-support-text').textContent, /不支持/);
+  h.click('start-button');
+  assert.equal(patterns.length, 1);
+});
+
+test('stock monitoring started after the close replaces the loading live notification with cached quotes', async () => {
+  const fixedNow = Date.parse('2026-10-13T20:00:00+08:00');
+  class FixedDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(fixedNow); }
+    static now() { return fixedNow; }
+  }
+  const live = [];
+  const host = stockHost({
+    notifications: { live: {
+      start: async (request) => { live.push(request); return {}; },
+      update: async (request) => { live.push(request); return {}; },
+    } },
+  });
+  host.toolbox.background.start = async () => ({ sessionId: 'session-1' });
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, startMonitoring, loaded: () => { stateLoaded = true; markStateLoaded(); }',
+    host.toolbox, { StockMonitorLive: stockLive }, { Date: FixedDate });
+  h.api.loaded();
+  h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550', price: 10.5, fetchedAt: fixedNow - 60000 })];
+  assert.equal(await h.api.startMonitoring(), true);
+  assert.equal(live.at(-1).shortText, '获取中');
+  await h.api.refreshAll();
+  assert.equal(host.calls.length, 0, 'closed-market quote not fetched again');
+  assert.notEqual(live.at(-1).shortText, '获取中', 'live notification no longer shows loading');
 });

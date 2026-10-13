@@ -111,3 +111,60 @@ test('a single failed write does not switch the game to session-only mode', asyn
   for (let index = 0; index < 10; index += 1) await settle();
   assert.ok(sets.length >= 1, 'later moves are still saved');
 });
+
+function manualHost() {
+  const host = { sets: [], pending: [], flush: null, stateListener: null };
+  host.toolbox = {
+    ready: async () => ({}),
+    runtime: {
+      registerFlushHandler(handler) { host.flush = handler; },
+      onStateChanged(listener) { host.stateListener = listener; listener({ foreground: true, closing: false }); },
+    },
+    storage: {
+      get: async () => null,
+      set: (_key, value) => new Promise((resolve) => { host.pending.push(() => { host.sets.push(value); resolve(); }); }),
+    },
+  };
+  host.release = () => { const writes = host.pending; host.pending = []; for (const write of writes) write(); };
+  return host;
+}
+
+async function moveOnce(game, host) {
+  const moves = () => game.nodes.get('move-count').textContent;
+  const before = moves();
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
+    game.key(key);
+    for (let index = 0; index < 3; index += 1) await settle();
+    if (moves() !== before) return;
+  }
+  assert.fail('no move was possible');
+}
+
+test('flush waits for a save queued by a move made while it was waiting', async () => {
+  const host = manualHost();
+  const game = loadGame(host.toolbox);
+  for (let index = 0; index < 5; index += 1) await settle();
+  await moveOnce(game, host);
+  let done = false;
+  const flushing = host.flush().then(() => { done = true; });
+  await settle();
+  await moveOnce(game, host);
+  const moves = Number(game.nodes.get('move-count').textContent);
+  for (let index = 0; index < 10 && !done; index += 1) { host.release(); await settle(); }
+  await flushing;
+  assert.equal(host.pending.length, 0, 'no write left in flight after flush');
+  assert.equal(host.sets.at(-1).moveCount, moves, 'the latest move was saved');
+});
+
+test('moves are ignored while the tool is closing', async () => {
+  const host = manualHost();
+  const game = loadGame(host.toolbox);
+  for (let index = 0; index < 5; index += 1) await settle();
+  host.stateListener({ foreground: false, closing: true });
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) game.key(key);
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.equal(host.pending.length, 0);
+  assert.equal(game.nodes.get('move-count').textContent, '0');
+  host.stateListener({ foreground: true, closing: false });
+  await moveOnce(game, host);
+});
