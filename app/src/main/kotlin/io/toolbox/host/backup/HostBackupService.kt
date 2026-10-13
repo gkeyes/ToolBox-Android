@@ -146,47 +146,43 @@ internal class HostBackupService(
             "lastOpenedAt" to tool.lastOpenedAt, "pinnedOrder" to tool.metadata.pinnedOrder, "categoryId" to tool.metadata.categoryId,
             "grants" to snapshot.grants.map { mapOf("capability" to it.capability, "granted" to it.granted, "updatedAt" to it.updatedAt) },
         ))
-        // Secure rows also go to their own spill, indexed by offset, so decryption can load one
-        // encrypted row at a time instead of keeping all ciphertext next to the plaintext.
-        val secureSpill = File(snapshot.keyValues.path + ".secure")
-        try {
-            val secureOffsets = LinkedHashMap<String, Long>()
-            var secureBytes = 0L
-            ExportSpillWriter(secureSpill).use { secureWriter ->
-                ExportSpillReader(snapshot.keyValues).use { reader ->
-                    while (true) {
-                        val row = reader.nextKv() ?: break
-                        BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
-                            "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
-                        ))
-                        if (BackupDataCodec.secureKey(row.key)) {
-                            secureBytes += row.bytes
-                            secureOffsets[row.key] = secureWriter.position
-                            secureWriter.kv(row)
-                        }
-                    }
+        // Secure rows are remembered by their offset in the key-value spill, so decryption can
+        // load one encrypted row at a time instead of keeping all ciphertext next to the plaintext.
+        val secureOffsets = LinkedHashMap<String, Long>()
+        var secureBytes = 0L
+        ExportSpillReader(snapshot.keyValues).use { reader ->
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val offset = reader.position
+                val row = reader.nextKv() ?: break
+                BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
+                    "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
+                ))
+                if (BackupDataCodec.secureKey(row.key)) {
+                    secureBytes += row.bytes
+                    secureOffsets[row.key] = offset
                 }
-                secureWriter.finish()
             }
-            if (secureBytes > 0) {
-                if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
-                else try {
-                    val document = ExportSpillRows(secureSpill).use { rows ->
-                        val repository = SnapshotToolKvRepository(id, secureOffsets.keys.toList(), secureBytes) { key ->
-                            secureOffsets[key]?.let(rows::kvAt)
-                        }
-                        RuntimeSecureStore(id, repository, AndroidKeyStoreCipher(id)).readAll()
+        }
+        if (secureBytes > 0) {
+            if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
+            else try {
+                val document = ExportSpillRows(snapshot.keyValues).use { rows ->
+                    val repository = SnapshotToolKvRepository(id, secureOffsets.keys.toList(), secureBytes) { key ->
+                        secureOffsets[key]?.let(rows::kvAt)
                     }
-                    if (document != null) {
-                        val plaintext = RuntimeValueJson.encodeObject(document)
-                        J.obj(J.parse(plaintext.toByteArray()))
-                        File(target, "data/secure.json").writeText(plaintext)
-                    }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { warnings += "${tool.metadata.name}：硬件密钥不可用，已归档加密记录，恢复后可能需要重新登录。" }
-            }
-        } finally { secureSpill.delete() }
+                    RuntimeSecureStore(id, repository, AndroidKeyStoreCipher(id)).readAll()
+                }
+                if (document != null) {
+                    val plaintext = RuntimeValueJson.encodeObject(document)
+                    J.obj(J.parse(plaintext.toByteArray()))
+                    File(target, "data/secure.json").writeText(plaintext)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { warnings += "${tool.metadata.name}：硬件密钥不可用，已归档加密记录，恢复后可能需要重新登录。" }
+        }
         ExportSpillReader(snapshot.tasks).use { reader -> while (true) {
+            currentCoroutineContext().ensureActive()
             val (task, result) = reader.nextTask() ?: break
             BackupDataCodec.write(File(target, "data/tasks/${BackupDataCodec.keyFile(task.taskId)}"), mapOf(
                 "dataVersion" to 1, "taskId" to task.taskId, "versionCode" to task.versionCode, "key" to task.key, "operation" to task.operation.name,

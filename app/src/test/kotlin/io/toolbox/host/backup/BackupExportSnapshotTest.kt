@@ -109,6 +109,10 @@ class BackupExportSnapshotTest {
         val offsets = ExportSpillWriter(file).use { writer ->
             rows.map { row -> writer.position.also { writer.kv(row) } }.also { writer.finish() }
         }
+        ExportSpillReader(file).use { reader ->
+            val seen = generateSequence { reader.position.let { offset -> reader.nextKv()?.let { offset } } }.toList()
+            assertEquals(offsets, seen)
+        }
         ExportSpillRows(file).use { spill ->
             for (index in rows.indices.reversed()) assertEquals(rows[index], spill.kvAt(offsets[index]))
         }

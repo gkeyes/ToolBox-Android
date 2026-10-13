@@ -96,10 +96,16 @@ internal class ExportSpillWriter(file: File) : Closeable {
 internal class ExportSpillReader(file: File) : Closeable {
     private val input = DataInputStream(BufferedInputStream(FileInputStream(file)))
 
+    /** Byte offset of the next key-value record, which [ExportSpillRows.kvAt] can seek back to. */
+    var position = 0L
+        private set
+
     /** Next key-value row, or null at the end marker. */
     fun nextKv(): ToolKvValue? = when (input.readByte().toInt()) {
         SPILL_END -> null
-        SPILL_KV -> ToolKvValue(text(), text(), input.readLong())
+        SPILL_KV -> ToolKvValue(text(), text(), input.readLong()).also {
+            position += 1 + 4 + 2L * it.key.length + 4 + 2L * it.valueJson.length + 8
+        }
         else -> throw IOException("Invalid backup spill record")
     }
 
