@@ -7,6 +7,10 @@
   let saving = false;
   let lastDeleted = null;
   let draftStored = false;
+  let saveWork = null;
+  let draftChain = Promise.resolve();
+  // Draft writes/clears run one at a time, after any in-flight note save, so a just-saved text is never kept as a draft.
+  const queueDraft = (step) => (draftChain = draftChain.catch(() => {}).then(async () => { await saveWork?.catch(() => {}); return step(); }));
   const toolbox = () => window.ToolBox;
   let readyWork = null;
   const whenReady = () => (readyWork ||= Promise.resolve().then(() => toolbox()?.ready?.()).catch(() => {}));
@@ -29,16 +33,19 @@
     if (original && original.text === text) return null;
     return { text, editingId: original ? editingId : null };
   }
-  async function writeDraft() {
+  function writeDraft() { return queueDraft(writeDraftNow); }
+  async function writeDraftNow() {
     const storage = toolbox()?.storage;
     if (!loaded || !storage?.set) return;
     const draft = currentDraft();
     if (draft) { await storage.set("draft", draft); draftStored = true; }
     else if (draftStored) { await storage.remove?.("draft"); draftStored = false; }
   }
-  async function clearDraft() {
-    if (!draftStored) return;
-    try { await toolbox()?.storage?.remove?.("draft"); draftStored = false; } catch (_) {}
+  function clearDraft() {
+    return queueDraft(async () => {
+      if (!draftStored) return;
+      try { await toolbox()?.storage?.remove?.("draft"); draftStored = false; } catch (_) {}
+    });
   }
   async function restore() {
     let saved = null, draft = null;
@@ -106,13 +113,22 @@
       : [{ id: `${timestamp}-${Math.random().toString(36).slice(2, 8)}`, text, updatedAt: timestamp }, ...notes];
     next.sort((a, b) => b.updatedAt - a.updatedAt);
     saving = true;
-    try {
-      await persist(next); render();
-      if ($("note-input").value === input) { resetEditor(); await clearDraft(); }
-      await notify("笔记已保存");
-    }
-    catch (_) { showError("保存失败，输入已保留；请检查数据大小、存储权限或可用空间后重试。"); }
-    finally { saving = false; }
+    let saved = false;
+    const work = (async () => {
+      try {
+        await persist(next); render();
+        if ($("note-input").value === input) resetEditor();
+        saved = true;
+      }
+      catch (_) { showError("保存失败，输入已保留；请检查数据大小、存储权限或可用空间后重试。"); }
+      finally { saving = false; }
+    })();
+    saveWork = work;
+    await work;
+    if (saveWork === work) saveWork = null;
+    if (!saved) return;
+    if (!$("note-input").value) await clearDraft();
+    await notify("笔记已保存");
   }
   async function cancelEdit() {
     resetEditor();

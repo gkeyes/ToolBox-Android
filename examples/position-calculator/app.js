@@ -12,8 +12,12 @@
   function parseDecimal(text) {
     const match = /^\+?(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(text).trim());
     if (!match || !(match[1] || match[2])) return null;
+    // Validation, not a cap: anything outside double range (|exponent| beyond ~324) is not a real price or amount,
+    // and expanding 10^exponent for it would freeze the page.
+    const exponent = Number(match[3] || 0);
+    if (!Number.isFinite(Number(text)) || Math.abs(exponent) > 400) return null;
     const digits = (match[1] || "") + (match[2] || "");
-    let scale = (match[2] || "").length - Number(match[3] || 0);
+    let scale = (match[2] || "").length - exponent;
     let n = BigInt(digits || "0");
     if (scale < 0) { n *= 10n ** BigInt(-scale); scale = 0; }
     return { n, scale };
@@ -68,7 +72,10 @@
     let saved = null;
     try { await toolbox()?.ready?.(); saved = await toolbox()?.storage?.get?.("last-input"); } catch (_) {}
     if (saved && typeof saved === "object") fieldIds.forEach((id) => {
-      if (!touched.has(id) && Number.isFinite(Number(saved[id]))) $(id).value = String(saved[id]);
+      // Newer versions save the exact typed strings; older ones saved numbers.
+      const value = saved[id];
+      if (touched.has(id) || (typeof value !== "string" && typeof value !== "number")) return;
+      if (parseDecimal(value)) $(id).value = String(value);
     });
   }
   async function calculate(event) {
@@ -86,7 +93,7 @@
     $("result-note").hidden = !note;
     $("result").hidden = false;
     setError("");
-    await save(Object.fromEntries(fieldIds.map((id) => [id, Number(raw[id])])));
+    await save(raw);
     try { await toolbox()?.haptics?.perform?.("confirm"); } catch (_) {}
   }
   async function copyResult() {

@@ -76,7 +76,11 @@
     try { await toolbox().background.cancel(taskId); cancelling.delete(taskId); setStatus("任务已取消"); await loadTasks(); }
     catch (error) {
       cancelling.delete(taskId);
-      if (button.isConnected !== false) { button.disabled = false; button.textContent = "取消任务"; }
+      // The list may have re-rendered while the cancel was pending; re-enable the row that is shown now.
+      const row = Array.from($("tasks").children).find((candidate) => candidate.dataset.id === taskId);
+      const current = row?.querySelector(".cancel") || button;
+      const state = row?.querySelector(".task-state")?.textContent;
+      if (state !== "COMPLETED" && state !== "CANCELLED") { current.disabled = false; current.textContent = "取消任务"; }
       setStatus(showError(error));
     }
   }

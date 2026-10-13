@@ -118,12 +118,40 @@ test('position calculator restore leaves fields the user already typed', async (
   assert.equal(tool.$('risk').value, '2');
 });
 
+test('position calculator saves the exact typed strings and still restores old numeric saves', async () => {
+  const saves = [];
+  const tool = positionCalculator({ capital: '100000', risk: '1', entry: '1.0000000000000001', stop: '0.5' },
+    { storage: { set: async (_key, value) => { saves.push(value); }, get: async () => null } });
+  await tool.$('calculator').fire('submit');
+  assert.equal(saves.at(-1).entry, '1.0000000000000001');
+
+  const restored = positionCalculator({}, { ready: async () => ({}), storage: { get: async () => ({ capital: '1.0000000000000001', risk: 2, entry: '10', stop: 9 }), set: async () => {} } });
+  await settle();
+  assert.equal(restored.$('capital').value, '1.0000000000000001');
+  assert.equal(restored.$('risk').value, '2');
+  assert.equal(restored.$('stop').value, '9');
+});
+
+test('position calculator rejects absurd exponents with the validation error', async () => {
+  for (const capital of ['1e100000000', '1e-100000000', '1e400']) {
+    const tool = positionCalculator({ capital, risk: '1', entry: '10', stop: '9' });
+    const started = Date.now();
+    await tool.$('calculator').fire('submit');
+    assert.ok(Date.now() - started < 1000);
+    assert.equal(tool.$('form-error').hidden, false, capital);
+    assert.equal(tool.$('result').hidden, true);
+  }
+  const ok = positionCalculator({ capital: '1e5', risk: '1', entry: '10', stop: '9.5' });
+  await ok.$('calculator').fire('submit');
+  assert.equal(ok.$('shares').textContent, '2,000 股');
+});
+
 // ---------- quick-notes ----------
 
 const NOTE_TEMPLATE = ['article', 'note', [['p', 'note-body'], ['p', 'note-time'], ['div', 'note-actions', [
   ['button', 'text-button edit'], ['button', 'text-button copy'], ['button', 'text-button danger delete']]]]];
 
-function quickNotes(initial = {}) {
+function quickNotes(initial = {}, { beforeSet } = {}) {
   const store = new Map(Object.entries(initial));
   const writes = [];
   let flush = null;
@@ -133,7 +161,7 @@ function quickNotes(initial = {}) {
     runtime: { registerFlushHandler: (handler) => { flush = handler; return () => {}; } },
     storage: {
       get: async (key) => store.has(key) ? structuredClone(store.get(key)) : null,
-      set: async (key, value) => { writes.push(key); store.set(key, structuredClone(value)); },
+      set: async (key, value) => { if (beforeSet) await beforeSet(key); writes.push(key); store.set(key, structuredClone(value)); },
       remove: async (key) => { store.delete(key); },
     },
   };
@@ -182,6 +210,23 @@ test('quick notes keeps an unsaved draft through the flush handler', async () =>
   await second.$('editor').fire('submit');
   assert.equal(second.store.get('notes')[0].text, 'half-written edit');
   assert.equal(second.store.has('draft'), false);
+});
+
+test('quick notes flush during a save does not keep the saved text as a draft', async () => {
+  const gate = defer();
+  const tool = quickNotes({ notes: [] }, { beforeSet: (key) => key === 'notes' ? gate.promise : undefined });
+  await settle();
+  tool.$('note-input').value = 'saved then closed';
+  const saving = tool.$('editor').fire('submit');
+  await tick();
+  // The host tears the page down as soon as the flush handler settles; what is stored then is what survives.
+  let draftAtFlush = null;
+  const flushing = tool.flush().then(() => { draftAtFlush = tool.store.get('draft') ?? null; });
+  await settle();
+  gate.resolve();
+  await Promise.all([saving, flushing]);
+  assert.deepEqual(tool.store.get('notes').map((note) => note.text), ['saved then closed']);
+  assert.equal(draftAtFlush, null);
 });
 
 // ---------- notification-lab ----------
@@ -332,6 +377,21 @@ test('background task cancel is disabled while in flight', async () => {
   assert.deepEqual(demo.calls.cancel, ['t1']);
   pending.resolve();
   await first;
+});
+
+test('background task cancel failure re-enables the re-rendered row', async () => {
+  const pending = defer();
+  const demo = taskDemo({ cancel: () => pending.promise });
+  await settle();
+  const first = demo.$('tasks').children[0].querySelector('.cancel').fire('click');
+  await demo.$('refresh').fire('click');
+  await settle();
+  const replacement = demo.$('tasks').children[0].querySelector('.cancel');
+  assert.equal(replacement.disabled, true);
+  pending.reject(apiError('INTERNAL'));
+  await first;
+  assert.equal(replacement.disabled, false);
+  assert.equal(replacement.textContent, '取消任务');
 });
 
 test('background task list refreshes when returning to the foreground', async () => {
