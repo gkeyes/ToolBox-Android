@@ -284,8 +284,7 @@ internal class ProductionHostBackgroundOperations(
     private val applicationContext = context.applicationContext
     private val network = ToolNetworkProxy()
     private val networkRevocationCleanup = NetworkRevocationCleanup(repositories.keyValues)
-    private val networkCatalog = repositories.catalog
-    private val networkGrants = repositories.grants
+    private val networkGrantState = io.toolbox.host.runtime.RepositoryRuntimeGrantStateSource(repositories.catalog, repositories.grants)
     private val notifications = AndroidNotificationGateway(applicationContext)
     private val coordinator = BackgroundTaskCoordinator(
         workManager = WorkManager.getInstance(applicationContext),
@@ -353,9 +352,10 @@ internal class ProductionHostBackgroundOperations(
         network = RuntimeNetworkGateway(
             network, runtime.installedManifest.network,
             validateNetworkAccess = {
-                val current = networkCatalog.observeTool(runtime.toolId).first()
-                val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
-                if (current?.currentVersion?.versionCode != runtime.versionCode || !granted) {
+                // Runs before every request and every stream chunk; served from the grant snapshot.
+                if (networkGrantState.installedVersionCode(runtime.toolId) != runtime.versionCode ||
+                    !networkGrantState.isGranted(runtime.toolId, io.toolbox.tool.api.ToolBoxCapabilityId.NETWORK)
+                ) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本或网络权限已变更。")
                 }
             },

@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.BackgroundTaskRepository
 import io.toolbox.core.data.CatalogEntry
+import io.toolbox.core.data.CatalogGrantEpoch
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogOrganizationRepository
@@ -132,6 +133,8 @@ internal class RoomCatalogLifecycleRepository(
             throw cancelled
         } catch (_: Exception) {
             DataResult.Failure.StorageFailure("commitInstall")
+        } finally {
+            CatalogGrantEpoch.advance()
         }
     }
 
@@ -148,6 +151,8 @@ internal class RoomCatalogLifecycleRepository(
         throw cancelled
     } catch (_: Exception) {
         DataResult.Failure.StorageFailure("deleteToolCatalog")
+    } finally {
+        CatalogGrantEpoch.advance()
     }
 }
 
@@ -196,6 +201,8 @@ internal class RoomPermissionGrantRepository(
         throw cancelled
     } catch (_: Exception) {
         DataResult.Failure.StorageFailure("putGrant")
+    } finally {
+        CatalogGrantEpoch.advance()
     }
 
     override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = try {
@@ -208,6 +215,8 @@ internal class RoomPermissionGrantRepository(
         throw cancelled
     } catch (_: Exception) {
         DataResult.Failure.StorageFailure("revokeGrant")
+    } finally {
+        CatalogGrantEpoch.advance()
     }
 }
 
