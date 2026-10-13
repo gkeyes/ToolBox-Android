@@ -1,0 +1,12 @@
+{
+  "name": "rss-scout-tests",
+  "private": true,
+  "description": "Test-only dependencies for RSS Scout; nothing here is packaged into the .tbx.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

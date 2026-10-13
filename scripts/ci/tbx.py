@@ -75,6 +75,17 @@ TEST_FILES = {
         "unit": {"test/platform.test.ts", "test/minimax.test.ts"},
         "browser": {"test/browser.spec.ts"},
     },
+    "rss-scout": {
+        "unit": {
+            "test/app.test.mjs",
+            "test/extract-page.test.mjs",
+            "test/miniflux.test.mjs",
+            "test/network-charset.test.mjs",
+            "test/parse-feed.test.mjs",
+            "test/rules-sync.test.mjs",
+        },
+        "browser": set(),
+    },
     "github-actions-watcher": {
         "unit": {"scripts/tests/watcher-reliability.test.cjs"},
         "browser": {"examples/github-actions-watcher/tests/layout.py"},

@@ -1,6 +1,7 @@
-/* RSS Scout 1.4.4 — independently implemented, no remote code execution. */
+/* RSS Scout 1.4.5 — independently implemented, no remote code execution. */
 (function (root) {
   'use strict';
+  const PROLOG_DOCTYPE = /^((?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->)*)<!DOCTYPE\b((?:[^>\['"]|"[^"]*"|'[^']*')*)([>[])/i;
   const FEED_TYPES = /^(application\/(rss\+xml|atom\+xml|rdf\+xml|feed\+json)|text\/(rss\+xml|atom\+xml))$/i;
   function cleanText(value, max) {
     const text = String(value == null ? '' : value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim();
@@ -53,8 +54,17 @@
       return { type: 'JSON Feed', title: cleanText(json.title) || '未命名 JSON Feed', count: json.items.length,
         preview: json.items.slice(0, 3).map(item => cleanText((item && typeof item === 'object' && (item.title || item.summary || item.content_text)) || '无标题条目', 200)) };
     }
-    if (!trimmed.startsWith('<') || /<!DOCTYPE\b|<!ENTITY\b/i.test(trimmed)) return null;
-    const doc = new DOMParser().parseFromString(trimmed, 'application/xml');
+    if (!trimmed.startsWith('<')) return null;
+    // A plain prolog DOCTYPE (e.g. RSS 0.91's Netscape DTD) is dropped before parsing so no DTD is
+    // ever processed; an internal subset can declare entities, so such documents are still refused.
+    let xml = trimmed;
+    const doctype = xml.match(PROLOG_DOCTYPE);
+    if (doctype) {
+      if (doctype[3] === '[') return null;
+      xml = doctype[1] + xml.slice(doctype[0].length);
+    }
+    if (/<!ENTITY\b/i.test(xml)) return null;
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
     if (doc.getElementsByTagName('parsererror').length) return null;
     const el = doc.documentElement;
     if (!el) return null;

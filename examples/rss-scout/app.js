@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.4 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.5 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -8,9 +8,12 @@
     settings: 'rss-scout.settings.v1',
     account: 'rss-scout.miniflux.v1',
     rules: 'rss-scout.radar.v2',
-    legacyRules: 'rss-scout.radar.v1',
     hub: 'rss-scout.hub-auth.v1'
   };
+  // Instance-only Radar cache written by early versions. Its rules lack private rules and RSSWorker targets,
+  // and its key can never match the current R.sourceKey(), so it is not migrated; it is only deleted.
+  const OBSOLETE_RULES_KEY = 'rss-scout.radar.v1';
+  const AUTH_PARAM = /^(?:key|code|token|auth|access_token)$/i;
   const LEGACY_PRIVATE_RULE_URL =
     'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/codex/refactor-lightweight-v2/examples/rss-scout/private-rules.json';
   const defaults = {
@@ -1027,10 +1030,30 @@
       toast(safeError(e));
     }
   }
-  async function subscribe(f) {
+  function carriesAccessKey(url) {
+    try {
+      const params = new URL(url).searchParams;
+      const key = hubKey();
+      if (key && [...params.values()].includes(key)) return true;
+      return [...params.keys()].some(name => AUTH_PARAM.test(name));
+    } catch (_) {
+      return false;
+    }
+  }
+  async function subscribe(f, keyConfirmed = false) {
     if (state.busy || state.writing || ['working', 'subscribed'].includes(f.subStatus)) return;
     if (!state.miniflux?.ready()) {
       openAccount();
+      return;
+    }
+    if (!keyConfirmed && f.subStatus !== 'uncertain' && carriesAccessKey(f.url)) {
+      confirmAction(
+        '订阅含访问密钥的地址？',
+        '这个订阅地址带有访问密钥或鉴权参数（例如 RSSHub 的 key）。订阅后，完整地址会明文保存在 Miniflux 服务器上，' +
+          '能查看订阅列表、OPML 导出或服务器数据的人都能看到这个密钥。仅在你信任该 Miniflux 服务器时继续。',
+        '仍然订阅',
+        () => subscribe(f, true)
+      );
       return;
     }
     state.writing++;
@@ -1389,7 +1412,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.4\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.5\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })
@@ -1462,12 +1485,7 @@
         note('实例密钥不可读：' + safeError(e));
       }
       try {
-        let c = await state.api.storage.get(KEYS.rules);
-        if (!c) {
-          const old = await state.api.storage.get(KEYS.legacyRules);
-          if (old?.base && Array.isArray(old.rules))
-            c = { ...old, sourceKey: 'legacy:' + old.base, source: '旧版实例缓存', attempts: [] };
-        }
+        const c = await state.api.storage.get(KEYS.rules);
         if (c && Array.isArray(c.rules) && Number.isFinite(c.at) && typeof c.sourceKey === 'string')
           state.cache = {
             ...c,
@@ -1477,6 +1495,9 @@
       } catch (e) {
         note('规则缓存不可读：' + safeError(e));
       }
+      Promise.resolve()
+        .then(() => state.api.storage.remove(OBSOLETE_RULES_KEY))
+        .catch(() => {});
       rebuildMiniflux();
       summaries();
       render();
