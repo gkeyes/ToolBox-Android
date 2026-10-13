@@ -15,7 +15,6 @@
   const OBSOLETE_RULES_KEY = 'rss-scout.radar.v1';
   const AUTH_NAMES = 'key|code|token|api_key|apikey|access_token|password|auth|secret|signature|sig';
   const AUTH_PARAM = new RegExp(`^(?:${AUTH_NAMES})$`, 'i');
-  const AUTH_QUERY = new RegExp(`[?&](?:${AUTH_NAMES})=`, 'i');
   const LEGACY_PRIVATE_RULE_URL =
     'https://raw.githubusercontent.com/gkeyes/ToolBox-Android/refs/heads/codex/refactor-lightweight-v2/examples/rss-scout/private-rules.json';
   const defaults = {
@@ -1093,7 +1092,7 @@
   async function copyFeed(f) {
     await state.api.clipboard.writeText(f.url);
     toast(
-      AUTH_QUERY.test(f.url) ? '已复制；链接含鉴权参数，请勿公开分享' : '已复制订阅链接'
+      carriesAccessKey(f.url) ? '已复制；链接含鉴权参数，请勿公开分享' : '已复制订阅链接'
     );
   }
   function showFeedActions(f) {
@@ -1104,7 +1103,7 @@
     list.append(button('在内置浏览器打开', () => nativeAction(() => state.api.browser.open(f.url))));
     list.append(
       button('分享链接', () => {
-        if (AUTH_QUERY.test(f.url)) {
+        if (carriesAccessKey(f.url)) {
           confirmAction(
             '分享含鉴权参数的链接？',
             '完整链接可能包含你的实例密钥或订阅 Token。请仅分享给可信接收方。',
@@ -1394,7 +1393,7 @@
     $('url').focus();
   });
   $('export').addEventListener('click', () => {
-    if (validRecords().some(f => AUTH_QUERY.test(f.url)))
+    if (validRecords().some(f => carriesAccessKey(f.url)))
       confirmAction(
         '导出含鉴权参数的链接？',
         'OPML 中将保留完整订阅地址，可能包含访问密钥，请妥善保存。',

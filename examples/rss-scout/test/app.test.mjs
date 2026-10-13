@@ -27,6 +27,7 @@ async function boot({ storage = {}, secure = {}, responses = {} } = {}) {
         remove: async key => { delete secure[key]; }
       }
     },
+    clipboard: { writeText: async text => { log.copied = text; } },
     network: {
       async openStream(request) {
         log.requests.push(request);
@@ -130,6 +131,21 @@ for (const name of ['api_key', 'password', 'secret', 'signature', 'sig']) {
     assert.equal(log.requests.some(r => r.url.startsWith(MINIFLUX)), false);
   });
 }
+
+test('copying a URL whose credential parameter name is percent-encoded warns about it', async () => {
+  const feedUrl = 'https://example.com/feed.xml?%73ecret=s3cret';
+  const { window, $, log } = await boot({
+    storage: { 'rss-scout.settings.v1': { useRadar: false, checkHome: false } },
+    responses: { ['GET ' + feedUrl]: { body: FEED } }
+  });
+  $('url').value = feedUrl;
+  $('search-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle(window);
+  $('results').querySelector('button[aria-label="复制链接"]').click();
+  await settle(window);
+  assert.equal(log.copied, feedUrl);
+  assert.match($('toast').textContent, /鉴权参数/);
+});
 
 test('index.html declares a CSP that its own markup satisfies', () => {
   const html = source('index.html');
