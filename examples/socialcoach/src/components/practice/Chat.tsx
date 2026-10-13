@@ -3,7 +3,7 @@ import {useRuntimeForeground} from "@platform/runtime";
 import {flushStorage} from "@platform/storage";
 import { holdSessionWrites, releaseSessionWrites } from "@/store/persistence";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@platform/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { clsx } from "clsx";
 import { ArrowUp, ArrowDown, ChevronDown, Lightbulb, Timer, LogOut } from "lucide-react";

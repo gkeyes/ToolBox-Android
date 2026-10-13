@@ -4,7 +4,7 @@
     "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx",
     "strict": true, "skipLibCheck": true, "esModuleInterop": true,
     "noEmit": true, "allowImportingTsExtensions": true,
-    "baseUrl": ".", "paths": {"@/*": ["src/*"], "@platform/*": ["platform/*"], "next/link": ["platform/navigation.tsx"], "next/navigation": ["platform/navigation.tsx"]}
+    "baseUrl": ".", "paths": {"@/*": ["src/*"], "@platform/*": ["platform/*"]}
   },
   "include": ["src", "platform", "vite.config.ts"]
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@platform/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Clock, MessageSquare, Timer } from "lucide-react";
 import { clsx } from "clsx";
