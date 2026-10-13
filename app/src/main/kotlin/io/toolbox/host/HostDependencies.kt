@@ -125,11 +125,11 @@ internal class HostDependencies(
 }
 
 internal fun interface HostDependenciesFactory {
-    fun create(application: Application, stores: CoreDataStores): HostDependencies
+    suspend fun create(application: Application, stores: CoreDataStores): HostDependencies
 }
 
 internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
-    override fun create(application: Application, stores: CoreDataStores): HostDependencies {
+    override suspend fun create(application: Application, stores: CoreDataStores): HostDependencies {
         val memory = application.getSystemService(android.app.ActivityManager::class.java)
         io.toolbox.host.background.NetworkResources.configureSystemAvailability {
             runCatching {
@@ -139,7 +139,7 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
             }.getOrDefault(false)
         }
 
-        kotlinx.coroutines.runBlocking(Dispatchers.IO) { io.toolbox.host.backup.HostBackupService.recover(application, stores) }
+        io.toolbox.host.backup.HostBackupService.recover(application, stores)
         val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
         lateinit var dependencies: HostDependencies
         dependencies = HostDependencies(
@@ -255,9 +255,7 @@ internal class HostDependenciesViewModel(
                 val dependencies = withContext(Dispatchers.IO) {
                     val app = getApplication<Application>()
                     if (app is ToolBoxApplication && dependenciesFactory === ProductionHostDependenciesFactory) {
-                        return@withContext HostTrace.bestEffortSection("coreData.create") {
-                            app.hostDependencies()
-                        }
+                        return@withContext app.hostDependencies()
                     }
                     val createdStores = HostTrace.bestEffortSection("coreData.create") { CoreDataFactory.create(app) }
                     openedStores = createdStores

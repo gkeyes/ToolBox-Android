@@ -6,6 +6,8 @@ import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 
 internal const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
@@ -182,13 +184,15 @@ internal data class StoredBackgroundSpec(
 )
 
 interface BackgroundWorkerDependencyOwner {
-    fun backgroundWorkerDependencies(): BackgroundWorkerDependencies
+    suspend fun backgroundWorkerDependencies(): BackgroundWorkerDependencies
 }
 
 class BackgroundWorkerDependencyRegistry(
-    factory: () -> BackgroundWorkerDependencies,
+    private val factory: suspend () -> BackgroundWorkerDependencies,
 ) : BackgroundWorkerDependencyOwner {
-    private val dependencies = lazy(LazyThreadSafetyMode.SYNCHRONIZED, factory)
+    private val lock = Mutex()
+    @Volatile private var dependencies: BackgroundWorkerDependencies? = null
 
-    override fun backgroundWorkerDependencies(): BackgroundWorkerDependencies = dependencies.value
+    override suspend fun backgroundWorkerDependencies(): BackgroundWorkerDependencies =
+        dependencies ?: lock.withLock { dependencies ?: factory().also { dependencies = it } }
 }

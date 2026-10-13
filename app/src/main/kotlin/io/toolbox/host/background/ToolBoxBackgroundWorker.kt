@@ -31,12 +31,16 @@ object ToolBoxBackgroundRuntime {
 
     internal fun current(): BackgroundWorkerDependencies? = dependencies.get()
 
-    internal fun resolve(context: Context): BackgroundWorkerDependencies? {
+    internal suspend fun resolve(context: Context): BackgroundWorkerDependencies? {
         current()?.let { return it }
         val owner = context.applicationContext as? BackgroundWorkerDependencyOwner ?: return null
-        return runCatching { owner.backgroundWorkerDependencies() }
-            .getOrNull()
-            ?.also(::install)
+        return try {
+            owner.backgroundWorkerDependencies()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }?.also(::install)
     }
 }
 
