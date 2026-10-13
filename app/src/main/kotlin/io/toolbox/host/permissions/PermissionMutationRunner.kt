@@ -41,7 +41,8 @@ internal class PermissionMutationRunner(
     private val catalog: CatalogRepository,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val now: () -> Long = System::currentTimeMillis,
-    private val mutationLock: DataMutationLock = DataMutationLock(),
+    /** The host's outer package lock (HostDependencies.packageMutations); never a fresh instance. */
+    private val mutationLock: DataMutationLock,
 ) {
     private val pending = mutableMapOf<String, Deferred<PermissionMutationResult>>()
 

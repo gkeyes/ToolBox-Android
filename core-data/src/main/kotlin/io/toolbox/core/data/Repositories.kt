@@ -107,5 +107,6 @@ data class CoreDataRepositories(
     val installs: InstallTransactionRepository,
     val backgroundTasks: BackgroundTaskRepository,
     val settings: HostSettingsRepository,
-    val mutations: DataMutationLock = DataMutationLock(),
+    /** Inner repository write lock. CoreDataFactory creates the single process instance. */
+    val mutations: DataMutationLock,
 )

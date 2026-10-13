@@ -5,19 +5,24 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.toolbox.core.data.CatalogLayoutRepository
 import io.toolbox.core.data.CoreDataFactory
 import io.toolbox.core.data.CoreDataInitializationException
 import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.core.data.CoreDataStores
+import io.toolbox.core.data.DataMutationLock
+import io.toolbox.core.data.backup.BackupDatabase
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.catalog.RunningToolsViewModel
 import io.toolbox.host.importflow.ImportViewModel
 import io.toolbox.host.icons.ToolIconLoader
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.PermissionMutationRunner
+import io.toolbox.host.runtime.HostRuntimeBridgeProvider
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.settings.SettingsViewModel
+import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeDataCleaner
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeDataCleanupResult
@@ -34,66 +39,104 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Composition root of the host process: every host service is built here, once, by constructor
+ * injection, in declaration order. Nothing outside this class constructs these services, and
+ * nothing is bound after construction.
+ *
+ * Locks — one instance per level, never merged:
+ * - [packageMutations] (outer) is owned here. Package install/delete, permission writes, backup
+ *   and restore hold it while they drain runtime and storage work.
+ * - [CoreDataRepositories.mutations] (inner) is owned by `CoreDataFactory` and wraps every single
+ *   repository write. Drained runtime work still needs it, which is why it must stay a separate
+ *   instance (see PermissionMutationRunnerTest.cleanupCanDrainRuntimeWorkThatStillNeedsTheSeparateRepositoryLock).
+ *   Always take the outer lock before the inner one.
+ *
+ * The only dependency cycle is runtime sessions -> bridge -> (background handlers, session
+ * continuity) -> runtime sessions. It is broken in exactly one place: [runtimeSessions] receives
+ * the bridge through a provider lambda, and [runtimeBridgeProvider] is built lazily on first use.
+ */
 internal class HostDependencies(
     private val application: Application,
     val repositories: CoreDataRepositories,
-    private val packageOperationsFactory: (RuntimeDataCleaner, HostBackgroundOperations) -> HostPackageOperations,
-    val backgroundOperations: HostBackgroundOperations,
-    val permissionSideEffects: HostPermissionSideEffects,
-    private val runtimePreparerFactory: () -> ToolRuntimePreparer,
-    private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
-    private val runtimeBridgeProviderFactory: (
-        HostRuntimeServiceHandlerFactory,
-        (io.toolbox.tool.runtime.PreparedToolRuntime) -> io.toolbox.host.runtime.HostRuntimeContinuityHandlers,
-    ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
-    private val runtimeServiceHandlerFactory: HostRuntimeServiceHandlerFactory,
-    private val backupDatabase: io.toolbox.core.data.backup.BackupDatabase? = null,
+    private val backupDatabase: BackupDatabase,
 ) {
+    /** Outer package/permission/backup admission lock; the single instance for this process. */
+    val packageMutations = DataMutationLock()
+    val catalogLayout = CatalogLayoutRepository(repositories)
     val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
 
-    private val deferredRuntimeProfileManager = lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-        runtimeProfileManagerFactory,
-    )
+    /** One-shot message from startup maintenance; the UI shows it once and clears it. */
+    val startupNotice = MutableStateFlow<String?>(null)
 
-    val runtimePreparer: ToolRuntimePreparer by lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-        runtimePreparerFactory,
-    )
+    // Runtime profiles stay unconstructed until the first runtime or package operation needs them.
+    private val runtimeProfileManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RuntimeProfileManager(application.filesDir)
+    }
 
     val runtimeDataCleaner: RuntimeDataCleaner = object : RuntimeDataCleaner {
         override suspend fun <T> withPreservedData(toolId: String, action: suspend () -> T): T =
-            deferredRuntimeProfileManager.value.withPreservedData(toolId, action)
+            runtimeProfileManager.withPreservedData(toolId, action)
 
         override suspend fun <T> clearThenRun(
             toolId: String,
             action: suspend () -> T,
         ): RuntimeDataCleanupExecution<T> =
-            deferredRuntimeProfileManager.value.clearThenRun(toolId, action)
+            runtimeProfileManager.clearThenRun(toolId, action)
     }
 
     val runtimePermitProvider = RuntimePermitProvider { toolId, awaitExistingRuntimeRelease ->
-        deferredRuntimeProfileManager.value.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease)
+        runtimeProfileManager.acquireRuntimePermit(toolId, awaitExistingRuntimeRelease)
     }
 
-    val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runtimeBridgeProviderFactory(runtimeServiceHandlerFactory, runtimeSessions::handlers)
+    val runtimePreparer: ToolRuntimePreparer by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ToolRuntimePreparer(application.filesDir, BuildConfig.VERSION_NAME)
     }
 
-    val runtimeSessions: RuntimeSessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        RuntimeSessionManager(
+    // The cycle break point (see class docs). Declared before the services it reads so its
+    // delegate exists before either of them; its body only runs when a runtime is first opened.
+    val runtimeBridgeProvider: RuntimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        HostRuntimeBridgeProvider(
             context = application,
             repositories = repositories,
-            preparer = runtimePreparer,
-            permitProvider = runtimePermitProvider,
-            bridgeProvider = { runtimeBridgeProvider },
+            serviceHandlerFactory = background,
+            continuityHandlerFactory = runtimeSessions::handlers,
         )
     }
 
-    val packageMutations = io.toolbox.core.data.DataMutationLock()
-    val catalogLayout = io.toolbox.core.data.CatalogLayoutRepository(repositories)
+    val runtimeSessions = RuntimeSessionManager(
+        context = application,
+        repositories = repositories,
+        preparer = runtimePreparer,
+        permitProvider = runtimePermitProvider,
+        bridgeProvider = { runtimeBridgeProvider },
+    )
+
+    private val background = ProductionHostBackgroundOperations(application, repositories, runtimeSessions)
+    val backgroundOperations: HostBackgroundOperations = background
+    val permissionSideEffects: HostPermissionSideEffects = background
+
+    val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        io.toolbox.host.backup.SerializedPackageOperations(
+            ProductionHostPackageOperations(
+                application = application,
+                repositories = repositories,
+                runtimeDataCleaner = runtimeDataCleaner,
+                background = background,
+                invalidateToolIcon = toolIcons::invalidate,
+            ),
+            packageMutations,
+            catalogLayout::reconcile,
+        )
+    }
+
+    val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects,
+            catalog = repositories.catalog, mutationLock = packageMutations)
+    }
+
     val backupService by lazy {
-        io.toolbox.host.backup.HostBackupService(application, repositories, checkNotNull(backupDatabase),
+        io.toolbox.host.backup.HostBackupService(application, repositories, backupDatabase,
             packageOperations, packageMutations, backgroundOperations, runtimeSessions::backupRuntimeIds)
     }
     fun backupViewModel() = io.toolbox.host.backup.BackupViewModel(
@@ -102,20 +145,8 @@ internal class HostDependencies(
 
     val updates by lazy { io.toolbox.host.update.UpdateRepository(application) }
 
-    val packageOperations: HostPackageOperations by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        io.toolbox.host.backup.SerializedPackageOperations(packageOperationsFactory(runtimeDataCleaner, backgroundOperations), packageMutations, catalogLayout::reconcile)
-    }
-
-    val permissionMutations: PermissionMutationRunner by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        PermissionMutationRunner(packageOperations, repositories.grants, permissionSideEffects,
-            catalog = repositories.catalog, mutationLock = packageMutations)
-    }
-
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
-        deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
-
-    /** One-shot message from startup maintenance; the UI shows it once and clears it. */
-    val startupNotice = MutableStateFlow<String?>(null)
+        runtimeProfileManager.reapMarkedOrphanProfiles(installedToolIds)
 
     suspend fun recoverPendingPackageMutations() {
         packageMutations.run {
@@ -145,37 +176,7 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
         }
 
         io.toolbox.host.backup.HostBackupService.recover(application, stores)
-        val backgroundOperations = ProductionHostBackgroundOperations(application, stores.repositories)
-        lateinit var dependencies: HostDependencies
-        dependencies = HostDependencies(
-            application = application,
-            repositories = stores.repositories,
-            packageOperationsFactory = { runtimeDataCleaner, background ->
-                ProductionHostPackageOperations(
-                    application = application,
-                    repositories = stores.repositories,
-                    runtimeDataCleaner = runtimeDataCleaner,
-                    background = background,
-                    invalidateToolIcon = dependencies.toolIcons::invalidate,
-                )
-            },
-            backgroundOperations = backgroundOperations,
-            permissionSideEffects = backgroundOperations,
-            runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir, BuildConfig.VERSION_NAME) },
-            runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
-            runtimeBridgeProviderFactory = { serviceHandlers, continuityHandlers ->
-                io.toolbox.host.runtime.HostRuntimeBridgeProvider(
-                    context = application,
-                    repositories = stores.repositories,
-                    serviceHandlerFactory = serviceHandlers,
-                    continuityHandlerFactory = continuityHandlers,
-                )
-            },
-            runtimeServiceHandlerFactory = backgroundOperations,
-            backupDatabase = stores.backup,
-        )
-        backgroundOperations.attachRuntimeSessions(dependencies.runtimeSessions)
-        return dependencies
+        return HostDependencies(application, stores.repositories, stores.backup)
     }
 }
 
