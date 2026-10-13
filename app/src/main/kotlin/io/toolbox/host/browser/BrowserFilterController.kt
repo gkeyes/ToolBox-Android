@@ -140,16 +140,18 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
             return
         }
 
-        val selectors = snapshot.selectors(host)
+        val state = snapshot
+        val selectors = state.selectors(host)
         if (!forceInstall && selectors.isEmpty()) {
             if (!filterEngineInstalled) {
                 after?.invoke(true)
                 return
             }
+            // evaluateJavascript runs in order, so the flag tracks the last queued install/destroy, not callbacks.
+            filterEngineInstalled = false
             view.evaluateJavascript(
                 "(() => { const engine = window[${JSONObject.quote(key)}]; if (engine?.destroy) engine.destroy(); return true; })()",
             ) {
-                if (page === view && generation == expected) filterEngineInstalled = false
                 after?.invoke(page === view && generation == expected)
             }
             return
@@ -160,10 +162,13 @@ class BrowserFilterController(context: Context, private val scope: CoroutineScop
         scope.launch(Dispatchers.Main.immediate) {
             val source = script.await()
             if (page !== view || generation != expected) { after?.invoke(false); return@launch }
+            // Every change/refresh replaces [snapshot]; a superseded install re-reads the current state now that
+            // the script is loaded, so a disable, exception or rule edit made meanwhile cannot be overwritten.
+            if (snapshot !== state) { applyToPage(forceInstall, after); return@launch }
+            // Mark before evaluating: a disable issued before the callback must still queue destroy() behind it.
+            filterEngineInstalled = true
             view.evaluateJavascript("($source)(${JSONObject.quote(key)},$values,${JSONObject.quote(host)})") { value ->
-                val applied = page === view && generation == expected && value == "true"
-                if (applied) filterEngineInstalled = true
-                after?.invoke(applied)
+                after?.invoke(page === view && generation == expected && value == "true")
             }
         }
     }
