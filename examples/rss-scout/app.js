@@ -13,7 +13,7 @@
   // Instance-only Radar cache written by early versions. Its rules lack private rules and RSSWorker targets,
   // and its key can never match the current R.sourceKey(), so it is not migrated; it is only deleted.
   const OBSOLETE_RULES_KEY = 'rss-scout.radar.v1';
-  const AUTH_NAMES = 'key|code|token|api_key|apikey|access_token|password|auth|secret';
+  const AUTH_NAMES = 'key|code|token|api_key|apikey|access_token|password|auth|secret|signature|sig';
   const AUTH_PARAM = new RegExp(`^(?:${AUTH_NAMES})$`, 'i');
   const AUTH_QUERY = new RegExp(`[?&](?:${AUTH_NAMES})=`, 'i');
   const LEGACY_PRIVATE_RULE_URL =

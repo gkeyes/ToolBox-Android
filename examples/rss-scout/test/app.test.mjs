@@ -109,7 +109,7 @@ test('subscribing a URL without credentials does not ask', async () => {
   assert.equal(log.requests.filter(r => r.method === 'POST').length, 1);
 });
 
-for (const name of ['api_key', 'password', 'secret']) {
+for (const name of ['api_key', 'password', 'secret', 'signature', 'sig']) {
   test(`subscribing a URL with a ${name} parameter asks first`, async () => {
     const feedUrl = `https://example.com/feed.xml?${name}=s3cret`;
     const { window, $, log } = await boot({
