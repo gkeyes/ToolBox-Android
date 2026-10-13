@@ -1,5 +1,6 @@
 import { useStore } from "@nanostores/react";
 import {
+  getFeedCount,
   getCategoryCount,
   categoryExpandedState,
   updateCategoryExpandState,
@@ -11,7 +12,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible.jsx";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router";
 import {
   SidebarMenuAction,
   SidebarMenuBadge,
@@ -21,17 +22,17 @@ import {
 } from "@/components/ui/sidebar";
 import { useSidebar } from "@/components/ui/sidebar.jsx";
 import { settingsState } from "@/stores/settingsStore";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import FeedItem from "./FeedItem";
 import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
 import { renameModalOpen, currentCategoryId } from "@/stores/modalStore.js";
 import { useTranslation } from "react-i18next";
 
-const FeedsGroupContent = ({ category }) => {
+const FeedsGroupContent = ({ category, active, activeFeedId }) => {
   const { t } = useTranslation();
   const $getCategoryCount = useStore(getCategoryCount);
+  const $getFeedCount = useStore(getFeedCount);
   const { isMobile, setOpenMobile } = useSidebar();
-  const { categoryId, feedId } = useParams();
   const { defaultExpandCategory } = useStore(settingsState);
   const $categoryExpandedState = useStore(categoryExpandedState);
   const [contextMenu, setContextMenu] = useState({
@@ -40,21 +41,14 @@ const FeedsGroupContent = ({ category }) => {
   });
 
   useEffect(() => {
-    if (feedId) {
-      const shouldExpand = category.feeds.some(
-        (feed) => parseInt(feedId) === feed.id,
-      );
-      // 只在需要展开时更新状态
-      if (shouldExpand) {
-        updateCategoryExpandState(category.id, true);
-      }
+    // activeFeedId is set only for the category that contains the active feed.
+    if (activeFeedId != null) {
+      updateCategoryExpandState(category.id, true);
       // 滚动到活动的 feed
-      if (shouldExpand) {
-        const feedItem = document.querySelector(".active-feed");
-        feedItem?.scrollIntoView({ behavior: "instant", block: "nearest" });
-      }
+      const feedItem = document.querySelector(".active-feed");
+      feedItem?.scrollIntoView({ behavior: "instant", block: "nearest" });
     }
-  }, [feedId, category.id]);
+  }, [activeFeedId, category.id]);
 
   const handleContextMenu = (e) => {
     e.preventDefault();
@@ -76,7 +70,7 @@ const FeedsGroupContent = ({ category }) => {
     >
       <SidebarMenuItem key={`menu-${category.id}`}>
         <SidebarMenuButton
-          isActive={String(categoryId) === String(category.id)}
+          isActive={active}
           asChild
         >
           <Link
@@ -100,7 +94,12 @@ const FeedsGroupContent = ({ category }) => {
         <CollapsibleContent>
           <SidebarMenuSub className="m-0 px-0 border-none">
             {category.feeds.map((feed) => (
-              <FeedItem key={feed.id} feed={feed} />
+              <FeedItem
+                key={feed.id}
+                feed={feed}
+                active={feed.id === activeFeedId}
+                count={$getFeedCount(feed.id)}
+              />
             ))}
           </SidebarMenuSub>
         </CollapsibleContent>
@@ -129,4 +128,4 @@ const FeedsGroupContent = ({ category }) => {
   );
 };
 
-export default FeedsGroupContent;
+export default memo(FeedsGroupContent);

@@ -10,14 +10,18 @@ import { useTranslation } from "react-i18next";
 import { searching } from "@/stores/searchStore.js";
 import { useStore } from "@nanostores/react";
 
+const EMPTY = [];
+
 export default function SearchResults({
-  results,
+  results: resultsProp,
   keyword,
   onSelect,
   type = "articles",
   isComposing,
 }) {
   const { t } = useTranslation();
+  // A failed search must render as "no results", never crash on .length.
+  const results = Array.isArray(resultsProp) ? resultsProp : EMPTY;
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [hoverEffect, setHoverEffect] = useState(true);
   const listRef = useRef(null);

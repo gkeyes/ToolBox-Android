@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import { useTranslation } from "react-i18next";
 import { activeArticle, filteredArticles, imageGalleryActive } from "@/stores/articlesStore.js";

@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { SERVER_URL } from "../toolbox/server.mjs";
 
 export function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -24,7 +25,7 @@ export function extractFirstImage(article) {
   const img = template.content.querySelector("img");
   const src = img?.getAttribute("src");
   if (!src) return null;
-  try { return new URL(src, src.startsWith("/proxy/") ? "https://miniflux.xiaochen.win" : article.url).href; } catch { return null; }
+  try { return new URL(src, src.startsWith("/proxy/") ? SERVER_URL : article.url).href; } catch { return null; }
 }
 
 export function getFontSizeClass(fontSize) {

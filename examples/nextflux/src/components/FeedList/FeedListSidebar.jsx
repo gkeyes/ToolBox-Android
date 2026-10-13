@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useStore } from "@nanostores/react";
 import { loadFeeds } from "@/stores/feedsStore.js";
 import { isSyncing, lastSync, syncProgress, error } from "@/stores/syncStore.js";
@@ -25,17 +25,27 @@ import { getLastSyncTime } from "@/db/storage.js";
 import AddFeedButton from "@/components/FeedList/components/AddFeedButton.jsx";
 import { useTranslation } from "react-i18next";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { isModalOpen } from "@/stores/modalStore";
 
-const FeedListSidebar = () => {
+// Sync progress changes once per fetched page; only this line subscribes to it.
+const SyncStatusLine = () => {
   const { t } = useTranslation();
   const $lastSync = useStore(lastSync);
   const $isSyncing = useStore(isSyncing);
   const $syncProgress = useStore(syncProgress);
   const $syncError = useStore(error);
-  const { showHiddenFeeds, floatingSidebar } = useStore(settingsState);
+  return (
+    <span role="status" className="ds-caption ds-tnum line-clamp-2">
+      {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || formatLastSync($lastSync)}
+    </span>
+  );
+};
+
+// Route-dependent swipe-to-open lives in a leaf so route changes do not
+// re-render the sidebar tree.
+const SidebarSwipeOpener = () => {
   const { setOpenMobile } = useSidebar();
   const { articleId } = useParams();
   const { isMobile } = useIsMobile();
@@ -48,6 +58,12 @@ const FeedListSidebar = () => {
       }
     },
   });
+  return null;
+};
+
+const FeedListSidebar = () => {
+  const $lastSync = useStore(lastSync);
+  const { showHiddenFeeds, floatingSidebar } = useStore(settingsState);
 
   useEffect(() => {
     lastSync.set(getLastSyncTime());
@@ -58,6 +74,8 @@ const FeedListSidebar = () => {
   }, [$lastSync, showHiddenFeeds]);
 
   return (
+    <>
+    <SidebarSwipeOpener />
     <Sidebar
       variant={floatingSidebar ? "floating" : "sidebar"}
       className="sidebar"
@@ -69,9 +87,7 @@ const FeedListSidebar = () => {
               <img src={logo} alt="" className="size-9 rounded-[var(--ds-radius-small)]" />
               <div className="grid min-w-0 flex-1 text-left leading-tight">
                 <span className="ds-title truncate">Nextflux</span>
-                <span role="status" className="ds-caption ds-tnum line-clamp-2">
-                  {$isSyncing ? $syncProgress || t("common.syncing") : $syncError?.message || formatLastSync($lastSync)}
-                </span>
+                <SyncStatusLine />
               </div>
               <SyncButton />
               <AddFeedButton />
@@ -91,7 +107,8 @@ const FeedListSidebar = () => {
         <ProfileButton />
       </SidebarFooter>
     </Sidebar>
+    </>
   );
 };
 
-export default FeedListSidebar;
+export default memo(FeedListSidebar);

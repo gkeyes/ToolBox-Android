@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ArticleCard from "./ArticleCard";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import {
   filter,
   hasMore,
@@ -20,7 +20,10 @@ import {
   MarkAllReadIcon as CheckCheck,
   EmptyIcon as Inbox,
 } from "@/components/ui/icons.jsx";
-import { handleMarkAllRead } from "@/handlers/articleHandlers";
+import { handleMarkAllRead, handleMarkRead } from "@/handlers/articleHandlers";
+import { feeds } from "@/stores/feedsStore.js";
+import { createReadObserver } from "@/lib/readObserver.mjs";
+import { dayField } from "@/lib/format.js";
 import { isSyncing } from "@/stores/syncStore.js";
 import { useTranslation } from "react-i18next";
 import { loadArticles } from "@/stores/articlesStore";
@@ -56,7 +59,7 @@ function dayLabel(value, t, language) {
   });
 }
 
-const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day }) => {
+const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day, feedTitle, observeRead }) => {
   const [stagger] = useState(() => index < STAGGER_LIMIT && performance.now() < staggerUntil);
   return (
     <div
@@ -64,7 +67,7 @@ const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day })
       style={stagger ? { animationDelay: `calc(var(--ds-stagger-step) * ${index})` } : undefined}
     >
       {day && <div className="article-day" role="heading" aria-level={2}><span>{day}</span></div>}
-      <ArticleCard article={article} active={active} onOpen={onOpen} />
+      <ArticleCard article={article} active={active} onOpen={onOpen} feedTitle={feedTitle} observeRead={observeRead} />
     </div>
   );
 });
@@ -122,7 +125,11 @@ export default function ArticleListContent({
   );
   const $loading = useStore(loading);
   const $loadingMore = useStore(loadingMore);
-  const { reduceMotion } = useStore(settingsState);
+  const { reduceMotion, sortField } = useStore(settingsState);
+  const $feeds = useStore(feeds);
+  // One lookup for all rows; cards do not subscribe to the feed catalog.
+  const feedTitles = useMemo(() => new Map($feeds.map((feed) => [feed.id, feed.title])), [$feeds]);
+  const dateField = dayField(sortField);
   const openContext = useRef(null);
   useLayoutEffect(() => {
     openContext.current = { navigate, isMedium, reduceMotion };
@@ -145,6 +152,15 @@ export default function ArticleListContent({
   }, []);
   const pageRequests = useRef(null);
   const listScroller = useRef(null);
+  const readObserver = useRef(null);
+  if (!readObserver.current) {
+    readObserver.current = createReadObserver({
+      getRoot: () => listScroller.current ?? document.querySelector(".v-list"),
+      onRead: (article) => { void handleMarkRead(article); },
+    });
+  }
+  const observeRead = useCallback((element, article) => readObserver.current.observe(element, article), []);
+  useEffect(() => () => readObserver.current?.dispose(), []);
   if (!pageRequests.current) pageRequests.current = createArticleRequestGate();
   const collapsedRef = useRef(false);
   const staggerUntil = useRef(0);
@@ -174,6 +190,7 @@ export default function ArticleListContent({
   const setListScroller = useCallback((element) => {
     listScroller.current?.removeEventListener?.("scroll", handleScroll);
     listScroller.current = element;
+    readObserver.current?.refresh();
     element?.addEventListener?.("scroll", handleScroll, { passive: true });
     reportCollapsed((element?.scrollTop ?? 0) > COLLAPSE_AT);
   }, [handleScroll, reportCollapsed]);
@@ -277,9 +294,11 @@ export default function ArticleListContent({
                 key={article.id}
                 article={article}
                 index={index}
-                day={index === 0 || dayKey(articles[index - 1]?.published_at) !== dayKey(article.published_at)
-                  ? dayLabel(article.published_at, t, i18n.language)
+                day={index === 0 || dayKey(articles[index - 1]?.[dateField]) !== dayKey(article[dateField])
+                  ? dayLabel(article[dateField], t, i18n.language)
                   : ""}
+                feedTitle={feedTitles.get(article.feedId)}
+                observeRead={observeRead}
                 staggerUntil={staggerUntil.current}
                 active={article.id === activeId}
                 onOpen={openArticle}

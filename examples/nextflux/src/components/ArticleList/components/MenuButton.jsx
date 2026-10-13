@@ -8,7 +8,7 @@ import {
   MoreVerticalIcon as EllipsisVertical,
   SyncIcon as RefreshCw,
 } from "@/components/ui/icons.jsx";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import {
   editFeedModalOpen,
   renameModalOpen,

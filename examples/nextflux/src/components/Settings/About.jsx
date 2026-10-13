@@ -2,11 +2,10 @@ import { useTranslation } from "react-i18next";
 import { NotFancyLogo } from "@/components/Settings/components/NotFancyLogo.jsx";
 import { ArrowUpRight, Heart, Rss } from "lucide-react";
 import manifest from "../../../manifest.json";
-import { SERVER_URL } from "@/toolbox/network.js";
+import { SERVER_HOST } from "@/toolbox/server.mjs";
 import { ItemWrapper, SettingRow } from "@/components/ui/settingItem.jsx";
 import SettingIcon from "@/components/ui/SettingIcon";
 
-const SERVER_HOST = new URL(SERVER_URL).host;
 
 const credits = [
   { name: "Reeder", href: "https://reederapp.com" },

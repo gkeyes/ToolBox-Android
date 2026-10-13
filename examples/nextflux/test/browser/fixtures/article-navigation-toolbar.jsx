@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 // Existing controls.spec.js exercises the real toolbar. Here its native/account
 // graph is replaced by a constant-height toolbar to isolate page motion.

@@ -1,5 +1,5 @@
 import { forwardRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
 import { releaseStuckGallery } from "@/toolbox/galleryRelease.js";

@@ -4,11 +4,12 @@ import { ALLOWED_TAGS, BLOCK_TAGS, DROP_CONTENT } from "./schema.mjs";
 import { analyzeArticle } from "./analyze.mjs";
 import { mediaSourceCandidates } from "./media-sources.mjs";
 import { createNormalizationPlan, hasSentenceTerminal, normalizeParagraphLeadingText, paragraphPresentation, semanticizeElement, shouldPreserveTextBreaks, shouldRemoveStandaloneNoise } from "./normalize.mjs";
+import { SERVER_BASE } from "../toolbox/server.mjs";
 
 const INPUT_CHUNK = 2048;
 const BATCH_NODES = 96;
 const BATCH_TEXT = 16 * 1024;
-const mediaUrl = (source, base) => safeContentUrl(source, /^\/(?:proxy\/|media\/v1\/)/.test(source || "") ? "https://miniflux.xiaochen.win/" : base);
+const mediaUrl = (source, base) => safeContentUrl(source, /^\/(?:proxy\/|media\/v1\/)/.test(source || "") ? SERVER_BASE : base);
 const hasSentencePunctuation = (text) => /[。！？!?]|\.(?=\s|$|["'”’」』】）])/u.test(text);
 
 // A flat, already-sanitized tree stream. No DOM parser or HTML serialization is

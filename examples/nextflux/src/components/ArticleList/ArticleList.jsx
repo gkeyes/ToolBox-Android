@@ -10,7 +10,7 @@ import {
   visibleRange,
 } from "@/stores/articlesStore.js";
 import { lastSync } from "@/stores/syncStore.js";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import ArticleListHeader from "./components/ArticleListHeader";
 import ArticleListContent from "./components/ArticleListContent";
 import { settingsState } from "@/stores/settingsStore.js";

@@ -13,12 +13,13 @@ import {
 } from "@/stores/searchStore";
 import { searchDialogOpen } from "@/stores/modalStore.js";
 import SearchResults from "./SearchResults";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { settingsState } from "@/stores/settingsStore";
 import { useTranslation } from "react-i18next";
 import { filter } from "@/stores/articlesStore.js";
 import { handleMarkStatus } from "@/handlers/articleHandlers";
-import debounce from "lodash/debounce.js";
+import { debounce } from "@/lib/debounce.mjs";
+import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile.jsx";
 import MobileSheet from "@/components/ui/MobileSheet.jsx";
 
@@ -52,12 +53,14 @@ export default function SearchModal() {
         const res = searchType === "articles" ? await search(keyword) : await searchFeeds(keyword);
         if (ignore) return;
         searchType === "articles" ? searchResults.set(res) : feedSearchResults.set(res);
-      } catch {
-        if (!ignore) console.error("搜索失败");
+      } catch (failure) {
+        if (ignore) return;
+        searchType === "articles" ? searchResults.set([]) : feedSearchResults.set([]);
+        toast.error(failure?.message || "搜索失败，请重试。");
       } finally {
         if (!ignore) searching.set(false);
       }
-    }, 500, { leading: false, trailing: true });
+    }, 500);
     handleSearch();
     return () => {
       ignore = true;

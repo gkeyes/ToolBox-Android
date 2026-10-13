@@ -99,6 +99,12 @@ function pumpAccountQueue() {
   });
 }
 
+// A check bound to the current account epoch for work done outside the account
+// queue (for example a slow page fetch); call it right before committing.
+export function currentAccountCheck(requireOnline = true) {
+  return accountCheck(accountEpoch, requireOnline);
+}
+
 // Automatic batches yield to pending manual intent; an already dispatched
 // operation keeps ownership through server acknowledgement and local commit.
 export function runAccountOperation(task, { requireOnline = true, priority = "manual" } = {}) {
@@ -328,8 +334,8 @@ async function collectSnapshot(baseCheck) {
     // Catalog requests wait until unread and article-state work finishes. This
     // makes unread data the first server workload and avoids competing with it.
     syncProgress.set("正在同步订阅信息…");
-    const [serverFeeds, serverCategories] = await join([
-      minifluxAPI.getFeeds(check), minifluxAPI.getCategories(check),
+    const [serverFeeds, serverCategories, oldestServerReadId] = await join([
+      minifluxAPI.getFeeds(check), minifluxAPI.getCategories(check), minifluxAPI.getOldestReadEntryId(check),
     ]);
     await staging;
     check();
@@ -340,6 +346,7 @@ async function collectSnapshot(baseCheck) {
       updatedCount: entryChanges.size,
       feeds: serverFeeds.map(mapServerFeed),
       categories: serverCategories.map((category) => ({ id: category.id, title: category.title })),
+      oldestServerReadId,
     };
   } catch (failure) {
     await staging;
@@ -371,7 +378,7 @@ export function sync(mode = "foreground") {
       try {
         check();
         syncProgress.set("正在保存完整阅读数据…");
-        const catalogs = { feeds: collected.feeds, categories: collected.categories };
+        const catalogs = { feeds: collected.feeds, categories: collected.categories, oldestServerReadId: collected.oldestServerReadId };
         await prepareArticleSyncCommit(collected.token, catalogs);
         check();
         await runAccountOperation(async (commitCheck) => {

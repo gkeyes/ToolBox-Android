@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { HashRouter, Route, Routes, useNavigate, useLocation, useParams } from "react-router-dom";
+import { HashRouter, Route, Routes, useNavigate, useLocation, useParams } from "react-router";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ArticleView from "@/components/ArticleView/ArticleView.jsx";
