@@ -72,9 +72,11 @@ on:
 permissions:
   contents: read
 
+# A push only builds and publishes the tools its own commits changed, so a push run is never cancelled
+# or replaced by a later one. PR and manual runs restart on a new commit.
 concurrency:
-  group: tbx-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tool || 'changed' }}
-  cancel-in-progress: true
+  group: tbx-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tool || 'changed' }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   select:

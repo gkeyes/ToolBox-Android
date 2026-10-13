@@ -58,9 +58,11 @@ on:
 permissions:
   contents: read
 
+# PR and manual runs restart on a new commit. Pushes to main never cancel a running build, so a quick
+# series of merges cannot starve the test channel; a newer push only replaces one still waiting.
 concurrency:
   group: android-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   verify:
@@ -179,13 +181,10 @@ jobs:
 
   delivery:
     name: Package stable signed release
-    needs: verify
+    # Runs alongside verify; nothing is delivered until the publish job sees both succeed.
     # PRs never receive the signing key.
     if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
-    permissions:
-      # Only to refresh the rolling `dev` prerelease behind the in-app test channel.
-      contents: write
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
     steps:
@@ -248,36 +247,23 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: python3 scripts/ci/release-startup-smoke.py
-      - name: Verify release certificate identity and optimization then assemble delivery
-        env:
-          VERIFY_JOB_RESULT: ${{ needs.verify.result }}
-          ALLOW_UNTESTED_STARTUP: "false"
-          HOST_VERIFICATION_SCOPE: current_run
-          HOST_VERIFICATION_RUN: ${{ github.run_id }}
-          HOST_VERIFICATION_ATTEMPT: ${{ github.run_attempt }}
-          HOST_VERIFICATION_COMMIT: ${{ github.sha }}
-          HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.checks }}
-          HOST_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
+      - name: Record release certificate and badging
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/37.0.0"
           apk=app/build/outputs/apk/release/app-release.apk
           "$tools/apksigner" verify --verbose --print-certs "$apk" > build/release-evidence/signature.txt
           "$tools/aapt" dump badging "$apk" > build/release-evidence/badging.txt
-          python3 scripts/ci/verify_release.py
-      - name: Upload verified signed release
+      - name: Hand the signed release to the publish job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
-          path: build/ci-delivery/
+          name: release-candidate-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/mapping/release/mapping.txt
+            build/release-evidence/
           if-no-files-found: error
-          # Publish release reads it by run id; published builds also live on their Release.
-          retention-days: 30
-      - name: Publish to the in-app test channel
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: bash scripts/ci/publish-test-release.sh app build/ci-delivery
+          retention-days: 1
       - name: Remove signing material even on failure
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/toolbox-signing"
@@ -291,3 +277,53 @@ jobs:
             app/build/outputs/mapping/release/
           if-no-files-found: warn
           retention-days: 30
+
+  publish:
+    name: Publish verified signed release
+    needs: [verify, delivery]
+    if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      # Only to refresh the rolling `dev` prerelease behind the in-app test channel.
+      contents: write
+      # To download the signed release that the delivery job uploaded.
+      actions: read
+    env:
+      TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Download the signed release from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" -n "release-candidate-$GITHUB_SHA" -D .
+          test -f app/build/outputs/apk/release/app-release.apk
+          test -f build/release-evidence/startup/result.json
+      - name: Verify release certificate identity and optimization then assemble delivery
+        env:
+          VERIFY_JOB_RESULT: ${{ needs.verify.result }}
+          ALLOW_UNTESTED_STARTUP: "false"
+          HOST_VERIFICATION_SCOPE: current_run
+          HOST_VERIFICATION_RUN: ${{ github.run_id }}
+          HOST_VERIFICATION_ATTEMPT: ${{ github.run_attempt }}
+          HOST_VERIFICATION_COMMIT: ${{ github.sha }}
+          HOST_VERIFICATION_CHECKS: ${{ needs.verify.outputs.checks }}
+          HOST_ANDROID_TEST_FILTER: ${{ inputs.android_test_filter || '' }}
+        run: python3 scripts/ci/verify_release.py
+      - name: Upload verified signed release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
+          path: build/ci-delivery/
+          if-no-files-found: error
+          # Publish release reads it by run id; published builds also live on their Release.
+          retention-days: 30
+      - name: Publish to the in-app test channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/ci/publish-test-release.sh app build/ci-delivery
