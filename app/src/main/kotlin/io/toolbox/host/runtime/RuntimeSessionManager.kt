@@ -66,6 +66,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -140,6 +141,8 @@ internal class RuntimeSessionManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val stateByTool = ConcurrentHashMap<String, MutableStateFlow<RuntimeUiState>>()
     private val hosts = mutableMapOf<String, RuntimeHost>()
+    // Read-only copy of [hosts] for timer coroutines that run off the main thread.
+    private val publishedHosts = MutableStateFlow<Map<String, RuntimeHost>>(emptyMap())
     private val openingTools = mutableMapOf<String, Job>()
     private val visibleTools = mutableSetOf<String>()
     private val recoveryStatus = mutableMapOf<String, String>()
@@ -561,6 +564,7 @@ internal class RuntimeSessionManager(
                                 ),
                             )
                             hosts[toolId] = host
+                            publishedHosts.value = hosts.toMap()
                             updateWebViewPlayback(host)
                             updateSessionProjection()
                             stateFlow(toolId).value = host.toUiState()
@@ -675,6 +679,7 @@ internal class RuntimeSessionManager(
 
     private fun destroyHost(toolId: String) {
         hosts.remove(toolId)?.let { host ->
+            publishedHosts.value = hosts.toMap()
             host.state = RuntimeHostState.STOPPED
             HostTrace.bestEffortSection("runtime.release") { HardenedRuntimeWebView.release(host.webView) }
         }
@@ -799,14 +804,12 @@ internal class RuntimeSessionManager(
             val expectedVersion = checkNotNull(hosts[toolId]).installedVersion
             val jobs = timersByTool.getOrPut(toolId, ::linkedMapOf)
             jobs.remove(key)?.cancel()
-            jobs[key] = scope.launch {
+            // Ticks, event encoding and delivery queueing run off the main thread; the tool's
+            // interval is used as given. Only recovery and failure handling touch the main thread.
+            jobs[key] = scope.launch(Dispatchers.Default) {
                 while (isActive) {
                     delay(intervalMillis)
-                    val host = hosts[toolId]
-                    if (host == null) {
-                        requestBackgroundRecovery(toolId, expectedVersion)
-                        continue
-                    }
+                    val host = publishedHosts.value[toolId] ?: awaitRecoveredHost(toolId, expectedVersion, intervalMillis)
                     if (!HardenedRuntimeWebView.awaitOpenForEvents(host.webView)) continue
                     val emitted = HardenedRuntimeWebView.emitEvent(
                         host.webView,
@@ -819,10 +822,26 @@ internal class RuntimeSessionManager(
                         ),
                     )
                     if (!emitted) {
-                        onRuntimeFailed(toolId, host.runtime, "EVENT_BACKLOG_OVERFLOW", "后台事件积压，正在按既有规则恢复。")
+                        withContext(Dispatchers.Main.immediate) {
+                            onRuntimeFailed(toolId, host.runtime, "EVENT_BACKLOG_OVERFLOW", "后台事件积压，正在按既有规则恢复。")
+                        }
                         break
                     }
                 }
+            }
+        }
+
+        /**
+         * Requests recovery and suspends until a host exists, instead of polling the main
+         * thread at the timer's interval. Recovery is re-requested at most once per second
+         * (or per interval, if longer) while no host appears.
+         */
+        private suspend fun awaitRecoveredHost(toolId: String, expectedVersion: ToolVersion, intervalMillis: Long): RuntimeHost {
+            while (true) {
+                withContext(Dispatchers.Main.immediate) { requestBackgroundRecovery(toolId, expectedVersion) }
+                withTimeoutOrNull(maxOf(intervalMillis, TIMER_RECOVERY_RECHECK_MILLIS)) {
+                    publishedHosts.first { toolId in it }[toolId]
+                }?.let { return it }
             }
         }
 
@@ -1393,6 +1412,7 @@ internal class RuntimeSessionManager(
         const val RUNTIME_CHANNEL_ID = "toolbox.runtime.v1"
         const val EVENT_BACKGROUND_RESTORE = "background.restore"
         const val EVENT_BACKGROUND_TIMER = "background.timer"
+        const val TIMER_RECOVERY_RECHECK_MILLIS = 1_000L
         const val EVENT_LOCATION_CHANGED = "location.onChanged"
         const val EVENT_ALARM = "alarm"
         const val RESTORE_REASON_PROCESS = "process"
