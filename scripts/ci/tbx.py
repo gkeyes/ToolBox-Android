@@ -72,7 +72,7 @@ TEST_FILES = {
         },
     },
     "socialcoach": {
-        "unit": {"test/platform.test.ts", "test/minimax.test.ts"},
+        "unit": {"test/platform.test.ts", "test/minimax.test.ts", "test/reliability.test.ts"},
         "browser": {"test/browser.spec.ts"},
     },
     "github-actions-watcher": {

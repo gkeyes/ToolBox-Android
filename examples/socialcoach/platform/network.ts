@@ -13,6 +13,23 @@ export async function abortAndSettleRequests(): Promise<void> {
   await Promise.allSettled([...settling]);
 }
 export function abortError() { return new DOMException('请求已取消', 'AbortError'); }
+export function timeoutError() { return new DOMException('模型服务长时间没有返回数据，请求已超时。请检查网络或模型服务后重试。', 'TimeoutError'); }
+/** The reason a signal stopped: a distinct timeout, or a plain cancel. */
+export function stopReason(signal?: AbortSignal | null): DOMException {
+  const reason = signal?.reason;
+  return reason instanceof DOMException && reason.name === 'TimeoutError' ? reason : abortError();
+}
+
+/**
+ * Idle, not total: the clock restarts on every byte received, so long but
+ * progressing generations are never cut off. Only silence this long stops a
+ * request (including one that never answers at all).
+ */
+let idleMs = 180000;
+export function setIdleTimeout(ms: number) { idleMs = ms; }
+const activity = new WeakMap<AbortSignal, () => void>();
+/** Report progress on a request signal; resets its scope's idle clock and every parent scope's. */
+export function touch(signal?: AbortSignal | null) { if (signal) activity.get(signal)?.(); }
 
 /** Validate before attaching credentials. HTTPS only; never accept credentials/query/fragment in a base URL. */
 export function endpoint(base: string, path: string): string {
@@ -27,16 +44,23 @@ export function endpoint(base: string, path: string): string {
 /** Native HTTPS -> Fetch Response; backpressure, byte-safe decoding and cancel propagate to the host. */
 export async function request(url: string, init: RequestInit = {}): Promise<Response> {
   const api = host();
-  if (!api) return fetch(url, init);
   const signal = init.signal;
-  if (signal?.aborted) throw abortError();
+  if (!api) {
+    // Browser preview: the same idle clock, fed by the fetch body.
+    const res = await fetch(url, init).catch((e) => { if (signal?.aborted) throw stopReason(signal); throw e; });
+    touch(signal);
+    if (!res.body || [204, 205, 304].includes(res.status)) return res;
+    const body = res.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({transform(chunk, c) { touch(signal); c.enqueue(chunk); }}));
+    return new Response(body, {status: res.status, statusText: res.statusText, headers: res.headers});
+  }
+  if (signal?.aborted) throw stopReason(signal);
   const headers = Object.fromEntries(new Headers(init.headers).entries());
   let opened;
   try {
     opened = await api.network.openStream({url, method: init.method || 'GET', headers,
-      ...(typeof init.body === 'string' ? {body: init.body} : {}), timeoutMs: 180000}, {signal: signal ?? undefined});
+      ...(typeof init.body === 'string' ? {body: init.body} : {}), timeoutMs: 0}, {signal: signal ?? undefined});
   } catch (e) {
-    if (signal?.aborted) throw abortError();
+    if (signal?.aborted) throw stopReason(signal);
     throw new Error(permissionMessage(e));
   }
   let finished = false;
@@ -47,8 +71,9 @@ export async function request(url: string, init: RequestInit = {}): Promise<Resp
     signal?.removeEventListener('abort', onAbort);
     await api.network.cancelStream(opened.streamId).catch(() => {});
   };
-  const onAbort = () => { if (!finished) { controller?.error(abortError()); void release(); } };
-  if (signal?.aborted) { await release(); throw abortError(); }
+  const onAbort = () => { if (!finished) { controller?.error(stopReason(signal)); void release(); } };
+  touch(signal);
+  if (signal?.aborted) { await release(); throw stopReason(signal); }
   const body = new ReadableStream<Uint8Array>({
     start(c) { controller = c; signal?.addEventListener('abort', onAbort, {once: true}); },
     async pull(c) {
@@ -56,10 +81,10 @@ export async function request(url: string, init: RequestInit = {}): Promise<Resp
       try {
         const chunk = await api.network.readStream(opened.streamId);
         if (finished) return;
-        if (chunk.data.byteLength) c.enqueue(new Uint8Array(chunk.data));
+        if (chunk.data.byteLength) { touch(signal); c.enqueue(new Uint8Array(chunk.data)); }
         if (chunk.done) { c.close(); await release(); }
       } catch (e) {
-        if (!finished) { c.error(signal?.aborted ? abortError() : new Error(permissionMessage(e))); await release(); }
+        if (!finished) { c.error(signal?.aborted ? stopReason(signal) : new Error(permissionMessage(e))); await release(); }
       }
     },
     cancel: release,
@@ -71,12 +96,15 @@ export async function request(url: string, init: RequestInit = {}): Promise<Resp
 /** One scope per task, not per frame. A scene transition aborts the whole task, including JSON repair calls. */
 export function requestScope(parent?: AbortSignal) {
   const controller = new AbortController();
-  const stop = () => controller.abort();
+  const stop = () => controller.abort(parent?.reason);
   if (parent?.aborted) stop(); else parent?.addEventListener('abort', stop, {once: true});
   active.add(controller);
-  const timeout = setTimeout(stop, 180000);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(timeoutError()), idleMs); };
+  activity.set(controller.signal, () => { arm(); touch(parent); });
+  arm();
   return {signal: controller.signal, dispose() {
-    active.delete(controller); parent?.removeEventListener('abort', stop); clearTimeout(timeout);
+    active.delete(controller); parent?.removeEventListener('abort', stop); clearTimeout(timer); activity.delete(controller.signal);
   }};
 }
 

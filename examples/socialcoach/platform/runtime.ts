@@ -13,6 +13,12 @@ export function useRuntimeForeground(): boolean {
 }
 
 export function initializeRuntime(): void {
+  // Leaving the page commits the debounced store writes; failures surface in the storage banner.
+  if (typeof document !== 'undefined') {
+    const flush = () => { void flushStorage().catch(() => {}); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+    window.addEventListener('pagehide', flush);
+  }
   const api = host();
   if (!api) { foreground = true; return; } // Standalone browser preview.
   const runtime = api.runtime;

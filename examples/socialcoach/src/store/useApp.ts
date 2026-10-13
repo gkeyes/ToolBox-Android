@@ -1,9 +1,5 @@
-import {appStorage} from "@platform/storage";
 import {draftStorage} from "@platform/storage";
-"use client";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { recordWork } from "@platform/perf";
 import type { ContextId, Lang, SkillId } from "@/data/taxonomy";
 import type { Scenario } from "@/data/corpus/types";
 import type { ChatMessage, Profile, Proficiency, Reflection, Report, Session } from "@/lib/types";
@@ -12,11 +8,8 @@ import type { PatternResult } from "@/lib/tasks/types";
 export type Theme = "system" | "light" | "dark";
 
 export interface Settings {
-  tts: boolean;
   /** "system" follows the OS; the other two pin it. */
   theme?: Theme;
-  /** The learner has been told that voice input uploads audio to their browser's vendor. */
-  voiceNoticeSeen?: boolean;
   /**
    * Which figure the learner's own avatar draws. Everyone plays a character
    * called 「你」, so seeding from the name alone would hand every user the
@@ -33,19 +26,13 @@ export interface Settings {
   timed?: boolean;
   /** How long the other side waits before they carry on, in seconds. */
   patience?: Patience;
-  /**
-   * Anonymous usage events (which scenario, how long, how it ended; never
-   * what was said) to the team's table. Undefined means on; the switch in
-   * Settings is the way out, and About says what leaves the device.
-   */
-  telemetry?: boolean;
 }
 
 export type Patience = 10 | 15 | 20;
 export const DEFAULT_PATIENCE: Patience = 15;
 export const PATIENCE_OPTIONS: readonly Patience[] = [10, 15, 20];
 
-interface AppState {
+export interface AppState {
   hydrated: boolean;
   /** In-memory onboarding choice, shared with global dialogs. */
   onboardingLang: Lang | undefined;
@@ -107,129 +94,90 @@ const initial = {
   todaySessionId: null,
   todayDate: null,
   patternInsight: null,
-  // Voice on by default: an NPC that speaks changes the felt stakes of a scene
-  // more than any visual does, and a setting nobody finds is a setting nobody uses.
-  settings: { tts: false, telemetry: false },
+  settings: {} as Settings,
 };
 
-const measuredStorage = {
-  async getItem(key: string) {
-    const raw = await appStorage.getItem(key);
-    return raw === null ? null : JSON.parse(raw);
-  },
-  setItem(key: string, value: unknown) {
-    const started = performance.now();
-    const raw = JSON.stringify(value);
-    if (raw === undefined) throw new Error('练习记录无法序列化。');
-    recordWork('serialize', raw.length * 2, performance.now() - started);
-    appStorage.setItem(key, raw);
-  },
-  removeItem: appStorage.removeItem,
-};
-
+// Persistence lives in ./persistence: one index key plus one key per session,
+// written only when something changed and debounced between flushes.
 export const useApp = create<AppState>()(
-  persist(
-    (set) => ({
-      ...initial,
-      setHydrated: () => set({ hydrated: true }),
-      setProfile: (profile) => set({ profile }),
-      updateProfile: (p) => set((s) => ({ profile: s.profile ? { ...s.profile, ...p } : s.profile })),
-      setLang: (lang) => set((s) => ({ onboardingLang: lang, profile: s.profile ? { ...s.profile, lang } : s.profile })),
-      setProficiency: (proficiency) => set({ proficiency }),
-      addSession: (session) => set((s) => ({ sessions: [session, ...s.sessions] })),
-      removeSession: (id) => set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id), todaySessionId: s.todaySessionId === id ? null : s.todaySessionId })),
-      pruneSessions: () =>
-        set((s) => {
-          const dayAgo = Date.now() - 24 * 3600 * 1000;
-          return {
-            sessions: s.sessions.filter((x) => {
-              if (x.id === s.todaySessionId) return true;
-              if (x.status === "briefing" && x.startedAt < dayAgo) return false;
-              if (x.status === "active" && x.startedAt < dayAgo && !x.messages.some((m) => m.role === "learner")) return false;
-              return true;
-            }),
-          };
-        }),
-      updateSession: (id, patch) =>
-        set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...(typeof patch === "function" ? patch(x) : patch) } : x)),
-        })),
-      appendMessage: (id, m) =>
-        set((s) => ({ sessions: s.sessions.map((x) => (x.id === id && !x.messages.some((y) => y.id === m.id) ? { ...x, messages: [...x.messages, m] } : x)) })),
-      updateNpcUtterances: (id, utterances, patch) =>
-        set((s) => ({
-          sessions: s.sessions.map((x) => {
-            if (x.id !== id) return x;
-            const msgs = [...x.messages];
-            for (const { id: messageId, text, characterId } of utterances) {
-              const i = msgs.findIndex((m) => m.id === messageId);
-              if (i === -1) msgs.push({ id: messageId, role: "npc", characterId, text, ts: Date.now() });
-              else msgs[i] = { ...msgs[i], text, characterId };
-            }
-            return { ...x, ...(patch?.(x) ?? {}), messages: msgs };
+  (set) => ({
+    ...initial,
+    setHydrated: () => set({ hydrated: true }),
+    setProfile: (profile) => set({ profile }),
+    updateProfile: (p) => set((s) => ({ profile: s.profile ? { ...s.profile, ...p } : s.profile })),
+    setLang: (lang) => set((s) => ({ onboardingLang: lang, profile: s.profile ? { ...s.profile, lang } : s.profile })),
+    setProficiency: (proficiency) => set({ proficiency }),
+    addSession: (session) => set((s) => ({ sessions: [session, ...s.sessions] })),
+    removeSession: (id) => set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id), todaySessionId: s.todaySessionId === id ? null : s.todaySessionId })),
+    pruneSessions: () =>
+      set((s) => {
+        const dayAgo = Date.now() - 24 * 3600 * 1000;
+        return {
+          sessions: s.sessions.filter((x) => {
+            if (x.id === s.todaySessionId) return true;
+            if (x.status === "briefing" && x.startedAt < dayAgo) return false;
+            if (x.status === "active" && x.startedAt < dayAgo && !x.messages.some((m) => m.role === "learner")) return false;
+            return true;
           }),
-        })),
-      applyReport: (id, report) =>
-        set((s) => {
-          const prof = { ...s.proficiency };
-          const sess = s.sessions.find((x) => x.id === id);
-          const allowed = new Set<SkillId>([...(s.profile?.goals ?? []), ...(sess?.scenario.skills ?? [])]);
-          for (const [k, v] of Object.entries(report.deltas)) {
-            const key = k as SkillId;
-            if (!allowed.has(key)) continue;
-            const cur = prof[key] ?? 2.5;
-            prof[key] = Math.min(5, Math.max(1, +(cur + (v ?? 0)).toFixed(2)));
-          }
-          const day = todayKey();
-          return {
-            proficiency: prof,
-            practiceDays: s.practiceDays.includes(day) ? s.practiceDays : [...s.practiceDays, day],
-            sessions: s.sessions.map((x) => (x.id === id ? { ...x, report, status: "assessed", outcome: report.outcome } : x)),
-          };
-        }),
-      addReflection: (id, r) => set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, reflections: [...x.reflections, r] } : x)) })),
-      updateReflection: (id, idx, patch) =>
-        set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, reflections: x.reflections.map((r, i) => (i === idx ? { ...r, ...patch } : r)) } : x)),
-        })),
-      addCustomScenario: (sc) => set((s) => ({ customScenarios: [sc, ...s.customScenarios.filter((x) => x.id !== sc.id)] })),
-      toggleBookmark: (id) => set((s) => ({ bookmarks: s.bookmarks.includes(id) ? s.bookmarks.filter((b) => b !== id) : [...s.bookmarks, id] })),
-      setToday: (todaySessionId) => set({ todaySessionId, todayDate: todayKey() }),
-      setSettings: (p) => set((s) => ({ settings: { ...s.settings, ...p } })),
-      setPatternInsight: (result, from) => set({ patternInsight: { result, from, at: Date.now() } }),
-      reset: () => {
-        try {
-          // Clear only this app's tab state, including unsent practice drafts.
-          for (const key of draftStorage.keys()) {
-            if (key === "socialcoach.rehearsal-draft" || key === "socialcoach.arena.location" || key.startsWith("socialcoach.draft.")) draftStorage.removeItem(key);
-          }
-        } catch {}
-        set({ ...initial, hydrated: true });
-      },
-    }),
-    {
-      name: "socialcoach.v1",
-      storage: measuredStorage,
-      skipHydration: true,
-      partialize: (s) => ({
-        profile: s.profile,
-        proficiency: s.proficiency,
-        sessions: s.sessions.slice(0, 200),
-        customScenarios: s.customScenarios,
-        bookmarks: s.bookmarks,
-        practiceDays: s.practiceDays,
-        todaySessionId: s.todaySessionId,
-        todayDate: s.todayDate,
-        settings: s.settings,
-        // This list is an allow-list on purpose — it is why a BYOK key can never
-        // end up in here. New state therefore has to be added deliberately, and
-        // this one has to be, or the cross-session read re-runs a smart-model
-        // call on every visit to Growth, which is what caching it prevents.
-        patternInsight: s.patternInsight,
+        };
       }),
-      onRehydrateStorage: () => (state) => state?.setHydrated(),
+    updateSession: (id, patch) =>
+      set((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...(typeof patch === "function" ? patch(x) : patch) } : x)),
+      })),
+    appendMessage: (id, m) =>
+      set((s) => ({ sessions: s.sessions.map((x) => (x.id === id && !x.messages.some((y) => y.id === m.id) ? { ...x, messages: [...x.messages, m] } : x)) })),
+    updateNpcUtterances: (id, utterances, patch) =>
+      set((s) => ({
+        sessions: s.sessions.map((x) => {
+          if (x.id !== id) return x;
+          const msgs = [...x.messages];
+          for (const { id: messageId, text, characterId } of utterances) {
+            const i = msgs.findIndex((m) => m.id === messageId);
+            if (i === -1) msgs.push({ id: messageId, role: "npc", characterId, text, ts: Date.now() });
+            else msgs[i] = { ...msgs[i], text, characterId };
+          }
+          return { ...x, ...(patch?.(x) ?? {}), messages: msgs };
+        }),
+      })),
+    applyReport: (id, report) =>
+      set((s) => {
+        const prof = { ...s.proficiency };
+        const sess = s.sessions.find((x) => x.id === id);
+        const allowed = new Set<SkillId>([...(s.profile?.goals ?? []), ...(sess?.scenario.skills ?? [])]);
+        for (const [k, v] of Object.entries(report.deltas)) {
+          const key = k as SkillId;
+          if (!allowed.has(key)) continue;
+          const cur = prof[key] ?? 2.5;
+          prof[key] = Math.min(5, Math.max(1, +(cur + (v ?? 0)).toFixed(2)));
+        }
+        const day = todayKey();
+        return {
+          proficiency: prof,
+          practiceDays: s.practiceDays.includes(day) ? s.practiceDays : [...s.practiceDays, day],
+          sessions: s.sessions.map((x) => (x.id === id ? { ...x, report, status: "assessed", outcome: report.outcome } : x)),
+        };
+      }),
+    addReflection: (id, r) => set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, reflections: [...x.reflections, r] } : x)) })),
+    updateReflection: (id, idx, patch) =>
+      set((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? { ...x, reflections: x.reflections.map((r, i) => (i === idx ? { ...r, ...patch } : r)) } : x)),
+      })),
+    addCustomScenario: (sc) => set((s) => ({ customScenarios: [sc, ...s.customScenarios.filter((x) => x.id !== sc.id)] })),
+    toggleBookmark: (id) => set((s) => ({ bookmarks: s.bookmarks.includes(id) ? s.bookmarks.filter((b) => b !== id) : [...s.bookmarks, id] })),
+    setToday: (todaySessionId) => set({ todaySessionId, todayDate: todayKey() }),
+    setSettings: (p) => set((s) => ({ settings: { ...s.settings, ...p } })),
+    setPatternInsight: (result, from) => set({ patternInsight: { result, from, at: Date.now() } }),
+    reset: () => {
+      try {
+        // Clear only this app's tab state, including unsent practice drafts.
+        for (const key of draftStorage.keys()) {
+          if (key === "socialcoach.rehearsal-draft" || key === "socialcoach.arena.location" || key.startsWith("socialcoach.draft.")) draftStorage.removeItem(key);
+        }
+      } catch {}
+      set({ ...initial, hydrated: true });
     },
-  ),
+  }),
 );
 
 /** Consecutive-day streak ending today or yesterday. */

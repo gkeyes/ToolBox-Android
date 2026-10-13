@@ -1,5 +1,4 @@
 import {draftStorage} from "@platform/storage";
-"use client";
 import { useCallback, useState } from "react";
 
 /** Drafts belong to a tab and session, never to a server or analytics event. */

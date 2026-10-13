@@ -30,7 +30,8 @@ async function drain() {
       }
       notify(null);
     } catch (e) {
-      if (!pending.has(id)) pending.set(id,item);
+      // Put the failed write back at the front so retries keep the original order.
+      if (!pending.has(id)) {const rest=[...pending];pending.clear();pending.set(id,item);for(const [k,v] of rest)pending.set(k,v);}
       notify(new Error(`数据尚未保存：${permissionMessage(e)}`));
       return;
     }
@@ -40,7 +41,12 @@ function kick() {
   if (!writing) writing = drain().finally(()=>{writing=null;if(pending.size&&!fault)queueMicrotask(()=>{void kick();});});
   return writing;
 }
+// Debounced writers (the per-session store) hand over their pending state here
+// before every flush, so a flush always commits the latest in-memory data.
+const beforeFlush = new Set<() => void>();
+export function onBeforeFlush(hook: () => void): () => void { beforeFlush.add(hook); return () => { beforeFlush.delete(hook); }; }
 export async function flushStorage() {
+  for (const hook of beforeFlush) hook();
   await kick();
   if (fault) throw fault;
   if (pending.size) {await kick(); if (fault) throw fault;}
@@ -55,11 +61,24 @@ function stateStorage(secure: boolean) {
         return typeof value === 'string' ? value : null;
       } catch(e) {const error=new Error(`无法读取${secure?'模型密钥':'练习记录'}：${permissionMessage(e)}`);notify(error);throw error;}
     },
-    setItem(key:string,value:string) {pending.set(`${secure}:${key}`,{key,value,secure});void kick();},
-    removeItem(key:string) {pending.set(`${secure}:${key}`,{key,value:null,secure});void kick();},
+    // Re-queue at the end so writes land in the order they were made (session records before the index that lists them).
+    setItem(key:string,value:string) {pending.delete(`${secure}:${key}`);pending.set(`${secure}:${key}`,{key,value,secure});void kick();},
+    removeItem(key:string) {pending.delete(`${secure}:${key}`);pending.set(`${secure}:${key}`,{key,value:null,secure});void kick();},
   };
 }
 export const appStorage = stateStorage(false);
+/** Read several ordinary keys from one host snapshot when the host supports it. */
+export async function getManyItems(keys: string[]): Promise<(string|null)[]> {
+  if (!keys.length) return [];
+  const api = host();
+  if (api?.storage.getMany) {
+    try {
+      const values = await api.storage.getMany(keys);
+      return values.map(value => typeof value === 'string' ? value : null);
+    } catch(e) {const error=new Error(`无法读取练习记录：${permissionMessage(e)}`);notify(error);throw error;}
+  }
+  return Promise.all(keys.map(key => appStorage.getItem(key)));
+}
 export const keyStorage = stateStorage(true);
 
 let drafts: Record<string,string> = {};

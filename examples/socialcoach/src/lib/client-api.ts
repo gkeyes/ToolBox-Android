@@ -1,9 +1,9 @@
 import type {Report,RoleplayMeta} from '@/lib/types';
 import type {LLM} from '@/lib/llm-core';
 import type {ScheduleInput,ScheduleOutput,AssessInput,RehearseInput,TurnInput,ReflectInput,PatternInput} from '@/lib/tasks/types';
-import {byokConfig,openModelSheet} from '@/lib/byok';
+import {byokConfig} from '@/lib/byok';
 import {makeByokLLM} from '../../platform/llm';
-import {requestScope,abortError,trackAbortableTask} from '../../platform/network';
+import {requestScope,stopReason,trackAbortableTask} from '../../platform/network';
 import {parsePartialJSON} from '@/lib/partial-json';
 import {recordWork} from '../../platform/perf';
 import {runSchedule} from '@/lib/tasks/schedule';
@@ -15,18 +15,23 @@ import {runAssess} from '@/lib/tasks/assess';
 import {runPattern} from '@/lib/tasks/pattern';
 
 export class ApiError extends Error {
-  constructor(message:string,public readonly status:number,public readonly kind:'http'|'network'|'stream'){super(message);}
+  constructor(message:string,public readonly status:number,public readonly kind:'http'|'network'|'stream'|'not-configured'){super(message);}
 }
+/** No usable model settings. The data layer only reports it; pages decide whether to offer the model sheet. */
+export class ModelNotConfiguredError extends ApiError {
+  constructor(){super('请先配置模型 API，再开始 AI 练习。',401,'not-configured');this.name='ModelNotConfiguredError';}
+}
+export const isModelNotConfigured=(e:unknown):e is ModelNotConfiguredError=>e instanceof ModelNotConfiguredError;
 export type ScheduleResult=ScheduleOutput;
 function task<T>(run:(llm:LLM,fast:string,smart:string)=>Promise<T>,signal?:AbortSignal):Promise<T>{
   return trackAbortableTask((async()=>{
   const c=byokConfig();
-  if(!c){openModelSheet();throw new ApiError('请先配置模型 API，再开始 AI 练习。',401,'http');}
+  if(!c)throw new ModelNotConfiguredError();
   const scope=requestScope(signal);
   try{
-    if(scope.signal.aborted)throw abortError();
+    if(scope.signal.aborted)throw stopReason(scope.signal);
     const result=await run(makeByokLLM(c,scope.signal),c.fastModel.trim(),c.smartModel.trim());
-    if(scope.signal.aborted)throw abortError();
+    if(scope.signal.aborted)throw stopReason(scope.signal);
     return result;
   }finally{scope.dispose();}
   })());

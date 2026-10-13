@@ -1,4 +1,3 @@
-"use client";
 import { useId } from "react";
 
 /** The approved split heart, using the same geometry as public/icon.svg. */

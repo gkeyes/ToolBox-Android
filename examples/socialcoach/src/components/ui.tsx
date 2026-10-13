@@ -1,5 +1,4 @@
 import {useSheetHistory} from "@platform/navigation";
-"use client";
 import { clsx } from "clsx";
 import { motion, AnimatePresence } from "framer-motion";
 import { create } from "zustand";
@@ -145,7 +144,7 @@ export function Stars({ n, of = 3, size = 18 }: { n: number; of?: number; size?:
  */
 export function Stages({ steps, title, slowAfterMs = 25000 }: { steps: string[]; title: string; slowAfterMs?: number }) {
   const lang = useLang();
-  const ownModel = isReady(useByok());
+  const ownModel = useByok((s) => isReady(s));
   const [slow, setSlow] = useState(false);
   // A long wait is the moment the offer actually means something. Say nothing to
   // someone already on their own endpoint — their slowness is not ours to explain.
@@ -181,6 +180,12 @@ export function Stages({ steps, title, slowAfterMs = 25000 }: { steps: string[];
       )}
     </div>
   );
+}
+
+/** Inline call to action when no model is configured; the data layer never opens the sheet itself. */
+export function ModelSetupButton({ size = "sm" }: { size?: "sm" | "md" }) {
+  const lang = useLang();
+  return <Button variant="secondary" size={size} onClick={openModelSheet}>{t(lang, "model_setup_cta")}</Button>;
 }
 
 /* ───────────── Bottom sheet ───────────── */
@@ -236,18 +241,26 @@ export function Sheet({ open, onClose, title, children, footer }: { open: boolea
 }
 
 /* ───────────── Toast ───────────── */
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
 interface ToastState { msg: string | null; kind: "info" | "error"; show: (msg: string, kind?: "info" | "error") => void; hide: () => void }
 export const useToast = create<ToastState>((set) => ({
   msg: null,
   kind: "info",
   show: (msg, kind = "info") => {
+    // A new message gets its full time on screen: the previous one's timer must not hide it early.
+    if (toastTimer) clearTimeout(toastTimer);
     set({ msg, kind });
-    setTimeout(() => set({ msg: null }), 2800);
+    toastTimer = setTimeout(() => { toastTimer = null; set({ msg: null }); }, 2800);
   },
-  hide: () => set({ msg: null }),
+  hide: () => {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
+    set({ msg: null });
+  },
 }));
 export function Toaster() {
-  const { msg, kind } = useToast();
+  const msg = useToast((s) => s.msg);
+  const kind = useToast((s) => s.kind);
   return (
     <AnimatePresence>
       {msg && (

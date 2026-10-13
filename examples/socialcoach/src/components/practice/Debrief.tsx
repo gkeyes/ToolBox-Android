@@ -1,16 +1,16 @@
 import {shareText} from "@platform/backup";
-"use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { Bookmark, ChevronDown, RotateCcw, Share2, Send } from "lucide-react";
-import { BottomBar, Button, IconButton, Marginalia, Stages, Stars, Spinner, useToast } from "@/components/ui";
+import { BottomBar, Button, IconButton, Marginalia, ModelSetupButton, Stages, Stars, Spinner, useToast } from "@/components/ui";
 import { SkillTag, Level } from "@/components/SkillBits";
 import { CaseBody, TheoryBody } from "@/components/Knowledge";
+import { useShallow } from "zustand/react/shallow";
 import { useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
-import { assessStream, reflectStream } from "@/lib/client-api";
+import { assessStream, isModelNotConfigured, reflectStream } from "@/lib/client-api";
 import { buildSession } from "@/lib/session-utils";
 import type { Report, Session } from "@/lib/types";
 import type { Character } from "@/data/corpus/types";
@@ -25,7 +25,7 @@ const skillIds = new Set(SKILLS.map((s) => s.id));
 export function Debrief({ session }: { session: Session }) {
   const lang = useLang();
   const router = useRouter();
-  const { profile, applyReport, addSession, updateSession } = useApp();
+  const { profile, applyReport, addSession, updateSession } = useApp(useShallow((s) => ({ profile: s.profile, applyReport: s.applyReport, addSession: s.addSession, updateSession: s.updateSession })));
   const [err, setErr] = useState<string | null>(null);
   const [partial, setPartial] = useState<Partial<Report> | null>(null);
   const inflight = useRef(false);
@@ -52,9 +52,8 @@ export function Debrief({ session }: { session: Session }) {
       applyReport(session.id, final);
       setPartial(null);
     } catch (e) {
-      console.error("[assess]", e);
       const raw = e instanceof Error ? e.message : "";
-      const friendly = /JSON|position|Unexpected|garbled|unexpectedly/i.test(raw) ? t(lang, "rp_failed") : raw || t(lang, "error_generic");
+      const friendly = isModelNotConfigured(e) ? t(lang, "model_required") : /JSON|position|Unexpected|garbled|unexpectedly/i.test(raw) ? t(lang, "rp_failed") : raw || t(lang, "error_generic");
       setErr(friendly);
       setPartial(null);
     } finally {
@@ -116,6 +115,7 @@ export function Debrief({ session }: { session: Session }) {
               {err ? (
                 <div className="flex flex-col gap-3">
                   <p className="text-[14px] text-danger">{err}</p>
+                  {err === t(lang, "model_required") && <ModelSetupButton />}
                   <Button variant="secondary" onClick={() => { setErr(null); void run(); }}>{t(lang, "retry")}</Button>
                 </div>
               ) : (
@@ -276,7 +276,7 @@ function ReportView({ session, report, streaming, onAgain }: { session: Session;
   const lang = useLang();
   const router = useRouter();
   const toast = useToast((s) => s.show);
-  const { proficiency, bookmarks, toggleBookmark, addReflection, updateReflection } = useApp();
+  const { proficiency, bookmarks, toggleBookmark, addReflection, updateReflection } = useApp(useShallow((s) => ({ proficiency: s.proficiency, bookmarks: s.bookmarks, toggleBookmark: s.toggleBookmark, addReflection: s.addReflection, updateReflection: s.updateReflection })));
   const goals = useApp((s) => s.profile?.goals ?? []);
   const sc = session.scenario;
   const [showTranscript, setShowTranscript] = useState(false);
@@ -549,6 +549,7 @@ function ReflectItem({ session, question, idx, addReflection, updateReflection, 
   const [text, setText] = useState(existing?.answer ?? "");
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ text: string; needsModel: boolean } | null>(null);
   const strip = (x: string) => x.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)\*(\S.*?)\*/g, "$1$2");
 
   const submit = async () => {
@@ -560,11 +561,13 @@ function ReflectItem({ session, question, idx, addReflection, updateReflection, 
       addReflection(session.id, { question, answer });
       index = session.reflections.length;
     }
+    setFailed(null);
     try {
       const reply = await reflectStream({ scenario: session.scenario, question, answer, lang, summary }, (acc) => setLive(strip(acc)));
       updateReflection(session.id, index, { coachReply: strip(reply).trim() });
-    } catch {
+    } catch (e) {
       updateReflection(session.id, index, { coachReply: undefined });
+      setFailed({ text: isModelNotConfigured(e) ? t(lang, "model_required") : t(lang, "rp_reflect_failed", { error: e instanceof Error ? e.message : t(lang, "error_generic") }), needsModel: isModelNotConfigured(e) });
     } finally {
       setBusy(false);
       setLive(null);
@@ -589,6 +592,12 @@ function ReflectItem({ session, question, idx, addReflection, updateReflection, 
             </button>
           </div>
           {reply && <p className="bubble-coach px-4 py-3 text-[14px] leading-relaxed">{reply}</p>}
+          {failed && !busy && (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-danger bg-danger-soft rounded-[var(--radius-sm)] px-4 py-2">
+              {failed.text}
+              {failed.needsModel ? <ModelSetupButton /> : <button onClick={submit} className="press min-h-11 px-2 underline font-medium">{t(lang, "retry")}</button>}
+            </div>
+          )}
         </>
       )}
     </div>

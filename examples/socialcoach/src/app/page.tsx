@@ -1,15 +1,16 @@
-"use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowUpRight, Check, Clock3, PenLine, RefreshCw } from "lucide-react";
 import { Shell } from "@/components/Shell";
-import { Button, Page, SectionTitle, Stages, Stars } from "@/components/ui";
+import { Button, ModelSetupButton, Page, SectionTitle, Stages, Stars } from "@/components/ui";
 import { Level, SkillTag } from "@/components/SkillBits";
 import { computeStreak, todayKey, useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
-import { schedule } from "@/lib/client-api";
+import { isModelNotConfigured, schedule } from "@/lib/client-api";
+import { isReady, useByok } from "@/lib/byok";
 import { buildSession, historyFor } from "@/lib/session-utils";
 import { skillById, contextById } from "@/data/taxonomy";
 import { compColor, relDate } from "@/lib/format";
@@ -19,9 +20,10 @@ export default function Home() {
   const lang = useLang();
   const router = useRouter();
   const { profile, proficiency, sessions, practiceDays, todaySessionId, todayDate, addSession, setToday, removeSession, pruneSessions } =
-    useApp();
+    useApp(useShallow((s) => ({ profile: s.profile, proficiency: s.proficiency, sessions: s.sessions, practiceDays: s.practiceDays, todaySessionId: s.todaySessionId, todayDate: s.todayDate, addSession: s.addSession, setToday: s.setToday, removeSession: s.removeSession, pruneSessions: s.pruneSessions })));
+  const modelReady = useByok((s) => isReady(s));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; needsModel: boolean } | null>(null);
   const inflight = useRef(false);
 
   const today = todayKey();
@@ -60,7 +62,7 @@ export default function Home() {
       addSession(s);
       setToday(s.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t(lang, "error_generic"));
+      setError({ text: isModelNotConfigured(e) ? t(lang, "model_required") : e instanceof Error ? e.message : t(lang, "error_generic"), needsModel: isModelNotConfigured(e) });
     } finally {
       setLoading(false);
       inflight.current = false;
@@ -71,11 +73,7 @@ export default function Home() {
     pruneSessions();
   }, [pruneSessions]);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- kick off an async request on mount
-    if (profile && !todaySession && !loading && !error) void planToday();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, todaySession]);
+  // Planning calls the learner's paid model, so it only starts from an explicit tap.
 
   if (!profile) return null;
   const recent = sessions.filter((s) => s.status === "assessed").slice(0, 3);
@@ -144,11 +142,24 @@ export default function Home() {
               {error && !loading && (
                 <div className="card p-5 flex flex-col gap-3">
                   {todaySession && <p className="text-[14px] text-ink-2">{t(lang, "home_swap_error")}</p>}
-                  <p className="text-[14px] text-danger">{error}</p>
-                  <Button variant="secondary" onClick={planToday}>
-                    <RefreshCw size={16} />
-                    {t(lang, "retry")}
-                  </Button>
+                  <p className={error.needsModel ? "text-[14px] text-ink-2" : "text-[14px] text-danger"}>{error.text}</p>
+                  {error.needsModel ? <ModelSetupButton size="md" /> : (
+                    <Button variant="secondary" onClick={planToday}>
+                      <RefreshCw size={16} />
+                      {t(lang, "retry")}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {!todaySession && !loading && !error && (
+                <div className="card p-5 lg:p-6 flex flex-col gap-3">
+                  <p className="text-[14px] text-ink-2 leading-relaxed">{t(lang, modelReady ? "home_plan_body" : "model_required")}</p>
+                  {modelReady ? (
+                    <Button onClick={planToday}>
+                      {t(lang, "home_plan_action")}
+                      <ArrowRight size={16} />
+                    </Button>
+                  ) : <ModelSetupButton size="md" />}
                 </div>
               )}
               {todaySession && !loading && (
