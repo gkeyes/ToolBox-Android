@@ -10,10 +10,6 @@
   --nf-tile-purple: #7C4DDB;
   --nf-tile-pink: #C2307A;
   --nf-tile-cyan: #0E7C8C;
-  /* Local: switch geometry (track 48×28, thumb 24). */
-  --nf-switch-w: 48px;
-  --nf-switch-h: 28px;
-  --nf-switch-thumb: 24px;
 }
 .dark {
   --nf-tile-purple: #C3A6FF;

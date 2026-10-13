@@ -87,9 +87,12 @@ def git_changes(event, event_name):
     # A new branch or unavailable pre-force-push commit must not silently skip tools.
     if base == "0" * 40:
         return ["scripts/ci/tbx-targets.json"]
+    # A pull request is compared from where it branched off: diffing against the base branch's
+    # current tip would also list everything merged since, and test tools the PR never touched.
+    revisions = [f"{base}...{head}"] if event_name == "pull_request" else [base, head]
     try:
         result = subprocess.check_output(
-            ["git", "diff", "--name-only", "-z", "--no-renames", base, head, "--"], cwd=ROOT,
+            ["git", "diff", "--name-only", "-z", "--no-renames", *revisions, "--"], cwd=ROOT,
         )
     except subprocess.CalledProcessError:
         print("Before/after diff unavailable; selecting all registered TBX targets.")

@@ -32,6 +32,10 @@ async function readerAction(page, name) {
   if (await direct.isVisible()) return direct.click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  // Phones have no hover. Left in place, the mouse ends up over a dock button
+  // once the compact sheet closes and opens its desktop tooltip, which would
+  // take the next Escape meant for the editor.
+  await page.mouse.move(0, 0);
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
 }
 const editor = async page => {
