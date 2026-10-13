@@ -17,6 +17,12 @@ fi
 
 release_id="$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq .id)"
 
+# A run cancelled mid-swap (newer pushes cancel older runs) leaves its temporary asset behind; drop
+# ones old enough that no running publish can still be renaming them.
+gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --paginate \
+  --jq '.[] | select((.name | startswith("tmp.")) and ((.updated_at | fromdateiso8601) < (now - 1800))) | .id' |
+  while read -r stale; do gh api -X DELETE "repos/$GH_REPO/releases/assets/$stale"; done
+
 existing() {
   gh release view "$tag" --json assets --jq '.assets[].name'
 }

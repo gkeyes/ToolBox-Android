@@ -131,14 +131,15 @@ internal class UpdateViewModel(
 
     /** Downloads the channel's APK; the screen then hands [UpdateUiState.pendingApk] to the system installer. */
     fun downloadApp() {
-        val app = mutableState.value.feed?.app ?: return
+        val feed = mutableState.value.feed ?: return
+        val app = feed.app ?: return
         if (AppProgressKey in mutableState.value.progress) return
         setProgress(AppProgressKey, 0f)
         viewModelScope.launch {
             try {
                 // During CI's swap the test feed falls back to the stable APK; never take that as the replacement.
-                val file = downloadCurrent(app.asset, AppProgressKey) { feed ->
-                    feed.app?.asset?.takeIf { feed.channel != UpdateChannel.TEST || it.name.endsWith("-dev.apk") }
+                val file = downloadCurrent(feed.channel, app.asset, AppProgressKey) { fresh ->
+                    fresh.app?.asset?.takeIf { fresh.channel != UpdateChannel.TEST || it.name.endsWith("-dev.apk") }
                 }
                 mutableState.update { it.copy(pendingApk = file) }
             } catch (cancelled: CancellationException) {
@@ -155,20 +156,22 @@ internal class UpdateViewModel(
 
     fun installTool(slug: String) {
         val row = mutableState.value.tools.firstOrNull { it.available.slug == slug } ?: return
+        val channel = mutableState.value.feed?.channel ?: return
         if (slug in mutableState.value.progress) return
         setProgress(slug, null)
         viewModelScope.launch {
-            val message = installOne(row)
+            val message = installOne(channel, row)
             if (message != null) mutableState.update { it.copy(message = message) }
         }
     }
 
     fun updateAllTools() {
         val rows = mutableState.value.updatableTools.filter { it.available.slug !in mutableState.value.progress }
+        val channel = mutableState.value.feed?.channel ?: return
         if (rows.isEmpty()) return
         rows.forEach { setProgress(it.available.slug, null) }
         viewModelScope.launch {
-            val failures = rows.mapNotNull { row -> installOne(row)?.let { "${row.name}：$it" } }
+            val failures = rows.mapNotNull { row -> installOne(channel, row)?.let { "${row.name}：$it" } }
             mutableState.update {
                 it.copy(message = if (failures.isEmpty()) "已更新 ${rows.size} 个小工具" else failures.joinToString("\n"))
             }
@@ -176,10 +179,10 @@ internal class UpdateViewModel(
     }
 
     /** Returns an error message, or null on success. */
-    private suspend fun installOne(row: ToolUpdateRow): String? = try {
+    private suspend fun installOne(channel: UpdateChannel, row: ToolUpdateRow): String? = try {
         toolMutations.withLock {
             val slug = row.available.slug
-            val file = downloadCurrent(row.available.asset, slug) { feed ->
+            val file = downloadCurrent(channel, row.available.asset, slug) { feed ->
                 feed.tools.firstOrNull { it.slug == slug && compareVersions(it.version, row.available.version) >= 0 }?.asset
             }
             setProgress(slug, null)
@@ -215,26 +218,36 @@ internal class UpdateViewModel(
     }
 
     /**
-     * The test channel is republished on every merge to main, so the asset read a moment ago can be
-     * replaced mid-download. Then read the feed again and download the asset that replaced it. [pick]
-     * returns null while the replacement is not published yet, which waits briefly and reads again.
+     * The test channel is republished on every merge to main, so an asset can be replaced while it
+     * downloads. Then read [channel]'s feed again and download the replacement, up to
+     * [StaleRetryAttempts] feed reads. [pick] returns null while the replacement is not published yet.
      */
-    private suspend fun downloadCurrent(asset: ReleaseAsset, key: String, pick: (ChannelFeed) -> ReleaseAsset?): File = try {
-        repository.download(asset) { setProgress(key, it) }
-    } catch (stale: StaleAssetException) {
-        val channel = mutableState.value.channel
-        var fresh: ReleaseAsset? = null
-        for (attempt in 0 until StaleRetryAttempts) {
-            if (attempt > 0) delay(StaleRetryDelayMs)
-            val feed = repository.fetch(channel)
-            mutableState.update { current ->
-                if (current.channel == channel) current.copy(feed = feed, tools = toolRows(feed, installedTools)) else current
+    private suspend fun downloadCurrent(
+        channel: UpdateChannel,
+        asset: ReleaseAsset,
+        key: String,
+        pick: (ChannelFeed) -> ReleaseAsset?,
+    ): File {
+        var current = asset
+        var reads = 0
+        while (true) {
+            try {
+                return repository.download(current) { setProgress(key, it) }
+            } catch (stale: StaleAssetException) {
+                var fresh: ReleaseAsset? = null
+                while (fresh == null && reads < StaleRetryAttempts) {
+                    if (reads > 0) delay(StaleRetryDelayMs)
+                    reads++
+                    val feed = repository.fetch(channel)
+                    mutableState.update {
+                        if (it.channel == channel) it.copy(feed = feed, tools = toolRows(feed, installedTools)) else it
+                    }
+                    fresh = pick(feed)?.takeIf { it != current }
+                }
+                current = fresh ?: throw stale
+                setProgress(key, 0f)
             }
-            fresh = pick(feed)?.takeIf { it != asset }
-            if (fresh != null) break
         }
-        setProgress(key, 0f)
-        repository.download(fresh ?: throw stale) { setProgress(key, it) }
     }
 
     private fun setProgress(key: String, value: Float?) = mutableState.update { it.copy(progress = it.progress + (key to value)) }
