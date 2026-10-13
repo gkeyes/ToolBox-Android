@@ -49,6 +49,7 @@ internal fun SettingsScreen(
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
     onBackupRestore: () -> Unit = {},
+    onUpdates: () -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -62,6 +63,7 @@ internal fun SettingsScreen(
         onDeveloperHelp = onDeveloperHelp,
         onAbout = onAbout,
         onBackupRestore = onBackupRestore,
+        onUpdates = onUpdates,
         onBackgroundEnabledChange = viewModel::setBackgroundEnabled,
         onRetryBackground = viewModel::retryBackgroundUpdate,
     )
@@ -77,6 +79,7 @@ internal fun SettingsContent(
     onDeveloperHelp: () -> Unit,
     onAbout: () -> Unit = {},
     onBackupRestore: () -> Unit = {},
+    onUpdates: () -> Unit = {},
     onBackgroundEnabledChange: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
     onRetryBackground: () -> Unit = {},
@@ -151,6 +154,12 @@ internal fun SettingsContent(
                     icon = ToolBoxIconKey.Code,
                     onClick = onDeveloperHelp,
                     enabled = state.loaded,
+                )
+                ToolBoxGroupDivider()
+                ToolBoxSettingRow(
+                    title = "软件更新", summary = "正式版或测试版，ToolBox 与小工具",
+                    icon = ToolBoxIconKey.Refresh, onClick = onUpdates,
+                    modifier = Modifier.testTag("settings_updates"),
                 )
                 ToolBoxGroupDivider()
                 ToolBoxSettingRow(

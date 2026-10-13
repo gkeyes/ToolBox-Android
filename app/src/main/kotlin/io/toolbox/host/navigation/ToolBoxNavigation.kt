@@ -316,6 +316,7 @@ internal fun ToolBoxNavigation(
                                 onDeveloperHelp = { navigate(DeveloperHelpRoute) },
                                 onAbout = { navigate(AboutRoute) },
                                 onBackupRestore = { navigate(BackupRestoreRoute) },
+                                onUpdates = { navigate(UpdateRoute) },
                             )
                         }
                     }
@@ -496,6 +497,14 @@ private fun SecondaryRouteContent(
                     .get("host.backup", io.toolbox.host.backup.BackupViewModel::class.java)
             }
             io.toolbox.host.backup.BackupScreen(backup, onBack, onReady)
+        }
+        UpdateRoute -> {
+            val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
+            val updates = remember(dependencies, owner) {
+                ViewModelProvider(owner, HostFeatureViewModelFactory(dependencies))
+                    .get("host.updates", io.toolbox.host.update.UpdateViewModel::class.java)
+            }
+            io.toolbox.host.update.UpdateScreen(updates, onBack, onReady)
         }
 
         is ToolDetailRoute -> ToolDetailRouteContent(

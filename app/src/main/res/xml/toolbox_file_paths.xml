@@ -3,4 +3,7 @@
     <cache-path
         name="toolbox_captures"
         path="toolbox-captures/" />
+    <cache-path
+        name="toolbox_updates"
+        path="updates/" />
 </paths>

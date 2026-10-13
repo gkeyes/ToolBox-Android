@@ -207,6 +207,9 @@ jobs:
     # PRs never receive the signing key.
     if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
+    permissions:
+      # Only to refresh the rolling `dev` prerelease behind the in-app test channel.
+      contents: write
     env:
       TOOLBOX_RELEASE_CERT_SHA256: 849be1fd8066964d6194faa538fc0b17b4b17e5c116304e1d3be8ff725e4c71d
     steps:
@@ -292,6 +295,11 @@ jobs:
           name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
           path: build/ci-delivery/
           if-no-files-found: error
+      - name: Publish to the in-app test channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/ci/publish-test-release.sh app build/ci-delivery
       - name: Remove signing material even on failure
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/toolbox-signing"
