@@ -45,6 +45,12 @@ def version_only(base_text, head_text):
             if not match or (match["code"] and not 0 < int(match["code"]) <= MAX_VERSION_CODE):
                 kept.append(line)
         return kept
+    # The head must still set each value exactly once, validly; a deleted or duplicated one needs the build.
+    valid = [VERSION_LINE.match(line) for line in head_text.splitlines()]
+    codes = [match for match in valid if match and match["code"] and 0 < int(match["code"]) <= MAX_VERSION_CODE]
+    names = [match for match in valid if match and not match["code"]]
+    if len(codes) != 1 or len(names) != 1:
+        return False
     return strip(base_text) == strip(head_text)
 
 
@@ -52,6 +58,8 @@ def needs_gradle(path, bundled):
     """Whether a changed path can change what Gradle compiles, packages or tests."""
     if path == "sdk/help/manual.md":
         return True  # Packaged into the APK.
+    if "/src/" in f"/{path}":
+        return True  # Source sets, including Markdown packaged as assets.
     if path.endswith(".md") or path.startswith("docs/") or path in {"LICENSE", ".gitignore"}:
         return False
     if path.startswith(".github/workflows/"):
