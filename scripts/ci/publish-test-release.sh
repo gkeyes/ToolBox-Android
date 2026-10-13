@@ -21,7 +21,10 @@ release_id="$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq .id)"
 # ones old enough that no running publish can still be renaming them.
 gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --paginate \
   --jq '.[] | select((.name | startswith("tmp.")) and ((.updated_at | fromdateiso8601) < (now - 1800))) | .id' |
-  while read -r stale; do gh api -X DELETE "repos/$GH_REPO/releases/assets/$stale"; done
+  while read -r stale; do
+    # The other publisher may have removed it first.
+    gh api -X DELETE "repos/$GH_REPO/releases/assets/$stale" || true
+  done
 
 existing() {
   gh release view "$tag" --json assets --jq '.assets[].name'
