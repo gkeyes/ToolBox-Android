@@ -663,7 +663,8 @@ class CatalogHomeBehaviorTest(private val style: ToolBoxThemeStyle, private val 
     }
 
     private fun openFolder(groupId: String) {
-        homeTile("catalog_group:$groupId").performClick()
+        // The capsule's own action: a touch at its center may land on a tool icon, which opens the tool.
+        homeTile("catalog_group:$groupId").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("catalog_group_folder").fetchSemanticsNodes().size == 1 }
     }
 

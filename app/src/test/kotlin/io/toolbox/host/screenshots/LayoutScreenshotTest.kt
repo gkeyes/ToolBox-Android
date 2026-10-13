@@ -177,6 +177,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
     private val groups = listOf(
         CatalogGroup("g-work", "工作效率", listOf("io.toolbox.calculator", "io.toolbox.timer", "io.toolbox.notes", "io.toolbox.unitconvert"), color = "blue"),
         CatalogGroup("g-life", "生活", listOf("io.toolbox.healthrecords", "io.toolbox.qrcode"), color = "orange"),
+        CatalogGroup("g-all", "全部常备工具", tools.map { it.toolId }, color = "green"),
+        CatalogGroup("g-empty", "空分组", emptyList()),
     )
     private val catalog = CatalogUiState(
         isLoaded = true,
