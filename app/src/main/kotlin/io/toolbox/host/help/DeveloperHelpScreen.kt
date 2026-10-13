@@ -86,6 +86,7 @@ internal fun DeveloperHelpScreen(
     val context = LocalContext.current.applicationContext
     val webViewDebuggingByUser by RuntimeWebViewDebugging.enabledByUser.collectAsState()
     val webViewDebugging = remember(context, webViewDebuggingByUser) { RuntimeWebViewDebugging.status(context) }
+    var webViewDebuggingUnavailable by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     val state by produceState<HelpLoadState>(HelpLoadState.Loading, context, loadAttempt) {
         value = HelpLoadState.Loading
@@ -112,7 +113,10 @@ internal fun DeveloperHelpScreen(
         webViewDebuggingEnabled = webViewDebugging.enabled,
         webViewDebuggingForced = webViewDebugging.forcedByPlatform,
         webViewDebuggingToggleable = webViewDebugging.userToggleable,
-        onWebViewDebuggingChange = { enabled -> RuntimeWebViewDebugging.setEnabledByUser(context, enabled) },
+        webViewDebuggingUnavailable = webViewDebuggingUnavailable,
+        onWebViewDebuggingChange = { enabled ->
+            webViewDebuggingUnavailable = !RuntimeWebViewDebugging.setEnabledByUser(context, enabled)
+        },
     )
 }
 
@@ -125,6 +129,7 @@ internal fun DeveloperHelpPage(
     webViewDebuggingEnabled: Boolean = false,
     webViewDebuggingForced: Boolean = false,
     webViewDebuggingToggleable: Boolean = false,
+    webViewDebuggingUnavailable: Boolean = false,
     onWebViewDebuggingChange: (Boolean) -> Unit = {},
 ) {
     DetailScreen(
@@ -143,6 +148,7 @@ internal fun DeveloperHelpPage(
                         title = "小工具 WebView 调试",
                         summary = when {
                             webViewDebuggingForced -> "当前系统强制开启接口；应用内不可切换。"
+                            webViewDebuggingUnavailable -> "WebView 不可用，无法切换。"
                             !webViewDebuggingToggleable && webViewDebuggingEnabled -> "调试版：编译时开启，应用内无法关闭。"
                             webViewDebuggingEnabled -> "已开启：连接电脑的人可读取小工具页面数据，应用重启后自动关闭。"
                             else -> "默认关闭；开启后电脑 Chrome 可检查小工具页面，应用重启后自动关闭。"

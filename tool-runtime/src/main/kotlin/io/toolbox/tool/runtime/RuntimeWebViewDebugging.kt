@@ -39,12 +39,24 @@ object RuntimeWebViewDebugging {
         enabledByUser = enabledByUserState.value,
     )
 
-    /** Applies immediately to every WebView in this process; new tool pages pick it up too. */
+    /**
+     * Applies immediately to every WebView in this process; new tool pages pick it up too.
+     * The override is published only after WebView accepted it. Returns false when the WebView
+     * provider is missing or disabled, in which case the previous state is kept.
+     */
     @UiThread
-    fun setEnabledByUser(context: Context, enabled: Boolean) {
+    fun setEnabledByUser(context: Context, enabled: Boolean): Boolean {
         check(Looper.myLooper() == Looper.getMainLooper()) { "WebView debugging must be changed on the main thread" }
-        enabledByUserState.value = enabled
-        WebView.setWebContentsDebuggingEnabled(status(context).appliedEnabled)
+        val current = status(context)
+        val next = current.copy(enabledByUser = enabled && !current.enabledByBuild)
+        return try {
+            WebView.setWebContentsDebuggingEnabled(next.appliedEnabled)
+            enabledByUserState.value = enabled
+            true
+        } catch (_: RuntimeException) {
+            // AndroidRuntimeException when no WebView provider is available.
+            false
+        }
     }
 
     @UiThread
