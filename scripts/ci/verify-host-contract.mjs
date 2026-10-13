@@ -18,10 +18,11 @@ assert.deepEqual(union('ToolBoxCapability'), capabilities);
 assert.deepEqual(schema.properties.permissions.items.properties.name.enum.toSorted(), capabilities);
 assert.equal(schema.properties.network.properties.maxResponseBytes.maximum, Number.MAX_SAFE_INTEGER);
 const source = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebMessageBridge.kt');
-const body = source.slice(source.indexOf('private fun shim(')).match(/return """([\s\S]*?)"""\.trimIndent\(\)/)[1];
-const shim = body.replaceAll("${'$'}", '$').replaceAll('${identity.versionCode}', '1')
-  .replaceAll('$BRIDGE_OBJECT', '__toolboxNative').replaceAll('$nonce', '"nonce"')
-  .replaceAll('$toolId', '"io.example.contract"').replaceAll('$generation', '"generation"');
+// The document-start SDK is an asset; RuntimeBridgeSession.shim fills these placeholders.
+const shimTemplate = read('tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js');
+const shim = shimTemplate.replaceAll('__TOOLBOX_VERSION_CODE__', '1')
+  .replaceAll('__TOOLBOX_BRIDGE_OBJECT__', '__toolboxNative').replaceAll('__TOOLBOX_NONCE__', '"nonce"')
+  .replaceAll('__TOOLBOX_TOOL_ID__', '"io.example.contract"').replaceAll('__TOOLBOX_GENERATION__', '"generation"');
 const sent = [];
 const bridge = { postMessage(encoded) {
   const message = JSON.parse(encoded); sent.push(message);
@@ -31,12 +32,16 @@ const bridge = { postMessage(encoded) {
 }};
 const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, btoa, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
-assert.deepEqual([...source.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
-const runtimeRpc = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt');
+assert.deepEqual([...shimTemplate.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
+// The RPC dispatcher is split by domain into RuntimeRpc.kt, RuntimeRpcParams.kt and Runtime*Rpc.kt.
+const runtimeDir = 'tool-runtime/src/main/kotlin/io/toolbox/tool/runtime';
+const runtimeRpc = readdirSync(resolve(root, runtimeDir)).filter(name => /^Runtime\w*Rpc\w*\.kt$/.test(name))
+  .map(name => read(`${runtimeDir}/${name}`)).join('\n');
+assert(runtimeRpc.includes('class RuntimeRpcDispatcher('), 'RPC dispatcher sources must be found');
 for (const retired of ['network.authorizeDomain', 'network.listDomains', 'allowDomains', 'allowUserDomains', 'allowRedirects', 'storageBytes', 'maxBridgePayloadBytes', 'USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
   assert(!api.includes(retired), `API descriptor retains retired contract: ${retired}`);
   assert(!manual.includes(retired), `SDK manual retains retired contract: ${retired}`);
-  assert(!source.includes(retired), `Web bridge retains retired contract: ${retired}`);
+  assert(!source.includes(retired) && !shimTemplate.includes(retired), `Web bridge retains retired contract: ${retired}`);
   assert(!runtimeRpc.includes(retired), `RPC dispatcher retains retired contract: ${retired}`);
   assert(!read('tool-package/src/main/kotlin/io/toolbox/tool/packagekit/ManifestValidator.kt').includes(retired), `Manifest parser retains retired field: ${retired}`);
   assert(!read('schema/manifest.schema.json').includes(retired), `Manifest schema retains retired field: ${retired}`);
