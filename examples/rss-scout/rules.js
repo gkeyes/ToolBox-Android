@@ -61,8 +61,14 @@
       catch(error){if(error.code==='PERMISSION_DENIED'||error.code==='NOT_DECLARED')break;}
     }
     let extra=null,privateError=null;
-    const psrc=privateSource(settings);
-    if(psrc){try{extra=await fetchSource(network,psrc,signal,accessKey,attempts,onProgress);}catch(error){privateError=error;}}
+    try{
+      const psrc=privateSource(settings);
+      if(psrc)extra=await fetchSource(network,psrc,signal,accessKey,attempts,onProgress);
+    }catch(error){
+      if(signal?.aborted||error.name==='AbortError'||error.code==='CANCELLED')throw error;
+      privateError=error;
+      if(!attempts.some(x=>x.source==='私人规则订阅'))attempts.push({source:'私人规则订阅',status:null,message:C.cleanText(error.message||'私人规则地址无效',400)});
+    }
     if(!base&&!extra){const error=new Error('规则更新未完成；'+attempts.map(x=>x.source+'：'+x.message).join('；'));error.attempts=attempts;throw error;}
     const rules=[...(extra?.parsed.rules||[]),...(base?.parsed.rules||[])];
     const skipped=(extra?.parsed.skipped||0)+(base?.parsed.skipped||0);
