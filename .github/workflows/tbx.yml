@@ -117,9 +117,6 @@ jobs:
         if: ${{ matrix.tool == 'rss-scout' && matrix.full_tests }}
         working-directory: examples/rss-scout
         run: npm test
-      - name: Watcher selected reliability cases
-        if: ${{ matrix.tool == 'github-actions-watcher' && !matrix.full_tests && matrix.watcher_reliability }}
-        run: python3 scripts/ci/tbx.py test-unit --tool github-actions-watcher --test-filter tests/reliability.test.cjs
       - name: Prepare watcher layout browser checks
         if: ${{ matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
         run: |

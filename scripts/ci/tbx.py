@@ -126,7 +126,7 @@ def append_values(environment_file, values):
 
 def selected_tests(name, changed, requested_filter, full, registry=None):
     registry = registry or targets()
-    result = {"full_tests": full, "unit_test_filter": "", "browser_test_filter": "", "watcher_reliability": False, "watcher_layout": False}
+    result = {"full_tests": full, "unit_test_filter": "", "browser_test_filter": "", "watcher_layout": False}
     if full or "tests" not in registry[name]:
         return result
     # Small plain-JS tools: a script, page or style edit reruns all of their tests; a media edit runs none.
@@ -175,11 +175,11 @@ def selected_tests(name, changed, requested_filter, full, registry=None):
         if shared:
             selected |= allowed
         selected |= {path for path in shared_tests(name, registry) if path in changed}
+    result["unit_test_filter"] = ",".join(sorted(selected & unit_files))
     if name == "github-actions-watcher":
-        result["watcher_reliability"] = bool(selected & unit_files)
+        # The watcher's browser check is a Python Playwright script with its own workflow step.
         result["watcher_layout"] = bool(selected & browser_files)
     else:
-        result["unit_test_filter"] = ",".join(sorted(selected & unit_files))
         result["browser_test_filter"] = ",".join(sorted(selected & browser_files))
     return result
 
@@ -206,7 +206,7 @@ def plan(selection, validation_scope="full", test_filter=""):
          **selected_tests(name, changed, test_filter, full=selection != "changed" and validation_scope == "full", registry=registry)}
         for name in selected
     ]}
-    if test_filter and not any(row["unit_test_filter"] or row["browser_test_filter"] or row["watcher_reliability"] or row["watcher_layout"] for row in matrix["include"]):
+    if test_filter and not any(row["unit_test_filter"] or row["browser_test_filter"] or row["watcher_layout"] for row in matrix["include"]):
         raise ValueError("Selected TBX test path does not belong to a selected tool")
     append_values(os.environ.get("GITHUB_OUTPUT"), {
         "matrix": json.dumps(matrix, separators=(",", ":")), "count": len(selected),
