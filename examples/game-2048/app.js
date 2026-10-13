@@ -32,6 +32,8 @@
   let storageAvailable = false;
   let saveFailed = false;
   let saveQueue = Promise.resolve();
+  // The host is closing the tool: no new moves, so the flushed save stays the last one.
+  let closing = false;
   let gesture = null;
 
   function toolbox() {
@@ -70,6 +72,7 @@
     try {
       await api.ready();
       if (api.runtime?.registerFlushHandler) api.runtime.registerFlushHandler(flushSaves);
+      if (api.runtime?.onStateChanged) api.runtime.onStateChanged((runtimeState) => { closing = runtimeState.closing === true; });
       const saved = await api.storage.get(SAVE_KEY);
       storageAvailable = true;
       return sanitizeSaved(saved);
@@ -101,14 +104,24 @@
     return saveQueue;
   }
 
+  // Waits until no newer save was queued meanwhile (e.g. by a move made before the
+  // closing state arrived), so the last write is always the one awaited.
+  async function drainSaves() {
+    let pending;
+    do {
+      pending = saveQueue;
+      await pending;
+    } while (pending !== saveQueue);
+  }
+
   async function flushSaves() {
     // A write still in flight when closing starts may fail after we begin waiting, so
     // re-check after the queue drains and retry once before reporting failure.
     if (saveFailed) queueSave();
-    await saveQueue;
+    await drainSaves();
     if (saveFailed) {
       queueSave();
-      await saveQueue;
+      await drainSaves();
     }
     if (saveFailed) throw new Error("棋局保存失败");
   }
@@ -240,7 +253,7 @@
   }
 
   function move(direction, fromTouch = false) {
-    if (!ready || !$("result-overlay").hidden) return;
+    if (!ready || closing || !$("result-overlay").hidden) return;
     const result = Core.move(state.board, direction);
     if (!result.moved) {
       announce("这个方向无法移动");
@@ -265,7 +278,7 @@
   }
 
   function startNewGame() {
-    if (!ready) return;
+    if (!ready || closing) return;
     const best = state.best;
     state = freshState(best);
     previousState = null;
@@ -277,7 +290,7 @@
   }
 
   function undo() {
-    if (!ready || !previousState) return;
+    if (!ready || closing || !previousState) return;
     const retainedBest = state.best;
     state = snapshot(previousState);
     state.best = Math.max(retainedBest, state.best);
@@ -290,7 +303,7 @@
   }
 
   function askForNewGame() {
-    if (!ready) return;
+    if (!ready || closing) return;
     if (state.moveCount === 0) {
       startNewGame();
       return;
@@ -313,7 +326,7 @@
     $("confirm-new-game").addEventListener("click", startNewGame);
 
     $("result-primary").addEventListener("click", (event) => {
-      if (!ready) return;
+      if (!ready || closing) return;
       if (event.currentTarget.dataset.action === "continue") {
         state.wonAcknowledged = true;
         hideResult();
@@ -332,7 +345,7 @@
 
     const board = $("board");
     board.addEventListener("pointerdown", (event) => {
-      if (!event.isPrimary || !ready || !$("result-overlay").hidden) return;
+      if (!event.isPrimary || !ready || closing || !$("result-overlay").hidden) return;
       gesture = { id: event.pointerId, x: event.clientX, y: event.clientY };
       try { board.setPointerCapture(event.pointerId); } catch (_) {}
     });
