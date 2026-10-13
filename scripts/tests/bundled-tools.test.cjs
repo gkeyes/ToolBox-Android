@@ -313,7 +313,7 @@ test('quick notes closing while deleting the edited note does not keep its text 
 
 // ---------- notification-lab ----------
 
-function notificationLab({ sessions = [], saved = null, start, update, end, ready } = {}) {
+function notificationLab({ sessions = [], saved = null, start, update, end, ready, stop, cancelTimer } = {}) {
   const calls = { start: [], update: [], end: [], bgStart: 0, set: 0, timers: [] };
   const listeners = {};
   let sessionCounter = 0;
@@ -326,10 +326,10 @@ function notificationLab({ sessions = [], saved = null, start, update, end, read
     storage: { get: async () => saved, set: async () => { calls.set += 1; } },
     background: {
       start: async () => { calls.bgStart += 1; sessionCounter += 1; return { sessionId: `session-${sessionCounter}-xxxxxxxx` }; },
-      stop: async () => {},
+      stop: async (id) => { if (stop) return stop(id); },
       listSessions: async () => sessions,
       setTimer: async (...args) => { calls.timers.push(args); },
-      cancelTimer: async () => {},
+      cancelTimer: async (key) => { if (cancelTimer) return cancelTimer(key); },
       onTimer: (listener) => { listeners.timer = listener; },
       onRestore: (listener) => { listeners.restore = listener; },
     },
@@ -452,6 +452,39 @@ test('notification lab stopping the background during an auto update does not re
   assert.equal(lab.api.state.sessionId, null);
   assert.equal(lab.api.state.live, false);
   assert.equal(lab.api.state.liveResult, null);
+});
+
+test('notification lab timer firing while stopping cancels the timer does not reacquire the session', async () => {
+  const cancelGate = defer();
+  const stopGate = defer();
+  const pendingUpdate = defer();
+  pendingUpdate.promise.catch(() => {}); // No update may be waiting on it once the fix blocks the timer.
+  let stopCalled = false;
+  const lab = notificationLab({
+    update: () => pendingUpdate.promise,
+    cancelTimer: () => cancelGate.promise,
+    stop: () => { stopCalled = true; return stopGate.promise; },
+  });
+  await lab.api.bootWork;
+  await lab.api.startLive();
+  lab.api.state.auto = true;
+  const stopping = lab.$('stop-background').fire('click');
+  await settle();
+  // A queued timer callback runs while stopBackground waits for cancelTimer.
+  lab.listeners.timer({ key: 'notification-lab-live' });
+  await settle();
+  cancelGate.resolve();
+  await settle();
+  assert.equal(stopCalled, true);
+  // The session ends under the in-flight update before stopBackground clears its state.
+  pendingUpdate.reject(apiError('INVALID_SESSION'));
+  await settle();
+  stopGate.resolve();
+  await stopping;
+  await settle();
+  assert.equal(lab.calls.bgStart, 1, 'no replacement background session');
+  assert.equal(lab.calls.start.length, 1, 'no replacement live notification');
+  assert.equal(lab.api.state.sessionId, null);
 });
 
 // ---------- background-task-demo ----------
