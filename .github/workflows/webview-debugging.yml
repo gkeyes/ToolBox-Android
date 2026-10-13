@@ -84,6 +84,21 @@ jobs:
           assert not any(case.find(tag) is not None for case in cases for tag in ('failure', 'error', 'skipped'))
           print('Verified 12 executed scenarios with no failures, errors, or skips.')
           PY
+      - name: Report failed scenarios as annotations
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for path in Path('app/build/outputs/androidTest-results/connected').rglob('TEST-*.xml'):
+              for case in ET.parse(path).getroot().iter('testcase'):
+                  for tag in ('failure', 'error'):
+                      node = case.find(tag)
+                      if node is not None:
+                          text = (node.get('message') or '') + ' ' + (node.text or '')
+                          text = ' '.join(text.split())[:1500].replace('%', '%25')
+                          print(f"::error title={case.get('name')}::{text}")
+          PY
       - name: Retain behavior reports and environment evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
