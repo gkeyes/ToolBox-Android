@@ -203,6 +203,7 @@ def plan(selection, validation_scope="full", test_filter=""):
         metadata(name, registry[name])
     matrix = {"include": [
         {"tool": name, "npm": registry[name].get("npm", False), "bundled": registry[name].get("bundled", False),
+         "unit_tests": bool(registry[name].get("tests", {}).get("unit")),
          **selected_tests(name, changed, test_filter, full=selection != "changed" and validation_scope == "full", registry=registry)}
         for name in selected
     ]}

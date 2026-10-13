@@ -145,7 +145,7 @@ jobs:
       - name: Registered unit tests
         # Every unit test the tool's globs in scripts/ci/tbx-targets.json discover; tools with an npm test
         # script run that instead, above.
-        if: ${{ matrix.full_tests && !contains(fromJSON('["rss-scout","socialcoach","nextflux"]'), matrix.tool) }}
+        if: ${{ matrix.full_tests && matrix.unit_tests && !contains(fromJSON('["rss-scout","socialcoach","nextflux"]'), matrix.tool) }}
         env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter all
