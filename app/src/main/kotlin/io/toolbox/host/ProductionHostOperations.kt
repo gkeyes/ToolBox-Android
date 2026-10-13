@@ -125,12 +125,14 @@ internal class ProductionHostPackageOperations(
         }
     }
 
-    override suspend fun recoverPendingMutations() {
-        when (packages.recoverPendingMutations(cleanup)) {
-            PackageRecoveryResult.Recovered -> Unit
-            is PackageRecoveryResult.Failed -> Unit
+    override suspend fun recoverPendingMutations(): String? =
+        when (val result = packages.recoverPendingMutations(cleanup)) {
+            PackageRecoveryResult.Recovered -> null
+            is PackageRecoveryResult.Failed -> {
+                android.util.Log.w(LOG_TAG, "Package recovery failed: ${result.failure.code} ${result.failure.message}")
+                "上次中断的工具安装或更新未能自动恢复（${importFailureMessage(result.failure)}）。请重启 ToolBox；问题持续时请重新安装相关工具。"
+            }
         }
-    }
 
     override suspend fun importPackage(input: PackageInput, control: PackageImportControl): HostImportResult =
         packages.importAndInstall(input, cleanup, control).toHostImportResult()
@@ -258,6 +260,7 @@ internal class ProductionHostPackageOperations(
     }
 
     private companion object {
+        const val LOG_TAG = "ToolBoxPackages"
         val BUNDLED_EXAMPLES = listOf(
             "position-calculator.tbx",
             "quick-notes.tbx",

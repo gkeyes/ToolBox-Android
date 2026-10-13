@@ -29,7 +29,7 @@ internal class SerializedPackageOperations(private val delegate: HostPackageOper
         }
     override suspend fun installBundledExamples(): HostExampleInstallResult =
         lock.tryRun({ HostExampleInstallResult.Failed("BUSY", busyMessage) }) { delegate.installBundledExamples() }
-    override suspend fun recoverPendingMutations() = lock.run { (delegate as? HostPackageMaintenance)?.recoverPendingMutations(); Unit }
+    override suspend fun recoverPendingMutations(): String? = lock.run { (delegate as? HostPackageMaintenance)?.recoverPendingMutations() }
 
     private val busyMessage = "正在备份、恢复或处理另一个工具包，请在当前操作完成后重试。"
 }

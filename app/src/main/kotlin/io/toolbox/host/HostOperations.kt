@@ -92,7 +92,8 @@ internal interface HostPermissionSideEffects {
 }
 
 internal interface HostPackageMaintenance {
-    suspend fun recoverPendingMutations()
+    /** Returns a user-facing message when an interrupted install or update could not be recovered. */
+    suspend fun recoverPendingMutations(): String?
 }
 
 internal interface HostBackgroundMaintenance {

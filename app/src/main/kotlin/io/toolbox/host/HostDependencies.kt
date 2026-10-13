@@ -112,9 +112,12 @@ internal class HostDependencies(
     suspend fun reapMarkedOrphanProfiles(installedToolIds: Set<String>): RuntimeDataCleanupResult =
         deferredRuntimeProfileManager.value.reapMarkedOrphanProfiles(installedToolIds)
 
+    /** One-shot message from startup maintenance; the UI shows it once and clears it. */
+    val startupNotice = MutableStateFlow<String?>(null)
+
     suspend fun recoverPendingPackageMutations() {
         packageMutations.run {
-            (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()
+            (packageOperations as? HostPackageMaintenance)?.recoverPendingMutations()?.let { startupNotice.value = it }
             check(catalogLayout.reconcile() is io.toolbox.core.data.DataResult.Success) { "CATALOG_LAYOUT_WRITE" }
         }
     }
@@ -298,8 +301,11 @@ internal class HostDependenciesViewModel(
                 runtimeMaintenance.run(dependencies)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                return@launch
+            } catch (failure: Exception) {
+                android.util.Log.w("ToolBoxStartup", "Startup maintenance failed", failure)
+                if (dependencies.startupNotice.value == null) {
+                    dependencies.startupNotice.value = "启动维护未完成，部分中断的安装或清理将在下次启动时重试。"
+                }
             }
         }
     }
