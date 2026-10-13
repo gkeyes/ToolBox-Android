@@ -34,7 +34,8 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
 internal fun BrowserMenuSheet(state: BrowserUiState, actions: BrowserScreenActions) {
-    ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { state.menu = false }) {
+    // The page behind keeps playing, so a frozen frosted copy would not match it.
+    ToolBoxActionSheet(title = "浏览器菜单", onDismissRequest = { state.menu = false }, frostedBackdrop = false) {
         Column(Modifier.fillMaxWidth()) {
             ToolBoxActionSheetHeader {
                 Spacer(Modifier.height(2.dp))

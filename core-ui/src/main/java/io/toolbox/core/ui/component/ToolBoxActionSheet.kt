@@ -20,12 +20,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -38,10 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import android.view.ViewTreeObserver
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -54,8 +59,20 @@ private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier
  */
 internal val LocalToolBoxInGlassSheet = staticCompositionLocalOf { false }
 
+/**
+ * False where another overlay window sits between the page and a sheet (a sheet opened over the
+ * group folder): the sheet can only copy the page window, so it keeps the opaque panel there.
+ */
+val LocalToolBoxFrostedSheets = staticCompositionLocalOf { true }
+
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
+
+/** The page must stop redrawing this long before the sheet retakes its copy of it. */
+private const val BackdropSettleMs = 160L
+
+/** Blur of the page copy behind a frosted sheet. */
+private val SheetBlur = 28.dp
 
 /** A modal window: taps cannot reach the catalog behind the sheet. */
 @Composable
@@ -65,6 +82,7 @@ fun ToolBoxActionSheet(
     modifier: Modifier = Modifier,
     onBackRequest: () -> Unit = onDismissRequest,
     containerColor: Color? = null,
+    frostedBackdrop: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -74,6 +92,55 @@ fun ToolBoxActionSheet(
     val shape = if (glass) toolBoxShape(sheetRadius) else toolBoxTopShape(sheetRadius)
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
+    // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
+    val hostView = LocalView.current
+    // Pass frostedBackdrop = false over live content (a playing web page): the copy would freeze it.
+    val frosted = glass && containerColor == null && frostedBackdrop && LocalToolBoxFrostedSheets.current &&
+        materials.realBlurEnabled
+    var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
+    // Opaque until the copy lands, then eases into the lighter glass fill.
+    val frostAmount = remember { Animatable(0f) }
+    val configuration = LocalConfiguration.current
+    if (frosted) LaunchedEffect(hostView, configuration.screenWidthDp, configuration.screenHeightDp) {
+        // A resize (rotation, multi-window) makes the old copy the wrong size: drop it and go
+        // opaque at once, then retake it once the page has laid out at the new size.
+        backdrop = null
+        frostAmount.snapTo(0f)
+        withFrameNanos { }
+        withFrameNanos { }
+        backdrop = captureWindowBackdrop(hostView)
+        if (backdrop != null) launch { frostAmount.animateTo(1f) }
+        // The page can change under an open sheet (a favourite or group toggled from it): retake
+        // the copy once the page window has stopped redrawing. A page that keeps animating (a
+        // spinner) keeps its last copy rather than being copied every frame.
+        val redraws = Channel<Unit>(Channel.CONFLATED)
+        var copying = false
+        var drewWhileCopying = false
+        var recopied = false
+        val listener = ViewTreeObserver.OnDrawListener {
+            if (copying) drewWhileCopying = true else redraws.trySend(Unit)
+        }
+        hostView.viewTreeObserver.addOnDrawListener(listener)
+        try {
+            while (true) {
+                redraws.receive()
+                while (withTimeoutOrNull(BackdropSettleMs) { redraws.receive() } != null) { }
+                drewWhileCopying = false
+                copying = true
+                val fresh = try { captureWindowBackdrop(hostView) } finally { copying = false }
+                if (fresh != null) {
+                    backdrop = fresh
+                    if (frostAmount.targetValue < 1f) launch { frostAmount.animateTo(1f) }
+                }
+                // A draw during the copy may be the page's last change: copy once more. Only once
+                // in a row, since a copy can itself trigger a draw.
+                recopied = if (drewWhileCopying && !recopied) { redraws.trySend(Unit); true } else false
+            }
+        } finally {
+            hostView.viewTreeObserver.removeOnDrawListener(listener)
+        }
+    }
+    val frost = if (frosted) frostAmount.value else 0f
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
@@ -217,8 +284,13 @@ fun ToolBoxActionSheet(
                             ) else Modifier,
                         )
                         .clip(shape)
+                        .then(
+                            backdrop?.takeIf { frosted }?.let {
+                                Modifier.windowBackdrop(it, SheetBlur) { entrance.value; dragOffset }
+                            } ?: Modifier,
+                        )
                         .background(
-                            containerColor ?: if (glass) materials.overlayFallback else colors.raised,
+                            containerColor ?: if (glass) lerp(materials.overlayFallback, materials.overlayFill, frost) else colors.raised,
                         )
                         .then(
                             if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape)

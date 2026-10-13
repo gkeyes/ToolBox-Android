@@ -4,6 +4,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -20,7 +23,9 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,8 +115,10 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         RuntimeEnvironment.setFontScale(fontScale)
     }
 
-    private fun render(name: String, dialog: Boolean = false, content: @Composable () -> Unit) {
+    private fun render(name: String, dialog: Boolean = false, interact: () -> Unit = {}, content: @Composable () -> Unit) {
         compose.setContent { ToolBoxTheme { content() } }
+        compose.waitForIdle()
+        interact()
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitForIdle()
@@ -225,6 +232,26 @@ class LayoutScreenshotTest(private val fontScale: Float) {
     @Test fun allTools() {
         render("tools") { Catalog(home = false) }
         assertShows("番茄钟专注计时")
+    }
+
+    /** A glass sheet over a page: the panel blurs a copy of the page instead of covering it. */
+    @Test fun sortSheet() = render("sort_sheet", dialog = true, interact = ::openSort) { SheetBackdropPage() }
+
+    /** Reduce Transparency keeps the opaque panel. */
+    @Test fun sortSheetOpaque() = render("sort_sheet_opaque", dialog = true, interact = ::openSort) {
+        ToolBoxTheme(reduceTransparency = true) { SheetBackdropPage() }
+    }
+
+    private fun openSort() {
+        compose.onAllNodes(hasText("排序 · ", substring = true)).onFirst().performClick()
+    }
+
+    /** The tool list sits at the bottom so the sheet covers rows, not empty canvas. */
+    @Composable private fun SheetBackdropPage() {
+        Column(Modifier.fillMaxSize()) {
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.fillMaxWidth().height(760.dp)) { Catalog(home = false) }
+        }
     }
 
     @Test fun settings() = render("settings") { Primary(MainDestination.Settings) }

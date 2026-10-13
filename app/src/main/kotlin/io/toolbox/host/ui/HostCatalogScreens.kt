@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.stateDescription
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
+import io.toolbox.core.ui.component.LocalToolBoxFrostedSheets
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -49,6 +50,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -320,10 +322,13 @@ internal fun ToolManagerContent(
         onDismiss = { openGroupId = null },
     )
     if (addingFavorites) CatalogFavoritesPicker(state, onAction) { addingFavorites = false }
-    if (selectedTool != null) CatalogToolOptions(selectedTool, state, onAction,
-        onDismiss = { selectedToolId = null },
-        onManage = { selectedToolId = null; openGroupId = null; onOpenDetails(selectedTool.toolId) },
-    )
+    // Over the folder window the sheet cannot copy the folder, so it stays opaque there.
+    if (selectedTool != null) CompositionLocalProvider(LocalToolBoxFrostedSheets provides (openGroup == null)) {
+        CatalogToolOptions(selectedTool, state, onAction,
+            onDismiss = { selectedToolId = null },
+            onManage = { selectedToolId = null; openGroupId = null; onOpenDetails(selectedTool.toolId) },
+        )
+    }
     if (editingGroupId != null) CatalogGroupEditor(
         group = state.layout.groups.firstOrNull { it.id == editingGroupId },
         state = state, creating = editingGroupId == "", onAction = onAction,
