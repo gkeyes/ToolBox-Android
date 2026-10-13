@@ -41,11 +41,11 @@ class CatalogHomeDragTest {
     }
 
     @Test fun folderColumnsKeepAtLeastTwoSquareFoldersAndGrowOnWideWindows() {
-        assertEquals(2, homeFolderColumnCount(358f, 1f))
+        assertEquals(3, homeFolderColumnCount(358f, 1f))
         assertEquals(2, homeFolderColumnCount(358f, 2f))
         assertEquals(2, homeFolderColumnCount(90f, 1f))
-        assertEquals(4, homeFolderColumnCount(680f, 1f))
-        assertEquals(6, homeFolderColumnCount(1600f, 1f))
+        assertEquals(6, homeFolderColumnCount(680f, 1f))
+        assertEquals(8, homeFolderColumnCount(1600f, 1f))
     }
 
     @Test fun unknownOrLegacyGroupStylesFallBackToTheDefaultSwatchAndIcon() {

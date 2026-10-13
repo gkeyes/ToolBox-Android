@@ -142,11 +142,14 @@ internal fun HomeSectionHeader(title: String, action: String? = null, onAction: 
 internal fun homeGridColumnCount(availableWidth: Float, fontScale: Float): Int =
     ((availableWidth + 12f) / (72f * fontScale.coerceAtLeast(1f) + 12f)).toInt().coerceAtLeast(1)
 
-/** App Library style folders: two per row on phones, more on wide windows. */
+/**
+ * Folders: three per row on phones so a folder (about 110dp) stays secondary to the shortcut
+ * icons above it; large text falls back to two, wide windows fit more.
+ */
 internal fun homeFolderColumnCount(availableWidth: Float, fontScale: Float): Int =
-    ((availableWidth + FOLDER_GAP) / (150f * fontScale.coerceAtLeast(1f) + FOLDER_GAP)).toInt().coerceIn(2, 6)
+    ((availableWidth + FOLDER_GAP) / (100f * fontScale.coerceAtLeast(1f) + FOLDER_GAP)).toInt().coerceIn(2, 8)
 
-private const val FOLDER_GAP = 14f
+private const val FOLDER_GAP = 12f
 
 internal fun LazyListScope.catalogHomeSections(
     state: CatalogUiState,
@@ -195,7 +198,7 @@ internal fun LazyListScope.catalogHomeSections(
     val groups = state.layout.groups
     if (groups.isNotEmpty() || editing) item("groups-heading") {
         Column(Modifier.homeItemMotion(this, editing)) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(HOME_SECTION_GAP))
             HomeSectionHeader("分组", trailing = if (groups.isNotEmpty()) "${groups.size} 个" else null)
         }
     }
@@ -234,6 +237,7 @@ internal fun LazyListScope.catalogHomeSections(
 }
 
 private const val HOME_SHORTCUT_LIMIT = 8
+private val HOME_SECTION_GAP = 24.dp
 
 /** Lazy rows retain one continuous card surface without nesting another vertical scroll container. */
 internal fun LazyListScope.homeToolGrid(
@@ -246,7 +250,7 @@ internal fun LazyListScope.homeToolGrid(
     onAction: (CatalogAction) -> Unit,
     onOptions: (String) -> Unit,
     surface: Boolean = false,
-    iconSize: Dp = 56.dp,
+    iconSize: Dp = 60.dp,
     onOpen: (CatalogTool) -> Unit = { onAction(CatalogAction.RequestRuntimeLaunch(it.toolId)) },
     onRemove: ((CatalogTool) -> Unit)? = null,
     onMove: (CatalogTool, Int) -> Unit,
@@ -260,12 +264,12 @@ internal fun LazyListScope.homeToolGrid(
             Modifier.homeItemMotion(this, editing).fillMaxWidth()
                 .then(if (surface) Modifier.groupSurface(top = first, bottom = last) else Modifier)
                 .padding(
-                    start = if (surface) 8.dp else 0.dp,
-                    end = if (surface) 8.dp else 0.dp,
-                    top = if (surface && first) 16.dp else 0.dp,
-                    bottom = if (!last) 12.dp else if (surface) 12.dp else 0.dp,
+                    start = if (surface) 12.dp else 0.dp,
+                    end = if (surface) 12.dp else 0.dp,
+                    top = if (surface && first) 18.dp else 0.dp,
+                    bottom = if (!last) 16.dp else if (surface) 14.dp else 0.dp,
                 ),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             repeat(columns) { column ->
                 val index = row * columns + column
@@ -368,7 +372,7 @@ private fun CatalogGroupFolder(
                             role = Role.Button, onClickLabel = "打开分组", onClick = onOpen,
                             onLongClick = onEdit, onLongClickLabel = editLabel),
                     )
-                    .padding(14.dp),
+                    .padding(12.dp),
             ) {
                 CatalogGroupFolderPreview(group, members)
             }
@@ -391,17 +395,15 @@ private fun CatalogGroupFolder(
         }
         Spacer(Modifier.height(6.dp))
         Row(
-            Modifier.fillMaxWidth().clearAndSetSemantics { },
+            Modifier.fillMaxWidth().padding(horizontal = 2.dp).clearAndSetSemantics { },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            CatalogGroupStyleIcon(group, 16.dp, 11.dp)
-            Spacer(Modifier.width(6.dp))
+            // Narrow three-up folders: icon + name only; the count stays in the folder's description.
+            CatalogGroupStyleIcon(group, 14.dp, 10.dp)
+            Spacer(Modifier.width(5.dp))
             AppText(group.name, Modifier.weight(1f, fill = false), maxLines = 1,
-                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold))
-            Spacer(Modifier.width(6.dp))
-            AppText("${members.size} 个", color = colors.textSecondary, maxLines = 1,
-                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold))
         }
     }
 }
@@ -414,7 +416,7 @@ private fun CatalogGroupFolderPreview(group: CatalogGroup, members: List<Catalog
             CatalogGroupStyleIcon(group, maxWidth * 0.5f)
             return@BoxWithConstraints
         }
-        val gap = 12.dp
+        val gap = 8.dp
         val cell = (minOf(maxWidth, maxHeight) - gap) / 2
         val big = if (members.size > 4) members.take(3) else members.take(4)
         val cluster = if (members.size > 4) members.drop(3).take(4) else emptyList()
@@ -444,9 +446,9 @@ private fun PreviewGlyph(tool: CatalogTool, size: Dp) {
 
 @Composable
 private fun PreviewCluster(tools: List<CatalogTool>, size: Dp) {
-    val gap = 5.dp
-    val tiny = (size - 6.dp - gap) / 2
-    Column(Modifier.size(size).padding(3.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+    val gap = 3.dp
+    val tiny = (size - 4.dp - gap) / 2
+    Column(Modifier.size(size).padding(2.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
         repeat(2) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                 repeat(2) { column ->
@@ -473,9 +475,9 @@ private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ToolBoxIcon(ToolBoxIconKey.Add, null, Modifier.size(26.dp), tint = colors.primary)
+            ToolBoxIcon(ToolBoxIconKey.Add, null, Modifier.size(24.dp), tint = colors.primary)
             AppText("新建分组", color = colors.primary, maxLines = 1,
-                textStyle = ToolBoxThemeTokens.textStyles.body.copy(fontSize = 15.sp, lineHeight = 20.sp))
+                textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp))
         }
     }
 }
