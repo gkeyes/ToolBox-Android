@@ -108,10 +108,12 @@ android {
         buildConfig = true
     }
 
-    sourceSets.getByName("main").assets.directories.add(
+    // Same cast-free path as core-data: AGP 9.4's typed source-set accessor can fail its cast.
+    val mainSources = (sourceSets as NamedDomainObjectContainer<*>).getByName("main") as com.android.build.api.dsl.AndroidSourceSet
+    mainSources.assets.directories.add(
         bundledExamplesDir.get().asFile.absolutePath,
     )
-    sourceSets.getByName("main").assets.directories.add(
+    mainSources.assets.directories.add(
         rootProject.layout.projectDirectory.dir("sdk/help").asFile.absolutePath,
     )
 }
