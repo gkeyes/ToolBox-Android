@@ -76,7 +76,7 @@
     return null;
   }
 
-  function classifyApiStatus(status, remaining, retryAfterSeconds) {
+  function classifyApiStatus(status, remaining, retryAfterSeconds, message = "") {
     const hasRetryAfter = retryAfterSeconds !== null
       && retryAfterSeconds !== undefined
       && Number.isFinite(Number(retryAfterSeconds));
@@ -84,6 +84,8 @@
     // GitHub documents both 403 and 429 for primary/secondary rate limits.
     if (status === 429) return "rate_limit";
     if (status === 403 && (Number(remaining) === 0 || hasRetryAfter)) return "rate_limit";
+    // A secondary limit can be a 403 with quota left and no Retry-After; only its message tells it apart.
+    if (status === 403 && /rate limit/i.test(String(message || ""))) return "rate_limit";
     if (status === 403) return "permission";
     if (status === 404) return "not_found";
     if (status >= 400) return "github";

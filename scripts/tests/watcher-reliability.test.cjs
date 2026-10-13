@@ -266,6 +266,8 @@ test('HTTP 429 is rate limiting and waits for Retry-After before any further req
     assert.ok(h.state.nextPollAt >= Date.now() + 290_000);
   } finally { h.close(); }
   assert.equal(model.classifyApiStatus(429, null, null), 'rate_limit');
+  assert.equal(model.classifyApiStatus(403, 4000, null, 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.'), 'rate_limit');
+  assert.equal(model.classifyApiStatus(403, 4000, null, 'Resource not accessible by integration'), 'permission');
   assert.equal(model.parseRetryAfter('120'), 120);
   assert.ok(Math.abs(model.parseRetryAfter(new Date(Date.now() + 60_000).toUTCString()) - 60) < 2);
   assert.equal(model.parseRetryAfter(null), null);

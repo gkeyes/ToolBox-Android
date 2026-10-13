@@ -483,7 +483,7 @@
     const remainingHeader = headerValue(response.headers, "x-ratelimit-remaining");
     const responseRemaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
     const retryAfterSeconds = model.parseRetryAfter(headerValue(response.headers, "retry-after"));
-    const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds);
+    const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds, errorMessage(response));
     if (failure === "invalid_token") throw createError(failure, "GitHub Token 无效", response.status);
     if (failure === "rate_limit") {
       // Polls stay blocked until rateResetAt. Retry-After is authoritative; the hourly
@@ -513,6 +513,15 @@
       return { data: JSON.parse(response.body), headers: response.headers };
     } catch (_error) {
       throw createError("github", "GitHub API 返回了无法解析的数据", response.status);
+    }
+  }
+
+  function errorMessage(response) {
+    if (!response.status || response.status < 400 || !response.body) return "";
+    try {
+      return String(JSON.parse(response.body)?.message || "");
+    } catch (_error) {
+      return String(response.body).slice(0, 500);
     }
   }
 
