@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: ["codex/refactor-lightweight-v2"]
+    branches: ["main"]
     paths:
       - "**"
       - "!README.md"
@@ -26,7 +26,7 @@ on:
       - "scripts/tests/test_release_startup.py"
       - "scripts/tests/test_reuse_host_verification.py"
   pull_request:
-    branches: ["codex/refactor-lightweight-v2"]
+    branches: ["main"]
     paths:
       - "**"
       - "!README.md"
