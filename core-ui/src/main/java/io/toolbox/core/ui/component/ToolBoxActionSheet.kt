@@ -46,6 +46,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier }
 
+private const val SheetBlurBehindRadiusPx = 60
+
 /** A modal window: taps cannot reach the catalog behind the sheet. */
 @Composable
 fun ToolBoxActionSheet(
@@ -59,7 +61,9 @@ fun ToolBoxActionSheet(
     val colors = ToolBoxThemeTokens.colors
     val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val sheetRadius = ToolBoxThemeTokens.radii.sheet
-    val shape = toolBoxTopShape(sheetRadius)
+    // iOS 27: sheets float inset from the screen edges with every corner rounded.
+    val shape = if (glass) toolBoxShape(sheetRadius) else toolBoxTopShape(sheetRadius)
+    val liveBlur = glass && ToolBoxThemeTokens.materials.realBlurEnabled
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
@@ -76,12 +80,26 @@ fun ToolBoxActionSheet(
             val previousDim = window.attributes.dimAmount
             val previousAnimations = window.attributes.windowAnimations
             window.setDimAmount(0f)
+            // Real material behind the sheet: the system blurs whatever the window covers
+            // (the app, or a WebView), when the device allows cross-window blur.
+            val previousFlags = window.attributes.flags
+            val previousBlur = window.attributes.blurBehindRadius
+            if (liveBlur) {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                window.attributes = window.attributes.apply { blurBehindRadius = SheetBlurBehindRadiusPx }
+            }
             // Entry is driven by Compose springs; the exit is a window animation so it also
             // plays when the caller removes the sheet directly (a selection, a guard, Back).
             window.setWindowAnimations(io.toolbox.core.ui.R.style.ToolBox_SheetWindowAnimation)
             onDispose {
                 window.setDimAmount(previousDim)
                 window.setWindowAnimations(previousAnimations)
+                if (liveBlur) {
+                    if ((previousFlags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) == 0) {
+                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    }
+                    window.attributes = window.attributes.apply { blurBehindRadius = previousBlur }
+                }
             }
         }
         val density = LocalDensity.current
@@ -160,7 +178,8 @@ fun ToolBoxActionSheet(
             }
         }
         Box(Modifier.fillMaxSize()) {
-            val scrim = colors.scrim
+            // The blurred window already separates the sheet, so the dim can be lighter.
+            val scrim = if (liveBlur) colors.scrim.copy(alpha = colors.scrim.alpha * 0.6f) else colors.scrim
             Box(Modifier.matchParentSize()
                 .graphicsLayer { alpha = scrimAlpha.value.coerceIn(0f, 1f) }
                 .background(scrim)
@@ -176,13 +195,26 @@ fun ToolBoxActionSheet(
             ) {
                 Column(
                     modifier.widthIn(max = 560.dp).fillMaxWidth()
+                        .then(
+                            if (glass) {
+                                Modifier
+                                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                                    .padding(horizontal = 8.dp).padding(bottom = 8.dp)
+                            } else Modifier,
+                        )
                         .offset { IntOffset(0, dragOffset.roundToInt()) }
                         .graphicsLayer {
                             // Never overshoot upward: that would open a gap under the sheet.
                             translationY = ((1f - entrance.value) * size.height).coerceAtLeast(0f)
                         }
                         .clip(shape)
-                        .background(containerColor ?: if (glass) ToolBoxThemeTokens.materials.glassFallback else colors.raised)
+                        .background(
+                            containerColor ?: when {
+                                liveBlur -> colors.surface.copy(alpha = 0.78f)
+                                glass -> ToolBoxThemeTokens.materials.glassFallback
+                                else -> colors.raised
+                            },
+                        )
                         .then(
                             if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape)
                             else Modifier.drawWithContent {
@@ -192,7 +224,10 @@ fun ToolBoxActionSheet(
                             },
                         )
                         .pointerInput(Unit) { detectTapGestures { /* Consume taps on the sheet, not its scrim. */ } }
-                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                        .then(
+                            if (glass) Modifier
+                            else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
+                        )
                         .padding(horizontal = 20.dp).padding(bottom = 12.dp)
                         .semantics { paneTitle = title; dismiss { onDismissRequest(); true } },
                 ) {
