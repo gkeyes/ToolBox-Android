@@ -527,6 +527,7 @@ internal fun ToolDetailScreen(
 }
 
 /** App Store style hero: large icon, name and summary, with Open / Favorite / Groups capsules below. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ToolDetailHero(
     tool: CatalogTool,
