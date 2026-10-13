@@ -281,6 +281,11 @@ jobs:
   publish:
     name: Publish verified signed release
     needs: [verify, delivery]
+    # Push and manual runs on main use different run groups; publishing to `dev` is serialized
+    # across both so the commit-order check in publish-test-release.sh can't race another publisher.
+    concurrency:
+      group: toolbox-dev-channel-app
+      cancel-in-progress: false
     if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     permissions:
