@@ -26,7 +26,10 @@ internal suspend fun RuntimeRpcDispatcher.invokeCore(
     params: RpcValue.ObjectValue,
 ): RpcValue = when (method) {
     "ui.toast" -> {
-        requireHandler(handlers.toast).show(params.requiredString("message", rpcMaxResponseBytes))
+        val toast = requireHandler(handlers.toast)
+        val message = params.requiredString("message", rpcMaxResponseBytes)
+        // A toast draws over whatever is in front, so only the visible tool shows one.
+        if (isForegroundTool()) toast.show(message)
         RpcValue.Null
     }
     "crypto.sha256" -> RpcValue.ObjectValue(
@@ -40,6 +43,15 @@ internal suspend fun RuntimeRpcDispatcher.invokeCore(
         RpcValue.Null
     }
     else -> noNativeHandler()
+}
+
+/** Same foreground check as clipboard/share/haptics; a background or hidden tool is not an error here. */
+private suspend fun RuntimeRpcDispatcher.isForegroundTool(): Boolean = try {
+    foregroundInteractionGuard()
+    true
+} catch (notForeground: RuntimeHandlerException) {
+    if (notForeground.errorCode != RuntimeRpcErrorCode.SESSION_ENDED) throw notForeground
+    false
 }
 
 private fun RuntimeBasicDeviceInfo.toRpcValue(): RpcValue.ObjectValue {
