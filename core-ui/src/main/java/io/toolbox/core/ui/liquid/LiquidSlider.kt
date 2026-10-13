@@ -1,7 +1,7 @@
 /*
  * Vendored from Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
  * catalog app @ 65ab177, Copyright Kyant, licensed under the Apache License 2.0
- * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed.
+ * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme darkness exposed as a parameter.
  */
 package io.toolbox.core.ui.liquid
 
@@ -56,9 +56,9 @@ fun LiquidSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     visibilityThreshold: Float,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLightTheme: Boolean = !isSystemInDarkTheme()
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
     val accentColor =
         if (isLightTheme) Color(0xFF0088FF)
         else Color(0xFF0091FF)

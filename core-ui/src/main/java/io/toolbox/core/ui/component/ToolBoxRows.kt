@@ -398,6 +398,8 @@ private fun ToolBoxLiquidSwitch(
                 }
             },
             backdrop = backdrop,
+            // Follow the app's ToolBox theme, which can differ from the system setting.
+            isLightTheme = ToolBoxThemeTokens.colors.surface.luminance() >= 0.5f,
         )
         if (!enabled) {
             // Drawn above the knob, so a disabled switch cannot be dragged or tapped.
