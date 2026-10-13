@@ -572,7 +572,9 @@ internal fun CatalogGroupFolderOverlay(
                 }
                 val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
-                    Modifier.fillMaxWidth()
+                    // Takes only what the header and footer leave, so a two-line title in a short
+                    // window shrinks the scrolling list instead of pushing the buttons off screen.
+                    Modifier.weight(1f, fill = false).fillMaxWidth()
                         .shadow(
                             elevation = 24.dp,
                             shape = panelShape,
