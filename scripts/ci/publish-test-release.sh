@@ -72,11 +72,22 @@ replace_assets() {
 
 case "$kind" in
   app)
-    # Main runs queue in order, but a re-run of an older commit can still finish after a newer one
-    # was published. Never move the test channel back to a commit the published one already contains.
-    current="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
-    if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
-      order="$(gh api "repos/$GH_REPO/compare/${current}...${GITHUB_SHA}" --jq .status 2>/dev/null || echo unknown)"
+    # A re-run of an older commit, or a manual run next to a push run, can finish after a newer
+    # build was published. Never move the test channel back to a commit the published one already
+    # contains, and don't publish when the order can't be established.
+    lookup() {
+      local attempt
+      for attempt in 1 2 3; do
+        gh api "$@" && return 0
+        sleep $((attempt * 5))
+      done
+      return 1
+    }
+    current="$(lookup "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha)" \
+      || { echo "Could not read where $tag points; not publishing." >&2; exit 1; }
+    if [ "$current" != "$GITHUB_SHA" ]; then
+      order="$(lookup "repos/$GH_REPO/compare/${current}...${GITHUB_SHA}" --jq .status)" \
+        || { echo "Could not compare ${current:0:7} with ${GITHUB_SHA:0:7}; not publishing." >&2; exit 1; }
       if [ "$order" = behind ]; then
         echo "The test channel already has ${current:0:7}, which is newer than ${GITHUB_SHA:0:7}; not publishing."
         exit 0
