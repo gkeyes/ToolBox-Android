@@ -1,14 +1,11 @@
 package io.toolbox.host.background
 
 import android.Manifest
-import android.app.AlarmManager
-import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,10 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +76,7 @@ import io.toolbox.host.ui.SectionHeader
 @Composable
 internal fun BackgroundSafeguardsScreen(
     viewModel: SettingsViewModel,
+    safeguards: BackgroundSafeguardsViewModel,
     runningTools: RunningToolsViewModel,
     onBack: () -> Unit,
     onReady: () -> Unit = {},
@@ -91,41 +85,25 @@ internal fun BackgroundSafeguardsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val settings by viewModel.state.collectAsStateWithLifecycle()
     val runningState by runningTools.state.collectAsStateWithLifecycle()
-    var refreshGeneration by remember { mutableIntStateOf(0) }
+    val safeguardsState by safeguards.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(settings.loaded) {
         if (settings.loaded) onReady()
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, safeguards) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                AndroidNotificationGateway.invalidateMiuiSupportCache()
-                refreshGeneration += 1
-            }
+            if (event == Lifecycle.Event.ON_RESUME) safeguards.onResume()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val systemState = remember(refreshGeneration) { readBackgroundSystemState(context) }
-    val focusState by produceState(
-        initialValue = LiveNotificationSupportState(
-            hyperOsProtocolVersion = 0,
-            hyperOsSupported = false,
-            hyperOsPermissionReported = false,
-            androidLiveAvailable = false,
-            androidLiveAllowed = false,
-        ),
-        key1 = refreshGeneration,
-    ) {
-        value = AndroidNotificationGateway(context).liveSupport()
-    }
     val openAppSettings = { context.openFirstSupported(appDetailsIntent(context)) }
     val backgroundLocationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        refreshGeneration += 1
+        safeguards.refresh()
         if (!granted) openAppSettings()
     }
     val foregroundLocationLauncher = rememberLauncherForActivityResult(
@@ -138,13 +116,13 @@ internal fun BackgroundSafeguardsScreen(
     }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { refreshGeneration += 1 }
+    ) { safeguards.refresh() }
 
     BackgroundSafeguardsContent(
         settings = settings,
         runningState = runningState,
-        systemState = systemState,
-        focusState = focusState,
+        systemState = safeguardsState.systemState,
+        focusState = safeguardsState.focusState,
         onBack = onBack,
         onSetBackgroundEnabled = viewModel::setBackgroundEnabled,
         onRetryBackground = viewModel::retryBackgroundUpdate,
@@ -478,27 +456,6 @@ private fun SystemStatusRow(title: String, summary: String) {
             textStyle = ToolBoxThemeTokens.textStyles.metadata,
         )
     }
-}
-
-internal data class BackgroundSystemState(
-    val notificationsAllowed: Boolean,
-    val backgroundLocationAllowed: Boolean,
-    val exactAlarmsAllowed: Boolean,
-    val ignoresBatteryOptimizations: Boolean,
-)
-
-private fun readBackgroundSystemState(context: Context): BackgroundSystemState {
-    val notificationManager = context.getSystemService(NotificationManager::class.java)
-    val alarmManager = context.getSystemService(AlarmManager::class.java)
-    val powerManager = context.getSystemService(PowerManager::class.java)
-    return BackgroundSystemState(
-        notificationsAllowed = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED && notificationManager.areNotificationsEnabled(),
-        backgroundLocationAllowed = context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED,
-        exactAlarmsAllowed = alarmManager.canScheduleExactAlarms(),
-        ignoresBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName),
-    )
 }
 
 private fun LiveNotificationSupportState.summary(): String {

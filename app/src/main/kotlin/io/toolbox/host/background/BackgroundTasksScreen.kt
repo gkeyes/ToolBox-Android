@@ -22,10 +22,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
@@ -38,115 +35,53 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
-import io.toolbox.core.data.BackgroundTaskHistoryPage
 import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.TaskRunResult
 import io.toolbox.core.data.TaskState
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
-import io.toolbox.host.runtime.RuntimeSessionManager
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
-private data class HistoryBoundary(val createdAt: Long, val taskId: String)
-private data class LoadedHistory(val boundary: HistoryBoundary, val tasks: List<BackgroundTask>)
-
 @Composable
 internal fun BackgroundTasksScreen(
-    toolId: String,
-    operations: HostBackgroundOperations,
-    runtimeSessions: RuntimeSessionManager,
+    viewModel: BackgroundTasksViewModel,
     onBack: () -> Unit,
     onReady: () -> Unit = {},
 ) {
-    var activeLoaded by remember(toolId, operations) { mutableStateOf(false) }
-    var historyLoaded by remember(toolId, operations) { mutableStateOf(false) }
-    val activeFlow = remember(toolId, operations) {
-        operations.observeActiveTasks(toolId).onEach { activeLoaded = true }
-    }
-    val historyFlow = remember(toolId, operations) {
-        operations.observeRecentHistory(toolId).onEach { historyLoaded = true }
-    }
-    val active by activeFlow.collectAsStateWithLifecycle(emptyList())
-    val recentHistory by historyFlow.collectAsStateWithLifecycle(BackgroundTaskHistoryPage(emptyList(), false))
-    var olderHistory by remember(toolId, operations) { mutableStateOf(emptyList<BackgroundTask>()) }
-    var loadedBoundary by remember(toolId, operations) { mutableStateOf<HistoryBoundary?>(null) }
-    var moreBeyondBoundary by remember(toolId, operations) { mutableStateOf(false) }
-    var loadingHistory by remember(toolId, operations) { mutableStateOf(false) }
-    var historyError by remember(toolId, operations) { mutableStateOf<String?>(null) }
-    val loadedFlow: Flow<LoadedHistory?> = remember(toolId, operations, loadedBoundary) {
-        loadedBoundary?.let { boundary ->
-            operations.observeHistoryThrough(toolId, boundary.createdAt, boundary.taskId)
-                .map { LoadedHistory(boundary, it) }
-        } ?: flowOf(null)
-    }
-    val loadedHistory by loadedFlow.collectAsStateWithLifecycle(null)
-    val visibleHistory = if (loadedHistory?.boundary == loadedBoundary && loadedBoundary != null) {
-        loadedHistory?.tasks.orEmpty()
-    } else (recentHistory.tasks + olderHistory).distinctBy(BackgroundTask::taskId)
-    val hasMoreHistory = if (loadedBoundary == null) recentHistory.hasMore else moreBeyondBoundary
-    val sessions by runtimeSessions.sessions.collectAsStateWithLifecycle()
-    val page = backgroundTasksPageModel(toolId, (active + visibleHistory).distinctBy(BackgroundTask::taskId), sessions)
-    val scope = rememberCoroutineScope()
-    val actions = remember(toolId, operations, runtimeSessions, scope) {
-        BackgroundTaskActions(scope, { operations.cancel(toolId, it) }, runtimeSessions::stopSession)
-    }
-    val actionState by actions.state.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val actionState by viewModel.actions.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(activeLoaded, historyLoaded) {
-        if (activeLoaded && historyLoaded) onReady()
+    LaunchedEffect(state.loaded) {
+        if (state.loaded) onReady()
     }
 
     BackgroundTasksContent(
-        page = page,
+        page = state.page,
         message = actionState.message,
         cancellingTaskId = actionState.cancellingTaskId,
         stoppingSessionId = actionState.stoppingSessionId,
         onBack = onBack,
         resultFor = { task ->
-            val resultFlow = remember(operations, task.taskId) { operations.observeResult(task.taskId) }
+            val resultFlow = remember(viewModel, task.taskId) { viewModel.result(task.taskId) }
             val result by resultFlow.collectAsStateWithLifecycle(null)
             result
         },
-        onStopSession = { actions.stop(it.sessionId) },
-        onCancelTask = { actions.cancel(it.taskId) },
-        onRetry = if (actionState.retry != null) actions::retry else null,
-        canLoadMoreHistory = hasMoreHistory,
-        loadingHistory = loadingHistory,
-        historyError = historyError,
-        onLoadMoreHistory = {
-            val cursor = loadedBoundary ?: recentHistory.tasks.lastOrNull()?.let { HistoryBoundary(it.createdAt, it.taskId) }
-            if (cursor != null && hasMoreHistory && !loadingHistory) {
-                loadingHistory = true
-                historyError = null
-                scope.launch {
-                    try {
-                        val next = operations.historyBefore(toolId, cursor.createdAt, cursor.taskId)
-                        olderHistory = (olderHistory + next.tasks).distinctBy(BackgroundTask::taskId)
-                        next.tasks.lastOrNull()?.let { loadedBoundary = HistoryBoundary(it.createdAt, it.taskId) }
-                        moreBeyondBoundary = next.hasMore
-                    } catch (_: Exception) {
-                        historyError = "读取历史任务失败，请重试。"
-                    } finally {
-                        loadingHistory = false
-                    }
-                }
-            }
-        },
+        onStopSession = { viewModel.actions.stop(it.sessionId) },
+        onCancelTask = { viewModel.actions.cancel(it.taskId) },
+        onRetry = if (actionState.retry != null) viewModel.actions::retry else null,
+        canLoadMoreHistory = state.canLoadMoreHistory,
+        loadingHistory = state.loadingHistory,
+        historyError = state.historyError,
+        onLoadMoreHistory = viewModel::loadMoreHistory,
     )
 }
 

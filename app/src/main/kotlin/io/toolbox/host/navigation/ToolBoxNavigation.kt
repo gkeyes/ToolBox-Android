@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
@@ -48,8 +49,13 @@ import io.toolbox.host.HostFeatureViewModelFactory
 import io.toolbox.host.PermissionCenterViewModelFactory
 import io.toolbox.host.RuntimeViewModelFactory
 import io.toolbox.host.HostTrace
-import io.toolbox.host.background.BackgroundTasksScreen
+import io.toolbox.host.background.AndroidBackgroundSystemStateSource
 import io.toolbox.host.background.BackgroundSafeguardsScreen
+import io.toolbox.host.background.BackgroundSafeguardsViewModel
+import io.toolbox.host.background.BackgroundSafeguardsViewModelFactory
+import io.toolbox.host.background.BackgroundTasksScreen
+import io.toolbox.host.background.BackgroundTasksViewModel
+import io.toolbox.host.background.BackgroundTasksViewModelFactory
 import io.toolbox.host.catalog.CatalogNavigationIntent
 import io.toolbox.host.catalog.CatalogViewModel
 import io.toolbox.host.catalog.CatalogAction
@@ -60,6 +66,8 @@ import io.toolbox.host.importflow.rememberPackageImportPicker
 import io.toolbox.host.permissions.PermissionCenterScreen
 import io.toolbox.host.permissions.PermissionCenterViewModel
 import io.toolbox.host.permissions.ToolPermissionsScreen
+import io.toolbox.host.permissions.ToolPermissionsViewModel
+import io.toolbox.host.permissions.ToolPermissionsViewModelFactory
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.settings.AppearanceScreen
 import io.toolbox.host.settings.AboutScreen
@@ -546,22 +554,41 @@ private fun SecondaryRouteContent(
             PermissionCenterScreen(permissionViewModel, onBack = onBack, onReady = onReady)
         }
 
-        is BackgroundTasksRoute -> BackgroundTasksScreen(
-            toolId = route.toolId,
-            operations = dependencies.backgroundOperations,
-            runtimeSessions = dependencies.runtimeSessions,
-            onBack = onBack,
-            onReady = onReady,
-        )
+        is BackgroundTasksRoute -> {
+            val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
+            val tasks = remember(route.toolId, dependencies, owner) {
+                ViewModelProvider(
+                    owner,
+                    BackgroundTasksViewModelFactory(
+                        toolId = route.toolId,
+                        operations = dependencies.backgroundOperations,
+                        sessions = dependencies.runtimeSessions.sessions,
+                        stopSession = dependencies.runtimeSessions::stopSession,
+                    ),
+                ).get("background-tasks:${route.toolId}", BackgroundTasksViewModel::class.java)
+            }
+            BackgroundTasksScreen(tasks, onBack = onBack, onReady = onReady)
+        }
 
-        ToolPermissionsRoute -> ToolPermissionsScreen(
-            catalog = dependencies.repositories.catalog,
-            onBack = onBack,
-            onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
-            onReady = onReady,
-            packages = dependencies.packageOperations,
-            grants = dependencies.repositories.grants,
-        )
+        ToolPermissionsRoute -> {
+            val owner = rememberViewModelStoreOwner(parent = viewModelStoreOwner)
+            val permissions = remember(dependencies, owner) {
+                ViewModelProvider(
+                    owner,
+                    ToolPermissionsViewModelFactory(
+                        catalog = dependencies.repositories.catalog,
+                        packages = dependencies.packageOperations,
+                        grants = dependencies.repositories.grants,
+                    ),
+                ).get("host.tool-permissions", ToolPermissionsViewModel::class.java)
+            }
+            ToolPermissionsScreen(
+                viewModel = permissions,
+                onBack = onBack,
+                onSelectTool = { onNavigate(PermissionCenterRoute(it)) },
+                onReady = onReady,
+            )
+        }
 
         AppearanceRoute -> AppearanceScreen(
             viewModel = settingsViewModel,
@@ -571,6 +598,7 @@ private fun SecondaryRouteContent(
 
         BackgroundSafeguardsRoute -> BackgroundSafeguardsScreen(
             viewModel = settingsViewModel,
+            safeguards = rememberBackgroundSafeguardsViewModel(viewModelStoreOwner),
             runningTools = remember(dependencies, viewModelStoreOwner) {
                 ViewModelProvider(viewModelStoreOwner, HostFeatureViewModelFactory(dependencies))
                     .get("host.safeguards-running-tools", RunningToolsViewModel::class.java)
@@ -590,6 +618,17 @@ private fun SecondaryRouteContent(
         SettingsRoute,
         is RuntimeRoute,
         -> error("Route is not a retained secondary page: $route")
+    }
+}
+
+/** Scoped to one visit of the page, like the state the page used to remember itself. */
+@Composable
+private fun rememberBackgroundSafeguardsViewModel(parent: ViewModelStoreOwner): BackgroundSafeguardsViewModel {
+    val context = LocalContext.current.applicationContext
+    val owner = rememberViewModelStoreOwner(parent = parent)
+    return remember(context, owner) {
+        ViewModelProvider(owner, BackgroundSafeguardsViewModelFactory(AndroidBackgroundSystemStateSource(context)))
+            .get("host.background-safeguards", BackgroundSafeguardsViewModel::class.java)
     }
 }
 
