@@ -28,6 +28,7 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
@@ -70,6 +71,7 @@ fun ToolBoxActionSheet(
     modifier: Modifier = Modifier,
     onBackRequest: () -> Unit = onDismissRequest,
     containerColor: Color? = null,
+    frostedBackdrop: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
@@ -81,9 +83,18 @@ fun ToolBoxActionSheet(
     val dark = colors.surface.luminance() < 0.5f
     // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
     val hostView = LocalView.current
-    val frosted = glass && containerColor == null && materials.realBlurEnabled
+    // Pass frostedBackdrop = false over live content (a playing web page): the copy would freeze it.
+    val frosted = glass && containerColor == null && frostedBackdrop && materials.realBlurEnabled
     var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
-    if (frosted) LaunchedEffect(hostView) { backdrop = captureWindowBackdrop(hostView) }
+    val configuration = LocalConfiguration.current
+    if (frosted) LaunchedEffect(hostView, configuration.screenWidthDp, configuration.screenHeightDp) {
+        // A resize (rotation, multi-window) makes the old copy the wrong size: retake it once the
+        // page has laid out at the new size.
+        backdrop = null
+        withFrameNanos { }
+        withFrameNanos { }
+        backdrop = captureWindowBackdrop(hostView)
+    }
     // Opaque until the copy lands, then eases into the lighter glass fill.
     val frost by animateFloatAsState(if (frosted && backdrop != null) 1f else 0f, label = "sheetFrost")
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
