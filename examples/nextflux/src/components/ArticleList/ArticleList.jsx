@@ -32,6 +32,7 @@ const ArticleList = () => {
     showIndicator,
     floatingSidebar,
     articleListStyle,
+    listFontScale,
   } = useStore(settingsState);
   const virtuosoRef = useRef(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
@@ -97,6 +98,7 @@ const ArticleList = () => {
           floatingSidebar ? "md:border-r" : "",
         )}
         data-list-style={articleListStyle === "cards" ? "cards" : "lines"}
+        style={{ "--nf-list-scale": Number.isFinite(listFontScale) ? Math.min(1.3, Math.max(0.85, listFontScale)) : 1 }}
       >
         <ArticleListHeader collapsed={headerCollapsed} />
         {showIndicator && <Indicator virtuosoRef={virtuosoRef} />}

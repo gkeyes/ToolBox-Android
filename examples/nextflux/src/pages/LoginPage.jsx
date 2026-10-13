@@ -1,3 +1,4 @@
+import appIcon from "@/assets/app-icon.svg";
 import {useEffect, useState} from "react";
 import {useNavigate} from "react-router";
 import {authState, login} from "@/stores/authStore";
@@ -15,7 +16,6 @@ import {
 import {
   Eye,
   EyeClosed,
-  Rss,
 } from "lucide-react";
 import {
   WarningIcon as CircleAlert,
@@ -87,9 +87,7 @@ export default function LoginPage() {
         <main className="nf-auth">
             <div className={stagger ? "nf-auth-column ds-stagger" : "nf-auth-column"}>
                 <header className="nf-auth-hero">
-                    <span className="ds-empty-icon is-accent" aria-hidden="true">
-                        <Rss/>
-                    </span>
+                    <img src={appIcon} alt="" className="nf-app-icon nf-auth-icon" aria-hidden="true"/>
                     <h1 className="ds-large-title">NextFlux</h1>
                     <p className="ds-subhead">连接你的 Miniflux，继续阅读。</p>
                 </header>

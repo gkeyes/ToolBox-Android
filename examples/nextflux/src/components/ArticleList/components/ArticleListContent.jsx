@@ -59,11 +59,11 @@ function dayLabel(value, t, language) {
   });
 }
 
-const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day, feedTitle, observeRead }) => {
+const ArticleItem = memo(({ article, index, staggerUntil, active, onOpen, day, dayEnd, feedTitle, observeRead }) => {
   const [stagger] = useState(() => index < STAGGER_LIMIT && performance.now() < staggerUntil);
   return (
     <div
-      className={cn("article-list-item", day && "has-day", stagger && "ds-stagger-item")}
+      className={cn("article-list-item", day && "has-day", dayEnd && "day-end", stagger && "ds-stagger-item")}
       style={stagger ? { animationDelay: `calc(var(--ds-stagger-step) * ${index})` } : undefined}
     >
       {day && <div className="article-day" role="heading" aria-level={2}><span>{day}</span></div>}
@@ -297,6 +297,7 @@ export default function ArticleListContent({
                 day={index === 0 || dayKey(articles[index - 1]?.[dateField]) !== dayKey(article[dateField])
                   ? dayLabel(article[dateField], t, i18n.language)
                   : ""}
+                dayEnd={index === articles.length - 1 || dayKey(articles[index + 1]?.[dateField]) !== dayKey(article[dateField])}
                 feedTitle={feedTitles.get(article.feedId)}
                 observeRead={observeRead}
                 staggerUntil={staggerUntil.current}

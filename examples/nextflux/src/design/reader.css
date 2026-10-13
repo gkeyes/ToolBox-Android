@@ -98,12 +98,6 @@
   }
   .article-list-tabs .tabs__tab[data-selected="true"] { color: var(--ds-text-primary); }
   .article-list-tabs .tabs__tab svg { display: none; }
-  .article-list-tabs .tabs__indicator {
-    inset-block: auto 0 !important;
-    block-size: 2px !important;
-    border-radius: 2px;
-    background: var(--accent) !important;
-  }
 
   /* ---------- Sidebar: a plain source list, not stacked cards ---------- */
   .sidebar-panel,
@@ -131,7 +125,7 @@
   .sidebar-row[data-active="true"] .sidebar-row-icon { color: var(--accent); }
   .sidebar-badge { color: var(--ds-text-tertiary); font-size: var(--ds-text-caption); }
   .sidebar-pref,
-  .sidebar-profile { background: var(--background) !important; }
+  .sidebar-profile { background: var(--surface) !important; }
 
   /* ---------- Sheets: content gets the height, chrome stays thin ---------- */
   .nextflux-mobile-sheet .nextflux-close-header { min-block-size: 40px; }

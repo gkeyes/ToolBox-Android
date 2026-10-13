@@ -309,6 +309,7 @@ export default {
       showIndicator: "Kaydırma çubuğunu göster",
       titleLines: "Başlık satırları",
       textPreviewLines: "Metin satırları",
+      listFontSize: "Liste yazı boyutu",
       showReadingTime: "Tahmini okuma süresi",
       codeBlock: "KOD BLOĞU",
       showLineNumbers: "Satır numaralarını göster",

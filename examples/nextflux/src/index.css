@@ -4,6 +4,7 @@
 @import "./design/components.css";
 @import "./design/views.css";
 @import "./design/reader.css";
+@import "./design/ios27.css";
 
 @config '../tailwind.config.js';
 

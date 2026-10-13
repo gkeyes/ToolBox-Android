@@ -312,6 +312,7 @@ export default {
       showIndicator: "Show scroll indicator",
       titleLines: "Title lines",
       textPreviewLines: "Summary lines",
+      listFontSize: "List text size",
       showReadingTime: "Estimated reading time",
       codeBlock: "CODE BLOCK",
       showLineNumbers: "Show line numbers",

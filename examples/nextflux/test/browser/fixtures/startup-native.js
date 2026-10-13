@@ -18,6 +18,7 @@ export const STORED_SETTINGS = {
   showFavicon: true,
   titleLines: 2,
   textPreviewLines: 2,
+  listFontScale: 1,
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "30",

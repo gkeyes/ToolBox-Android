@@ -29,12 +29,12 @@
   --ds-topbar: 48px;
 
   /* Radii (continuous corners where supported) */
-  --ds-radius-card: 16px;
-  --ds-radius-row: 10px;
-  --ds-radius-button: 12px;
+  --ds-radius-card: 26px;
+  --ds-radius-row: 12px;
+  --ds-radius-button: 999px;
   --ds-radius-control: 10px;
   --ds-radius-small: 8px;
-  --ds-radius-sheet: 24px;
+  --ds-radius-sheet: 34px;
   --field-radius: var(--ds-radius-control);
 
   /* Type scale (rem follows the interface font-size preference) */
@@ -63,8 +63,8 @@
   --ds-accent: var(--accent);
   --ds-on-accent: var(--accent-foreground);
   --ds-accent-tonal: color-mix(in srgb, var(--accent) 12%, transparent);
-  --ds-hairline: rgb(0 0 0 / 0.08);
-  --ds-scrim: rgb(0 0 0 / 0.32);
+  --ds-hairline: rgb(60 60 67 / 0.22);
+  --ds-scrim: rgb(0 0 0 / 0.20);
   --ds-state-layer: rgb(0 0 0 / 0.06);
 
   /* Semantic tones: background / foreground */
@@ -115,7 +115,7 @@
 
 /* Dark mode metrics that do not depend on the selected palette. */
 .dark {
-  --ds-hairline: rgb(255 255 255 / 0.10);
+  --ds-hairline: rgb(84 84 88 / 0.65);
   --ds-scrim: rgb(0 0 0 / 0.50);
   --ds-state-layer: rgb(255 255 255 / 0.06);
   --ds-tone-success-bg: #17351F; --ds-tone-success-fg: #8FD9A8;
@@ -125,92 +125,92 @@
   --ds-tone-neutral-bg: #26282D; --ds-tone-neutral-fg: #C4C8CF;
 }
 
-/* Reader palette — light: white page, neutral grey surfaces, ink text, RSS-orange accent.
-   NextFlux is a reader, so it no longer mirrors the ToolBox host palette. */
+/* iOS 27 palette — light: grouped grey page, white cards, system blue accent.
+   Mirrors the ToolBox host (ToolBoxTheme) so NextFlux reads as part of the app. */
 :root:not([data-theme]),
 [data-theme="light"] {
   color-scheme: light;
-  --ds-on-surface: #1C1B19;
+  --ds-on-surface: #000000;
   --ds-reader: #FFFFFF;
-  --background: #FFFFFF;
-  --foreground: rgb(28 27 25 / 0.92);
-  --surface: #F5F5F7;
+  --background: #F2F2F7;
+  --foreground: rgb(0 0 0 / 0.92);
+  --surface: #FFFFFF;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #EEEEF1;
+  --surface-secondary: #F7F7FA;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #E6E6EA;
+  --surface-tertiary: #EDEDF2;
   --surface-tertiary-foreground: var(--foreground);
   --overlay: #FFFFFF;
   --overlay-foreground: var(--foreground);
-  --muted: rgb(28 27 25 / 0.60);
-  --scrollbar: rgb(28 27 25 / 0.20);
-  --default: #F0F0F3;
-  --default-foreground: rgb(28 27 25 / 0.92);
-  --accent: #C2410C;
+  --muted: #6C6C70;
+  --scrollbar: rgb(60 60 67 / 0.22);
+  --default: rgb(118 118 128 / 0.12);
+  --default-foreground: rgb(0 0 0 / 0.92);
+  --accent: #0064D2;
   --accent-foreground: #FFFFFF;
-  --field-background: #F2F2F5;
+  --field-background: rgb(118 118 128 / 0.12);
   --field-foreground: var(--foreground);
-  --field-placeholder: rgb(28 27 25 / 0.42);
+  --field-placeholder: rgb(60 60 67 / 0.42);
   --field-border: transparent;
-  --success: #1B6B34;
+  --success: #34C759;
   --success-foreground: #FFFFFF;
-  --warning: #8A5300;
+  --warning: #C77700;
   --warning-foreground: #FFFFFF;
-  --danger: #B3261E;
+  --danger: #D70015;
   --danger-foreground: #FFFFFF;
   --segment: #FFFFFF;
   --segment-foreground: var(--foreground);
-  --border: rgb(0 0 0 / 0.08);
-  --separator: rgb(0 0 0 / 0.08);
-  --focus: #C2410C;
-  --link: #C2410C;
-  --backdrop: rgb(0 0 0 / 0.32);
+  --border: rgb(60 60 67 / 0.22);
+  --separator: rgb(60 60 67 / 0.22);
+  --focus: #0064D2;
+  --link: #0064D2;
+  --backdrop: rgb(0 0 0 / 0.20);
   --surface-shadow: none;
   --field-shadow: none;
-  --overlay-shadow: 0 12px 32px rgb(0 0 0 / 0.12), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+  --overlay-shadow: 0 18px 50px rgb(0 0 0 / 0.20), 0 0 0 0.5px rgb(0 0 0 / 0.05);
 }
 
-/* Reader palette — dark: pure black page (OLED), near-black raised surfaces. */
+/* iOS 27 palette — dark: pure black page, #1C1C1E cards, system blue accent. */
 [data-theme="dark"] {
   color-scheme: dark;
-  --ds-on-surface: #F2F0EC;
-  --ds-reader: #000000;
+  --ds-on-surface: #FFFFFF;
+  --ds-reader: #0E0E10;
   --background: #000000;
-  --foreground: rgb(242 240 236 / 0.90);
-  --surface: #121212;
+  --foreground: rgb(255 255 255 / 0.92);
+  --surface: #1C1C1E;
   --surface-foreground: var(--foreground);
-  --surface-secondary: #1C1C1C;
+  --surface-secondary: #2C2C2E;
   --surface-secondary-foreground: var(--foreground);
-  --surface-tertiary: #262626;
+  --surface-tertiary: #3A3A3C;
   --surface-tertiary-foreground: var(--foreground);
-  --overlay: #161616;
+  --overlay: #2C2C2E;
   --overlay-foreground: var(--foreground);
-  --muted: rgb(242 240 236 / 0.60);
-  --scrollbar: rgb(242 240 236 / 0.20);
-  --default: #222222;
-  --default-foreground: rgb(242 240 236 / 0.90);
-  --accent: #FF8A3D;
-  --accent-foreground: #1A0D03;
-  --field-background: #161616;
+  --muted: #98989F;
+  --scrollbar: rgb(235 235 245 / 0.22);
+  --default: rgb(118 118 128 / 0.24);
+  --default-foreground: rgb(255 255 255 / 0.92);
+  --accent: #0A84FF;
+  --accent-foreground: #FFFFFF;
+  --field-background: rgb(118 118 128 / 0.24);
   --field-foreground: var(--foreground);
-  --field-placeholder: rgb(242 240 236 / 0.42);
+  --field-placeholder: rgb(235 235 245 / 0.42);
   --field-border: transparent;
-  --success: #8FD9A8;
-  --success-foreground: #17351F;
-  --warning: #F5C36B;
-  --warning-foreground: #3A2B10;
-  --danger: #F4A7A3;
-  --danger-foreground: #3B1A1A;
-  --segment: #3A3936;
+  --success: #30D158;
+  --success-foreground: #FFFFFF;
+  --warning: #FFB340;
+  --warning-foreground: #1C1C1E;
+  --danger: #FF6961;
+  --danger-foreground: #FFFFFF;
+  --segment: rgb(255 255 255 / 0.18);
   --segment-foreground: var(--foreground);
-  --border: rgb(255 255 255 / 0.10);
-  --separator: rgb(255 255 255 / 0.10);
-  --focus: #FF8A3D;
-  --link: #FF9A52;
-  --backdrop: rgb(0 0 0 / 0.50);
+  --border: rgb(84 84 88 / 0.65);
+  --separator: rgb(84 84 88 / 0.65);
+  --focus: #0A84FF;
+  --link: #0A84FF;
+  --backdrop: rgb(0 0 0 / 0.48);
   --surface-shadow: none;
   --field-shadow: none;
-  --overlay-shadow: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(255 255 255 / 0.10);
+  --overlay-shadow: 0 18px 50px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.10);
 }
 
 /* Before the theme store runs (splash), follow the host's colour scheme directly
@@ -218,47 +218,47 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --ds-on-surface: #F2F0EC;
-    --ds-reader: #000000;
+    --ds-on-surface: #FFFFFF;
+    --ds-reader: #0E0E10;
     --background: #000000;
-    --foreground: rgb(242 240 236 / 0.90);
-    --surface: #121212;
+    --foreground: rgb(255 255 255 / 0.92);
+    --surface: #1C1C1E;
     --surface-foreground: var(--foreground);
-    --surface-secondary: #1C1C1C;
+    --surface-secondary: #2C2C2E;
     --surface-secondary-foreground: var(--foreground);
-    --surface-tertiary: #262626;
+    --surface-tertiary: #3A3A3C;
     --surface-tertiary-foreground: var(--foreground);
-    --overlay: #161616;
+    --overlay: #2C2C2E;
     --overlay-foreground: var(--foreground);
-    --muted: rgb(242 240 236 / 0.60);
-    --scrollbar: rgb(242 240 236 / 0.20);
-    --default: #222222;
-    --default-foreground: rgb(242 240 236 / 0.90);
-    --accent: #FF8A3D;
-    --accent-foreground: #1A0D03;
-    --field-background: #161616;
+    --muted: #98989F;
+    --scrollbar: rgb(235 235 245 / 0.22);
+    --default: rgb(118 118 128 / 0.24);
+    --default-foreground: rgb(255 255 255 / 0.92);
+    --accent: #0A84FF;
+    --accent-foreground: #FFFFFF;
+    --field-background: rgb(118 118 128 / 0.24);
     --field-foreground: var(--foreground);
-    --field-placeholder: rgb(242 240 236 / 0.42);
+    --field-placeholder: rgb(235 235 245 / 0.42);
     --field-border: transparent;
-    --success: #8FD9A8;
-    --success-foreground: #17351F;
-    --warning: #F5C36B;
-    --warning-foreground: #3A2B10;
-    --danger: #F4A7A3;
-    --danger-foreground: #3B1A1A;
-    --segment: #3A3936;
+    --success: #30D158;
+    --success-foreground: #FFFFFF;
+    --warning: #FFB340;
+    --warning-foreground: #1C1C1E;
+    --danger: #FF6961;
+    --danger-foreground: #FFFFFF;
+    --segment: rgb(255 255 255 / 0.18);
     --segment-foreground: var(--foreground);
-    --border: rgb(255 255 255 / 0.10);
-    --separator: rgb(255 255 255 / 0.10);
-    --focus: #FF8A3D;
-    --link: #FF9A52;
-    --backdrop: rgb(0 0 0 / 0.50);
+    --border: rgb(84 84 88 / 0.65);
+    --separator: rgb(84 84 88 / 0.65);
+    --focus: #0A84FF;
+    --link: #0A84FF;
+    --backdrop: rgb(0 0 0 / 0.48);
     --surface-shadow: none;
     --field-shadow: none;
-    --overlay-shadow: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(255 255 255 / 0.10);
-  }
+    --overlay-shadow: 0 18px 50px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.10);
+}
   :root:not([data-theme]) {
-    --ds-hairline: rgb(255 255 255 / 0.10);
-    --ds-scrim: rgb(0 0 0 / 0.50);
+    --ds-hairline: rgb(84 84 88 / 0.65);
+    --ds-scrim: rgb(0 0 0 / 0.48);
   }
 }
