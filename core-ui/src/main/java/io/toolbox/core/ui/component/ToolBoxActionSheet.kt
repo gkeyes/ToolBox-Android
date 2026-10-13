@@ -1,6 +1,7 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.activity.compose.PredictiveBackHandler
@@ -57,6 +59,9 @@ internal val LocalToolBoxInGlassSheet = staticCompositionLocalOf { false }
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
 
+/** Blur of the page copy behind a frosted sheet. */
+private val SheetBlur = 28.dp
+
 /** A modal window: taps cannot reach the catalog behind the sheet. */
 @Composable
 fun ToolBoxActionSheet(
@@ -74,6 +79,13 @@ fun ToolBoxActionSheet(
     val shape = if (glass) toolBoxShape(sheetRadius) else toolBoxTopShape(sheetRadius)
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
+    // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
+    val hostView = LocalView.current
+    val frosted = glass && containerColor == null && materials.realBlurEnabled
+    var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
+    if (frosted) LaunchedEffect(hostView) { backdrop = captureWindowBackdrop(hostView) }
+    // Opaque until the copy lands, then eases into the lighter glass fill.
+    val frost by animateFloatAsState(if (frosted && backdrop != null) 1f else 0f, label = "sheetFrost")
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
@@ -217,8 +229,13 @@ fun ToolBoxActionSheet(
                             ) else Modifier,
                         )
                         .clip(shape)
+                        .then(
+                            backdrop?.takeIf { frosted }?.let {
+                                Modifier.windowBackdrop(it, SheetBlur) { entrance.value; dragOffset }
+                            } ?: Modifier,
+                        )
                         .background(
-                            containerColor ?: if (glass) materials.overlayFallback else colors.raised,
+                            containerColor ?: if (glass) lerp(materials.overlayFallback, materials.overlayFill, frost) else colors.raised,
                         )
                         .then(
                             if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape)
