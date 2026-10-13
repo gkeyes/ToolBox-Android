@@ -266,8 +266,8 @@ test("real Defuddle extraction retains lazy srcset and picture alternate candida
   await openFixture(page);
   const url = "https://media.example.invalid/articles/fulltext";
   const html = sourcePage(`<figure><picture><source srcset="${SECONDARY} 1x"><img data-lazy-srcset="${FALLBACK} 2x" alt="Lazy picture full text"></picture><figcaption>Lazy picture caption</figcaption></figure>`);
-  const result = await page.evaluate((input) => {
-    const extracted = window.mediaCompatFixture.extractWithDefuddle(input);
+  const result = await page.evaluate(async (input) => {
+    const extracted = await window.mediaCompatFixture.extractWithDefuddle(input);
     window.mediaCompatFixture.renderArticle(extracted.content, extracted.metadata.baseUrl);
     return { baseUrl: extracted.metadata.baseUrl, content: extracted.content };
   }, { html, url, baseUrl: url });
@@ -284,8 +284,8 @@ test("DW lazy image templates survive real extraction and keep image alt and cap
   const url = "https://www.dw.com/zh/fixture-article";
   const source = "https://static.dw.com/image/79414331_906.jpg";
   const html = sourcePage('<figure><img data-format="MASTER_LANDSCAPE" data-id="79414331" data-url="https://static.dw.com/image/79414331_${formatId}.jpg" alt="DW supercomputer image" style="padding-bottom:56.25%;height:0;max-height:0"><figcaption>DW supercomputer caption</figcaption></figure>');
-  const extracted = await page.evaluate((input) => {
-    const result = window.mediaCompatFixture.extractWithDefuddle(input);
+  const extracted = await page.evaluate(async (input) => {
+    const result = await window.mediaCompatFixture.extractWithDefuddle(input);
     window.mediaCompatFixture.renderArticle(result.content, result.metadata.baseUrl);
     return { content: result.content, metadata: result.metadata };
   }, { html, url, baseUrl: url });
