@@ -68,9 +68,11 @@ on:
 permissions:
   contents: read
 
+# A push only builds and publishes the tools its own commits changed, so a push run is never cancelled
+# or replaced by a later one. PR and manual runs restart on a new commit.
 concurrency:
-  group: tbx-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tool || 'changed' }}
-  cancel-in-progress: true
+  group: tbx-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tool || 'changed' }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   select:
@@ -219,9 +221,9 @@ jobs:
     permissions:
       contents: write
       actions: read
-    concurrency:
-      group: tbx-test-channel
-      cancel-in-progress: false
+    # No concurrency group: GitHub keeps only one waiting job per group, which would drop a middle run's
+    # tools. Runs publish concurrently instead (each asset swap uses a run-specific temporary name), and
+    # a run skips tools that a newer commit on main changed, so an older package never overwrites a newer one.
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -235,4 +237,11 @@ jobs:
           gh run download "$GITHUB_RUN_ID" --pattern "*-$GITHUB_SHA" -D "$RUNNER_TEMP/artifacts" || true
           mkdir -p "$RUNNER_TEMP/tbx"
           find "$RUNNER_TEMP/artifacts" -name '*.tbx' -exec cp {} "$RUNNER_TEMP/tbx/" \; 2>/dev/null || true
+          # Leave tools that later commits on main changed to those commits' own runs.
+          newer="$(gh api "repos/$GH_REPO/compare/$GITHUB_SHA...main" \
+            --jq 'if .ahead_by == 0 then empty elif (.files | length) >= 300 then "scripts/ci/tbx.py" else .files[].filename end' \
+            | python3 scripts/ci/tbx.py superseded)"
+          for tool in $newer; do
+            find "$RUNNER_TEMP/tbx" -name "$tool-v*.tbx" -print -delete | sed 's/^/Superseded by a newer commit: /'
+          done
           bash scripts/ci/publish-test-release.sh tools "$RUNNER_TEMP/tbx"

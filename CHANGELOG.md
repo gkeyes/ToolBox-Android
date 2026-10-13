@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- CI 加快测试版发布：`main` 上的 Android CI 不再被后来的合并取消（之前连续合并时每次都在发布前被取消，测试版一直不更新）；正式签名构建和冷启动验证与检查任务并行，两者都通过后由新的发布任务校验并更新 `dev`，检查项目不变。TBX CI 的推送运行也不再互相取消或排队丢弃，避免只在某次提交里改动的小工具漏发；发布时跳过之后提交又改过的小工具，旧包不会覆盖新包。
 - SocialCoach 的 Playwright 测试依赖从 1.55.1 升到 1.58.2，与 NextFlux 一致（与 Watcher 使用的 Python 版 1.58.0 同为 Chromium 1208 构建）；只影响浏览器测试，打包产物不变。
 - 构建整理：内置示例清单只在 `scripts/ci/tbx-targets.json` 中以 `bundled` 标记登记一次，`package-examples.sh`、`app` 的打包任务、Android CI 的资源校验和 TBX CI 都从这里读取；TBX CI 的测试文件改为按 glob 自动发现，不再逐一登记（NextFlux 之前漏登记的 `touch-press.spec.js` 也因此纳入定向运行）。Watcher 可靠性测试和三个工具的运行时性能测试移入各自示例的 `tests/` 目录，测试内容不变。测试依赖（JUnit、AndroidX Test、协程测试、WorkManager 测试、Compose UI 测试）改由版本目录统一管理，版本不变。打包产物和界面不变。
 - 新增 MIT 许可证（`LICENSE`），APK 内附许可证；README 注明授权范围：内置的 AndroidLiquidGlass 组件（Apache 2.0）和 `examples/` 下第三方小工具沿用各自许可证，第三方声明补上 AndroidLiquidGlass。
