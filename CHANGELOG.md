@@ -6,6 +6,7 @@
 
 - SocialCoach 的 Playwright 测试依赖从 1.55.1 升到 1.58.2，与 NextFlux 一致（与 Watcher 使用的 Python 版 1.58.0 同为 Chromium 1208 构建）；只影响浏览器测试，打包产物不变。
 - 构建整理：内置示例清单只在 `scripts/ci/tbx-targets.json` 中以 `bundled` 标记登记一次，`package-examples.sh`、`app` 的打包任务、Android CI 的资源校验和 TBX CI 都从这里读取；TBX CI 的测试文件改为按 glob 自动发现，不再逐一登记（NextFlux 之前漏登记的 `touch-press.spec.js` 也因此纳入定向运行）。Watcher 可靠性测试和三个工具的运行时性能测试移入各自示例的 `tests/` 目录，测试内容不变。测试依赖（JUnit、AndroidX Test、协程测试、WorkManager 测试、Compose UI 测试）改由版本目录统一管理，版本不变。打包产物和界面不变。
+- 新增 MIT 许可证（`LICENSE`），APK 内附许可证；README 注明授权范围：内置的 AndroidLiquidGlass 组件（Apache 2.0）和 `examples/` 下第三方小工具沿用各自许可证，第三方声明补上 AndroidLiquidGlass。
 - 工具包和备份 ZIP 检查新增条目重叠检测：本地文件头、数据和数据描述符区间互相重叠的压缩包（重叠条目型 ZIP 炸弹或损坏文件）按格式错误拒绝；不增加任何大小、数量或压缩比上限。新增对应单元测试。
 - 网络流记录的已结束流标识不再只增不减：只保留最近 4096 个用于识别迟到的取消和重复使用，更早的标识按未知标识处理；不限制工具可打开的网络流数量，行为不变。新增对应单元测试。
 - CI 简化：后台任务迁移测试移到 `core-data`，改用已提交的 v1 schema 和 `MigrationTestHelper` 建库，删除 CI 中用 `git archive` 取旧提交重新生成 schema 的步骤，本机也能运行；`verify-host-contract.mjs` 删除检查已废弃字串不存在的“墓碑”断言，保留 API、手册、schema 一致性和桥接/安全检查；WebView 调试工作流不再要求恰好 12 个用例，改为至少运行一个且没有失败、错误或跳过。测试覆盖不变。
