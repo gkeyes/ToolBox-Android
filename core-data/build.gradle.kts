@@ -15,7 +15,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
     // MigrationTestHelper reads the exported Room schemas from the test APK's assets.
-    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    // AGP 9.4's typed library source-set accessor fails its cast; go through the stable DSL interface.
+    ((sourceSets as NamedDomainObjectContainer<*>).getByName("androidTest") as com.android.build.api.dsl.AndroidSourceSet)
+        .assets.directories.add("$projectDir/schemas")
 }
 
 ksp {
