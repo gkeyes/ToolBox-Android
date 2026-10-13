@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- SocialCoach 的 Playwright 测试依赖从 1.55.1 升到 1.58.2，与 NextFlux 一致（与 Watcher 使用的 Python 版 1.58.0 同为 Chromium 1208 构建）；只影响浏览器测试，打包产物不变。
 - 构建整理：内置示例清单只在 `scripts/ci/tbx-targets.json` 中以 `bundled` 标记登记一次，`package-examples.sh`、`app` 的打包任务、Android CI 的资源校验和 TBX CI 都从这里读取；TBX CI 的测试文件改为按 glob 自动发现，不再逐一登记（NextFlux 之前漏登记的 `touch-press.spec.js` 也因此纳入定向运行）。Watcher 可靠性测试和三个工具的运行时性能测试移入各自示例的 `tests/` 目录，测试内容不变。测试依赖（JUnit、AndroidX Test、协程测试、WorkManager 测试、Compose UI 测试）改由版本目录统一管理，版本不变。打包产物和界面不变。
 - 内部整理：后台任务、工具权限和后台保障页面的数据读取移入各自的 ViewModel（分页、任务列表与权限摘要查询、系统权限与实时通知状态读取），页面只负责显示；系统状态仍在打开页面、返回页面和系统权限请求结束时重新读取，界面和行为不变。
 - 内置浏览器代码按职责拆分：界面状态、WebView 创建与回调、工具栏和菜单界面分别放在单独文件，`BrowserActivity` 只负责连接；界面和行为不变。新增工具栏随滚动隐藏/显示的单元测试。
