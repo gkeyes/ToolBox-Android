@@ -76,7 +76,7 @@ async function persist(mutator, expectedRevision) {
 function header(title, subtitle = "", back = null) {
   return h("header", { class: `page-header${back ? " form-header" : ""}` },
     back && iconButton("返回", "back", back),
-    h("div", { class: back ? "" : "brand" }, !back && page === "overview" && h("img", { src: "icon.png", class: "brand-icon", alt: "", width: 44, height: 44 }), h("div", {}, h("h1", {}, title), subtitle && h("p", { class: "page-subtitle" }, subtitle))),
+    h("div", { class: back ? "" : "brand" }, !back && page === "overview" && h("img", { src: "icon.svg", class: "brand-icon", alt: "", width: 44, height: 44 }), h("div", {}, h("h1", {}, title), subtitle && h("p", { class: "page-subtitle" }, subtitle))),
     !back && page === "overview" && iconButton("设置与个人档案", "settings", () => go("mine")));
 }
 

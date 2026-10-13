@@ -7,7 +7,7 @@ version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encodi
 [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'Invalid tool version\n' >&2; exit 1; }
 output_path="${1:-${repo_root}/build/github-actions-watcher/github-actions-watcher-v${version}.tbx}"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-github-actions-watcher.XXXXXX")"
-entries=(manifest.json index.html style.css github-model.js reliability.js app.js icon.png)
+entries=(manifest.json index.html style.css github-model.js reliability.js app.js icon.svg)
 trap 'rm -rf -- "${stage_dir}"' EXIT
 
 for entry in "${entries[@]}"; do
