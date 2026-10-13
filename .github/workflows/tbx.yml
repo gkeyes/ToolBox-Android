@@ -117,9 +117,6 @@ jobs:
         if: ${{ matrix.tool == 'rss-scout' && matrix.full_tests }}
         working-directory: examples/rss-scout
         run: npm test
-      - name: Watcher reliability regressions
-        if: ${{ matrix.tool == 'github-actions-watcher' && matrix.full_tests }}
-        run: node --test examples/github-actions-watcher/tests/reliability.test.cjs
       - name: Watcher selected reliability cases
         if: ${{ matrix.tool == 'github-actions-watcher' && !matrix.full_tests && matrix.watcher_reliability }}
         run: python3 scripts/ci/tbx.py test-unit --tool github-actions-watcher --test-filter tests/reliability.test.cjs
@@ -140,9 +137,6 @@ jobs:
           path: build/watcher-layout/
           if-no-files-found: warn
           retention-days: 14
-      - name: Health records model and AI validator tests
-        if: ${{ matrix.tool == 'health-records' && matrix.full_tests }}
-        run: python3 scripts/ci/tbx.py test-unit --tool health-records --test-filter test/model.test.mjs,test/ai.test.mjs
       - name: SocialCoach unit and corpus regressions
         if: ${{ matrix.tool == 'socialcoach' && matrix.full_tests }}
         working-directory: examples/socialcoach
@@ -151,19 +145,13 @@ jobs:
         if: ${{ matrix.tool == 'nextflux' && matrix.full_tests }}
         working-directory: examples/nextflux
         run: npm test
-      - name: Bundled tool runtime performance regression
-        if: ${{ matrix.full_tests && (matrix.tool == 'stock-monitor' || matrix.tool == 'notification-lab' || matrix.tool == 'kegel-trainer') }}
+      - name: Registered unit tests
+        # Every unit test the tool's globs in scripts/ci/tbx-targets.json discover; tools with an npm test
+        # script run that instead, above.
+        if: ${{ matrix.full_tests && !contains(fromJSON('["rss-scout","socialcoach","nextflux"]'), matrix.tool) }}
         env:
           TBX_TOOL: ${{ matrix.tool }}
-        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter tests/runtime-performance.test.cjs
-      - name: Bundled tool behaviour regressions
-        if: ${{ matrix.full_tests && matrix.bundled }}
-        env:
-          TBX_TOOL: ${{ matrix.tool }}
-        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/bundled-tools.test.cjs
-      - name: 2048 game core and save tests
-        if: ${{ matrix.tool == 'game-2048' && matrix.full_tests }}
-        run: python3 scripts/ci/tbx.py test-unit --tool game-2048 --test-filter tests/game-core.test.cjs,tests/game-save.test.cjs
+        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter all
       - name: Verify selected tool unit cases
         if: ${{ !matrix.full_tests && matrix.unit_test_filter != '' }}
         env:

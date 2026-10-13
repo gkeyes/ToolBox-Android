@@ -47,6 +47,12 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     inputs.file(tbxTargetsFile)
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
     outputs.dir(bundledExamplesDir)
+    // Start from an empty directory so a renamed or un-bundled example's old .tbx is never shipped.
+    val outputDirectory = bundledExamplesDir.get().asFile
+    doFirst {
+        outputDirectory.deleteRecursively()
+        outputDirectory.mkdirs()
+    }
     workingDir = rootProject.projectDir
     environment("TOOLBOX_EXAMPLE_OUTPUT_DIR", bundledExamplesDir.get().asFile.absolutePath)
     commandLine("bash", rootProject.layout.projectDirectory.file("scripts/package-examples.sh").asFile.absolutePath)

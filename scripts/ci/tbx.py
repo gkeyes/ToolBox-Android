@@ -225,8 +225,9 @@ def run_selected_tests(name, test_filter, browser=False):
     registry = targets()
     if "tests" not in registry.get(name, {}):
         raise ValueError(f"No registered tests for {name}")
-    selected = [value.strip() for value in test_filter.split(",") if value.strip()]
     allowed = available_tests(name, "browser" if browser else "unit", registry)
+    # "all" runs every test the registered globs discover, so full validation never misses a new file.
+    selected = sorted(allowed) if test_filter.strip() == "all" else [value.strip() for value in test_filter.split(",") if value.strip()]
     name_patterns = registry[name]["tests"].get("name_patterns", {})
     if not selected or any(value not in allowed for value in selected):
         raise ValueError(f"Invalid selected {'browser' if browser else 'unit'} tests for {name}")

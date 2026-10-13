@@ -259,8 +259,10 @@ internal class ProductionHostPackageOperations(
         else -> "安装未完成，请重试。"
     }
 
-    private companion object {
+    internal companion object {
         const val LOG_TAG = "ToolBoxPackages"
+
+        /** Install order of the shipped examples; BundledExamplesRegistryTest keeps it equal to tbx-targets.json. */
         val BUNDLED_EXAMPLES = listOf(
             "position-calculator.tbx",
             "quick-notes.tbx",
