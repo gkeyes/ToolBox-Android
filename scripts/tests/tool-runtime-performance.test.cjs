@@ -723,6 +723,16 @@ test('Kegel uses its localStorage records when the host handshake fails', async 
   assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 2);
 });
 
+test('Kegel keeps a setting changed during a handshake that then fails', async () => {
+  let reject;
+  const localStorage = legacyStore([]);
+  const h = loadKegel({ toolbox: { ready: () => new Promise((_resolve, fail) => { reject = fail; }) }, localStorage });
+  for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value: '30' } });
+  reject(new Error('no host'));
+  await settleMany();
+  assert.equal(JSON.parse(localStorage.data.get('wenli.preferences.v1')).volume, 30);
+});
+
 test('Kegel vibrates through the browser when host haptics are unavailable', async () => {
   const patterns = [];
   const h = loadKegel({ navigator: { vibrate: (pattern) => { patterns.push(pattern); return true; } } });

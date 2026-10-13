@@ -410,8 +410,14 @@
       storageState = "unavailable";
       return;
     }
-    adoptLoaded(legacy.preferences, [legacy.history]);
+    const changed = adoptLoaded(legacy.preferences, [legacy.history]);
     storageState = "legacy";
+    // Edits or sessions made before this point were only marked dirty: write them now,
+    // since nothing else flushes in legacy mode.
+    if (changed.preferences || changed.history || dirtyKeys.size > 0) {
+      if (writeLegacy()) dirtyKeys.clear();
+      else legacyWriteFailed();
+    }
     syncControls();
     renderSetup();
   }
