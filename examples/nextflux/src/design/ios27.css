@@ -577,3 +577,12 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   position: absolute;
   inset: -18px 0;
 }
+
+/* Sheets paint no close button (drag down closes them), so the title row
+   keeps no space for one. */
+.nextflux-mobile-sheet .nextflux-close-header { padding-inline-end: 1rem; }
+.nextflux-close-button.sr-only {
+  inline-size: 1px; block-size: 1px; min-inline-size: 0; min-block-size: 0;
+  max-inline-size: 1px; max-block-size: 1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%);
+}

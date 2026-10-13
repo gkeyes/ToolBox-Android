@@ -177,7 +177,7 @@ async function dragSheetDown(page, distance = 260) {
 test("More sheet hands off to the editor and every close path frees the page", async ({ page }) => {
   await open(page);
   await editor(page);
-  await page.getByRole("dialog").locator(".nextflux-close-button").click();
+  await page.getByRole("dialog").locator(".nextflux-close-button").dispatchEvent("click");
   await page.mouse.move(0, 0); // the dock under a closed sheet must not keep a hover tooltip
   await expectUncovered(page);
   await editor(page);
