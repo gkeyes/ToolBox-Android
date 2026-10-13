@@ -42,7 +42,7 @@ class PrScopeTest(unittest.TestCase):
         self.assertTrue(run(["scripts/ci/tbx-targets.json"])["gradle"])
 
     def test_invalid_version_values_are_not_exempted(self):
-        for head in (gradle(2147483648, "0.9.0"), gradle(0, "0.9.0"), gradle(67, "0.9")):
+        for head in (gradle(2147483648, "0.9.0"), gradle(0, "0.9.0"), gradle("0000000070", "0.9.0"), gradle(67, "0.9")):
             self.assertTrue(run(["app/build.gradle.kts"], head_build=head)["gradle"], head)
 
     def test_removed_version_lines_are_not_exempted(self):

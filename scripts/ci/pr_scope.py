@@ -28,7 +28,8 @@ WEBVIEW_PATHS = {
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt",
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt",
 }
-VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*(?P<code>\d{1,10})|versionName\s*=\s*"\d+\.\d+\.\d+")\s*$')
+# Kotlin decimal literals have no leading zeros, and versionCode must be positive.
+VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*(?P<code>[1-9]\d{0,9})|versionName\s*=\s*"\d+\.\d+\.\d+")\s*$')
 # Google Play's ceiling for versionCode, well inside the Int that Gradle assigns it to.
 MAX_VERSION_CODE = 2_100_000_000
 
