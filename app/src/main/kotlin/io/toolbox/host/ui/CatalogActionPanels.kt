@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -606,11 +607,13 @@ private fun PanelShortcut(
     val interactionSource = remember { MutableInteractionSource() }
     val haptics = rememberToolBoxHaptics()
     val shape = toolBoxShape(ToolBoxThemeTokens.radii.button)
-    // Selection cross-fades between the tonal and filled looks; no drop shadows on sheets.
+    // Flat iOS 26 capsules: neutral grey fill, solid accent with white text once selected.
+    val dark = colors.surface.luminance() < 0.5f
+    val neutralFill = Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f)
     val container = androidx.compose.animation.animateColorAsState(
-        if (selected) colors.primary else colors.surfaceMuted, ToolBoxMotion.effects(), label = "shortcut container",
+        if (selected) colors.primary else neutralFill, ToolBoxMotion.effects(), label = "shortcut container",
     )
-    val content = if (selected) colors.onPrimary else colors.textPrimary
+    val content = if (selected) Color.White else colors.textPrimary
     Row(
         modifier
             .graphicsLayer { alpha = if (enabled) 1f else 0.46f }

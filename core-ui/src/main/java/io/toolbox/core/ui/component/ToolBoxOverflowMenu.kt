@@ -1,5 +1,6 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -94,24 +95,27 @@ fun ToolBoxOverflowMenu(
                     action?.invoke()
                 },
             ) {
-                ToolBoxContextMenuPanel {
-                    actions.forEachIndexed { index, action ->
-                        if (index > 0) {
-                            val previous = actions[index - 1]
-                            if (action.destructive && !previous.destructive) ToolBoxContextMenuGap()
-                            else ToolBoxContextMenuSeparator()
+                // The nested MiuixTheme may re-provide its own indication; keep the flat iOS highlight.
+                CompositionLocalProvider(LocalIndication provides ToolBoxPressIndication) {
+                    ToolBoxContextMenuPanel {
+                        actions.forEachIndexed { index, action ->
+                            if (index > 0) {
+                                val previous = actions[index - 1]
+                                if (action.destructive && !previous.destructive) ToolBoxContextMenuGap()
+                                else ToolBoxContextMenuSeparator()
+                            }
+                            ToolBoxContextMenuItem(
+                                label = action.label,
+                                icon = action.icon,
+                                destructive = action.destructive,
+                                enabled = expanded,
+                                modifier = Modifier.testTag(action.testTag),
+                                onClick = {
+                                    pendingAction = action.onClick
+                                    expanded = false
+                                },
+                            )
                         }
-                        ToolBoxContextMenuItem(
-                            label = action.label,
-                            icon = action.icon,
-                            destructive = action.destructive,
-                            enabled = expanded,
-                            modifier = Modifier.testTag(action.testTag),
-                            onClick = {
-                                pendingAction = action.onClick
-                                expanded = false
-                            },
-                        )
                     }
                 }
             }
@@ -123,25 +127,27 @@ private val ContextMenuShape = ToolBoxContinuousShape(26.dp)
 private val ContextMenuItemShape = ToolBoxContinuousShape(20.dp)
 
 /**
- * iOS 27 context-menu panel: a 26dp continuous rounded panel with an elevated material fill,
- * a light rim and a soft drop shadow. The outer padding leaves room for the shadow inside the
- * popup window's own clip.
+ * iOS 27 context-menu panel: a 26dp continuous rounded panel of menu glass, a 0.5dp light rim and
+ * a soft drop shadow. The popup is its own window and cannot sample the app's recorded glass layer,
+ * so it draws the denser translucent menu fallback. The outer padding leaves room for the shadow
+ * inside the popup window's own clip.
  */
 @Composable
 private fun ToolBoxContextMenuPanel(content: @Composable ColumnScope.() -> Unit) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
-    val fill = if (dark) Color(0xFF2C2C2E) else Color(0xFFFBFBFD)
+    val fill = materials.menuFallback
     Box(Modifier.padding(10.dp)) {
         Column(
             Modifier
                 .width(250.dp)
                 .shadow(elevation = 18.dp, shape = ContextMenuShape, clip = false,
-                    ambientColor = Color.Black.copy(alpha = 0.22f), spotColor = Color.Black.copy(alpha = 0.22f))
+                    ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                    spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f))
                 .clip(ContextMenuShape)
                 .background(fill)
-                .border(0.5.dp, materials.glassBorder, ContextMenuShape)
+                .border(0.5.dp, materials.overlayBorder, ContextMenuShape)
                 .verticalScroll(rememberScrollState())
                 .padding(6.dp),
             content = content,

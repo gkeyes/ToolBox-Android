@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
@@ -46,7 +48,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier }
 
-private const val SheetBlurBehindRadiusPx = 60
+/**
+ * True inside a glass overlay sheet: grouped cards there use the translucent
+ * [io.toolbox.core.ui.theme.ToolBoxMaterialTokens.sheetCard] fill so the sheet material still reads.
+ */
+internal val LocalToolBoxInGlassSheet = staticCompositionLocalOf { false }
+
+/** Sheets float this far from the screen edges (iOS 26/27). */
+private val SheetInset = 12.dp
 
 /** A modal window: taps cannot reach the catalog behind the sheet. */
 @Composable
@@ -63,7 +72,8 @@ fun ToolBoxActionSheet(
     val sheetRadius = ToolBoxThemeTokens.radii.sheet
     // iOS 27: sheets float inset from the screen edges with every corner rounded.
     val shape = if (glass) toolBoxShape(sheetRadius) else toolBoxTopShape(sheetRadius)
-    val liveBlur = glass && ToolBoxThemeTokens.materials.realBlurEnabled
+    val materials = ToolBoxThemeTokens.materials
+    val dark = colors.surface.luminance() < 0.5f
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
@@ -80,26 +90,16 @@ fun ToolBoxActionSheet(
             val previousDim = window.attributes.dimAmount
             val previousAnimations = window.attributes.windowAnimations
             window.setDimAmount(0f)
-            // Real material behind the sheet: the system blurs whatever the window covers
-            // (the app, or a WebView), when the device allows cross-window blur.
-            val previousFlags = window.attributes.flags
-            val previousBlur = window.attributes.blurBehindRadius
-            if (liveBlur) {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = SheetBlurBehindRadiusPx }
-            }
+            // No window blur: FLAG_BLUR_BEHIND / setBackgroundBlurRadius blur everything under this
+            // full-screen window, but the page behind an iOS 26 sheet stays sharp. The sheet is its
+            // own window, so it cannot sample the app's recorded ToolBoxGlassState layer either;
+            // it draws the denser translucent overlay fallback instead (see ToolBoxMaterialTokens).
             // Entry is driven by Compose springs; the exit is a window animation so it also
             // plays when the caller removes the sheet directly (a selection, a guard, Back).
             window.setWindowAnimations(io.toolbox.core.ui.R.style.ToolBox_SheetWindowAnimation)
             onDispose {
                 window.setDimAmount(previousDim)
                 window.setWindowAnimations(previousAnimations)
-                if (liveBlur) {
-                    if ((previousFlags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) == 0) {
-                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    }
-                    window.attributes = window.attributes.apply { blurBehindRadius = previousBlur }
-                }
             }
         }
         val density = LocalDensity.current
@@ -178,8 +178,8 @@ fun ToolBoxActionSheet(
             }
         }
         Box(Modifier.fillMaxSize()) {
-            // The blurred window already separates the sheet, so the dim can be lighter.
-            val scrim = if (liveBlur) colors.scrim.copy(alpha = colors.scrim.alpha * 0.6f) else colors.scrim
+            // A light scrim (0.18 / 0.42): the page behind stays crisp and readable.
+            val scrim = colors.scrim
             Box(Modifier.matchParentSize()
                 .graphicsLayer { alpha = scrimAlpha.value.coerceIn(0f, 1f) }
                 .background(scrim)
@@ -199,7 +199,7 @@ fun ToolBoxActionSheet(
                             if (glass) {
                                 Modifier
                                     .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-                                    .padding(horizontal = 8.dp).padding(bottom = 8.dp)
+                                    .padding(horizontal = SheetInset).padding(bottom = SheetInset)
                             } else Modifier,
                         )
                         .offset { IntOffset(0, dragOffset.roundToInt()) }
@@ -207,16 +207,21 @@ fun ToolBoxActionSheet(
                             // Never overshoot upward: that would open a gap under the sheet.
                             translationY = ((1f - entrance.value) * size.height).coerceAtLeast(0f)
                         }
+                        .then(
+                            if (glass) Modifier.shadow(
+                                elevation = 24.dp,
+                                shape = shape,
+                                clip = false,
+                                ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                                spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                            ) else Modifier,
+                        )
                         .clip(shape)
                         .background(
-                            containerColor ?: when {
-                                liveBlur -> colors.surface.copy(alpha = 0.78f)
-                                glass -> ToolBoxThemeTokens.materials.glassFallback
-                                else -> colors.raised
-                            },
+                            containerColor ?: if (glass) materials.overlayFallback else colors.raised,
                         )
                         .then(
-                            if (glass) Modifier.border(0.75.dp, ToolBoxThemeTokens.materials.glassBorder, shape)
+                            if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape)
                             else Modifier.drawWithContent {
                                 drawContent()
                                 // Sheets separate by surface tone plus a top hairline, not a shadow.
@@ -233,6 +238,8 @@ fun ToolBoxActionSheet(
                 ) {
                     CompositionLocalProvider(
                         LocalSheetHeaderDrag provides headerDrag,
+                        // Opaque custom containers (browser sheets) keep their opaque cards.
+                        LocalToolBoxInGlassSheet provides (glass && containerColor == null),
                     ) {
                         Box(Modifier.fillMaxWidth()) { content() }
                     }
@@ -247,7 +254,7 @@ fun ToolBoxActionSheet(
 fun ToolBoxActionSheetHeader(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(modifier.fillMaxWidth().then(LocalSheetHeaderDrag.current)) {
         Box(Modifier.fillMaxWidth().height(16.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
+            Box(Modifier.width(36.dp).height(5.dp).clip(RoundedCornerShape(2.5.dp))
                 .background(ToolBoxThemeTokens.colors.textSecondary.copy(alpha = 0.32f)))
         }
         content()

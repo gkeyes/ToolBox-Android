@@ -66,9 +66,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -634,24 +632,18 @@ private fun actionContrast(a: Color, b: Color): Float {
 }
 
 /**
- * Solid fills keep the accent's hue and saturation and only lose brightness until white labels
- * reach 4.5:1, so dark mode gets a deep, saturated button instead of a washed-out tint.
+ * Solid iOS 26 fills (#0064D2 / #0A84FF accent, #D70015 / #FF6961 destructive) carry white
+ * 17sp semibold labels, which count as large text (3:1). Only a very light custom accent
+ * falls back to a dark label.
  */
-private fun solidActionColors(fill: Color): ToolBoxActionColors {
-    if (fill.luminance() > 0.45f) return ToolBoxActionColors(fill, Color(0xFF111214))
-    if (actionContrast(fill, Color.White) >= 4.5f) return ToolBoxActionColors(fill, Color.White)
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(fill.toArgb(), hsv)
-    hsv[1] = (hsv[1] + (1f - hsv[1]) * 0.35f).coerceAtMost(1f)
-    var candidate = fill
-    while (hsv[2] > 0.2f) {
-        hsv[2] -= 0.01f
-        candidate = Color(android.graphics.Color.HSVToColor(hsv))
-        if (actionContrast(candidate, Color.White) >= 4.5f) break
-    }
-    return ToolBoxActionColors(candidate, Color.White)
-}
+private fun solidActionColors(fill: Color): ToolBoxActionColors =
+    ToolBoxActionColors(fill, if (actionContrast(fill, Color.White) >= 2.4f) Color.White else Color(0xFF111214))
 
+/**
+ * Flat iOS 26 button roles: prominent = solid accent; regular = accent at 10% / 18%;
+ * neutral = rgba(118,118,128,0.12 / 0.24); destructive = danger at 10% / 18%; a destructive
+ * confirmation = solid danger. Translucent fills stay translucent so they sit on glass sheets.
+ */
 @Composable
 private fun toolBoxActionColors(tone: ToolBoxActionTone, contentColorOverride: Color?): ToolBoxActionColors {
     val colors = ToolBoxThemeTokens.colors
@@ -659,23 +651,24 @@ private fun toolBoxActionColors(tone: ToolBoxActionTone, contentColorOverride: C
     val accent = colors.primary
     return when (tone) {
         ToolBoxActionTone.Primary -> solidActionColors(accent)
-        ToolBoxActionTone.DangerConfirmation -> solidActionColors(if (dark) Color(0xFFD13438) else colors.danger)
-        ToolBoxActionTone.Tonal -> {
-            val container = accent.copy(alpha = if (dark) 0.22f else 0.12f).compositeOver(colors.surface)
-            val content = contentColorOverride?.takeUnless { it == accent }
-                ?: if (dark) lerp(accent, Color.White, 0.3f) else accent
-            ToolBoxActionColors(container, readableForeground(content, listOf(container)))
-        }
-        ToolBoxActionTone.Neutral -> {
-            val container = if (dark) Color.White.copy(alpha = 0.07f).compositeOver(colors.surfaceMuted) else colors.surfaceMuted
-            ToolBoxActionColors(container, readableForeground(contentColorOverride ?: colors.textPrimary, listOf(container)))
-        }
-        ToolBoxActionTone.Danger -> {
-            val container = colors.softDanger
-            ToolBoxActionColors(container, readableForeground(colors.onSoftDanger, listOf(container)))
-        }
+        ToolBoxActionTone.DangerConfirmation -> solidActionColors(colors.danger)
+        ToolBoxActionTone.Tonal -> ToolBoxActionColors(
+            accent.copy(alpha = if (dark) 0.18f else 0.10f),
+            contentColorOverride ?: accent,
+        )
+        ToolBoxActionTone.Neutral -> ToolBoxActionColors(
+            ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f),
+            contentColorOverride ?: colors.textPrimary,
+        )
+        ToolBoxActionTone.Danger -> ToolBoxActionColors(
+            colors.danger.copy(alpha = if (dark) 0.18f else 0.10f),
+            colors.danger,
+        )
     }
 }
+
+/** iOS tertiarySystemFill base, rgb(118,118,128); callers apply 0.12 light / 0.24 dark. */
+internal val ToolBoxNeutralFill = Color(0xFF767680)
 
 @Composable
 private fun ToolBoxActionButton(
@@ -718,14 +711,10 @@ private fun ToolBoxActionButton(
     val background = if (filled) pressedOverlay.compositeOver(palette.container) else pressedOverlay
 
     val labelStyle = if (compact) {
-        ToolBoxThemeTokens.textStyles.metadata.copy(fontWeight = FontWeight.Medium)
+        ToolBoxThemeTokens.textStyles.metadata.copy(fontWeight = FontWeight.SemiBold)
     } else {
-        ToolBoxThemeTokens.textStyles.body.copy(
-            fontSize = 16.sp,
-            lineHeight = 21.sp,
-            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
-            letterSpacing = 0.1.sp,
-        )
+        // iOS 26 large control label: 17 / SemiBold for every role.
+        ToolBoxThemeTokens.textStyles.headline
     }
 
     Box(
@@ -733,8 +722,10 @@ private fun ToolBoxActionButton(
             .sizeIn(minWidth = 48.dp)
             .heightIn(
                 min = when {
-                    compact -> 40.dp
-                    filled && emphasized -> ToolBoxThemeTokens.sizes.primaryButton
+                    // Small inline capsule, 44 / radius 22.
+                    compact -> 44.dp
+                    // Page and sheet capsules, 50 / radius 25.
+                    filled -> ToolBoxThemeTokens.sizes.primaryButton
                     else -> ToolBoxThemeTokens.sizes.touchTarget
                 },
             )
@@ -757,8 +748,8 @@ private fun ToolBoxActionButton(
                 },
             )
             .padding(
-                horizontal = if (compact) 12.dp else if (filled) 20.dp else 16.dp,
-                vertical = if (compact) 7.dp else 12.dp,
+                horizontal = if (compact) 14.dp else if (filled) 20.dp else 16.dp,
+                vertical = if (compact) 8.dp else 12.dp,
             ),
         contentAlignment = Alignment.Center,
     ) {

@@ -50,8 +50,6 @@ import androidx.compose.ui.window.DialogWindowProvider
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
-private const val AlertBlurBehindRadiusPx = 48
-
 /**
  * Centered iOS 27 alert: a floating 34dp continuous panel with a title, an optional message,
  * optional extra content, and capsule buttons (side by side when both labels are short, stacked
@@ -88,38 +86,23 @@ fun ToolBoxAlertDialog(
         val colors = ToolBoxThemeTokens.colors
         val materials = ToolBoxThemeTokens.materials
         val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
-        val liveBlur = glass && materials.realBlurEnabled
         val dark = colors.surface.luminance() < 0.5f
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        DisposableEffect(window, liveBlur) {
+        DisposableEffect(window) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
-            val previousFlags = window.attributes.flags
-            val previousBlur = window.attributes.blurBehindRadius
             window.setDimAmount(0f)
-            if (liveBlur) {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = AlertBlurBehindRadiusPx }
-            }
-            onDispose {
-                window.setDimAmount(previousDim)
-                if (liveBlur) {
-                    if ((previousFlags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) == 0) {
-                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    }
-                    window.attributes = window.attributes.apply { blurBehindRadius = previousBlur }
-                }
-            }
+            // No window blur: it would blur the whole page, which stays sharp behind an iOS 26
+            // alert. The alert window cannot sample the app's recorded glass layer, so it draws
+            // the denser translucent overlay fallback.
+            onDispose { window.setDimAmount(previousDim) }
         }
         // iOS alerts settle in from slightly larger than final size while the dim fades in.
         val appear = remember { Animatable(0f) }
         LaunchedEffect(appear) { appear.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val shape = toolBoxShape(ToolBoxThemeTokens.radii.dialog)
-        val fill = when {
-            liveBlur -> if (dark) Color(0xCC2C2C2E) else Color.White.copy(alpha = 0.82f)
-            else -> colors.raised
-        }
-        val scrim = if (liveBlur) colors.scrim.copy(alpha = colors.scrim.alpha * 0.7f) else colors.scrim
+        val fill = if (glass) materials.overlayFallback else colors.raised
+        val scrim = colors.scrim
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
@@ -130,8 +113,8 @@ fun ToolBoxAlertDialog(
             Column(
                 modifier
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(horizontal = 40.dp, vertical = 24.dp)
-                    .widthIn(max = 320.dp)
+                    .padding(horizontal = 24.dp, vertical = 24.dp)
+                    .widthIn(min = 300.dp, max = 340.dp)
                     .fillMaxWidth()
                     .graphicsLayer {
                         val progress = appear.value
@@ -144,12 +127,12 @@ fun ToolBoxAlertDialog(
                         elevation = 24.dp,
                         shape = shape,
                         clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.28f),
-                        spotColor = Color.Black.copy(alpha = 0.28f),
+                        ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                        spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                     )
                     .clip(shape)
                     .background(fill)
-                    .border(0.5.dp, materials.glassBorder, shape)
+                    .then(if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape) else Modifier)
                     .semantics { paneTitle = title }
                     .verticalScroll(rememberScrollState())
                     .padding(start = 18.dp, end = 18.dp, top = 26.dp, bottom = 18.dp),
@@ -212,9 +195,10 @@ private fun ToolBoxAlertButtons(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val dark = colors.surface.luminance() < 0.5f
-    val neutralFill = Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f)
+    val neutralFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
+    // Solid iOS 26 confirm: accent (#0064D2 / #0A84FF) or destructive (#D70015 / #FF6961), white label.
     val confirmFill = if (destructive) colors.danger else colors.primary
-    val confirmContent = if (destructive) colors.onDanger else colors.onPrimary
+    val confirmContent = Color.White
     val sideBySide = dismissLabel != null &&
         LocalDensity.current.fontScale < 1.3f &&
         confirmLabel.length <= 6 && dismissLabel.length <= 6
@@ -266,7 +250,7 @@ private fun ToolBoxAlertCapsuleButton(
     val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier
-            .heightIn(min = 50.dp)
+            .heightIn(min = 48.dp)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .toolBoxPressFeedback(interactionSource, enabled = enabled, shape = CircleShape, scale = 0.96f)
             .clip(CircleShape)
@@ -278,7 +262,7 @@ private fun ToolBoxAlertCapsuleButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         ToolBoxText(

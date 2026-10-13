@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -15,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.toolbox.core.ui.component.ToolBoxPressIndication
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
@@ -123,7 +125,7 @@ data class ToolBoxSpacing(
 
 @Immutable
 /**
- * Corner radii (iOS 27): card 26, capsule buttons, control 12, small 8, alert 34, sheet 38. Shapes use continuous-curvature corners via
+ * Corner radii (iOS 27): card 26, capsule buttons, control 12, small 8, alert 34, sheet 34. Shapes use continuous-curvature corners via
  * [io.toolbox.core.ui.component.toolBoxShape].
  */
 data class ToolBoxRadii(
@@ -133,7 +135,7 @@ data class ToolBoxRadii(
     /** Buttons are capsules: the continuous shape clamps the radius to half the height. */
     val button: Dp = 999.dp,
     val card: Dp = 26.dp,
-    val sheet: Dp = 38.dp,
+    val sheet: Dp = 34.dp,
     val dialog: Dp = 34.dp,
     val full: Dp = 999.dp,
 )
@@ -147,8 +149,8 @@ data class ToolBoxSizes(
     val compactChrome: Dp = 56.dp,
     val runtimeChrome: Dp = 52.dp,
     val denseRow: Dp = 56.dp,
-    /** Primary button height. */
-    val primaryButton: Dp = 52.dp,
+    /** Page and sheet capsule button height (iOS 26 large control). */
+    val primaryButton: Dp = 50.dp,
     /** Collapsed top bar height below the status bar. */
     val topBar: Dp = 56.dp,
     /** Expanded large-title block height. */
@@ -170,9 +172,24 @@ data class ToolBoxMaterialTokens(
     val topEdgeFadeEnabled: Boolean,
     val navigationLensEnabled: Boolean,
     val pressFeedbackEnabled: Boolean,
+    /** Floating glass (tab bar, search circle, top round buttons) tint over the refracted page. */
     val glassTint: Color,
     val glassFallback: Color,
     val glassBorder: Color,
+    /**
+     * Overlay glass (sheets, alerts). [overlayFill] is the DualSim recipe for a surface that refracts
+     * a live in-window backdrop; overlays are their own windows and cannot sample the app's
+     * recorded layer, so they draw [overlayFallback], a denser translucent fill of the same tone.
+     */
+    val overlayFill: Color,
+    val overlayFallback: Color,
+    /** Context-menu glass; [menuFallback] for the popup window, as with [overlayFallback]. */
+    val menuFill: Color,
+    val menuFallback: Color,
+    /** 0.5dp rim around overlay glass. */
+    val overlayBorder: Color,
+    /** Grouped cards placed inside an overlay sheet, translucent so the sheet material still reads. */
+    val sheetCard: Color,
     val navigationSelectionTint: Color,
     val navigationSelectionHighlight: Color,
     val navigationSelectionBorder: Color,
@@ -208,7 +225,7 @@ internal val LightToolBoxColors = ToolBoxColorScheme(
     onSoftInfo = Color(0xFF0064D2),
     softNeutral = Color(0xFFEFEFF0),
     onSoftNeutral = Color(0xFF48484A),
-    scrim = Color.Black.copy(alpha = 0.22f),
+    scrim = Color.Black.copy(alpha = 0.18f),
 )
 
 internal val DarkToolBoxColors = ToolBoxColorScheme(
@@ -237,7 +254,7 @@ internal val DarkToolBoxColors = ToolBoxColorScheme(
     onSoftInfo = Color(0xFF64B0FF),
     softNeutral = Color(0xFF2C2C2E),
     onSoftNeutral = Color(0xFFC7C7CC),
-    scrim = Color.Black.copy(alpha = 0.48f),
+    scrim = Color.Black.copy(alpha = 0.42f),
 )
 
 /** Digits keep a fixed advance so counters, sizes and versions do not jitter as they change. */
@@ -276,6 +293,12 @@ private val LocalToolBoxMaterials = staticCompositionLocalOf {
         glassTint = Color.White,
         glassFallback = Color.White,
         glassBorder = Color.Transparent,
+        overlayFill = Color.White,
+        overlayFallback = Color.White,
+        menuFill = Color.White,
+        menuFallback = Color.White,
+        overlayBorder = Color.Transparent,
+        sheetCard = Color.White,
         navigationSelectionTint = Color.Transparent,
         navigationSelectionHighlight = Color.Transparent,
         navigationSelectionBorder = Color.Transparent,
@@ -453,6 +476,8 @@ fun ToolBoxTheme(
             LocalToolBoxThemeStyle provides style,
             LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.Miuix) MiuixRadii else LiquidGlassRadii,
             LocalToolBoxMaterials provides materials,
+            // Flat iOS press highlight, clipped by the pressed element's own shape; never a ripple.
+            LocalIndication provides ToolBoxPressIndication,
             content = content,
         )
     }
@@ -520,25 +545,50 @@ internal fun liquidGlassColors(
     )
 }
 
+/** Dark overlay glass tone, rgb(36,36,40); dark floating glass uses rgb(40,40,44). */
+private val DarkOverlayGlass = Color(0xFF242428)
+private val DarkFloatingGlass = Color(0xFF28282C)
+
 internal fun liquidGlassMaterials(
     colors: ToolBoxColorScheme,
     dark: Boolean,
     enabled: Boolean,
     reduceTransparency: Boolean,
-) = ToolBoxMaterialTokens(
-    realBlurEnabled = enabled && !reduceTransparency,
-    topEdgeFadeEnabled = enabled && !reduceTransparency,
-    navigationLensEnabled = enabled,
-    pressFeedbackEnabled = enabled,
-    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.22f else 0.30f),
-    glassFallback = colors.surface,
-    glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
-    navigationSelectionTint = colors.softPrimary,
-    navigationSelectionHighlight = colors.softPrimary,
-    navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
-    blurRadius = 4.dp,
-    noiseFactor = 0.015f,
-)
+): ToolBoxMaterialTokens {
+    val overlayTone = if (dark) DarkOverlayGlass else Color.White
+    // Reduce Transparency: every material becomes opaque in its own tone.
+    fun overlay(alpha: Float) = overlayTone.copy(alpha = if (reduceTransparency) 1f else alpha)
+    return ToolBoxMaterialTokens(
+        realBlurEnabled = enabled && !reduceTransparency,
+        topEdgeFadeEnabled = enabled && !reduceTransparency,
+        navigationLensEnabled = enabled,
+        pressFeedbackEnabled = enabled,
+        // DualSim floating glass: rgba(255,255,255,0.24) / rgba(40,40,44,0.30).
+        glassTint = when {
+            reduceTransparency -> colors.surface
+            dark -> DarkFloatingGlass.copy(alpha = 0.30f)
+            else -> Color.White.copy(alpha = 0.24f)
+        },
+        glassFallback = colors.surface,
+        glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
+        overlayFill = overlay(if (dark) 0.62f else 0.58f),
+        overlayFallback = overlay(if (dark) 0.84f else 0.86f),
+        menuFill = overlay(if (dark) 0.66f else 0.62f),
+        menuFallback = overlay(if (dark) 0.88f else 0.90f),
+        overlayBorder = if (dark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.60f),
+        sheetCard = when {
+            reduceTransparency -> colors.surface
+            dark -> Color(0xFF767680).copy(alpha = 0.20f)
+            else -> Color.White.copy(alpha = 0.60f)
+        },
+        navigationSelectionTint = colors.softPrimary,
+        navigationSelectionHighlight = colors.softPrimary,
+        navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
+        // Floating glass keeps the page legible: a small blur, the lens does the work.
+        blurRadius = 2.dp,
+        noiseFactor = 0.015f,
+    )
+}
 
 private fun ToolBoxThemeMode.toMiuixMode(): ColorSchemeMode = when (this) {
     ToolBoxThemeMode.System -> ColorSchemeMode.System

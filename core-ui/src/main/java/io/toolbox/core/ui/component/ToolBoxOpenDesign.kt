@@ -18,7 +18,13 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 @Composable
 fun Modifier.toolBoxOpenDesignCanvas(): Modifier = background(ToolBoxThemeTokens.colors.background)
 
-/** iOS inset-grouped card: an opaque secondarySystemGroupedBackground fill, no border or shadow. */
+/**
+ * iOS inset-grouped card: an opaque secondarySystemGroupedBackground fill, no border or shadow.
+ * Inside a glass sheet the card turns translucent (white 0.60 / rgba(118,118,128,0.20)).
+ */
 @Composable
 fun Modifier.toolBoxOpenDesignSurface(shape: Shape): Modifier =
-    clip(shape).background(ToolBoxThemeTokens.colors.surface)
+    clip(shape).background(
+        if (LocalToolBoxInGlassSheet.current) ToolBoxThemeTokens.materials.sheetCard
+        else ToolBoxThemeTokens.colors.surface,
+    )

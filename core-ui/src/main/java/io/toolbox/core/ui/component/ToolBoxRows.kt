@@ -1,7 +1,9 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -384,11 +386,12 @@ private fun ToolBoxLiquidSwitch(
 @Composable
 private fun ToolBoxSolidSwitch(checked: Boolean, enabled: Boolean) {
     val dark = ToolBoxThemeTokens.colors.surface.luminance() < 0.5f
-    val onColor = if (dark) Color(0xFF30D158) else Color(0xFF34C759)
-    val offColor = if (dark) Color(0x5C787880) else Color(0x29787880)
+    // iOS 26 flat switch: #34C759 on; rgba(120,120,128,0.16) / 0.32 off.
+    val onColor = Color(0xFF34C759)
+    val offColor = Color(0xFF787880).copy(alpha = if (dark) 0.32f else 0.16f)
     val track = animateColorAsState(
         targetValue = if (checked) onColor else offColor,
-        animationSpec = ToolBoxMotion.effects(),
+        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
         label = "switch track",
     )
     val knobOffset = animateDpAsState(
