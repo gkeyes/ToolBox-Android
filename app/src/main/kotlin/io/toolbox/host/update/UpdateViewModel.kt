@@ -8,6 +8,7 @@ import io.toolbox.host.HostImportConfirmationKind
 import io.toolbox.host.HostImportResult
 import io.toolbox.host.HostPackageOperations
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,10 @@ internal data class ToolUpdateRow(
 )
 
 internal const val AppProgressKey = "toolbox-app"
+
+/** CI swaps a replaced test asset within seconds; read the feed this many times, this far apart. */
+private const val StaleRetryAttempts = 3
+private const val StaleRetryDelayMs = 5_000L
 
 internal data class UpdateUiState(
     val installed: InstalledBuild,
@@ -131,7 +136,10 @@ internal class UpdateViewModel(
         setProgress(AppProgressKey, 0f)
         viewModelScope.launch {
             try {
-                val file = downloadCurrent(app.asset, AppProgressKey) { feed -> feed.app?.asset }
+                // During CI's swap the test feed falls back to the stable APK; never take that as the replacement.
+                val file = downloadCurrent(app.asset, AppProgressKey) { feed ->
+                    feed.app?.asset?.takeIf { feed.channel != UpdateChannel.TEST || it.name.endsWith("-dev.apk") }
+                }
                 mutableState.update { it.copy(pendingApk = file) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -171,7 +179,9 @@ internal class UpdateViewModel(
     private suspend fun installOne(row: ToolUpdateRow): String? = try {
         toolMutations.withLock {
             val slug = row.available.slug
-            val file = downloadCurrent(row.available.asset, slug) { feed -> feed.tools.firstOrNull { it.slug == slug }?.asset }
+            val file = downloadCurrent(row.available.asset, slug) { feed ->
+                feed.tools.firstOrNull { it.slug == slug && compareVersions(it.version, row.available.version) >= 0 }?.asset
+            }
             setProgress(slug, null)
             try {
                 when (val result = packages.importPackage(FilePackageInput(file))) {
@@ -206,19 +216,25 @@ internal class UpdateViewModel(
 
     /**
      * The test channel is republished on every merge to main, so the asset read a moment ago can be
-     * replaced mid-download. Then read the feed again once and download the asset that replaced it.
+     * replaced mid-download. Then read the feed again and download the asset that replaced it. [pick]
+     * returns null while the replacement is not published yet, which waits briefly and reads again.
      */
     private suspend fun downloadCurrent(asset: ReleaseAsset, key: String, pick: (ChannelFeed) -> ReleaseAsset?): File = try {
         repository.download(asset) { setProgress(key, it) }
     } catch (stale: StaleAssetException) {
         val channel = mutableState.value.channel
-        val feed = repository.fetch(channel)
-        mutableState.update { current ->
-            if (current.channel == channel) current.copy(feed = feed, tools = toolRows(feed, installedTools)) else current
+        var fresh: ReleaseAsset? = null
+        for (attempt in 0 until StaleRetryAttempts) {
+            if (attempt > 0) delay(StaleRetryDelayMs)
+            val feed = repository.fetch(channel)
+            mutableState.update { current ->
+                if (current.channel == channel) current.copy(feed = feed, tools = toolRows(feed, installedTools)) else current
+            }
+            fresh = pick(feed)?.takeIf { it != asset }
+            if (fresh != null) break
         }
-        val fresh = pick(feed) ?: throw stale
         setProgress(key, 0f)
-        repository.download(fresh) { setProgress(key, it) }
+        repository.download(fresh ?: throw stale) { setProgress(key, it) }
     }
 
     private fun setProgress(key: String, value: Float?) = mutableState.update { it.copy(progress = it.progress + (key to value)) }
