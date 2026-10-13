@@ -40,10 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import android.view.ViewTreeObserver
 import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -64,6 +67,9 @@ val LocalToolBoxFrostedSheets = staticCompositionLocalOf { true }
 
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
+
+/** Quiet time after a page redraw before the sheet retakes its copy of the page. */
+private const val BackdropRefreshDelayMs = 120L
 
 /** Blur of the page copy behind a frosted sheet. */
 private val SheetBlur = 28.dp
@@ -103,7 +109,26 @@ fun ToolBoxActionSheet(
         withFrameNanos { }
         withFrameNanos { }
         backdrop = captureWindowBackdrop(hostView)
-        if (backdrop != null) frostAmount.animateTo(1f)
+        if (backdrop != null) launch { frostAmount.animateTo(1f) }
+        // The page can change under an open sheet (a favourite or group toggled from it): retake
+        // the copy shortly after each redraw of the page window.
+        val redraws = Channel<Unit>(Channel.CONFLATED)
+        val listener = ViewTreeObserver.OnDrawListener { redraws.trySend(Unit) }
+        hostView.viewTreeObserver.addOnDrawListener(listener)
+        try {
+            while (true) {
+                redraws.receive()
+                delay(BackdropRefreshDelayMs)
+                captureWindowBackdrop(hostView)?.let { fresh ->
+                    backdrop = fresh
+                    if (frostAmount.targetValue < 1f) launch { frostAmount.animateTo(1f) }
+                }
+                // A draw the copy itself caused is not a page change.
+                redraws.tryReceive()
+            }
+        } finally {
+            hostView.viewTreeObserver.removeOnDrawListener(listener)
+        }
     }
     val frost = if (frosted) frostAmount.value else 0f
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
