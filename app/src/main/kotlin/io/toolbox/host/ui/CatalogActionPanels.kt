@@ -11,6 +11,12 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -142,7 +148,7 @@ private fun CatalogToolOptionsSession(
                                 enabled = !writes.isWriting(target, state),
                                 busy = writes.isWriting(target, state),
                                 modifier = Modifier.testTag("membership:${group.id}"),
-                                icon = { ToolBoxIcon(ToolBoxIconKey.Folder, null) },
+                                icon = { CatalogGroupStyleIcon(group, 36.dp, 20.dp) },
                                 onChecked = { selected ->
                                     writes.submit(target, onAction) { id ->
                                         CatalogAction.SetGroupMembership(group.id, tool.toolId, selected, id)
@@ -254,7 +260,7 @@ private fun CatalogGroupEditorSession(
 private fun DiscardGroupChanges(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
     HostConfirmationContent(
         title = "放弃本次修改？",
-        summary = "分组名称和成员尚未保存。继续编辑会保留当前选择。",
+        summary = "分组名称、样式和成员尚未保存。继续编辑会保留当前选择。",
         confirmLabel = "放弃修改", cancelLabel = "继续编辑", destructive = true,
         onConfirm = onDiscard, onCancel = onKeepEditing,
     )
@@ -271,30 +277,105 @@ internal fun CatalogFavoritesPicker(
     val session = rememberPanelSession()
     val dismiss = { session.dismiss { writes.forgetAll(onAction); onDismiss() } }
     val tools = matchingTools(state.tools, query)
+    val order = remember(state.layout.favorites) { state.layout.favorites.withIndex().associate { (index, id) -> id to index + 1 } }
     ToolBoxActionSheet("添加收藏", dismiss) {
-        LazyColumn(Modifier.fillMaxWidth().testTag("catalog_favorites_picker"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item("heading") { PanelHeader("添加收藏", dismiss) }
-            item("summary") {
-                AppText("已收藏 ${state.layout.favorites.size} 个 · 勾选后自动保存",
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
-            }
-            item("search") {
-                ToolBoxSearchField(query, { query = it }, "搜索工具", Modifier.testTag("catalog_favorites_search"))
-            }
-            if (tools.isEmpty()) item("empty") {
-                PanelEmpty(if (state.tools.isEmpty()) "导入工具后，可在这里添加收藏。" else "没有匹配的工具")
-                if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
-            }
-            items(tools, key = { "tool:${it.toolId}" }) { tool ->
-                val target = "favorite:${tool.toolId}"
-                Column(Modifier.animateItem(fadeInSpec = ToolBoxMotion.effects(), placementSpec = ToolBoxMotion.ItemPlacement, fadeOutSpec = ToolBoxMotion.effects())) {
-                    ToolCheckRow(tool, tool.toolId in state.layout.favorites, !writes.isWriting(target, state), "favorite-tool:${tool.toolId}") { selected ->
-                        writes.submit(target, onAction) { id -> CatalogAction.SetFavorite(tool.toolId, selected, id) }
-                    }
-                    writes.error(target, state)?.let { PanelError(it) }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // Four icons per row on phones, as the home "常用" grid; fewer with very large text.
+            val columns = homeGridColumnCount((maxWidth - 12.dp).value, LocalDensity.current.fontScale).coerceIn(1, 4)
+            val rows = (tools.size + columns - 1) / columns
+            // Grid rows join into one card, so spacing is per item instead of an arrangement.
+            LazyColumn(Modifier.fillMaxWidth().testTag("catalog_favorites_picker")) {
+                item("heading") { Box(Modifier.padding(bottom = 8.dp)) { PanelHeader("添加收藏", dismiss) } }
+                item("summary") {
+                    AppText("已收藏 ${state.layout.favorites.size} 个 · 勾选后自动保存，按勾选顺序显示在首页“常用”",
+                        Modifier.padding(bottom = 8.dp),
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata, color = ToolBoxThemeTokens.colors.textSecondary)
                 }
+                item("search") {
+                    ToolBoxSearchField(query, { query = it }, "搜索工具", Modifier.padding(bottom = 12.dp).testTag("catalog_favorites_search"))
+                }
+                if (tools.isEmpty()) item("empty") {
+                    PanelEmpty(if (state.tools.isEmpty()) "导入工具后，可在这里添加收藏。" else "没有匹配的工具")
+                    if (query.isNotBlank()) ToolBoxTextButton("清除搜索", { query = "" }, outlined = false)
+                }
+                items(rows, key = { "tool-row:$it" }) { row ->
+                    val radius = ToolBoxThemeTokens.radii.card
+                    val shape = RoundedCornerShape(
+                        topStart = if (row == 0) radius else 0.dp, topEnd = if (row == 0) radius else 0.dp,
+                        bottomStart = if (row == rows - 1) radius else 0.dp, bottomEnd = if (row == rows - 1) radius else 0.dp,
+                    )
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(shape).background(ToolBoxThemeTokens.colors.surfaceMuted)
+                            .padding(start = 6.dp, end = 6.dp, top = if (row == 0) 16.dp else 4.dp, bottom = if (row == rows - 1) 14.dp else 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        repeat(columns) { column ->
+                            val tool = tools.getOrNull(row * columns + column)
+                            if (tool == null) Spacer(Modifier.weight(1f))
+                            else key(tool.toolId) {
+                                val target = "favorite:${tool.toolId}"
+                                FavoritePickerCell(
+                                    tool = tool,
+                                    order = order[tool.toolId],
+                                    enabled = !writes.isWriting(target, state),
+                                    busy = writes.isWriting(target, state),
+                                    modifier = Modifier.weight(1f).testTag("favorite-tool:${tool.toolId}"),
+                                ) { selected ->
+                                    writes.submit(target, onAction) { id -> CatalogAction.SetFavorite(tool.toolId, selected, id) }
+                                }
+                            }
+                        }
+                    }
+                }
+                val errors = tools.mapNotNull { tool -> writes.error("favorite:${tool.toolId}", state) }.distinct()
+                if (errors.isNotEmpty()) item("errors") { Column(Modifier.padding(top = 8.dp)) { errors.forEach { PanelError(it) } } }
             }
         }
+    }
+}
+
+@Composable
+private fun FavoritePickerCell(
+    tool: CatalogTool,
+    order: Int?,
+    enabled: Boolean,
+    busy: Boolean,
+    modifier: Modifier = Modifier,
+    onChecked: (Boolean) -> Unit,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val interaction = remember { MutableInteractionSource() }
+    val haptics = rememberToolBoxHaptics()
+    val selected = order != null
+    Column(
+        modifier
+            .toolBoxPressFeedback(interaction, enabled = enabled, shape = toolBoxShape(16.dp))
+            .toggleable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox,
+                onValueChange = { haptics.toggle(it); onChecked(it) })
+            .semantics { if (busy) stateDescription = "正在保存" }
+            .graphicsLayer { alpha = if (enabled) 1f else 0.6f }
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box {
+            CatalogToolGlyph(tool.toolId, tool.versionCode, tool.visual(colors.primary), size = 56.dp)
+            Box(
+                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp).size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) colors.primary else colors.surface)
+                    .then(if (selected) Modifier else Modifier.border(1.5.dp, colors.textTertiary, CircleShape)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (busy) ToolBoxBusyIndicator()
+                else if (order != null) ToolBoxText(order.toString(), style = ToolBoxThemeTokens.textStyles.label.copy(
+                    color = colors.onPrimary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        ToolBoxText(tool.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            style = ToolBoxThemeTokens.textStyles.label.copy(color = colors.textPrimary,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center))
     }
 }
 
@@ -315,6 +396,8 @@ private fun GroupEditorContent(
     var members by draft.members
     var query by draft.query
     var confirmingDelete by draft.confirmingDelete
+    var colorKey by draft.color
+    var iconKey by draft.icon
     var selectedOnly by rememberSaveable(creating, group?.id) { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -376,6 +459,15 @@ private fun GroupEditorContent(
         LazyColumn(Modifier.weight(1f, fill = false).testTag("catalog_group_members"), state = listState,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item("heading") { PanelHeader(if (creating) "新建分组" else "编辑分组", close, onBack = back, enabled = !writing) }
+            item("hero") {
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CatalogGroupStyleIcon(colorKey, iconKey, 84.dp, 44.dp, Modifier.clearAndSetSemantics { })
+                    ToolBoxText(name.ifBlank { if (creating) "新建分组" else group?.name.orEmpty() }, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        style = ToolBoxThemeTokens.textStyles.detailTitle.copy(color = ToolBoxThemeTokens.colors.textPrimary))
+                }
+            }
             item("name") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ToolBoxText("分组名称", style = ToolBoxThemeTokens.textStyles.label.copy(color = ToolBoxThemeTokens.colors.textSecondary))
@@ -400,6 +492,15 @@ private fun GroupEditorContent(
                         },
                     )
                 }
+            }
+            item("style") {
+                GroupStylePicker(
+                    colorKey = colorKey,
+                    iconKey = iconKey,
+                    enabled = !writing,
+                    onColor = { colorKey = it },
+                    onIcon = { iconKey = it },
+                )
             }
             item("search") {
                 ToolBoxSearchField(query, { query = it }, "搜索工具", Modifier.testTag("catalog_member_search"))
@@ -448,7 +549,8 @@ private fun GroupEditorContent(
                 val id = UUID.randomUUID().toString()
                 writes.ids = writes.ids + (EDITOR_WRITE to id)
                 val installed = state.tools.mapTo(HashSet()) { it.toolId }
-                onAction(CatalogAction.SaveGroup(if (creating) null else group?.id, name, members.filter(installed::contains), id))
+                onAction(CatalogAction.SaveGroup(if (creating) null else group?.id, name, members.filter(installed::contains), id,
+                    color = colorKey, icon = iconKey))
             },
         )
     }
@@ -625,41 +727,70 @@ private fun matchingTools(tools: List<CatalogTool>, query: String): List<Catalog
     return if (term.isEmpty()) tools else tools.filter { it.name.contains(term, true) || it.toolId.contains(term, true) }
 }
 
-internal fun groupDraftHasChanges(name: String, members: List<String>, originalName: String, originalMembers: List<String>): Boolean =
-    name.trim() != originalName.trim() || members != originalMembers
+internal fun groupDraftHasChanges(
+    name: String,
+    members: List<String>,
+    originalName: String,
+    originalMembers: List<String>,
+    style: String = "",
+    originalStyle: String = "",
+): Boolean =
+    name.trim() != originalName.trim() || members != originalMembers || style != originalStyle
 
 private class GroupDraft(
     initialName: String,
     initialMembers: List<String>,
     initialQuery: String = "",
     initialConfirmingDelete: Boolean = false,
+    initialColor: String = catalogGroupColor(null).key,
+    initialIcon: String = catalogGroupGlyph(null).key,
 ) {
     val name = mutableStateOf(initialName)
     val members = mutableStateOf(initialMembers)
     val query = mutableStateOf(initialQuery)
     val confirmingDelete = mutableStateOf(initialConfirmingDelete)
+    val color = mutableStateOf(initialColor)
+    val icon = mutableStateOf(initialIcon)
+
+    private val style: String get() = color.value + "/" + icon.value
 
     fun hasChanges(group: CatalogGroup?, initialMembers: List<String> = emptyList()) =
-        groupDraftHasChanges(name.value, members.value, group?.name.orEmpty(), group?.members ?: initialMembers)
+        groupDraftHasChanges(name.value, members.value, group?.name.orEmpty(), group?.members ?: initialMembers,
+            style, group.styleKey())
 
     fun reset(initialMembers: List<String>) {
         name.value = ""
         members.value = initialMembers
         query.value = ""
         confirmingDelete.value = false
+        color.value = catalogGroupColor(null).key
+        icon.value = catalogGroupGlyph(null).key
     }
 
     companion object {
         val Saver = listSaver<GroupDraft, String>(
-            save = { listOf(it.name.value, it.query.value, it.confirmingDelete.value.toString()) + it.members.value },
-            restore = { GroupDraft(it[0], it.drop(3), it[1], it[2].toBoolean()) },
+            save = {
+                listOf(it.name.value, it.query.value, it.confirmingDelete.value.toString(), it.color.value, it.icon.value) +
+                    it.members.value
+            },
+            restore = { GroupDraft(it[0], it.drop(5), it[1], it[2].toBoolean(), it[3], it[4]) },
         )
     }
 }
 
+/** Resolved style of a saved group (defaults for groups saved before styles existed). */
+private fun CatalogGroup?.styleKey(): String =
+    catalogGroupColor(this?.color).key + "/" + catalogGroupGlyph(this?.icon).key
+
 @Composable
 private fun rememberGroupDraft(group: CatalogGroup?, initialMembers: List<String> = emptyList()): GroupDraft =
-    rememberSaveable(saver = GroupDraft.Saver) { GroupDraft(group?.name.orEmpty(), group?.members ?: initialMembers) }
+    rememberSaveable(saver = GroupDraft.Saver) {
+        GroupDraft(
+            group?.name.orEmpty(), group?.members ?: initialMembers,
+            initialColor = catalogGroupColor(group?.color).key,
+            initialIcon = catalogGroupGlyph(group?.icon).key,
+        )
+    }
 
 private class PanelSession {
     var active = true
@@ -723,4 +854,85 @@ private fun rememberPanelWrites(state: CatalogUiState, onAction: (CatalogAction)
         }
     }
     return writes
+}
+
+/** Colour swatches and an icon grid, as in the GroupEditor board. Selection updates the draft only. */
+@Composable
+private fun GroupStylePicker(
+    colorKey: String,
+    iconKey: String,
+    enabled: Boolean,
+    onColor: (String) -> Unit,
+    onIcon: (String) -> Unit,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val selectedColor = catalogGroupColor(colorKey)
+    val selectedGlyph = catalogGroupGlyph(iconKey)
+    val haptics = rememberToolBoxHaptics()
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ToolBoxText("图标与颜色", style = ToolBoxThemeTokens.textStyles.label.copy(color = colors.textSecondary))
+        Column(
+            Modifier.fillMaxWidth()
+                .clip(toolBoxShape(22.dp))
+                .background(colors.surfaceMuted)
+                .padding(horizontal = 10.dp, vertical = 12.dp)
+                .graphicsLayer { alpha = if (enabled) 1f else 0.46f },
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().selectableGroup().testTag("catalog_group_colors")) {
+                CatalogGroupColors.forEach { option ->
+                    val selected = option.key == selectedColor.key
+                    Box(
+                        Modifier.weight(1f).heightIn(min = 44.dp)
+                            .selectable(selected, enabled = enabled, role = Role.RadioButton) {
+                                haptics.tick()
+                                onColor(option.key)
+                            }
+                            .semantics { contentDescription = option.label }
+                            .testTag("catalog_group_color:" + option.key),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            Modifier.size(36.dp)
+                                .then(if (selected) Modifier.border(2.5.dp, option.bottom, CircleShape) else Modifier)
+                                .padding(4.dp)
+                                .clip(CircleShape)
+                                .background(Brush.verticalGradient(listOf(option.top, option.bottom))),
+                        )
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.divider))
+            CatalogGroupGlyphs.chunked(6).forEach { row ->
+                Row(Modifier.fillMaxWidth().selectableGroup()) {
+                    row.forEach { glyph ->
+                        val selected = glyph.key == selectedGlyph.key
+                        Box(
+                            Modifier.weight(1f).heightIn(min = 48.dp)
+                                .selectable(selected, enabled = enabled, role = Role.RadioButton) {
+                                    haptics.tick()
+                                    onIcon(glyph.key)
+                                }
+                                .semantics { contentDescription = glyph.label }
+                                .testTag("catalog_group_icon:" + glyph.key),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier.size(44.dp)
+                                    .clip(toolBoxShape(14.dp))
+                                    .background(
+                                        if (selected) Brush.verticalGradient(listOf(selectedColor.top, selectedColor.bottom))
+                                        else SolidColor(colors.surface),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                ToolBoxIcon(glyph.icon, null, Modifier.size(22.dp),
+                                    tint = if (selected) Color.White else colors.textPrimary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

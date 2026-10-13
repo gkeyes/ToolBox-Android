@@ -23,4 +23,10 @@ class GroupDraftPresentationTest {
     fun newEmptyGroupIsStillADraftOnceNamed() {
         assertTrue(groupDraftHasChanges("Travel", emptyList(), "", emptyList()))
     }
+
+    @Test
+    fun changingOnlyTheStyleRequiresConfirmation() {
+        assertTrue(groupDraftHasChanges("Work", listOf("a"), "Work", listOf("a"), "green/Code", "blue/Folder"))
+        assertFalse(groupDraftHasChanges("Work", listOf("a"), "Work", listOf("a"), "blue/Folder", "blue/Folder"))
+    }
 }

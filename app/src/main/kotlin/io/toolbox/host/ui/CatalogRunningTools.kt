@@ -1,6 +1,22 @@
 package io.toolbox.host.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.toolbox.core.ui.component.toolBoxShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -73,27 +89,35 @@ internal fun CatalogRunningToolsContent(
     val toolsById = remember(tools) { tools.associateBy(CatalogTool::toolId) }
     Column {
         if (state.sessions.isNotEmpty()) {
-            Column(Modifier.testTag("catalog-running-tools")) {
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.testTag("catalog-running-tools").padding(bottom = 20.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     AppText(
                         "正在运行",
-                        modifier = Modifier.weight(1f),
-                        textStyle = ToolBoxThemeTokens.textStyles.headline,
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                        textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold),
                     )
                     Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${state.sessions.size} 个" }) {
                         io.toolbox.core.ui.component.ToolBoxRollingNumber(
                             state.sessions.size,
-                            ToolBoxThemeTokens.textStyles.metadata.copy(color = ToolBoxThemeTokens.colors.textSecondary),
+                            ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp, color = ToolBoxThemeTokens.colors.textSecondary),
                         )
-                        AppText(" 个", color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                        AppText(" 个", color = ToolBoxThemeTokens.colors.textSecondary,
+                            textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp))
                     }
                 }
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.xs))
-                ToolBoxGroupedSurface(Modifier.animateContentSize(io.toolbox.core.ui.component.ToolBoxMotion.spatial())) {
-                    state.sessions.forEachIndexed { index, session ->
+                // Compact capsules scroll sideways, so many sessions never push the home content down.
+                Row(
+                    Modifier.fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .animateContentSize(io.toolbox.core.ui.component.ToolBoxMotion.spatial()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.sessions.forEach { session ->
                         key(session.sessionId) {
-                            RunningToolRow(
+                            RunningToolCapsule(
                                 session = session,
                                 tool = toolsById[session.toolId],
                                 stopping = state.stoppingSessionId == session.sessionId,
@@ -101,11 +125,9 @@ internal fun CatalogRunningToolsContent(
                                 onOpen = { onOpen(session.toolId) },
                                 onStop = { onRequestStop(session.sessionId) },
                             )
-                            if (index != state.sessions.lastIndex) ToolBoxGroupDivider()
                         }
                     }
                 }
-                Spacer(Modifier.height(ToolBoxThemeTokens.spacing.oneHalf))
             }
         }
         state.feedback?.let { feedback ->
@@ -267,3 +289,86 @@ internal fun RunningToolRow(
         )
     }
 }
+
+/** Home "正在运行" capsule: icon with a live dot, name and status, and a separate stop button. */
+@Composable
+internal fun RunningToolCapsule(
+    session: RuntimeBackgroundSessionUi,
+    tool: CatalogTool?,
+    stopping: Boolean,
+    canStop: Boolean,
+    onOpen: () -> Unit,
+    onStop: () -> Unit,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val visual = tool?.visual(colors.primary) ?: ToolVisual(ToolBoxIconKey.Tools, colors.primary)
+    val status = runningToolStatusLines(session, stopping)
+    val openInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val stopInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val capsule = toolBoxShape(ToolBoxThemeTokens.radii.full)
+    Row(
+        Modifier.testTag("catalog-running-${session.sessionId}")
+            .height(52.dp)
+            .clip(capsule)
+            .background(colors.surface)
+            .padding(start = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.fillMaxHeight()
+                .toolBoxPressFeedback(openInteraction, shape = capsule)
+                .clickable(interactionSource = openInteraction, indication = null, role = Role.Button, onClick = onOpen)
+                .semantics(mergeDescendants = true) { contentDescription = "打开${session.toolName}" },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                CatalogToolGlyph(
+                    toolId = session.toolId,
+                    versionCode = tool?.versionCode,
+                    visual = visual,
+                    size = 40.dp,
+                )
+                Box(
+                    Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(12.dp)
+                        .clip(CircleShape).background(colors.surface).padding(2.dp)
+                        .clip(CircleShape).background(if (stopping) colors.textTertiary else Color(0xFF34C759)),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.widthIn(max = 132.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                AppText(
+                    text = session.toolName,
+                    maxLines = 1,
+                    textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
+                )
+                AppText(
+                    text = status.primary,
+                    maxLines = 1,
+                    color = colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 12.sp, lineHeight = 15.sp),
+                )
+            }
+        }
+        Box(
+            Modifier.size(48.dp)
+                .clickable(enabled = canStop, interactionSource = stopInteraction, indication = null, role = Role.Button, onClick = onStop)
+                .semantics {
+                    contentDescription = "停止${session.toolName}后台运行"
+                    stateDescription = if (stopping) "停止中" else "运行中"
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier.size(32.dp)
+                    .toolBoxPressFeedback(stopInteraction, enabled = canStop, shape = CircleShape)
+                    .clip(CircleShape)
+                    .background(colors.surfaceMuted),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (stopping) io.toolbox.core.ui.component.ToolBoxBusyIndicator()
+                else Box(Modifier.size(11.dp).clip(toolBoxShape(3.dp)).background(if (canStop) colors.textSecondary else colors.textTertiary))
+            }
+        }
+    }
+}
+
