@@ -69,7 +69,7 @@ internal fun BrowserScreen(
     )
     // The bars slide over the page on their own layers; the page is resized once per toggle
     // (at once when the bars return, after they are gone when they leave), never per frame.
-    val reserveChrome by remember { derivedStateOf { chromeVisible || chromeShown > 0.001f } }
+    val reserveChrome by remember(chromeVisible) { derivedStateOf { chromeVisible || chromeShown > 0.001f } }
     var topBarHeight by remember { mutableIntStateOf(0) }
     var bottomBarHeight by remember { mutableIntStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current

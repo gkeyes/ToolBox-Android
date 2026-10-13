@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         ToolBoxThemeStyle.LiquidGlass
                     }
+                    LaunchedEffect(themeMode) { applyLaunchNightMode(themeMode) }
                     SideEffect {
                         BrowserAppearance.current = BrowserAppearance(
                             themeMode = themeMode,
@@ -233,6 +234,22 @@ class MainActivity : ComponentActivity() {
             applyHyperOsGestureNavigationImmersion()
         }
     }
+}
+
+
+/**
+ * Android 14+: tell the system which day/night theme this app uses, so the window that shows
+ * before Compose draws (the starting window, the browser's first frame) already has the user's
+ * forced Light or Dark background instead of the device's.
+ */
+private fun ComponentActivity.applyLaunchNightMode(mode: ToolBoxThemeMode) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+    val nightMode = when (mode) {
+        ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> android.app.UiModeManager.MODE_NIGHT_YES
+        ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> android.app.UiModeManager.MODE_NIGHT_NO
+        ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> android.app.UiModeManager.MODE_NIGHT_AUTO
+    }
+    getSystemService(android.app.UiModeManager::class.java)?.setApplicationNightMode(nightMode)
 }
 
 private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
