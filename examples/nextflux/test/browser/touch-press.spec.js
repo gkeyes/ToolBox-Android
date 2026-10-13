@@ -17,17 +17,20 @@ async function open(page, { withoutPointerEvents = false } = {}) {
   if (withoutPointerEvents) {
     // Registered before the app, so neither the compatibility layer nor React sees them.
     await page.addInitScript((types) => {
-      for (const type of types) window.addEventListener(type, (event) => event.stopImmediatePropagation(), { capture: true });
+      window.blockPointerEvents = true;
+      for (const type of types) {
+        window.addEventListener(type, (event) => { if (window.blockPointerEvents) event.stopImmediatePropagation(); }, { capture: true });
+      }
     }, POINTER_EVENTS);
   }
   await page.goto("/touch-press.html");
   await expect(page.getByRole("button", { name: "更多" })).toBeVisible();
 }
 const counts = (page) => page.evaluate(() => ({ ...window.pressCounts }));
-async function tap(page, name) {
+async function tap(page, name, { settle = 150 } = {}) {
   const box = await page.getByRole("button", { name }).boundingBox();
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-  await page.waitForTimeout(150);
+  if (settle) await page.waitForTimeout(settle);
 }
 
 test("a tap without pointer events presses once", async ({ page }) => {
@@ -37,6 +40,15 @@ test("a tap without pointer events presses once", async ({ page }) => {
   await tap(page, "关闭");
   await tap(page, "更多");
   await expect.poll(() => counts(page)).toEqual({ more: 2, close: 1, disabled: 0 });
+});
+
+test("a tap without pointer events right after a normal tap still presses", async ({ page }) => {
+  await open(page, { withoutPointerEvents: true });
+  await page.evaluate(() => { window.blockPointerEvents = false; });
+  await tap(page, "更多", { settle: 0 });
+  await page.evaluate(() => { window.blockPointerEvents = true; });
+  await tap(page, "关闭");
+  await expect.poll(() => counts(page)).toEqual({ more: 1, close: 1, disabled: 0 });
 });
 
 test("a normal tap presses once", async ({ page }) => {

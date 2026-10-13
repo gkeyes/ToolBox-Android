@@ -28,15 +28,16 @@ export function installTouchPressCompat(target = window) {
 
   const onPointerDown = (event) => { pointerAt = event.timeStamp; };
   const onTouchStart = (event) => { touchAt = event.timeStamp; };
-  const onTouchCancel = () => { touchAt = -Infinity; };
+  const forget = () => { touchAt = -Infinity; pointerAt = -Infinity; };
   const onClick = (event) => {
     // Untrusted (programmatic) and keyboard/virtual clicks already work.
     if (!event.isTrusted || event.detail === 0) return;
     const fromTouch = event.pointerType === "touch" || event.timeStamp - touchAt < GESTURE_MS;
     const gestureStart = Number.isFinite(touchAt) ? touchAt : event.timeStamp - GESTURE_MS;
     const hadPointerDown = pointerAt >= gestureStart - POINTER_LEAD_MS;
-    // Each tap is judged once; a cancelled or finished gesture leaves nothing behind.
-    touchAt = -Infinity;
+    // Each tap is judged once; a finished or cancelled gesture leaves nothing
+    // behind, so the next tap never borrows this one's pointerdown.
+    forget();
     if (!fromTouch || hadPointerDown) return;
     const element = event.target instanceof Element ? event.target.closest(PRESSABLE) : null;
     if (!element || isDisabled(element)) return;
@@ -48,12 +49,14 @@ export function installTouchPressCompat(target = window) {
   const capture = { capture: true, passive: true };
   target.addEventListener("pointerdown", onPointerDown, capture);
   target.addEventListener("touchstart", onTouchStart, capture);
-  target.addEventListener("touchcancel", onTouchCancel, capture);
+  target.addEventListener("touchcancel", forget, capture);
+  target.addEventListener("pointercancel", forget, capture);
   target.addEventListener("click", onClick, { capture: true });
   return () => {
     target.removeEventListener("pointerdown", onPointerDown, capture);
     target.removeEventListener("touchstart", onTouchStart, capture);
-    target.removeEventListener("touchcancel", onTouchCancel, capture);
+    target.removeEventListener("touchcancel", forget, capture);
+    target.removeEventListener("pointercancel", forget, capture);
     target.removeEventListener("click", onClick, { capture: true });
   };
 }
