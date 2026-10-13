@@ -41,7 +41,9 @@ async function readerAction(page, name) {
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
 }
 
-async function closeGeometry(button) {
+// Phones float the reader's close as a 44px glass disc painted by ::before;
+// every other close paints a 32px disc. Both keep the 48px target.
+async function closeGeometry(button, painted = 32) {
   await expect(button).toBeVisible();
   // HeroUI dialogs briefly scale during entrance. Visibility alone does not
   // mean that geometry is settled. Poll the same geometry assertions rather
@@ -56,12 +58,13 @@ async function closeGeometry(button) {
       visibleWidth: rounded(rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
       visibleHeight: rounded(rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)),
       clip: style.backgroundClip, shadow: style.boxShadow,
+      glass: getComputedStyle(el, "::before").backdropFilter.includes("blur"),
       centered: Math.abs(svg.x + svg.width / 2 - (rect.x + rect.width / 2)) < 1 &&
         Math.abs(svg.y + svg.height / 2 - (rect.y + rect.height / 2)) < 1,
     };
-  }), { message: "settled close control must keep a 48px target and centered 32px painted disc" }).toEqual({
-    width: 48, height: 48, visibleWidth: 32, visibleHeight: 32,
-    clip: "content-box", shadow: "none", centered: true,
+  }), { message: `settled close control must keep a 48px target and centered ${painted}px painted disc` }).toEqual({
+    width: 48, height: 48, visibleWidth: painted, visibleHeight: painted,
+    clip: "content-box", shadow: "none", glass: painted === 44, centered: true,
   });
 }
 
@@ -90,7 +93,7 @@ async function bounds(page) {
 for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393, "dark", 1], [820, "light", 1], [393, "dark", 1.5]]) {
   test(`compact toolbar ${width}px ${theme} font ${scale}`, async ({ page }, info) => {
     await open(page, width, theme, scale);
-    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"));
+    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"), width < 768 ? 44 : 32);
     await bounds(page);
     if (width < 768) {
       await page.getByRole("button", { name: "更多", exact: true }).click();

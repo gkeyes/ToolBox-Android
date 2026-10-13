@@ -100,11 +100,16 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   min-block-size: 60px;
   padding: 8px 16px;
 }
+/* The shared 48px toolbar-button box sets min/max sizes too; override all of
+   them so the trigger is a true 44px circle level with the capsules. */
 .article-list-header > [data-sidebar="trigger"] {
-  flex: none;
+  flex: 0 0 44px;
   inline-size: 44px;
   min-inline-size: 44px;
+  max-inline-size: 44px;
   block-size: 44px;
+  min-block-size: 44px;
+  max-block-size: 44px;
   border-radius: 50%;
 }
 .article-list-header > [data-sidebar="trigger"] svg { color: var(--ds-on-surface); }
@@ -115,9 +120,13 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   border-radius: 999px;
 }
 .article-list-actions .nextflux-toolbar-button {
+  flex: 0 0 40px;
   inline-size: 40px;
   min-inline-size: 40px;
+  max-inline-size: 40px;
   block-size: 40px;
+  min-block-size: 40px;
+  max-block-size: 40px;
   border-radius: 50%;
 }
 .article-list-actions .nextflux-toolbar-button svg { color: var(--ds-on-surface); }
@@ -333,6 +342,32 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   .dark .action-buttons .reader-dock { box-shadow: var(--nf-glass-rim); }
   .action-buttons .reader-dock .nextflux-toolbar-button::after { color: var(--ds-on-surface); font-weight: 600; }
   .action-buttons .reader-topbar-row { background: transparent; }
+  /* No bar behind the floating close button, so no hairline under it either
+     (it also outlived the hidden bar while reading). */
+  .action-buttons.reader-topbar::after { display: none; }
+  /* Close: a floating 44px glass disc like the list header's buttons, painted
+     by ::before so the whole 48px target stays pressable. */
+  .action-buttons .reader-topbar-row .nextflux-close-button {
+    position: relative;
+    isolation: isolate;
+    padding: 2px;
+    background-color: transparent;
+    color: var(--ds-on-surface);
+  }
+  .action-buttons .reader-topbar-row .nextflux-close-button::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: 50%;
+    background: var(--nf-glass);
+    -webkit-backdrop-filter: var(--nf-glass-filter);
+    backdrop-filter: var(--nf-glass-filter);
+    box-shadow: var(--nf-glass-rim);
+    pointer-events: none;
+  }
+  .action-buttons .reader-topbar-row .nextflux-close-button[data-pressed="true"]::before { transform: scale(0.94); }
+  .action-buttons .reader-topbar-row .nextflux-close-button > svg { inline-size: 18px; block-size: 18px; }
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     background: var(--nf-glass);
     -webkit-backdrop-filter: var(--nf-glass-filter);
@@ -340,19 +375,20 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     box-shadow: var(--nf-glass-rim);
   }
 }
-/* "More" sheet: a 3-up grid of cards, each a coloured tile over its label. */
-.reader-more-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 4px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+/* "More" sheet: compact cards, as many per row as fit (five on a phone). */
+.reader-more-grid { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 8px; padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
 .button.reader-more-item {
   inline-size: 100%;
-  min-block-size: 96px;
-  gap: 10px;
-  padding: 16px 4px 12px;
-  border-radius: 22px;
+  min-inline-size: 0;
+  min-block-size: 68px;
+  gap: 6px;
+  padding: 10px 2px 8px;
+  border-radius: 16px;
   background: var(--nf-sheet-card);
 }
 .button.reader-more-item[data-disabled="true"] { opacity: 0.45; }
-.reader-more-icon.nf-tile { inline-size: 34px; block-size: 34px; border-radius: 9px; }
-.reader-more-icon.nf-tile svg { inline-size: 20px; block-size: 20px; }
+.reader-more-icon.nf-tile { inline-size: 30px; block-size: 30px; border-radius: 8px; }
+.reader-more-icon.nf-tile svg { inline-size: 18px; block-size: 18px; }
 .reader-more-label { font-size: 0.75rem; color: var(--ds-on-surface); }
 
 /* ---------------------------------------------------------------- menus & sheets */
@@ -392,7 +428,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .nf-tile[data-tone="neutral"] { background: linear-gradient(160deg, #A1A1A8, #6E6E76); color: #FFFFFF; }
 
 /* ---------------------------------------------------------------- switches */
-/* Flat iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. */
+/* Flat iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. These
+   variables are the only switch geometry; nothing else may redefine them. */
 :root { --nf-switch-w: 64px; --nf-switch-h: 28px; --nf-switch-thumb: 24px; --nf-switch-knob-w: 40px; }
 .switch .switch__control,
 .nf-switch.switch__control {
@@ -519,3 +556,11 @@ html .nextflux-modal-surface { background: var(--nf-sheet-bg); }
 .nf-field :is(.input, .input-group) { min-block-size: 50px; }
 .ds-group-card .nf-field :is(.input, .textarea, .input-group) { background: var(--field-background); }
 .nextflux-close-header :is(h2, h3, [slot="title"]) { font-size: 1.0625rem; font-weight: 600; }
+
+/* ---------------------------------------------------------------- forms */
+/* A fieldset is min-content wide by default, so one long unbreakable value
+   (a feed URL, a rule) pushed whole forms past the edge on narrow phones. */
+fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
+/* Inputs inside a group keep their intrinsic ~20ch width unless allowed to
+   shrink, which pushed the trailing copy button off narrow screens. */
+.input-group > :is(input, .input-group__input) { min-inline-size: 0; flex: 1 1 0; }
