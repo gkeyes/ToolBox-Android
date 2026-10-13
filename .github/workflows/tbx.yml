@@ -143,6 +143,7 @@ jobs:
           name: watcher-layout-${{ github.sha }}
           path: build/watcher-layout/
           if-no-files-found: warn
+          retention-days: 14
       - name: Health records model and AI validator tests
         if: ${{ matrix.tool == 'health-records' && matrix.full_tests }}
         run: python3 scripts/ci/tbx.py test-unit --tool health-records --test-filter test/model.test.mjs,test/ai.test.mjs
@@ -195,6 +196,7 @@ jobs:
           name: nextflux-reading-checks-${{ github.sha }}
           path: examples/nextflux/test/browser/test-results/reading-results.json
           if-no-files-found: warn
+          retention-days: 14
       - name: Build and verify registered TBX
         env:
           TBX_TOOL: ${{ matrix.tool }}
@@ -219,11 +221,13 @@ jobs:
           name: socialcoach-browser-${{ github.sha }}
           path: examples/socialcoach/test-results/
           if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.tool }}-${{ github.sha }}
           path: build/tbx/${{ matrix.tool }}/delivery/
           if-no-files-found: error
+          retention-days: 14
 
   publish-test:
     name: Publish TBX to the in-app test channel

@@ -194,12 +194,14 @@ jobs:
             build/emulator-evidence/
           if-no-files-found: warn
           retention-days: 14
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() }}
         with:
           name: apk-${{ github.sha }}
           path: app/build/outputs/apk/
           if-no-files-found: warn
+          retention-days: 7
 
   delivery:
     name: Package stable signed release
@@ -295,6 +297,8 @@ jobs:
           name: toolbox-v${{ env.TOOLBOX_VERSION }}-release-${{ github.sha }}
           path: build/ci-delivery/
           if-no-files-found: error
+          # Publish release reads it by run id; published builds also live on their Release.
+          retention-days: 30
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}
@@ -312,3 +316,4 @@ jobs:
             build/release-evidence/
             app/build/outputs/mapping/release/
           if-no-files-found: warn
+          retention-days: 30
