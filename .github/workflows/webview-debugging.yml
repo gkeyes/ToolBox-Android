@@ -20,8 +20,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # app/build.gradle.kts is watched for its debugging flags; a PR that only raises the version number
+  # there skips the emulator runs (scripts/ci/pr_scope.py). Manual runs always verify.
+  select:
+    name: Select
+    runs-on: ubuntu-24.04
+    outputs:
+      webview: ${{ steps.scope.outputs.webview || 'true' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: scope
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/pr_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
+
   verify:
     name: Verify ${{ matrix.variant }} debugging state on a user Android image
+    needs: select
+    if: ${{ needs.select.outputs.webview == 'true' }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

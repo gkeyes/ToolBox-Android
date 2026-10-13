@@ -1,6 +1,8 @@
 name: Android CI
 
-# Every push and pull request runs the contract checks, lint, both APK builds and every JVM unit test.
+# Every push and pull request runs the contract checks and script tests. Lint, both APK builds and every
+# JVM unit test run on every push to main, and on a pull request whose changes Gradle compiles or packages
+# (scripts/ci/pr_scope.py; a PR that only touches CI scripts, docs or the version number skips them).
 # Emulator behavior tests are opt-in from a manual run. Pushes to the default branch also build the
 # signed release and cold-start it on an emulator before uploading it.
 on:
@@ -70,6 +72,19 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          # A pull request compares its head with the commit it branched from.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+      - name: Select what this pull request needs
+        id: pr
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pr_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
+          grep -q '^gradle=true' "$GITHUB_OUTPUT" \
+            || echo "Gradle build and JVM tests skipped: nothing this PR changed is compiled or packaged." >> "$GITHUB_STEP_SUMMARY"
       - name: Select emulator scope
         id: scope
         env:
@@ -98,20 +113,25 @@ jobs:
       - name: Verify CI and packaging scripts
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
       - name: Lint, build APKs and compile emulator tests
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         run: >-
           ./gradlew --no-daemon :app:lint :app:assembleDebug :app:assembleRelease
           :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
           :core-data:compileDebugAndroidTestKotlin
       - name: Run all JVM unit tests
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         run: >-
           ./gradlew --no-daemon :core-data:testDebugUnitTest :core-ui:testDebugUnitTest
           :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :tool-api:testDebugUnitTest
@@ -141,7 +161,7 @@ jobs:
             adb shell dumpsys webviewupdate > build/emulator-evidence/webview-provider.txt
             bash scripts/ci/run-android-behavior.sh
       - name: Retain unit test reports
-        if: ${{ always() }}
+        if: ${{ always() && steps.pr.outputs.gradle != 'false' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: unit-tests-${{ github.sha }}
@@ -168,7 +188,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: ${{ always() }}
+        if: ${{ always() && steps.pr.outputs.gradle != 'false' }}
         with:
           name: apk-${{ github.sha }}
           path: app/build/outputs/apk/
