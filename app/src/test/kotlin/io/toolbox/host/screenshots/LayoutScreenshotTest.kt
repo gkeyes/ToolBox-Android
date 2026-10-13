@@ -134,12 +134,14 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         val fontPx = with(layout.layoutInput.density) { layout.layoutInput.style.fontSize.toPx() }
         // Text hidden without an ellipsis: lines dropped by maxLines/height, or a line wider than its box.
         val last = layout.lineCount - 1
-        val hidden = layout.didOverflowWidth || layout.getLineEnd(last, visibleEnd = false) < layout.layoutInput.text.length
+        val inkWidth = (0..last).maxOf { layout.getLineRight(it) - layout.getLineLeft(it) }
+        val widerThanBox = inkWidth > layout.size.width + 2f
+        val hidden = widerThanBox || layout.getLineEnd(last, visibleEnd = false) < layout.layoutInput.text.length
         val cut = hidden && !layout.isLineEllipsized(last) && layout.layoutInput.overflow != TextOverflow.Ellipsis
         // A label narrower than ~2.5 glyphs that still wraps is the "one character per line" failure.
         val squeezed = layout.lineCount > 1 && fontPx > 0 && layout.size.width < fontPx * 2.5f
         return when {
-            cut -> "clipped: \"$text\" (${layout.size.width}x${layout.size.height}px, ${layout.lineCount} lines)"
+            cut -> "clipped: \"$text\" (box ${layout.size.width}x${layout.size.height}px, text ${inkWidth.toInt()}px, ${layout.lineCount} lines)"
             squeezed -> "squeezed: \"$text\" (${layout.size.width}px wide, ${layout.lineCount} lines)"
             else -> null
         }
