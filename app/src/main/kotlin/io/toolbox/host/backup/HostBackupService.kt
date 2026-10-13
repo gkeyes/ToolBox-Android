@@ -60,14 +60,20 @@ internal class HostBackupService(
                 val warnings = mutableListOf<String>()
                 val contents = packageLock.run {
                     // Only the row reads share the Room transaction, so the backup is one consistent
-                    // snapshot. Bundle repacking, package validation, Keystore decryption and file
-                    // writes run after it commits; the package lock still keeps bundles stable.
-                    val snapshot = repositories.mutations.run { database.transaction { readExportSnapshot() } }
+                    // snapshot across all tools. Rows are paged into per-tool spill files there, so
+                    // memory stays bounded however much a tool stores. Bundle repacking, package
+                    // validation, Keystore decryption and the backup's own file writes run after it
+                    // commits; the package lock still keeps bundles stable. The spill lives in the
+                    // session directory, which is deleted on failure or cancellation.
+                    val spill = File(session, "spill").apply { mkdirs() }
+                    val snapshot = repositories.mutations.run { database.transaction { readExportSnapshot(spill) } }
                     BackupDataCodec.write(File(content, "host/settings.json"), BackupDataCodec.settings(snapshot.settings))
                     snapshot.tools.forEachIndexed { index, tool ->
-                        exportTool(content, tool, warnings)
+                        try { exportTool(content, tool, warnings) }
+                        finally { tool.keyValues.delete(); tool.tasks.delete() }
                         progress("收集工具与数据", (index + 1) * 45 / maxOf(1, snapshot.tools.size))
                     }
+                    spill.deleteRecursively()
                     BackupContents(BuildConfig.VERSION_NAME, System.currentTimeMillis(), snapshot.tools.map { (tool) ->
                         BackupTool(tool.metadata.id, tool.metadata.name, tool.currentVersion.version, tool.currentVersion.versionCode)
                     }, warnings.distinct())
@@ -80,24 +86,34 @@ internal class HostBackupService(
         }
     }
 
-    /** Row reads only; runs inside the export transaction. */
-    private suspend fun readExportSnapshot(): ExportSnapshot {
+    /** Row reads and plain spill serialization only; runs inside the export transaction. */
+    private suspend fun readExportSnapshot(spill: File): ExportSnapshot {
         val tools = repositories.catalog.observeTools().first()
         val settings = repositories.settings.settings.first()
-        return ExportSnapshot(settings, tools.map { tool ->
+        return ExportSnapshot(settings, tools.mapIndexed { index, tool ->
             val id = tool.metadata.id
-            val keys = repositories.keyValues.keys(id)
-            val found = repositories.keyValues.readSnapshot(id) { it.getMany(keys.toSet()) }
-            val rows = linkedMapOf<String, ToolKvValue>()
-            keys.forEach { key -> found[key]?.let { rows[key] = it } }
-            ExportToolSnapshot(
-                tool, repositories.grants.observeGrants(id).first(), rows,
-                repositories.backgroundTasks.observeTasks(id).first().map { it to repositories.backgroundTasks.observeResult(it.taskId).first() },
-            )
+            val keyValues = File(spill, "$index.kv")
+            ExportSpillWriter(keyValues).use { writer ->
+                repositories.keyValues.keys(id).chunked(16).forEach { window ->
+                    repositories.keyValues.readSnapshot(id) { snapshot ->
+                        val found = snapshot.getMany(window.toSet())
+                        window.forEach { key -> found[key]?.let(writer::kv) }
+                    }
+                }
+                writer.finish()
+            }
+            val tasks = File(spill, "$index.tasks")
+            ExportSpillWriter(tasks).use { writer ->
+                repositories.backgroundTasks.observeTasks(id).first().forEach { task ->
+                    writer.task(task, repositories.backgroundTasks.observeResult(task.taskId).first())
+                }
+                writer.finish()
+            }
+            ExportToolSnapshot(tool, repositories.grants.observeGrants(id).first(), keyValues, tasks)
         })
     }
 
-    /** Files, ZIP and Keystore work only; reads nothing but [snapshot] and the locked bundle. */
+    /** Files, ZIP and Keystore work only; reads nothing but [snapshot]'s spill files and the locked bundle. */
     private suspend fun exportTool(root: File, snapshot: ExportToolSnapshot, warnings: MutableList<String>) {
         val tool = snapshot.tool
         val id = tool.metadata.id
@@ -131,16 +147,27 @@ internal class HostBackupService(
             "grants" to snapshot.grants.map { mapOf("capability" to it.capability, "granted" to it.granted, "updatedAt" to it.updatedAt) },
         ))
         var secureBytes = 0L
-        snapshot.rows.values.forEach { row ->
-            BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
-                "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
-            ))
-            if (BackupDataCodec.secureKey(row.key)) secureBytes += row.bytes
+        ExportSpillReader(snapshot.keyValues).use { reader ->
+            while (true) {
+                val row = reader.nextKv() ?: break
+                BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
+                    "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
+                ))
+                if (BackupDataCodec.secureKey(row.key)) secureBytes += row.bytes
+            }
         }
         if (secureBytes > 0) {
             if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
             else try {
-                val document = RuntimeSecureStore(id, SnapshotToolKvRepository(id, snapshot.rows), AndroidKeyStoreCipher(id)).readAll()
+                // Only the secure rows are loaded, under the same heap check as before the spill.
+                val secureRows = linkedMapOf<String, ToolKvValue>()
+                ExportSpillReader(snapshot.keyValues).use { reader ->
+                    while (true) {
+                        val row = reader.nextKv() ?: break
+                        if (BackupDataCodec.secureKey(row.key)) secureRows[row.key] = row
+                    }
+                }
+                val document = RuntimeSecureStore(id, SnapshotToolKvRepository(id, secureRows), AndroidKeyStoreCipher(id)).readAll()
                 if (document != null) {
                     val plaintext = RuntimeValueJson.encodeObject(document)
                     J.obj(J.parse(plaintext.toByteArray()))
@@ -149,14 +176,15 @@ internal class HostBackupService(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { warnings += "${tool.metadata.name}：硬件密钥不可用，已归档加密记录，恢复后可能需要重新登录。" }
         }
-        snapshot.tasks.forEach { (task, result) ->
+        ExportSpillReader(snapshot.tasks).use { reader -> while (true) {
+            val (task, result) = reader.nextTask() ?: break
             BackupDataCodec.write(File(target, "data/tasks/${BackupDataCodec.keyFile(task.taskId)}"), mapOf(
                 "dataVersion" to 1, "taskId" to task.taskId, "versionCode" to task.versionCode, "key" to task.key, "operation" to task.operation.name,
                 "specJson" to task.specJson, "periodic" to task.periodic, "intervalMinutes" to task.intervalMinutes,
                 "state" to task.state.name, "createdAt" to task.createdAt, "updatedAt" to task.updatedAt, "runAttempt" to task.runAttempt,
                 "result" to result?.let { mapOf("outcome" to it.outcome.name, "completedAt" to it.completedAt, "payloadJson" to it.payloadJson, "errorCode" to it.errorCode, "attemptCount" to it.attemptCount) },
             ))
-        }
+        } }
     }
 
     override suspend fun inspect(input: InputStream, progress: (String, Int) -> Unit): RestorePreview = withContext(Dispatchers.IO) {

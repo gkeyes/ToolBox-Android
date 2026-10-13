@@ -1,10 +1,17 @@
 package io.toolbox.host.backup
 
+import io.toolbox.core.data.BackgroundOperation
+import io.toolbox.core.data.BackgroundTask
+import io.toolbox.core.data.RunOutcome
+import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.TaskState
 import io.toolbox.core.data.ToolKvValue
 import io.toolbox.host.runtime.RuntimeSecureStore
 import io.toolbox.host.runtime.RuntimeValueJson
 import io.toolbox.host.runtime.SecureValueCipher
 import io.toolbox.tool.runtime.RpcValue
+import java.io.File
+import java.io.IOException
 import java.util.Base64
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -52,6 +59,57 @@ class BackupExportSnapshotTest {
         } catch (_: UnsupportedOperationException) {
         }
         assertEquals("1", snapshot.observe(toolId, "a").first()?.valueJson)
+    }
+
+    @Test
+    fun spillRoundTripsRowsTasksAndResultsExactly() {
+        val file = File.createTempFile("backup-spill", ".bin").apply { deleteOnExit() }
+        val large = "y".repeat(3 * 1024 * 1024)
+        val rows = listOf(
+            ToolKvValue("a", "\"short\"", 1),
+            ToolKvValue("lone\uD800surrogate é", "\"\uDC00 中文\"", Long.MAX_VALUE),
+            ToolKvValue("large", large, 0),
+            ToolKvValue("", "", -1),
+        )
+        val full = BackgroundTask(
+            "task.1", toolId, 3, "k", BackgroundOperation.HTTP_GET, "{\"url\":\"https://x\"}", true, 15,
+            TaskState.COMPLETED, 10, 20, 30, 2, executionToken = "secret-token",
+        )
+        val sparse = BackgroundTask(
+            "task.2", toolId, 1, "n", BackgroundOperation.NOTIFY, "{}", false, null,
+            TaskState.QUEUED, 5, 5, null, 0,
+        )
+        val result = TaskRunResult("task.1", RunOutcome.FAILED, 25, null, "E_NET", 2)
+        val tasks = File.createTempFile("backup-spill", ".bin").apply { deleteOnExit() }
+        ExportSpillWriter(file).use { writer -> rows.forEach(writer::kv); writer.finish() }
+        ExportSpillWriter(tasks).use { writer ->
+            writer.task(full, result)
+            writer.task(sparse, null)
+            writer.finish()
+        }
+
+        val readRows = mutableListOf<ToolKvValue>()
+        ExportSpillReader(file).use { reader -> while (true) readRows += reader.nextKv() ?: break }
+        assertEquals(rows, readRows)
+        val readTasks = mutableListOf<Pair<BackgroundTask, TaskRunResult?>>()
+        ExportSpillReader(tasks).use { reader -> while (true) readTasks += reader.nextTask() ?: break }
+        assertEquals(listOf(full.copy(executionToken = null) to result, sparse to null), readTasks)
+        file.delete(); tasks.delete()
+    }
+
+    @Test
+    fun spillWithoutEndMarkerIsRejected() {
+        val file = File.createTempFile("backup-spill", ".bin").apply { deleteOnExit() }
+        ExportSpillWriter(file).use { it.kv(ToolKvValue("a", "1", 0)) }
+        ExportSpillReader(file).use { reader ->
+            assertEquals("a", reader.nextKv()?.key)
+            try {
+                reader.nextKv()
+                fail("A truncated spill must not read as complete")
+            } catch (_: IOException) {
+            }
+        }
+        file.delete()
     }
 
     /** Envelope-shaped, associated-data-bound stand-in for the Android Keystore cipher. */
