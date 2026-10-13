@@ -23,6 +23,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
+import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
@@ -99,6 +100,7 @@ class LayoutScreenshotTest(private val fontScale: Float) {
 
     private val outputDir = File(System.getProperty("toolbox.screenshots.dir") ?: "build/screenshots")
     private val now = 1_760_000_000_000L
+    private val pixelCopy = RoborazziOptions(captureType = RoborazziOptions.CaptureType.Screenshot())
 
     @Before fun setFontScale() {
         RuntimeEnvironment.setFontScale(fontScale)
@@ -110,7 +112,9 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitForIdle()
         val file = File(outputDir, "${name}_font${fontScale}.png")
-        if (dialog) captureScreenRoboImage(file.path) else compose.onRoot().captureRoboImage(file.path)
+        // Screenshot capture goes through PixelCopy, so RenderNode layers (animateItem, glass) draw too.
+        if (dialog) captureScreenRoboImage(file.path, roborazziOptions = pixelCopy)
+        else compose.onRoot().captureRoboImage(file.path, roborazziOptions = pixelCopy)
         assertTextFits(name)
     }
 
@@ -128,7 +132,10 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         val text = config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text } ?: layout.layoutInput.text.text
         if (text.isBlank()) return null
         val fontPx = with(layout.layoutInput.density) { layout.layoutInput.style.fontSize.toPx() }
-        val cut = layout.hasVisualOverflow && layout.layoutInput.overflow != TextOverflow.Ellipsis
+        // Text hidden without an ellipsis: lines dropped by maxLines/height, or a line wider than its box.
+        val last = layout.lineCount - 1
+        val hidden = layout.didOverflowWidth || layout.getLineEnd(last, visibleEnd = false) < layout.layoutInput.text.length
+        val cut = hidden && !layout.isLineEllipsized(last) && layout.layoutInput.overflow != TextOverflow.Ellipsis
         // A label narrower than ~2.5 glyphs that still wraps is the "one character per line" failure.
         val squeezed = layout.lineCount > 1 && fontPx > 0 && layout.size.width < fontPx * 2.5f
         return when {

@@ -67,6 +67,8 @@ tasks.withType<Test>().configureEach {
     if (layoutScreenshots) {
         filter.includeTestsMatching("io.toolbox.host.screenshots.*")
         systemProperty("roborazzi.test.record", "true")
+        // Hardware rendering makes Robolectric draw RenderNode layers (item animations, blur) in PixelCopy.
+        systemProperty("robolectric.pixelCopyRenderMode", "hardware")
         systemProperty("toolbox.screenshots.dir", rootProject.layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
         maxHeapSize = "4g"
         // Robolectric's interceptors reflect into JDK internals that Java 21 closes by default.
