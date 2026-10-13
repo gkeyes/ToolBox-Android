@@ -18,6 +18,10 @@
   let tokenPresent = false;
   let tokenValue = "";
   let editingId = null;
+  // Each open of the editor gets a new token; an in-flight save or delete only closes the
+  // editor it was started from. editorBusy blocks a second submit while one is pending.
+  let editorToken = 0;
+  let editorBusy = false;
   let refreshPromise = null;
   let refreshForced = false;
   let forcedFollowUp = null;
@@ -130,6 +134,16 @@
     const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
     writeChain = work;
     return work;
+  }
+
+  // User edits must not look saved while the saved list is unread: a later successful
+  // read replaces the in-memory list. Refuse them so the handler keeps the old state.
+  function persistUserChange(source) {
+    if (savedStateUnreadable) {
+      retrySavedState();
+      return Promise.reject(new Error("已保存的自选列表尚未读取成功，修改未保存，正在重试读取，请稍后再试。"));
+    }
+    return persist(source);
   }
 
   function sourceLabel(provider) {
@@ -684,6 +698,7 @@
   }
 
   function openEditor(item = null) {
+    editorToken += 1;
     editingId = item?.id || null;
     $("editor-title").textContent = item ? "编辑监控" : "添加监控";
     $("symbol").value = item?.symbol || "";
@@ -704,6 +719,7 @@
   }
 
   function closeEditor() {
+    editorToken += 1;
     $("editor").close();
     editingId = null;
     $("api-token").value = "";
@@ -723,6 +739,13 @@
 
   async function saveEditor(event) {
     event.preventDefault();
+    if (editorBusy) return;
+    editorBusy = true;
+    try { await saveEditorChanges(editingId, editorToken); }
+    finally { editorBusy = false; }
+  }
+
+  async function saveEditorChanges(targetId, token) {
     const provider = selectedProvider();
     const symbol = $("symbol").value.trim().toUpperCase();
     const name = $("stock-name").value.trim();
@@ -746,9 +769,9 @@
         tokenPresent = true;
         $("api-token").value = "";
       }
-      const existingIndex = state.items.findIndex((item) => item.id === editingId);
+      const existingIndex = state.items.findIndex((item) => item.id === targetId);
       const existing = existingIndex >= 0 ? state.items[existingIndex] : null;
-      const duplicate = state.items.some((item) => item.id !== editingId && item.provider === provider && item.symbol === symbol);
+      const duplicate = state.items.some((item) => item.id !== targetId && item.provider === provider && item.symbol === symbol);
       if (duplicate) { showFormError("这只股票已经在监控列表中。"); return; }
       const updated = createItem({
         ...existing,
@@ -766,8 +789,8 @@
       else nextItems.push(updated);
       const intervalChanged = intervalMs !== state.intervalMs;
       // Only show the change once it is saved; a failed write keeps the old list.
-      await persist({ ...state, items: nextItems, intervalMs });
-      const currentIndex = state.items.findIndex((item) => item.id === editingId);
+      await persistUserChange({ ...state, items: nextItems, intervalMs });
+      const currentIndex = state.items.findIndex((item) => item.id === targetId);
       if (currentIndex >= 0) state.items.splice(currentIndex, 1, updated);
       else state.items.push(updated);
       state.intervalMs = intervalMs;
@@ -776,31 +799,37 @@
         try { await toolbox().background.setTimer(TIMER_KEY, intervalMs); }
         catch (error) { timerError = error; }
       }
-      closeEditor();
+      if (token === editorToken) closeEditor();
       render();
       showToast(existing ? "监控设置已更新" : "股票已添加");
       await refreshAll({ force: true });
       if (timerError) setStatus(errorMessage(timerError, "设置已保存，但监控间隔更新失败。"), "warning");
     } catch (error) {
-      showFormError(errorMessage(error, "保存失败，请检查存储或后台权限。"));
+      if (token === editorToken) showFormError(errorMessage(error, "保存失败，请检查存储或后台权限。"));
+      else setStatus(errorMessage(error, "保存失败，请检查存储或后台权限。"), "error");
     }
   }
 
   async function deleteEditingStock() {
     const item = state.items.find((candidate) => candidate.id === editingId);
-    if (!item) return;
+    if (!item || editorBusy) return;
+    const token = editorToken;
+    editorBusy = true;
     try {
-      await persist({ ...state, items: state.items.filter((candidate) => candidate.id !== item.id) });
+      await persistUserChange({ ...state, items: state.items.filter((candidate) => candidate.id !== item.id) });
       state.items = state.items.filter((candidate) => candidate.id !== item.id);
       for (const kind of ["above", "below"]) {
         const id = `${item.id}-${kind}`;
         try { await toolbox().notifications.cancel(id); } catch (_) {}
       }
-      closeEditor();
+      if (token === editorToken) closeEditor();
       render();
       showToast("股票已删除");
     } catch (error) {
-      showFormError(errorMessage(error, "删除失败。"));
+      if (token === editorToken) showFormError(errorMessage(error, "删除失败。"));
+      else setStatus(errorMessage(error, "删除失败。"), "error");
+    } finally {
+      editorBusy = false;
     }
   }
 
@@ -825,7 +854,7 @@
     if (!item) return;
     item.enabled = toggle.checked;
     item.error = null;
-    try { await persist(); }
+    try { await persistUserChange(); }
     catch (error) { item.enabled = !toggle.checked; setStatus(errorMessage(error, "设置保存失败。"), "error"); }
     render();
   }
@@ -899,7 +928,7 @@
         }
       }
       render();
-      if (savedStateUnreadable) setStatus("读取已保存的自选列表失败，当前修改不会保存，稍后会自动重试。", "warning");
+      if (savedStateUnreadable) setStatus("读取已保存的自选列表失败，修改暂时无法保存，稍后会自动重试。", "warning");
       else setStatus(state.monitoring ? `后台监控已连接，每 ${intervalLabel(state.intervalMs)}更新。` : "准备就绪。", "success");
       if (runtimeClosing) return;
       if (state.monitoring) await publishLiveState("start");
@@ -938,7 +967,7 @@
         if (runtimeClosing) { restorePending = true; return; }
         // Memory still holds defaults (never read): do not reconcile with them.
         if (!savedStateEverRead) {
-          setStatus("读取已保存的自选列表失败，当前修改不会保存，稍后会自动重试。", "warning");
+          setStatus("读取已保存的自选列表失败，修改暂时无法保存，稍后会自动重试。", "warning");
           return;
         }
         await reconcileMonitoring();

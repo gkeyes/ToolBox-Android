@@ -40,7 +40,7 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
     domReads -= 1;
     for (const listener of node.listeners[type] || []) listener({ preventDefault() {}, target: node, ...event });
   };
-  return { api: window.testApi, nodes, dispatch, counts: () => ({ domReads, created }) };
+  return { api: window.testApi, nodes, dispatch, node: (id) => { const node = document.getElementById(id); domReads -= 1; return node; }, counts: () => ({ domReads, created }) };
 }
 
 test('stock background refresh fetches each enabled quote, saves once and leaves DOM untouched', async () => {
@@ -578,4 +578,83 @@ test('stock saved-state read failure keeps the background timer until the state 
   assert.deepEqual(timers, [900000]);
   assert.equal(h.api.state.monitoring, true);
   assert.deepEqual(h.api.state.items.map((item) => item.symbol), ['000001']);
+});
+
+test('stock edits while the saved list is unread are refused instead of reported as saved', async () => {
+  const host = stockHost();
+  host.toolbox.storage.get = async () => { throw Object.assign(new Error('busy'), { code: 'BUSY' }); };
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'get state() { return state; }, get status() { return statusMessage; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  await settleMany(20);
+  const id = h.api.state.items[0].id;
+  const toggle = { checked: false };
+  h.dispatch('watchlist', 'change', { target: { closest: (selector) => (selector === '.enabled-toggle' ? toggle : { dataset: { id } }) } });
+  await settleMany(20);
+  assert.equal(h.api.state.items[0].enabled, true, 'toggle reverted because nothing was saved');
+  assert.match(h.api.status, /无法保存|未保存/);
+  assert.equal(host.writes.length, 0);
+});
+
+test('stock editor save keeps its target when the editor closes or is submitted again mid-save', async () => {
+  const releaseToken = [];
+  const host = stockHost();
+  host.toolbox.storage.get = async () => ({ version: 1, intervalMs: 300000, monitoring: false, sessionId: null,
+    items: [{ id: 'saved', provider: 'tencent', symbol: '000001', name: '自选' }] });
+  host.toolbox.background.listSessions = async () => [];
+  host.toolbox.storage.secure.set = () => new Promise((resolve) => { releaseToken.push(resolve); });
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'get state() { return state; }, saveEditor, closeEditor, edit: (id) => { editingId = id; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  await settleMany(20);
+  h.node('stock-form').elements = { provider: { value: 'tencent' } };
+  Object.assign(h.node('symbol'), { value: '000002' });
+  Object.assign(h.node('stock-name'), { value: '改名' });
+  for (const id of ['upper-price', 'lower-price']) h.node(id).value = '';
+  h.node('interval').value = '300000';
+  h.node('enabled').checked = true;
+  h.node('api-token').value = 'token';
+  h.api.edit('saved');
+  const first = h.api.saveEditor({ preventDefault() {} });
+  const second = h.api.saveEditor({ preventDefault() {} });
+  h.api.closeEditor();
+  for (const release of releaseToken) release();
+  await Promise.all([first, second]);
+  await settleMany(20);
+  assert.deepEqual(h.api.state.items.map((item) => [item.id, item.symbol]), [['saved', '000002']]);
+});
+
+test('Kegel without a host keeps using records saved in localStorage', async () => {
+  const old = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const localStorage = legacyStore([['wenli.history.v1', [old]], ['wenli.preferences.v1', { selectedMode: 'standard' }]]);
+  const h = loadKegel({ localStorage });
+  assert.match(h.nodes.get('history-summary').textContent, /已保存 1 次/);
+  assert.equal(h.nodes.get('summary-title').textContent, '标准训练');
+  h.click('start-button');
+  h.runFrames(1, 3600000);
+  assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 2);
+});
+
+test('Kegel training started before a failed handshake keeps running', async () => {
+  let reject;
+  const h = loadKegel({ toolbox: { ready: () => new Promise((_resolve, fail) => { reject = fail; }) } });
+  h.click('start-button');
+  reject(new Error('no host'));
+  await settleMany();
+  h.runFrames(70, 16);
+  assert.equal(h.nodes.get('countdown').textContent, '4');
+});
+
+test('Kegel switches to the localStorage fallback when storage permission is revoked', async () => {
+  let denied = false;
+  const localStorage = legacyStore([]);
+  const host = kegelHost({ getMany: async () => [null, []] });
+  host.toolbox.storage.apply = async () => { if (denied) throw Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' }); };
+  const h = loadKegel({ toolbox: host.toolbox, localStorage });
+  await settleMany();
+  denied = true;
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  await settleMany();
+  assert.equal(JSON.parse(localStorage.data.get('wenli.history.v1')).length, 1);
+  assert.match(h.nodes.get('history-summary').textContent, /存储权限未开启：1 条/);
+  await host.flush();
 });

@@ -381,8 +381,35 @@
     storageState = "unavailable";
     dirtyKeys.add(STORAGE_KEYS.preferences);
     dirtyKeys.add(STORAGE_KEYS.history);
-    showToast("网页存储写入失败，训练记录仅保留在本次会话，请开启「存储」权限");
+    showToast(hostConnected
+      ? "网页存储写入失败，训练记录仅保留在本次会话，请开启「存储」权限"
+      : "网页存储写入失败，训练记录仅保留在本次会话");
     renderHistory();
+  }
+
+  // The storage permission was switched off after data loaded: keep everything in the
+  // localStorage fallback (merged back once it is enabled) instead of retrying forever.
+  function storagePermissionRevoked() {
+    storageState = "legacy";
+    legacyUsed = true;
+    pendingLegacyDrop = null;
+    dirtyKeys.clear();
+    if (!writeLegacy()) { legacyWriteFailed(); return; }
+    showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
+    renderHistory();
+  }
+
+  // Without a ToolBox host the trainer runs as a plain page: localStorage is its storage.
+  function useStandaloneStorage() {
+    const legacy = readLegacyStorage();
+    if (!legacy) {
+      storageState = "unavailable";
+      return;
+    }
+    adoptLoaded(legacy.preferences, [legacy.history]);
+    storageState = "legacy";
+    syncControls();
+    renderSetup();
   }
 
   // Adopts loaded data while keeping edits and sessions made before it could be read
@@ -474,7 +501,11 @@
       key,
       value: key === STORAGE_KEYS.preferences ? preferences : history
     }));
-    writeWork = hostApi().storage.apply({ set }).then(() => true, () => {
+    writeWork = hostApi().storage.apply({ set }).then(() => true, (error) => {
+      if (error?.code === "PERMISSION_DENIED" || error?.code === "NOT_DECLARED") {
+        storagePermissionRevoked();
+        return false;
+      }
       for (const key of keys) dirtyKeys.add(key);
       return false;
     }).then((saved) => {
@@ -721,7 +752,7 @@
     const list = $("history-list");
     list.replaceChildren();
     $("clear-history-button").disabled = history.length === 0;
-    $("history-summary").textContent = storageState === "legacy"
+    $("history-summary").textContent = storageState === "legacy" && hostConnected
       ? `存储权限未开启：${history.length} 条记录暂存在网页存储，开启后自动迁移`
       : storageState !== "unavailable"
       ? (history.length === 0 ? "还没有训练记录" : `已保存 ${history.length} 次完成记录`)
@@ -1079,13 +1110,20 @@
       if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
       cancelAnimationFrameLoop();
       releaseWakeLock();
-    } else if (currentScreen === "training") {
-      if (completionPending) { showCompletion(completionPending, false); return; }
-      renderTraining(engine.tick());
-      if (engine.status === "running") {
-        requestWakeLock();
-        ensureAnimationFrame();
-      }
+    } else {
+      showForegroundTraining();
+    }
+  }
+
+  // Back in the foreground (or the host handshake failed): continue a training screen
+  // whose frames and wake lock were skipped while not foreground.
+  function showForegroundTraining() {
+    if (currentScreen !== "training") return;
+    if (completionPending) { showCompletion(completionPending, false); return; }
+    renderTraining(engine.tick());
+    if (engine.status === "running") {
+      requestWakeLock();
+      ensureAnimationFrame();
     }
   }
 
@@ -1095,7 +1133,7 @@
     const api = hostApi();
     if (typeof api?.ready !== "function") {
       runtimeForeground = true;
-      storageState = "unavailable";
+      useStandaloneStorage();
       renderHistory();
       return;
     }
@@ -1114,6 +1152,7 @@
       runtimeForeground = true;
       if (storageState === "loading") storageState = "unavailable";
       renderHistory();
+      showForegroundTraining();
     });
   }
 
