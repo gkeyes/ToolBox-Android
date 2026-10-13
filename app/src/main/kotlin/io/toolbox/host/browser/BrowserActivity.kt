@@ -43,9 +43,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
@@ -59,7 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +71,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
 import androidx.core.view.ViewCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.UserAgentMetadata
@@ -103,7 +103,7 @@ import kotlinx.coroutines.launch
 /** Ordinary web content: no asset loader, tool profile, page-to-native bridge or native RPC.
  * Local content-filter scripts only manipulate the current webpage DOM. */
 class BrowserActivity : ComponentActivity() {
-    private val filters by lazy { BrowserFilterController(this) }
+    private val filters by lazy { BrowserFilterController(this, lifecycleScope) }
     private val mediaDiagnosticsScript by lazy {
         applicationContext.assets.open("browser/media-diagnostics.js").bufferedReader().use { it.readText() }
     }
@@ -1438,15 +1438,19 @@ class BrowserActivity : ComponentActivity() {
     ) {
         val tint = if (enabled) ToolBoxThemeTokens.colors.textSecondary else ToolBoxThemeTokens.disabledContent
         val interactionSource = remember { MutableInteractionSource() }
-        val transition = rememberInfiniteTransition(label = "browser_refresh_rotation")
-        val rotation by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 720, easing = LinearEasing),
-            ),
-            label = "browser_refresh_rotation_value",
-        )
+        // Animate only while loading; the angle is read in the draw layer, so frames skip recomposition.
+        val rotation = remember { Animatable(0f) }
+        LaunchedEffect(spinning) {
+            rotation.snapTo(0f)
+            if (spinning) {
+                rotation.animateTo(
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 720, easing = LinearEasing),
+                    ),
+                )
+            }
+        }
         Box(
             Modifier.size(40.dp)
                 .clickable(
@@ -1462,7 +1466,7 @@ class BrowserActivity : ComponentActivity() {
             ToolBoxIcon(
                 ToolBoxIconKey.Refresh,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp).rotate(if (spinning) rotation else 0f),
+                modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation.value },
                 tint = tint,
             )
         }

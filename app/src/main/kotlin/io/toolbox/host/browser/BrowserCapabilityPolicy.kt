@@ -9,6 +9,7 @@ internal class BrowserCapabilityQueue<T> {
     private val entries = mutableListOf<Entry<T>>()
     val first: Entry<T>? get() = entries.firstOrNull()
     fun add(page: Any, value: T): Entry<T> = Entry(++sequence, page, value).also(entries::add)
+    fun peek(id: Long): Entry<T>? = entries.firstOrNull { it.id == id }
     fun take(id: Long): Entry<T>? {
         val index = entries.indexOfFirst { it.id == id }
         return if (index < 0) null else entries.removeAt(index)
@@ -33,6 +34,10 @@ internal object BrowserCapabilityPolicy {
         .map { it.trim().lowercase() }
         .filter { it.matches(Regex("(?:[a-z0-9!#$&^_.+-]+|\\*)/(?:[a-z0-9!#$&^_.+-]+|\\*)")) }
         .distinct().ifEmpty { listOf("*/*") }
+
+    /** Picker results are all-or-nothing: one item outside the content boundary rejects the whole selection. */
+    fun <T> acceptedUploads(returned: List<T>, multiple: Boolean, isSafe: (T) -> Boolean): List<T>? =
+        returned.distinct().takeIf { it.isNotEmpty() && it.all(isSafe) }?.let { if (multiple) it else it.take(1) }
 
     fun acceptsContentUri(scheme: String?, authority: String?, ownedByHost: Boolean): Boolean =
         scheme == "content" && !authority.isNullOrBlank() && '@' !in authority && !ownedByHost

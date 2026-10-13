@@ -39,6 +39,29 @@ class BrowserCapabilityPolicyTest {
         assertEquals(1, completions)
     }
 
+    @Test fun cancellationDuringUploadValidationDeniesOnceAndNeverDelivers() {
+        for (cancel in listOf<(BrowserCapabilityQueue<String>, Any) -> Unit>(
+            { queue, page -> queue.cancelPage(page) },
+            { queue, _ -> queue.remove { it.value == "file" } },
+        )) {
+            val queue = BrowserCapabilityQueue<String>()
+            val page = Any()
+            val upload = queue.add(page, "file")
+            // Picker result arrives: the entry is peeked, not taken, while validation runs off main.
+            assertEquals(upload, queue.peek(upload.id))
+            assertEquals(upload, queue.first)
+            cancel(queue, page)
+            assertNull(queue.peek(upload.id))
+            // Validation finishes: nothing left to deliver to.
+            assertNull(queue.take(upload.id))
+        }
+        val queue = BrowserCapabilityQueue<String>()
+        val upload = queue.add(Any(), "file")
+        assertEquals(upload, queue.peek(upload.id))
+        assertEquals(upload, queue.take(upload.id))
+        assertNull(queue.take(upload.id))
+    }
+
     @Test fun replacingFileRequestDoesNotCancelCameraOrConsumeReplacement() {
         val queue = BrowserCapabilityQueue<String>()
         val page = Any()
@@ -70,5 +93,15 @@ class BrowserCapabilityPolicyTest {
         assertFalse(BrowserCapabilityPolicy.acceptsContentUri("content", "10@documents", false))
         assertFalse(BrowserCapabilityPolicy.acceptsContentUri("content", null, false))
         assertTrue(BrowserCapabilityPolicy.acceptsContentUri("content", "com.android.providers.media.documents", false))
+    }
+
+    @Test fun uploadSelectionIsAllOrNothingAndHonoursSingleMode() {
+        val safe = { uri: String -> uri.startsWith("content://") }
+        assertEquals(listOf("content://a/1", "content://a/2"),
+            BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "content://a/2", "content://a/1"), true, safe))
+        assertEquals(listOf("content://a/1"),
+            BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "content://a/2"), false, safe))
+        assertNull(BrowserCapabilityPolicy.acceptedUploads(listOf("content://a/1", "file:///x"), true, safe))
+        assertNull(BrowserCapabilityPolicy.acceptedUploads(emptyList(), true, safe))
     }
 }

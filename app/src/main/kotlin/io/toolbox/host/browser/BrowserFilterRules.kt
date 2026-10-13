@@ -4,6 +4,7 @@ import java.net.IDN
 import java.net.URI
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
 
 enum class BrowserFilterKind { Cosmetic, NetworkHost }
 enum class BrowserFilterSource { Picker, Manual }
@@ -86,4 +87,39 @@ object BrowserFilterValidation {
         } ?: return null
         return rule.copy(site = site, value = value)
     }
+}
+
+/** Filter state shared with WebView network threads. A background read applies only when no local
+ * change happened since it started; request interception waits for the first stored snapshot. */
+internal class BrowserFilterEngine {
+    private val lock = Any()
+    private val loaded = CountDownLatch(1)
+    private var revision = 0L
+    @Volatile private var value = BrowserFilterSnapshot()
+
+    fun revision(): Long = synchronized(lock) { revision }
+    fun isCurrent(token: Long): Boolean = synchronized(lock) { revision == token }
+
+    /** Applies [read] if nothing changed since [token]; returns the new revision, or null when it was dropped. */
+    fun offer(token: Long, read: BrowserFilterSnapshot?): Long? {
+        try {
+            synchronized(lock) {
+                if (read == null || revision != token) return null
+                value = read
+                return ++revision
+            }
+        } finally {
+            loaded.countDown()
+        }
+    }
+
+    fun replace(snapshot: BrowserFilterSnapshot) {
+        synchronized(lock) { value = snapshot; revision++ }
+        loaded.countDown()
+    }
+
+    /** Releases waiting network threads even if a read was canceled before it ran. */
+    fun release() = loaded.countDown()
+
+    fun awaitLoaded(): BrowserFilterSnapshot { loaded.await(); return value }
 }
