@@ -358,11 +358,17 @@ async function dragSheetDown(page, distance = 260) {
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 4 });
   await page.mouse.up();
+  // The release point can sit over a dock button once the sheet is gone; a
+  // phone has no hover, so do not leave a desktop tooltip open there.
+  await page.mouse.move(0, 0);
 }
 
 async function openFromMore(page, name, heading) {
   await page.getByRole("button", { name: "更多", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  // Tap, as on a phone: a mouse click leaves the pointer resting where the
+  // compact sheet was, over a dock button whose desktop hover tooltip would
+  // then take the next Escape meant for the second sheet.
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).tap();
   // The second sheet opens only after the More sheet has gone.
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
   await expect(page.getByRole("dialog").filter({ hasText: heading })).toBeVisible();
@@ -377,6 +383,7 @@ for (const reduced of [false, true]) {
     // sheet is closable; the title filter path is covered in title-filter.spec.
     await openFromMore(page, "全文适配", "AI 全文适配");
     await page.getByRole("dialog").locator(".nextflux-close-button").click();
+    await page.mouse.move(0, 0); // the dock under a closed sheet must not keep a hover tooltip
     await expectUncovered(page);
 
     await openFromMore(page, "全文适配", "AI 全文适配");
@@ -591,6 +598,7 @@ test("the overlay janitor never touches an open sheet", async ({ page }) => {
   await expect(sheet).toBeVisible();
   expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);
   await sheet.getByRole("button", { name: "全文适配", exact: true }).click();
+  await page.mouse.move(0, 0); // no hover tooltip on the dock below (see openFromMore)
   await expect(page.getByRole("dialog").filter({ hasText: "AI 全文适配" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expectUncovered(page);

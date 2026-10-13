@@ -61,6 +61,9 @@ export default function MobileSheet({
   dialogClassName,
   bodyClassName,
   headerStart,
+  // A short action sheet can drop the visible title row (and its close
+  // button); both stay for assistive tech, and drag, backdrop and Escape close.
+  hideHeader = false,
   children,
   footer,
 }) {
@@ -190,8 +193,8 @@ export default function MobileSheet({
             >
               <Drawer.Handle className="p-1" />
             </div>
-            <Drawer.CloseTrigger className="nextflux-close-button" aria-label={closeLabel} />
-            <Drawer.Header className="nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2">
+            <Drawer.CloseTrigger className={cn("nextflux-close-button", hideHeader && "sr-only")} aria-label={closeLabel} />
+            <Drawer.Header className={cn("nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2", hideHeader && "sr-only")}>
               {headerStart}
               <Drawer.Heading>{title}</Drawer.Heading>
             </Drawer.Header>
