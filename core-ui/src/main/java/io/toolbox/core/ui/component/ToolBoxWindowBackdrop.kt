@@ -35,8 +35,8 @@ internal class WindowBackdrop(val image: ImageBitmap, val scale: Float)
 
 /**
  * Copies the window that hosts [view] (the page under a sheet). Overlay windows cannot sample
- * the page behind them, so a sheet blurs this copy instead. The page stays put while a modal
- * sheet is open, so one copy taken on open is enough. Returns null when the copy fails.
+ * the page behind them, so a sheet blurs this copy instead, taken on open and again whenever
+ * the page settles after a change. Returns null when the copy fails.
  */
 internal suspend fun captureWindowBackdrop(view: View, scale: Float = 0.25f): WindowBackdrop? {
     val window = (view.parent as? DialogWindowProvider)?.window ?: view.context.findActivity()?.window ?: return null

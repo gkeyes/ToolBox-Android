@@ -46,7 +46,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -68,8 +68,8 @@ val LocalToolBoxFrostedSheets = staticCompositionLocalOf { true }
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
 
-/** Quiet time after a page redraw before the sheet retakes its copy of the page. */
-private const val BackdropRefreshDelayMs = 120L
+/** The page must stop redrawing this long before the sheet retakes its copy of it. */
+private const val BackdropSettleMs = 160L
 
 /** Blur of the page copy behind a frosted sheet. */
 private val SheetBlur = 28.dp
@@ -111,20 +111,30 @@ fun ToolBoxActionSheet(
         backdrop = captureWindowBackdrop(hostView)
         if (backdrop != null) launch { frostAmount.animateTo(1f) }
         // The page can change under an open sheet (a favourite or group toggled from it): retake
-        // the copy shortly after each redraw of the page window.
+        // the copy once the page window has stopped redrawing. A page that keeps animating (a
+        // spinner) keeps its last copy rather than being copied every frame.
         val redraws = Channel<Unit>(Channel.CONFLATED)
-        val listener = ViewTreeObserver.OnDrawListener { redraws.trySend(Unit) }
+        var copying = false
+        var drewWhileCopying = false
+        var recopied = false
+        val listener = ViewTreeObserver.OnDrawListener {
+            if (copying) drewWhileCopying = true else redraws.trySend(Unit)
+        }
         hostView.viewTreeObserver.addOnDrawListener(listener)
         try {
             while (true) {
                 redraws.receive()
-                delay(BackdropRefreshDelayMs)
-                captureWindowBackdrop(hostView)?.let { fresh ->
+                while (withTimeoutOrNull(BackdropSettleMs) { redraws.receive() } != null) { }
+                drewWhileCopying = false
+                copying = true
+                val fresh = try { captureWindowBackdrop(hostView) } finally { copying = false }
+                if (fresh != null) {
                     backdrop = fresh
                     if (frostAmount.targetValue < 1f) launch { frostAmount.animateTo(1f) }
                 }
-                // A draw the copy itself caused is not a page change.
-                redraws.tryReceive()
+                // A draw during the copy may be the page's last change: copy once more. Only once
+                // in a row, since a copy can itself trigger a draw.
+                recopied = if (drewWhileCopying && !recopied) { redraws.trySend(Unit); true } else false
             }
         } finally {
             hostView.viewTreeObserver.removeOnDrawListener(listener)
