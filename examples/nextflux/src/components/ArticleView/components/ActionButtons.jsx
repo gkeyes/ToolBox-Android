@@ -416,6 +416,7 @@ export default function ActionButtons() {
         onOpenChange={setMoreOpen}
         title="这篇文章"
         closeLabel={t("common.close")}
+        hideHeader
       >
         <div className="reader-more-grid">
           <MoreItem
