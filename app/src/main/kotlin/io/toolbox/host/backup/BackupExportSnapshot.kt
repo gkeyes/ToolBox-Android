@@ -21,6 +21,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -48,9 +49,14 @@ internal data class ExportToolSnapshot(
 internal class ExportSpillWriter(file: File) : Closeable {
     private val output = DataOutputStream(BufferedOutputStream(FileOutputStream(file)))
 
+    /** Byte offset of the next record; tracked for key-value rows, which [ExportSpillRows] seeks to. */
+    var position = 0L
+        private set
+
     fun kv(row: ToolKvValue) {
         output.writeByte(SPILL_KV)
         text(row.key); text(row.valueJson); output.writeLong(row.updatedAt)
+        position += 1 + 4 + 2L * row.key.length + 4 + 2L * row.valueJson.length + 8
     }
 
     /** The execution token is host-only and is never spilled. */
@@ -132,6 +138,30 @@ internal class ExportSpillReader(file: File) : Closeable {
     private fun optionalLong(): Long? = if (input.readBoolean()) input.readLong() else null
 }
 
+/** Reads single key-value rows back from an [ExportSpillWriter] file by their byte offset. */
+internal class ExportSpillRows(file: File) : Closeable {
+    private val input = RandomAccessFile(file, "r")
+
+    fun kvAt(offset: Long): ToolKvValue {
+        input.seek(offset)
+        if (input.readByte().toInt() != SPILL_KV) throw IOException("Invalid backup spill record")
+        return ToolKvValue(text(), text(), input.readLong())
+    }
+
+    override fun close() = input.close()
+
+    private fun text(): String {
+        val length = input.readInt()
+        if (length < 0 || length > Int.MAX_VALUE / 2) throw IOException("Invalid backup spill record")
+        val bytes = ByteArray(length * 2)
+        input.readFully(bytes)
+        val chars = CharArray(length) { index ->
+            (((bytes[2 * index].toInt() and 0xff) shl 8) or (bytes[2 * index + 1].toInt() and 0xff)).toChar()
+        }
+        return String(chars)
+    }
+}
+
 private const val SPILL_END = 0
 private const val SPILL_KV = 1
 private const val SPILL_TASK = 2
@@ -142,23 +172,29 @@ private const val SPILL_TASK = 2
  */
 internal class SnapshotToolKvRepository(
     private val toolId: String,
-    private val rows: Map<String, ToolKvValue>,
+    private val keys: List<String>,
+    private val bytes: Long,
+    /** Loads one captured row on demand, so ciphertext is not kept around while it is decrypted. */
+    private val row: (String) -> ToolKvValue?,
 ) : ToolKvRepository {
+    constructor(toolId: String, rows: Map<String, ToolKvValue>) :
+        this(toolId, rows.keys.toList(), rows.values.sumOf { it.bytes.toLong() }, rows::get)
+
     override suspend fun <T> readSnapshot(toolId: String, action: suspend (ToolKvSnapshot) -> T): T =
         action(object : ToolKvSnapshot {
             override suspend fun getMany(keys: Set<String>): Map<String, ToolKvValue> =
                 if (toolId != this@SnapshotToolKvRepository.toolId) emptyMap()
-                else buildMap { for (key in keys) rows[key]?.let { put(key, it) } }
+                else buildMap { for (key in keys) row(key)?.let { put(key, it) } }
         })
 
     override fun observe(toolId: String, key: String): Flow<ToolKvValue?> =
-        flowOf(if (toolId == this.toolId) rows[key] else null)
+        flowOf(if (toolId == this.toolId) row(key) else null)
 
     override suspend fun keys(toolId: String): List<String> =
-        if (toolId == this.toolId) rows.keys.toList() else emptyList()
+        if (toolId == this.toolId) keys else emptyList()
 
     override suspend fun bytesUsed(toolId: String): Long =
-        if (toolId == this.toolId) rows.values.sumOf { it.bytes.toLong() } else 0L
+        if (toolId == this.toolId) bytes else 0L
 
     override suspend fun put(toolId: String, key: String, valueJson: String, updatedAt: Long): DataResult<Unit> = readOnly()
 

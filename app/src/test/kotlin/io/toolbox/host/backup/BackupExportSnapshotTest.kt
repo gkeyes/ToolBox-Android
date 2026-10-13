@@ -98,6 +98,23 @@ class BackupExportSnapshotTest {
     }
 
     @Test
+    fun spillRowsAreReadBackByOffset() {
+        val file = File.createTempFile("backup-spill", ".bin").apply { deleteOnExit() }
+        val rows = listOf(
+            ToolKvValue("a", "1", 1),
+            ToolKvValue("鍵\uD800", "值".repeat(70_000), Long.MIN_VALUE),
+            ToolKvValue("", "", Long.MAX_VALUE),
+            ToolKvValue("z", "\"tail\"", 7),
+        )
+        val offsets = ExportSpillWriter(file).use { writer ->
+            rows.map { row -> writer.position.also { writer.kv(row) } }.also { writer.finish() }
+        }
+        ExportSpillRows(file).use { spill ->
+            for (index in rows.indices.reversed()) assertEquals(rows[index], spill.kvAt(offsets[index]))
+        }
+    }
+
+    @Test
     fun spillWithoutEndMarkerIsRejected() {
         val file = File.createTempFile("backup-spill", ".bin").apply { deleteOnExit() }
         ExportSpillWriter(file).use { it.kv(ToolKvValue("a", "1", 0)) }
