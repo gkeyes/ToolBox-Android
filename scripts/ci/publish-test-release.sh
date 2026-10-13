@@ -142,8 +142,19 @@ case "$kind" in
         echo "The test channel already has $name; the same version is not published again."
         continue
       fi
-      replace_assets "^${BASH_REMATCH[1]}-v[0-9][0-9A-Za-z.+-]*\.tbx$" "$package"
+      slug="${BASH_REMATCH[1]}"
+      version="${name#"$slug"-v}"
+      version="${version%.tbx}"
+      # Never replace a higher published version of the same tool with a lower one.
+      current="$(sed -n "s/^${slug}-v\([0-9][0-9A-Za-z.+-]*\)\.tbx\$/\1/p" <<<"$published" | head -n 1)"
+      if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)" != "$version" ]; then
+        echo "The test channel has $slug $current, higher than this build's $version; not publishing it." >&2
+        refused=1
+        continue
+      fi
+      replace_assets "^${slug}-v[0-9][0-9A-Za-z.+-]*\.tbx$" "$package"
     done
+    test -z "${refused:-}"
     ;;
   *)
     echo "Unknown kind: $kind" >&2

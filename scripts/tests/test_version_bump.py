@@ -115,6 +115,22 @@ class VersionBumpTest(unittest.TestCase):
         self.assertTrue(any(problem.startswith("Mini-tool game-2048") for problem in problems), problems)
         self.assertFalse(any(problem.startswith("ToolBox app") for problem in problems), problems)
 
+    def test_packaging_command_change_needs_a_tool_bump(self):
+        registry = json.loads(json.dumps(REGISTRY))
+        registry["game-2048"]["package"] = ["bash", "package.sh", "--minify", "{output}"]
+        head = tree(registry=registry)
+        head["scripts/ci/tbx-targets.json"] = json.dumps(registry)
+        problems, _ = run(["scripts/ci/tbx-targets.json"], head=head)
+        self.assertTrue(any(problem.startswith("Mini-tool game-2048") for problem in problems), problems)
+
+    def test_bundled_tool_packaging_change_also_needs_an_app_bump(self):
+        registry = json.loads(json.dumps(REGISTRY))
+        registry["quick-notes"]["expected_files"].append("style.css")
+        head = tree(tools={"quick-notes": ("1.0.4", 5)}, registry=registry)
+        problems, _ = run(["scripts/ci/tbx-targets.json"], head=head)
+        self.assertTrue(any(problem.startswith("ToolBox app") for problem in problems), problems)
+        self.assertFalse(any(problem.startswith("Mini-tool quick-notes") for problem in problems), problems)
+
     def test_bundled_tool_change_also_ships_in_the_apk(self):
         problems = self.assertNeeds(["examples/quick-notes/app.js"], "ToolBox app (APK)")
         self.assertTrue(any(problem.startswith("Mini-tool quick-notes") for problem in problems))

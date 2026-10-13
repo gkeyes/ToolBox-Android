@@ -100,6 +100,16 @@ class PublishTestReleaseTest(unittest.TestCase):
         self.assertTrue(any("rss-scout-v1.4.7.tbx" in call for call in uploads))
         self.assertTrue(any("delete-asset dev rss-scout-v1.4.6.tbx" in call for call in calls))
 
+    def test_lower_tool_version_is_refused_without_blocking_others(self):
+        result, calls = self.publish("tools", ["game-2048-v1.0.3.tbx", "rss-scout-v1.4.7.tbx"],
+                                     ["game-2048-v1.0.10.tbx", "rss-scout-v1.4.6.tbx"])
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("higher than this build's 1.0.3", result.stderr)
+        uploads = [call for call in calls if call.startswith("release upload")]
+        self.assertFalse(any("game-2048" in call for call in uploads))
+        self.assertFalse(any("delete-asset dev game-2048" in call for call in calls))
+        self.assertTrue(any("rss-scout-v1.4.7.tbx" in call for call in uploads))
+
 
 if __name__ == "__main__":
     unittest.main()

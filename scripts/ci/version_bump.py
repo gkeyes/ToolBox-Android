@@ -107,6 +107,10 @@ def gradle_modules(settings):
     return {name.replace(":", "/") for name in re.findall(r'"\s*:([A-Za-z0-9_.:-]+)\s*"', settings)}
 
 
+# Registry entries that decide what a tool's .tbx contains: its file list, manifest and packaging command.
+PACKAGING_KEYS = ("expected_files", "manifest", "package")
+
+
 def bundled(registry):
     return {name for name, config in registry.items() if config.get("bundled")}
 
@@ -159,9 +163,10 @@ def classify(changed, base_registry, head_registry, modules):
             if bundled(base_registry) != bundled(head_registry):
                 ship("app", path, "changes which examples are bundled into the APK")
             for name in sorted(set(base_registry) & set(head_registry)):
-                if base_registry[name].get("expected_files") != head_registry[name].get("expected_files") \
-                        or base_registry[name].get("manifest") != head_registry[name].get("manifest"):
-                    ship(name, path, "changes the files packaged into its .tbx")
+                if any(base_registry[name].get(key) != head_registry[name].get(key) for key in PACKAGING_KEYS):
+                    ship(name, path, "changes how its .tbx is packaged")
+                    if name in bundled_any:
+                        ship("app", path, f"bundled example {name} is packaged into the APK")
             notes.setdefault(path, ["tool registry (test or build settings only)"])
         elif top == "examples" and "/" in rest:
             name, relative = rest.split("/", 1)
