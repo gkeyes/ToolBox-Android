@@ -625,7 +625,7 @@ private enum class ToolBoxActionTone { Primary, Tonal, Neutral, Danger, DangerCo
 private data class ToolBoxActionColors(val container: Color, val content: Color)
 
 /** WCAG contrast between two opaque colors. */
-private fun actionContrast(a: Color, b: Color): Float {
+internal fun actionContrast(a: Color, b: Color): Float {
     val la = a.luminance()
     val lb = b.luminance()
     return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)

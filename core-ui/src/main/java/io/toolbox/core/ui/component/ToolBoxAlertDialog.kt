@@ -196,9 +196,10 @@ private fun ToolBoxAlertButtons(
     val colors = ToolBoxThemeTokens.colors
     val dark = colors.surface.luminance() < 0.5f
     val neutralFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
-    // Solid iOS 26 confirm: accent (#0064D2 / #0A84FF) or destructive (#D70015 / #FF6961), white label.
+    // Solid iOS 26 confirm: accent (#0064D2 / #0A84FF) or destructive (#D70015 / #FF6961); white
+    // label unless it would fall under 3:1 (dark #FF6961), then the iOS dark label.
     val confirmFill = if (destructive) colors.danger else colors.primary
-    val confirmContent = Color.White
+    val confirmContent = if (actionContrast(confirmFill, Color.White) >= 3.0f) Color.White else Color(0xFF1C1C1E)
     val sideBySide = dismissLabel != null &&
         LocalDensity.current.fontScale < 1.3f &&
         confirmLabel.length <= 6 && dismissLabel.length <= 6

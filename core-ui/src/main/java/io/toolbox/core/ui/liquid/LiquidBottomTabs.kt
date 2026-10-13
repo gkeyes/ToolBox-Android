@@ -153,12 +153,16 @@ fun LiquidBottomTabs(
                     currentIndex = index
                 }
         }
+        val latestSelectedTabIndex = rememberUpdatedState(selectedTabIndex)
+        val latestOnTabSelected = rememberUpdatedState(onTabSelected)
         LaunchedEffect(dampedDragAnimation) {
             snapshotFlow { currentIndex }
                 .drop(1)
                 .collectLatest { index ->
+                    // An index the owner already selected (a tap the tab handled itself, or an
+                    // external change) only moves the lens; report drags the owner hasn't seen.
+                    if (index != latestSelectedTabIndex.value()) latestOnTabSelected.value(index)
                     dampedDragAnimation.animateToValue(index.toFloat())
-                    onTabSelected(index)
                 }
         }
 
