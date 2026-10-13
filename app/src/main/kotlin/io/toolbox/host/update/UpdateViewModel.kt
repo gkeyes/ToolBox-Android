@@ -142,7 +142,7 @@ internal class UpdateViewModel(
                 val file = downloadCurrent(feed.channel, app.asset, AppProgressKey) { fresh ->
                     fresh.app?.takeIf { replacement ->
                         (fresh.channel != UpdateChannel.TEST || replacement.asset.name.endsWith("-dev.apk")) &&
-                            (app.runId == null || (replacement.runId ?: 0L) >= app.runId)
+                            UpdateFeedParser.isNotOlder(replacement, app)
                     }?.asset
                 }
                 mutableState.update { it.copy(pendingApk = file) }
