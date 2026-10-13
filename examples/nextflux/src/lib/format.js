@@ -92,3 +92,6 @@ export const generateReadableDate = (dateString) => {
 
 export const formatDate = (dateString) =>
   dayjs(dateString).format("YYYY-MM-DD");
+
+// Article date field that orders the list (and therefore its day headers).
+export const dayField = (sortField) => (sortField === "created_at" ? "created_at" : "published_at");

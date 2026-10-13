@@ -24,7 +24,9 @@ export const themes = {
 export const themeState = persistentAtom("theme", defaultValue, {
   encode: JSON.stringify,
   decode: (str) => {
-    const storedValue = JSON.parse(str);
+    let storedValue;
+    try { storedValue = JSON.parse(str); } catch { return { ...defaultValue }; }
+    if (!storedValue || typeof storedValue !== "object" || Array.isArray(storedValue)) return { ...defaultValue };
     return { ...defaultValue, ...storedValue };
   },
 });

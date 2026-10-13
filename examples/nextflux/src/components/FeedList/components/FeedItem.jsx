@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { memo, useState } from "react";
+import { Link } from "react-router";
 import {
   FilePen,
   Trash2,
@@ -20,19 +20,17 @@ import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
 import { useTranslation } from "react-i18next";
 import { handleRefresh } from "@/handlers/feedHandlers";
 import { handleMarkAllRead } from "@/handlers/articleHandlers";
-import { useStore } from "@nanostores/react";
-import { getFeedCount } from "@/stores/feedsStore.js";
 import {
   editFeedModalOpen,
   unsubscribeModalOpen,
   currentFeedId,
 } from "@/stores/modalStore.js";
 
-const FeedItem = ({ feed }) => {
+// Rows get their active state and count from FeedsGroupContent; they do not
+// subscribe to the router or the count stores themselves.
+const FeedItem = ({ feed, active, count }) => {
   const { t } = useTranslation();
   const { isMobile, setOpenMobile } = useSidebar();
-  const { feedId } = useParams();
-  const $getFeedCount = useStore(getFeedCount);
   const [contextMenu, setContextMenu] = useState({
     isOpen: false,
     position: { x: 0, y: 0 },
@@ -54,10 +52,10 @@ const FeedItem = ({ feed }) => {
     <SidebarMenuSubItem>
       <SidebarMenuSubButton
         asChild
-        isActive={parseInt(feedId) === feed.id}
+        isActive={active}
         className={cn(
           "pl-11 pr-3",
-          parseInt(feedId) === feed.id && "active-feed",
+          active && "active-feed",
         )}
       >
         <Link
@@ -75,7 +73,7 @@ const FeedItem = ({ feed }) => {
             <span className="line-clamp-1">{feed.title}</span>
           </span>
           <span className="sidebar-badge ds-tnum text-[length:var(--ds-text-subhead)]">
-            {$getFeedCount(feed.id) !== 0 && $getFeedCount(feed.id)}
+            {count !== 0 && count}
           </span>
         </Link>
       </SidebarMenuSubButton>
@@ -133,4 +131,4 @@ const FeedItem = ({ feed }) => {
   );
 };
 
-export default FeedItem;
+export default memo(FeedItem);

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, Routes, Route, useNavigate, useParams } from "react-router-dom";
+import { HashRouter, Routes, Route, useNavigate, useParams } from "react-router";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";

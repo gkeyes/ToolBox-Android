@@ -21,7 +21,7 @@ import { categories } from "@/stores/feedsStore";
 import { addFeedModalOpen } from "@/stores/modalStore";
 import minifluxAPI from "@/api/miniflux";
 import { backgroundSync, refreshSingleFeed, requestForegroundPriority } from "@/stores/syncStore";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Search, Rss, Loader2, ChevronDown } from "lucide-react";
 import GlassYellow from "@/assets/glass-yellow.svg";

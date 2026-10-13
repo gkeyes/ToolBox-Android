@@ -52,6 +52,7 @@ TEST_FILES = {
             "test/reading-client.test.mjs",
             "test/reading-motion.test.mjs",
             "test/reading-pipeline.test.mjs",
+            "test/runtime-behaviour.test.mjs",
             "test/source-document.test.mjs",
             "test/speech.test.mjs",
             "test/swipe-gesture.test.mjs",

@@ -1,7 +1,6 @@
 import { initializeBackground } from "@/toolbox/background.js";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import "./App.css";
-import "m3-ripple/ripple.css";
 import { useEffect, useState } from "react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar.jsx";
 import FeedListSidebar from "@/components/FeedList/FeedListSidebar.jsx";
@@ -16,6 +15,13 @@ import { useZoom } from "@/hooks/useZoom.js";
 import { useBorderRadius } from "@/hooks/useBorderRadius.js";
 import FontLoader from "@/components/FontLoader.jsx";
 import { useReducedMotionAttribute } from "@/design/motion.js";
+
+// Router hooks re-render their caller on every route change; keep them in a
+// leaf that renders nothing instead of in App, which owns the whole layout.
+function Hotkeys() {
+  useHotkeys();
+  return null;
+}
 
 function App() {
   const { syncInterval, reduceMotion } = useStore(settingsState);
@@ -42,12 +48,12 @@ function App() {
     checkIntegrations();
   }, []);
 
-  useHotkeys();
   useZoom();
   useReducedMotionAttribute(reduceMotion);
   useBorderRadius();
   return (
     <SidebarProvider>
+      <Hotkeys />
       <FontLoader />
       <FeedListSidebar />
       <SidebarInset className="min-w-0">

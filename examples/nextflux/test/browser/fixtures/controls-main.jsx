@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, useLocation } from "react-router-dom";
+import { HashRouter, useLocation } from "react-router";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import ActionButtons from "@/components/ArticleView/components/ActionButtons.jsx";
@@ -83,6 +83,6 @@ function ControlsFixture() {
 }
 
 // Same janitor as the app (render.jsx); the fixture's only store-driven overlay is Settings.
-installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
+window.controlsOverlayJanitor = installOverlayJanitor({ isOverlayExpected: () => settingsModalOpen.get(), settleMs: 300 });
 
 createRoot(document.getElementById("root")).render(<HashRouter><ControlsFixture /></HashRouter>);

@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { HashRouter } from "react-router-dom";
+import { HashRouter } from "react-router";
 import { Toaster } from "sonner";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";

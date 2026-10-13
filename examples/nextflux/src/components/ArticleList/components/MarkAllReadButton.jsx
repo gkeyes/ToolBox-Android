@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { Button, Dropdown, Label, Spinner } from "@heroui/react";
 import { handleMarkAllRead } from "@/handlers/articleHandlers";
 import {

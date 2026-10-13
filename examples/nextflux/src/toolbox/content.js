@@ -2,6 +2,7 @@ import { imageDimension } from "./imageDimensions.js";
 import { dwImageSources } from "../reading/adapters/dw-images.mjs";
 
 import { ALLOWED_TAGS, DROP_CONTENT } from "../reading/schema.mjs";
+import { SERVER_BASE } from "./server.mjs";
 export { ALLOWED_TAGS, DROP_CONTENT };
 
 const LAZY_IMAGE_ATTRIBUTES = ["data-src", "data-original", "data-lazy-src"];
@@ -12,7 +13,7 @@ const SPACE = /[\t\n\f\r ]/;
 export function safeContentUrl(value, baseUrl) {
   if (typeof value !== "string" || !value || Array.from(value).some((char) => char.codePointAt(0) <= 32 || char.codePointAt(0) === 127)) return null;
   try {
-    const url = new URL(value, baseUrl || "https://miniflux.xiaochen.win/");
+    const url = new URL(value, baseUrl || SERVER_BASE);
     return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
   } catch { return null; }
 }
@@ -20,7 +21,7 @@ export function safeContentUrl(value, baseUrl) {
 function safeImageSource(value, baseUrl) {
   if (typeof value !== "string" || !value) return null;
   if (/^data:image\/(png|jpeg|gif|webp|avif|bmp|x-icon);base64,[a-z0-9+/=\s]+$/i.test(value)) return value;
-  const url = safeContentUrl(value, /^\/(?:proxy\/|media\/v1\/)/.test(value) ? "https://miniflux.xiaochen.win/" : baseUrl);
+  const url = safeContentUrl(value, /^\/(?:proxy\/|media\/v1\/)/.test(value) ? SERVER_BASE : baseUrl);
   // The native media transport only accepts HTTPS. An HTTP lazy placeholder
   // must not hide a usable HTTPS src or srcset candidate.
   return url?.startsWith("https:") ? url : null;
@@ -98,7 +99,7 @@ export function imageSourceCandidates(attributes = {}, baseUrl, pictureSources =
   const embedded = candidates.filter((url) => url.startsWith("data:") && (!remote.length || !embeddedPlaceholder(url)));
   // Preserve server cache/proxy admission. The server itself handles cache
   // misses; direct origins are alternatives after every server candidate.
-  const archived = (url) => /^https:\/\/miniflux\.xiaochen\.win\/(?:proxy\/|media\/v1\/)/.test(url);
+  const archived = (url) => url.startsWith(`${SERVER_BASE}proxy/`) || url.startsWith(`${SERVER_BASE}media/v1/`);
   return [...remote.filter(archived), ...remote.filter((url) => !archived(url)), ...embedded].slice(0, MAX_IMAGE_CANDIDATES);
 }
 

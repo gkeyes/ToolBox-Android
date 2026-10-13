@@ -15,10 +15,9 @@ import {
   handleMarkRead,
   handleMarkAboveAsRead,
 } from "@/handlers/articleHandlers.js";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { settingsState } from "@/stores/settingsStore";
-import { feeds } from "@/stores/feedsStore";
 import FeedIcon from "@/components/ui/FeedIcon.jsx";
 import { useTranslation } from "react-i18next";
 import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
@@ -27,10 +26,11 @@ import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
 // closing an article changes the route, and every mounted card re-rendering
 // at that moment delays the page motion. The list passes `active` (only the
 // two affected rows change) and a stable `onOpen` that owns navigation.
-export default function ArticleCard({ article, active = false, onOpen }) {
+// feedTitle comes from the list's precomputed map, and mark-as-read uses the
+// list's single IntersectionObserver (observeRead) instead of one per card.
+export default function ArticleCard({ article, active = false, onOpen, feedTitle, observeRead }) {
   const { t } = useTranslation();
   const cardRef = useRef(null);
-  const $feeds = useStore(feeds);
   const {
     markAsReadOnScroll,
     cardImageSize,
@@ -39,7 +39,6 @@ export default function ArticleCard({ article, active = false, onOpen }) {
     textPreviewLines,
     titleLines,
   } = useStore(settingsState);
-  const hasBeenVisible = useRef(false);
   const [contextMenu, setContextMenu] = useState({
     isOpen: false,
     position: { x: 0, y: 0 },
@@ -47,51 +46,14 @@ export default function ArticleCard({ article, active = false, onOpen }) {
 
   const imageUrl = article.coverUrl;
   const imageSources = article.coverSources;
-  const feedTitle = useMemo(() => {
-    const feed = $feeds.find((f) => f.id === article.feedId);
-    return feed?.title || article.feedId;
-  }, [article.feedId, $feeds]);
 
   const previewContent = article.previewText || "";
 
   useEffect(() => {
     // 如果文章已读或未启用滚动标记已读,则不需要观察
-    if (article.status === "read" || !markAsReadOnScroll) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const cardRect = entry.boundingClientRect;
-          const rootRect = entry.rootBounds;
-
-          // 当文章进入视口时记录状态
-          if (entry.isIntersecting) {
-            hasBeenVisible.current = true;
-          }
-          // 只有当卡片完全在视口顶部以上,且之前显示过时才标记已读
-          else if (hasBeenVisible.current && rootRect && cardRect.top < rootRect.top) {
-            // console.log(cardRect.bottom, rootRect.top, '标记已读');
-            handleMarkRead(article);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      {
-        // 设置根元素为滚动容器
-        root: document.querySelector(".v-list"),
-        // 设置阈值为0,表示完全离开视口时触发
-        threshold: 0.2,
-      },
-    );
-
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [article, markAsReadOnScroll]);
+    if (article.status === "read" || !markAsReadOnScroll || !observeRead) return;
+    return observeRead(cardRef.current, article);
+  }, [article, markAsReadOnScroll, observeRead]);
 
   const handleArticleClick = async (article) => {
     onOpen?.(article, cardRef.current?.querySelector(".card-title"));
@@ -143,7 +105,7 @@ export default function ArticleCard({ article, active = false, onOpen }) {
                 <div className="card-source-content flex gap-1.5 items-center min-w-0">
                   {showFavicon && <FeedIcon feedId={article.feedId} />}
                   <span className="card-source-title ds-caption font-medium line-clamp-1">
-                    {feedTitle}
+                    {feedTitle || article.feedId}
                   </span>
                 </div>
               </div>
