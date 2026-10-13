@@ -16,7 +16,7 @@ export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void}) {
   const [models,setModels]=useState<string[]>([]),[target,setTarget]=useState<'fastModel'|'smartModel'|null>(null);
   const [query,setQuery]=useState('');
   const tr=(zh:string,en:string)=>pick({zh,en},lang);
-  // A saved key stays bound to the host it was saved for; typing a key in this sheet binds it to whatever host is chosen.
+  // A key is bound to the host it was saved or typed for; moving to another host clears it before anything can send it there.
   const [savedOrigin,setSavedOrigin]=useState<string|null>(null);
   useEffect(()=>{if(open){const saved=useByok.getState();setDraft({...saved});setSavedOrigin(saved.apiKey.trim()?keyOrigin(saved):null);setNote('');setModels([]);setTarget(null);}},[open]);
   const update=(p:Partial<ByokConfig>)=>{setDraft(d=>({...d,...p}));setNote('');};
@@ -61,7 +61,7 @@ export function ModelSheet({open,onClose}: {open:boolean;onClose:()=>void}) {
       {(isMiniMaxM3(config,config.fastModel)||isMiniMaxM3(config,config.smartModel))&&<p className="text-[12px] text-ink-3 leading-relaxed">{tr('M3 专用适配已启用：提示与角色对话关闭思考，复盘保留推理；只显示最终答案。无需读取模型列表。','M3 adaptation is active: hints and dialogue skip thinking; assessments retain reasoning. Only final answers are shown. Loading the model list is optional.')}</p>}
       <label className="flex flex-col gap-2 text-sm">{tr('API 地址','API base URL')}<input className={input} value={draft.baseUrl} onChange={e=>{changeEndpoint({baseUrl:e.target.value});setModels([]);}} placeholder={draft.provider==='openai'?'https://api.openai.com/v1':'https://api.anthropic.com/v1'} autoCapitalize="none" autoCorrect="off" spellCheck={false}/></label>
       <p className="text-[12px] text-ink-3">{tr('留空使用官方地址。兼容接口填写到 /v1 等基路径，不要填 /chat/completions。Gemini 可使用其 OpenAI 兼容端点。','Leave blank for the official endpoint. Use the base path, not /chat/completions. Gemini can use its OpenAI-compatible endpoint.')}</p>
-      <label className="flex flex-col gap-2 text-sm">API Key<input className={input} type="password" value={draft.apiKey} onChange={e=>{update({apiKey:e.target.value});setSavedOrigin(null);setModels([]);}} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={tr('粘贴你的密钥','Paste your API key')}/></label>
+      <label className="flex flex-col gap-2 text-sm">API Key<input className={input} type="password" value={draft.apiKey} onChange={e=>{update({apiKey:e.target.value});setSavedOrigin(e.target.value.trim()?keyOrigin(draft):null);setModels([]);}} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder={tr('粘贴你的密钥','Paste your API key')}/></label>
       {(['fastModel','smartModel'] as const).map(k=><label key={k} className="flex flex-col gap-2 text-sm">{k==='fastModel'?tr('对话模型','Conversation model'):tr('复盘模型','Assessment model')}
         <input className={input} value={draft[k]} onChange={e=>update({[k]:e.target.value})} placeholder={tr('填写服务提供的完整模型名称','Exact model ID from your provider')} autoCapitalize="none" spellCheck={false}/>
         {!!models.length&&<Button size="sm" variant="secondary" onClick={()=>{setTarget(target===k?null:k);setQuery('');}}>{tr('从模型列表选择','Choose from model list')}</Button>}

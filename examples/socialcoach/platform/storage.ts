@@ -30,8 +30,10 @@ async function drain() {
       }
       notify(null);
     } catch (e) {
-      // Put the failed write back at the front so retries keep the original order.
-      if (!pending.has(id)) {const rest=[...pending];pending.clear();pending.set(id,item);for(const [k,v] of rest)pending.set(k,v);}
+      // Retry this key first so a record is never written after an index that already lists it.
+      // A newer value queued while this write was in flight replaces the failed one in that front slot.
+      const retry=pending.get(id)??item;pending.delete(id);
+      const rest=[...pending];pending.clear();pending.set(id,retry);for(const [k,v] of rest)pending.set(k,v);
       notify(new Error(`数据尚未保存：${permissionMessage(e)}`));
       return;
     }

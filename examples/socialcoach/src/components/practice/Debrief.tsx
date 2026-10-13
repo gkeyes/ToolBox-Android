@@ -11,6 +11,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useApp, useLang } from "@/store/useApp";
 import { t, tList } from "@/lib/i18n";
 import { assessStream, isModelNotConfigured, reflectStream } from "@/lib/client-api";
+import { isReady, useByok } from "@/lib/byok";
 import { buildSession } from "@/lib/session-utils";
 import type { Report, Session } from "@/lib/types";
 import type { Character } from "@/data/corpus/types";
@@ -550,6 +551,10 @@ function ReflectItem({ session, question, idx, addReflection, updateReflection, 
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ text: string; needsModel: boolean } | null>(null);
+  const modelReady = useByok((s) => isReady(s));
+  useEffect(() => {
+    if (modelReady) setFailed((current) => (current?.needsModel ? null : current));
+  }, [modelReady]);
   const strip = (x: string) => x.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)\*(\S.*?)\*/g, "$1$2");
 
   const submit = async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
@@ -6,6 +6,7 @@ import { Button, ModelSetupButton, Spinner } from "@/components/ui";
 import { useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
 import { isModelNotConfigured, pattern as patternApi } from "@/lib/client-api";
+import { isReady, useByok } from "@/lib/byok";
 import { skillById } from "@/data/taxonomy";
 import type { PatternSession } from "@/lib/tasks/types";
 import type { Session } from "@/lib/types";
@@ -54,6 +55,11 @@ export function PatternCard() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<{ text: string; needsModel: boolean } | null>(null);
   const inflight = useRef(false);
+  // Once a model is configured, drop the "needs a model" prompt so the run button comes back.
+  const modelReady = useByok((s) => isReady(s));
+  useEffect(() => {
+    if (modelReady) setErr((current) => (current?.needsModel ? null : current));
+  }, [modelReady]);
 
   const done = useMemo(() => sessions.filter((s) => s.status === "assessed" && s.report), [sessions]);
   const ids = done.map((s) => s.id);

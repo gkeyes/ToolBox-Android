@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {request,requestScope,abortRequests,setIdleTimeout} from '../platform/network';
 import {makeByokLLM,keyOrigin} from '../platform/llm';
-import {flushStorage} from '../platform/storage';
+import {flushStorage,appStorage} from '../platform/storage';
 import {validateBackup,backupText} from '../platform/backup';
 import {useApp} from '../src/store/useApp';
 import {hydrateApp,holdSessionWrites,releaseSessionWrites,INDEX_KEY,LEGACY_KEY,sessionKey} from '../src/store/persistence';
@@ -172,4 +172,23 @@ test('the saved API key is bound to the origin it was saved for',()=>{
   assert.equal(keyOrigin({provider:'openai',baseUrl:''}),'https://api.openai.com');
   assert.equal(keyOrigin({provider:'openai',baseUrl:'https://proxy.example/v1'}),'https://proxy.example');
   assert.notEqual(keyOrigin({provider:'openai',baseUrl:'https://proxy.example/v1'}),keyOrigin({provider:'openai',baseUrl:'https://other.example/v1'}));
+});
+
+test('a failed in-flight record write is retried, with its newer value, before an index queued behind it',async()=>{
+  const host=mockHost();
+  const order:string[]=[];let fail:((e:Error)=>void)|null=null;let first=true;
+  const set=host.api.storage.set;
+  host.api.storage.set=async(k:string,v:unknown)=>{
+    if(first&&k==='rec'){first=false;await new Promise((_,reject)=>{fail=reject;});}
+    order.push(`${k}=${v}`);await set(k,v);
+  };
+  appStorage.setItem('rec','v1');
+  await wait(0);
+  appStorage.setItem('index','lists-rec');
+  appStorage.setItem('rec','v2');
+  fail!(new Error('disk busy'));
+  await assert.rejects(flushStorage(),/尚未保存/);
+  await flushStorage();
+  assert.deepEqual(order,['rec=v2','index=lists-rec']);
+  assert.equal(host.ordinary.get('rec'),'v2');
 });

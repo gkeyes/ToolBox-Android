@@ -74,6 +74,9 @@ export default function Home() {
   }, [pruneSessions]);
 
   // Planning calls the learner's paid model, so it only starts from an explicit tap.
+  useEffect(() => {
+    if (modelReady) setError((current) => (current?.needsModel ? null : current));
+  }, [modelReady]);
 
   if (!profile) return null;
   const recent = sessions.filter((s) => s.status === "assessed").slice(0, 3);
