@@ -150,9 +150,14 @@ internal object StrictJson {
                 't' -> '\t'
                 'u' -> {
                     if (index + 4 > text.length) fail("Incomplete Unicode escape")
-                    val code = text.substring(index, index + 4).toIntOrNull(16)
-                        ?: fail("Invalid Unicode escape")
-                    index += 4
+                    // Exactly four ASCII hex digits: toIntOrNull(16) would also accept a sign
+                    // ("+00A") and non-ASCII digits, which IntegrityJsonReader rejects.
+                    var code = 0
+                    repeat(4) {
+                        val digit = jsonHexDigit(text[index]) ?: fail("Invalid Unicode escape")
+                        code = code * 16 + digit
+                        index++
+                    }
                     code.toChar()
                 }
                 else -> fail("Invalid escape: \\$escaped")
@@ -210,6 +215,14 @@ internal object StrictJson {
 
         private fun fail(message: String): Nothing = throw JsonFormatException("$message at character $index")
     }
+}
+
+/** Value of one ASCII hex digit, or null. Shared by both strict JSON readers. */
+internal fun jsonHexDigit(character: Char): Int? = when (character) {
+    in '0'..'9' -> character - '0'
+    in 'a'..'f' -> character - 'a' + 10
+    in 'A'..'F' -> character - 'A' + 10
+    else -> null
 }
 
 internal fun JsonValue.asObject(label: String): Map<String, JsonValue> =
