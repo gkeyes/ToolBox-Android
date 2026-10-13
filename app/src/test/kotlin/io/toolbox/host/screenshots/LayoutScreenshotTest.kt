@@ -92,7 +92,7 @@ import java.io.File
 @OptIn(ExperimentalRoborazziApi::class)
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w320dp-h1400dp-xxhdpi")
+@Config(sdk = [36], qualifiers = "w320dp-h2400dp-xxhdpi")
 class LayoutScreenshotTest(private val fontScale: Float) {
     companion object {
         @JvmStatic
