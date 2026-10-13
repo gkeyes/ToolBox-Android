@@ -11,9 +11,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.InstalledTool
-import io.toolbox.core.data.PermissionGrantRepository
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -21,32 +19,40 @@ import io.toolbox.core.ui.component.ToolBoxText
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.core.ui.component.toolBoxEntrance
 import io.toolbox.core.ui.component.toolBoxPressFeedback
-import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.CatalogToolGlyph
 import io.toolbox.host.ui.DetailScreen
 import io.toolbox.host.ui.SectionHeader
 import io.toolbox.host.ui.ToolVisual
 import io.toolbox.host.ui.mergePadding
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 internal fun ToolPermissionsScreen(
-    catalog: CatalogRepository,
+    viewModel: ToolPermissionsViewModel,
     onBack: () -> Unit,
     onSelectTool: (String) -> Unit,
     onReady: () -> Unit = {},
-    packages: HostPackageOperations? = null,
-    grants: PermissionGrantRepository? = null,
 ) {
-    var toolsLoaded by remember(catalog) { mutableStateOf(false) }
-    val toolsFlow = remember(catalog) { catalog.observeTools().onEach { toolsLoaded = true } }
-    val tools by toolsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val summaryReader = remember(catalog, packages, grants) {
-        if (packages == null || grants == null) null else ToolPermissionSummaryReader(catalog, packages, grants)
-    }
-    LaunchedEffect(toolsLoaded) { if (toolsLoaded) onReady() }
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(state.toolsLoaded) { if (state.toolsLoaded) onReady() }
+    ToolPermissionsContent(
+        tools = state.tools,
+        toolsLoaded = state.toolsLoaded,
+        summaryFor = viewModel::summary,
+        onBack = onBack,
+        onSelectTool = onSelectTool,
+    )
+}
 
+@Composable
+internal fun ToolPermissionsContent(
+    tools: List<InstalledTool>,
+    toolsLoaded: Boolean,
+    summaryFor: (InstalledTool) -> Flow<ToolPermissionSummary>,
+    onBack: () -> Unit,
+    onSelectTool: (String) -> Unit,
+) {
     val entrance = io.toolbox.core.ui.component.rememberToolBoxEntrance("tool-permissions")
     DetailScreen(title = "工具权限", onBack = onBack) { chromePadding ->
         LazyColumn(
@@ -81,14 +87,9 @@ internal fun ToolPermissionsScreen(
                 ) { index, tool ->
                     CatalogLazyGroupItem(index = index, count = tools.size, modifier = Modifier.toolBoxEntrance(entrance, index + 1)) {
                         // Reset collected state, not just the flow, when an installed identity changes.
-                        key(tool.currentVersion, summaryReader) {
-                            val summary = if (summaryReader == null) {
-                                ToolPermissionSummary.Unavailable
-                            } else {
-                                val summaryFlow = remember(tool.currentVersion, summaryReader) { summaryReader.observe(tool) }
-                                val value by summaryFlow.collectAsStateWithLifecycle(initialValue = ToolPermissionSummary.Loading)
-                                value
-                            }
+                        key(tool.currentVersion) {
+                            val summaryFlow = remember(tool.currentVersion) { summaryFor(tool) }
+                            val summary by summaryFlow.collectAsStateWithLifecycle(initialValue = ToolPermissionSummary.Loading)
                             ToolPermissionSelectionRow(tool, summary, onSelectTool)
                         }
                     }
