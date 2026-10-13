@@ -24,6 +24,7 @@ on:
       - "!scripts/ci/tbx-targets.json"
       - "!scripts/tests/watcher-reliability.test.cjs"
       - "!scripts/tests/tool-runtime-performance.test.cjs"
+      - "!scripts/tests/bundled-tools.test.cjs"
   pull_request:
     branches: ["main"]
     paths:
@@ -44,6 +45,7 @@ on:
       - "!scripts/ci/tbx-targets.json"
       - "!scripts/tests/watcher-reliability.test.cjs"
       - "!scripts/tests/tool-runtime-performance.test.cjs"
+      - "!scripts/tests/bundled-tools.test.cjs"
   workflow_dispatch:
     inputs:
       run_android_ui_tests:
