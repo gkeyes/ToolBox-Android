@@ -205,33 +205,30 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         }
     }
 
+    // The catalog lists render on their own: inside the pager, Robolectric draws only the first
+    // items of the home and tools pages, while the real app (and these lists alone) draw them all.
+    @Composable private fun Catalog(home: Boolean) {
+        ToolManagerContent(
+            state = catalog, importState = ImportUiState(), listState = rememberLazyListState(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            onAction = {}, onImport = {}, onInstallExamples = {}, onDismissImport = {}, onOpenDetails = {}, home = home,
+        )
+    }
+
     @Test fun home() {
-        render("home") { Primary(MainDestination.Home) }
+        render("home") { Catalog(home = true) }
         assertShows("NextFlux 阅读器", "工作效率")
     }
 
-    @Test fun homeList() {
-        render("home_list") {
-            ToolManagerContent(
-                state = catalog, importState = ImportUiState(), listState = rememberLazyListState(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                onAction = {}, onImport = {}, onInstallExamples = {}, onDismissImport = {}, onOpenDetails = {}, home = true,
-            )
-        }
-        compose.mainClock.advanceTimeBy(10_000)
-        compose.waitForIdle()
-        compose.onRoot().captureRoboImage(File(outputDir, "home_list_late_font${fontScale}.png").path, roborazziOptions = pixelCopy)
-    }
-
     @Test fun allTools() {
-        render("tools") { Primary(MainDestination.Tools) }
+        render("tools") { Catalog(home = false) }
         assertShows("番茄钟专注计时")
     }
 
     @Test fun settings() = render("settings") { Primary(MainDestination.Settings) }
 
     @Test fun groupFolder() = render("group_folder", dialog = true) {
-        Box(Modifier.fillMaxSize()) { Primary(MainDestination.Home) }
+        Box(Modifier.fillMaxSize()) { Catalog(home = true) }
         CatalogGroupFolderOverlay(groups[0], tools.filter { it.toolId in groups[0].members }, editing = false, {}, {}, {}, {})
     }
 

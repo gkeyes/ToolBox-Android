@@ -1,5 +1,7 @@
 package io.toolbox.host.update
 
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -383,18 +385,29 @@ private fun VersionRow(
             .padding(start = 16.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.Center,
     ) {
+        // Large text on a narrow phone: the version gets its own line so most of it stays visible.
+        val stacked = LocalConfiguration.current.screenWidthDp / LocalDensity.current.fontScale < 260f
+        val valueText = @Composable { modifier: Modifier ->
+            ToolBoxText(
+                value,
+                modifier = modifier.horizontalScroll(rememberScrollState()),
+                style = textStyles.body.copy(color = valueColor),
+                maxLines = 1,
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsIconTile(icon, tint)
-            ToolBoxText(title, style = textStyles.body.copy(color = colors.textPrimary), maxLines = 1)
-            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                ToolBoxText(
-                    value,
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    style = textStyles.body.copy(color = valueColor),
-                    maxLines = 1,
-                )
+            ToolBoxText(
+                title,
+                modifier = if (stacked) Modifier.weight(1f) else Modifier,
+                style = textStyles.body.copy(color = colors.textPrimary),
+                maxLines = if (stacked) 2 else 1,
+            )
+            if (!stacked) {
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { valueText(Modifier) }
             }
         }
+        if (stacked) valueText(Modifier.padding(start = 42.dp))
         summary?.let {
             ToolBoxText(
                 it,
