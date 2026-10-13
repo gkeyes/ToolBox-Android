@@ -81,11 +81,47 @@
       && retryAfterSeconds !== undefined
       && Number.isFinite(Number(retryAfterSeconds));
     if (status === 401) return "invalid_token";
+    // GitHub documents both 403 and 429 for primary/secondary rate limits.
+    if (status === 429) return "rate_limit";
     if (status === 403 && (Number(remaining) === 0 || hasRetryAfter)) return "rate_limit";
     if (status === 403) return "permission";
     if (status === 404) return "not_found";
     if (status >= 400) return "github";
     return null;
+  }
+
+  // Retry-After is either delta-seconds or an HTTP date.
+  function parseRetryAfter(value, now = Date.now()) {
+    if (value === null || value === undefined || String(value).trim() === "") return null;
+    const text = String(value).trim();
+    if (/^\d+(?:\.\d+)?$/.test(text)) return Number(text);
+    const at = Date.parse(text);
+    return Number.isFinite(at) ? Math.max(0, (at - now) / 1000) : null;
+  }
+
+  // Persist and keep only the fields the watcher UI and estimator read, not
+  // GitHub's full objects (actor, repository and URL blocks are large).
+  const RUN_FIELDS = ["id", "run_attempt", "run_number", "workflow_id", "name", "display_title", "status",
+    "conclusion", "event", "head_branch", "head_sha", "created_at", "run_started_at", "updated_at"];
+  const JOB_FIELDS = ["id", "name", "status", "conclusion", "started_at", "completed_at"];
+  const STEP_FIELDS = ["name", "number", "status", "conclusion", "started_at", "completed_at"];
+
+  function pick(source, fields) {
+    const result = {};
+    for (const field of fields) {
+      if (source?.[field] !== undefined && source[field] !== null) result[field] = source[field];
+    }
+    return result;
+  }
+
+  function slimRun(run) {
+    return pick(run, RUN_FIELDS);
+  }
+
+  function slimJob(job) {
+    const result = pick(job, JOB_FIELDS);
+    if (Array.isArray(job?.steps)) result.steps = job.steps.map((step) => pick(step, STEP_FIELDS));
+    return result;
   }
 
   function pollInterval(authenticated, active) {
@@ -322,10 +358,13 @@
     normalizeJobName,
     parseNextLink,
     parseRepositoryLink,
+    parseRetryAfter,
     pollInterval,
     runKey,
     selectHistoricalRuns,
     selectedRuns,
+    slimJob,
+    slimRun,
     statePresentation
   };
 });
