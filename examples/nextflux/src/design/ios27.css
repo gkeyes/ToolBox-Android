@@ -586,3 +586,8 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   max-inline-size: 1px; max-block-size: 1px; padding: 0; border: 0;
   overflow: hidden; clip-path: inset(50%);
 }
+/* A keyboard or switch-control user still sees where focus is. */
+.nextflux-close-button.sr-only:focus-visible {
+  inline-size: 44px; block-size: 44px; max-inline-size: none; max-block-size: none;
+  margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: normal;
+}

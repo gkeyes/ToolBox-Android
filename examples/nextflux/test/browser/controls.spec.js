@@ -150,6 +150,11 @@ for (const width of [393, 820]) {
         const header = await dialog.locator(".nextflux-close-header").first().evaluate((el) => getComputedStyle(el).paddingInlineEnd);
         expect(parseFloat(header)).toBeLessThanOrEqual(16);
         if (trigger === "Open settings") await info.attach(`settings-${width}.png`, { body: await page.screenshot(), contentType: "image/png" });
+        // Keyboard focus reveals it, so focus never lands on an invisible target.
+        await close.evaluate((el) => el.focus({ focusVisible: true }));
+        await page.keyboard.press("Shift");
+        const focused = await close.evaluate((el) => el.matches(":focus-visible") ? el.getBoundingClientRect().width : -1);
+        expect(focused).toBeGreaterThanOrEqual(44);
         await close.dispatchEvent("click");
         await expect(dialog).toHaveCount(0);
         continue;
