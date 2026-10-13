@@ -199,7 +199,8 @@ function openEditor(record = null, notice = "", nameReview = null, resumed = fal
   const editing = archive.records.some((r) => r.id === current.id);
   page = "editor"; nav.hidden = true; document.body.classList.add("editing");
   editor = createRecordEditor(current, {
-    editing, notice, nameReview, startDirty: resumed,
+    // A passed-in record that is not in the archive (OCR result, resumed draft) is unsaved work.
+    editing, notice, nameReview, startDirty: resumed || (Boolean(record) && !editing),
     cancel: (dirty) => { if (dirty) ask("放弃未保存的修改？", "当前输入尚未保存，原记录不会改变。", "放弃修改", () => { editor = null; navigate(returnPage); }, true); else navigate(returnPage); },
     history: openHistoryPicker,
     save: async (next, aliases) => {

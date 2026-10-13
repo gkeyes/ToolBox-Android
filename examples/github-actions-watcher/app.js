@@ -28,6 +28,13 @@
   let anonymousPollCount = 0;
   // Anonymous full polls have one list page: alternate front page and discovery queue.
   let lastAnonymousListRead = null;
+  // Requests actually spent by the last anonymous full and light polls. Large runs
+  // page their jobs (100 per request), so the interval adapts to the measured cost.
+  const ANONYMOUS_HOURLY_BUDGET = 50;
+  const anonymousCost = { full: 3, light: 1 };
+  let requestCount = 0;
+  // Consecutive secondary-limit responses without Retry-After back off exponentially.
+  let secondaryLimitStrikes = 0;
   let generation = 0;
   const discoveryVisited = new Set();
   let clockSessionId = null;
@@ -60,6 +67,9 @@
     lastActiveSweepAt = 0;
     lastFrontPageAt = 0;
     lastAnonymousListRead = null;
+    anonymousCost.full = 3;
+    anonymousCost.light = 1;
+    secondaryLimitStrikes = 0;
     clockSessionId = null;
   }
 
@@ -457,6 +467,7 @@
     if (token) headers.Authorization = `Bearer ${token}`;
     let response;
     try {
+      requestCount += 1;
       response = await bounded(toolbox().network.request({
         url,
         method: "GET",
@@ -475,17 +486,28 @@
     const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds);
     if (failure === "invalid_token") throw createError(failure, "GitHub Token 无效", response.status);
     if (failure === "rate_limit") {
-      // Polls stay blocked until rateResetAt. A secondary limit's Retry-After is the
-      // authoritative wait and is not combined with the hourly x-ratelimit-reset.
+      // Polls stay blocked until rateResetAt. Retry-After is authoritative; the hourly
+      // x-ratelimit-reset applies only when this response reports 0 remaining. Otherwise
+      // it is a secondary limit: wait at least 1 minute, doubling on repeated hits.
+      const resetSeconds = Number(headerValue(response.headers, "x-ratelimit-reset"));
+      const primaryResetAt = responseRemaining === 0 && Number.isFinite(resetSeconds) ? resetSeconds * 1000 : 0;
+      let blockedUntil;
+      if (retryAfterSeconds !== null) {
+        blockedUntil = Date.now() + retryAfterSeconds * 1000;
+      } else if (primaryResetAt > Date.now()) {
+        blockedUntil = primaryResetAt;
+      } else {
+        blockedUntil = Date.now() + 60_000 * 2 ** Math.min(secondaryLimitStrikes, 4);
+        secondaryLimitStrikes += 1;
+      }
       state.rateRemaining = 0;
-      state.rateResetAt = retryAfterSeconds !== null
-        ? Date.now() + retryAfterSeconds * 1000
-        : Math.max(state.rateResetAt && state.rateResetAt > Date.now() ? state.rateResetAt : 0, Date.now() + 60_000);
+      state.rateResetAt = blockedUntil;
       throw createError(failure, "GitHub API rate limit exceeded", response.status);
     }
     if (failure === "permission") throw createError(failure, "GitHub Actions read permission required", response.status);
     if (failure === "not_found") throw createError(failure, "Repository or Actions resource not found", response.status);
     if (failure) throw createError(failure, `GitHub API 返回 ${response.status}`, response.status);
+    secondaryLimitStrikes = 0;
     if (!response.body) return {};
     try {
       return { data: JSON.parse(response.body), headers: response.headers };
@@ -678,7 +700,11 @@
 
   function currentPollInterval() {
     const active = state.runs.some(isActiveRun);
-    return model.pollInterval(state.hasToken, active);
+    const base = model.pollInterval(state.hasToken, active);
+    if (state.hasToken) return base;
+    // Polls alternate full/light: keep (full + light) requests per pair under the hourly budget.
+    const pairCost = anonymousCost.full + anonymousCost.light;
+    return Math.max(base, Math.ceil(pairCost * 3_600_000 / 2 / ANONYMOUS_HOURLY_BUDGET));
   }
 
   async function configureTimers(lease) {
@@ -952,6 +978,9 @@
     // Anonymous quota is 60/hour. Every other automatic anonymous poll only re-reads
     // tracked runs; discovery and job details wait for the next full poll.
     const lightPoll = !state.hasToken && !manual && (anonymousPollCount++ % 2 === 1);
+    const requestsBefore = requestCount;
+    let skipExtras = false;
+    let pollCompleted = false;
     try {
       // Current run IDs first: completion cannot disappear behind a newer history page.
       const tracked = state.runs.filter((run) => (unavailableRuns.get(run.id) || 0) <= Date.now() &&
@@ -960,7 +989,7 @@
       const batch = ordered.slice(0, state.hasToken ? 6 : 1);
       activeCursor += batch.length;
       // A light poll with nothing to re-read still discovers new runs.
-      const skipExtras = lightPoll && batch.length > 0;
+      skipExtras = lightPoll && batch.length > 0;
       for (const run of batch) {
         let latest;
         try {
@@ -997,9 +1026,25 @@
         lastAnonymousListRead = "front";
       }
       const pageBudget = skipExtras ? 0 : (state.hasToken ? 4 : 1) - freshPageReads;
+      const failedPages = new Set();
       for (let page = 0; page < pageBudget && discoveryQueue.length && lease.remaining() > 5_000; page += 1) {
         const url = discoveryQueue[0];
-        const response = await apiRequest(url, undefined, lease);
+        if (failedPages.has(url)) break;
+        let response;
+        try {
+          response = await apiRequest(url, undefined, lease);
+        } catch (error) {
+          lease.assert();
+          if (error?.code || ["rate_limit", "offline", "invalid_token"].includes(error?.kind)) throw error;
+          // A failing cursor (e.g. a deleted workflow) must not pin the queue head or keep
+          // the anonymous front page skipped: drop it when gone, otherwise retry it last.
+          discoveryQueue.shift();
+          if (![404, 410].includes(error?.status)) discoveryQueue.push(url);
+          failedPages.add(url);
+          lastAnonymousListRead = "discovery";
+          detailError = error;
+          continue;
+        }
         if (!Array.isArray(response.data?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
         acceptRuns(response.data.workflow_runs, lease);
         discoveryQueue.shift();
@@ -1029,6 +1074,7 @@
       if (detailError) state.warningMessage = `部分构建或任务详情稍后重试：${errorLabel(detailError)}`;
       await bounded(updateLiveNotification(), lease, 5_000);
       await updateBackgroundStatus();
+      pollCompleted = true;
     } catch (error) {
       if (activePoll !== lease || !state.monitoring || runtimeClosing) return;
       state.warning = ["rate_limit", "invalid_token", "permission", "not_found"].includes(error?.kind) ? error.kind : "offline";
@@ -1040,6 +1086,9 @@
         if (activePoll === lease) {
           // Retire before cleanup; cleanup is bounded separately and cannot mutate a new run.
           lease.invalidate();
+          // A poll cut short by an error only raises the estimate, never lowers it.
+          const spent = requestCount - requestsBefore, kind = skipExtras ? "light" : "full";
+          if (!state.hasToken && spent > 0 && (pollCompleted || spent > anonymousCost[kind])) anonymousCost[kind] = spent;
           const cleanup = new reliability.Lease(8_000);
           try {
             if (state.monitoring) await configureTimers(cleanup);

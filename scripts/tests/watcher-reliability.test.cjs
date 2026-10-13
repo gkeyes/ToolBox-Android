@@ -55,7 +55,7 @@ function harness(request) {
       ageFrontPage: () => { lastFrontPageAt = 0; },
       setForeground: (value) => { runtimeForeground = value; }, clockPaints: () => clockPaints,
       expire: () => activePoll?.invalidate(reliability.timeoutError()),
-      pendingPages: () => discoveryQueue.length };
+      pendingPages: () => discoveryQueue.length, pollInterval: () => currentPollInterval() };
   `);
   vm.runInContext(source, context, { filename: 'watcher/app.js' });
   const api = window.testApi;
@@ -361,5 +361,68 @@ test('anonymous full polls alternate the due front page with queued discovery pa
     // Per hour: 10 full polls x (run + one list page + jobs) + 10 light polls x run.
     const fullCost = 3, pollsPerHour = 3_600_000 / model.pollInterval(false, true);
     assert.ok(pollsPerHour / 2 * fullCost + pollsPerHour / 2 < 60);
+  } finally { h.close(); }
+});
+
+test('a secondary limit with quota remaining ignores the hourly reset and backs off from 1 minute', async () => {
+  const hourly = Math.floor(Date.now() / 1000) + 3_000;
+  const h = harness(() => ({ status: 429, body: '{"message":"secondary rate limit"}',
+    headers: { 'x-ratelimit-remaining': '40', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await h.pollGitHub(false);
+    assert.equal(h.state.warning, 'rate_limit');
+    let wait = h.state.rateResetAt - Date.now();
+    assert.ok(wait >= 59_000 && wait <= 61_000, `first wait ${wait}ms`);
+    h.state.rateResetAt = Date.now() - 1; // the minute passes; the limit is hit again
+    await h.pollGitHub(false);
+    wait = h.state.rateResetAt - Date.now();
+    assert.ok(wait >= 119_000 && wait <= 121_000, `second wait ${wait}ms`);
+  } finally { h.close(); }
+  const exhausted = harness(() => ({ status: 403, body: '{}',
+    headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await exhausted.pollGitHub(false);
+    assert.equal(exhausted.state.rateResetAt, hourly * 1000);
+  } finally { exhausted.close(); }
+});
+
+test('anonymous poll interval adapts to runs whose jobs span several pages', async () => {
+  const jobsPage = (o) => {
+    const page = Number(new URL(o.url).searchParams.get('page') || 1);
+    const next = page < 3 ? { link: `<${o.url.replace(/&page=\d+/, '')}&page=${page + 1}>; rel="next"` } : {};
+    return response({ total_count: 250, jobs: Array.from({ length: page < 3 ? 100 : 50 }, (_, i) => ({ id: page * 1000 + i, status: 'in_progress', steps: [] })) }, next);
+  };
+  const h = harness((o) => o.url.includes('/jobs?') ? jobsPage(o)
+    : response(o.url.includes('/actions/runs/17') ? run() : { workflow_runs: [] }));
+  try {
+    await h.pollGitHub(false);
+    const full = h.calls.length;
+    assert.equal(h.calls.filter((o) => o.url.includes('/jobs?')).length, 3);
+    assert.equal(h.state.jobsByRun[model.runKey(run())].length, 250, 'every job is still fetched');
+    await h.pollGitHub(false);
+    const light = h.calls.length - full;
+    const pollsPerHour = 3_600_000 / h.pollInterval();
+    assert.ok(h.pollInterval() > model.pollInterval(false, true));
+    assert.ok(pollsPerHour / 2 * (full + light) <= 50, `${pollsPerHour / 2 * (full + light)} requests/hour`);
+  } finally { h.close(); }
+});
+
+test('a failing discovery page rotates out and the next full poll reads the front page', async () => {
+  const h = harness((o) => o.url.includes('/workflows/9/runs')
+    ? { status: 404, body: '{"message":"Not Found"}', headers: {} }
+    : response(o.url.includes('/jobs?') ? { jobs: [] } : o.url.includes('/actions/runs/17') ? run() : { workflow_runs: [] }));
+  const lists = (from) => h.calls.slice(from).map((o) => new URL(o.url)).filter((u) => !/\/runs\/\d+/.test(u.pathname))
+    .map((u) => u.pathname.includes('/workflows/') ? 'workflow' : u.searchParams.has('status') ? 'status' : 'front');
+  try {
+    const kinds = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      h.ageFrontPage();
+      const full = h.calls.length; await h.pollGitHub(false); kinds.push(...lists(full));
+      await h.pollGitHub(false);
+    }
+    // front, then the failing workflow page (dropped), then front again rather than a stuck head.
+    assert.deepEqual(kinds.slice(0, 3), ['front', 'workflow', 'front']);
+    assert.equal(h.calls.filter((o) => o.url.includes('/workflows/9/runs')).length, 1);
+    assert.notEqual(h.state.warning, 'not_found');
   } finally { h.close(); }
 });
