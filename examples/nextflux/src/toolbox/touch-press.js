@@ -12,7 +12,8 @@
 // usePress stamps every element it manages with data-react-aria-pressable;
 // data-nextflux-press opts in any other control that needs the same handling.
 const PRESSABLE = '[data-react-aria-pressable="true"], [data-nextflux-press]';
-// A tap's click follows its touchstart closely; older touches are not this tap.
+// A tap's click follows its touchend closely; older touches are not this tap.
+// (Measured from the release, so a slow press still counts.)
 const GESTURE_MS = 1000;
 // pointerdown normally fires just before touchstart for the same contact.
 const POINTER_LEAD_MS = 300;
@@ -24,15 +25,17 @@ const isDisabled = (element) =>
 
 export function installTouchPressCompat(target = window) {
   let touchAt = -Infinity;
+  let touchEndAt = -Infinity;
   let pointerAt = -Infinity;
 
   const onPointerDown = (event) => { pointerAt = event.timeStamp; };
   const onTouchStart = (event) => { touchAt = event.timeStamp; };
-  const forget = () => { touchAt = -Infinity; pointerAt = -Infinity; };
+  const onTouchEnd = (event) => { touchEndAt = event.timeStamp; };
+  const forget = () => { touchAt = -Infinity; touchEndAt = -Infinity; pointerAt = -Infinity; };
   const onClick = (event) => {
     // Untrusted (programmatic) and keyboard/virtual clicks already work.
     if (!event.isTrusted || event.detail === 0) return;
-    const fromTouch = event.pointerType === "touch" || event.timeStamp - touchAt < GESTURE_MS;
+    const fromTouch = event.pointerType === "touch" || event.timeStamp - touchEndAt < GESTURE_MS;
     const gestureStart = Number.isFinite(touchAt) ? touchAt : event.timeStamp - GESTURE_MS;
     const hadPointerDown = pointerAt >= gestureStart - POINTER_LEAD_MS;
     // Each tap is judged once; a finished or cancelled gesture leaves nothing
@@ -49,12 +52,14 @@ export function installTouchPressCompat(target = window) {
   const capture = { capture: true, passive: true };
   target.addEventListener("pointerdown", onPointerDown, capture);
   target.addEventListener("touchstart", onTouchStart, capture);
+  target.addEventListener("touchend", onTouchEnd, capture);
   target.addEventListener("touchcancel", forget, capture);
   target.addEventListener("pointercancel", forget, capture);
   target.addEventListener("click", onClick, { capture: true });
   return () => {
     target.removeEventListener("pointerdown", onPointerDown, capture);
     target.removeEventListener("touchstart", onTouchStart, capture);
+    target.removeEventListener("touchend", onTouchEnd, capture);
     target.removeEventListener("touchcancel", forget, capture);
     target.removeEventListener("pointercancel", forget, capture);
     target.removeEventListener("click", onClick, { capture: true });
