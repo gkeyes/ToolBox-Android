@@ -75,13 +75,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.readableForeground
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardColors
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TopAppBar
@@ -292,14 +288,13 @@ fun ToolBoxNavigationBar(
     glassState: ToolBoxGlassState? = null,
 ) {
     val usesIconOnlyLayout = LocalDensity.current.fontScale >= 1.5f
-    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val navigationShape = RoundedCornerShape(25.dp)
     val haptics = rememberToolBoxHaptics()
     val select: (ToolBoxNavigationItem) -> Unit = { item ->
         if (item.id != selectedId) haptics.tick()
         onItemSelected(item)
     }
-    if (isGlass && glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+    if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
         LiquidTabNavigationBar(
             items = items,
             selectedId = selectedId,
@@ -310,44 +305,13 @@ fun ToolBoxNavigationBar(
         )
         return
     }
-    if (isGlass) {
-        LiquidGlassNavigationBar(
-            items = items,
-            selectedId = selectedId,
-            onItemSelected = select,
-            modifier = modifier,
-            navigationShape = navigationShape,
-        )
-        return
-    }
-    val navigationModifier = when {
-        glassState != null -> modifier
-            .toolBoxGlassEffect(glassState, navigationShape)
-        else -> modifier
-    }
-    NavigationBar(
-        modifier = navigationModifier,
-        color = ToolBoxThemeTokens.colors.surface,
-        showDivider = false,
-        defaultWindowInsetsPadding = true,
-        mode = if (usesIconOnlyLayout) {
-            NavigationBarDisplayMode.IconOnly
-        } else {
-            NavigationBarDisplayMode.IconAndText
-        },
-    ) {
-        items.forEach { item ->
-            key(item.id) {
-                NavigationBarItem(
-                    selected = item.id == selectedId,
-                    onClick = { select(item) },
-                    icon = item.icon.asImageVector(),
-                    label = item.label,
-                    modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
-                )
-            }
-        }
-    }
+    LiquidGlassNavigationBar(
+        items = items,
+        selectedId = selectedId,
+        onItemSelected = select,
+        modifier = modifier,
+        navigationShape = navigationShape,
+    )
 }
 
 /**

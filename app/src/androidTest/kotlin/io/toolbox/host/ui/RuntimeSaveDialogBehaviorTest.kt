@@ -20,7 +20,6 @@ import org.junit.runner.RunWith
 class RuntimeSaveDialogBehaviorTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun miuixCloseChoicesAndCallbacks() = exercise(ToolBoxThemeStyle.Miuix)
     @Test fun liquidGlassCloseChoicesAndCallbacks() = exercise(ToolBoxThemeStyle.LiquidGlass)
 
     private fun exercise(style: ToolBoxThemeStyle) {

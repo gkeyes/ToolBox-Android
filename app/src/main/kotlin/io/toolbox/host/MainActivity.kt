@@ -130,11 +130,8 @@ class MainActivity : ComponentActivity() {
                     // Report usable host content, not the earlier bootstrap placeholder.
                     ReportDrawnWhen { catalogReady && !settingsState.hasError }
                     val themeMode = settingsState.theme.toToolBoxThemeMode()
-                    val themeStyle = if (settingsState.themeStyle == io.toolbox.core.data.ThemeStyle.MIUIX) {
-                        ToolBoxThemeStyle.Miuix
-                    } else {
-                        ToolBoxThemeStyle.LiquidGlass
-                    }
+                    // A legacy stored Miuix style still renders the single iOS look.
+                    val themeStyle = ToolBoxThemeStyle.LiquidGlass
                     LaunchedEffect(themeMode) { applyLaunchNightMode(themeMode) }
                     SideEffect {
                         BrowserAppearance.current = BrowserAppearance(

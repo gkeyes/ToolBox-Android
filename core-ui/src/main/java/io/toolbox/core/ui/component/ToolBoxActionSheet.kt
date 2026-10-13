@@ -21,8 +21,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -41,7 +39,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import android.view.ViewTreeObserver
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -49,7 +46,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier }
 
@@ -86,16 +82,15 @@ fun ToolBoxActionSheet(
     content: @Composable () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val sheetRadius = ToolBoxThemeTokens.radii.sheet
     // iOS 27: sheets float inset from the screen edges with every corner rounded.
-    val shape = if (glass) toolBoxShape(sheetRadius) else toolBoxTopShape(sheetRadius)
+    val shape = toolBoxShape(sheetRadius)
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
     // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
     val hostView = LocalView.current
     // Pass frostedBackdrop = false over live content (a playing web page): the copy would freeze it.
-    val frosted = glass && containerColor == null && frostedBackdrop && LocalToolBoxFrostedSheets.current &&
+    val frosted = containerColor == null && frostedBackdrop && LocalToolBoxFrostedSheets.current &&
         materials.realBlurEnabled
     var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
     // Opaque until the copy lands, then eases into the lighter glass fill.
@@ -265,26 +260,19 @@ fun ToolBoxActionSheet(
             ) {
                 Column(
                     modifier.widthIn(max = 560.dp).fillMaxWidth()
-                        .then(
-                            if (glass) {
-                                Modifier
-                                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-                                    .padding(horizontal = SheetInset).padding(bottom = SheetInset)
-                            } else Modifier,
-                        )
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                        .padding(horizontal = SheetInset).padding(bottom = SheetInset)
                         .offset { IntOffset(0, dragOffset.roundToInt()) }
                         .graphicsLayer {
                             // Never overshoot upward: that would open a gap under the sheet.
                             translationY = ((1f - entrance.value) * size.height).coerceAtLeast(0f)
                         }
-                        .then(
-                            if (glass) Modifier.shadow(
-                                elevation = 24.dp,
-                                shape = shape,
-                                clip = false,
-                                ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                                spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                            ) else Modifier,
+                        .shadow(
+                            elevation = 24.dp,
+                            shape = shape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                            spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                         )
                         .clip(shape)
                         .then(
@@ -293,28 +281,17 @@ fun ToolBoxActionSheet(
                             } ?: Modifier,
                         )
                         .background(
-                            containerColor ?: if (glass) lerp(materials.overlayFallback, materials.overlayFill, frost) else colors.raised,
+                            containerColor ?: lerp(materials.overlayFallback, materials.overlayFill, frost),
                         )
-                        .then(
-                            if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape)
-                            else Modifier.drawWithContent {
-                                drawContent()
-                                // Sheets separate by surface tone plus a top hairline, not a shadow.
-                                drawLine(colors.divider, Offset(size.width * 0.08f, 0f), Offset(size.width * 0.92f, 0f), 1.dp.toPx())
-                            },
-                        )
+                        .border(0.5.dp, materials.overlayBorder, shape)
                         .pointerInput(Unit) { detectTapGestures { /* Consume taps on the sheet, not its scrim. */ } }
-                        .then(
-                            if (glass) Modifier
-                            else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)),
-                        )
                         .padding(horizontal = 20.dp).padding(bottom = 12.dp)
                         .semantics { paneTitle = title; dismiss { onDismissRequest(); true } },
                 ) {
                     CompositionLocalProvider(
                         LocalSheetHeaderDrag provides headerDrag,
                         // Opaque custom containers (browser sheets) keep their opaque cards.
-                        LocalToolBoxInGlassSheet provides (glass && containerColor == null),
+                        LocalToolBoxInGlassSheet provides (containerColor == null),
                     ) {
                         Box(Modifier.fillMaxWidth()) { content() }
                     }

@@ -62,7 +62,6 @@ import io.toolbox.core.ui.component.ToolBoxTopBar
 import io.toolbox.core.ui.component.rememberToolBoxGlassState
 import io.toolbox.core.ui.component.toolBoxBackdropSource
 import io.toolbox.core.ui.component.toolBoxGlassEffect
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -313,16 +312,13 @@ private fun DestinationBar(
             )
         }
     } else {
-        val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
         Column(
             modifier
                 .toolBoxGlassEffect(
                     state = glassState,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(
-                        if (isGlass) ToolBoxThemeTokens.radii.card else 0.dp,
-                    ),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.card),
                 )
-                .background(if (isGlass) androidx.compose.ui.graphics.Color.Transparent else ToolBoxThemeTokens.colors.surface),
+                .background(androidx.compose.ui.graphics.Color.Transparent),
             verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.two),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -466,24 +462,13 @@ private fun TopBar(
                     )
                 }
             } else if (onImport != null) {
-                if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
-                    ToolBoxGlassIconButton(
-                        icon = ToolBoxIconKey.Add,
-                        contentDescription = "导入工具（支持 .tbx / .zip）",
-                        onClick = onImport,
-                        glassState = glassState,
-                        modifier = Modifier.testTag(HostTestTags.ImportFab),
-                    )
-                } else {
-                    ToolBoxTextButton(
-                        label = "＋ 导入",
-                        onClick = onImport,
-                        modifier = Modifier
-                            .testTag(HostTestTags.ImportFab)
-                            .semantics { contentDescription = "导入工具（支持 .tbx / .zip）" },
-                        contentColor = ToolBoxThemeTokens.colors.primary,
-                    )
-                }
+                ToolBoxGlassIconButton(
+                    icon = ToolBoxIconKey.Add,
+                    contentDescription = "导入工具（支持 .tbx / .zip）",
+                    onClick = onImport,
+                    glassState = glassState,
+                    modifier = Modifier.testTag(HostTestTags.ImportFab),
+                )
             }
         },
     )

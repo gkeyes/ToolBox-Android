@@ -32,8 +32,11 @@ enum class ToolBoxThemeMode {
     MonetDark,
 }
 
+/**
+ * The iOS 27 redesign has a single look. The enum stays so call sites and tests keep their shape;
+ * a stored legacy Miuix setting maps to [LiquidGlass] where it is read.
+ */
 enum class ToolBoxThemeStyle {
-    Miuix,
     LiquidGlass,
 }
 
@@ -274,16 +277,12 @@ private val DefaultTextStyles = ToolBoxTextStyles(
     collapsedTitle = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.43).sp),
 )
 
-/** Design system v2 unifies metrics across both looks; Liquid Glass differs only in material. */
-private val LiquidGlassTextStyles = DefaultTextStyles
-
-private val MiuixRadii = ToolBoxRadii()
 private val LiquidGlassRadii = ToolBoxRadii()
 
 private val LocalToolBoxColors = staticCompositionLocalOf { LightToolBoxColors }
 private val LocalToolBoxTextStyles = staticCompositionLocalOf { DefaultTextStyles }
-private val LocalToolBoxThemeStyle = staticCompositionLocalOf { ToolBoxThemeStyle.Miuix }
-private val LocalToolBoxRadii = staticCompositionLocalOf { MiuixRadii }
+private val LocalToolBoxThemeStyle = staticCompositionLocalOf { ToolBoxThemeStyle.LiquidGlass }
+private val LocalToolBoxRadii = staticCompositionLocalOf { LiquidGlassRadii }
 private val LocalToolBoxMaterials = staticCompositionLocalOf {
     ToolBoxMaterialTokens(
         realBlurEnabled = false,
@@ -314,19 +313,10 @@ fun ToolBoxTheme(
     reduceTransparency: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    // The iOS 27 redesign has a single look; the legacy Miuix style setting is ignored until its
-    // picker is removed from Appearance.
-    @Suppress("NAME_SHADOWING")
-    val style = ToolBoxThemeStyle.LiquidGlass
     val usesDarkColors = when (mode) {
         ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> true
         ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> isSystemInDarkTheme()
         ToolBoxThemeMode.Light, ToolBoxThemeMode.MonetLight -> false
-    }
-    val baseColors = if (usesDarkColors) {
-        DarkToolBoxColors
-    } else {
-        LightToolBoxColors
     }
     val controller = remember(mode) {
         ThemeController(
@@ -437,44 +427,25 @@ fun ToolBoxTheme(
         }
     }
 
-    MiuixTheme(controller = if (style == ToolBoxThemeStyle.Miuix) controller else renderedController) {
+    // Miuix components still render inside the iOS look, so they read the same palette.
+    MiuixTheme(controller = renderedController) {
         val miuixColors = MiuixTheme.colorScheme
-        val miuixSemanticColors = baseColors.copy(
-            primary = miuixColors.primary,
-            onPrimary = readableForeground(miuixColors.onPrimary, listOf(miuixColors.primary)),
-            background = miuixColors.background,
-            surface = miuixColors.surface,
-            surfaceMuted = miuixColors.surfaceVariant,
-            textPrimary = miuixColors.onBackground,
-            textSecondary = readableForeground(
-                miuixColors.onSurfaceVariantSummary,
-                listOf(miuixColors.background, miuixColors.surface, miuixColors.surfaceVariant),
-            ),
-            danger = miuixColors.error,
-            onDanger = readableForeground(baseColors.onDanger, listOf(miuixColors.error)),
-            divider = miuixColors.dividerLine,
-            softPrimary = miuixColors.primaryContainer,
-            softDanger = miuixColors.errorContainer,
-            onSoftDanger = miuixColors.onErrorContainer,
+        val colors = liquidGlassColors(
+            dark = usesDarkColors,
+            accent = miuixColors.primary,
+            accentForeground = readableForeground(miuixColors.onPrimary, listOf(miuixColors.primary)),
         )
-        val colors = if (style == ToolBoxThemeStyle.Miuix) miuixSemanticColors else run {
-            liquidGlassColors(
-                dark = usesDarkColors,
-                accent = miuixSemanticColors.primary,
-                accentForeground = miuixSemanticColors.onPrimary,
-            )
-        }
         val materials = liquidGlassMaterials(
             colors = colors,
             dark = usesDarkColors,
-            enabled = style == ToolBoxThemeStyle.LiquidGlass,
+            enabled = true,
             reduceTransparency = reduceTransparency,
         )
         CompositionLocalProvider(
             LocalToolBoxColors provides colors,
-            LocalToolBoxTextStyles provides if (style == ToolBoxThemeStyle.Miuix) DefaultTextStyles else LiquidGlassTextStyles,
+            LocalToolBoxTextStyles provides DefaultTextStyles,
             LocalToolBoxThemeStyle provides style,
-            LocalToolBoxRadii provides if (style == ToolBoxThemeStyle.Miuix) MiuixRadii else LiquidGlassRadii,
+            LocalToolBoxRadii provides LiquidGlassRadii,
             LocalToolBoxMaterials provides materials,
             // Flat iOS press highlight, clipped by the pressed element's own shape; never a ripple.
             LocalIndication provides ToolBoxPressIndication,
