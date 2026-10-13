@@ -59,19 +59,18 @@ internal class HostBackupService(
                 val content = File(session, "content").apply { mkdirs() }
                 val warnings = mutableListOf<String>()
                 val contents = packageLock.run {
-                    repositories.mutations.run {
-                        database.transaction {
-                            val tools = repositories.catalog.observeTools().first()
-                            BackupDataCodec.write(File(content, "host/settings.json"), BackupDataCodec.settings(repositories.settings.settings.first()))
-                            tools.forEachIndexed { index, tool ->
-                                exportTool(content, tool, warnings)
-                                progress("收集工具与数据", (index + 1) * 45 / maxOf(1, tools.size))
-                            }
-                            BackupContents(BuildConfig.VERSION_NAME, System.currentTimeMillis(), tools.map {
-                                BackupTool(it.metadata.id, it.metadata.name, it.currentVersion.version, it.currentVersion.versionCode)
-                            }, warnings.distinct())
-                        }
+                    // Only the row reads share the Room transaction, so the backup is one consistent
+                    // snapshot. Bundle repacking, package validation, Keystore decryption and file
+                    // writes run after it commits; the package lock still keeps bundles stable.
+                    val snapshot = repositories.mutations.run { database.transaction { readExportSnapshot() } }
+                    BackupDataCodec.write(File(content, "host/settings.json"), BackupDataCodec.settings(snapshot.settings))
+                    snapshot.tools.forEachIndexed { index, tool ->
+                        exportTool(content, tool, warnings)
+                        progress("收集工具与数据", (index + 1) * 45 / maxOf(1, snapshot.tools.size))
                     }
+                    BackupContents(BuildConfig.VERSION_NAME, System.currentTimeMillis(), snapshot.tools.map { (tool) ->
+                        BackupTool(tool.metadata.id, tool.metadata.name, tool.currentVersion.version, tool.currentVersion.versionCode)
+                    }, warnings.distinct())
                 }
                 val zip = File(session, "ToolBox-backup.zip")
                 archive.write(content, zip, contents) { progress("压缩并复核备份", 45 + it * 55 / 100) }
@@ -81,7 +80,26 @@ internal class HostBackupService(
         }
     }
 
-    private suspend fun exportTool(root: File, tool: InstalledTool, warnings: MutableList<String>) {
+    /** Row reads only; runs inside the export transaction. */
+    private suspend fun readExportSnapshot(): ExportSnapshot {
+        val tools = repositories.catalog.observeTools().first()
+        val settings = repositories.settings.settings.first()
+        return ExportSnapshot(settings, tools.map { tool ->
+            val id = tool.metadata.id
+            val keys = repositories.keyValues.keys(id)
+            val found = repositories.keyValues.readSnapshot(id) { it.getMany(keys.toSet()) }
+            val rows = linkedMapOf<String, ToolKvValue>()
+            keys.forEach { key -> found[key]?.let { rows[key] = it } }
+            ExportToolSnapshot(
+                tool, repositories.grants.observeGrants(id).first(), rows,
+                repositories.backgroundTasks.observeTasks(id).first().map { it to repositories.backgroundTasks.observeResult(it.taskId).first() },
+            )
+        })
+    }
+
+    /** Files, ZIP and Keystore work only; reads nothing but [snapshot] and the locked bundle. */
+    private suspend fun exportTool(root: File, snapshot: ExportToolSnapshot, warnings: MutableList<String>) {
+        val tool = snapshot.tool
         val id = tool.metadata.id
         val target = File(root, "tools/$id").apply { mkdirs() }
         val bundle = File(files, tool.currentVersion.bundleLocator.value)
@@ -110,23 +128,19 @@ internal class HostBackupService(
             "dataVersion" to 1, "id" to id, "versionCode" to tool.currentVersion.versionCode,
             "installedAt" to tool.metadata.installedAt, "versionInstalledAt" to tool.currentVersion.installedAt,
             "lastOpenedAt" to tool.lastOpenedAt, "pinnedOrder" to tool.metadata.pinnedOrder, "categoryId" to tool.metadata.categoryId,
-            "grants" to repositories.grants.observeGrants(id).first().map { mapOf("capability" to it.capability, "granted" to it.granted, "updatedAt" to it.updatedAt) },
+            "grants" to snapshot.grants.map { mapOf("capability" to it.capability, "granted" to it.granted, "updatedAt" to it.updatedAt) },
         ))
         var secureBytes = 0L
-        repositories.keyValues.keys(id).chunked(16).forEach { window ->
-            repositories.keyValues.readSnapshot(id) { snapshot ->
-                snapshot.getMany(window.toSet()).values.forEach { row ->
-                    BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
-                        "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
-                    ))
-                    if (BackupDataCodec.secureKey(row.key)) secureBytes += row.bytes
-                }
-            }
+        snapshot.rows.values.forEach { row ->
+            BackupDataCodec.write(File(target, "data/kv/${BackupDataCodec.keyFile(row.key)}"), mapOf(
+                "dataVersion" to 1, "key" to row.key, "valueJson" to row.valueJson, "updatedAt" to row.updatedAt,
+            ))
+            if (BackupDataCodec.secureKey(row.key)) secureBytes += row.bytes
         }
         if (secureBytes > 0) {
             if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
             else try {
-                val document = RuntimeSecureStore(id, repositories.keyValues, AndroidKeyStoreCipher(id)).readAll()
+                val document = RuntimeSecureStore(id, SnapshotToolKvRepository(id, snapshot.rows), AndroidKeyStoreCipher(id)).readAll()
                 if (document != null) {
                     val plaintext = RuntimeValueJson.encodeObject(document)
                     J.obj(J.parse(plaintext.toByteArray()))
@@ -135,8 +149,7 @@ internal class HostBackupService(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { warnings += "${tool.metadata.name}：硬件密钥不可用，已归档加密记录，恢复后可能需要重新登录。" }
         }
-        repositories.backgroundTasks.observeTasks(id).first().forEach { task ->
-            val result = repositories.backgroundTasks.observeResult(task.taskId).first()
+        snapshot.tasks.forEach { (task, result) ->
             BackupDataCodec.write(File(target, "data/tasks/${BackupDataCodec.keyFile(task.taskId)}"), mapOf(
                 "dataVersion" to 1, "taskId" to task.taskId, "versionCode" to task.versionCode, "key" to task.key, "operation" to task.operation.name,
                 "specJson" to task.specJson, "periodic" to task.periodic, "intervalMinutes" to task.intervalMinutes,
