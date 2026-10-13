@@ -289,6 +289,8 @@ data class RuntimeBackgroundTaskRunResult(
     val status: Int?,
     val body: String?,
     val error: RuntimeBackgroundTaskError?,
+    /** How [body] is encoded; null for results stored before the host recorded it. */
+    val bodyEncoding: RuntimeNetworkBodyEncoding? = null,
 )
 
 interface RuntimeBackgroundTaskHandler {
@@ -1121,6 +1123,9 @@ class RuntimeRpcDispatcher(
             put("completedAt", RpcValue.Number(completedAt.toDouble()))
             status?.let { put("status", RpcValue.Number(it.toDouble())) }
             body?.let { put("body", RpcValue.StringValue(it)) }
+            if (body != null && bodyEncoding != null) {
+                put("bodyEncoding", RpcValue.StringValue(bodyEncoding.name.lowercase(Locale.ROOT)))
+            }
             error?.let {
                 put(
                     "error",

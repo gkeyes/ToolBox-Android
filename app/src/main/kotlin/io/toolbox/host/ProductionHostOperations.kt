@@ -549,6 +549,8 @@ private fun TaskRunResult.toRuntimeResult(
     val payload = payloadJson?.let { encoded ->
         runCatching { JSONTokener(encoded).nextValue() as? JSONObject }.getOrNull()
     }
+    val httpPayload = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
+    val body = httpPayload?.optString("body")?.takeIf { it.isNotEmpty() }
     return RuntimeBackgroundTaskRunResult(
         taskId = taskId,
         outcome = when (outcome) {
@@ -557,12 +559,16 @@ private fun TaskRunResult.toRuntimeResult(
             RunOutcome.CANCELLED -> RuntimeBackgroundRunOutcome.CANCELLED
         },
         completedAt = completedAt,
-        status = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
-            ?.optInt("statusCode")
-            ?.takeIf { it > 0 },
-        body = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
-            ?.optString("body")
-            ?.takeIf { it.isNotEmpty() },
+        status = httpPayload?.optInt("statusCode")?.takeIf { it > 0 },
+        body = body,
+        // Results stored by older hosts have no encoding; leave it absent rather than guess.
+        bodyEncoding = body?.let {
+            when (httpPayload?.optString("bodyEncoding")) {
+                "text" -> io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding.TEXT
+                "base64" -> io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding.BASE64
+                else -> null
+            }
+        },
         error = errorCode?.let { code ->
             RuntimeBackgroundTaskError(code.toRuntimeErrorCode(), "后台任务未成功完成。")
         },
