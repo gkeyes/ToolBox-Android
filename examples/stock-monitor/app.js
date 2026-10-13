@@ -1053,5 +1053,18 @@
   $("clear-token").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(clearToken()); });
   $("editor").addEventListener("cancel", (event) => { event.preventDefault(); closeEditor(); });
 
-  bootWork = boot();
+  // Test hook: only tests define window.__TOOLBOX_TEST__ before loading this script,
+  // so production never exposes internals or changes startup.
+  const testHook = window.__TOOLBOX_TEST__;
+  if (testHook) {
+    testHook.api = {
+      get state() { return state; },
+      get status() { return statusMessage; },
+      dirtyItems, createItem, refreshAll, startMonitoring, persist, saveEditor, closeEditor,
+      chinaMarketClosedSince, skipWhileClosed,
+      loaded: () => { stateLoaded = true; markStateLoaded(); },
+      edit: (id) => { editingId = id; },
+    };
+  }
+  if (testHook?.boot !== false) bootWork = boot();
 })();
