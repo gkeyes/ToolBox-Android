@@ -118,7 +118,8 @@ jobs:
       - name: Run all JVM unit tests
         run: >-
           ./gradlew --no-daemon :core-data:testDebugUnitTest :core-ui:testDebugUnitTest
-          :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+          :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :tool-api:testDebugUnitTest
+          :app:testDebugUnitTest
       - name: Generate actual Room v1 schema from the fixed installed baseline
         if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         run: |
