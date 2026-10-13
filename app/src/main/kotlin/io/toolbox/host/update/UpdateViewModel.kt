@@ -137,9 +137,13 @@ internal class UpdateViewModel(
         setProgress(AppProgressKey, 0f)
         viewModelScope.launch {
             try {
-                // During CI's swap the test feed falls back to the stable APK; never take that as the replacement.
+                // During CI's swap the test feed falls back to the stable APK, and an older overlapping
+                // run can publish last; take neither as the replacement.
                 val file = downloadCurrent(feed.channel, app.asset, AppProgressKey) { fresh ->
-                    fresh.app?.asset?.takeIf { fresh.channel != UpdateChannel.TEST || it.name.endsWith("-dev.apk") }
+                    fresh.app?.takeIf { replacement ->
+                        (fresh.channel != UpdateChannel.TEST || replacement.asset.name.endsWith("-dev.apk")) &&
+                            (app.runId == null || (replacement.runId ?: 0L) >= app.runId)
+                    }?.asset
                 }
                 mutableState.update { it.copy(pendingApk = file) }
             } catch (cancelled: CancellationException) {
@@ -219,8 +223,8 @@ internal class UpdateViewModel(
 
     /**
      * The test channel is republished on every merge to main, so an asset can be replaced while it
-     * downloads. Then read [channel]'s feed again and download the replacement, up to
-     * [StaleRetryAttempts] feed reads. [pick] returns null while the replacement is not published yet.
+     * downloads. Then read [channel]'s feed again and download what it offers now, up to
+     * [StaleRetryAttempts] feed reads in total. [pick] returns null while the replacement is not published yet.
      */
     private suspend fun downloadCurrent(
         channel: UpdateChannel,
@@ -242,7 +246,8 @@ internal class UpdateViewModel(
                     mutableState.update {
                         if (it.channel == channel) it.copy(feed = feed, tools = toolRows(feed, installedTools)) else it
                     }
-                    fresh = pick(feed)?.takeIf { it != current }
+                    // The same asset may be back after the swap (a rerun publishes identical bytes), so retry it too.
+                    fresh = pick(feed)
                 }
                 current = fresh ?: throw stale
                 setProgress(key, 0f)
