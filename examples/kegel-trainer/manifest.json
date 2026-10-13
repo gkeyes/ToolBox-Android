@@ -4,8 +4,8 @@
   "name": "稳力",
   "shortName": "稳力",
   "description": "离线男性盆底训练：节奏倒计时、提示音、语音和震动反馈。",
-  "version": "1.0.4",
-  "versionCode": 5,
+  "version": "1.0.5",
+  "versionCode": 6,
   "entry": "index.html",
   "icon": "icon.png",
   "apiVersion": "1.0",
@@ -14,7 +14,18 @@
     "健康",
     "训练"
   ],
-  "permissions": [],
+  "permissions": [
+    {
+      "name": "storage",
+      "reason": "保存训练偏好和完成记录。",
+      "required": false
+    },
+    {
+      "name": "haptics",
+      "reason": "训练阶段切换时提供震动提示。",
+      "required": false
+    }
+  ],
   "securityProfile": "strict",
   "ui": {
     "orientation": "unspecified",
