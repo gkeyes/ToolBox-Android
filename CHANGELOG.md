@@ -23,6 +23,7 @@
 - 导入 macOS 访达压缩的 ZIP 时忽略 `__MACOSX/` 和 `._` 元数据文件，不再误报“发现 2 个 TBX 工具”。
 - 更新工具不再删除其后台任务历史和结果：旧版本排队或运行中的任务标记为已取消，已完成的记录保留。
 - 删除确认无调用的死代码：从未使用的结果清理接口 `pruneResultsCompletedBefore`（不自动清理历史；卸载工具时其任务和结果仍随工具删除）、`markRunning`、`revoke`、`CatalogAction.CreateGroup`/`RenameGroup`、`toolBoxTopGlassEffect`、`RuntimeShellScreen` 旧重载，以及 `CapabilityDescriptor` 中未读取的字段。
+- 稳力 1.0.6：清空记录或改回设置时恰逢存储权限被关闭，恢复权限后不再把旧记录/旧设置合并回来；宿主握手失败时改用网页存储保存记录；无宿主触感时用浏览器震动提示。
 
 ## 0.8.32 (65)
 
