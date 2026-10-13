@@ -1,0 +1,33 @@
+name: Version check
+
+# Every pull request, whatever it touches: a change to anything that ships in the APK or in a mini-tool's
+# .tbx must raise that package's versionCode and its MAJOR.MINOR.PATCH version above the base branch.
+# The rules and what counts as shipped are in scripts/ci/version_bump.py and CONTRIBUTING.md.
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Shipped changes raise the version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          # The check reads both ends of the PR and their merge base.
+          fetch-depth: 0
+      - name: Unit tests for the check
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/tests/test_version_bump.py -v
+      - name: Require a version bump for shipped changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/version_bump.py --base "$BASE_SHA" --head "$HEAD_SHA"

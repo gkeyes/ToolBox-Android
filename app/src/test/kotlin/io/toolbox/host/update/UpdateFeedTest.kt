@@ -61,15 +61,31 @@ class UpdateFeedTest {
     }
 
     @Test
-    fun appStateUsesVersionCodeThenCiRun() {
+    fun appStateIsDecidedByVersionAndRunOnlyTellsBuildsApart() {
         val asset = ReleaseAsset("toolbox-v0.8.32-release.apk", "u", 0, null)
         fun app(code: Int?, run: Long?, name: String = "0.8.32") = AppPackage(name, code, null, run, null, "", asset)
         val installed = InstalledBuild("0.8.32", 65, 200)
-        assertEquals(AppUpdateState.NEWER, UpdateFeedParser.appState(app(66, 100), installed))
-        assertEquals(AppUpdateState.DOWNGRADE, UpdateFeedParser.appState(app(64, 300), installed))
-        assertEquals(AppUpdateState.NEWER, UpdateFeedParser.appState(app(65, 300), installed))
-        assertEquals(AppUpdateState.CURRENT, UpdateFeedParser.appState(app(65, 200), installed))
+        assertEquals(AppUpdateState.NEWER, UpdateFeedParser.appState(app(66, 100, "0.9.0"), installed))
+        assertEquals(AppUpdateState.DOWNGRADE, UpdateFeedParser.appState(app(64, 300, "0.8.31"), installed))
+        // A later CI run of the same version is another build, not an update: the shown version would not change.
+        assertEquals(AppUpdateState.OTHER_BUILD, UpdateFeedParser.appState(app(65, 300), installed))
         assertEquals(AppUpdateState.OTHER_BUILD, UpdateFeedParser.appState(app(65, 100), installed))
+        assertEquals(AppUpdateState.CURRENT, UpdateFeedParser.appState(app(65, 200), installed))
         assertEquals(AppUpdateState.NEWER, UpdateFeedParser.appState(app(null, null, "0.8.33"), installed))
+        assertEquals(AppUpdateState.DOWNGRADE, UpdateFeedParser.appState(app(null, null, "0.8.31"), installed))
+        assertEquals(AppUpdateState.CURRENT, UpdateFeedParser.appState(app(null, null), InstalledBuild("0.8.32", 65, 0)))
+    }
+
+    @Test
+    fun swappedTestAssetMustNotBeAnOlderVersionOrRun() {
+        val asset = ReleaseAsset("toolbox-v0.9.0-dev.apk", "u", 0, null)
+        fun app(code: Int?, run: Long?, name: String) = AppPackage(name, code, null, run, null, "", asset)
+        val original = app(66, 200, "0.9.0")
+        assertTrue(UpdateFeedParser.isNotOlder(app(67, 150, "0.9.1"), original))
+        assertTrue(UpdateFeedParser.isNotOlder(app(66, 200, "0.9.0"), original))
+        assertTrue(UpdateFeedParser.isNotOlder(app(66, 300, "0.9.0"), original))
+        assertFalse(UpdateFeedParser.isNotOlder(app(66, 100, "0.9.0"), original))
+        assertFalse(UpdateFeedParser.isNotOlder(app(65, 900, "0.8.32"), original))
+        assertTrue(UpdateFeedParser.isNotOlder(app(null, null, "0.9.1"), original))
     }
 }

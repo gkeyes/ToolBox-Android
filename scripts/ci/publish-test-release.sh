@@ -103,6 +103,21 @@ case "$kind" in
     version="$(basename "$apk")"
     version="${version#toolbox-v}"
     version="${version%-release.apk}"
+    # One version number never ships twice: every build has its own bytes (it embeds its run id), so a
+    # commit that left the version alone (CI, docs or scripts only; the PR version check requires a bump
+    # for anything shipped) keeps the APK already on `dev`. Never offer a lower version either.
+    published="$(printf '%s\n' "$app_assets" | sed -n 's/^toolbox-v\(.*\)-dev\.apk$/\1/p' | head -n 1)"
+    if [ -n "$published" ]; then
+      if [ "$published" = "$version" ]; then
+        echo "The test channel already has ToolBox $version; the same version is not published again."
+        exit 0
+      fi
+      highest="$(printf '%s\n%s\n' "$published" "$version" | sort -V | tail -n 1)"
+      if [ "$highest" != "$version" ]; then
+        echo "The test channel has ToolBox $published, higher than this build's $version; not publishing." >&2
+        exit 1
+      fi
+    fi
     staging="$(mktemp -d)"
     cp "$apk" "$staging/toolbox-v${version}-dev.apk"
     replace_assets '^toolbox-v.*\.apk$' "$staging/toolbox-v${version}-dev.apk"
@@ -117,9 +132,16 @@ case "$kind" in
     shopt -s nullglob
     packages=("$dir"/*.tbx)
     test "${#packages[@]}" -gt 0 || { echo "No TBX packages to publish"; exit 0; }
+    # Listing failures stop the script (set -e) rather than risk replacing a published version.
+    published="$(existing)"
     for package in "${packages[@]}"; do
       name="$(basename "$package")"
       [[ "$name" =~ ^([a-z0-9][a-z0-9-]*)-v[0-9][0-9A-Za-z.+-]*\.tbx$ ]] || { echo "Unexpected package name: $name" >&2; exit 1; }
+      # The file name carries the tool version: an existing one is that version, already published.
+      if grep -qxF "$name" <<<"$published"; then
+        echo "The test channel already has $name; the same version is not published again."
+        continue
+      fi
       replace_assets "^${BASH_REMATCH[1]}-v[0-9][0-9A-Za-z.+-]*\.tbx$" "$package"
     done
     ;;
