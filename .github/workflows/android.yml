@@ -311,7 +311,8 @@ jobs:
   publish-screenshots:
     name: Publish layout screenshots
     needs: [screenshots]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    # Only a fully green render replaces the shared set; a failed run keeps its artifact for diagnosis.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     # One publisher at a time across refs, so two runs never mix their assets on the shared release.
     concurrency:
