@@ -75,7 +75,7 @@ internal class HostRuntimeBridgeProvider(
     }
 
     private fun createCoreHandlers(runtime: PreparedToolRuntime, requireForegroundRuntime: () -> Unit): RuntimeCoreHandlers = RuntimeCoreHandlers(
-        toast = AndroidToastHandler(applicationContext),
+        toast = AndroidToastHandler(applicationContext, requireForegroundRuntime),
         storage = StandardToolKvStorageHandler(
             toolId = runtime.toolId,
             repository = keyValues,

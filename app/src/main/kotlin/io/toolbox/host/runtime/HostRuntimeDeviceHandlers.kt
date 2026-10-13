@@ -36,9 +36,17 @@ internal class HostRuntimeQuotaChecker : RuntimeQuotaChecker {
 
 internal class AndroidToastHandler(
     private val context: Context,
+    private val requireForegroundRuntime: () -> Unit,
 ) : RuntimeToastHandler {
     override suspend fun show(message: String) {
         withContext(Dispatchers.Main.immediate) {
+            // Recheck on the same main-thread pass as show(); a tool that left the foreground skips quietly.
+            try {
+                requireForegroundRuntime()
+            } catch (notForeground: RuntimeHandlerException) {
+                if (notForeground.errorCode != RuntimeRpcErrorCode.SESSION_ENDED) throw notForeground
+                return@withContext
+            }
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
