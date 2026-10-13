@@ -114,8 +114,9 @@ android {
 tasks.configureEach {
     val consumesBundledExamples =
         (name.startsWith("merge") && name.endsWith("Assets")) ||
+            name.startsWith("lintAnalyze") ||
             name.startsWith("lintVital") ||
-            (name.startsWith("generate") && name.endsWith("LintVitalReportModel"))
+            (name.startsWith("generate") && (name.endsWith("LintReportModel") || name.endsWith("LintVitalReportModel")))
     if (consumesBundledExamples) {
         dependsOn(packageBundledExamples)
     }
