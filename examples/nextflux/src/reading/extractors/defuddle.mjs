@@ -28,13 +28,20 @@ function cleanLocatedRoot(root) {
   return clone.innerHTML.trim();
 }
 
-export function extractWithDefuddle({html,url,baseUrl=url}){
+// DOMParser and Defuddle need a real DOM, so this cannot move to a Worker.
+// Instead each heavy step (parse, copy, Defuddle, re-parse) runs as its own
+// task, letting the page paint and handle taps between them on a large page.
+const yieldToMain=()=>globalThis.scheduler?.yield?.()??new Promise(resolve=>setTimeout(resolve,0));
+
+export async function extractWithDefuddle({html,url,baseUrl=url}){
   if(typeof DOMParser!=="function")throw new Error("当前环境不支持网页结构解析。");
   url=validateArticleUrl(url);
   baseUrl=validateArticleUrl(baseUrl);
+  await yieldToMain();
   const original=new DOMParser().parseFromString(String(html||""),"text/html");
   const images=normalizeDocumentImages(original,{url,baseUrl});
   // Defuddle gets its own DOM because extraction mutates the document.
+  await yieldToMain();
   const working=new DOMParser().parseFromString(original.documentElement.outerHTML,"text/html");
   // Use the validated base from the source loader, including redirects. This
   // avoids a second interpretation of an inert or invalid source <base>.
@@ -42,6 +49,7 @@ export function extractWithDefuddle({html,url,baseUrl=url}){
   const resourceBase=working.createElement("base");
   resourceBase.setAttribute("href",baseUrl);
   working.head.prepend(resourceBase);
+  await yieldToMain();
   const result=new Defuddle(working,{
     url,
     useAsync:false,
@@ -58,6 +66,7 @@ export function extractWithDefuddle({html,url,baseUrl=url}){
   // materially richer semantic structure and comparable text, preserve that
   // original DOM instead of accepting a flattened standardized rewrite.
   const locatedChars=textLength(located);
+  await yieldToMain();
   const standardizedDoc=new DOMParser().parseFromString(`<main>${standardized}</main>`,"text/html");
   const standardizedRoot=standardizedDoc.querySelector("main");
   normalizeDocumentImages(standardizedRoot,{url,baseUrl},images);

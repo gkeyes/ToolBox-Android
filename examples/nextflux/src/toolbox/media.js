@@ -13,6 +13,23 @@ const images = createImageCache({
   }),
 });
 
+// One IntersectionObserver for every mounted image (a long list can hold
+// hundreds); each element maps to its own visibility callback.
+const visibilityListeners = new Map();
+let visibilityObserver = null;
+function observeVisibility(element, onChange) {
+  visibilityObserver ??= new IntersectionObserver((entries) => {
+    for (const entry of entries) visibilityListeners.get(entry.target)?.(entry.isIntersecting);
+  }, { rootMargin: "400px" });
+  visibilityListeners.set(element, onChange);
+  visibilityObserver.observe(element);
+  return () => {
+    if (visibilityListeners.get(element) !== onChange) return;
+    visibilityListeners.delete(element);
+    visibilityObserver.unobserve(element);
+  };
+}
+
 export function approvedImageSource(value, allowLocal = false) {
   if (typeof value !== "string" || !value) return null;
   if (/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i.test(value)) return { kind: "local", url: value };
@@ -50,9 +67,7 @@ export function useSafeImage(src, allowLocal = false, keepAlive = false) {
   useEffect(() => {
     const element = containerRef.current;
     if (!element || typeof IntersectionObserver === "undefined") { setVisible(true); return; }
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { rootMargin: "400px" });
-    observer.observe(element);
-    return () => observer.disconnect();
+    return observeVisibility(element, setVisible);
   }, []);
   useEffect(() => {
     const sources = JSON.parse(sourceKey);

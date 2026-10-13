@@ -14,6 +14,10 @@
   --nf-glass: rgb(255 255 255 / 0.58);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.6), 0 6px 18px rgb(0 0 0 / 0.14);
+  /* Small floating controls (the reader close disc): same glass rims, but only
+     a faint contact shadow, like iOS's round close button. */
+  --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
+    inset 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
   --nf-glass-filter: blur(14px) saturate(180%);
   --nf-menu: rgb(255 255 255 / 0.84);
   --nf-menu-shadow: 0 18px 50px rgb(0 0 0 / 0.20), inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 0 0 0.5px rgb(255 255 255 / 0.75);
@@ -30,6 +34,8 @@
   --nf-glass: rgb(40 40 44 / 0.52);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
+  --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 1px 3px rgb(0 0 0 / 0.30);
   --nf-menu: rgb(44 44 46 / 0.86);
   --nf-menu-shadow: 0 18px 50px rgb(0 0 0 / 0.55), inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
   --nf-seg-pill: rgb(255 255 255 / 0.18);
@@ -44,6 +50,8 @@
     --nf-glass: rgb(40 40 44 / 0.52);
     --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
       inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
+    --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+      inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 1px 3px rgb(0 0 0 / 0.30);
     --nf-menu: rgb(44 44 46 / 0.86);
     --nf-seg-pill: rgb(255 255 255 / 0.18);
     --nf-tertiary: #636366;
@@ -363,11 +371,19 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     background: var(--nf-glass);
     -webkit-backdrop-filter: var(--nf-glass-filter);
     backdrop-filter: var(--nf-glass-filter);
-    box-shadow: var(--nf-glass-rim);
+    box-shadow: var(--nf-glass-rim-soft);
     pointer-events: none;
   }
   .action-buttons .reader-topbar-row .nextflux-close-button[data-pressed="true"]::before { transform: scale(0.94); }
   .action-buttons .reader-topbar-row .nextflux-close-button > svg { inline-size: 18px; block-size: 18px; }
+  /* The floating close button shares the first line with the feed name
+     instead of taking a row of its own: the bar keeps no space in the flow,
+     lets taps through beside the button, and the feed line steps right of it. */
+  .action-buttons.reader-topbar { margin-block-end: -60px; pointer-events: none; }
+  .action-buttons.reader-topbar > :not(.reader-topbar-row),
+  .action-buttons.reader-topbar .reader-topbar-row > * { pointer-events: auto; }
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed { min-block-size: 28px; padding-inline-start: 44px; }
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed.justify-center { padding-inline: 44px; }
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     background: var(--nf-glass);
     -webkit-backdrop-filter: var(--nf-glass-filter);
@@ -431,7 +447,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .nf-tile[data-tone="neutral"] { background: linear-gradient(160deg, #A1A1A8, #6E6E76); color: #FFFFFF; }
 
 /* ---------------------------------------------------------------- switches */
-/* Flat iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. These
+/* iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. These
    variables are the only switch geometry; nothing else may redefine them. */
 :root { --nf-switch-w: 64px; --nf-switch-h: 28px; --nf-switch-thumb: 24px; --nf-switch-knob-w: 40px; }
 .switch .switch__control,
@@ -439,11 +455,12 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   inline-size: var(--nf-switch-w);
   block-size: var(--nf-switch-h);
   border-radius: 999px;
-  background-color: rgb(120 120 128 / 0.16);
-  box-shadow: none;
+  background-color: rgb(120 120 128 / 0.2);
+  /* A faint inner shade so the off track reads as a recessed groove. */
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.08);
 }
 .dark .switch .switch__control,
-[data-theme="dark"] .switch .switch__control { background-color: rgb(120 120 128 / 0.32); }
+[data-theme="dark"] .switch .switch__control { background-color: rgb(120 120 128 / 0.36); }
 .switch[data-selected="true"] .switch__control,
 .switch[aria-checked="true"] .switch__control,
 .switch[data-selected="true"] .nf-switch.switch__control { background-color: #34C759; }
@@ -457,7 +474,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   margin-inline-start: 2px !important;
   border-radius: 999px;
   background: #FFFFFF;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.04);
+  /* Raised knob: a tight contact shadow plus a soft spread, as on iOS. */
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.04);
   transform: translate3d(0, 0, 0);
 }
 .switch[data-selected="true"] .switch__thumb,
