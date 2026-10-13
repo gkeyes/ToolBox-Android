@@ -58,9 +58,9 @@ def needs_gradle(path, bundled):
     """Whether a changed path can change what Gradle compiles, packages or tests."""
     if path == "sdk/help/manual.md":
         return True  # Packaged into the APK.
-    if "/src/" in f"/{path}":
-        return True  # Source sets, including Markdown packaged as assets.
-    if path.endswith(".md") or path.startswith("docs/") or path in {"LICENSE", ".gitignore"}:
+    # Markdown is documentation, except inside a source set, where it can be a packaged asset.
+    is_doc = path.endswith(".md") and "/src/" not in f"/{path}"
+    if is_doc or path.startswith("docs/") or path in {"LICENSE", ".gitignore"}:
         return False
     if path.startswith(".github/workflows/"):
         return path == ".github/workflows/android.yml"
