@@ -73,8 +73,11 @@ internal object ZipStructureReader {
         file.seek(centralOffset)
         val entries = ArrayList<CheckedZipEntry>()
         val collisions = mutableMapOf<String, CheckedZipEntry>()
+        // Local record ranges [header start, payload/descriptor end) used to reject overlapping entries.
+        val localStarts = LongArray(entryCount.toInt())
+        val localEnds = LongArray(entryCount.toInt())
         var totalExtracted = 0L
-        repeat(entryCount.toInt()) {
+        repeat(entryCount.toInt()) { index ->
             resources?.check()
             checkPackageInterrupted()
             val fixed = ByteArray(46).also(file::readFully)
@@ -107,7 +110,8 @@ internal object ZipStructureReader {
             validateFlags(flags, method, diskStart, localOffset, file.length())
             file.seek(file.filePointer + commentLength)
             val nextCentral = file.filePointer
-            validateLocalAndDescriptor(file, localOffset, centralOffset, flags, method, rawName, crc32, compressed, extracted, wideSizes)
+            localStarts[index] = localOffset
+            localEnds[index] = validateLocalAndDescriptor(file, localOffset, centralOffset, flags, method, rawName, crc32, compressed, extracted, wideSizes)
             file.seek(nextCentral)
             val safePath = PackagePathPolicy.validate(rawName)
             validateEntryType(versionMadeBy, externalAttributes, safePath, compressed, extracted, forbidCode)
@@ -121,6 +125,7 @@ internal object ZipStructureReader {
         if (file.filePointer != centralOffset + centralSize) {
             reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Central-directory size does not match its entries")
         }
+        rejectOverlappingEntries(localStarts, localEnds)
         rejectFileDirectoryCollisions(entries)
         return CheckedArchive(entries, Files.size(archive), totalExtracted)
     }
@@ -136,7 +141,7 @@ internal object ZipStructureReader {
         compressed: Long,
         extracted: Long,
         wideSizes: Boolean,
-    ) {
+    ): Long {
         if (offset + 30 > file.length()) reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Local ZIP header is truncated")
         file.seek(offset)
         val fixed = ByteArray(30).also(file::readFully)
@@ -164,12 +169,12 @@ internal object ZipStructureReader {
             if (localValues != listOf(crc32, compressed, extracted)) {
                 reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Local CRC or sizes disagree with the central directory")
             }
-            return
+            return payloadEnd
         }
         if (localValues.any { it != 0L }) {
             reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Data-descriptor entries require zero local CRC and sizes")
         }
-        validateDescriptor(file, payloadEnd, centralOffset, crc32, compressed, extracted, wideSizes)
+        return validateDescriptor(file, payloadEnd, centralOffset, crc32, compressed, extracted, wideSizes)
     }
 
     private fun validateDescriptor(
@@ -180,7 +185,7 @@ internal object ZipStructureReader {
         compressed: Long,
         extracted: Long,
         wideSizes: Boolean,
-    ) {
+    ): Long {
         if (offset + 12 > centralOffset) reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Data descriptor is truncated")
         file.seek(offset)
         val first = ByteArray(4).also(file::readFully).let { u32(it, 0) }
@@ -197,6 +202,21 @@ internal object ZipStructureReader {
         }
         if (actual != listOf(crc32, compressed, extracted)) {
             reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Data descriptor disagrees with the central directory")
+        }
+        return offset + descriptorSize
+    }
+
+    /**
+     * Every entry must own its local header, payload and descriptor exclusively. Entries whose local
+     * records share bytes (the classic overlapping-entry ZIP bomb, or a corrupt archive) are malformed.
+     */
+    private fun rejectOverlappingEntries(starts: LongArray, ends: LongArray) {
+        checkPackageInterrupted()
+        val order = starts.indices.sortedBy { starts[it] }
+        for (position in 1 until order.size) {
+            if (starts[order[position]] < ends[order[position - 1]]) {
+                reject(PackageRejectionCode.MALFORMED_ARCHIVE, "ZIP entries overlap")
+            }
         }
     }
 
