@@ -44,3 +44,6 @@ data object AboutRoute : ToolBoxRoute
 
 @Serializable
 data object BackupRestoreRoute : ToolBoxRoute
+
+@Serializable
+data object UpdateRoute : ToolBoxRoute

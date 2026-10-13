@@ -10,6 +10,8 @@ plugins {
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
 val verifyWebViewDebugging = providers.gradleProperty("toolbox.verifyWebViewDebugging").orNull == "true"
 
+val ciRunId = providers.environmentVariable("GITHUB_RUN_ID").orNull?.toLongOrNull() ?: 0L
+
 val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
 val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
 val stableSigningKeyAlias = providers.environmentVariable("TOOLBOX_SIGNING_KEY_ALIAS").orNull
@@ -55,6 +57,9 @@ android {
         versionCode = 65
         versionName = "0.8.32"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // In-app updates read this repository's releases and compare against the CI run that built the APK.
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")
+        buildConfigField("long", "BUILD_RUN_ID", "${ciRunId}L")
     }
 
     val stableSigningConfig =
