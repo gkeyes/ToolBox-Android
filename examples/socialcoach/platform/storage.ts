@@ -11,6 +11,9 @@ function notify(error: Error | null) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('socialcoach-storage',{detail:error?.message || null}));
 }
 export const storageFailure = () => fault;
+// A failed read is fatal at boot (state would be incomplete); failed writes stay retryable warnings.
+let readFault: Error | null = null;
+export const storageReadFailure = () => readFault;
 async function drain() {
   while (pending.size) {
     const [id, item] = pending.entries().next().value!;
@@ -61,7 +64,7 @@ function stateStorage(secure: boolean) {
         const value = api ? await (secure ? api.storage.secure : api.storage).get(key)
           : secure ? memoryKeys.get(key) ?? null : typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
         return typeof value === 'string' ? value : null;
-      } catch(e) {const error=new Error(`无法读取${secure?'模型密钥':'练习记录'}：${permissionMessage(e)}`);notify(error);throw error;}
+      } catch(e) {const error=new Error(`无法读取${secure?'模型密钥':'练习记录'}：${permissionMessage(e)}`);readFault=error;notify(error);throw error;}
     },
     // Re-queue at the end so writes land in the order they were made (session records before the index that lists them).
     setItem(key:string,value:string) {pending.delete(`${secure}:${key}`);pending.set(`${secure}:${key}`,{key,value,secure});void kick();},
@@ -69,17 +72,30 @@ function stateStorage(secure: boolean) {
   };
 }
 export const appStorage = stateStorage(false);
-/** Read several ordinary keys from one host snapshot when the host supports it. */
+/**
+ * Read ordinary keys in index order. The host rejects a getMany response larger
+ * than its memory-derived budget (QUOTA_EXCEEDED), so keys go in small batches
+ * and a rejected batch is split until it fits; a single key falls back to get().
+ */
+export const READ_BATCH_KEYS = 32;
 export async function getManyItems(keys: string[]): Promise<(string|null)[]> {
   if (!keys.length) return [];
   const api = host();
-  if (api?.storage.getMany) {
+  const getMany = api?.storage.getMany?.bind(api.storage);
+  if (!getMany) return Promise.all(keys.map(key => appStorage.getItem(key)));
+  const read = async (batch: string[]): Promise<(string|null)[]> => {
+    if (batch.length === 1) return [await appStorage.getItem(batch[0])];
     try {
-      const values = await api.storage.getMany(keys);
-      return values.map(value => typeof value === 'string' ? value : null);
-    } catch(e) {const error=new Error(`无法读取练习记录：${permissionMessage(e)}`);notify(error);throw error;}
-  }
-  return Promise.all(keys.map(key => appStorage.getItem(key)));
+      return (await getMany(batch)).map(value => typeof value === 'string' ? value : null);
+    } catch (e) {
+      if ((e as {code?: string})?.code !== 'QUOTA_EXCEEDED') {const error=new Error(`无法读取练习记录：${permissionMessage(e)}`);readFault=error;notify(error);throw error;}
+      const half = Math.ceil(batch.length / 2);
+      return [...await read(batch.slice(0, half)), ...await read(batch.slice(half))];
+    }
+  };
+  const result: (string|null)[] = [];
+  for (let i = 0; i < keys.length; i += READ_BATCH_KEYS) result.push(...await read(keys.slice(i, i + READ_BATCH_KEYS)));
+  return result;
 }
 export const keyStorage = stateStorage(true);
 

@@ -50,7 +50,21 @@ export async function request(url: string, init: RequestInit = {}): Promise<Resp
     const res = await fetch(url, init).catch((e) => { if (signal?.aborted) throw stopReason(signal); throw e; });
     touch(signal);
     if (!res.body || [204, 205, 304].includes(res.status)) return res;
-    const body = res.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({transform(chunk, c) { touch(signal); c.enqueue(chunk); }}));
+    // Body errors after the headers report why the signal stopped (timeout vs cancel), not the raw AbortError.
+    const reader = res.body.getReader();
+    let fetchController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const onFetchAbort = () => { try { fetchController?.error(stopReason(signal)); } catch {} void reader.cancel().catch(() => {}); };
+    const body = new ReadableStream<Uint8Array>({
+      start(c) { fetchController = c; if (signal?.aborted) onFetchAbort(); else signal?.addEventListener('abort', onFetchAbort, {once: true}); },
+      async pull(c) {
+        try {
+          const part = await reader.read();
+          if (part.done) { signal?.removeEventListener('abort', onFetchAbort); c.close(); return; }
+          touch(signal); c.enqueue(part.value);
+        } catch (e) { signal?.removeEventListener('abort', onFetchAbort); c.error(signal?.aborted ? stopReason(signal) : e); }
+      },
+      cancel(reason) { signal?.removeEventListener('abort', onFetchAbort); return reader.cancel(reason); },
+    });
     return new Response(body, {status: res.status, statusText: res.statusText, headers: res.headers});
   }
   if (signal?.aborted) throw stopReason(signal);

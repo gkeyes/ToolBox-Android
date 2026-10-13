@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {request,requestScope,abortRequests,setIdleTimeout} from '../platform/network';
 import {makeByokLLM,keyOrigin} from '../platform/llm';
-import {flushStorage,appStorage} from '../platform/storage';
+import {flushStorage,appStorage,storageFailure,storageReadFailure} from '../platform/storage';
 import {validateBackup,backupText} from '../platform/backup';
 import {useApp} from '../src/store/useApp';
 import {hydrateApp,holdSessionWrites,releaseSessionWrites,INDEX_KEY,LEGACY_KEY,sessionKey} from '../src/store/persistence';
@@ -72,6 +72,7 @@ test('a change to one session rewrites only that session, debounced until flush'
   const host=mockHost();
   useApp.setState({profile,sessions:sessionsOf(50)});
   await hydrateApp();
+  await flushStorage();
   host.writes.length=0;
   for(let i=0;i<5;i++)useApp.getState().updateSession('s-7',{timed:i%2===0});
   assert.deepEqual(host.writes,[]);
@@ -89,6 +90,7 @@ test('debounced writes land without an explicit flush',async()=>{
   const host=mockHost();
   useApp.setState({profile,sessions:sessionsOf(2)});
   await hydrateApp();
+  await flushStorage();
   host.writes.length=0;
   useApp.getState().updateSession('s-1',{timed:true});
   await wait(700);
@@ -99,6 +101,7 @@ test('streaming checkpoints stay in memory until the turn ends, but a close flus
   const host=mockHost();
   useApp.setState({profile,sessions:sessionsOf(2)});
   await hydrateApp();
+  await flushStorage();
   host.writes.length=0;
   holdSessionWrites('s-0');
   useApp.getState().updateNpcUtterances('s-0',[{id:'npc-1',characterId:'npc',text:'第一'}]);
@@ -191,4 +194,62 @@ test('a failed in-flight record write is retried, with its newer value, before a
   await flushStorage();
   assert.deepEqual(order,['rec=v2','index=lists-rec']);
   assert.equal(host.ordinary.get('rec'),'v2');
+});
+
+test('hydration reads a large history in batches the host budget accepts, keeping index order',async()=>{
+  const sessions=sessionsOf(120);
+  const initial:Record<string,string>={[INDEX_KEY]:JSON.stringify({version:2,sessionIds:sessions.map(s=>s.id),profile})};
+  for(const s of sessions)initial[sessionKey(s.id)]=JSON.stringify(s);
+  const host=mockHost(initial);
+  const budget=JSON.stringify(sessions[0]).length*5;
+  const batches:number[]=[];
+  (host.api.storage as any).getMany=async(keys:string[])=>{
+    const values=keys.map(k=>host.ordinary.get(k)??null);
+    if(values.reduce((n,v)=>n+String(v).length,0)>budget)throw Object.assign(new Error('Storage batch response is too large; request fewer keys'),{code:'QUOTA_EXCEEDED'});
+    batches.push(keys.length);return values;
+  };
+  await hydrateApp();
+  assert.deepEqual(useApp.getState().sessions.map(s=>s.id),sessions.map(s=>s.id));
+  assert.ok(batches.length>4);assert.equal(batches.reduce((a,b)=>a+b,0),2+120); // index + v1 probe, then every session once
+});
+
+test('a failed migration write keeps the loaded data and the v1 record, as a retryable warning',async()=>{
+  const sessions=sessionsOf(3);
+  const host=mockHost({[LEGACY_KEY]:JSON.stringify({state:{profile,sessions},version:0})});
+  const set=host.api.storage.set;let full=true;
+  host.api.storage.set=async(k:string,v:unknown)=>{if(full)throw new Error('disk full');await set(k,v);};
+  await hydrateApp();
+  assert.equal(useApp.getState().sessions.length,3);
+  assert.ok(storageFailure());assert.equal(storageReadFailure(),null);
+  assert.ok(host.ordinary.has(LEGACY_KEY));
+  full=false;await flushStorage();
+  assert.ok(host.ordinary.has(INDEX_KEY));assert.ok(host.ordinary.has(sessionKey('s-2')));
+});
+
+test('the index does not list a new session until its held record is queued ahead of it',async()=>{
+  const host=mockHost();
+  useApp.setState({profile,sessions:sessionsOf(1)});
+  await hydrateApp();
+  await flushStorage();
+  host.writes.length=0;
+  const fresh={...buildSession(SCENARIOS[1],'arena','zh'),id:'fresh'};
+  holdSessionWrites('fresh');
+  useApp.getState().addSession(fresh);
+  await wait(700);
+  assert.deepEqual(host.writes,[]);
+  releaseSessionWrites('fresh');
+  await wait(700);
+  assert.deepEqual(host.writes,[sessionKey('fresh'),INDEX_KEY]);
+});
+
+test('browser preview: an idle timeout after the headers is reported as timed out, not cancelled',async()=>{
+  setIdleTimeout(60);
+  const realFetch=globalThis.fetch;
+  globalThis.fetch=(async()=>new Response(new ReadableStream({start(c){c.enqueue(encoder.encode('data: {}\n\n'));}}),{status:200,headers:{'Content-Type':'text/event-stream'}})) as typeof fetch;
+  try{
+    const scope=requestScope();
+    const res=await request('https://example.invalid',{signal:scope.signal});
+    await assert.rejects(res.text(),(e:Error)=>e.name==='TimeoutError'&&/超时/.test(e.message));
+    scope.dispose();
+  }finally{globalThis.fetch=realFetch;}
 });

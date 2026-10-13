@@ -42,6 +42,8 @@ const dirtySessions = new Set<string>();
 const removedSessions = new Set<string>();
 /** Sessions whose writes wait for the end of a streaming turn (a flush still writes them). */
 const held = new Set<string>();
+/** Sessions whose record exists in storage or is queued; the index never lists one that is not. */
+const recorded = new Set<string>();
 let indexDirty = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let firstDirtyAt = 0;
@@ -65,12 +67,12 @@ function commit(force: boolean) {
       if (!force && held.has(id)) continue;
       dirtySessions.delete(id);
       const session = byId.get(id);
-      if (session) appStorage.setItem(sessionKey(id), serialize(session));
+      if (session) { appStorage.setItem(sessionKey(id), serialize(session)); recorded.add(id); }
     }
   }
-  // The index goes after the records it lists; removals after the index that dropped them.
-  if (indexDirty) { indexDirty = false; appStorage.setItem(INDEX_KEY, serialize(indexRecord(state))); }
-  for (const id of removedSessions) appStorage.removeItem(sessionKey(id));
+  // The index goes after the records it lists (a held new session keeps it waiting); removals after the index that dropped them.
+  if (indexDirty && state.sessions.every((x) => recorded.has(x.id))) { indexDirty = false; appStorage.setItem(INDEX_KEY, serialize(indexRecord(state))); }
+  for (const id of removedSessions) { appStorage.removeItem(sessionKey(id)); recorded.delete(id); }
   removedSessions.clear();
 }
 
@@ -134,7 +136,7 @@ function persistedFrom(source: Record<string, unknown>, sessions: Session[]): Pe
 export async function hydrateApp(): Promise<void> {
   unsubscribe?.();
   unhook?.();
-  dirtySessions.clear(); removedSessions.clear(); held.clear(); indexDirty = false;
+  dirtySessions.clear(); removedSessions.clear(); held.clear(); recorded.clear(); indexDirty = false;
   if (timer) { clearTimeout(timer); timer = null; }
 
   const [rawIndex, rawLegacy] = await getManyItems([INDEX_KEY, LEGACY_KEY]);
@@ -149,7 +151,7 @@ export async function hydrateApp(): Promise<void> {
     const sessions: Session[] = [];
     ids.forEach((id, i) => {
       const raw = raws[i];
-      if (raw !== null) sessions.push(parse<Session>(raw));
+      if (raw !== null) { sessions.push(parse<Session>(raw)); recorded.add(id); }
       else if (legacySessions.has(id)) { sessions.push(legacySessions.get(id)!); dirtySessions.add(id); }
     });
     loaded = persistedFrom(index, sessions);
@@ -160,6 +162,10 @@ export async function hydrateApp(): Promise<void> {
   }
   if (loaded) useApp.setState(loaded);
 
+  // Anything already in memory that storage does not hold yet gets written (never silently left out of the index).
+  const unrecorded = useApp.getState().sessions.filter((x) => !recorded.has(x.id));
+  for (const session of unrecorded) dirtySessions.add(session.id);
+  if (unrecorded.length) { indexDirty = true; schedule(); }
   unsubscribe = useApp.subscribe(track);
   unhook = onBeforeFlush(() => commit(true));
 

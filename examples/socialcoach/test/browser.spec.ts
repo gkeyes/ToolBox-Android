@@ -6,8 +6,8 @@ const learnerLine='我会在明天下午三点前给出反馈。';
 const npcLine='谢谢你说明时间。不过文档缺什么信息，我们现在能先确定吗？';
 const profile={name:'练习者',bio:'产品团队成员',goals:scene.skills,contexts:[scene.context],lang:'zh',createdAt:1780000000000};
 const key='mock-test-key-never-use-in-production';
-async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{withProfile?:boolean;withKey?:boolean;minimax?:boolean}={}){
-  await page.addInitScript(({profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax})=>{
+async function setup(page:Page,{withProfile=true,withKey=true,minimax=false,failWrites=false}:{withProfile?:boolean;withKey?:boolean;minimax?:boolean;failWrites?:boolean}={}){
+  await page.addInitScript(({profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax,failWrites})=>{
     const w=window as any;
     const saved=(name:string,initial:unknown)=>{const text=localStorage.getItem(name);return text?JSON.parse(text):initial;};
     const ordinary=saved('test.native.ordinary',withProfile?{'socialcoach.v1':JSON.stringify({state:{profile,proficiency:{},sessions:[],customScenarios:[],bookmarks:[],practiceDays:[],settings:{tts:false,telemetry:false,theme:'light'},todayDate:null,todaySessionId:null,patternInsight:null},version:0})}:{});
@@ -17,6 +17,7 @@ async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{wi
       session:(i=0)=>{const index=JSON.parse(ordinary['socialcoach.v2.index']);return JSON.parse(ordinary['socialcoach.v2.session.'+encodeURIComponent(index.sessionIds[i])]);}};
     if(minimax)new MutationObserver(records=>{for(const r of records){for(const n of Array.from(r.addedNodes)){if(/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(n.textContent||''))w.__testHost.leaks.push('added-node');}if(r.type==='characterData'&&/PRIVATE_MINIMAX_TRACE|<\/?think/i.test(r.target.textContent||''))w.__testHost.leaks.push('text-change');}}).observe(document,{subtree:true,childList:true,characterData:true});
     const storage=(data:any,name:string)=>({get:async(k:string)=>data[k]??null,set:async(k:string,v:unknown)=>{
+      if(failWrites&&name==='test.native.ordinary')throw new Error('disk full');
       if(name==='test.native.ordinary'&&k.startsWith('socialcoach.v2.session.')&&typeof v==='string'&&JSON.parse(v).status==='ended')w.__testHost.endedWrites.push(JSON.parse(v));
       data[k]=v;localStorage.setItem(name,JSON.stringify(data));
     },remove:async(k:string)=>{delete data[k];localStorage.setItem(name,JSON.stringify(data));}});
@@ -47,7 +48,7 @@ async function setup(page:Page,{withProfile=true,withKey=true,minimax=false}:{wi
       files:{save:async(name:string,mime:string,content:string)=>{w.__testHost.exports.push({name,mime,content});return {token:'saved'};},open:async()=>null,read:async()=>new Uint8Array()},
       share:{text:async(text:string)=>{w.__testHost.shared=text;}},browser:{open:async(url:string)=>{w.__testHost.external=url;}}
     };
-  },{profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax});
+  },{profile,scene,withProfile,withKey,key,learnerLine,npcLine,minimax,failWrites});
   await page.route('https://**/*',route=>route.abort());
 }
 function consoleCheck(page:Page){const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});return errors;}
@@ -294,4 +295,20 @@ test('a key typed in the sheet is cleared when the provider or address moves to 
   await page.getByRole('button',{name:'Anthropic',exact:true}).click();
   await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
   expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('a key typed while the address is malformed is cleared once the address resolves',async({page})=>{
+  await setup(page,{withKey:false});const errors=consoleCheck(page);await page.goto('/#/settings');
+  await page.getByRole('button').filter({hasText:'尚未配置模型'}).click();
+  await page.getByLabel('API 地址',{exact:true}).fill('not a url');
+  await page.getByLabel('API Key',{exact:true}).fill('typed-key');
+  await page.getByLabel('API 地址',{exact:true}).fill('https://other.invalid/v1');
+  await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  expect(await page.evaluate(()=>(window as any).__testHost.calls.length)).toBe(0);expect(errors).toEqual([]);
+});
+
+test('a failed migration write opens the app with the storage warning instead of a fatal screen',async({page})=>{
+  await setup(page,{failWrites:true});await arena(page);
+  await expect(page.getByRole('alert').filter({hasText:'数据尚未保存'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'重试保存',exact:true})).toBeVisible();
 });
