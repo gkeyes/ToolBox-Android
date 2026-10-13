@@ -311,6 +311,24 @@ test('quick notes closing while deleting the edited note does not keep its text 
   assert.equal(reopened.$('note-input').value, '');
 });
 
+test('quick notes deleting the edited note keeps text typed while the delete is saving', async () => {
+  let gate = null;
+  const tool = quickNotes({ notes: [{ id: 'a', text: 'first', updatedAt: 2 }, { id: 'b', text: 'other', updatedAt: 1 }] },
+    { beforeSet: (key) => key === 'notes' ? gate?.promise : undefined });
+  await settle();
+  await noteButton(tool, 0, 'edit').fire('click');
+  gate = defer();
+  const deleting = noteButton(tool, 0, 'delete').fire('click');
+  await tick();
+  tool.$('note-input').value = 'typed during a slow delete';
+  gate.resolve();
+  await deleting;
+  await settle();
+  assert.equal(tool.$('note-input').value, 'typed during a slow delete');
+  await tool.flush();
+  assert.equal(tool.store.get('draft')?.text, 'typed during a slow delete');
+});
+
 // ---------- notification-lab ----------
 
 function notificationLab({ sessions = [], saved = null, start, update, end, ready, stop, cancelTimer } = {}) {
