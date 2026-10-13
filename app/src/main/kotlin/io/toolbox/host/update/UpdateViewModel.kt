@@ -131,7 +131,7 @@ internal class UpdateViewModel(
         setProgress(AppProgressKey, 0f)
         viewModelScope.launch {
             try {
-                val file = repository.download(app.asset) { setProgress(AppProgressKey, it) }
+                val file = downloadCurrent(app.asset, AppProgressKey) { feed -> feed.app?.asset }
                 mutableState.update { it.copy(pendingApk = file) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -170,8 +170,9 @@ internal class UpdateViewModel(
     /** Returns an error message, or null on success. */
     private suspend fun installOne(row: ToolUpdateRow): String? = try {
         toolMutations.withLock {
-            val file = repository.download(row.available.asset) { setProgress(row.available.slug, it) }
-            setProgress(row.available.slug, null)
+            val slug = row.available.slug
+            val file = downloadCurrent(row.available.asset, slug) { feed -> feed.tools.firstOrNull { it.slug == slug }?.asset }
+            setProgress(slug, null)
             try {
                 when (val result = packages.importPackage(FilePackageInput(file))) {
                     is HostImportResult.Installed -> null
@@ -201,6 +202,23 @@ internal class UpdateViewModel(
         error.userMessage("更新失败，请重试。")
     } finally {
         clearProgress(row.available.slug)
+    }
+
+    /**
+     * The test channel is republished on every merge to main, so the asset read a moment ago can be
+     * replaced mid-download. Then read the feed again once and download the asset that replaced it.
+     */
+    private suspend fun downloadCurrent(asset: ReleaseAsset, key: String, pick: (ChannelFeed) -> ReleaseAsset?): File = try {
+        repository.download(asset) { setProgress(key, it) }
+    } catch (stale: StaleAssetException) {
+        val channel = mutableState.value.channel
+        val feed = repository.fetch(channel)
+        mutableState.update { current ->
+            if (current.channel == channel) current.copy(feed = feed, tools = toolRows(feed, installedTools)) else current
+        }
+        val fresh = pick(feed) ?: throw stale
+        setProgress(key, 0f)
+        repository.download(fresh) { setProgress(key, it) }
     }
 
     private fun setProgress(key: String, value: Float?) = mutableState.update { it.copy(progress = it.progress + (key to value)) }

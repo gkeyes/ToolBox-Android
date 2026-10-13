@@ -15,15 +15,43 @@ if ! gh release view "$tag" >/dev/null 2>&1; then
     || gh release view "$tag" >/dev/null
 fi
 
+release_id="$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq .id)"
+
 existing() {
   gh release view "$tag" --json assets --jq '.assets[].name'
 }
 
+asset_id() {
+  gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --paginate \
+    --jq ".[] | select(.name == \"$1\") | .id"
+}
+
+# `--clobber` deletes the old asset before the new one finishes uploading, so a phone that is
+# downloading it meanwhile gets a 404 or a file that no longer matches its checksum. Upload under a
+# temporary name first, then swap: the name is missing only between the delete and the rename.
+publish_asset() {
+  local file="$1" name temp old new staging
+  name="$(basename "$file")"
+  # The dots keep the temporary name from matching the app or tool patterns the updater reads.
+  temp="tmp.${GITHUB_RUN_ID:-local}.$name"
+  old="$(asset_id "$name")"
+  if [ -z "$old" ]; then
+    gh release upload "$tag" "$file"
+    return
+  fi
+  staging="$(mktemp -d)"
+  cp "$file" "$staging/$temp"
+  gh release upload "$tag" "$staging/$temp" --clobber
+  new="$(asset_id "$temp")"
+  gh api -X DELETE "repos/$GH_REPO/releases/assets/$old"
+  gh api -X PATCH "repos/$GH_REPO/releases/assets/$new" -f name="$name" >/dev/null
+}
+
 # Uploads files, then removes older assets matching the pattern, so the release is never empty.
 replace_assets() {
-  local pattern="$1"
+  local pattern="$1" file
   shift
-  gh release upload "$tag" "$@" --clobber
+  for file in "$@"; do publish_asset "$file"; done
   local keep
   keep="$(printf '%s\n' "$@" | xargs -n1 basename)"
   existing | { grep -E "$pattern" || true; } | while read -r name; do
@@ -43,7 +71,7 @@ case "$kind" in
     staging="$(mktemp -d)"
     cp "$apk" "$staging/toolbox-v${version}-dev.apk"
     replace_assets '^toolbox-v.*\.apk$' "$staging/toolbox-v${version}-dev.apk"
-    gh release upload "$tag" "$dir/BUILD_RECEIPT.txt" --clobber
+    publish_asset "$dir/BUILD_RECEIPT.txt"
     gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null
     gh release edit "$tag" --notes "main 分支最新通过 CI 的构建，供应用内“测试版”更新渠道使用。
 
