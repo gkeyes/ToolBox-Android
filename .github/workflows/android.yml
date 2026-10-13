@@ -16,13 +16,11 @@ on:
       - "examples/quick-notes/**"
       - "examples/background-task-demo/**"
       - "examples/notification-lab/**"
+      - "!examples/*/tests/**"
       - "!.github/workflows/tbx.yml"
       - "!.github/workflows/release.yml"
       - "!.github/workflows/webview-debugging.yml"
       - "!scripts/ci/tbx.py"
-      - "!scripts/ci/tbx-targets.json"
-      - "!scripts/tests/watcher-reliability.test.cjs"
-      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!scripts/tests/bundled-tools.test.cjs"
   pull_request:
     branches: ["main"]
@@ -36,13 +34,11 @@ on:
       - "examples/quick-notes/**"
       - "examples/background-task-demo/**"
       - "examples/notification-lab/**"
+      - "!examples/*/tests/**"
       - "!.github/workflows/tbx.yml"
       - "!.github/workflows/release.yml"
       - "!.github/workflows/webview-debugging.yml"
       - "!scripts/ci/tbx.py"
-      - "!scripts/ci/tbx-targets.json"
-      - "!scripts/tests/watcher-reliability.test.cjs"
-      - "!scripts/tests/tool-runtime-performance.test.cjs"
       - "!scripts/tests/bundled-tools.test.cjs"
   workflow_dispatch:
     inputs:
@@ -229,7 +225,9 @@ jobs:
           set -euo pipefail
           apk=app/build/outputs/apk/release/app-release.apk
           unzip -p "$apk" assets/manual.md | cmp - sdk/help/manual.md
-          for example in position-calculator quick-notes background-task-demo notification-lab; do
+          bundled="$(jq -r 'to_entries[] | select(.value.bundled == true) | .key' scripts/ci/tbx-targets.json)"
+          test -n "$bundled"
+          for example in $bundled; do
             unzip -p "$apk" "assets/$example.tbx" | cmp - "build/bundled-examples/$example.tbx"
           done
       - name: Enable accelerated release startup emulator

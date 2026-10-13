@@ -1,5 +1,6 @@
 package io.toolbox.host.ui
 
+import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -502,21 +504,39 @@ internal fun CatalogGroupFolderOverlay(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        DisposableEffect(window) {
+        val blurPx = with(LocalDensity.current) { 40.dp.roundToPx() }
+        var blurred by remember { mutableStateOf(false) }
+        // "降低透明度" turns live blur off, so the folder keeps the near-solid veil then.
+        val blurAllowed = materials.realBlurEnabled
+        DisposableEffect(window, blurAllowed) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
             window.setDimAmount(0f)
-            // No window blur: FLAG_BLUR_BEHIND would blur the whole home page, which stays sharp
-            // behind an iOS 27 overlay. The overlay window cannot sample the app's recorded glass
-            // layer, so the panel draws the denser translucent overlay fallback instead.
-            onDispose { window.setDimAmount(previousDim) }
+            // Like an iOS folder, the home page goes out of focus behind the open group. Window
+            // blur can be switched off at any time (battery saver, some ROMs); the listener keeps
+            // the flag and the veil in step, falling back to a near-solid veil without blur.
+            val applyBlur = java.util.function.Consumer<Boolean> { available ->
+                blurred = blurAllowed && available
+                if (blurred) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.attributes = window.attributes.also { it.blurBehindRadius = blurPx }
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                }
+            }
+            // Invoked immediately with the current state, then on every change.
+            window.windowManager.addCrossWindowBlurEnabledListener(applyBlur)
+            onDispose {
+                window.windowManager.removeCrossWindowBlurEnabledListener(applyBlur)
+                window.setDimAmount(previousDim)
+            }
         }
         val entrance = remember { Animatable(0f) }
         LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
         Box(
             Modifier.fillMaxSize()
-                .background(colors.scrim)
+                .background(colors.background.copy(alpha = if (blurred) 0.45f else 0.9f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
@@ -560,7 +580,8 @@ internal fun CatalogGroupFolderOverlay(
                             spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                         )
                         .clip(panelShape)
-                        .background(if (glass) materials.overlayFallback else colors.raised)
+                        // Opaque: icons and labels behind must never read through the panel.
+                        .background(if (glass) materials.overlayFallback.compositeOver(colors.surface) else colors.raised)
                         .then(if (glass) Modifier.border(0.5.dp, materials.overlayBorder, panelShape) else Modifier)
                         .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
                 ) {

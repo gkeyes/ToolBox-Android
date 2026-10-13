@@ -163,7 +163,8 @@ fun ToolBoxStatusChip(text: String, tone: ToolBoxTone, modifier: Modifier = Modi
             },
             label = "chip text",
         ) { value ->
-            ToolBoxText(value, style = ToolBoxThemeTokens.textStyles.label.copy(color = fg.value, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), maxLines = 1)
+            ToolBoxText(value, style = ToolBoxThemeTokens.textStyles.label.copy(color = fg.value, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
     }
 }

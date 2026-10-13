@@ -134,10 +134,15 @@ fun ToolBoxTitleCollapseSource(state: ScrollState) {
     }
 }
 
-/** Height of the expanded title block below the 56dp bar. */
+/**
+ * Height of the expanded title block below the 56dp bar. The block is sized for its text, so it
+ * grows with the system font scale instead of clipping the bottom of the 34sp title.
+ */
 @Composable
-fun toolBoxLargeTitleHeight(subtitle: String = ""): Dp =
-    ToolBoxThemeTokens.sizes.largeTitle + if (subtitle.isNotBlank()) 20.dp else 0.dp
+fun toolBoxLargeTitleHeight(subtitle: String = ""): Dp {
+    val textScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    return ToolBoxThemeTokens.sizes.largeTitle * textScale + if (subtitle.isNotBlank()) 20.dp * textScale else 0.dp
+}
 
 /**
  * Screen top bar (design system v2 scaffold): a fixed 56dp bar holding navigation, actions and

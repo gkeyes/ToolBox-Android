@@ -1,5 +1,6 @@
 package io.toolbox.host.ui
 
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -368,7 +369,9 @@ internal fun RunningToolCapsule(
     val capsule = toolBoxShape(ToolBoxThemeTokens.radii.full)
     Row(
         Modifier.testTag("catalog-running-${session.sessionId}")
-            .height(52.dp)
+            // Grows with large text so the two-line name and status are never cut off.
+            .heightIn(min = 52.dp)
+            .height(IntrinsicSize.Min)
             .clip(capsule)
             .background(colors.surface)
             .padding(start = 6.dp),

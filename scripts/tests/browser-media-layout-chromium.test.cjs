@@ -72,7 +72,7 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
 
   fs.writeFileSync(htmlPath, html);
   const chrome = chromeBinary();
-  const result = spawnSync(
+  const launch = () => spawnSync(
     chrome,
     [
       '--headless=new',
@@ -88,7 +88,12 @@ function runFixture({ playerClass = 'dplayer', expectedRepair = true } = {}) {
   );
 
   try {
+    let result = launch();
+    // A cold headless Chrome on CI runners occasionally stalls and dumps no DOM at all. The fixture
+    // itself never produces an empty document, so launch once more; the assertions are unchanged.
+    if (!result.stdout || !result.stdout.trim()) result = launch();
     assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.ok(result.stdout.trim(), 'Chromium dumped no DOM: ' + (result.stderr || String(result.error || '')));
     return result.stdout;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
