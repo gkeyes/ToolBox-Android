@@ -143,6 +143,9 @@ jobs:
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install the emulator and system image, retrying bad downloads
+        if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
+        run: bash scripts/ci/install-emulator.sh 36 google_apis x86_64
       - name: Run Android behavior tests on the emulator
         if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         id: emulator
@@ -256,6 +259,8 @@ jobs:
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install the emulator and system image, retrying bad downloads
+        run: bash scripts/ci/install-emulator.sh 35 google_apis x86_64
       - name: Cold-start the signed release and verify its initial home
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:

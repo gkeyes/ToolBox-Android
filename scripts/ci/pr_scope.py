@@ -27,6 +27,8 @@ WEBVIEW_PATHS = {
     "app/src/androidTest/kotlin/io/toolbox/host/DeveloperWebViewDebuggingBehaviorTest.kt",
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt",
     "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt",
+    "scripts/ci/install-emulator.sh",
+    "scripts/ci/webview-debugging-connected.sh",
 }
 # Kotlin decimal literals have no leading zeros, and versionCode must be positive.
 VERSION_LINE = re.compile(r'^\s*(versionCode\s*=\s*(?P<code>[1-9]\d{0,9})|versionName\s*=\s*"\d+\.\d+\.\d+")\s*$')
