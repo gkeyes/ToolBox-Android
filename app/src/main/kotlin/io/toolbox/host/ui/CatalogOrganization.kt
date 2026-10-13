@@ -45,7 +45,6 @@ import androidx.compose.ui.window.DialogWindowProvider
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.data.CatalogSort
 import io.toolbox.core.ui.component.*
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.*
 
@@ -544,7 +543,6 @@ internal fun CatalogGroupFolderOverlay(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
-    val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val dark = colors.surface.luminance() < 0.5f
     Dialog(
         onDismissRequest = onDismiss,
@@ -631,8 +629,8 @@ internal fun CatalogGroupFolderOverlay(
                         )
                         .clip(panelShape)
                         // Opaque: icons and labels behind must never read through the panel.
-                        .background(if (glass) materials.overlayFallback.compositeOver(colors.surface) else colors.raised)
-                        .then(if (glass) Modifier.border(0.5.dp, materials.overlayBorder, panelShape) else Modifier)
+                        .background(materials.overlayFallback.compositeOver(colors.surface))
+                        .border(0.5.dp, materials.overlayBorder, panelShape)
                         .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
                 ) {
                     if (members.isEmpty()) {

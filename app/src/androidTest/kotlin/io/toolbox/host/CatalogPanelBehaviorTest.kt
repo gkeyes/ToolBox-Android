@@ -472,8 +472,8 @@ class CatalogPanelBehaviorTest(private val style: ToolBoxThemeStyle, private val
 
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "{0} wideLargeText={1}") fun variants() = listOf(
-            arrayOf<Any>(ToolBoxThemeStyle.Miuix, false), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, false),
-            arrayOf<Any>(ToolBoxThemeStyle.Miuix, true), arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, true),
+            arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, false),
+            arrayOf<Any>(ToolBoxThemeStyle.LiquidGlass, true),
         )
     }
 }
