@@ -72,6 +72,16 @@ replace_assets() {
 
 case "$kind" in
   app)
+    # Main runs queue in order, but a re-run of an older commit can still finish after a newer one
+    # was published. Never move the test channel back to a commit the published one already contains.
+    current="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
+    if [ -n "$current" ] && [ "$current" != "$GITHUB_SHA" ]; then
+      order="$(gh api "repos/$GH_REPO/compare/${current}...${GITHUB_SHA}" --jq .status 2>/dev/null || echo unknown)"
+      if [ "$order" = behind ]; then
+        echo "The test channel already has ${current:0:7}, which is newer than ${GITHUB_SHA:0:7}; not publishing."
+        exit 0
+      fi
+    fi
     apk="$(find "$dir" -maxdepth 1 -name 'toolbox-v*-release.apk' -print -quit)"
     test -n "$apk" || { echo "No signed APK in $dir" >&2; exit 1; }
     version="$(basename "$apk")"
