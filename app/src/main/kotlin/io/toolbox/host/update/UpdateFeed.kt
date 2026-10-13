@@ -113,19 +113,36 @@ internal object UpdateFeedParser {
             candidates.maxWith { a, b -> compareVersions(a.version, b.version) }
         }.sortedBy { it.slug }
 
+    /**
+     * Decided by version alone: CI requires a higher versionCode and versionName for every change that
+     * ships, and never publishes one version twice, so a newer test build always shows a new version
+     * number. versionCode decides; versionName only when a feed has no build receipt. The CI run id
+     * only tells this exact build apart from another build of the same version (e.g. a stable and a
+     * test build of one commit); it never makes a same-version build "newer".
+     */
     fun appState(candidate: AppPackage, installed: InstalledBuild): AppUpdateState {
-        val code = candidate.versionCode
+        val order = compareAppVersions(candidate.versionCode, candidate.versionName, installed.versionCode, installed.versionName)
         return when {
-            code != null && code < installed.versionCode -> AppUpdateState.DOWNGRADE
-            code != null && code > installed.versionCode -> AppUpdateState.NEWER
-            code == null && compareVersions(candidate.versionName, installed.versionName) > 0 -> AppUpdateState.NEWER
-            code == null && compareVersions(candidate.versionName, installed.versionName) < 0 -> AppUpdateState.DOWNGRADE
-            candidate.runId != null && installed.runId > 0 && candidate.runId == installed.runId -> AppUpdateState.CURRENT
-            candidate.runId != null && candidate.runId > installed.runId -> AppUpdateState.NEWER
+            order > 0 -> AppUpdateState.NEWER
+            order < 0 -> AppUpdateState.DOWNGRADE
             candidate.runId == null && installed.runId == 0L -> AppUpdateState.CURRENT
+            candidate.runId != null && candidate.runId == installed.runId -> AppUpdateState.CURRENT
             else -> AppUpdateState.OTHER_BUILD
         }
     }
+
+    /**
+     * Whether [replacement], read again after the test asset was swapped mid-download, may stand in for
+     * [original]: not a lower version, and for the same version (a rerun before CI stopped republishing
+     * versions) not an older CI run.
+     */
+    fun isNotOlder(replacement: AppPackage, original: AppPackage): Boolean {
+        val order = compareAppVersions(replacement.versionCode, replacement.versionName, original.versionCode, original.versionName)
+        return order > 0 || (order == 0 && (original.runId == null || (replacement.runId ?: 0L) >= original.runId))
+    }
+
+    private fun compareAppVersions(leftCode: Int?, leftName: String, rightCode: Int?, rightName: String): Int =
+        if (leftCode != null && rightCode != null) leftCode.compareTo(rightCode) else compareVersions(leftName, rightName)
 }
 
 /** Numeric dotted comparison; a pre-release suffix sorts before the same release. */
