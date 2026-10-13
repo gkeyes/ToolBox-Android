@@ -4,7 +4,7 @@
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
   // Keep in sync with manifest.json "version" (checked by watcher-reliability tests).
-  const TOOL_VERSION = "1.1.10";
+  const TOOL_VERSION = "1.1.11";
   const USER_AGENT = `ToolBox-GitHub-Actions-Watcher/${TOOL_VERSION}`;
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
@@ -1860,5 +1860,20 @@
     foregroundClock = null;
   }
 
-  bootPromise = boot();
+  // Test hook: only tests define window.__TOOLBOX_TEST__ before loading this script,
+  // so production never exposes internals or changes startup.
+  const testHook = window.__TOOLBOX_TEST__;
+  if (testHook) {
+    ({ renderDashboard, renderDashboardClock, renderAll, showToast } = {
+      renderDashboard, renderDashboardClock, renderAll, showToast, ...testHook.stubs });
+    testHook.api = {
+      state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
+      saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
+      ageFrontPage: () => { lastFrontPageAt = 0; },
+      setForeground: (value) => { runtimeForeground = value; },
+      expire: () => activePoll?.invalidate(reliability.timeoutError()),
+      pendingPages: () => discoveryQueue.length, pollInterval: () => currentPollInterval(),
+    };
+  }
+  if (testHook?.boot !== false) bootPromise = boot();
 })();

@@ -6,13 +6,9 @@ const vm = require('node:vm');
 
 const examples = path.resolve(__dirname, '../..');
 
-function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
+function loadApp(name, toolbox, extraWindow = {}, options = {}) {
   const filename = path.join(examples, name, 'app.js');
-  const marker = '  bootWork = boot();\n})();';
-  let source = fs.readFileSync(filename, 'utf8');
-  assert.equal(source.split(marker).length, 2, `${name} startup changed`);
-  const startup = options.boot ? '  bootWork = boot();\n' : '';
-  source = source.replace(marker, `${startup}  window.testApi = { ${expose} };\n})();`);
+  const source = fs.readFileSync(filename, 'utf8');
   const nodes = new Map();
   let domReads = 0;
   let created = 0;
@@ -32,7 +28,8 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
     querySelectorAll() { return []; },
     createElement() { created += 1; return element(); },
   };
-  const window = { ToolBox: toolbox, ...extraWindow };
+  const hook = { boot: Boolean(options.boot) };
+  const window = { ToolBox: toolbox, __TOOLBOX_TEST__: hook, ...extraWindow };
   const timers = { setTimeout: options.setTimeout || setTimeout, clearTimeout: options.clearTimeout || clearTimeout };
   vm.runInNewContext(source, { window, document, URL, Intl, Date: options.Date || Date, console, ...timers }, { filename });
   const dispatch = (id, type, event = {}) => {
@@ -40,12 +37,12 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
     domReads -= 1;
     for (const listener of node.listeners[type] || []) listener({ preventDefault() {}, target: node, ...event });
   };
-  return { api: window.testApi, nodes, dispatch, node: (id) => { const node = document.getElementById(id); domReads -= 1; return node; }, counts: () => ({ domReads, created }) };
+  return { api: hook.api, nodes, dispatch, node: (id) => { const node = document.getElementById(id); domReads -= 1; return node; }, counts: () => ({ domReads, created }) };
 }
 
 test('notification lab retains only the latest 200 events and reconstructs them on return', () => {
   const toolbox = { background: { onTimer() {}, onRestore() {} } };
-  const h = loadApp('notification-lab', 'state, appendEvent, renderLog, setForeground: (value) => { runtimeForeground = value; }', toolbox);
+  const h = loadApp('notification-lab', toolbox);
   const before = h.counts();
   for (let index = 0; index < 205; index += 1) h.api.appendEvent(`event-${index}`);
   assert.equal(h.api.state.eventCount, 200);
