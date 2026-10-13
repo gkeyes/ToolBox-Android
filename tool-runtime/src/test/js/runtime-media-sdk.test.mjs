@@ -7,12 +7,11 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const source = readFileSync(resolve(root, 'tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebMessageBridge.kt'), 'utf8');
-const template = source.slice(source.indexOf('private fun shim(')).match(/return """([\s\S]*?)"""\.trimIndent\(\)/)?.[1];
-assert.ok(template, 'Tests load the production document-start SDK');
-const shim = template.replaceAll("${'$'}", '$').replaceAll('${identity.versionCode}', '1')
-  .replaceAll('$BRIDGE_OBJECT', '__toolboxNative').replaceAll('$nonce', '"nonce"')
-  .replaceAll('$toolId', '"io.example.media"').replaceAll('$generation', '"generation"');
+const template = readFileSync(resolve(root, 'tool-runtime/src/main/assets/toolbox-runtime/runtime-sdk.js'), 'utf8');
+assert.ok(template.includes('__TOOLBOX_NONCE__'), 'Tests load the production document-start SDK');
+const shim = template.replaceAll('__TOOLBOX_VERSION_CODE__', '1')
+  .replaceAll('__TOOLBOX_BRIDGE_OBJECT__', '__toolboxNative').replaceAll('__TOOLBOX_NONCE__', '"nonce"')
+  .replaceAll('__TOOLBOX_TOOL_ID__', '"io.example.media"').replaceAll('__TOOLBOX_GENERATION__', '"generation"');
 
 class TrackedSignal extends EventTarget {
   aborted = false;
