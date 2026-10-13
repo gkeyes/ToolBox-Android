@@ -17,8 +17,9 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
   let domReads = 0;
   let created = 0;
   const element = () => ({
-    children: [], dataset: {}, style: {}, textContent: '',
-    addEventListener() {}, setAttribute() {},
+    children: [], dataset: {}, style: {}, textContent: '', listeners: {},
+    addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
+    setAttribute() {}, close() {}, focus() {},
     append(...items) { this.children.push(...items); },
     replaceChildren(...items) { this.children = items; },
   });
@@ -34,7 +35,12 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
   const window = { ToolBox: toolbox, ...extraWindow };
   const timers = { setTimeout: options.setTimeout || setTimeout, clearTimeout: options.clearTimeout || clearTimeout };
   vm.runInNewContext(source, { window, document, URL, Intl, Date, console, ...timers }, { filename });
-  return { api: window.testApi, nodes, counts: () => ({ domReads, created }) };
+  const dispatch = (id, type, event = {}) => {
+    const node = document.getElementById(id);
+    domReads -= 1;
+    for (const listener of node.listeners[type] || []) listener({ preventDefault() {}, target: node, ...event });
+  };
+  return { api: window.testApi, nodes, dispatch, counts: () => ({ domReads, created }) };
 }
 
 test('stock background refresh fetches each enabled quote, saves once and leaves DOM untouched', async () => {
@@ -52,7 +58,8 @@ test('stock background refresh fetches each enabled quote, saves once and leaves
     } },
   };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, dirtyItems', toolbox, { StockMonitorLive: stockLive });
+  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, dirtyItems, loaded: () => { stateLoaded = true; markStateLoaded(); }', toolbox, { StockMonitorLive: stockLive });
+  h.api.loaded();
   h.api.state.items = [
     h.api.createItem({ provider: 'tencent', symbol: '600550' }),
     h.api.createItem({ provider: 'tencent', symbol: '000001' }),
@@ -141,8 +148,9 @@ test('stock hung quote request times out so the next poll can run', async () => 
   const fakeSetTimeout = (fn, ms) => { if (ms >= 60000) { pending.push(fn); return pending.length; } return setTimeout(fn, ms); };
   const fakeClearTimeout = (id) => { if (typeof id === 'number' && id <= pending.length) pending[id - 1] = null; else clearTimeout(id); };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll', host.toolbox, { StockMonitorLive: stockLive },
+  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, loaded: () => { stateLoaded = true; markStateLoaded(); }', host.toolbox, { StockMonitorLive: stockLive },
     { setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout });
+  h.api.loaded();
   h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550' })];
   const work = h.api.refreshAll({ background: true, force: true });
   await settle();
@@ -158,6 +166,55 @@ test('stock hung quote request times out so the next poll can run', async () => 
   assert.equal(host.calls.length, 2, 'a later poll is not blocked by the hung request');
   assert.equal(h.api.state.items[0].error, null);
   assert.equal(h.api.state.items[0].price, 10.5);
+});
+
+test('stock editor save and monitor toggle before the saved list loads never persist the default list', async () => {
+  let releaseStorage;
+  const host = stockHost();
+  let started = 0;
+  host.toolbox.background.start = async () => { started += 1; return { sessionId: 'session-2' }; };
+  host.toolbox.background.listSessions = async () => [];
+  host.toolbox.storage.get = () => new Promise((resolve) => { releaseStorage = resolve; });
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'get state() { return state; }, persist', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  await settle();
+  const field = (id, value) => { h.nodes.get(id) || h.dispatch(id, 'noop'); h.nodes.get(id).value = value; };
+  h.dispatch('stock-form', 'noop');
+  h.nodes.get('stock-form').elements = { provider: { value: 'tencent' } };
+  field('symbol', '000002'); field('stock-name', ''); field('upper-price', ''); field('lower-price', '');
+  field('interval', '300000'); field('api-token', ''); h.nodes.get('enabled') || h.dispatch('enabled', 'noop');
+  h.nodes.get('enabled').checked = true;
+  h.dispatch('stock-form', 'submit');
+  h.dispatch('toggle-monitor', 'click');
+  void h.api.persist();
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.equal(host.writes.length, 0, 'nothing persisted before the saved list is read');
+  assert.equal(started, 0, 'monitoring is not toggled from the default state');
+  releaseStorage({ version: 1, intervalMs: 300000, monitoring: false, items: [{ id: 'saved', provider: 'tencent', symbol: '000001' }] });
+  for (let index = 0; index < 20; index += 1) await settle();
+  assert.ok(host.writes.length > 0);
+  for (const write of host.writes) assert.ok(write.items.some((item) => item.symbol === '000001'), 'saved stock kept');
+  assert.deepEqual(h.api.state.items.map((item) => item.symbol), ['000001', '000002']);
+});
+
+test('stock manual refresh during a background pass runs its own forced pass afterwards', async () => {
+  const host = stockHost();
+  const original = host.toolbox.network.request;
+  const waiting = [];
+  host.toolbox.network.request = (request) => new Promise((resolve) => { waiting.push(() => resolve(original(request))); });
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, loaded: () => { stateLoaded = true; markStateLoaded(); }', host.toolbox, { StockMonitorLive: stockLive });
+  h.api.loaded();
+  h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550' })];
+  const background = h.api.refreshAll({ background: true });
+  const manual = h.api.refreshAll({ announce: true, force: true });
+  assert.notEqual(manual, background);
+  for (let index = 0; index < 50 && (waiting.length || host.calls.length < 2); index += 1) {
+    waiting.splice(0).forEach((resolve) => resolve());
+    await settle();
+  }
+  await Promise.all([background, manual]);
+  assert.equal(host.calls.length, 2, 'forced pass fetched after the background pass');
 });
 
 test('stock market-closed polling skips A-share quotes already refreshed after the close', () => {
@@ -176,6 +233,9 @@ test('stock market-closed polling skips A-share quotes already refreshed after t
   assert.equal(skipWhileClosed(createItem({ symbol: '600550', fetchedAt: since + 60000 }), since), true);
   assert.equal(skipWhileClosed(createItem({ provider: 'twelve', symbol: 'AAPL', fetchedAt: since + 60000 }), since), false);
   assert.equal(skipWhileClosed(createItem({ symbol: '600550', fetchedAt: since + 60000 }), null), false);
+  assert.equal(skipWhileClosed(createItem({ symbol: '600550', fetchedAt: since + 60000, price: 12, upper: 11 }), since), false,
+    'unlatched crossed threshold is re-evaluated');
+  assert.equal(skipWhileClosed(createItem({ symbol: '600550', fetchedAt: since + 60000, price: 12, upper: 11, aboveLatched: true }), since), true);
 });
 
 test('notification lab retains only the latest 200 events and reconstructs them on return', () => {
@@ -316,4 +376,77 @@ test('Kegel imports legacy localStorage once into ToolBox storage and uses host 
   h.click('start-button');
   assert.deepEqual(haptics, ['click']);
   await flush();
+});
+
+function legacyStore(entries) {
+  const data = new Map(entries.map(([key, value]) => [key, JSON.stringify(value)]));
+  return {
+    data,
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => { data.set(key, String(value)); },
+    removeItem: (key) => data.delete(key),
+  };
+}
+
+test('Kegel keeps legacy history while storage is switched off and migrates once it is enabled', async () => {
+  const oldEntry = { completedAt: '2026-01-01T00:00:00Z', mode: '标准训练', reps: 10, durationMs: 60000 };
+  const localStorage = legacyStore([['wenli.history.v1', [oldEntry]]]);
+  let denied = true;
+  let stateListener = null;
+  const applied = [];
+  const toolbox = {
+    ready: async () => ({}),
+    runtime: {
+      onStateChanged(listener) { stateListener = listener; listener({ foreground: true, closing: false }); },
+      registerFlushHandler() {},
+    },
+    storage: {
+      getMany: async () => {
+        if (denied) throw Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' });
+        return [null, null];
+      },
+      apply: async (mutation) => { applied.push(JSON.parse(JSON.stringify(mutation))); },
+    },
+    haptics: { perform: async () => {} },
+  };
+  const h = loadKegel({ toolbox, localStorage });
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.match(h.nodes.get('history-summary').textContent, /存储权限未开启：1 条/);
+  assert.match(h.nodes.get('toast').textContent, /开启「存储」/);
+  h.click('start-button');
+  h.runFrames(1, 70000);
+  const saved = JSON.parse(localStorage.data.get('wenli.history.v1'));
+  assert.equal(saved.length, 2, 'new session recorded in the legacy copy, old entry kept');
+  denied = false;
+  stateListener({ foreground: false, closing: false });
+  stateListener({ foreground: true, closing: false });
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.equal(applied.length, 1);
+  const history = applied[0].set.find((entry) => entry.key === 'wenli.history.v1').value;
+  assert.equal(history.length, 2);
+  assert.equal(localStorage.data.size, 0, 'legacy copy removed only after migration');
+});
+
+test('Kegel keeps preference edits made while saved preferences are loading', async () => {
+  let release;
+  const applied = [];
+  const toolbox = {
+    ready: async () => ({}),
+    runtime: { onStateChanged(listener) { listener({ foreground: true, closing: false }); }, registerFlushHandler() {} },
+    storage: {
+      getMany: () => new Promise((resolve) => { release = resolve; }),
+      apply: async (mutation) => { applied.push(JSON.parse(JSON.stringify(mutation))); },
+    },
+  };
+  const h = loadKegel({ toolbox });
+  await settle();
+  for (const listener of h.nodes.get('volume-range').listeners.input) listener({ target: { value: '30' } });
+  release([{ selectedMode: 'standard', volume: 80, sound: false }, []]);
+  for (let index = 0; index < 5; index += 1) await settle();
+  assert.equal(h.nodes.get('volume-output').textContent, '30%');
+  assert.equal(h.nodes.get('summary-title').textContent, '标准训练');
+  const prefs = applied.at(-1).set.find((entry) => entry.key === 'wenli.preferences.v1').value;
+  assert.equal(prefs.volume, 30);
+  assert.equal(prefs.selectedMode, 'standard');
+  assert.equal(prefs.sound, false);
 });

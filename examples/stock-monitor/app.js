@@ -19,6 +19,8 @@
   let tokenValue = "";
   let editingId = null;
   let refreshPromise = null;
+  let refreshForced = false;
+  let forcedFollowUp = null;
   let bootWork = null;
   let restoreWork = null;
   let restorePending = false;
@@ -120,6 +122,9 @@
     // While the saved watchlist could not be read, never write: the in-memory fallback
     // would otherwise replace the user's real list.
     if (savedStateUnreadable) return Promise.resolve();
+    // Nothing may be written before the saved list was read: a snapshot taken from the
+    // default list would replace it. Late callers write the loaded state instead.
+    if (!stateLoaded) return stateLoadedWork.then(() => (stateLoaded ? persist() : undefined));
     const snapshot = persistedState(source);
     const work = writeChain.catch(() => {}).then(() => toolbox().storage.set(STORAGE_KEY, snapshot));
     writeChain = work;
@@ -187,9 +192,14 @@
   // A-share quotes do not move while the market is closed; polling them all night only
   // costs battery. One refresh after the close is still taken so the closing price lands.
   function skipWhileClosed(item, closedSince) {
-    return item.provider === "tencent" && closedSince !== null
-      && Number.isFinite(item.fetchedAt) && item.fetchedAt >= closedSince;
+    if (item.provider !== "tencent" || closedSince === null) return false;
+    if (!Number.isFinite(item.fetchedAt) || item.fetchedAt < closedSince) return false;
+    // A crossed threshold whose notification failed is retried on the next poll.
+    const abovePending = item.upper !== null && item.price !== null && item.price >= item.upper && !item.aboveLatched;
+    const belowPending = item.lower !== null && item.price !== null && item.price <= item.lower && !item.belowLatched;
+    return !abovePending && !belowPending;
   }
+
 
   function quoteTimeLabel(item) {
     if (!Number.isFinite(item.quoteAt)) return formatTime(item.fetchedAt);
@@ -517,7 +527,19 @@
 
   async function refreshAll(options = {}) {
     if (runtimeClosing) return;
-    if (refreshPromise) return refreshPromise;
+    if (refreshPromise) {
+      // A manual refresh must not be absorbed by a background pass that skipped
+      // closed-market items; run it once the current pass ends.
+      if (!options.force || refreshForced) return refreshPromise;
+      if (!forcedFollowUp) {
+        forcedFollowUp = refreshPromise.catch(() => {}).then(() => {
+          forcedFollowUp = null;
+          return refreshAll(options);
+        });
+      }
+      return forcedFollowUp;
+    }
+    refreshForced = Boolean(options.force);
     refreshPromise = (async () => {
       const active = state.items.filter((item) => item.enabled);
       if (!active.length) {
@@ -932,6 +954,7 @@
   $("toggle-monitor").addEventListener("click", () => {
     if (monitorAction || runtimeClosing) return;
     if (!ready) { showToast("ToolBox 尚未连接"); return; }
+    if (!stateLoaded) { showToast("正在读取自选列表…"); return; }
     monitorAction = state.monitoring ? "stop" : "start";
     render();
     const work = (async () => {
@@ -956,16 +979,16 @@
     const item = state.items.find((candidate) => candidate.id === root?.dataset.id);
     if (item) openEditor(item);
   });
-  $("watchlist").addEventListener("change", (event) => { if (!runtimeClosing) trackUserAction(changeItemEnabled(event)); });
+  $("watchlist").addEventListener("change", (event) => { if (!runtimeClosing) trackUserAction(afterStateLoaded(() => changeItemEnabled(event))); });
   $("stock-form").addEventListener("change", (event) => {
     if (event.target.name === "provider") updateProviderFields();
   });
   $("stock-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!runtimeClosing) trackUserAction(saveEditor(event));
+    if (!runtimeClosing) trackUserAction(afterStateLoaded(() => saveEditor(event)));
   });
   $("cancel-editor").addEventListener("click", closeEditor);
-  $("delete-stock").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(deleteEditingStock()); });
+  $("delete-stock").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(afterStateLoaded(deleteEditingStock)); });
   $("clear-token").addEventListener("click", () => { if (!runtimeClosing) trackUserAction(clearToken()); });
   $("editor").addEventListener("cancel", (event) => { event.preventDefault(); closeEditor(); });
 

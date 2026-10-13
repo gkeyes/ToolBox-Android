@@ -146,9 +146,9 @@ jobs:
         env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/tool-runtime-performance.test.cjs
-      - name: 2048 game core tests
+      - name: 2048 game core and save tests
         if: ${{ matrix.tool == 'game-2048' && matrix.full_tests }}
-        run: python3 scripts/ci/tbx.py test-unit --tool game-2048 --test-filter tests/game-core.test.cjs
+        run: python3 scripts/ci/tbx.py test-unit --tool game-2048 --test-filter tests/game-core.test.cjs,tests/game-save.test.cjs
       - name: Verify selected tool unit cases
         if: ${{ !matrix.full_tests && matrix.unit_test_filter != '' }}
         env:

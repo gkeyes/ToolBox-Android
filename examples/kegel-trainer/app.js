@@ -257,7 +257,12 @@
   let completionPending = null;
   // Data lives in ToolBox.storage; it is only written after the saved copy was read, so an
   // early or failed read can never overwrite the user's history.
+  // States: loading, ready (ToolBox.storage), legacy (storage permission off: keep using
+  // the pre-1.0.5 localStorage copy until it can be migrated) and unavailable.
   let storageState = "loading";
+  let hostConnected = false;
+  let loadWork = null;
+  let unsavedHistory = [];
   const dirtyKeys = new Set();
   let writeWork = null;
   let hapticsWarned = false;
@@ -320,35 +325,94 @@
     } catch (_) {}
   }
 
-  async function loadStoredData() {
+  function preferenceEdits(base, current) {
+    const edits = {};
+    for (const key of Object.keys(current)) {
+      if (key !== "custom" && base[key] !== current[key]) edits[key] = current[key];
+    }
+    const custom = {};
+    for (const key of Object.keys(current.custom)) {
+      if (base.custom[key] !== current.custom[key]) custom[key] = current.custom[key];
+    }
+    if (Object.keys(custom).length) edits.custom = custom;
+    return edits;
+  }
+
+  function applyPreferenceEdits(saved, edits) {
+    return { ...saved, ...edits, custom: { ...saved.custom, ...(edits.custom || {}) } };
+  }
+
+  function writeLegacy() {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify(preferences));
+      window.localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
+    } catch (_) {}
+  }
+
+  // Adopts loaded data while keeping edits and sessions made during the read.
+  function adoptLoaded(savedPreferences, savedHistory, base) {
+    const edits = preferenceEdits(base, preferences);
+    preferences = applyPreferenceEdits(sanitizePreferences(savedPreferences), edits);
+    history = [...unsavedHistory, ...sanitizeHistory(savedHistory)];
+    const changed = { preferences: Object.keys(edits).length > 0, history: unsavedHistory.length > 0 };
+    unsavedHistory = [];
+    return changed;
+  }
+
+  function loadStoredData() {
+    if (!loadWork) loadWork = readStoredData().finally(() => { loadWork = null; });
+    return loadWork;
+  }
+
+  async function readStoredData() {
     const api = hostApi();
+    const base = sanitizePreferences(preferences);
     let saved;
     try {
       saved = await api.storage.getMany([STORAGE_KEYS.preferences, STORAGE_KEYS.history]);
     } catch (_) {
-      storageState = "unavailable";
+      // An update from 1.0.4 adds the storage capability switched off. Keep showing and
+      // recording data in the old localStorage copy (never deleting it) until it is enabled.
+      const legacy = readLegacyStorage();
+      const wasLegacy = storageState === "legacy";
+      if (legacy) {
+        adoptLoaded(legacy.preferences, legacy.history, base);
+        storageState = "legacy";
+        writeLegacy();
+      } else {
+        storageState = "unavailable";
+      }
+      if (!wasLegacy) showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
+      syncControls();
+      if (currentScreen === "setup") renderSetup();
       renderHistory();
       return;
     }
     let [savedPreferences, savedHistory] = saved;
     const legacy = savedPreferences === null && savedHistory === null ? readLegacyStorage() : null;
+    let imported = false;
     if (legacy && (legacy.preferences !== null || legacy.history !== null)) {
       savedPreferences = legacy.preferences;
       savedHistory = legacy.history;
-      const set = [];
-      if (savedPreferences !== null) set.push({ key: STORAGE_KEYS.preferences, value: sanitizePreferences(savedPreferences) });
-      if (savedHistory !== null) set.push({ key: STORAGE_KEYS.history, value: sanitizeHistory(savedHistory) });
-      try {
-        await api.storage.apply({ set });
-        dropLegacyStorage(legacy);
-      } catch (_) {}
+      imported = true;
     }
-    // Sessions finished while the saved data was loading are kept ahead of older entries.
-    const earlier = history;
-    if (savedPreferences !== null) preferences = sanitizePreferences(savedPreferences);
-    history = [...earlier, ...sanitizeHistory(savedHistory)];
+    const changed = adoptLoaded(savedPreferences, savedHistory, base);
     storageState = "ready";
-    if (earlier.length) dirtyKeys.add(STORAGE_KEYS.history);
+    if (imported) {
+      try {
+        await api.storage.apply({ set: [
+          { key: STORAGE_KEYS.preferences, value: preferences },
+          { key: STORAGE_KEYS.history, value: history }
+        ] });
+        dropLegacyStorage(legacy);
+      } catch (_) {
+        dirtyKeys.add(STORAGE_KEYS.preferences);
+        dirtyKeys.add(STORAGE_KEYS.history);
+      }
+    } else {
+      if (changed.preferences) dirtyKeys.add(STORAGE_KEYS.preferences);
+      if (changed.history) dirtyKeys.add(STORAGE_KEYS.history);
+    }
     void writeDirty();
     syncControls();
     if (currentScreen === "setup") renderSetup();
@@ -377,11 +441,13 @@
   }
 
   function persistPreferences() {
+    if (storageState === "legacy") { writeLegacy(); return; }
     dirtyKeys.add(STORAGE_KEYS.preferences);
     void writeDirty();
   }
 
   function persistHistory() {
+    if (storageState === "legacy") { writeLegacy(); return; }
     dirtyKeys.add(STORAGE_KEYS.history);
     void writeDirty();
   }
@@ -604,7 +670,9 @@
     const list = $("history-list");
     list.replaceChildren();
     $("clear-history-button").disabled = history.length === 0;
-    $("history-summary").textContent = storageState !== "unavailable"
+    $("history-summary").textContent = storageState === "legacy"
+      ? `存储权限未开启：${history.length} 条记录暂存在网页存储，开启后自动迁移`
+      : storageState !== "unavailable"
       ? (history.length === 0 ? "还没有训练记录" : `已保存 ${history.length} 次完成记录`)
       : (history.length === 0 ? "训练记录只保留在本次会话" : `本次会话已完成 ${history.length} 次`);
 
@@ -795,6 +863,7 @@
       durationMs: Math.round(state.elapsedMs)
     };
     history = [entry, ...history];
+    if (storageState === "loading" || storageState === "unavailable") unsavedHistory = [entry, ...unsavedHistory];
     persistHistory();
     if (!runtimeForeground) {
       completionPending = state;
@@ -951,6 +1020,10 @@
 
   function handleRuntimeState(snapshot) {
     runtimeForeground = snapshot.foreground && !snapshot.closing;
+    // Returning from the tool's permission page: retry ToolBox.storage and migrate.
+    if (runtimeForeground && hostConnected && (storageState === "legacy" || storageState === "unavailable")) {
+      void loadStoredData();
+    }
     if (!runtimeForeground) {
       if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
       cancelAnimationFrameLoop();
@@ -976,6 +1049,7 @@
       return;
     }
     api.ready().then(() => {
+      hostConnected = true;
       api.runtime.onStateChanged(handleRuntimeState);
       api.runtime.registerFlushHandler(async () => {
         if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);

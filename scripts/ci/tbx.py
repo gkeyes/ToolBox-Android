@@ -80,7 +80,7 @@ TEST_FILES = {
         "browser": {"examples/github-actions-watcher/tests/layout.py"},
     },
     **{name: {"unit": {RUNTIME_PERFORMANCE_TEST}, "browser": set()} for name in RUNTIME_PERFORMANCE_TOOLS},
-    "game-2048": {"unit": {"tests/game-core.test.cjs"}, "browser": set()},
+    "game-2048": {"unit": {"tests/game-core.test.cjs", "tests/game-save.test.cjs"}, "browser": set()},
 }
 
 

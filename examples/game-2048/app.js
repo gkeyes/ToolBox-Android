@@ -102,8 +102,14 @@
   }
 
   async function flushSaves() {
+    // A write still in flight when closing starts may fail after we begin waiting, so
+    // re-check after the queue drains and retry once before reporting failure.
     if (saveFailed) queueSave();
     await saveQueue;
+    if (saveFailed) {
+      queueSave();
+      await saveQueue;
+    }
     if (saveFailed) throw new Error("棋局保存失败");
   }
 
