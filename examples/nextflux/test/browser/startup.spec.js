@@ -124,3 +124,60 @@ test("an internal error restoring authentication is identified without blaming p
   expect(native.reads).toContain("secure.get:nextflux.auth");
   expect(native.writes).toEqual([]);
 });
+
+// The list header floats three pieces (sidebar button, filter capsule, actions)
+// over the list. On narrow screens, large display sizes or large text with a
+// long unread count, the capsule must step down (or take its own row, or
+// scroll) instead of running under them.
+for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1], [393, 1.5], [430, 1]]) {
+  test(`list header pieces stay apart at ${width}px, text x${scale}`, async ({ page }) => {
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.setViewportSize({ width, height: 800 });
+    await installNativeBoundary(page, {
+      auth: {
+        serverUrl: "https://miniflux.xiaochen.win", username: "layout-test-user", password: "", userId: 7,
+        token: "fixed-synthetic-test-token", authType: "token",
+      },
+      settings: { ...STORED_SETTINGS, syncInterval: "0" },
+      cacheRoot: {
+        version: 3, revision: 1, account: { serverUrl: "https://miniflux.xiaochen.win", userId: "7" },
+        transaction: null, lastSyncTime: null,
+        tables: { articles: null, feeds: null, categories: null, feedIcons: null },
+      },
+    });
+    await page.goto(PRODUCTION_URL);
+    await expect(page.locator(".article-list-inline-tabs .tabs__list")).toBeVisible();
+    await page.evaluate((scale) => {
+      document.documentElement.style.fontSize = `${16 * scale}px`;
+      for (const count of document.querySelectorAll(".article-tab-count")) count.textContent = "4262";
+    }, scale);
+    await expect(page.locator(".article-list-inline-tabs")).toHaveAttribute("data-fit", /^(full|compact|tight|small)$/);
+    await page.waitForTimeout(100);
+    const layout = await page.evaluate(() => {
+      const box = (selector) => {
+        const rect = document.querySelector(selector).getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      };
+      const list = document.querySelector(".article-list-inline-tabs .tabs__list");
+      return {
+        trigger: box('.article-list-header > [data-sidebar="trigger"]'),
+        list: box(".article-list-inline-tabs .tabs__list"),
+        actions: box(".article-list-actions"),
+        clipped: list.scrollWidth > list.clientWidth + 1,
+        scrollable: getComputedStyle(list).overflowX === "auto",
+        overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+    expect(apart(layout.list, layout.trigger)).toBe(true);
+    expect(apart(layout.list, layout.actions)).toBe(true);
+    expect(layout.list.left).toBeGreaterThanOrEqual(0);
+    expect(layout.list.right).toBeLessThanOrEqual(width);
+    expect(layout.actions.right).toBeLessThanOrEqual(width);
+    // Past the smallest density the capsule scrolls instead of hiding a tab.
+    if (layout.clipped) expect(layout.scrollable).toBe(true);
+    expect(layout.overflow).toBe(false);
+    expect(pageErrors).toEqual([]);
+  });
+}

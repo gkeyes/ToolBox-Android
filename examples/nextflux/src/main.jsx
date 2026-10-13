@@ -3,6 +3,10 @@ import "./compact-controls.css";
 import { initializePreferences, flushPreferences } from "./toolbox/preferences.js";
 import { installLinkHandling } from "./toolbox/actions.js";
 import { runtimeForeground, runtimeClosing } from "./toolbox/foreground.js";
+import { installTouchPressCompat } from "./toolbox/touch-press.js";
+
+// Before anything renders, so the first tap on any button is covered.
+installTouchPressCompat();
 
 let startupStage = "连接 ToolBox";
 

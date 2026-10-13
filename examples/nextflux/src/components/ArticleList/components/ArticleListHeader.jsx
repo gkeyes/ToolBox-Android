@@ -15,7 +15,51 @@ import {
 import MenuButton from "./MenuButton";
 import FeedTitleFilterButton from "./FeedTitleFilterButton.jsx";
 import ArticleListTabs from "./ArticleListFooter.jsx";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+
+const TAB_DENSITIES = ["full", "compact", "tight", "small"];
+
+/**
+ * Fits the filter capsule to the width it is given: drops the tab icons, then
+ * tightens the padding, then the text. If even that is too wide beside the
+ * buttons, the capsule takes a row of its own and steps down again there, so
+ * it never runs under the buttons on narrow screens, large display sizes or
+ * large system fonts. Past the smallest density it scrolls sideways.
+ */
+function useTabsFit(ref, deps) {
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return undefined;
+    // A capsule already on its own row (inside a feed) has nowhere to move.
+    const canStack = box.classList.contains("article-list-inline-tabs");
+    const fit = () => {
+      const list = box.querySelector(".tabs__list");
+      if (!list) return;
+      // The list is capped at the width it can use (padding excluded), so it
+      // overflows itself when its content does not fit.
+      box.dataset.scroll = "false";
+      for (const stacked of canStack ? [false, true] : [false]) {
+        box.dataset.stacked = String(stacked);
+        for (const density of TAB_DENSITIES) {
+          box.dataset.fit = density;
+          if (list.scrollWidth <= list.clientWidth + 1) return;
+        }
+      }
+      // Nothing fits (very large text or long translations): scroll the
+      // capsule sideways rather than hiding a tab.
+      box.dataset.scroll = "true";
+    };
+    fit();
+    // Watch the list too: late fonts or a text-size change resize it without
+    // changing the space it is given.
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
+    observer?.observe(box);
+    const list = box.querySelector(".tabs__list");
+    if (list) observer?.observe(list);
+    return () => observer?.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
 
 /** Title and status line shared by the collapsed top bar and the large title. */
 export function useArticleListTitle() {
@@ -125,6 +169,9 @@ export default function ArticleListHeader({ collapsed = false }) {
   const { feedId, categoryId, title, transientStatus, hasError, activeCount } = useArticleListTitle();
   const scoped = Boolean(feedId || categoryId);
   const wrapRef = useRef(null);
+  const tabsRef = useRef(null);
+  const { i18n } = useTranslation();
+  useTabsFit(tabsRef, [scoped, activeCount, i18n.language]);
   // The header floats over the list (so it can slide away without relayout);
   // publish its height so the list reserves exactly that much space on top.
   useEffect(() => {
@@ -168,14 +215,18 @@ export default function ArticleListHeader({ collapsed = false }) {
         ) : (
           <>
             <h1 className="sr-only">{title}</h1>
-            <div className="article-list-inline-tabs min-w-0 flex-1">
+            <div ref={tabsRef} className="article-list-inline-tabs min-w-0 flex-1" data-fit="full">
               <ArticleListTabs activeCount={activeCount} />
             </div>
           </>
         )}
         {actions}
       </div>
-      {scoped && <ArticleListTabs activeCount={activeCount} />}
+      {scoped && (
+        <div ref={tabsRef} className="article-list-scoped-tabs" data-fit="full">
+          <ArticleListTabs activeCount={activeCount} />
+        </div>
+      )}
       {!scoped && caption && <div className="article-list-caption-row">{caption}</div>}
     </div>
   );
