@@ -114,33 +114,6 @@ jobs:
           ./gradlew --no-daemon :core-data:testDebugUnitTest :core-ui:testDebugUnitTest
           :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :tool-api:testDebugUnitTest
           :app:testDebugUnitTest
-      - name: Generate actual Room v1 schema from the fixed installed baseline
-        if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin 06cd8ec7899f139f974c4c72b565af59a3f91118
-          baseline_dir="$RUNNER_TEMP/toolbox-room-v1"
-          mkdir -p "$baseline_dir"
-          git archive 06cd8ec7899f139f974c4c72b565af59a3f91118 | tar -x -C "$baseline_dir"
-          python3 - "$baseline_dir" <<'PY'
-          from pathlib import Path
-          import sys
-          root = Path(sys.argv[1])
-          database = root / 'core-data/src/main/kotlin/io/toolbox/core/data/db/ToolBoxDatabase.kt'
-          source = database.read_text()
-          assert 'exportSchema = false' in source and 'version = 1' in source
-          database.write_text(source.replace('exportSchema = false', 'exportSchema = true'))
-          gradle = root / 'core-data/build.gradle.kts'
-          source = gradle.read_text()
-          marker = 'arg("room.generateKotlin", "true")'
-          assert marker in source
-          gradle.write_text(source.replace(marker, marker + '\n    arg("room.schemaLocation", "$projectDir/schemas")'))
-          PY
-          (cd "$baseline_dir" && ./gradlew --no-daemon :core-data:kspDebugKotlin)
-          schema="$baseline_dir/core-data/schemas/io.toolbox.core.data.db.ToolBoxDatabase/1.json"
-          test -s "$schema"
-          mkdir -p app/src/androidTest/assets/room-v1
-          cp "$schema" app/src/androidTest/assets/room-v1/1.json
       - name: Enable accelerated emulator
         if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         run: |
