@@ -20,10 +20,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -490,38 +492,29 @@ internal fun CatalogGroupFolderOverlay(
     onDismiss: () -> Unit,
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val liveBlur = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass && ToolBoxThemeTokens.materials.realBlurEnabled
+    val materials = ToolBoxThemeTokens.materials
+    val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
+    val dark = colors.surface.luminance() < 0.5f
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        DisposableEffect(window, liveBlur) {
+        DisposableEffect(window) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
-            val previousFlags = window.attributes.flags
-            val previousBlur = window.attributes.blurBehindRadius
             window.setDimAmount(0f)
-            if (liveBlur) {
-                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = FOLDER_BLUR_RADIUS_PX }
-            }
-            onDispose {
-                window.setDimAmount(previousDim)
-                if (liveBlur) {
-                    if ((previousFlags and android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND) == 0) {
-                        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    }
-                    window.attributes = window.attributes.apply { blurBehindRadius = previousBlur }
-                }
-            }
+            // No window blur: FLAG_BLUR_BEHIND would blur the whole home page, which stays sharp
+            // behind an iOS 27 overlay. The overlay window cannot sample the app's recorded glass
+            // layer, so the panel draws the denser translucent overlay fallback instead.
+            onDispose { window.setDimAmount(previousDim) }
         }
         val entrance = remember { Animatable(0f) }
         LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
         Box(
             Modifier.fillMaxSize()
-                .background(colors.background.copy(alpha = if (liveBlur) 0.35f else 0.9f))
+                .background(colors.scrim)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
@@ -554,10 +547,19 @@ internal fun CatalogGroupFolderOverlay(
                     FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
                     FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
                 }
+                val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
                     Modifier.fillMaxWidth()
-                        .clip(toolBoxShape(ToolBoxThemeTokens.radii.sheet))
-                        .background(colors.surface.copy(alpha = if (liveBlur) 0.72f else 1f))
+                        .shadow(
+                            elevation = 24.dp,
+                            shape = panelShape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                            spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                        )
+                        .clip(panelShape)
+                        .background(if (glass) materials.overlayFallback else colors.raised)
+                        .then(if (glass) Modifier.border(0.5.dp, materials.overlayBorder, panelShape) else Modifier)
                         .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
                 ) {
                     if (members.isEmpty()) {
@@ -610,18 +612,15 @@ internal fun CatalogGroupFolderOverlay(
     }
 }
 
-private const val FOLDER_BLUR_RADIUS_PX = 60
-
 @Composable
 private fun FolderRoundButton(icon: ToolBoxIconKey, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = ToolBoxThemeTokens.colors
     val interactionSource = remember { MutableInteractionSource() }
+    // Solid glass disc: the overlay window has no recorded backdrop to refract.
     Box(
         modifier.size(44.dp)
             .toolBoxPressFeedback(interactionSource, shape = CircleShape)
-            .clip(CircleShape)
-            .background(colors.surface.copy(alpha = 0.7f))
-            .border(0.5.dp, colors.divider, CircleShape)
+            .toolBoxSolidGlass(CircleShape)
             .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
