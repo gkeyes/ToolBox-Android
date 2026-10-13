@@ -269,6 +269,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/toolbox-signing"
       - name: Retain release verification and R8 evidence
         if: ${{ always() }}
+        # Diagnostics only; a failed copy must not hold back publishing.
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-optimization-${{ github.sha }}

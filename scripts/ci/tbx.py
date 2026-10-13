@@ -387,7 +387,7 @@ def build(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("plan", "build", "test-unit", "test-browser"))
+    parser.add_argument("command", choices=("plan", "build", "test-unit", "test-browser", "superseded"))
     parser.add_argument("--tool", default="all")
     parser.add_argument("--validation-scope", default="full")
     parser.add_argument("--test-filter", default="")
@@ -395,6 +395,11 @@ def main():
     try:
         if args.command == "plan":
             plan(args.tool, args.validation_scope, args.test_filter)
+        elif args.command == "superseded":
+            # Paths changed on main after this run's commit, one per line on stdin; prints the tools a
+            # newer push run rebuilds, so this run must not publish its older packages for them.
+            changed = [line.strip() for line in sys.stdin if line.strip()]
+            print("\n".join(select_targets(targets(), "changed", changed)))
         elif args.command.startswith("test-"):
             run_selected_tests(args.tool, args.test_filter, browser=args.command == "test-browser")
         else:
