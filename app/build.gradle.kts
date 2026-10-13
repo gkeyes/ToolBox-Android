@@ -77,6 +77,8 @@ tasks.withType<Test>().configureEach {
             "--add-opens=java.base/java.util=ALL-UNNAMED",
             "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
             "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
+            "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
         )
         testLogging {
             events("failed")
