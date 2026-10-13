@@ -632,12 +632,13 @@ private fun actionContrast(a: Color, b: Color): Float {
 }
 
 /**
- * Solid iOS 26 fills (#0064D2 / #0A84FF accent, #D70015 / #FF6961 destructive) carry white
- * 17sp semibold labels, which count as large text (3:1). Only a very light custom accent
- * falls back to a dark label.
+ * Solid iOS 26 fills carry 17sp semibold labels, which count as large text and need 3:1.
+ * White passes on #0064D2 / #0A84FF accent and light #D70015 destructive; dark #FF6961
+ * destructive is only ~2.8:1 against white, so it (and any very light custom accent) takes
+ * the iOS dark label #1C1C1E (~6:1) instead.
  */
 private fun solidActionColors(fill: Color): ToolBoxActionColors =
-    ToolBoxActionColors(fill, if (actionContrast(fill, Color.White) >= 2.4f) Color.White else Color(0xFF111214))
+    ToolBoxActionColors(fill, if (actionContrast(fill, Color.White) >= 3.0f) Color.White else Color(0xFF1C1C1E))
 
 /**
  * Flat iOS 26 button roles: prominent = solid accent; regular = accent at 10% / 18%;
