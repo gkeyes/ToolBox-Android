@@ -15,7 +15,7 @@ class RuntimeTaskResultEncodingTest {
         hostVersion = "0.8.32",
         nonce = "nonce",
         exactOrigin = "https://tasks.toolbox.invalid/",
-        declaredCapabilities = setOf(ToolBoxCapabilityId.BACKGROUND_TASKS),
+        declaredCapabilities = setOf("background.tasks"),
     )
     private val allowAll = object : RuntimeAuthorizationPolicy {
         override suspend fun isCurrent(identity: RuntimeSessionIdentity) = true
