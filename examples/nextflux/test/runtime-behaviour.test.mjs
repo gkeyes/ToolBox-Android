@@ -5,6 +5,7 @@ import { createArticleCache, pruneServerPurged } from "../src/toolbox/cache.js";
 import { parseHashRoute, sidebarItems, adjacentSidebarPath } from "../src/lib/hashRoute.mjs";
 import { createReadObserver } from "../src/lib/readObserver.mjs";
 import { debounce } from "../src/lib/debounce.mjs";
+import { toggleStarAcknowledged } from "../src/toolbox/star-toggle.mjs";
 import { initializePreferences, setPreference, flushPreferences } from "../src/toolbox/preferences.js";
 import { decodeSettings, settingsState, updateSettings } from "../src/stores/settingsStore.js";
 import { aiSummaries, setSummaryLoading, appendSummaryChunk, finishCancelledSummary } from "../src/stores/aiStore.js";
@@ -180,4 +181,20 @@ test("a cancelled AI summary is not an error and leaves no stale entry", () => {
   setSummaryLoading(3);
   finishCancelledSummary(3, { keepPartial: true });
   assert.equal(aiSummaries.get()[3], undefined, "a stop before any text leaves nothing behind");
+});
+
+test("an acknowledged star toggle is committed even when the confirming read fails", async () => {
+  const run = async (fetchEntry, starred = 0) => {
+    const saves = [];
+    const result = await toggleStarAcknowledged({ current: { id: 5, starred }, toggle: async () => {}, fetchEntry, save: async (value) => saves.push(value) });
+    return { result, saves };
+  };
+  assert.deepEqual(await run(async () => { throw new Error("offline"); }), { result: 1, saves: [1] });
+  assert.deepEqual(await run(async () => ({ id: 5 })), { result: 1, saves: [1] }, "a malformed read keeps the expected state");
+  assert.deepEqual(await run(async () => ({ starred: true })), { result: 1, saves: [1] });
+  assert.deepEqual(await run(async () => ({ starred: true }), 1), { result: 1, saves: [0, 1] }, "the server's state corrects a stale cache");
+  const saves = [];
+  await assert.rejects(toggleStarAcknowledged({ current: { id: 5, starred: 0 }, toggle: async () => { throw new Error("PUT failed"); },
+    fetchEntry: async () => ({ starred: true }), save: async (value) => saves.push(value) }), /PUT failed/);
+  assert.deepEqual(saves, [], "nothing is committed when the toggle was not acknowledged");
 });

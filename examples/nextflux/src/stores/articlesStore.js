@@ -10,6 +10,7 @@ import minifluxAPI from "../api/miniflux.js";
 import { starredCounts, unreadCounts } from "./feedsStore.js";
 import { settingsState } from "./settingsStore.js";
 import { clearAllSummaries } from "./aiStore.js";
+import { toggleStarAcknowledged } from "../toolbox/star-toggle.mjs";
 
 export const filteredArticles = atom([]);
 export const activeArticle = atom(null);
@@ -209,12 +210,12 @@ export function updateArticleStarred(article) {
     const current = await getArticleMetadata(article.id);
     check();
     if (!current) throw new Error("该文章已不在本地缓存，请刷新后重试。");
-    await minifluxAPI.updateEntryStarred(current, check);
-    // The bookmark endpoint toggles whatever the server holds, which can differ
-    // from this cache (another client). Record the server's resulting state.
-    const server = await minifluxAPI.getEntry(current.id, check);
-    if (typeof server?.starred !== "boolean") throw new Error("服务器返回的文章收藏状态无效，请同步后重试。");
-    await saveAcknowledged([{ id: current.id, starred: server.starred ? 1 : 0 }], check);
+    await toggleStarAcknowledged({
+      current,
+      toggle: () => minifluxAPI.updateEntryStarred(current, check),
+      fetchEntry: () => minifluxAPI.getEntry(current.id, check),
+      save: (starred) => saveAcknowledged([{ id: current.id, starred }], check),
+    });
   }, { priority: "manual" });
 }
 
