@@ -106,11 +106,22 @@ case "$kind" in
     # One version number never ships twice: every build has its own bytes (it embeds its run id), so a
     # commit that left the version alone (CI, docs or scripts only; the PR version check requires a bump
     # for anything shipped) keeps the APK already on `dev`. Never offer a lower version either.
-    published="$(printf '%s\n' "$app_assets" | sed -n 's/^toolbox-v\(.*\)-dev\.apk$/\1/p' | head -n 1)"
+    # A failed swap can leave two APKs behind; the highest one is what the channel offers.
+    published="$(printf '%s\n' "$app_assets" | sed -n 's/^toolbox-v\(.*\)-dev\.apk$/\1/p' | sort -V | tail -n 1)"
+    upload_apk=1
     if [ -n "$published" ]; then
       if [ "$published" = "$version" ]; then
-        echo "The test channel already has ToolBox $version; the same version is not published again."
-        exit 0
+        # The same bytes on `dev` mean this build uploaded them in an earlier attempt that stopped before
+        # the receipt or tag; finish those. Any other build of this version is left alone.
+        published_digest="$(lookup "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --paginate \
+          --jq ".[] | select(.name == \"toolbox-v${version}-dev.apk\") | .digest")" \
+          || { echo "Could not read the published APK's checksum; not publishing." >&2; exit 1; }
+        if [ "$published_digest" != "sha256:$(sha256sum "$apk" | cut -d' ' -f1)" ]; then
+          echo "The test channel already has ToolBox $version; the same version is not published again."
+          exit 0
+        fi
+        echo "The test channel already has this build's APK; finishing its receipt and tag."
+        upload_apk=
       fi
       highest="$(printf '%s\n%s\n' "$published" "$version" | sort -V | tail -n 1)"
       if [ "$highest" != "$version" ]; then
@@ -118,9 +129,11 @@ case "$kind" in
         exit 1
       fi
     fi
-    staging="$(mktemp -d)"
-    cp "$apk" "$staging/toolbox-v${version}-dev.apk"
-    replace_assets '^toolbox-v.*\.apk$' "$staging/toolbox-v${version}-dev.apk"
+    if [ -n "$upload_apk" ]; then
+      staging="$(mktemp -d)"
+      cp "$apk" "$staging/toolbox-v${version}-dev.apk"
+      replace_assets '^toolbox-v.*\.apk$' "$staging/toolbox-v${version}-dev.apk"
+    fi
     publish_asset "$dir/BUILD_RECEIPT.txt"
     gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$GITHUB_SHA" -F force=true >/dev/null
     gh release edit "$tag" --notes "main 分支最新通过 CI 的构建，供应用内“测试版”更新渠道使用。
@@ -146,7 +159,7 @@ case "$kind" in
       version="${name#"$slug"-v}"
       version="${version%.tbx}"
       # Never replace a higher published version of the same tool with a lower one.
-      current="$(sed -n "s/^${slug}-v\([0-9][0-9A-Za-z.+-]*\)\.tbx\$/\1/p" <<<"$published" | head -n 1)"
+      current="$(sed -n "s/^${slug}-v\([0-9][0-9A-Za-z.+-]*\)\.tbx\$/\1/p" <<<"$published" | sort -V | tail -n 1)"
       if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)" != "$version" ]; then
         echo "The test channel has $slug $current, higher than this build's $version; not publishing it." >&2
         refused=1

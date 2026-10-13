@@ -18,6 +18,7 @@ case "$args" in
   *"git/ref/tags/dev"*) [ -n "$FAKE_CURRENT" ] || exit 1; echo "$FAKE_CURRENT"; exit 0 ;;
   *"/compare/"*) echo "$FAKE_ORDER"; exit 0 ;;
   *"releases/tags/dev --jq .id") echo 1; exit 0 ;;
+  *".digest"*) echo "$FAKE_DIGEST"; exit 0 ;;
   *"assets?per_page=100"*"toolbox-v"*) printf '%s\n' "$FAKE_ASSETS" | grep -E '^toolbox-v.*\.apk$' || true; exit 0 ;;
   *"assets?per_page=100"*) exit 0 ;;
 esac
@@ -26,7 +27,7 @@ exit 0
 
 
 class PublishTestReleaseTest(unittest.TestCase):
-    def publish(self, kind, files, assets, current="a" * 40, order="ahead"):
+    def publish(self, kind, files, assets, current="a" * 40, order="ahead", digest="sha256:other"):
         with tempfile.TemporaryDirectory() as temporary:
             temporary = Path(temporary)
             bin_dir, delivery = temporary / "bin", temporary / "delivery"
@@ -43,7 +44,7 @@ class PublishTestReleaseTest(unittest.TestCase):
             environment = os.environ | {
                 "PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_LOG": str(log), "FAKE_ASSETS": "\n".join(assets),
                 "FAKE_CURRENT": current, "FAKE_ORDER": order, "GH_REPO": "owner/repo", "GITHUB_SHA": "b" * 40,
-                "GITHUB_RUN_ID": "7",
+                "GITHUB_RUN_ID": "7", "FAKE_DIGEST": digest,
             }
             result = subprocess.run(["bash", str(SCRIPT), kind, str(delivery)], env=environment,
                                     capture_output=True, text=True)
@@ -109,6 +110,21 @@ class PublishTestReleaseTest(unittest.TestCase):
         self.assertFalse(any("game-2048" in call for call in uploads))
         self.assertFalse(any("delete-asset dev game-2048" in call for call in calls))
         self.assertTrue(any("rss-scout-v1.4.7.tbx" in call for call in uploads))
+
+    def test_same_build_already_uploaded_finishes_receipt_and_tag(self):
+        import hashlib
+        digest = "sha256:" + hashlib.sha256(b"toolbox-v0.9.0-release.apk").hexdigest()
+        result, calls = self.publish("app", ["toolbox-v0.9.0-release.apk", "BUILD_RECEIPT.txt"],
+                                     ["toolbox-v0.9.0-dev.apk", "BUILD_RECEIPT.txt"], digest=digest)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(any(".apk" in call for call in calls if call.startswith("release upload")))
+        self.assertTrue(any("BUILD_RECEIPT.txt" in call for call in calls if call.startswith("release upload")))
+        self.assertTrue(any("git/refs/tags/dev" in call for call in calls))
+
+    def test_highest_of_leftover_tool_versions_is_compared(self):
+        result, calls = self.publish("tools", ["game-2048-v1.0.5.tbx"], ["game-2048-v1.0.4.tbx", "game-2048-v1.0.10.tbx"])
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(any("game-2048" in call for call in calls if call.startswith("release upload")))
 
 
 if __name__ == "__main__":
