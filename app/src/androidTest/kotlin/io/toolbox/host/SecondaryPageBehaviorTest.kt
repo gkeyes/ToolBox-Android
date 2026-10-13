@@ -225,12 +225,14 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
         }
         compose.onNodeWithTag(HostTestTags.AppearanceSystemColor).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(ThemeMode.MONET_LIGHT, state.value.settings.theme); assertFalse(state.value.settings.reduceTransparency) }
-        if (style == ToolBoxThemeStyle.LiquidGlass) {
-            compose.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).performScrollTo().performClick()
-            compose.runOnIdle { assertTrue(state.value.settings.reduceTransparency); assertEquals(ThemeMode.MONET_LIGHT, state.value.settings.theme) }
-        } else compose.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).assertDoesNotExist()
+        // One iOS look: reduce transparency is offered whatever the legacy stored style is,
+        // and the old Miuix / Liquid Glass picker is gone.
+        compose.onNodeWithTag(HostTestTags.AppearanceReduceTransparency).performScrollTo().performClick()
+        compose.runOnIdle { assertTrue(state.value.settings.reduceTransparency); assertEquals(ThemeMode.MONET_LIGHT, state.value.settings.theme) }
+        compose.onNodeWithText("Miuix").assertDoesNotExist()
+        compose.onNodeWithTag(HostTestTags.AppearanceLiquidGlass).assertDoesNotExist()
         compose.runOnIdle { about.value = true }
-        compose.onNodeWithText(if (style == ToolBoxThemeStyle.Miuix) "Miuix" else "Liquid Glass").assertExists()
+        compose.onNodeWithText("Liquid Glass").assertExists()
         compose.onNodeWithText("Liquid Glass · 唯一主题").assertDoesNotExist()
     }
 

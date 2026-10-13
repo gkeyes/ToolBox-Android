@@ -1,5 +1,7 @@
 package io.toolbox.host.background
 
+import io.toolbox.host.settings.SettingsIconTile
+import io.toolbox.host.settings.SettingsIconTint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -292,6 +294,8 @@ private fun RuntimeSessionCard(
     onStop: () -> Unit,
 ) {
     BackgroundEntryLayout(
+        icon = io.toolbox.core.ui.component.ToolBoxIconKey.Refresh,
+        tint = SettingsIconTint.Aqua,
         modifier = Modifier.testTag("background_session:${session.sessionId}"),
         action = {
             ToolBoxDestructiveButton(
@@ -325,6 +329,8 @@ private fun BackgroundTaskCard(
     val cancellable = task.state == TaskState.QUEUED || task.state == TaskState.RUNNING
 
     BackgroundEntryLayout(
+        icon = io.toolbox.core.ui.component.ToolBoxIconKey.Clock,
+        tint = if (task.periodic) SettingsIconTint.Orange else SettingsIconTint.Blue,
         modifier = Modifier.testTag("background_task:${task.taskId}"),
         action = if (cancellable) ({
             ToolBoxDestructiveButton(
@@ -360,31 +366,38 @@ private fun BackgroundTaskCard(
 
 @Composable
 private fun BackgroundEntryLayout(
+    icon: io.toolbox.core.ui.component.ToolBoxIconKey,
+    tint: SettingsIconTint,
     modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)?,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val largeText = LocalDensity.current.fontScale >= 1.3f
-    BoxWithConstraints(
+    Row(
         modifier.fillMaxWidth()
             .heightIn(min = ToolBoxThemeTokens.sizes.denseRow)
             .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.sm),
+        verticalAlignment = Alignment.Top,
     ) {
-        if (action == null) {
-            Column(Modifier.fillMaxWidth(), content = content)
-        } else if (maxWidth < 320.dp || largeText) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+        SettingsIconTile(icon, tint, Modifier.padding(top = 2.dp))
+        Spacer(Modifier.width(ToolBoxThemeTokens.spacing.sm))
+        BoxWithConstraints(Modifier.weight(1f)) {
+            if (action == null) {
                 Column(Modifier.fillMaxWidth(), content = content)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { action() }
-            }
-        } else {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.oneHalf),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), content = content)
-                action()
+            } else if (maxWidth < 320.dp || largeText) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.one)) {
+                    Column(Modifier.fillMaxWidth(), content = content)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { action() }
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.oneHalf),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f), content = content)
+                    action()
+                }
             }
         }
     }

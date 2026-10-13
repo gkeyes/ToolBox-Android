@@ -18,21 +18,22 @@ import kotlin.math.abs
 /**
  * Drives the real app (no test content) into a secondary page and checks its pixels, not just
  * its semantics: an alpha-0 or covered page still "exists" and "is displayed" for the semantics
- * tree, so only a capture catches a blank destination. Runs in both looks.
+ * tree, so only a capture catches a blank destination. Runs in every light/dark mode.
  */
 @RunWith(AndroidJUnit4::class)
 class SecondaryPageVisibilityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun secondaryPageIsVisibleAfterPushInBothLooksAndAfterReturning() {
+    @Test fun secondaryPageIsVisibleAfterPushInEveryModeAndAfterReturning() {
         compose.waitUntil(30_000) {
             compose.onAllNodesWithTag(HostTestTags.BottomSettings).fetchSemanticsNodes().isNotEmpty()
         }
         openAppearance()
         assertPainted("明暗模式", "Appearance page after push (initial look)")
 
-        // Switch the look from inside the page, leave and come back: both looks must render.
-        for (look in listOf("Miuix", "Liquid Glass")) {
+        // Switch the light/dark mode from inside the page, leave and come back: every mode must
+        // render. (There is a single iOS look now, so mode is the appearance change left.)
+        for (look in listOf("深色", "浅色", "跟随系统")) {
             compose.onNodeWithText(look).performClick()
             compose.waitForIdle()
             assertPainted("明暗模式", "Appearance page after switching to $look")
