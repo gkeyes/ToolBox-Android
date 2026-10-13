@@ -20,6 +20,7 @@ entries=(
   network.js
   miniflux.js
   rules.js
+  icon.svg
 )
 for entry in "${entries[@]}"; do
   cp -- "${source_dir}/${entry}" "${stage_dir}/${entry}"

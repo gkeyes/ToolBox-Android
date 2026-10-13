@@ -1,12 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="2048">
-  <rect width="512" height="512" rx="118" fill="#172321"/>
-  <rect x="58" y="58" width="396" height="396" rx="86" fill="#233331"/>
-  <rect x="86" y="86" width="154" height="154" rx="40" fill="#E8EEE9"/>
-  <rect x="272" y="86" width="154" height="154" rx="40" fill="#D4A35E"/>
-  <rect x="86" y="272" width="154" height="154" rx="40" fill="#9B3E40"/>
-  <rect x="272" y="272" width="154" height="154" rx="40" fill="#29B8A3"/>
-  <text x="163" y="184" fill="#23312F" font-family="Arial, sans-serif" font-size="84" font-weight="700" text-anchor="middle">2</text>
-  <text x="349" y="184" fill="#302312" font-family="Arial, sans-serif" font-size="84" font-weight="700" text-anchor="middle">0</text>
-  <text x="163" y="371" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="84" font-weight="700" text-anchor="middle">4</text>
-  <text x="349" y="371" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="84" font-weight="700" text-anchor="middle">8</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#F6CE6E"/><stop offset="0.55" stop-color="#DFA43A"/><stop offset="1" stop-color="#B07612"/></linearGradient>
+<radialGradient id="sheen" cx="0.22" cy="0.04" r="0.85"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="shade" cx="0.62" cy="1.08" r="0.75"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+<linearGradient id="glyph" x1="0" y1="0.18" x2="0" y2="0.86" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FCF6EB"/></linearGradient>
+<linearGradient id="t8" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF9F43"/><stop offset="1" stop-color="#F2711C"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect width="1024" height="1024" fill="url(#sheen)"/>
+<g opacity="0.07" transform="translate(0 30)">
+<path d="M320,264H440A56,56 0 0 1 496,320V440A56,56 0 0 1 440,496H320A56,56 0 0 1 264,440V320A56,56 0 0 1 320,264Z" fill="#000000"/>
+<path d="M584,264H704A56,56 0 0 1 760,320V440A56,56 0 0 1 704,496H584A56,56 0 0 1 528,440V320A56,56 0 0 1 584,264Z" fill="#000000"/>
+<path d="M320,528H440A56,56 0 0 1 496,584V704A56,56 0 0 1 440,760H320A56,56 0 0 1 264,704V584A56,56 0 0 1 320,528Z" fill="#000000"/>
+<path d="M584,528H704A56,56 0 0 1 760,584V704A56,56 0 0 1 704,760H584A56,56 0 0 1 528,704V584A56,56 0 0 1 584,528Z" fill="#000000"/>
+</g>
+<g opacity="0.09" transform="translate(0 20)">
+<path d="M320,264H440A56,56 0 0 1 496,320V440A56,56 0 0 1 440,496H320A56,56 0 0 1 264,440V320A56,56 0 0 1 320,264Z" fill="#000000"/>
+<path d="M584,264H704A56,56 0 0 1 760,320V440A56,56 0 0 1 704,496H584A56,56 0 0 1 528,440V320A56,56 0 0 1 584,264Z" fill="#000000"/>
+<path d="M320,528H440A56,56 0 0 1 496,584V704A56,56 0 0 1 440,760H320A56,56 0 0 1 264,704V584A56,56 0 0 1 320,528Z" fill="#000000"/>
+<path d="M584,528H704A56,56 0 0 1 760,584V704A56,56 0 0 1 704,760H584A56,56 0 0 1 528,704V584A56,56 0 0 1 584,528Z" fill="#000000"/>
+</g>
+<g opacity="0.12" transform="translate(0 11)">
+<path d="M320,264H440A56,56 0 0 1 496,320V440A56,56 0 0 1 440,496H320A56,56 0 0 1 264,440V320A56,56 0 0 1 320,264Z" fill="#000000"/>
+<path d="M584,264H704A56,56 0 0 1 760,320V440A56,56 0 0 1 704,496H584A56,56 0 0 1 528,440V320A56,56 0 0 1 584,264Z" fill="#000000"/>
+<path d="M320,528H440A56,56 0 0 1 496,584V704A56,56 0 0 1 440,760H320A56,56 0 0 1 264,704V584A56,56 0 0 1 320,528Z" fill="#000000"/>
+<path d="M584,528H704A56,56 0 0 1 760,584V704A56,56 0 0 1 704,760H584A56,56 0 0 1 528,704V584A56,56 0 0 1 584,528Z" fill="#000000"/>
+</g>
+<g opacity="0.1" transform="translate(0 5)">
+<path d="M320,264H440A56,56 0 0 1 496,320V440A56,56 0 0 1 440,496H320A56,56 0 0 1 264,440V320A56,56 0 0 1 320,264Z" fill="#000000"/>
+<path d="M584,264H704A56,56 0 0 1 760,320V440A56,56 0 0 1 704,496H584A56,56 0 0 1 528,440V320A56,56 0 0 1 584,264Z" fill="#000000"/>
+<path d="M320,528H440A56,56 0 0 1 496,584V704A56,56 0 0 1 440,760H320A56,56 0 0 1 264,704V584A56,56 0 0 1 320,528Z" fill="#000000"/>
+<path d="M584,528H704A56,56 0 0 1 760,584V704A56,56 0 0 1 704,760H584A56,56 0 0 1 528,704V584A56,56 0 0 1 584,528Z" fill="#000000"/>
+</g>
+<path d="M320,264H440A56,56 0 0 1 496,320V440A56,56 0 0 1 440,496H320A56,56 0 0 1 264,440V320A56,56 0 0 1 320,264Z" fill="url(#glyph)"/>
+<path d="M584,264H704A56,56 0 0 1 760,320V440A56,56 0 0 1 704,496H584A56,56 0 0 1 528,440V320A56,56 0 0 1 584,264Z" fill="url(#glyph)"/>
+<path d="M320,528H440A56,56 0 0 1 496,584V704A56,56 0 0 1 440,760H320A56,56 0 0 1 264,704V584A56,56 0 0 1 320,528Z" fill="url(#glyph)"/>
+<path d="M584,528H704A56,56 0 0 1 760,584V704A56,56 0 0 1 704,760H584A56,56 0 0 1 528,704V584A56,56 0 0 1 584,528Z" fill="url(#t8)"/>
+<path d="M332.5 342.5C332.5 300 427.5 295 427.5 345C427.5 385 372.5 407.5 330 457.5H430" fill="none" stroke="#B47A16" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M644 302.5C609 302.5 594 337.5 594 380C594 422.5 609 457.5 644 457.5C679 457.5 694 422.5 694 380C694 337.5 679 302.5 644 302.5Z" fill="none" stroke="#B47A16" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M400 724V566.5L327.5 674H435" fill="none" stroke="#B47A16" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M644 639C611.5 639 596.5 621.5 596.5 601.5C596.5 579 616.5 564 644 564C671.5 564 691.5 579 691.5 601.5C691.5 621.5 676.5 639 644 639ZM644 639C606.5 639 591.5 661.5 591.5 681.5C591.5 706.5 614 724 644 724C674 724 696.5 706.5 696.5 681.5C696.5 661.5 681.5 639 644 639Z" fill="none" stroke="#FFFFFF" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="10"/>
 </svg>

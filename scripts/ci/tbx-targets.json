@@ -14,7 +14,7 @@
       "index.html",
       "style.css",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "integrity.json"
     ]
   },
@@ -55,7 +55,7 @@
       "github-model.js",
       "reliability.js",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "integrity.json"
     ]
   },
@@ -86,7 +86,7 @@
       "index.html",
       "style.css",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "audio/prepare.ogg",
       "audio/contract.ogg",
       "audio/relax.ogg",
@@ -120,7 +120,7 @@
       "index.html",
       "style.css",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "integrity.json"
     ]
   },
@@ -139,7 +139,7 @@
       "index.html",
       "style.css",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "integrity.json"
     ]
   },
@@ -158,7 +158,7 @@
       "index.html",
       "style.css",
       "app.js",
-      "icon.png",
+      "icon.svg",
       "integrity.json"
     ]
   },
@@ -181,6 +181,7 @@
       "network.js",
       "miniflux.js",
       "rules.js",
+      "icon.svg",
       "integrity.json"
     ]
   },

@@ -13,7 +13,7 @@ import tempfile
 
 source = Path(sys.argv[1])
 output = Path(sys.argv[2]).absolute()
-entries = ["manifest.json", "index.html", "style.css", "app.js", "icon.png",
+entries = ["manifest.json", "index.html", "style.css", "app.js", "icon.svg",
            "audio/prepare.ogg", "audio/contract.ogg", "audio/relax.ogg", "audio/complete.ogg"]
 with tempfile.TemporaryDirectory(prefix="toolbox-kegel-package-") as temporary:
     stage = Path(temporary)

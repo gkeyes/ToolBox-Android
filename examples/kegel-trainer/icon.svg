@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#3EDCD2"/><stop offset="0.55" stop-color="#14AFAE"/><stop offset="1" stop-color="#08807F"/></linearGradient>
+<radialGradient id="sheen" cx="0.22" cy="0.04" r="0.85"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="shade" cx="0.62" cy="1.08" r="0.75"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+<linearGradient id="glyph" x1="0" y1="0.18" x2="0" y2="0.86" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8F7F7"/></linearGradient>
+
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect width="1024" height="1024" fill="url(#sheen)"/>
+<path d="M250,512A262,262 0 1 0 774,512A262,262 0 1 0 250,512Z" fill="none" stroke="#FFFFFF" stroke-width="70" stroke-linecap="round" stroke-linejoin="round" opacity="0.24"/>
+<g opacity="0.07" transform="translate(0 30)">
+<path d="M512.0,250.0A262,262 0 1 1 250.0,512.0" fill="none" stroke="#000000" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M362,512C412,402 462,402 512,512S612,622 662,512" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.09" transform="translate(0 20)">
+<path d="M512.0,250.0A262,262 0 1 1 250.0,512.0" fill="none" stroke="#000000" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M362,512C412,402 462,402 512,512S612,622 662,512" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.12" transform="translate(0 11)">
+<path d="M512.0,250.0A262,262 0 1 1 250.0,512.0" fill="none" stroke="#000000" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M362,512C412,402 462,402 512,512S612,622 662,512" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g opacity="0.1" transform="translate(0 5)">
+<path d="M512.0,250.0A262,262 0 1 1 250.0,512.0" fill="none" stroke="#000000" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M362,512C412,402 462,402 512,512S612,622 662,512" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path d="M512.0,250.0A262,262 0 1 1 250.0,512.0" fill="none" stroke="url(#glyph)" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M362,512C412,402 462,402 512,512S612,622 662,512" fill="none" stroke="url(#glyph)" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="10"/>
+</svg>

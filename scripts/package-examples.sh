@@ -25,7 +25,7 @@ for name in "${requested[@]}"; do
   source_dir="${repo_root}/examples/${name}"
   output_path="${output_override:-${output_dir}/${name}.tbx}"
   stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-${name}.XXXXXX")"
-  entries=(manifest.json index.html style.css app.js icon.png)
+  entries=(manifest.json index.html style.css app.js icon.svg)
   trap 'rm -rf -- "${stage_dir}"' EXIT
 
   for entry in "${entries[@]}"; do

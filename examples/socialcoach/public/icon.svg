@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#565B72"/><stop offset="0.55" stop-color="#353A4F"/><stop offset="1" stop-color="#1E2233"/></linearGradient>
+<radialGradient id="sheen" cx="0.22" cy="0.04" r="0.85"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="shade" cx="0.62" cy="1.08" r="0.75"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+<linearGradient id="glyph" x1="0" y1="0.18" x2="0" y2="0.86" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F3F3F4"/></linearGradient>
+<linearGradient id="coral" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF9A6B"/><stop offset="1" stop-color="#F2552E"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect width="1024" height="1024" fill="url(#sheen)"/>
+<g opacity="0.07" transform="translate(0 30)">
+<path d="M360,250H584A124,124 0 0 1 708,374V446A124,124 0 0 1 584,570H420L322,646Q306,658 308,638L316,566A124,124 0 0 1 236,446V374A124,124 0 0 1 360,250Z" fill="#000000"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="#000000"/>
+</g>
+<g opacity="0.09" transform="translate(0 20)">
+<path d="M360,250H584A124,124 0 0 1 708,374V446A124,124 0 0 1 584,570H420L322,646Q306,658 308,638L316,566A124,124 0 0 1 236,446V374A124,124 0 0 1 360,250Z" fill="#000000"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="#000000"/>
+</g>
+<g opacity="0.12" transform="translate(0 11)">
+<path d="M360,250H584A124,124 0 0 1 708,374V446A124,124 0 0 1 584,570H420L322,646Q306,658 308,638L316,566A124,124 0 0 1 236,446V374A124,124 0 0 1 360,250Z" fill="#000000"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="#000000"/>
+</g>
+<g opacity="0.1" transform="translate(0 5)">
+<path d="M360,250H584A124,124 0 0 1 708,374V446A124,124 0 0 1 584,570H420L322,646Q306,658 308,638L316,566A124,124 0 0 1 236,446V374A124,124 0 0 1 360,250Z" fill="#000000"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="#000000"/>
+</g>
+<path d="M360,250H584A124,124 0 0 1 708,374V446A124,124 0 0 1 584,570H420L322,646Q306,658 308,638L316,566A124,124 0 0 1 236,446V374A124,124 0 0 1 360,250Z" fill="url(#glyph)"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="url(#coral)"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="none" stroke="#2E3245" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M576,478H690A104,104 0 0 1 794,582V636A104,104 0 0 1 736,729L744,786Q746,804 730,794L654,740H576A104,104 0 0 1 472,636V582A104,104 0 0 1 576,478Z" fill="url(#coral)"/>
+<path d="M548,610A22,22 0 1 0 592,610A22,22 0 1 0 548,610Z" fill="#FFFFFF"/>
+<path d="M611,610A22,22 0 1 0 655,610A22,22 0 1 0 611,610Z" fill="#FFFFFF"/>
+<path d="M674,610A22,22 0 1 0 718,610A22,22 0 1 0 674,610Z" fill="#FFFFFF"/>
+<path d="M352,368H592" fill="none" stroke="#9AA0B8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+<path d="M352,452H508" fill="none" stroke="#9AA0B8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+<rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="10"/>
+</svg>

@@ -7,7 +7,7 @@
   "version": "1.0.51",
   "versionCode": 72,
   "entry": "index.html",
-  "icon": "web-app-manifest-512x512.png",
+  "icon": "icon.svg",
   "apiVersion": "1.0",
   "minHostVersion": "0.8.29",
   "categories": [

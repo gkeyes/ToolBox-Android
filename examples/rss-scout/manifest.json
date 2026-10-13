@@ -7,6 +7,7 @@
   "version": "1.4.5",
   "versionCode": 12,
   "entry": "index.html",
+  "icon": "icon.svg",
   "apiVersion": "1.0",
   "minHostVersion": "0.8.21",
   "categories": [
