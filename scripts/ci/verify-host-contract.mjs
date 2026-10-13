@@ -32,7 +32,11 @@ const bridge = { postMessage(encoded) {
 const context = vm.createContext({ __toolboxNative: bridge, Uint8Array, atob, btoa, queueMicrotask, addEventListener() {}, dispatchEvent() {} });
 vm.runInContext(shim, context);
 assert.deepEqual([...source.matchAll(/call\('([^']+)'/g)].map(m => m[1]).filter((v,i,a) => a.indexOf(v) === i).sort(), methods);
-const runtimeRpc = read('tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeRpc.kt');
+// The RPC dispatcher is split by domain into RuntimeRpc.kt, RuntimeRpcParams.kt and Runtime*Rpc.kt.
+const runtimeDir = 'tool-runtime/src/main/kotlin/io/toolbox/tool/runtime';
+const runtimeRpc = readdirSync(resolve(root, runtimeDir)).filter(name => /^Runtime\w*Rpc\w*\.kt$/.test(name))
+  .map(name => read(`${runtimeDir}/${name}`)).join('\n');
+assert(runtimeRpc.includes('class RuntimeRpcDispatcher('), 'RPC dispatcher sources must be found');
 for (const retired of ['network.authorizeDomain', 'network.listDomains', 'allowDomains', 'allowUserDomains', 'allowRedirects', 'storageBytes', 'maxBridgePayloadBytes', 'USER_GESTURE_REQUIRED', 'RATE_LIMITED', 'retryAfterMs']) {
   assert(!api.includes(retired), `API descriptor retains retired contract: ${retired}`);
   assert(!manual.includes(retired), `SDK manual retains retired contract: ${retired}`);
