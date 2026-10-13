@@ -402,11 +402,13 @@ private fun ToolBoxLiquidSwitch(
             isLightTheme = ToolBoxThemeTokens.colors.surface.luminance() >= 0.5f,
         )
         if (!enabled) {
-            // Drawn above the knob, so a disabled switch cannot be dragged or tapped.
+            // Drawn above the knob, so a disabled switch cannot be dragged or tapped: as the topmost
+            // sibling it alone is hit, which keeps the knob from seeing the gesture. It consumes
+            // nothing, so a vertical drag that starts here still scrolls the list.
             Box(
                 Modifier.matchParentSize().pointerInput(Unit) {
                     awaitPointerEventScope {
-                        while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                        while (true) awaitPointerEvent()
                     }
                 },
             )
