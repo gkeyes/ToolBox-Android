@@ -27,11 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalDensity
@@ -39,7 +37,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
@@ -166,7 +163,6 @@ fun ToolBoxCollapsingTopBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = ToolBoxThemeTokens.colors
-    val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
     val largeHeight = toolBoxLargeTitleHeight(subtitle)
     val insets = if (statusBarPadding) {
         WindowInsets.statusBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
@@ -219,8 +215,6 @@ fun ToolBoxCollapsingTopBar(
         // One deterministic material. A live blur here is switched off whenever its page stops
         // being the active glass page (every push, pop and runtime entry) and back on afterwards,
         // which flashed the bar between blurred glass and its solid fallback during transitions.
-        val materials = ToolBoxThemeTokens.materials
-        val barFill = if (isGlass) materials.glassTint.compositeOver(colors.background) else colors.background
         // At the top of a page the bar is see-through onto the same page canvas, so a new page's
         // first frame needs no material at all; the fill and hairline arrive with the collapse.
         // iOS 27 scroll-edge effect: content dissolves into the canvas under the floating glass
@@ -229,36 +223,21 @@ fun ToolBoxCollapsingTopBar(
         val barSurface = Modifier.drawBehind {
             val fraction = progress(readScrolled())
             if (fraction <= 0f) return@drawBehind
-            if (isGlass) {
-                val fadePx = edgeFade.toPx()
-                val total = size.height + fadePx
-                drawRect(
-                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                        0f to colors.background.copy(alpha = 0.94f * fraction),
-                        (size.height / total) * 0.7f to colors.background.copy(alpha = 0.82f * fraction),
-                        1f to colors.background.copy(alpha = 0f),
-                        endY = total,
-                    ),
-                    size = androidx.compose.ui.geometry.Size(size.width, total),
-                )
-            } else {
-                drawRect(barFill.copy(alpha = barFill.alpha * fraction))
-            }
+            val fadePx = edgeFade.toPx()
+            val total = size.height + fadePx
+            drawRect(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to colors.background.copy(alpha = 0.94f * fraction),
+                    (size.height / total) * 0.7f to colors.background.copy(alpha = 0.82f * fraction),
+                    1f to colors.background.copy(alpha = 0f),
+                    endY = total,
+                ),
+                size = androidx.compose.ui.geometry.Size(size.width, total),
+            )
         }
         ToolBoxTopBar(
             title = title,
-            modifier = Modifier
-                .then(barSurface)
-                .drawWithContent {
-                    drawContent()
-                    val fraction = progress(readScrolled())
-                    if (!isGlass && fraction > 0.01f) {
-                        drawLine(
-                            colors.divider.copy(alpha = colors.divider.alpha * fraction),
-                            Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f,
-                        )
-                    }
-                },
+            modifier = Modifier.then(barSurface),
             navigationIcon = navigationIcon,
             navigationContentDescription = navigationContentDescription,
             onNavigationClick = onNavigationClick,

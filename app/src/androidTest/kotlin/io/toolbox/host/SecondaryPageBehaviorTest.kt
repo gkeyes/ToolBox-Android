@@ -210,7 +210,8 @@ class SecondaryPageBehaviorTest(private val style: ToolBoxThemeStyle) {
     }
 
     @Test fun combinedAppearanceControlsKeepIndependentValuesAndAboutNamesTheActiveStyle() {
-        val hostStyle = if (style == ToolBoxThemeStyle.Miuix) ThemeStyle.MIUIX else ThemeStyle.LIQUID_GLASS
+        // A legacy stored Miuix style must still render the one iOS look.
+        val hostStyle = ThemeStyle.MIUIX
         val state = mutableStateOf(SettingsUiState(HostSettings(theme = ThemeMode.LIGHT, themeStyle = hostStyle), loaded = true))
         val about = mutableStateOf(false)
         compose.activity.setContent {

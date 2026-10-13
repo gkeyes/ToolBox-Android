@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import io.toolbox.core.ui.theme.ToolBoxThemeStyle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 /**
@@ -85,7 +84,6 @@ fun ToolBoxAlertDialog(
     ) {
         val colors = ToolBoxThemeTokens.colors
         val materials = ToolBoxThemeTokens.materials
-        val glass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
         val dark = colors.surface.luminance() < 0.5f
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         DisposableEffect(window) {
@@ -101,7 +99,7 @@ fun ToolBoxAlertDialog(
         val appear = remember { Animatable(0f) }
         LaunchedEffect(appear) { appear.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val shape = toolBoxShape(ToolBoxThemeTokens.radii.dialog)
-        val fill = if (glass) materials.overlayFallback else colors.raised
+        val fill = materials.overlayFallback
         val scrim = colors.scrim
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
@@ -132,7 +130,7 @@ fun ToolBoxAlertDialog(
                     )
                     .clip(shape)
                     .background(fill)
-                    .then(if (glass) Modifier.border(0.5.dp, materials.overlayBorder, shape) else Modifier)
+                    .border(0.5.dp, materials.overlayBorder, shape)
                     .semantics { paneTitle = title }
                     .verticalScroll(rememberScrollState())
                     .padding(start = 18.dp, end = 18.dp, top = 26.dp, bottom = 18.dp),
