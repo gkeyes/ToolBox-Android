@@ -1,33 +1,17 @@
 package io.toolbox.host.runtime
 
-import android.Manifest
-import android.app.AlarmManager
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.res.Configuration
-import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.webkit.WebView
 import io.toolbox.core.data.CoreDataRepositories
-import io.toolbox.core.data.DataResult
 import io.toolbox.core.data.ToolVersion
 import io.toolbox.core.data.ThemeMode
 import io.toolbox.tool.runtime.RuntimeWebViewTheme
 import io.toolbox.host.HostTrace
-import io.toolbox.host.MainActivity
-import io.toolbox.host.R
 import io.toolbox.host.background.AndroidNotificationGateway
-import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.tool.runtime.HardenedRuntimeWebView
 import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RpcValue
-import io.toolbox.tool.runtime.RuntimeAlarmHandler
-import io.toolbox.tool.runtime.RuntimeAlarmSummary
 import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeContinuousBackgroundHandler
 import io.toolbox.tool.runtime.RuntimeBackgroundActivityRequest
@@ -35,10 +19,6 @@ import io.toolbox.tool.runtime.RuntimeBackgroundSessionSummary
 import io.toolbox.tool.runtime.RuntimeBackgroundStartOptions
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
 import io.toolbox.tool.runtime.RuntimeHandlerException
-import io.toolbox.tool.runtime.RuntimeLocationWatchHandler
-import io.toolbox.tool.runtime.RuntimeLocationWatchOptions
-import io.toolbox.tool.runtime.RuntimeAndroidLiveStatus
-import io.toolbox.tool.runtime.RuntimeHyperOsIslandStatus
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
 import io.toolbox.tool.runtime.RuntimePermitProvider
@@ -56,78 +36,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONArray
-import org.json.JSONObject
-
-internal sealed interface RuntimeUiState {
-    data object Loading : RuntimeUiState
-
-    data class Ready(
-        val runtime: PreparedToolRuntime,
-        val webView: WebView,
-        val mainEntryLoaded: Boolean,
-    ) : RuntimeUiState
-
-    data class Error(
-        val code: String,
-        val message: String,
-    ) : RuntimeUiState
-}
-
-internal data class RuntimeBackgroundSessionUi(
-    val sessionId: String,
-    val toolId: String,
-    val toolName: String,
-    val startedAt: Long,
-    val notificationId: Int,
-    val statusText: String? = null,
-    val livePrimaryText: String? = null,
-    val liveSecondaryText: String? = null,
-    val liveUpdatedAt: Long? = null,
-    val liveProgress: Int? = null,
-    val activityPrimaryText: String? = null,
-    val activitySecondaryText: String? = null,
-    val activityUpdatedAt: Long? = null,
-)
-
-internal data class RuntimeForegroundDetachPlan(
-    val destroyHost: Boolean,
-    val refreshNotification: Boolean,
-)
-
-internal fun runtimeForegroundDetachPlan(hasBackgroundSession: Boolean): RuntimeForegroundDetachPlan =
-    if (hasBackgroundSession) {
-        RuntimeForegroundDetachPlan(destroyHost = false, refreshNotification = true)
-    } else {
-        RuntimeForegroundDetachPlan(destroyHost = true, refreshNotification = false)
-    }
-
-internal data class HostRuntimeContinuityHandlers(
-    val background: RuntimeContinuousBackgroundHandler,
-    val locationWatch: RuntimeLocationWatchHandler,
-    val alarms: RuntimeAlarmHandler,
-    val requireForegroundRuntime: () -> Unit = {
-        throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
-    },
-)
-
-internal object RuntimeReminderPolicy {
-    const val INTERVAL_MILLIS = 12L * 60L * 60L * 1_000L
-
-    fun nextReminderAt(startedAt: Long, lastReminderAt: Long?): Long =
-        (lastReminderAt ?: startedAt) + INTERVAL_MILLIS
-}
 
 internal class RuntimeSessionManager(
     context: Context,
@@ -150,21 +66,47 @@ internal class RuntimeSessionManager(
     private val sessionsByTool = mutableMapOf<String, MutableMap<String, StoredRuntimeSession>>()
     private val notificationIds = RuntimeNotificationIds()
     private val restoredToolNames = mutableMapOf<String, String>()
-    private val timersByTool = mutableMapOf<String, MutableMap<String, Job>>()
-    private val watchesByTool = mutableMapOf<String, MutableMap<String, ActiveLocationWatch>>()
-    private val alarmsByTool = mutableMapOf<String, MutableMap<String, StoredAlarm>>()
-    private val reminderJobs = mutableMapOf<String, Job>()
     private val mutableSessions = MutableStateFlow<List<RuntimeBackgroundSessionUi>>(emptyList())
     private val mutableNotificationSnapshots = MutableStateFlow(
         RuntimeForegroundNotificationSnapshot(emptyList(), emptyList(), usesLocation = false),
     )
     private var hostActivityResumed = false
-    private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
-    private val locationManager = appContext.getSystemService(LocationManager::class.java)
-    private val notificationManager = appContext.getSystemService(NotificationManager::class.java)
     private val liveNotifications = LiveNotificationCoordinator(scope, nowMillis) {
         refreshForegroundService()
     }
+    private val notifications = RuntimeSessionNotifications(appContext)
+    private val store = RuntimeSessionStore(repositories, nowMillis)
+    private val reminders = RuntimeSessionReminders(
+        scope = scope,
+        nowMillis = nowMillis,
+        sessionsByTool = sessionsByTool,
+        notifications = notifications,
+        persistSessions = { toolId -> persistSessions(toolId) },
+    )
+    private val backgroundTimers = RuntimeBackgroundTimers(
+        scope = scope,
+        publishedHosts = publishedHosts,
+        nowMillis = nowMillis,
+        requestBackgroundRecovery = ::requestBackgroundRecovery,
+        onRuntimeFailed = ::onRuntimeFailed,
+    )
+    private val locationWatches = RuntimeLocationWatchService(
+        appContext = appContext,
+        repositories = repositories,
+        hostFor = { toolId -> hosts[toolId] },
+        ensureCurrentRuntime = ::ensureCurrentRuntime,
+        hasBackgroundSession = { toolId -> !sessionsByTool[toolId].isNullOrEmpty() },
+        setRecoveryStatus = { toolId, status -> recoveryStatus[toolId] = status },
+        refreshForegroundService = ::refreshForegroundService,
+    )
+    private val alarmService = RuntimeAlarmService(
+        appContext = appContext,
+        store = store,
+        notifications = notifications,
+        nowMillis = nowMillis,
+        hostFor = { toolId -> hosts[toolId] },
+        ensureCurrentRuntime = ::ensureCurrentRuntime,
+    )
     private var recovered = false
     private var currentTheme = ThemeMode.SYSTEM
     private var configuration = Configuration(appContext.resources.configuration)
@@ -247,8 +189,8 @@ internal class RuntimeSessionManager(
     fun discardForegroundRuntime(toolId: String) { destroyHost(toolId) }
 
     suspend fun reloadSaved(toolId: String) = withContext(Dispatchers.Main.immediate) {
-        timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
-        clearAllWatches(toolId)
+        backgroundTimers.cancelAll(toolId)
+        locationWatches.clearAllWatches(toolId)
         destroyHost(toolId)
         ensureRuntime(toolId, if (sessionsByTool[toolId].isNullOrEmpty()) null else RESTORE_REASON_PROCESS)
     }
@@ -257,7 +199,7 @@ internal class RuntimeSessionManager(
         scope.launch {
             if (!visibleTools.remove(toolId)) return@launch
             HostTrace.bestEffortSection("runtime.detach") { }
-            clearForegroundOnlyWatches(toolId)
+            locationWatches.clearForegroundOnlyWatches(toolId)
             val plan = runtimeForegroundDetachPlan(!sessionsByTool[toolId].isNullOrEmpty())
             if (plan.destroyHost) {
                 // Normally the route was retained until saving finished. A forced route removal
@@ -277,8 +219,8 @@ internal class RuntimeSessionManager(
 
     fun handlers(runtime: PreparedToolRuntime): HostRuntimeContinuityHandlers = HostRuntimeContinuityHandlers(
         background = ContinuousBackgroundHandler(runtime.toolId, runtime.versionCode),
-        locationWatch = LocationWatchHandler(runtime.toolId, runtime.versionCode, runtime.declaredCapabilities),
-        alarms = AlarmHandler(runtime.toolId, runtime.versionCode),
+        locationWatch = locationWatches.handler(runtime.toolId, runtime.versionCode, runtime.declaredCapabilities),
+        alarms = alarmService.handler(runtime.toolId, runtime.versionCode),
         requireForegroundRuntime = {
             val host = hosts[runtime.toolId]
                 ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The tool runtime ended")
@@ -296,7 +238,7 @@ internal class RuntimeSessionManager(
     suspend fun recover(reason: String) {
         if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
         if (withContext(Dispatchers.Main.immediate) { recovered }) return
-        val recovery = withContext(Dispatchers.IO) { readPersistedState() }
+        val recovery = withContext(Dispatchers.IO) { store.readPersistedState() }
         withContext(Dispatchers.Main.immediate) {
             if (recovered || io.toolbox.host.backup.BackupRuntimeGate.paused) return@withContext
             recovered = true
@@ -316,12 +258,9 @@ internal class RuntimeSessionManager(
                         restorable.associateBy(StoredRuntimeSession::sessionId),
                     )
                     updateSessionProjection()
-                    restorable.forEach(::scheduleReminder)
+                    restorable.forEach(reminders::schedule)
                 }
-                alarmsByTool.getOrPut(persisted.toolId, ::linkedMapOf).putAll(
-                    persisted.alarms.associateBy(StoredAlarm::alarmId),
-                )
-                persisted.alarms.forEach { scheduleAlarm(persisted.toolId, persisted.versionCode, it) }
+                alarmService.restore(persisted.toolId, persisted.versionCode, persisted.alarms)
                 if (restorable != persisted.sessions) persistSessions(persisted.toolId)
             }
             refreshForegroundService()
@@ -343,16 +282,13 @@ internal class RuntimeSessionManager(
         recovery.cancel(toolId)?.join()
         recoveryStatus.remove(toolId)
         val removedSessionIds = sessionsByTool.remove(toolId)?.keys.orEmpty()
-        removedSessionIds.forEach(::cancelReminder)
+        removedSessionIds.forEach(reminders::cancel)
         removedSessionIds.forEach(notificationIds::release)
         liveNotifications.clearSessions(removedSessionIds)
-        timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
-        clearAllWatches(toolId)
-        cancelRuntimeNotifications(removedSessionIds)
-        if (removeAlarms) {
-            alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
-            persistAlarms(toolId)
-        }
+        backgroundTimers.cancelAll(toolId)
+        locationWatches.clearAllWatches(toolId)
+        notifications.cancelRuntimeNotifications(removedSessionIds)
+        if (removeAlarms) alarmService.removeAll(toolId)
         persistSessions(toolId)
         updateSessionProjection()
         if (toolId !in visibleTools) destroyHost(toolId)
@@ -372,7 +308,7 @@ internal class RuntimeSessionManager(
     }
 
     suspend fun backupRuntimeIds(): Set<String> = withContext(Dispatchers.Main.immediate) {
-        (hosts.keys + openingTools.keys + sessionsByTool.keys + alarmsByTool.keys).toSet()
+        (hosts.keys + openingTools.keys + sessionsByTool.keys + alarmService.toolIds).toSet()
     }
 
     internal suspend fun backgroundCancellationToolIds(): List<String> = withContext(Dispatchers.Main.immediate) {
@@ -387,48 +323,25 @@ internal class RuntimeSessionManager(
                 val sessionIds = sessionsByTool[toolId].orEmpty().keys
                 liveNotifications.clearSessions(sessionIds)
             }
-            "location" -> withContext(Dispatchers.Main.immediate) { clearAllWatches(toolId) }
-            "location.background" -> withContext(Dispatchers.Main.immediate) { clearBackgroundWatches(toolId) }
-            "alarms" -> withContext(Dispatchers.Main.immediate) {
-                alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
-                persistAlarms(toolId)
-            }
+            "location" -> withContext(Dispatchers.Main.immediate) { locationWatches.clearAllWatches(toolId) }
+            "location.background" -> withContext(Dispatchers.Main.immediate) { locationWatches.clearBackgroundWatches(toolId) }
+            "alarms" -> withContext(Dispatchers.Main.immediate) { alarmService.removeAll(toolId) }
         }
     }
 
     suspend fun handleAlarm(toolId: String, versionCode: Int, alarmId: String) {
         if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
-        val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
-        val persisted = if (needsLoad) loadAlarms(toolId, versionCode) else emptyList()
-        withContext(Dispatchers.Main.immediate) {
-            if (persisted.isNotEmpty()) {
-                alarmsByTool.getOrPut(toolId, ::linkedMapOf).putAll(persisted.associateBy(StoredAlarm::alarmId))
-            }
-            val alarm = alarmsByTool[toolId]?.remove(alarmId) ?: return@withContext
-            persistAlarms(toolId)
-            val payload = alarm.toEvent(nowMillis())
-            val delivered = hosts[toolId]?.let { host ->
-                host.versionCode == versionCode && HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, payload)
-            } == true
-            if (!delivered) postAlarmNotification(toolId, alarm)
-        }
+        alarmService.handleAlarm(toolId, versionCode, alarmId)
     }
 
     suspend fun rescheduleAlarms() {
         if (io.toolbox.host.backup.BackupRuntimeGate.paused) return
-        val persisted = withContext(Dispatchers.IO) { readPersistedState() }
+        val persisted = withContext(Dispatchers.IO) { store.readPersistedState() }
         withContext(Dispatchers.Main.immediate) {
             persisted.forEach { state ->
-                alarmsByTool.getOrPut(state.toolId, ::linkedMapOf).putAll(
-                    state.alarms.associateBy(StoredAlarm::alarmId),
-                )
-                state.alarms.forEach { alarm -> scheduleAlarm(state.toolId, state.versionCode, alarm) }
+                alarmService.restore(state.toolId, state.versionCode, state.alarms)
             }
         }
-    }
-
-    fun hasBackgroundLocationWatch(): Boolean = watchesByTool.values.any { watches ->
-        watches.values.any(ActiveLocationWatch::allowBackground)
     }
 
     fun foregroundNotificationSnapshot(): RuntimeForegroundNotificationSnapshot {
@@ -438,7 +351,7 @@ internal class RuntimeSessionManager(
         return RuntimeForegroundNotificationSnapshot(
             sessions = activeSessions,
             presentations = presentations.filter { it.request.sessionId in activeIds },
-            usesLocation = hasBackgroundLocationWatch(),
+            usesLocation = locationWatches.hasBackgroundLocationWatch(),
         )
     }
 
@@ -450,7 +363,7 @@ internal class RuntimeSessionManager(
         withContext(Dispatchers.Main.immediate) {
             requireLiveSessionOwner(toolId, versionCode, request.sessionId)
         }
-        val support = notificationSupport()
+        val support = notifications.notificationSupport()
         return withContext(Dispatchers.Main.immediate) {
             val host = requireLiveSessionOwner(toolId, versionCode, request.sessionId)
             liveNotifications.start(toolId, host.runtime.toolName, request)
@@ -466,7 +379,7 @@ internal class RuntimeSessionManager(
         withContext(Dispatchers.Main.immediate) {
             requireLiveSessionOwner(toolId, versionCode, request.sessionId)
         }
-        val support = notificationSupport()
+        val support = notifications.notificationSupport()
         return withContext(Dispatchers.Main.immediate) {
             val host = requireLiveSessionOwner(toolId, versionCode, request.sessionId)
             if (!liveNotifications.update(toolId, host.runtime.toolName, request)) {
@@ -621,8 +534,8 @@ internal class RuntimeSessionManager(
             val failed = hosts[toolId]?.takeIf { it.runtime === runtime } ?: return@launch
             restoredToolNames[toolId] = runtime.toolName
             destroyHost(toolId)
-            timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
-            clearAllWatches(toolId)
+            backgroundTimers.cancelAll(toolId)
+            locationWatches.clearAllWatches(toolId)
             liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
             stateFlow(toolId).value = RuntimeUiState.Error(code, message)
             requestBackgroundRecovery(toolId, failed.installedVersion)
@@ -667,8 +580,8 @@ internal class RuntimeSessionManager(
             },
             onInterrupted = {
                 destroyHost(toolId)
-                timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
-                clearAllWatches(toolId)
+                backgroundTimers.cancelAll(toolId)
+                locationWatches.clearAllWatches(toolId)
                 recoveryStatus[toolId] = "后台已中断，请打开工具重试或停止会话"
                 stateFlow(toolId).value = RuntimeUiState.Error("BACKGROUND_INTERRUPTED", recoveryStatus.getValue(toolId))
                 liveNotifications.clearSessions(sessionsByTool[toolId].orEmpty().keys)
@@ -754,7 +667,7 @@ internal class RuntimeSessionManager(
                         "系统未允许启动后台运行环境",
                     )
                 }
-                scheduleReminder(record)
+                reminders.schedule(record)
                 refreshForegroundService()
                 record.toRuntimeSummary()
             }
@@ -802,187 +715,25 @@ internal class RuntimeSessionManager(
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "请先启动后台运行环境")
             }
             val expectedVersion = checkNotNull(hosts[toolId]).installedVersion
-            val jobs = timersByTool.getOrPut(toolId, ::linkedMapOf)
-            jobs.remove(key)?.cancel()
-            // Ticks, event encoding and delivery queueing run off the main thread; the tool's
-            // interval is used as given. Only recovery and failure handling touch the main thread.
-            jobs[key] = scope.launch(Dispatchers.Default) {
-                while (isActive) {
-                    delay(intervalMillis)
-                    val host = publishedHosts.value[toolId] ?: awaitRecoveredHost(toolId, expectedVersion, intervalMillis)
-                    if (!HardenedRuntimeWebView.awaitOpenForEvents(host.webView)) continue
-                    val emitted = HardenedRuntimeWebView.emitEvent(
-                        host.webView,
-                        EVENT_BACKGROUND_TIMER,
-                        RpcValue.ObjectValue(
-                            mapOf(
-                                "key" to RpcValue.StringValue(key),
-                                "firedAt" to RpcValue.Number(nowMillis().toDouble()),
-                            ),
-                        ),
-                    )
-                    if (!emitted) {
-                        withContext(Dispatchers.Main.immediate) {
-                            onRuntimeFailed(toolId, host.runtime, "EVENT_BACKLOG_OVERFLOW", "后台事件积压，正在按既有规则恢复。")
-                        }
-                        break
-                    }
-                }
-            }
-        }
-
-        /**
-         * Requests recovery and suspends until a host exists, instead of polling the main
-         * thread at the timer's interval. Recovery is re-requested at most once per second
-         * (or per interval, if longer) while no host appears.
-         */
-        private suspend fun awaitRecoveredHost(toolId: String, expectedVersion: ToolVersion, intervalMillis: Long): RuntimeHost {
-            while (true) {
-                withContext(Dispatchers.Main.immediate) { requestBackgroundRecovery(toolId, expectedVersion) }
-                withTimeoutOrNull(maxOf(intervalMillis, TIMER_RECOVERY_RECHECK_MILLIS)) {
-                    publishedHosts.first { toolId in it }[toolId]
-                }?.let { return it }
-            }
+            backgroundTimers.start(toolId, key, intervalMillis, expectedVersion)
         }
 
         override suspend fun cancelTimer(key: String): Boolean = withContext(Dispatchers.Main.immediate) {
-            timersByTool[toolId]?.remove(key)?.also(Job::cancel) != null
-        }
-    }
-
-    private inner class LocationWatchHandler(
-        private val toolId: String,
-        private val versionCode: Int,
-        private val declaredCapabilities: Set<String>,
-    ) : RuntimeLocationWatchHandler {
-        override suspend fun watch(options: RuntimeLocationWatchOptions): String {
-            if (options.allowBackground) {
-                if ("location.background" !in declaredCapabilities || "background.runtime" !in declaredCapabilities) {
-                    throw RuntimeHandlerException(
-                        RuntimeRpcErrorCode.NOT_DECLARED,
-                        "后台定位需要声明 location.background 与 background.runtime",
-                    )
-                }
-                val grants = repositories.grants.observeGrants(toolId).first().associate { it.capability to it.granted }
-                if (grants["location.background"] != true || grants["background.runtime"] != true) {
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "后台定位权限未开启")
-                }
-            }
-            return withContext(Dispatchers.Main.immediate) {
-            ensureCurrentRuntime(toolId, versionCode)
-            val foregroundPermission = if (options.precise) {
-                Manifest.permission.ACCESS_FINE_LOCATION
-            } else {
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            }
-            if (appContext.checkSelfPermission(foregroundPermission) != PackageManager.PERMISSION_GRANTED) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "位置权限不可用")
-            }
-            if (options.allowBackground) {
-                if (sessionsByTool[toolId].isNullOrEmpty()) {
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "后台定位需要正在运行的后台环境")
-                }
-                if (appContext.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "请在后台保障中允许始终访问位置")
-                }
-            }
-            val manager = locationManager
-                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "位置服务不可用")
-            val provider = chooseProvider(manager, options.precise)
-                ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "没有可用的位置来源")
-            val watchId = UUID.randomUUID().toString()
-            val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) {
-                    emitLocation(toolId, watchId, location)
-                }
-            }
-            runCatching {
-                manager.requestLocationUpdates(
-                    provider,
-                    options.intervalMillis,
-                    options.minDistanceMeters,
-                    appContext.mainExecutor,
-                    listener,
-                )
-            }.getOrElse {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "位置监听未能启动")
-            }
-            watchesByTool.getOrPut(toolId, ::linkedMapOf)[watchId] = ActiveLocationWatch(
-                listener = listener,
-                allowBackground = options.allowBackground,
-            )
-            if (options.allowBackground) refreshForegroundService()
-            watchId
-            }
-        }
-
-        override suspend fun clearWatch(watchId: String): Boolean = withContext(Dispatchers.Main.immediate) {
-            val watch = watchesByTool[toolId]?.remove(watchId) ?: return@withContext false
-            locationManager?.removeUpdates(watch.listener)
-            refreshForegroundService()
-            true
-        }
-    }
-
-    private inner class AlarmHandler(
-        private val toolId: String,
-        private val versionCode: Int,
-    ) : RuntimeAlarmHandler {
-        override suspend fun schedule(alarm: RuntimeAlarmSummary): RuntimeAlarmSummary =
-            withContext(Dispatchers.Main.immediate) {
-                ensureCurrentRuntime(toolId, versionCode)
-                val manager = alarmManager
-                    ?: throw RuntimeHandlerException(RuntimeRpcErrorCode.UNSUPPORTED, "闹钟服务不可用")
-                if (!manager.canScheduleExactAlarms()) {
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "请在后台保障中允许闹钟和提醒")
-                }
-                if (alarm.triggerAt <= nowMillis()) {
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_REQUEST, "闹钟时间必须晚于当前时间")
-                }
-                val stored = StoredAlarm(
-                    alarmId = alarm.alarmId,
-                    triggerAt = alarm.triggerAt,
-                    scheduledAt = alarm.scheduledAt,
-                )
-                alarmsByTool.getOrPut(toolId, ::linkedMapOf)[stored.alarmId] = stored
-                try {
-                    persistAlarms(toolId)
-                } catch (failure: Exception) {
-                    alarmsByTool[toolId]?.remove(stored.alarmId)
-                    throw failure
-                }
-                if (!scheduleAlarm(toolId, versionCode, stored)) {
-                    alarmsByTool[toolId]?.remove(stored.alarmId)
-                    persistAlarms(toolId)
-                    throw RuntimeHandlerException(RuntimeRpcErrorCode.INTERNAL_ERROR, "精确闹钟未能登记")
-                }
-                stored.toRuntimeSummary()
-            }
-
-        override suspend fun list(): List<RuntimeAlarmSummary> = withContext(Dispatchers.Main.immediate) {
-            ensureCurrentRuntime(toolId, versionCode)
-            alarmsByTool[toolId].orEmpty().values.map(StoredAlarm::toRuntimeSummary)
-        }
-
-        override suspend fun cancel(alarmId: String): Boolean = withContext(Dispatchers.Main.immediate) {
-            val removed = alarmsByTool[toolId]?.remove(alarmId) ?: return@withContext false
-            cancelScheduledAlarm(toolId, removed.alarmId)
-            persistAlarms(toolId)
-            true
+            backgroundTimers.cancel(toolId, key)
         }
     }
 
     private suspend fun stopSession(toolId: String, sessionId: String): Boolean {
         val removed = sessionsByTool[toolId]?.remove(sessionId) ?: return false
         notificationIds.release(sessionId)
-        cancelReminder(removed.sessionId)
+        reminders.cancel(removed.sessionId)
         liveNotifications.clearSessions(listOf(sessionId))
         if (sessionsByTool[toolId].isNullOrEmpty()) {
             val cancelledRecovery = recovery.cancel(toolId)
             recoveryStatus.remove(toolId)
-            timersByTool.remove(toolId)?.values?.forEach(Job::cancel)
-            clearBackgroundWatches(toolId)
-            cancelRuntimeNotifications(listOf(sessionId))
+            backgroundTimers.cancelAll(toolId)
+            locationWatches.clearBackgroundWatches(toolId)
+            notifications.cancelRuntimeNotifications(listOf(sessionId))
             if (toolId !in visibleTools) {
                 val closingHost = hosts[toolId]
                 if (closingHost != null) scope.launch {
@@ -1016,84 +767,6 @@ internal class RuntimeSessionManager(
         return checkNotNull(hosts[toolId])
     }
 
-    private suspend fun notificationSupport(): LiveNotificationSupportState {
-        val liveChannelBlocked = notificationManager
-            .getNotificationChannel(RuntimeLiveNotificationRenderer.CHANNEL_ID)
-            ?.importance == NotificationManager.IMPORTANCE_NONE
-        if (appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ||
-            !notificationManager.areNotificationsEnabled() || liveChannelBlocked
-        ) {
-            throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "系统通知未开启")
-        }
-        AndroidNotificationGateway.invalidateMiuiSupportCache()
-        return AndroidNotificationGateway(appContext).liveSupport()
-    }
-
-    private fun LiveNotificationSupportState.toRuntimeResult() = RuntimeLiveNotificationResult(
-        androidLive = when {
-            !androidLiveAvailable -> RuntimeAndroidLiveStatus.UNAVAILABLE
-            androidLiveAllowed -> RuntimeAndroidLiveStatus.REQUESTED
-            else -> RuntimeAndroidLiveStatus.NOT_ALLOWED
-        },
-        hyperOsIsland = if (hyperOsSupported) {
-            RuntimeHyperOsIslandStatus.REQUESTED
-        } else {
-            RuntimeHyperOsIslandStatus.UNAVAILABLE
-        },
-        hyperOsProtocolVersion = hyperOsProtocolVersion,
-        hyperOsPermissionReported = hyperOsPermissionReported,
-    )
-
-    private fun emitLocation(toolId: String, watchId: String, location: Location) {
-        val host = hosts[toolId] ?: return
-        if (HardenedRuntimeWebView.isClosing(host.webView)) return
-        val emitted = HardenedRuntimeWebView.emitEvent(
-            host.webView,
-            EVENT_LOCATION_CHANGED,
-            RpcValue.ObjectValue(
-                mapOf(
-                    "watchId" to RpcValue.StringValue(watchId),
-                    "latitude" to RpcValue.Number(location.latitude),
-                    "longitude" to RpcValue.Number(location.longitude),
-                    "accuracyMeters" to RpcValue.Number(location.accuracy.toDouble()),
-                    "capturedAt" to RpcValue.Number(location.time.toDouble()),
-                ),
-            ),
-        )
-        if (!emitted) {
-            watchesByTool[toolId]?.remove(watchId)?.let { locationManager?.removeUpdates(it.listener) }
-            recoveryStatus[toolId] = "定位事件积压，已停止该监听，请重新开启。"
-            refreshForegroundService()
-        }
-    }
-
-    private fun chooseProvider(manager: LocationManager, precise: Boolean): String? {
-        val candidates = if (precise) {
-            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        } else {
-            listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-        }
-        return candidates.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
-    }
-
-    private fun clearForegroundOnlyWatches(toolId: String) {
-        val watches = watchesByTool[toolId] ?: return
-        val foregroundOnly = watches.filterValues { !it.allowBackground }.keys
-        foregroundOnly.forEach { watchId -> watches.remove(watchId)?.let { locationManager?.removeUpdates(it.listener) } }
-    }
-
-    private fun clearBackgroundWatches(toolId: String) {
-        val watches = watchesByTool[toolId] ?: return
-        val background = watches.filterValues(ActiveLocationWatch::allowBackground).keys
-        background.forEach { watchId -> watches.remove(watchId)?.let { locationManager?.removeUpdates(it.listener) } }
-        refreshForegroundService()
-    }
-
-    private fun clearAllWatches(toolId: String) {
-        watchesByTool.remove(toolId)?.values?.forEach { locationManager?.removeUpdates(it.listener) }
-        refreshForegroundService()
-    }
-
     private fun updateSessionProjection() {
         mutableSessions.value = sessionProjection()
     }
@@ -1123,182 +796,9 @@ internal class RuntimeSessionManager(
         }.sortedBy(RuntimeBackgroundSessionUi::startedAt)
     }
 
-    private fun scheduleReminder(record: StoredRuntimeSession) {
-        cancelReminder(record.sessionId)
-        reminderJobs[record.sessionId] = scope.launch {
-            var nextAt = RuntimeReminderPolicy.nextReminderAt(record.startedAt, record.lastReminderAt)
-            while (isActive) {
-                delay((nextAt - nowMillis()).coerceAtLeast(1))
-                val owner = sessionsByTool.entries.firstOrNull { record.sessionId in it.value }?.key ?: return@launch
-                postRuntimeReminder(owner, record.sessionId)
-                val updated = sessionsByTool[owner]?.get(record.sessionId)?.copy(lastReminderAt = nowMillis())
-                    ?: return@launch
-                sessionsByTool[owner]?.set(record.sessionId, updated)
-                persistSessions(owner)
-                nextAt = RuntimeReminderPolicy.nextReminderAt(updated.startedAt, updated.lastReminderAt)
-            }
-        }
-    }
-
-    private fun cancelReminder(sessionId: String) {
-        reminderJobs.remove(sessionId)?.cancel()
-    }
-
-    private fun postRuntimeReminder(toolId: String, sessionId: String) {
-        createRuntimeNotificationChannel()
-        val open = PendingIntent.getActivity(
-            appContext,
-            sessionId.hashCode(),
-            MainActivity.openToolIntent(appContext, toolId)
-                .setData(RuntimeForegroundService.actionUri(toolId, sessionId, "reminder")),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stop = RuntimeForegroundService.stopSessionPendingIntent(appContext, toolId, sessionId)
-        val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setContentTitle("ToolBox 后台运行提醒")
-            .setContentText("此工具已连续运行 12 小时")
-            .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "停止", stop).build())
-            .setAutoCancel(true)
-            .build()
-        notificationManager.notify("runtime-reminder", sessionId.hashCode(), notification)
-    }
-
-    private fun postAlarmNotification(toolId: String, alarm: StoredAlarm) {
-        createRuntimeNotificationChannel()
-        val open = PendingIntent.getActivity(
-            appContext,
-            alarm.alarmId.hashCode(),
-            // Two tools may use the same alarm id; the tool id in the data keeps their intents apart.
-            MainActivity.openToolIntent(appContext, toolId)
-                .setData(RuntimeForegroundService.actionUri(toolId, alarm.alarmId, "alarm")),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = Notification.Builder(appContext, RUNTIME_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_toolbox_notification)
-            .setContentTitle("ToolBox 提醒")
-            .setContentText("点击打开对应工具")
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .build()
-        notificationManager.notify("alarm:$toolId", alarm.alarmId.hashCode(), notification)
-    }
-
-    private fun cancelRuntimeNotifications(sessionIds: Collection<String>) {
-        sessionIds.forEach { sessionId ->
-            notificationManager.cancel("runtime-reminder", sessionId.hashCode())
-        }
-    }
-
-    private fun createRuntimeNotificationChannel() {
-        notificationManager.createNotificationChannel(
-            NotificationChannel(RUNTIME_CHANNEL_ID, "ToolBox 后台保障", NotificationManager.IMPORTANCE_DEFAULT),
-        )
-    }
-
-    private fun scheduleAlarm(toolId: String, versionCode: Int, alarm: StoredAlarm): Boolean {
-        val manager = alarmManager ?: return false
-        if (!manager.canScheduleExactAlarms()) return false
-        return runCatching {
-            manager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                alarm.triggerAt,
-                RuntimeAlarmReceiver.pendingIntent(appContext, toolId, versionCode, alarm.alarmId),
-            )
-        }.isSuccess
-    }
-
-    private fun cancelScheduledAlarm(toolId: String, alarmId: String) {
-        alarmManager?.cancel(RuntimeAlarmReceiver.pendingIntent(appContext, toolId, 0, alarmId))
-    }
-
     private suspend fun persistSessions(toolId: String) {
-        val snapshot = sessionsByTool[toolId].orEmpty().values.toList()
-        withContext(Dispatchers.IO) {
-            val result = if (snapshot.isEmpty()) {
-                repositories.keyValues.remove(toolId, RUNTIME_SESSIONS_KEY)
-            } else {
-                repositories.keyValues.put(
-                    toolId,
-                    RUNTIME_SESSIONS_KEY,
-                    JSONArray().also { array -> snapshot.forEach { array.put(it.toJson()) } }.toString(),
-                    nowMillis(),
-                )
-            }
-            requirePersistence(result, allowMissingTool = snapshot.isEmpty())
-        }
+        store.persistSessions(toolId, sessionsByTool[toolId].orEmpty().values.toList())
     }
-
-    private suspend fun persistAlarms(toolId: String) {
-        val snapshot = alarmsByTool[toolId].orEmpty().values.toList()
-        withContext(Dispatchers.IO) {
-            val result = if (snapshot.isEmpty()) {
-                repositories.keyValues.remove(toolId, RUNTIME_ALARMS_KEY)
-            } else {
-                repositories.keyValues.put(
-                    toolId,
-                    RUNTIME_ALARMS_KEY,
-                    JSONArray().also { array -> snapshot.forEach { array.put(it.toJson()) } }.toString(),
-                    nowMillis(),
-                )
-            }
-            requirePersistence(result, allowMissingTool = snapshot.isEmpty())
-        }
-    }
-
-    private fun requirePersistence(result: DataResult<Unit>, allowMissingTool: Boolean) {
-        when (result) {
-            is DataResult.Success -> Unit
-            is DataResult.Failure.NotFound -> if (!allowMissingTool) {
-                throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "工具已不存在")
-            }
-            is DataResult.Failure.QuotaExceeded -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                "工具存储空间不足，无法保存后台状态",
-            )
-            is DataResult.Failure -> throw RuntimeHandlerException(
-                RuntimeRpcErrorCode.INTERNAL_ERROR,
-                "后台状态未能保存",
-            )
-        }
-    }
-
-    private suspend fun readPersistedState(): List<PersistedToolState> {
-        return repositories.catalog.observeTools().first().mapNotNull { tool ->
-            val toolId = tool.metadata.id
-            val sessions = repositories.keyValues.observe(toolId, RUNTIME_SESSIONS_KEY).first()?.valueJson
-                ?.let(::parseSessions).orEmpty()
-            val alarms = repositories.keyValues.observe(toolId, RUNTIME_ALARMS_KEY).first()?.valueJson
-                ?.let(::parseAlarms).orEmpty()
-            if (sessions.isEmpty() && alarms.isEmpty()) null else PersistedToolState(
-                toolId = toolId,
-                toolName = tool.metadata.name,
-                versionCode = tool.currentVersion.versionCode,
-                sessions = sessions,
-                alarms = alarms,
-            )
-        }
-    }
-
-    private suspend fun loadAlarms(toolId: String, versionCode: Int): List<StoredAlarm> =
-        withContext(Dispatchers.IO) {
-            val installed = repositories.catalog.observeTool(toolId).first() ?: return@withContext emptyList()
-            if (installed.currentVersion.versionCode != versionCode) return@withContext emptyList()
-            repositories.keyValues.observe(toolId, RUNTIME_ALARMS_KEY).first()?.valueJson
-                ?.let(::parseAlarms)
-                .orEmpty()
-        }
-
-    private fun parseSessions(value: String): List<StoredRuntimeSession> = runCatching {
-        val array = JSONArray(value)
-        List(array.length()) { index -> StoredRuntimeSession.fromJson(array.getJSONObject(index)) }
-    }.getOrDefault(emptyList())
-
-    private fun parseAlarms(value: String): List<StoredAlarm> = runCatching {
-        val array = JSONArray(value)
-        List(array.length()) { index -> StoredAlarm.fromJson(array.getJSONObject(index)) }
-    }.getOrDefault(emptyList())
 
     private fun refreshForegroundService() {
         val snapshot = foregroundNotificationSnapshot()
@@ -1306,118 +806,8 @@ internal class RuntimeSessionManager(
         mutableNotificationSnapshots.value = snapshot
     }
 
-    private data class RuntimeHost(
-        val runtime: PreparedToolRuntime,
-        val installedVersion: ToolVersion,
-        val webView: WebView,
-        var mainEntryLoaded: Boolean,
-        var state: RuntimeHostState,
-        val playback: RuntimeWebViewPlayback,
-    ) {
-        val versionCode: Int get() = runtime.versionCode
-        fun toUiState() = RuntimeUiState.Ready(runtime, webView, mainEntryLoaded)
-    }
-
-    private enum class RuntimeHostState { ATTACHED, BACKGROUND_DETACHED, RESTORING, STOPPED }
-
-    private data class ActiveLocationWatch(
-        val listener: LocationListener,
-        val allowBackground: Boolean,
-    )
-
-    private data class StoredRuntimeSession(
-        val sessionId: String,
-        val startedAt: Long,
-        val restoreAfterProcessDeath: Boolean,
-        val restoreAfterReboot: Boolean,
-        val lastReminderAt: Long?,
-        val notificationId: Int,
-        val activityPrimaryText: String? = null,
-        val activitySecondaryText: String? = null,
-        val activityUpdatedAt: Long? = null,
-    ) {
-        fun toRuntimeSummary() = RuntimeBackgroundSessionSummary(
-            sessionId,
-            startedAt,
-            restoreAfterProcessDeath,
-            restoreAfterReboot,
-        )
-
-        fun toJson() = JSONObject()
-            .put("sessionId", sessionId)
-            .put("startedAt", startedAt)
-            .put("restoreAfterProcessDeath", restoreAfterProcessDeath)
-            .put("restoreAfterReboot", restoreAfterReboot)
-            .put("notificationId", notificationId)
-            .apply {
-                lastReminderAt?.let { put("lastReminderAt", it) }
-                activityPrimaryText?.let { put("activityPrimaryText", it) }
-                activitySecondaryText?.let { put("activitySecondaryText", it) }
-                activityUpdatedAt?.let { put("activityUpdatedAt", it) }
-            }
-
-        companion object {
-            fun fromJson(value: JSONObject) = StoredRuntimeSession(
-                sessionId = value.getString("sessionId"),
-                startedAt = value.getLong("startedAt"),
-                restoreAfterProcessDeath = value.optBoolean("restoreAfterProcessDeath", true),
-                restoreAfterReboot = value.optBoolean("restoreAfterReboot", false),
-                lastReminderAt = value.optLong("lastReminderAt").takeIf { value.has("lastReminderAt") },
-                notificationId = value.optInt("notificationId", 0),
-                activityPrimaryText = value.optString("activityPrimaryText").takeIf { value.has("activityPrimaryText") && it.isNotBlank() },
-                activitySecondaryText = value.optString("activitySecondaryText").takeIf { value.has("activitySecondaryText") && it.isNotBlank() },
-                activityUpdatedAt = value.optLong("activityUpdatedAt").takeIf { value.has("activityUpdatedAt") },
-            )
-        }
-    }
-
-    private data class StoredAlarm(
-        val alarmId: String,
-        val triggerAt: Long,
-        val scheduledAt: Long,
-    ) {
-        fun toRuntimeSummary() = RuntimeAlarmSummary(alarmId, triggerAt, scheduledAt)
-
-        fun toEvent(firedAt: Long) = RpcValue.ObjectValue(
-            mapOf(
-                "id" to RpcValue.StringValue(alarmId),
-                "triggerAt" to RpcValue.Number(triggerAt.toDouble()),
-                "scheduledAt" to RpcValue.Number(scheduledAt.toDouble()),
-                "firedAt" to RpcValue.Number(firedAt.toDouble()),
-            ),
-        )
-
-        fun toJson() = JSONObject()
-            .put("id", alarmId)
-            .put("triggerAt", triggerAt)
-            .put("scheduledAt", scheduledAt)
-
-        companion object {
-            fun fromJson(value: JSONObject) = StoredAlarm(
-                alarmId = value.getString("id"),
-                triggerAt = value.getLong("triggerAt"),
-                scheduledAt = value.getLong("scheduledAt"),
-            )
-        }
-    }
-
-    private data class PersistedToolState(
-        val toolId: String,
-        val toolName: String,
-        val versionCode: Int,
-        val sessions: List<StoredRuntimeSession>,
-        val alarms: List<StoredAlarm>,
-    )
-
     private companion object {
-        const val RUNTIME_SESSIONS_KEY = "__toolbox.host.runtime-sessions.v1"
-        const val RUNTIME_ALARMS_KEY = "__toolbox.host.alarms.v1"
-        const val RUNTIME_CHANNEL_ID = "toolbox.runtime.v1"
         const val EVENT_BACKGROUND_RESTORE = "background.restore"
-        const val EVENT_BACKGROUND_TIMER = "background.timer"
-        const val TIMER_RECOVERY_RECHECK_MILLIS = 1_000L
-        const val EVENT_LOCATION_CHANGED = "location.onChanged"
-        const val EVENT_ALARM = "alarm"
         const val RESTORE_REASON_PROCESS = "process"
         const val RESTORE_REASON_REBOOT = "reboot"
     }

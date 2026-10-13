@@ -229,9 +229,6 @@ internal class RuntimeForegroundService : Service() {
         private var startRequested = false
         private var runningInstance: RuntimeForegroundService? = null
 
-        val isRunningOrStarting: Boolean
-            get() = synchronized(runningLock) { startRequested }
-
         private fun markRunning(service: RuntimeForegroundService) = synchronized(runningLock) {
             runningInstance = service
             startRequested = true

@@ -53,7 +53,7 @@ object CoreDataFactory {
             defaultThemeStyle = if (hasExistingHostData) ThemeStyle.MIUIX else ThemeStyle.LIQUID_GLASS,
         )
         val database = Room.databaseBuilder(appContext, ToolBoxDatabase::class.java, databaseName)
-            .addMigrations(ToolBoxMigrations.ONE_TO_TWO)
+            .addMigrations(*ToolBoxMigrations.ALL.toTypedArray())
             .build()
         return CoreDataStores(
             repositories = CoreDataRepositories(

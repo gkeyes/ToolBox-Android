@@ -12,4 +12,7 @@ internal object ToolBoxMigrations {
             db.execSQL("CREATE INDEX IF NOT EXISTS index_background_tasks_toolId_createdAt_taskId ON background_tasks (toolId ASC, createdAt DESC, taskId ASC)")
         }
     }
+
+    /** Every migration, oldest first. Room and the migration tests both read this list. */
+    val ALL: List<Migration> = listOf(ONE_TO_TWO)
 }
