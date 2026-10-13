@@ -55,3 +55,7 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 ## 版本
 
 当前版本为 ToolBox 0.8.32 / 65，与 NextFlux 1.0.50 / 71 一同发布。版本历史见 [CHANGELOG](CHANGELOG.md)。
+
+## 授权
+
+ToolBox 主程序以 [MIT 许可证](LICENSE) 发布。`examples/` 下随附的第三方小工具保留各自目录中的许可证（如 `examples/nextflux/LICENSE`、`examples/socialcoach/LICENSE`）。
