@@ -146,6 +146,25 @@ test('position calculator rejects absurd exponents with the validation error', a
   assert.equal(ok.$('shares').textContent, '2,000 股');
 });
 
+test('position calculator rejects a huge pasted mantissa without building BigInts for it', async () => {
+  const huge = `1.${'0'.repeat(3_000_000)}1`;
+  for (const [field, value] of [['capital', huge], ['entry', huge], ['stop', `0.${'0'.repeat(3_000_000)}1`], ['risk', `0.${'1'.repeat(1500)}`]]) {
+    const tool = positionCalculator({ capital: '100000', risk: '1', entry: '10', stop: '9', [field]: value });
+    const started = Date.now();
+    await tool.$('calculator').fire('submit');
+    assert.ok(Date.now() - started < 1000, field);
+    assert.equal(tool.$('form-error').hidden, false, field);
+    assert.match(tool.$('form-error').textContent, /位数过多/, field);
+    assert.equal(tool.$('result').hidden, true);
+  }
+  // Trailing fractional zeros do not count: the value is unchanged, so it still calculates.
+  const zeros = positionCalculator({ capital: `100000.${'0'.repeat(3_000_000)}`, risk: '1', entry: '10', stop: '9.5' });
+  const started = Date.now();
+  await zeros.$('calculator').fire('submit');
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(zeros.$('shares').textContent, '2,000 股');
+});
+
 // ---------- quick-notes ----------
 
 const NOTE_TEMPLATE = ['article', 'note', [['p', 'note-body'], ['p', 'note-time'], ['div', 'note-actions', [
@@ -412,6 +431,27 @@ test('notification lab starts the live notification once when onRestore races bo
   await settle(20);
   assert.equal(lab.calls.start.length, 1);
   assert.equal(lab.calls.start[0].sessionId, 'restored-session');
+});
+
+test('notification lab stopping the background during an auto update does not restart it', async () => {
+  const pending = defer();
+  let updates = 0;
+  const lab = notificationLab({ update: () => { updates += 1; return updates === 1 ? pending.promise : {}; } });
+  await lab.api.bootWork;
+  await lab.api.startLive();
+  lab.api.state.auto = true;
+  const update = lab.api.updateLive();
+  await settle();
+  await lab.$('stop-background').fire('click');
+  assert.equal(lab.api.state.sessionId, null);
+  pending.reject(apiError('INVALID_SESSION'));
+  await update.catch(() => {});
+  await settle();
+  assert.equal(lab.calls.bgStart, 1, 'no new background session after the user stopped it');
+  assert.equal(lab.calls.start.length, 1, 'no new live notification after the user stopped it');
+  assert.equal(lab.api.state.sessionId, null);
+  assert.equal(lab.api.state.live, false);
+  assert.equal(lab.api.state.liveResult, null);
 });
 
 // ---------- background-task-demo ----------

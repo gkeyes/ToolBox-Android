@@ -39,6 +39,9 @@
   let runtimeClosing = false;
   let booted = false;
   let liveStartedFor = null;
+  // Bumped when the user ends the live notification or stops the background, so an update still awaiting the host
+  // does not republish or restart what the user just stopped.
+  let liveGeneration = 0;
 
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
@@ -323,15 +326,19 @@
     if (runtimeClosing) return null;
     if (updateInFlight) return liveUpdateWork;
     updateInFlight = true;
+    const generation = liveGeneration;
     const work = (async () => { try {
       state.tick += 1;
       const sessionId = await ensureSession();
       let result;
       try { result = await toolbox().notifications.live.update(liveRequest(sessionId)); } catch (error) {
         if (!sessionLost(error)) throw error;
+        // Stopped while this update was in flight: the old session ending is expected, so do not start a new one.
+        if (generation !== liveGeneration || !state.live) return null;
         // The live notification belonged to the ended session; publish it again in the new one.
         result = await startLiveIn(await reacquireSession(error, sessionId));
       }
+      if (generation !== liveGeneration) return null;
       applyLiveResult(result);
       // The tick lives in memory; it is saved on flush, on leaving the page, with other state changes and
       // by a throttled checkpoint, because process death skips the flush and restore would republish an old tick.
@@ -370,6 +377,7 @@
   }
 
   async function endLive() {
+    liveGeneration += 1;
     if (state.auto) await setAuto(false);
     await endLiveNotification();
     state.live = false;
@@ -378,6 +386,7 @@
   }
 
   async function stopBackground() {
+    liveGeneration += 1;
     if (state.auto) await setAuto(false);
     await endLiveNotification();
     if (state.sessionId) {

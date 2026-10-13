@@ -9,16 +9,30 @@
   const inputs = () => Object.fromEntries(fieldIds.map((id) => [id, $(id).value.trim()]));
   const clearResult = () => { lastResult = ""; $("result").hidden = true; };
   // Exact decimal arithmetic: each value becomes { n: BigInt, scale } meaning n / 10^scale.
-  function parseDecimal(text) {
+  // Validation, not a cap: no real price, amount or percentage needs this many significant digits or decimal places,
+  // and a pasted value beyond it would make the BigInt work below freeze the page.
+  const MAX_DIGITS = 1000;
+  function splitDecimal(text) {
     const match = /^\+?(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(text).trim());
     if (!match || !(match[1] || match[2])) return null;
-    // Validation, not a cap: anything outside double range (|exponent| beyond ~324) is not a real price or amount,
+    // Anything outside double range (|exponent| beyond ~324) is not a real price or amount,
     // and expanding 10^exponent for it would freeze the page.
     const exponent = Number(match[3] || 0);
     if (!Number.isFinite(Number(text)) || Math.abs(exponent) > 400) return null;
-    const digits = (match[1] || "") + (match[2] || "");
-    let scale = (match[2] || "").length - exponent;
-    let n = BigInt(digits || "0");
+    // Trailing fractional zeros and leading zeros do not change the value; drop them (plain loops, no backtracking).
+    const fraction = match[2] || "";
+    let end = fraction.length;
+    while (end > 0 && fraction.charCodeAt(end - 1) === 48) end -= 1;
+    const all = (match[1] || "") + fraction.slice(0, end);
+    let start = 0;
+    while (start < all.length && all.charCodeAt(start) === 48) start += 1;
+    return { digits: all.slice(start), scale: end - exponent };
+  }
+  const tooPrecise = (parts) => parts.digits.length > MAX_DIGITS || parts.scale > MAX_DIGITS;
+  function parseDecimal(text) {
+    const parts = splitDecimal(text);
+    if (!parts || tooPrecise(parts)) return null;
+    let { scale } = parts, n = BigInt(parts.digits || "0");
     if (scale < 0) { n *= 10n ** BigInt(-scale); scale = 0; }
     return { n, scale };
   }
@@ -82,6 +96,10 @@
     event.preventDefault();
     clearResult();
     const raw = inputs();
+    if (fieldIds.some((id) => { const parts = splitDecimal(raw[id]); return parts && tooPrecise(parts); })) {
+      setError(`数值位数过多：有效数字和小数位都不能超过 ${MAX_DIGITS} 位，请检查输入。`);
+      return;
+    }
     const result = computePosition(raw);
     if (!result) { setError("请填写有效数值，且入场价必须高于止损价。"); return; }
     const note = explain(result);
