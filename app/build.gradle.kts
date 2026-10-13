@@ -59,8 +59,19 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
 }
 
 // BundledExamplesRegistryTest reads the registry at run time, so a registry change must re-run unit tests.
+// Layout screenshots render on the JVM (Robolectric) and run in their own CI job, so the main unit tests skip them.
+val layoutScreenshots = providers.gradleProperty("toolbox.screenshots").orNull == "true"
+
 tasks.withType<Test>().configureEach {
     inputs.file(tbxTargetsFile).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("tbxTargets")
+    if (layoutScreenshots) {
+        filter.includeTestsMatching("io.toolbox.host.screenshots.*")
+        systemProperty("roborazzi.test.record", "true")
+        systemProperty("toolbox.screenshots.dir", rootProject.layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
+        maxHeapSize = "4g"
+    } else {
+        exclude("io/toolbox/host/screenshots/**")
+    }
 }
 
 android {
@@ -121,6 +132,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -178,6 +193,12 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.work.testing)

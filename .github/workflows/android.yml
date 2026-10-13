@@ -278,6 +278,66 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  screenshots:
+    # Separate from verify so the screenshot render adds no time to the main checks.
+    name: Layout screenshots at 320dp and largest font
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+      - name: Render screens and check text layout
+        run: ./gradlew --no-daemon :app:testDebugUnitTest -Ptoolbox.screenshots=true
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: layout-screenshots-${{ github.sha }}
+          path: |
+            build/screenshots/
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish-screenshots:
+    name: Publish layout screenshots
+    needs: [screenshots]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      # Only to refresh the `ui-screenshots` prerelease that holds the latest renders for review.
+      contents: write
+      actions: read
+    steps:
+      - name: Replace the screenshots on the ui-screenshots prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" -n "layout-screenshots-$GITHUB_SHA" -D shots || { echo "No screenshots in this run"; exit 0; }
+          files=$(find shots -name '*.png' | sort)
+          [ -n "$files" ] || { echo "No screenshots in this run"; exit 0; }
+          notes="Layout screenshots from ${REF_NAME} at ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID}). Not an app release."
+          if gh release view ui-screenshots >/dev/null 2>&1; then
+            gh release view ui-screenshots --json assets --jq '.assets[].name' | while read -r name; do gh release delete-asset ui-screenshots "$name" -y; done
+            gh release edit ui-screenshots --notes "$notes"
+          else
+            gh release create ui-screenshots --prerelease --latest=false --target "$GITHUB_SHA" --title "UI screenshots" --notes "$notes"
+          fi
+          # shellcheck disable=SC2086
+          gh release upload ui-screenshots $files --clobber
+
   publish:
     name: Publish verified signed release
     needs: [verify, delivery]
