@@ -25,6 +25,7 @@
 - 删除确认无调用的死代码：从未使用的结果清理接口 `pruneResultsCompletedBefore`（不自动清理历史；卸载工具时其任务和结果仍随工具删除）、`markRunning`、`revoke`、`CatalogAction.CreateGroup`/`RenameGroup`、`toolBoxTopGlassEffect`、`RuntimeShellScreen` 旧重载，以及 `CapabilityDescriptor` 中未读取的字段。
 - 稳力 1.0.6：清空记录或改回设置时恰逢存储权限被关闭，恢复权限后不再把旧记录/旧设置合并回来；宿主握手失败时改用网页存储保存记录；无宿主触感时用浏览器震动提示。
 - 2048 1.0.3：关闭工具期间不再接受新的移动，关闭前的保存会等到最后一次写入完成后才报告成功。
+- 行情哨兵 1.1.6：休市期间开启监控且行情均已在收盘后获取时，实时通知不再整晚停留在“获取中”，改为显示已缓存的收盘行情。
 
 ## 0.8.32 (65)
 

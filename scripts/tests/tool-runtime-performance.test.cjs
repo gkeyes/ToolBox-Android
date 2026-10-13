@@ -34,7 +34,7 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
   };
   const window = { ToolBox: toolbox, ...extraWindow };
   const timers = { setTimeout: options.setTimeout || setTimeout, clearTimeout: options.clearTimeout || clearTimeout };
-  vm.runInNewContext(source, { window, document, URL, Intl, Date, console, ...timers }, { filename });
+  vm.runInNewContext(source, { window, document, URL, Intl, Date: options.Date || Date, console, ...timers }, { filename });
   const dispatch = (id, type, event = {}) => {
     const node = document.getElementById(id);
     domReads -= 1;
@@ -729,4 +729,30 @@ test('Kegel vibrates through the browser when host haptics are unavailable', asy
   assert.doesNotMatch(h.nodes.get('vibration-support-text').textContent, /不支持/);
   h.click('start-button');
   assert.equal(patterns.length, 1);
+});
+
+test('stock monitoring started after the close replaces the loading live notification with cached quotes', async () => {
+  const fixedNow = Date.parse('2026-10-13T20:00:00+08:00');
+  class FixedDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(fixedNow); }
+    static now() { return fixedNow; }
+  }
+  const live = [];
+  const host = stockHost({
+    notifications: { live: {
+      start: async (request) => { live.push(request); return {}; },
+      update: async (request) => { live.push(request); return {}; },
+    } },
+  });
+  host.toolbox.background.start = async () => ({ sessionId: 'session-1' });
+  const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
+  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, startMonitoring, loaded: () => { stateLoaded = true; markStateLoaded(); }',
+    host.toolbox, { StockMonitorLive: stockLive }, { Date: FixedDate });
+  h.api.loaded();
+  h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550', price: 10.5, fetchedAt: fixedNow - 60000 })];
+  assert.equal(await h.api.startMonitoring(), true);
+  assert.equal(live.at(-1).shortText, '获取中');
+  await h.api.refreshAll();
+  assert.equal(host.calls.length, 0, 'closed-market quote not fetched again');
+  assert.notEqual(live.at(-1).shortText, '获取中', 'live notification no longer shows loading');
 });
