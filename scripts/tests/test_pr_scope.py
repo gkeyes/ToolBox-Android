@@ -49,6 +49,10 @@ class PrScopeTest(unittest.TestCase):
         head = 'android {\n    defaultConfig {\n        versionName = "0.9.0"\n    }\n}\n'
         self.assertTrue(run(["app/build.gradle.kts"], head_build=head)["gradle"])
 
+    def test_moved_version_lines_are_not_exempted(self):
+        head = ('android {\n    defaultConfig {\n    }\n    versionCode = 67\n    versionName = "0.9.0"\n}\n')
+        self.assertTrue(run(["app/build.gradle.kts"], head_build=head)["gradle"])
+
     def test_markdown_packaged_from_a_source_set_needs_gradle(self):
         self.assertTrue(run(["app/src/main/assets/licenses/THIRD_PARTY_NOTICES.md"])["gradle"])
 

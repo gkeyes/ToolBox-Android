@@ -37,13 +37,16 @@ def version_only(base_text, head_text):
     """True when two build files differ only in their versionCode / versionName lines."""
     if base_text is None or head_text is None:
         return False
-    def strip(text):
+    def mask(text):
         kept = []
         for line in text.splitlines():
             match = VERSION_LINE.match(line)
             # An out-of-range code is not exempted: only a build would show the failure.
             if not match or (match["code"] and not 0 < int(match["code"]) <= MAX_VERSION_CODE):
                 kept.append(line)
+            else:
+                # Keep the line's place with its value masked, so moving it out of defaultConfig counts.
+                kept.append("versionCode" if match["code"] else "versionName")
         return kept
     # The head must still set each value exactly once, validly; a deleted or duplicated one needs the build.
     valid = [VERSION_LINE.match(line) for line in head_text.splitlines()]
@@ -51,7 +54,7 @@ def version_only(base_text, head_text):
     names = [match for match in valid if match and not match["code"]]
     if len(codes) != 1 or len(names) != 1:
         return False
-    return strip(base_text) == strip(head_text)
+    return mask(base_text) == mask(head_text)
 
 
 def needs_gradle(path, bundled):
