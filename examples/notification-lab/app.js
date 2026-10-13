@@ -572,5 +572,15 @@
     });
   }
 
-  bootWork = boot();
+  // Test hook: only tests define window.__TOOLBOX_TEST__ before loading this script,
+  // so production never exposes internals or changes startup.
+  const testHook = window.__TOOLBOX_TEST__;
+  if (testHook) {
+    testHook.api = {
+      state, cleanText, appendEvent, renderLog, updateLive, startLive, endLive, render,
+      get bootWork() { return bootWork; },
+      setForeground: (value) => { runtimeForeground = value; },
+    };
+  }
+  if (testHook?.boot !== false) bootWork = boot();
 })();

@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link, { usePathname } from "@platform/navigation";
 import { clsx } from "clsx";
 import { Sun, Drama, Sprout, BookOpen, CircleUser, PenLine, ArrowUpRight, HardDrive } from "lucide-react";
 import { BrandMark } from "./BrandMark";

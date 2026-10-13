@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@platform/navigation";
 import { ArrowUpRight, BookOpen, Check, MessageCircle, Plus } from "lucide-react";
 import { Shell } from "@/components/Shell";
 import { Chip, Page, SectionTitle, Sheet, Stars } from "@/components/ui";

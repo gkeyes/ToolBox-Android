@@ -49,13 +49,9 @@ function build(spec) {
   return node;
 }
 
-function loadTool(name, toolbox, { templates = {}, expose = '', marker = null } = {}) {
+function loadTool(name, toolbox, { templates = {} } = {}) {
   const filename = path.join(examples, name, 'app.js');
-  let source = fs.readFileSync(filename, 'utf8');
-  if (expose) {
-    assert.equal(source.split(marker).length, 2, `${name} startup changed`);
-    source = source.replace(marker, `${marker.replace('})();', '')}  window.testApi = { ${expose} };\n})();`);
-  }
+  const source = fs.readFileSync(filename, 'utf8');
   const nodes = new Map();
   const document = {
     getElementById(id) {
@@ -69,9 +65,10 @@ function loadTool(name, toolbox, { templates = {}, expose = '', marker = null } 
     querySelectorAll() { return []; },
     createElement: (tag) => new Element(tag),
   };
-  const window = { ToolBox: toolbox };
+  const hook = {};
+  const window = { ToolBox: toolbox, __TOOLBOX_TEST__: hook };
   vm.runInNewContext(source, { window, document, Intl, Date, console, setTimeout, clearTimeout, BigInt, Promise }, { filename });
-  return { $: (id) => document.getElementById(id), api: window.testApi };
+  return { $: (id) => document.getElementById(id), api: hook.api };
 }
 
 // ---------- position-calculator ----------
@@ -360,10 +357,7 @@ function notificationLab({ sessions = [], saved = null, start, update, end, read
       },
     },
   };
-  const tool = loadTool('notification-lab', toolbox, {
-    marker: '  bootWork = boot();\n})();',
-    expose: 'state, cleanText, updateLive, startLive, endLive, render, bootWork, setForeground: (value) => { runtimeForeground = value; }',
-  });
+  const tool = loadTool('notification-lab', toolbox);
   return { ...tool, calls, listeners };
 }
 

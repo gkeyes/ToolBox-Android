@@ -1,6 +1,6 @@
 import {shareText} from "@platform/backup";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@platform/navigation";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { Bookmark, ChevronDown, RotateCcw, Share2, Send } from "lucide-react";
