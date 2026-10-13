@@ -3,7 +3,7 @@ run-name: TBX · ${{ inputs.tool || 'changed tools' }} · ${{ github.ref_name }}
 
 on:
   push:
-    branches: ["codex/refactor-lightweight-v2"]
+    branches: ["main"]
     paths:
       - "examples/**"
       - ".github/workflows/tbx.yml"
@@ -27,7 +27,7 @@ on:
       - "build.gradle.kts"
       - "settings.gradle.kts"
   pull_request:
-    branches: ["codex/refactor-lightweight-v2"]
+    branches: ["main"]
     paths:
       - "examples/**"
       - ".github/workflows/tbx.yml"

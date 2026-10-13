@@ -1,19 +1,25 @@
 package io.toolbox.host.browser
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Live diagnostics: failures retain the real network/TLS error, never bypass certificate checks. */
+/**
+ * Live diagnostics: failures retain the real network/TLS error, never bypass certificate checks.
+ * These reach third-party sites, so they run only with the `liveSites=true` instrumentation argument.
+ */
 @RunWith(AndroidJUnit4::class)
 class BrowserLiveSitesTest {
     private lateinit var browser: BrowsingTestPage
 
     @Before fun setUp() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("liveSites") == "true")
         browser = BrowsingTestPage()
     }
 

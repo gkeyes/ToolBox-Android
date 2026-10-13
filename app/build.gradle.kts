@@ -9,7 +9,6 @@ plugins {
 
 val bundledExamplesDir = rootProject.layout.buildDirectory.dir("bundled-examples")
 val verifyWebViewDebugging = providers.gradleProperty("toolbox.verifyWebViewDebugging").orNull == "true"
-val compactWebViewDebug = providers.gradleProperty("toolbox.compactWebViewDebug").orNull == "true"
 
 val stableSigningStoreFile = providers.environmentVariable("TOOLBOX_SIGNING_STORE_FILE").orNull
 val stableSigningStorePassword = providers.environmentVariable("TOOLBOX_SIGNING_STORE_PASSWORD").orNull
@@ -72,15 +71,6 @@ android {
 
     buildTypes {
         debug {
-            if (compactWebViewDebug) {
-                isMinifyEnabled = true
-                isShrinkResources = true
-                proguardFiles(
-                    getDefaultProguardFile("proguard-android-optimize.txt"),
-                    "compact-debug.pro",
-                )
-                testProguardFiles("compact-debug-test.pro")
-            }
             stableSigningConfig?.let { signingConfig = it }
         }
         release {
@@ -113,10 +103,6 @@ android {
         buildConfig = true
     }
 
-    if (compactWebViewDebug) {
-        packaging.dex.useLegacyPackaging = true
-    }
-
     sourceSets.getByName("main").assets.directories.add(
         bundledExamplesDir.get().asFile.absolutePath,
     )
@@ -128,8 +114,9 @@ android {
 tasks.configureEach {
     val consumesBundledExamples =
         (name.startsWith("merge") && name.endsWith("Assets")) ||
+            name.startsWith("lintAnalyze") ||
             name.startsWith("lintVital") ||
-            (name.startsWith("generate") && name.endsWith("LintVitalReportModel"))
+            (name.startsWith("generate") && (name.endsWith("LintReportModel") || name.endsWith("LintVitalReportModel")))
     if (consumesBundledExamples) {
         dependsOn(packageBundledExamples)
     }
@@ -171,10 +158,4 @@ dependencies {
     androidTestImplementation("androidx.work:work-testing:2.11.2")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    if (compactWebViewDebug) {
-        androidTestImplementation("com.google.errorprone:error_prone_annotations:2.26.1")
-    }
-
-
-
 }

@@ -5,8 +5,8 @@ boundaries are separate and unchanged. A webpage never receives the tool-native 
 
 ## User choices
 
-- HTTP(S) navigation retains its original scheme, host and encoding. No NewSMTH host or
-  protocol rewriting is performed. Generated `blob:`, `data:` and `about:blank` documents
+- HTTP(S) navigation retains its original scheme, host and encoding. No host or protocol
+  rewriting is performed. Generated `blob:`, `data:` and `about:blank` documents
   remain engine-owned. App links are offered explicitly, with a validated HTTP(S) fallback
   when an Android intent link supplies one.
 - Recoverable TLS errors, including cross-origin page resources, are queued for a visible
@@ -29,14 +29,13 @@ boundaries are separate and unchanged. A webpage never receives the tool-native 
 requests; delayed Android activity results retain one-shot request identities so they cannot
 fulfil another page's request. Only one host decision dialog is shown at a time.
 
-The existing cookie store, UA modes, media layout recovery, fullscreen player and optional
-content filtering remain. Changing engines or disabling filtering is not a demonstrated fix
-for the two reported sites.
+The browser also keeps its own cookie store, UA modes, media layout recovery, fullscreen
+player and optional content filtering.
 
 ## Verification scope
 
 JVM tests cover URL classification, SSL queue/navigation lifecycle, capability request identity,
-origin display and file selection policy. Targeted Android tests exercise real WebView network,
-DOM, touch, cookie POST, image loading and generated-document navigation. Live checks cover
-the supplied game Canvas and NewSMTH verification image; they do not submit its captcha.
+origin display and file selection policy. Android tests exercise real WebView network, DOM,
+touch, cookie POST, image loading and generated-document navigation. `BrowserLiveSitesTest`
+loads real third-party pages and runs only with the `liveSites=true` instrumentation argument.
 Passing emulator tests does not establish performance or compatibility on a particular phone.

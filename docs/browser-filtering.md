@@ -44,11 +44,10 @@ global switch disable both custom rules and the built-in baseline.
 selector construction using a DOM test double, not a rendering engine.
 `./gradlew :app:testDebugUnitTest --tests 'io.toolbox.host.browser.*'` covers
 host boundaries, exemptions, switches, input validation and navigation state.
-Android CI runs these with the existing host suite and compiles an optimized
+Android CI runs these on every push and pull request and compiles an optimized
 release. On the default branch, it separately builds a release with the original
-signing identity. Browser-related changes in a PR or push also trigger the full
-Android emulator suite; manual runs can enable it explicitly. Emulator checks
-do not establish real-device WebView or visual-layout validation.
+signing identity. The Android emulator suite runs from a manual workflow run.
+Emulator checks do not establish real-device WebView or visual-layout validation.
 
 Before broad use, check a real webpage's banner, fixed footer and iframe:
 select, preview, cancel, save, reload, disable, re-enable and undo; then verify
