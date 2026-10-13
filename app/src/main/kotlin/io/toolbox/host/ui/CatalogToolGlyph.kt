@@ -1,14 +1,19 @@
 package io.toolbox.host.ui
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.Dp
+import com.kyant.shapes.RoundedRectangle
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.icons.ToolIconLoader
 import kotlinx.coroutines.flow.collectLatest
@@ -34,14 +39,21 @@ internal fun CatalogToolArtwork(
     size: Dp = ToolBoxThemeTokens.sizes.toolGlyph,
 ) {
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
-    ToolGlyph(
-        icon = visual.icon,
-        accent = visual.accent,
-        size = size,
-        imageResource = visual.imageResource,
-        imageBitmap = image,
-    )
+    // iOS app-icon mask: a continuous-curvature rounded square at ~22% of the edge, applied to
+    // bundled, decoded and fallback artwork alike so every tool reads as the same object.
+    val mask = remember(size) { RoundedRectangle(size * ToolIconCornerFraction) }
+    Box(Modifier.size(size).clip(mask)) {
+        ToolGlyph(
+            icon = visual.icon,
+            accent = visual.accent,
+            size = size,
+            imageResource = visual.imageResource,
+            imageBitmap = image,
+        )
+    }
 }
+
+private const val ToolIconCornerFraction = 0.22f
 
 @Composable
 internal fun rememberCatalogToolBitmap(toolId: String, versionCode: Int?): Bitmap? =

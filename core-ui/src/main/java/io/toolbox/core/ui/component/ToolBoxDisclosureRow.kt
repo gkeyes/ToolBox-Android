@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -25,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 
 @Composable
@@ -48,7 +50,7 @@ fun ToolBoxDisclosureRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = ToolBoxThemeTokens.sizes.touchTarget)
+            .heightIn(min = ToolBoxRowMinHeight)
             .semantics(mergeDescendants = true) {
                 stateDescription = if (expanded) "已展开" else "已折叠"
                 if (sectionHeading) heading()
@@ -61,11 +63,16 @@ fun ToolBoxDisclosureRow(
                 onClickLabel = if (expanded) "收起$title" else "展开$title",
                 onClick = onClick,
             )
-            .padding(horizontal = spacing.two, vertical = spacing.one),
+            .padding(
+                start = ToolBoxRowStartPadding,
+                end = ToolBoxRowEndPadding,
+                top = ToolBoxRowVerticalPadding,
+                bottom = ToolBoxRowVerticalPadding,
+            ),
         horizontalArrangement = Arrangement.spacedBy(spacing.one),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.half)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             ToolBoxText(
                 text = title,
                 style = ToolBoxThemeTokens.textStyles.title.copy(
@@ -76,7 +83,7 @@ fun ToolBoxDisclosureRow(
             summary?.takeIf(String::isNotBlank)?.let {
                 ToolBoxText(
                     text = it,
-                    style = ToolBoxThemeTokens.textStyles.metadata.copy(color = colors.textSecondary),
+                    style = ToolBoxThemeTokens.textStyles.sectionTitle.copy(color = colors.textSecondary),
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
@@ -85,7 +92,8 @@ fun ToolBoxDisclosureRow(
         ToolBoxIcon(
             icon = ToolBoxIconKey.ChevronDown,
             contentDescription = null,
-            modifier = Modifier.graphicsLayer { rotationZ = angle.value },
+            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = angle.value },
+            tint = colors.textTertiary,
         )
     }
 }

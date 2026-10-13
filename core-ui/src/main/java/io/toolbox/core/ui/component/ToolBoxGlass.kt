@@ -58,7 +58,7 @@ fun rememberToolBoxGlassState(): ToolBoxGlassState {
 }
 
 @Composable
-private fun glassRendersLive(): Boolean =
+internal fun glassRendersLive(): Boolean =
     ToolBoxThemeTokens.materials.realBlurEnabled &&
         LocalToolBoxGlassActive.current &&
         LocalView.current.isHardwareAccelerated

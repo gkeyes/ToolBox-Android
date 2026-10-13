@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -607,11 +608,18 @@ fun ToolBoxGroupedSurface(
 @Composable
 fun ToolBoxGroupDivider(
     modifier: Modifier = Modifier,
-    startPadding: Dp = 60.dp,
+    startPadding: Dp = ToolBoxRowStartPadding + ToolBoxRowIconSize + ToolBoxRowIconGap,
     endPadding: Dp = 0.dp,
 ) {
-    // Design system v2: group cards never draw separators; rows separate by 56dp height and inset.
-    Unit
+    // iOS inset-grouped hairline: inset after the row icon, running to the card's trailing edge.
+    val color = ToolBoxThemeTokens.colors.divider
+    Spacer(
+        modifier
+            .fillMaxWidth()
+            .height(0.5.dp)
+            .padding(start = startPadding, end = endPadding)
+            .drawBehind { drawRect(color) },
+    )
 }
 
 private enum class ToolBoxActionTone { Primary, Tonal, Neutral, Danger, DangerConfirmation }
