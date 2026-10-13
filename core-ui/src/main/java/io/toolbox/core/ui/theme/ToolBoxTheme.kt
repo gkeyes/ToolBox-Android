@@ -291,6 +291,10 @@ fun ToolBoxTheme(
     reduceTransparency: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // The iOS 27 redesign has a single look; the legacy Miuix style setting is ignored until its
+    // picker is removed from Appearance.
+    @Suppress("NAME_SHADOWING")
+    val style = ToolBoxThemeStyle.LiquidGlass
     val usesDarkColors = when (mode) {
         ToolBoxThemeMode.Dark, ToolBoxThemeMode.MonetDark -> true
         ToolBoxThemeMode.System, ToolBoxThemeMode.MonetSystem -> isSystemInDarkTheme()
@@ -526,13 +530,13 @@ internal fun liquidGlassMaterials(
     topEdgeFadeEnabled = enabled && !reduceTransparency,
     navigationLensEnabled = enabled,
     pressFeedbackEnabled = enabled,
-    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.66f else 0.48f),
+    glassTint = colors.surface.copy(alpha = if (reduceTransparency) 1f else if (dark) 0.22f else 0.30f),
     glassFallback = colors.surface,
     glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
     navigationSelectionTint = colors.softPrimary,
     navigationSelectionHighlight = colors.softPrimary,
     navigationSelectionBorder = colors.primary.copy(alpha = if (dark) 0.38f else 0.24f),
-    blurRadius = 32.dp,
+    blurRadius = 4.dp,
     noiseFactor = 0.015f,
 )
 

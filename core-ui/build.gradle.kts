@@ -42,6 +42,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.compose.material.icons.extended)
+    // Choreographer-aligned awaitFrame for the vendored liquid glass components.
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation("junit:junit:4.13.2")
 

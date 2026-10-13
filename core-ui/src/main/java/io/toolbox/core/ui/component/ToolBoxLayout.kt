@@ -1,5 +1,9 @@
 package io.toolbox.core.ui.component
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.runtime.rememberUpdatedState
+import io.toolbox.core.ui.liquid.LiquidBottomTab
+import io.toolbox.core.ui.liquid.LiquidBottomTabs
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -284,6 +288,17 @@ fun ToolBoxNavigationBar(
         if (item.id != selectedId) haptics.tick()
         onItemSelected(item)
     }
+    if (isGlass && glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+        LiquidTabNavigationBar(
+            items = items,
+            selectedId = selectedId,
+            onItemSelected = select,
+            modifier = modifier,
+            glassState = glassState,
+            iconOnly = usesIconOnlyLayout,
+        )
+        return
+    }
     if (isGlass) {
         LiquidGlassNavigationBar(
             items = items,
@@ -319,6 +334,72 @@ fun ToolBoxNavigationBar(
                     label = item.label,
                     modifier = item.testTag?.let(Modifier::testTag) ?: Modifier,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * iOS 27 floating tab bar: the vendored Kyant [LiquidBottomTabs] capsule refracting the page
+ * behind it, with a draggable lens that morphs between tabs.
+ */
+@Composable
+private fun LiquidTabNavigationBar(
+    items: List<ToolBoxNavigationItem>,
+    selectedId: String,
+    onItemSelected: (ToolBoxNavigationItem) -> Unit,
+    modifier: Modifier,
+    glassState: ToolBoxGlassState,
+    iconOnly: Boolean,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val dark = colors.background.luminance() < 0.5f
+    val selectedIndex = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+    val currentItems by rememberUpdatedState(items)
+    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+    LiquidBottomTabs(
+        selectedTabIndex = { currentSelectedIndex },
+        onTabSelected = { index -> currentItems.getOrNull(index)?.let(onItemSelected) },
+        backdrop = glassState.backdrop,
+        tabsCount = items.size,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = ToolBoxThemeTokens.spacing.oneHalf, vertical = ToolBoxThemeTokens.spacing.compact)
+            .selectableGroup(),
+        isLightTheme = !dark,
+        accentColor = colors.primary,
+        containerColor = ToolBoxThemeTokens.materials.glassTint,
+    ) {
+        items.forEachIndexed { index, item ->
+            key(item.id) {
+                LiquidBottomTab(
+                    onClick = { onItemSelected(item) },
+                    modifier = Modifier
+                        .then(item.testTag?.let(Modifier::testTag) ?: Modifier)
+                        .semantics {
+                            contentDescription = item.label
+                            this.selected = index == selectedIndex
+                        },
+                ) {
+                    ToolBoxIcon(
+                        icon = item.icon,
+                        contentDescription = null,
+                        tint = colors.textPrimary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (!iconOnly) {
+                        ToolBoxText(
+                            text = item.label,
+                            style = ToolBoxThemeTokens.textStyles.label.copy(
+                                color = colors.textPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
