@@ -1,5 +1,6 @@
 package io.toolbox.host.ui
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import org.junit.Assert.*
@@ -40,12 +41,19 @@ class CatalogHomeDragTest {
         assertTrue(homeGridColumnCount(680f, 1f) > 4)
     }
 
-    @Test fun folderColumnsKeepAtLeastTwoSquareFoldersAndGrowOnWideWindows() {
-        assertEquals(3, homeFolderColumnCount(358f, 1f))
-        assertEquals(2, homeFolderColumnCount(358f, 2f))
-        assertEquals(2, homeFolderColumnCount(90f, 1f))
-        assertEquals(6, homeFolderColumnCount(680f, 1f))
-        assertEquals(8, homeFolderColumnCount(1600f, 1f))
+    @Test fun groupCapsulesTakeAPhoneRowAndShareWideWindows() {
+        assertEquals(1, homeFolderColumnCount(358f, 1f))
+        assertEquals(1, homeFolderColumnCount(358f, 2f))
+        assertEquals(1, homeFolderColumnCount(90f, 1f))
+        assertEquals(2, homeFolderColumnCount(680f, 1f))
+        assertEquals(4, homeFolderColumnCount(1600f, 1f))
+    }
+
+    @Test fun groupCapsuleSlotsStayBetweenSmallAndFullIconSize() {
+        assertEquals(72f, groupCapsuleMetrics(358.dp).slot.value, 0.01f)
+        assertEquals(44f, groupCapsuleMetrics(120.dp).slot.value, 0.01f)
+        val phone = groupCapsuleMetrics(288.dp)
+        assertEquals(phone.slot.value + 24f, phone.height.value, 0.01f)
     }
 
     @Test fun unknownOrLegacyGroupStylesFallBackToTheDefaultSwatchAndIcon() {
