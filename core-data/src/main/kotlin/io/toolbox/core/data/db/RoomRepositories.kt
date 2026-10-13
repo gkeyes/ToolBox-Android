@@ -107,7 +107,9 @@ internal class RoomCatalogLifecycleRepository(
                 }
                 database.versions().put(attempt.version.toEntity())
                 if (existingVersion != null) {
-                    database.backgroundTasks().deleteForTool(attempt.metadata.id)
+                    // Tasks scheduled by the old version must not run under the new one, but
+                    // their history (and results) stays visible after the update.
+                    database.backgroundTasks().cancelActiveForTool(attempt.metadata.id, attempt.version.installedAt)
                 }
                 val nextGrants = if (existingVersion == null) {
                     attempt.initialGrants.map(PermissionGrant::toEntity)

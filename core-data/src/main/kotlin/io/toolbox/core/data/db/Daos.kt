@@ -172,6 +172,10 @@ internal interface BackgroundTaskDao {
         runAttempt: Int,
     ): Int
 
+    /** Stops a tool's queued/running tasks while keeping their rows and results as history. */
+    @Query("UPDATE background_tasks SET state = 'CANCELLED', updatedAt = MAX(updatedAt, :updatedAt), nextRunAt = NULL WHERE toolId = :toolId AND state IN ('QUEUED', 'RUNNING')")
+    suspend fun cancelActiveForTool(toolId: String, updatedAt: Long): Int
+
     @Query("UPDATE background_tasks SET state = 'QUEUED', updatedAt = :updatedAt, nextRunAt = :updatedAt WHERE taskId = :taskId AND state = 'RUNNING' AND updatedAt <= :updatedAt")
     suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): Int
 
