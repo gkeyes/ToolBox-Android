@@ -1,7 +1,8 @@
 /*
  * Vendored from Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
  * catalog app @ 65ab177, Copyright Kyant, licensed under the Apache License 2.0
- * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours exposed as parameters.
+ * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours exposed as parameters;
+ * geometry read by the gesture callbacks kept current across resizes.
  */
 package io.toolbox.core.ui.liquid
 
@@ -24,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -87,22 +89,34 @@ fun LiquidBottomTabs(
             (constraints.maxWidth.toFloat() - 8f.dp.toPx()) / tabsCount
         }
 
+        // The drag/highlight objects below are remembered across recompositions, so everything they
+        // read from their callbacks goes through updated state and stays current after a resize,
+        // a layout-direction change or a different tab count.
+        val latestDensity = rememberUpdatedState(density)
+        val latestMaxWidth = rememberUpdatedState(constraints.maxWidth)
+        val latestTabWidth = rememberUpdatedState(tabWidth)
+        val latestTabsCount = rememberUpdatedState(tabsCount)
+
         val offsetAnimation = remember { Animatable(0f) }
-        val panelOffset by remember(density) {
+        val panelOffset by remember {
             derivedStateOf {
-                val fraction = (offsetAnimation.value / constraints.maxWidth).fastCoerceIn(-1f, 1f)
-                with(density) {
+                val fraction = (offsetAnimation.value / latestMaxWidth.value).fastCoerceIn(-1f, 1f)
+                with(latestDensity.value) {
                     4f.dp.toPx() * fraction.sign * EaseOut.transform(abs(fraction))
                 }
             }
         }
 
         val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+        val latestIsLtr = rememberUpdatedState(isLtr)
         val animationScope = rememberCoroutineScope()
-        var currentIndex by remember(selectedTabIndex) {
+        // Not keyed on the lambda: callers may pass a fresh lambda each composition, and the
+        // remembered drag callbacks and the effect below must keep writing/reading one state.
+        var currentIndex by remember {
             mutableIntStateOf(selectedTabIndex())
         }
-        val dampedDragAnimation = remember(animationScope) {
+        // valueRange is fixed per instance, so a new tab count needs a new animation.
+        val dampedDragAnimation = remember(animationScope, tabsCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = selectedTabIndex().toFloat(),
@@ -112,7 +126,7 @@ fun LiquidBottomTabs(
                 pressedScale = 78f / 56f,
                 onDragStarted = {},
                 onDragStopped = {
-                    val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, latestTabsCount.value - 1)
                     currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
@@ -124,8 +138,8 @@ fun LiquidBottomTabs(
                 },
                 onDrag = { _, dragAmount ->
                     updateValue(
-                        (targetValue + dragAmount.x / tabWidth * if (isLtr) 1f else -1f)
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                        (targetValue + dragAmount.x / latestTabWidth.value * if (latestIsLtr.value) 1f else -1f)
+                            .fastCoerceIn(0f, (latestTabsCount.value - 1).toFloat())
                     )
                     animationScope.launch {
                         offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
@@ -148,13 +162,16 @@ fun LiquidBottomTabs(
                 }
         }
 
+        val latestDragAnimation = rememberUpdatedState(dampedDragAnimation)
         val interactiveHighlight = remember(animationScope) {
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, offset ->
+                    val value = latestDragAnimation.value.value
+                    val width = latestTabWidth.value
                     Offset(
-                        if (isLtr) (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
+                        if (latestIsLtr.value) (value + 0.5f) * width + panelOffset
+                        else size.width - (value + 0.5f) * width + panelOffset,
                         size.height / 2f
                     )
                 }
