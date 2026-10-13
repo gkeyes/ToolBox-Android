@@ -24,7 +24,7 @@ const TAB_DENSITIES = ["full", "compact", "tight", "small"];
  * tightens the padding, then the text. If even that is too wide beside the
  * buttons, the capsule takes a row of its own and steps down again there, so
  * it never runs under the buttons on narrow screens, large display sizes or
- * large system fonts.
+ * large system fonts. Past the smallest density it scrolls sideways.
  */
 function useTabsFit(ref, deps) {
   useLayoutEffect(() => {
@@ -35,13 +35,19 @@ function useTabsFit(ref, deps) {
     const fit = () => {
       const list = box.querySelector(".tabs__list");
       if (!list) return;
+      // The list is capped at the width it can use (padding excluded), so it
+      // overflows itself when its content does not fit.
+      box.dataset.scroll = "false";
       for (const stacked of canStack ? [false, true] : [false]) {
         box.dataset.stacked = String(stacked);
         for (const density of TAB_DENSITIES) {
           box.dataset.fit = density;
-          if (list.scrollWidth <= box.clientWidth) return;
+          if (list.scrollWidth <= list.clientWidth + 1) return;
         }
       }
+      // Nothing fits (very large text or long translations): scroll the
+      // capsule sideways rather than hiding a tab.
+      box.dataset.scroll = "true";
     };
     fit();
     // Watch the list too: late fonts or a text-size change resize it without

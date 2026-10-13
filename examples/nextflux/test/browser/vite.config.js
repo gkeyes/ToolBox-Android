@@ -55,7 +55,7 @@ export default defineConfig({
   root: fixture,
   // The navigation fixture uses a different account boundary at its importers.
   // Scan the original entries together; navigation imports resolve individually.
-  optimizeDeps: { entries: ["index.html", "controls.html", "controls-main.jsx", "controls-sidebar.jsx", "title-filter.html", "media-compat.html"] },
+  optimizeDeps: { entries: ["index.html", "controls.html", "controls-main.jsx", "controls-sidebar.jsx", "title-filter.html", "media-compat.html", "touch-press.html"] },
   plugins: [
     {
       name: "reading-test-boundaries",

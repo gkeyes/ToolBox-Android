@@ -127,9 +127,9 @@ test("an internal error restoring authentication is identified without blaming p
 
 // The list header floats three pieces (sidebar button, filter capsule, actions)
 // over the list. On narrow screens, large display sizes or large text with a
-// long unread count, the capsule must step down (or take its own row) instead
-// of running under them.
-for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [360, 1], [393, 1.5], [430, 1]]) {
+// long unread count, the capsule must step down (or take its own row, or
+// scroll) instead of running under them.
+for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1], [393, 1.5], [430, 1]]) {
   test(`list header pieces stay apart at ${width}px, text x${scale}`, async ({ page }) => {
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -165,6 +165,7 @@ for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [360, 1], [393, 1.
         list: box(".article-list-inline-tabs .tabs__list"),
         actions: box(".article-list-actions"),
         clipped: list.scrollWidth > list.clientWidth + 1,
+        scrollable: getComputedStyle(list).overflowX === "auto",
         overflow: document.documentElement.scrollWidth > innerWidth + 1,
       };
     });
@@ -174,7 +175,8 @@ for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [360, 1], [393, 1.
     expect(layout.list.left).toBeGreaterThanOrEqual(0);
     expect(layout.list.right).toBeLessThanOrEqual(width);
     expect(layout.actions.right).toBeLessThanOrEqual(width);
-    expect(layout.clipped).toBe(false);
+    // Past the smallest density the capsule scrolls instead of hiding a tab.
+    if (layout.clipped) expect(layout.scrollable).toBe(true);
     expect(layout.overflow).toBe(false);
     expect(pageErrors).toEqual([]);
   });

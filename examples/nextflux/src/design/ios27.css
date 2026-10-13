@@ -173,7 +173,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
    size or system font): the header measures it and steps down from full, to
    no icons, to tight padding, to smaller text; if it still does not fit it
    takes a row of its own and steps down again there, so it never runs under
-   the buttons beside it. */
+   the buttons beside it. Past the smallest density it scrolls sideways. */
 .article-list-inline-tabs { justify-content: safe center; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs) :is(.article-list-tabs, .tabs, .tabs__list-container) { min-inline-size: 0; max-inline-size: 100%; }
 :is(.article-list-inline-tabs, .article-list-scoped-tabs) .tabs__list { max-inline-size: 100%; overflow: hidden; }
@@ -187,6 +187,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 /* Still too wide: the capsule takes a row of its own under the buttons. */
 .article-list-header.ds-topbar:has(> .article-list-inline-tabs[data-stacked="true"]) { flex-wrap: wrap; row-gap: 8px; }
 .article-list-inline-tabs[data-stacked="true"] { order: 3; flex: 1 0 100%; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-scroll="true"] .tabs__list { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+:is(.article-list-inline-tabs, .article-list-scoped-tabs)[data-scroll="true"] .tabs__list::-webkit-scrollbar { display: none; }
 @media (max-width: 379px) {
   .article-list-header.ds-topbar { gap: 6px; padding-inline: 12px; }
 }
