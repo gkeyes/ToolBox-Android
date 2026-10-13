@@ -24,6 +24,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.RoborazziOptions
@@ -207,6 +208,19 @@ class LayoutScreenshotTest(private val fontScale: Float) {
     @Test fun home() {
         render("home") { Primary(MainDestination.Home) }
         assertShows("NextFlux 阅读器", "工作效率")
+    }
+
+    @Test fun homeList() {
+        render("home_list") {
+            ToolManagerContent(
+                state = catalog, importState = ImportUiState(), listState = rememberLazyListState(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                onAction = {}, onImport = {}, onInstallExamples = {}, onDismissImport = {}, onOpenDetails = {}, home = true,
+            )
+        }
+        compose.mainClock.advanceTimeBy(10_000)
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage(File(outputDir, "home_list_late_font${fontScale}.png").path, roborazziOptions = pixelCopy)
     }
 
     @Test fun allTools() {
