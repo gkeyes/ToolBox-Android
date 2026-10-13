@@ -15,11 +15,11 @@ class RuntimeTextCompatibilityTest {
         override suspend fun isGranted(identity: RuntimeSessionIdentity, capability: ToolBoxCapabilityId) = true
         override suspend fun hasSystemPermissions(identity: RuntimeSessionIdentity, permissions: Set<String>) = true
         override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int) = RuntimePolicyDecision.Allowed
-    }, RuntimeM1Handlers(clipboardWrite = RuntimeClipboardWriteHandler { received += it }),
-        m2Handlers = RuntimeM2Handlers(notifications = object : RuntimeNotificationHandler {
+    }, RuntimeCoreHandlers(clipboardWrite = RuntimeClipboardWriteHandler { received += it }),
+        serviceHandlers = RuntimeServiceHandlers(notifications = object : RuntimeNotificationHandler {
             override suspend fun post(notificationId: String, title: String, body: String) { received += body }
             override suspend fun cancel(notificationId: String) = Unit
-        }), m3Handlers = RuntimeM3Handlers(shareText = RuntimeShareTextHandler { received += it }), foregroundInteractionGuard = {})
+        }), systemHandlers = RuntimeSystemHandlers(shareText = RuntimeShareTextHandler { received += it }), foregroundInteractionGuard = {})
 
     @Test fun emptyAndMultilineTextReachRealDispatchHandlers() = runBlocking {
         listOf("", "line one\nline two\t\"quoted\"").forEach { text ->

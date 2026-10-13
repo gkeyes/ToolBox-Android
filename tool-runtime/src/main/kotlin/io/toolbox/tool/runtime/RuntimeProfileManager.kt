@@ -21,8 +21,6 @@ import java.util.Collections
 import java.util.UUID
 import java.util.WeakHashMap
 import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
@@ -371,12 +369,10 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
 
     @UiThread
     private suspend fun awaitBrowsingDataDeletion(webStorage: WebStorage): Boolean =
-        suspendCoroutine { continuation ->
-            try {
-                WebStorageCompat.deleteBrowsingData(webStorage) { continuation.resume(true) }
-            } catch (_: RuntimeException) {
-                continuation.resume(false)
-            }
+        // A callback that never fires is reported as a failed cleanup instead of hanging
+        // the uninstall/clear flow, which runs under NonCancellable.
+        awaitPlatformCallback(BROWSING_DATA_DELETION_TIMEOUT_MILLIS) { done ->
+            WebStorageCompat.deleteBrowsingData(webStorage) { done() }
         }
 
     private fun writeMarker(toolId: String): Boolean {
@@ -653,6 +649,8 @@ class RuntimeProfileManager(privateFilesDirectory: File) : RuntimeDataCleaner, R
     }
 
     private companion object {
+        // Generous: deletion is asynchronous disk work; this only guards a lost callback.
+        const val BROWSING_DATA_DELETION_TIMEOUT_MILLIS = 30_000L
         const val MARKER_DIRECTORY = "runtime-profile-cleanup"
         const val MARKER_SUFFIX = ".pending"
         const val MARKER_STATUS = "CONTENT_CLEARED_PENDING_PROFILE_DELETE"

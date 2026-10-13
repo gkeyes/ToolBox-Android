@@ -34,7 +34,7 @@ import io.toolbox.tool.runtime.RuntimeAuthorizationPolicy
 import io.toolbox.tool.runtime.RuntimeBridgeConfiguration
 import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
-import io.toolbox.tool.runtime.RuntimeM1Handlers
+import io.toolbox.tool.runtime.RuntimeCoreHandlers
 import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.RuntimeSessionIdentity
@@ -189,7 +189,7 @@ class DeveloperWebViewDebuggingBehaviorTest(
                 override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int) =
                     RuntimePolicyDecision.Allowed
             },
-            handlers = RuntimeM1Handlers(),
+            handlers = RuntimeCoreHandlers(),
             hostVersion = BuildConfig.VERSION_NAME,
         )
     }

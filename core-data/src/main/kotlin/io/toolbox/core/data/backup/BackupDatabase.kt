@@ -15,7 +15,12 @@ import kotlinx.coroutines.*
 
 /** Logical, private rollback snapshots: never copies a live SQLite/WAL file or executes user-supplied SQL. */
 class BackupDatabase internal constructor(private val database: ToolBoxDatabase) {
-    suspend fun <T> transaction(action: suspend () -> T): T = database.withTransaction { action() }
+    // Nested catalog writes advance the epoch before this outer commit; advance again after it.
+    suspend fun <T> transaction(action: suspend () -> T): T = try {
+        database.withTransaction { action() }
+    } finally {
+        CatalogGrantEpoch.advance()
+    }
 
     suspend fun checkpoint(destination: File) = withContext(Dispatchers.IO) {
         val partial = File(destination.parentFile, "${destination.name}.partial")
@@ -51,6 +56,10 @@ class BackupDatabase internal constructor(private val database: ToolBoxDatabase)
     }
 
     suspend fun restoreCheckpoint(source: File) = withContext(Dispatchers.IO) {
+        try { restoreCheckpointRows(source) } finally { CatalogGrantEpoch.advance() }
+    }
+
+    private suspend fun restoreCheckpointRows(source: File) {
         database.withTransaction {
             val sql = database.openHelper.writableDatabase
             TABLES.asReversed().forEach { sql.execSQL("DELETE FROM `$it`") }

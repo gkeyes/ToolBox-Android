@@ -31,12 +31,16 @@ object ToolBoxBackgroundRuntime {
 
     internal fun current(): BackgroundWorkerDependencies? = dependencies.get()
 
-    internal fun resolve(context: Context): BackgroundWorkerDependencies? {
+    internal suspend fun resolve(context: Context): BackgroundWorkerDependencies? {
         current()?.let { return it }
         val owner = context.applicationContext as? BackgroundWorkerDependencyOwner ?: return null
-        return runCatching { owner.backgroundWorkerDependencies() }
-            .getOrNull()
-            ?.also(::install)
+        return try {
+            owner.backgroundWorkerDependencies()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }?.also(::install)
     }
 }
 
@@ -158,6 +162,7 @@ class ToolBoxBackgroundWorker(
                                 finalUrl = network.finalUrl,
                                 contentType = network.contentType,
                                 body = network.body,
+                                bodyEncoding = network.bodyEncoding.name.lowercase(java.util.Locale.ROOT),
                             ),
                         ) } catch (error: Throwable) { network.release(); throw error }
                         TaskExecution.Succeeded(payload, network.release)
@@ -295,6 +300,8 @@ private data class HttpGetResult(
     val finalUrl: String,
     val contentType: String?,
     val body: String,
+    /** "text" or "base64". No default so it is always stored; results from older hosts lack it. */
+    val bodyEncoding: String,
 )
 
 private sealed interface TaskExecution {

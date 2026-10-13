@@ -40,9 +40,7 @@ sealed interface CatalogLayoutWriteStatus {
 sealed interface CatalogAction {
     data class SetSort(val sort: CatalogSort, val operationId: String? = null) : CatalogAction
     data class SetFavorite(val toolId: String, val selected: Boolean, val operationId: String? = null) : CatalogAction
-    data class CreateGroup(val name: String, val operationId: String? = null) : CatalogAction
     data class SaveGroup(val groupId: String?, val name: String, val members: List<String>, val operationId: String? = null) : CatalogAction
-    data class RenameGroup(val groupId: String, val name: String, val operationId: String? = null) : CatalogAction
     data class DeleteGroup(val groupId: String, val operationId: String? = null) : CatalogAction
     data class SetGroupMembership(val groupId: String, val toolId: String, val selected: Boolean, val operationId: String? = null) : CatalogAction
     data class SetGroupExpanded(val groupId: String, val expanded: Boolean, val operationId: String? = null) : CatalogAction

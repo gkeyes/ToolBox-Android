@@ -31,7 +31,7 @@ import io.toolbox.tool.runtime.RuntimeBridgeProvider
 import io.toolbox.tool.runtime.RuntimeCreationPermit
 import io.toolbox.tool.runtime.RuntimeCreationPermitResult
 import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
-import io.toolbox.tool.runtime.RuntimeM1Handlers
+import io.toolbox.tool.runtime.RuntimeCoreHandlers
 import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.RuntimeSessionIdentity
@@ -109,7 +109,7 @@ class RuntimeStorageFlushInstrumentationTest {
                     attach(activity, runtime, permit, RuntimeBridgeProvider {
                         RuntimeBridgeConfiguration(
                             authorization = storageAuthorization,
-                            handlers = RuntimeM1Handlers(storage = controlledStorage),
+                            handlers = RuntimeCoreHandlers(storage = controlledStorage),
                             hostVersion = "0.8.0",
                         )
                     })

@@ -189,5 +189,5 @@ class JavaScriptDialogInstrumentationTest {
         override suspend fun isGranted(identity: RuntimeSessionIdentity, capability: ToolBoxCapabilityId) = false
         override suspend fun hasSystemPermissions(identity: RuntimeSessionIdentity, permissions: Set<String>) = false
         override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int) = RuntimePolicyDecision.Allowed
-    }, RuntimeM1Handlers(), hostVersion = "0.8.0") }
+    }, RuntimeCoreHandlers(), hostVersion = "0.8.0") }
 }

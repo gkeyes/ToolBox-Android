@@ -27,7 +27,8 @@ internal interface BackupOperations {
 
 internal object BackupDataCodec {
     const val SECURE = "toolbox.runtime.v1.secure.values"
-    fun secureKey(key: String) = key == SECURE || key.startsWith("$SECURE.chunk.")
+    const val SECURE_ROW_PREFIX = "toolbox.runtime.v2.secure.key."
+    fun secureKey(key: String) = key == SECURE || key.startsWith("$SECURE.chunk.") || key.startsWith(SECURE_ROW_PREFIX)
     // Archive host control records but never turn imported data into executable runtime requests.
     fun hostControl(key: String) = key.startsWith("__toolbox.") || key.startsWith("toolbox.host.")
     fun keyFile(key: String) = MessageDigest.getInstance("SHA-256").digest(key.toByteArray())
