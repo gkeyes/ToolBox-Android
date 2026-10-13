@@ -130,7 +130,7 @@ jobs:
         run: '"$RUNNER_TEMP/watcher-layout-venv/bin/python" examples/github-actions-watcher/tests/layout.py'
       - name: Save watcher layout evidence
         if: ${{ always() && matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: watcher-layout-${{ github.sha }}
           path: build/watcher-layout/
@@ -174,7 +174,7 @@ jobs:
         run: python3 scripts/ci/tbx.py test-browser --tool nextflux --test-filter "$TBX_TEST_FILTER"
       - name: Save NextFlux reading test results
         if: ${{ always() && matrix.tool == 'nextflux' && (matrix.full_tests || matrix.browser_test_filter != '') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: nextflux-reading-checks-${{ github.sha }}
           path: examples/nextflux/test/browser/test-results/reading-results.json
@@ -199,13 +199,13 @@ jobs:
         run: python3 scripts/ci/tbx.py test-browser --tool socialcoach --test-filter "$TBX_TEST_FILTER"
       - name: Save SocialCoach browser results
         if: ${{ always() && matrix.tool == 'socialcoach' && (matrix.full_tests || matrix.browser_test_filter != '') }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: socialcoach-browser-${{ github.sha }}
           path: examples/socialcoach/test-results/
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ matrix.tool }}-${{ github.sha }}
           path: build/tbx/${{ matrix.tool }}/delivery/
