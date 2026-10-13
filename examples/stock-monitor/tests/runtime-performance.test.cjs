@@ -6,13 +6,9 @@ const vm = require('node:vm');
 
 const examples = path.resolve(__dirname, '../..');
 
-function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
+function loadApp(name, toolbox, extraWindow = {}, options = {}) {
   const filename = path.join(examples, name, 'app.js');
-  const marker = '  bootWork = boot();\n})();';
-  let source = fs.readFileSync(filename, 'utf8');
-  assert.equal(source.split(marker).length, 2, `${name} startup changed`);
-  const startup = options.boot ? '  bootWork = boot();\n' : '';
-  source = source.replace(marker, `${startup}  window.testApi = { ${expose} };\n})();`);
+  const source = fs.readFileSync(filename, 'utf8');
   const nodes = new Map();
   let domReads = 0;
   let created = 0;
@@ -32,7 +28,8 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
     querySelectorAll() { return []; },
     createElement() { created += 1; return element(); },
   };
-  const window = { ToolBox: toolbox, ...extraWindow };
+  const hook = { boot: Boolean(options.boot) };
+  const window = { ToolBox: toolbox, __TOOLBOX_TEST__: hook, ...extraWindow };
   const timers = { setTimeout: options.setTimeout || setTimeout, clearTimeout: options.clearTimeout || clearTimeout };
   vm.runInNewContext(source, { window, document, URL, Intl, Date: options.Date || Date, console, ...timers }, { filename });
   const dispatch = (id, type, event = {}) => {
@@ -40,7 +37,7 @@ function loadApp(name, expose, toolbox, extraWindow = {}, options = {}) {
     domReads -= 1;
     for (const listener of node.listeners[type] || []) listener({ preventDefault() {}, target: node, ...event });
   };
-  return { api: window.testApi, nodes, dispatch, node: (id) => { const node = document.getElementById(id); domReads -= 1; return node; }, counts: () => ({ domReads, created }) };
+  return { api: hook.api, nodes, dispatch, node: (id) => { const node = document.getElementById(id); domReads -= 1; return node; }, counts: () => ({ domReads, created }) };
 }
 
 test('stock background refresh fetches each enabled quote, saves once and leaves DOM untouched', async () => {
@@ -58,7 +55,7 @@ test('stock background refresh fetches each enabled quote, saves once and leaves
     } },
   };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, dirtyItems, loaded: () => { stateLoaded = true; markStateLoaded(); }', toolbox, { StockMonitorLive: stockLive });
+  const h = loadApp('stock-monitor', toolbox, { StockMonitorLive: stockLive });
   h.api.loaded();
   h.api.state.items = [
     h.api.createItem({ provider: 'tencent', symbol: '600550' }),
@@ -114,7 +111,7 @@ test('stock timer event before boot waits for the saved watchlist instead of per
   const host = stockHost();
   host.toolbox.storage.get = () => new Promise((resolve) => { releaseStorage = resolve; });
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   await settle();
   host.listeners.timer({ key: 'quote-poll' });
   await settle();
@@ -133,7 +130,7 @@ test('stock storage read failure keeps working in memory without overwriting the
   const host = stockHost();
   host.toolbox.storage.get = async () => { throw Object.assign(new Error('busy'), { code: 'BUSY' }); };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   for (let index = 0; index < 20; index += 1) await settle();
   assert.equal(h.api.state.items.length, 1);
   assert.equal(host.calls.length, 1, 'quotes still refresh from the in-memory list');
@@ -148,7 +145,7 @@ test('stock hung quote request times out so the next poll can run', async () => 
   const fakeSetTimeout = (fn, ms) => { if (ms >= 60000) { pending.push(fn); return pending.length; } return setTimeout(fn, ms); };
   const fakeClearTimeout = (id) => { if (typeof id === 'number' && id <= pending.length) pending[id - 1] = null; else clearTimeout(id); };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, loaded: () => { stateLoaded = true; markStateLoaded(); }', host.toolbox, { StockMonitorLive: stockLive },
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive },
     { setTimeout: fakeSetTimeout, clearTimeout: fakeClearTimeout });
   h.api.loaded();
   h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550' })];
@@ -176,7 +173,7 @@ test('stock editor save and monitor toggle before the saved list loads never per
   host.toolbox.background.listSessions = async () => [];
   host.toolbox.storage.get = () => new Promise((resolve) => { releaseStorage = resolve; });
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }, persist', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   await settle();
   const field = (id, value) => { h.nodes.get(id) || h.dispatch(id, 'noop'); h.nodes.get(id).value = value; };
   h.dispatch('stock-form', 'noop');
@@ -203,7 +200,7 @@ test('stock manual refresh during a background pass runs its own forced pass aft
   const waiting = [];
   host.toolbox.network.request = (request) => new Promise((resolve) => { waiting.push(() => resolve(original(request))); });
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, loaded: () => { stateLoaded = true; markStateLoaded(); }', host.toolbox, { StockMonitorLive: stockLive });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive });
   h.api.loaded();
   h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550' })];
   const background = h.api.refreshAll({ background: true });
@@ -219,7 +216,7 @@ test('stock manual refresh during a background pass runs its own forced pass aft
 
 test('stock market-closed polling skips A-share quotes already refreshed after the close', () => {
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'chinaMarketClosedSince, skipWhileClosed, createItem', { background: {} }, { StockMonitorLive: stockLive });
+  const h = loadApp('stock-monitor', { background: {} }, { StockMonitorLive: stockLive });
   const { chinaMarketClosedSince, skipWhileClosed, createItem } = h.api;
   const at = (iso) => new Date(iso);
   assert.equal(chinaMarketClosedSince(at('2026-10-13T10:00:00+08:00')), null);
@@ -251,7 +248,7 @@ test('stock saved-state read failure keeps the background timer until the state 
       items: [{ id: 'saved', provider: 'tencent', symbol: '000001', name: '自选' }] };
   };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   await settleMany(20);
   assert.deepEqual(timers, [], 'default interval never replaces the saved schedule');
   assert.equal(h.api.state.monitoring, false);
@@ -267,7 +264,7 @@ test('stock edits while the saved list is unread are refused instead of reported
   const host = stockHost();
   host.toolbox.storage.get = async () => { throw Object.assign(new Error('busy'), { code: 'BUSY' }); };
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }, get status() { return statusMessage; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   await settleMany(20);
   const id = h.api.state.items[0].id;
   const toggle = { checked: false };
@@ -286,7 +283,7 @@ test('stock editor save keeps its target when the editor closes or is submitted 
   host.toolbox.background.listSessions = async () => [];
   host.toolbox.storage.secure.set = () => new Promise((resolve) => { releaseToken.push(resolve); });
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'get state() { return state; }, saveEditor, closeEditor, edit: (id) => { editingId = id; }', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { boot: true });
   await settleMany(20);
   h.node('stock-form').elements = { provider: { value: 'tencent' } };
   Object.assign(h.node('symbol'), { value: '000002' });
@@ -320,8 +317,7 @@ test('stock monitoring started after the close replaces the loading live notific
   });
   host.toolbox.background.start = async () => ({ sessionId: 'session-1' });
   const stockLive = require(path.join(examples, 'stock-monitor', 'live-summary.js'));
-  const h = loadApp('stock-monitor', 'state, createItem, refreshAll, startMonitoring, loaded: () => { stateLoaded = true; markStateLoaded(); }',
-    host.toolbox, { StockMonitorLive: stockLive }, { Date: FixedDate });
+  const h = loadApp('stock-monitor', host.toolbox, { StockMonitorLive: stockLive }, { Date: FixedDate });
   h.api.loaded();
   h.api.state.items = [h.api.createItem({ provider: 'tencent', symbol: '600550', price: 10.5, fetchedAt: fixedNow - 60000 })];
   assert.equal(await h.api.startMonitoring(), true);

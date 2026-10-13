@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@platform/navigation";
 import { useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
 

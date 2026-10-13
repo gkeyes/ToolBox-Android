@@ -13,13 +13,19 @@ from playwright.sync_api import expect, sync_playwright
 
 SOURCE = Path(__file__).resolve().parents[1]
 OUTPUT = SOURCE.parents[1] / "build/watcher-layout"
-ENTRY = "  bootPromise = boot();\n})();"
-TEST_ENTRY = "  runtimeForeground = true;\n  window.__watcherLayout = {state, model, viewState, renderDashboard, renderAll, chooseDisplayedRun, friendlyName};\n})();"
 ASSETS = {"index.html", "style.css", "github-model.js", "reliability.js", "app.js", "icon.svg"}
 CASES = [(width, 100, "light") for width in (280, 320, 360, 393, 420, 480, 699, 700, 820, 1280)]
 CASES += [(320, 150, "light"), (393, 150, "dark"), (700, 150, "dark"), (393, 100, "dark")]
 
 BRIDGE = r"""() => {
+  // app.js exposes its internals through this hook instead of being rewritten; skip boot
+  // and treat the page as foreground, as the isolated renderer harness expects.
+  window.__TOOLBOX_TEST__ = {
+    boot: false,
+    get api() { return this._api; },
+    set api(value) { this._api = value; value.setForeground(true); }
+  };
+  Object.defineProperty(window, '__watcherLayout', {get: () => window.__TOOLBOX_TEST__.api});
   window.__calls = [];
   window.ToolBox = {
     browser: {open: async url => {
@@ -136,10 +142,6 @@ BOUNDS = r"""() => {
 
 def main():
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    app = (SOURCE / 'app.js').read_text(encoding='utf-8')
-    if app.count(ENTRY) != 1:
-        raise RuntimeError('Watcher startup changed; update the isolated renderer harness')
-    instrumented = app.replace(ENTRY, TEST_ENTRY)
     results = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -157,8 +159,6 @@ def main():
                 if url.netloc != 'watcher.test' or path not in ASSETS:
                     errors.append(f'Unexpected request: {route.request.url}')
                     route.abort()
-                elif path == 'app.js':
-                    route.fulfill(content_type='text/javascript', body=instrumented)
                 else:
                     route.fulfill(content_type=mimetypes.guess_type(path)[0] or 'application/octet-stream', body=(SOURCE / path).read_bytes())
 

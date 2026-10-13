@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@platform/navigation";
 import { ArrowUpRight, Bookmark, ChevronDown, Search, X } from "lucide-react";
 import { clsx } from "clsx";
 import { Shell } from "@/components/Shell";

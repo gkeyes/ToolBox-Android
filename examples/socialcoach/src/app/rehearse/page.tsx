@@ -1,7 +1,6 @@
 import {draftStorage} from "@platform/storage";
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Link, { useRouter } from "@platform/navigation";
 import { ArrowLeft, ArrowRight, ArrowUpRight, Check, Clock3, PenLine } from "lucide-react";
 import { motion } from "framer-motion";
 import { Shell } from "@/components/Shell";

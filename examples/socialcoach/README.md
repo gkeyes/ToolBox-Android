@@ -4,7 +4,7 @@
 
 ## 使用
 
-在 ToolBox 0.8.28 或更新版本导入 `socialcoach-v1.0.8.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
+在 ToolBox 0.8.28 或更新版本导入 `socialcoach-v1.0.9.tbx`，开启存储、安全存储和网络权限。完成本地个人练习设置后，在「设置 → 模型设置」填写 HTTPS API 地址、API Key、对话模型和复盘模型；两者可以相同。通过「测试并保存」验证连接，再选择场景开始练习。读取模型列表失败时仍可手动输入模型名称。
 
 支持 OpenAI Chat Completions 兼容接口及 Anthropic Messages；Gemini 可使用其 OpenAI 兼容端点。兼容服务的 Base URL 填到 `/v1` 等基路径，不要包含 `/chat/completions`。推理模型可选择 `max_completion_tokens`。首版不提供共享 API、不内置密钥、不部署服务器。
 
@@ -45,6 +45,10 @@
 - 反思回复失败时显示错误并可重试；页面出错只影响当前页面，可返回首页；提示消息不会被上一条的计时提前关闭；地址中的异常编码不再导致页面崩溃。
 - 移除未启用的朗读/语音识别代码及相关设置字段（旧备份中的这些字段仍可恢复并被忽略）、未使用的文案和模块；不再在控制台输出模型原文；性能诊断接口仅在开发构建中提供。
 
+## 移除 Next.js 兼容别名（1.0.9）
+
+页面直接从 `@platform/navigation` 引入基于 hash 的路由，构建与类型配置不再保留 `next/link`、`next/navigation` 别名。界面与行为不变。
+
 ## 本地与联网边界
 
 场景、知识内容、历史及草稿可以离线查看；AI 场景生成、训练、复盘和反思需要连接你配置的模型服务。相关对话文本与训练上下文会发送给该服务。记录使用 ToolBox 存储；密钥使用 ToolBox 安全存储，导出不包含密钥。普通浏览器预览时密钥仅保存在内存中。
@@ -70,7 +74,7 @@ npm ci --ignore-scripts
 npm test
 npm run build
 npm run test:browser
-bash package.sh ../../build/socialcoach-v1.0.8.tbx
+bash package.sh ../../build/socialcoach-v1.0.9.tbx
 ```
 
 浏览器集成测试使用明确标记的模拟 ToolBox/模型响应，仅验证协议与界面交互，不代表真实模型效果或 Android 真机验证。未使用任何用户密钥进行测试。

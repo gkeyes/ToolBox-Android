@@ -39,26 +39,14 @@ function harness(request) {
       live: { start: async (r) => { lives.push(r); }, update: async (r) => { lives.push(r); }, end: async () => { lives.push('end'); } },
     },
   };
-  const window = { ToolBox: toolbox, GitHubWatcherModel: model, GitHubWatcherReliability: reliability, addEventListener() {} };
+  let clockPaints = 0;
+  const hook = { boot: false, stubs: {
+    renderDashboard() {}, renderDashboardClock() { clockPaints += 1; }, renderAll() {}, showToast() {},
+  } };
+  const window = { ToolBox: toolbox, GitHubWatcherModel: model, GitHubWatcherReliability: reliability, __TOOLBOX_TEST__: hook, addEventListener() {} };
   const context = vm.createContext({ window, document, URL, Intl, Date, console, setTimeout, clearTimeout, setInterval, clearInterval });
-  let source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-  const end = '  bootPromise = boot();';
-  assert.ok(source.includes(end));
-  source = source.replace(end, `
-    renderDashboard = function () {};
-    let clockPaints = 0;
-    renderDashboardClock = function () { clockPaints += 1; };
-    renderAll = function () {};
-    showToast = function () {};
-    window.testApi = { state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
-      saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
-      ageFrontPage: () => { lastFrontPageAt = 0; },
-      setForeground: (value) => { runtimeForeground = value; }, clockPaints: () => clockPaints,
-      expire: () => activePoll?.invalidate(reliability.timeoutError()),
-      pendingPages: () => discoveryQueue.length, pollInterval: () => currentPollInterval() };
-  `);
-  vm.runInContext(source, context, { filename: 'watcher/app.js' });
-  const api = window.testApi;
+  vm.runInContext(fs.readFileSync(path.join(root, 'app.js'), 'utf8'), context, { filename: 'watcher/app.js' });
+  const api = { ...hook.api, clockPaints: () => clockPaints };
   Object.assign(api.state, { ready: true, monitoring: true, sessionId: 's', hasToken: false,
     config: { owner: 'fixture', repo: 'fixture', fullName: 'fixture/fixture', selectedWorkflowIds: [9], branchMode: 'branch', branch: 'main' },
     watchStartedAt: Date.now() - 1_000, runs: [run()], trackedRunKeys: ['17:1'],
