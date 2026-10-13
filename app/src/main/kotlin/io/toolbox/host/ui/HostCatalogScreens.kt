@@ -31,6 +31,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -525,7 +526,7 @@ internal fun ToolDetailScreen(
     }
 }
 
-/** App Store style hero: large icon, name, summary, then Open / Favorite / Groups capsules. */
+/** App Store style hero: large icon, name and summary, with Open / Favorite / Groups capsules below. */
 @Composable
 private fun ToolDetailHero(
     tool: CatalogTool,
@@ -538,55 +539,59 @@ private fun ToolDetailHero(
     val colors = ToolBoxThemeTokens.colors
     val visual = tool.visual(colors.primary)
     val presentation = rememberCatalogToolPresentation(tool.toolId, tool.versionCode)
-    Row(modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Top) {
-        Box(Modifier.size(96.dp).clip(toolBoxShape(26.dp))) {
-            CatalogToolArtwork(presentation.bitmap, visual, 96.dp)
-        }
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            AppText(
-                text = tool.name,
-                modifier = Modifier.semantics { heading() },
-                maxLines = 2,
-                textStyle = ToolBoxThemeTokens.textStyles.detailTitle.copy(fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold),
-            )
-            AppText(
-                text = presentation.description ?: "版本 ${tool.versionName}",
-                maxLines = 2,
-                color = colors.textSecondary,
-                textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp),
-            )
-            Row(
-                Modifier.padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DetailCapsule(
-                    label = "打开",
-                    onClick = onOpen,
-                    container = colors.primary,
-                    content = colors.onPrimary,
-                    modifier = Modifier.semantics { contentDescription = "打开工具" },
+    Column(modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Box(Modifier.size(96.dp).clip(toolBoxShape(26.dp))) {
+                CatalogToolArtwork(presentation.bitmap, visual, 96.dp)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                AppText(
+                    text = tool.name,
+                    modifier = Modifier.semantics { heading() },
+                    maxLines = 2,
+                    textStyle = ToolBoxThemeTokens.textStyles.detailTitle.copy(fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold),
                 )
-                DetailCapsule(
-                    label = if (favorite) "已收藏" else "收藏",
-                    onClick = onToggleFavorite,
-                    container = colors.surface,
-                    content = if (favorite) colors.warning else colors.textPrimary,
-                    icon = if (favorite) ToolBoxIconKey.StarFilled else ToolBoxIconKey.Star,
-                    modifier = Modifier.testTag("tool_detail_favorite_capsule").semantics {
-                        stateDescription = if (favorite) "已收藏" else "未收藏"
-                    },
-                )
-                DetailCapsule(
-                    label = null,
-                    onClick = onGroups,
-                    container = colors.surface,
-                    content = colors.textPrimary,
-                    icon = ToolBoxIconKey.Folder,
-                    modifier = Modifier.semantics { contentDescription = "加入分组" },
+                AppText(
+                    text = presentation.description ?: "版本 ${tool.versionName}",
+                    maxLines = 2,
+                    color = colors.textSecondary,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 15.sp, lineHeight = 20.sp),
                 )
             }
+        }
+        // Full width below the identity row so the capsules never compete with the 96dp icon;
+        // on narrow screens or large font scales they wrap onto a second line.
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DetailCapsule(
+                label = "打开",
+                onClick = onOpen,
+                container = colors.primary,
+                content = colors.onPrimary,
+                modifier = Modifier.semantics { contentDescription = "打开工具" },
+            )
+            DetailCapsule(
+                label = if (favorite) "已收藏" else "收藏",
+                onClick = onToggleFavorite,
+                container = colors.surface,
+                content = if (favorite) colors.warning else colors.textPrimary,
+                icon = if (favorite) ToolBoxIconKey.StarFilled else ToolBoxIconKey.Star,
+                modifier = Modifier.testTag("tool_detail_favorite_capsule").semantics {
+                    stateDescription = if (favorite) "已收藏" else "未收藏"
+                },
+            )
+            DetailCapsule(
+                label = null,
+                onClick = onGroups,
+                container = colors.surface,
+                content = colors.textPrimary,
+                icon = ToolBoxIconKey.Folder,
+                modifier = Modifier.semantics { contentDescription = "加入分组" },
+            )
         }
     }
 }
