@@ -1,5 +1,7 @@
 package io.toolbox.host.ui
 
+import androidx.compose.foundation.layout.navigationBars
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.pager.HorizontalPager
@@ -288,13 +290,28 @@ private fun DestinationBar(
             .padding(vertical = ToolBoxThemeTokens.spacing.two)
     }
     if (compact) {
-        ToolBoxNavigationBar(
-            items = mainNavigationItems,
-            selectedId = selected.name,
-            onItemSelected = { item -> onDestination(MainDestination.valueOf(item.id)) },
-            modifier = modifier,
-            glassState = glassState,
-        )
+        // iOS 27: the tab capsule and a separate search circle float over the content.
+        Row(modifier, verticalAlignment = Alignment.Bottom) {
+            ToolBoxNavigationBar(
+                items = mainNavigationItems,
+                selectedId = selected.name,
+                onItemSelected = { item -> onDestination(MainDestination.valueOf(item.id)) },
+                modifier = Modifier.weight(1f),
+                glassState = glassState,
+            )
+            ToolBoxGlassIconButton(
+                icon = ToolBoxIconKey.Search,
+                contentDescription = "搜索工具",
+                onClick = { onDestination(MainDestination.Tools) },
+                glassState = glassState,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(end = ToolBoxThemeTokens.spacing.oneHalf, bottom = ToolBoxThemeTokens.spacing.compact)
+                    .testTag(HostTestTags.BottomSearch),
+                size = 64.dp,
+                iconSize = 24.dp,
+            )
+        }
     } else {
         val isGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass
         Column(
@@ -444,21 +461,18 @@ private fun TopBar(
                             onCreateGroup?.let { add(ToolBoxMenuAction("新建分组", ToolBoxIconKey.Folder, "catalog_home_create_group", it)) }
                         },
                         menuTestTag = "catalog_home_menu",
-                        modifier = Modifier
-                            .toolBoxOpenDesignSurface(CircleShape)
-                            .testTag("catalog_home_overflow"),
+                        modifier = Modifier.testTag("catalog_home_overflow"),
+                        glassState = glassState,
                     )
                 }
             } else if (onImport != null) {
                 if (ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass) {
-                    ToolBoxIconButton(
+                    ToolBoxGlassIconButton(
                         icon = ToolBoxIconKey.Add,
                         contentDescription = "导入工具（支持 .tbx / .zip）",
                         onClick = onImport,
-                        modifier = Modifier
-                            .toolBoxOpenDesignSurface(CircleShape)
-                            .testTag(HostTestTags.ImportFab),
-                        tint = ToolBoxThemeTokens.colors.primary,
+                        glassState = glassState,
+                        modifier = Modifier.testTag(HostTestTags.ImportFab),
                     )
                 } else {
                     ToolBoxTextButton(

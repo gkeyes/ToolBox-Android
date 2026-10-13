@@ -218,9 +218,27 @@ fun ToolBoxCollapsingTopBar(
         val barFill = if (isGlass) materials.glassTint.compositeOver(colors.background) else colors.background
         // At the top of a page the bar is see-through onto the same page canvas, so a new page's
         // first frame needs no material at all; the fill and hairline arrive with the collapse.
+        // iOS 27 scroll-edge effect: content dissolves into the canvas under the floating glass
+        // buttons instead of meeting a solid bar and hairline.
+        val edgeFade = 24.dp
         val barSurface = Modifier.drawBehind {
             val fraction = progress(readScrolled())
-            if (fraction > 0f) drawRect(barFill.copy(alpha = barFill.alpha * fraction))
+            if (fraction <= 0f) return@drawBehind
+            if (isGlass) {
+                val fadePx = edgeFade.toPx()
+                val total = size.height + fadePx
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to colors.background.copy(alpha = 0.94f * fraction),
+                        (size.height / total) * 0.7f to colors.background.copy(alpha = 0.82f * fraction),
+                        1f to colors.background.copy(alpha = 0f),
+                        endY = total,
+                    ),
+                    size = androidx.compose.ui.geometry.Size(size.width, total),
+                )
+            } else {
+                drawRect(barFill.copy(alpha = barFill.alpha * fraction))
+            }
         }
         ToolBoxTopBar(
             title = title,
@@ -229,7 +247,7 @@ fun ToolBoxCollapsingTopBar(
                 .drawWithContent {
                     drawContent()
                     val fraction = progress(readScrolled())
-                    if (fraction > 0.01f) {
+                    if (!isGlass && fraction > 0.01f) {
                         drawLine(
                             colors.divider.copy(alpha = colors.divider.alpha * fraction),
                             Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1f,
@@ -239,6 +257,7 @@ fun ToolBoxCollapsingTopBar(
             navigationIcon = navigationIcon,
             navigationContentDescription = navigationContentDescription,
             onNavigationClick = onNavigationClick,
+            glassState = glassState,
             windowInsets = insets,
             titleAlpha = { toolBoxBarTitleAlpha(progress(readScrolled())) },
             actions = actions,

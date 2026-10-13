@@ -11,6 +11,7 @@ object HostTestTags {
     const val BottomTools = "bottom_tools"
     const val BottomSettings = "bottom_settings"
     const val BottomNavigationContainer = "bottom_navigation_container"
+    const val BottomSearch = "bottom_search"
     const val ImportFab = "import_fab"
     const val PermissionRowPrefix = "permission_row:"
     const val RuntimeShell = "runtime_shell"

@@ -35,17 +35,29 @@ fun ToolBoxOverflowMenu(
     actions: List<ToolBoxMenuAction>,
     menuTestTag: String,
     modifier: Modifier = Modifier,
+    glassState: ToolBoxGlassState? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     Box {
-        ToolBoxIconButton(
-            icon = ToolBoxIconKey.More,
-            contentDescription = contentDescription,
-            onClick = { expanded = true },
-            modifier = modifier.semantics { stateDescription = if (expanded) "已展开" else "已收起" },
-            tint = ToolBoxThemeTokens.colors.primary,
-        )
+        val stateModifier = modifier.semantics { stateDescription = if (expanded) "已展开" else "已收起" }
+        if (glassState != null) {
+            ToolBoxGlassIconButton(
+                icon = ToolBoxIconKey.More,
+                contentDescription = contentDescription,
+                onClick = { expanded = true },
+                glassState = glassState,
+                modifier = stateModifier,
+            )
+        } else {
+            ToolBoxIconButton(
+                icon = ToolBoxIconKey.More,
+                contentDescription = contentDescription,
+                onClick = { expanded = true },
+                modifier = stateModifier,
+                tint = ToolBoxThemeTokens.colors.primary,
+            )
+        }
         WindowListPopup(
             show = expanded,
             alignment = PopupPositionProvider.Align.End,

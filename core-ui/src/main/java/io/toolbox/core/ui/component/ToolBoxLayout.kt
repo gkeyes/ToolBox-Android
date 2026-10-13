@@ -186,10 +186,22 @@ fun ToolBoxTopBar(
         content = {
             Box {
                 if (navigationIcon != null && onNavigationClick != null) {
-                    ToolBoxIconButton(
-                        navigationIcon, navigationContentDescription, onNavigationClick,
-                        tint = colors.primary,
-                    )
+                    // iOS 27: a round glass button carrying only the chevron.
+                    if (glassState != null) {
+                        ToolBoxGlassIconButton(
+                            icon = navigationIcon,
+                            contentDescription = navigationContentDescription,
+                            onClick = onNavigationClick,
+                            glassState = glassState,
+                            modifier = Modifier.padding(2.dp),
+                        )
+                    } else {
+                        ToolBoxIconButton(
+                            navigationIcon, navigationContentDescription, onNavigationClick,
+                            modifier = Modifier.padding(2.dp).size(44.dp).toolBoxSolidGlass(CircleShape),
+                            tint = colors.textPrimary,
+                        )
+                    }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, content = actions)
