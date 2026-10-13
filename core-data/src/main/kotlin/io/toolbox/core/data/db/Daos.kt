@@ -74,9 +74,6 @@ internal interface PermissionGrantDao {
 
     @Query("DELETE FROM permission_grants WHERE toolId = :toolId")
     suspend fun deleteAll(toolId: String): Int
-
-    @Query("DELETE FROM permission_grants WHERE toolId = :toolId AND capability = :capability")
-    suspend fun delete(toolId: String, capability: String): Int
 }
 
 @Dao
@@ -172,6 +169,10 @@ internal interface BackgroundTaskDao {
         runAttempt: Int,
     ): Int
 
+    /** Stops a tool's queued/running tasks while keeping their rows and results as history. */
+    @Query("UPDATE background_tasks SET state = 'CANCELLED', updatedAt = MAX(updatedAt, :updatedAt), nextRunAt = NULL WHERE toolId = :toolId AND state IN ('QUEUED', 'RUNNING')")
+    suspend fun cancelActiveForTool(toolId: String, updatedAt: Long): Int
+
     @Query("UPDATE background_tasks SET state = 'QUEUED', updatedAt = :updatedAt, nextRunAt = :updatedAt WHERE taskId = :taskId AND state = 'RUNNING' AND updatedAt <= :updatedAt")
     suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): Int
 
@@ -186,7 +187,4 @@ internal interface TaskResultDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: TaskResultEntity)
-
-    @Query("DELETE FROM task_results WHERE completedAt < :cutoffMillis")
-    suspend fun deleteCompletedBefore(cutoffMillis: Long): Int
 }

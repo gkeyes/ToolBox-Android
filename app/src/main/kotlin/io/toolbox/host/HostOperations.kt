@@ -6,7 +6,7 @@ import io.toolbox.host.background.BackgroundCancellationResult
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.runtime.PreparedToolRuntime
-import io.toolbox.tool.runtime.RuntimeM2Handlers
+import io.toolbox.tool.runtime.RuntimeServiceHandlers
 import io.toolbox.tool.runtime.RuntimePreparationCode
 import kotlinx.coroutines.flow.Flow
 
@@ -92,13 +92,14 @@ internal interface HostPermissionSideEffects {
 }
 
 internal interface HostPackageMaintenance {
-    suspend fun recoverPendingMutations()
+    /** Returns a user-facing message when an interrupted install or update could not be recovered. */
+    suspend fun recoverPendingMutations(): String?
 }
 
 internal interface HostBackgroundMaintenance {
     suspend fun reconcile()
 }
 
-internal interface HostRuntimeM2HandlerFactory {
-    fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers
+internal interface HostRuntimeServiceHandlerFactory {
+    fun createHandlers(runtime: PreparedToolRuntime): RuntimeServiceHandlers
 }

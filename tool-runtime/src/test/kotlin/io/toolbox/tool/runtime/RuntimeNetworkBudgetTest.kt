@@ -154,7 +154,7 @@ class RuntimeNetworkBudgetTest {
                 return RuntimeNetworkStreamChunk(byteArrayOf(1), false, 1) { releases++ }
             }
         }
-        val dispatcher = RuntimeRpcDispatcher(identity, postReadAuthorization, RuntimeM1Handlers(), RuntimeM2Handlers(network = network))
+        val dispatcher = RuntimeRpcDispatcher(identity, postReadAuthorization, RuntimeCoreHandlers(), RuntimeServiceHandlers(network = network))
         val pending = async {
             dispatch(dispatcher, "network.readStream", mapOf("streamId" to RpcValue.StringValue("stream-" + "d".repeat(32))))
         }
@@ -166,7 +166,7 @@ class RuntimeNetworkBudgetTest {
     }
 
     private fun dispatcher(network: RuntimeNetworkHandler) = RuntimeRpcDispatcher(identity, authorization,
-        RuntimeM1Handlers(), RuntimeM2Handlers(network = network))
+        RuntimeCoreHandlers(), RuntimeServiceHandlers(network = network))
     private suspend fun dispatch(dispatcher: RuntimeRpcDispatcher, method: String, params: Map<String, RpcValue>) =
         dispatcher.dispatch(RuntimeRpcRequest("request-id", method, identity.nonce, identity.toolId, identity.versionCode,
             identity.generation, RpcValue.ObjectValue(params), 512), RuntimeInboundContext(identity.exactOrigin, true))

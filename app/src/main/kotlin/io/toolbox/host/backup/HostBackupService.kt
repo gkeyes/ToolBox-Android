@@ -8,7 +8,8 @@ import io.toolbox.core.data.*
 import io.toolbox.core.data.backup.BackupDatabase
 import io.toolbox.host.*
 import io.toolbox.host.runtime.AndroidKeyStoreCipher
-import io.toolbox.host.runtime.RuntimeSecureEnvelopeStorage
+import io.toolbox.host.runtime.RuntimeSecureStore
+import io.toolbox.host.runtime.RuntimeValueJson
 import io.toolbox.host.runtime.withRuntimeStorageQuiescent
 import io.toolbox.tool.packagekit.*
 import io.toolbox.tool.packagekit.backup.*
@@ -125,9 +126,9 @@ internal class HostBackupService(
         if (secureBytes > 0) {
             if (secureBytes > io.toolbox.core.data.ResourceCapacity.availableHeapBytes() / 2) warnings += "${tool.metadata.name}：当前可用内存不足以解密，仅归档原加密记录，跨设备可能需要重新登录。"
             else try {
-                val encrypted = RuntimeSecureEnvelopeStorage(id, repositories.keyValues).read()
-                if (encrypted != null) {
-                    val plaintext = AndroidKeyStoreCipher(id).decrypt(encrypted)
+                val document = RuntimeSecureStore(id, repositories.keyValues, AndroidKeyStoreCipher(id)).readAll()
+                if (document != null) {
+                    val plaintext = RuntimeValueJson.encodeObject(document)
                     J.obj(J.parse(plaintext.toByteArray()))
                     File(target, "data/secure.json").writeText(plaintext)
                 }
@@ -229,15 +230,28 @@ internal class HostBackupService(
                         try {
                             progress("创建本机回滚快照", 8)
                             journal.begin()
-                            database.transaction {
-                                preview.recoverable.forEachIndexed { index, plan ->
-                                    currentCoroutineContext().ensureActive()
-                                    progress("恢复工具 ${index + 1}/${preview.recoverable.size}", 15 + index * 70 / maxOf(1, preview.recoverable.size))
-                                    restoreTool(File(preview.prepared.directory, "tools/${plan.id}"), plan, warnings)
-                                }
-                                val settings = J.read(File(preview.prepared.directory, "host/settings.json"))
-                                BackupDataCodec.requireSuccess(repositories.settings.update { BackupDataCodec.settings(it, settings, warnings) })
+                            // Package installs (unpacking, signature checks, file copies) and Keystore
+                            // encryption run outside the Room transaction; the journal's checkpoint
+                            // rolls back installed files, rows, settings and new keys on any failure.
+                            val restores = preview.recoverable.mapIndexed { index, plan ->
+                                currentCoroutineContext().ensureActive()
+                                progress("恢复工具 ${index + 1}/${preview.recoverable.size}", 15 + index * 60 / maxOf(1, preview.recoverable.size))
+                                val folder = File(preview.prepared.directory, "tools/${plan.id}")
+                                installPackage(folder, plan)
+                                PreparedToolRestore(
+                                    plan, folder, prepareSecure(folder, plan, warnings),
+                                    dataFiles(folder, "tasks").mapNotNull { parseTask(it, plan.id, warnings) },
+                                )
                             }
+                            progress("写入工具数据", 80)
+                            database.transaction {
+                                restores.forEach { restore ->
+                                    currentCoroutineContext().ensureActive()
+                                    restoreRows(restore)
+                                }
+                            }
+                            val settings = J.read(File(preview.prepared.directory, "host/settings.json"))
+                            BackupDataCodec.requireSuccess(repositories.settings.update { BackupDataCodec.settings(it, settings, warnings) })
                             // Room has committed its final installed set. Never prune layout from a
                             // transient projection emitted while individual tools are being restored.
                             BackupDataCodec.requireSuccess(CatalogLayoutRepository(repositories).reconcile())
@@ -269,7 +283,7 @@ internal class HostBackupService(
         }
     }
 
-    private suspend fun restoreTool(folder: File, plan: RestoreToolPlan, warnings: MutableList<String>) {
+    private suspend fun installPackage(folder: File, plan: RestoreToolPlan) {
         val imported = packages.importPackage(FilePackageInput(File(folder, "package.tbx")))
         val installed = if (imported is HostImportResult.ConfirmationRequired) {
             try { packages.confirmImport(imported.confirmation.id) }
@@ -277,17 +291,10 @@ internal class HostBackupService(
         } else imported
         if (installed is HostImportResult.Failed) throw BackupException("PACKAGE_${installed.code}")
         if (installed !is HostImportResult.Installed || installed.toolId != plan.id) throw BackupException("PACKAGE")
-        BackupDataCodec.requireSuccess(repositories.keyValues.replace(plan.id, repositories.keyValues.keys(plan.id).filterNot(BackupDataCodec::secureKey).toSet(), emptyMap(), 0))
-        var opaqueSecure = false
-        dataFiles(folder, "kv").forEach { file ->
-            val row = J.read(file)
-            val key = J.string(row["key"])
-            when {
-                BackupDataCodec.secureKey(key) -> opaqueSecure = true
-                BackupDataCodec.hostControl(key) -> Unit
-                else -> BackupDataCodec.requireSuccess(repositories.keyValues.put(plan.id, key, J.string(row["valueJson"]), J.long(row["updatedAt"])))
-            }
-        }
+    }
+
+    /** Decides and encrypts secure data after the package (and its grants) is installed. */
+    private suspend fun prepareSecure(folder: File, plan: RestoreToolPlan, warnings: MutableList<String>): SecureRestore {
         val secure = File(folder, "data/secure.json")
         if (secure.exists()) {
             val manifest = packages.installedManifest(plan.id) as? HostInstalledManifestResult.Found
@@ -295,14 +302,55 @@ internal class HostBackupService(
             if (manifest?.manifest?.permissions?.any { it.capability == "storage.secure" } == true && granted) {
                 val plaintext = secure.readText()
                 J.obj(J.parse(plaintext.toByteArray()))
-                BackupDataCodec.requireSuccess(RuntimeSecureEnvelopeStorage(plan.id, repositories.keyValues).write(AndroidKeyStoreCipher(plan.id).encrypt(plaintext), System.currentTimeMillis()))
-            } else warnings += "${plan.name}：当前未授权安全存储，本机安全数据未覆盖；开启权限后可再次恢复。"
-        } else if (opaqueSecure) warnings += "${plan.name}：加密记录仍在原备份中，但缺少可迁移密钥，本机安全数据未覆盖；可能需要重新登录。"
-        else BackupDataCodec.requireSuccess(RuntimeSecureEnvelopeStorage(plan.id, repositories.keyValues).clear())
+                val document = RuntimeValueJson.decodeObject(plaintext) ?: throw BackupException("INDEX")
+                return SecureRestore.Replace(secureStore(plan.id).encryptRows(document))
+            }
+            warnings += "${plan.name}：当前未授权安全存储，本机安全数据未覆盖；开启权限后可再次恢复。"
+            return SecureRestore.Keep
+        }
+        val opaqueSecure = dataFiles(folder, "kv").any { BackupDataCodec.secureKey(J.string(J.read(it)["key"])) }
+        if (opaqueSecure) {
+            warnings += "${plan.name}：加密记录仍在原备份中，但缺少可迁移密钥，本机安全数据未覆盖；可能需要重新登录。"
+            return SecureRestore.Keep
+        }
+        return SecureRestore.Clear
+    }
+
+    /** Row writes only; runs inside the restore transaction. */
+    private suspend fun restoreRows(restore: PreparedToolRestore) {
+        val (plan, folder, secure, tasks) = restore
+        BackupDataCodec.requireSuccess(repositories.keyValues.replace(plan.id, repositories.keyValues.keys(plan.id).filterNot(BackupDataCodec::secureKey).toSet(), emptyMap(), 0))
+        dataFiles(folder, "kv").forEach { file ->
+            val row = J.read(file)
+            val key = J.string(row["key"])
+            if (!BackupDataCodec.secureKey(key) && !BackupDataCodec.hostControl(key)) {
+                BackupDataCodec.requireSuccess(repositories.keyValues.put(plan.id, key, J.string(row["valueJson"]), J.long(row["updatedAt"])))
+            }
+        }
+        when (secure) {
+            SecureRestore.Keep -> Unit
+            SecureRestore.Clear -> BackupDataCodec.requireSuccess(secureStore(plan.id).clearRows())
+            is SecureRestore.Replace -> BackupDataCodec.requireSuccess(secureStore(plan.id).replaceAll(secure.rows, System.currentTimeMillis()))
+        }
         val metadata = J.read(File(folder, "metadata.json"))
         database.restorePresentation(plan.id, J.long(metadata["installedAt"]), J.long(metadata["versionInstalledAt"]), metadata["lastOpenedAt"]?.let(J::long), metadata["pinnedOrder"]?.let(J::int), metadata["categoryId"]?.let(J::string))
         BackupDataCodec.requireSuccess(repositories.backgroundTasks.deleteForTool(plan.id))
-        dataFiles(folder, "tasks").forEach { parseTask(it, plan.id, warnings)?.let { (task, result) -> database.restoreTaskHistory(task, result) } }
+        tasks.forEach { (task, result) -> database.restoreTaskHistory(task, result) }
+    }
+
+    private fun secureStore(toolId: String) = RuntimeSecureStore(toolId, repositories.keyValues, AndroidKeyStoreCipher(toolId))
+
+    private data class PreparedToolRestore(
+        val plan: RestoreToolPlan,
+        val folder: File,
+        val secure: SecureRestore,
+        val tasks: List<Pair<BackgroundTask, TaskRunResult?>>,
+    )
+
+    private sealed interface SecureRestore {
+        data object Keep : SecureRestore
+        data object Clear : SecureRestore
+        class Replace(val rows: Map<String, String>) : SecureRestore
     }
 
     private fun parseTask(file: File, toolId: String, warnings: MutableList<String>): Pair<BackgroundTask, TaskRunResult?>? {

@@ -72,7 +72,7 @@ class RuntimeAuthorizationStageTest {
     fun capabilityFreeReadyStillRechecksVersionAfterAdmission() = runBlocking {
         val calls = mutableListOf<String>()
         val state = RecordingGrantState(calls)
-        val dispatcher = RuntimeRpcDispatcher(identity, policy(state, calls), RuntimeM1Handlers())
+        val dispatcher = RuntimeRpcDispatcher(identity, policy(state, calls), RuntimeCoreHandlers())
         val request = RuntimeRpcRequest("request", "ready", identity.nonce, identity.toolId,
             identity.versionCode, identity.generation, RpcValue.ObjectValue(emptyMap()), 100)
 
@@ -89,8 +89,8 @@ class RuntimeAuthorizationStageTest {
             state.versionCode = 2
             RuntimeNetworkResponse(200, emptyMap(), "body", release = { released = true })
         }
-        val dispatcher = RuntimeRpcDispatcher(identity, policy(state, calls), RuntimeM1Handlers(),
-            RuntimeM2Handlers(network = network))
+        val dispatcher = RuntimeRpcDispatcher(identity, policy(state, calls), RuntimeCoreHandlers(),
+            RuntimeServiceHandlers(network = network))
         val request = RuntimeRpcRequest("request", "network.request", identity.nonce, identity.toolId,
             identity.versionCode, identity.generation,
             RpcValue.ObjectValue(mapOf("url" to RpcValue.StringValue("https://example.test"))), 100)
@@ -125,7 +125,7 @@ class RuntimeAuthorizationStageTest {
             val dispatcher = RuntimeRpcDispatcher(
                 identity = identity,
                 authorization = suspendingPolicy,
-                handlers = RuntimeM1Handlers(clipboardWrite = RuntimeClipboardWriteHandler { calls += "write" }),
+                handlers = RuntimeCoreHandlers(clipboardWrite = RuntimeClipboardWriteHandler { calls += "write" }),
                 foregroundInteractionGuard = {
                     calls += "foreground"
                     if (pauseAt == "foreground" && !paused) {
@@ -167,7 +167,7 @@ class RuntimeAuthorizationStageTest {
     ) = RuntimeRpcDispatcher(
         identity = identity,
         authorization = policy(state, calls, quotaAllowed),
-        handlers = RuntimeM1Handlers(clipboardWrite = RuntimeClipboardWriteHandler { calls += "write" }),
+        handlers = RuntimeCoreHandlers(clipboardWrite = RuntimeClipboardWriteHandler { calls += "write" }),
         foregroundInteractionGuard = { calls += "foreground"; onForegroundDispatch() },
     )
 

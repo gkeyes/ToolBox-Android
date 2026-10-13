@@ -290,7 +290,8 @@ internal class RuntimeForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        private fun actionUri(toolId: String, sessionId: String, action: String): Uri = Uri.Builder()
+        /** Distinct data keeps PendingIntents for different tools and items from replacing each other. */
+        internal fun actionUri(toolId: String, sessionId: String, action: String): Uri = Uri.Builder()
             .scheme("toolbox").authority("runtime-notification")
             .appendPath(toolId).appendPath(sessionId).appendPath(action).build()
     }

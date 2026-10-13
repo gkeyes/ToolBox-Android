@@ -194,7 +194,7 @@ class RuntimeBridgeLifecycleInstrumentationTest {
                                         return RuntimePolicyDecision.Allowed
                                     }
                                 },
-                                handlers = RuntimeM1Handlers(),
+                                handlers = RuntimeCoreHandlers(),
                                 hostVersion = "0.8.0",
                             )
                         })
