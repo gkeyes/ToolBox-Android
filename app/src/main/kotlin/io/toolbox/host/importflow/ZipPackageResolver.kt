@@ -56,6 +56,7 @@ internal object ZipPackageResolver {
                         throw ZipImportRejected("压缩包文件数量过多，已停止解析")
                     }
                     if (entry.isDirectory ||
+                        isMacOsMetadata(entry.name) ||
                         !entry.name.endsWith(ToolBoxOpenDocument.FILE_EXTENSION, ignoreCase = true)
                     ) {
                         continue
@@ -116,6 +117,13 @@ internal object ZipPackageResolver {
         }
         output.fd.sync()
     }
+
+    /**
+     * macOS Finder adds `__MACOSX/` resource-fork copies (`._name.tbx`) when compressing;
+     * they are not packages and must not count as a second TBX.
+     */
+    internal fun isMacOsMetadata(rawName: String): Boolean =
+        rawName.startsWith("__MACOSX/") || rawName.substringAfterLast('/').startsWith("._")
 
     private fun validateCandidatePath(rawName: String) {
         if (rawName.isBlank() || rawName.indexOf('\u0000') >= 0 || rawName.contains('\\') ||
