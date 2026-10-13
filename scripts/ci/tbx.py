@@ -25,91 +25,29 @@ SHARED_PATHS = (
     "gradle.properties", "build.gradle.kts", "settings.gradle.kts",
 )
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?")
-RUNTIME_PERFORMANCE_TEST = "scripts/tests/tool-runtime-performance.test.cjs"
-RUNTIME_PERFORMANCE_TOOLS = {"stock-monitor", "notification-lab", "kegel-trainer"}
-BUNDLED_TOOLS_TEST = "scripts/tests/bundled-tools.test.cjs"
-BUNDLED_TOOLS_PATTERNS = {
-    "position-calculator": "^position calculator ", "quick-notes": "^quick notes ",
-    "notification-lab": "^notification lab ", "background-task-demo": "^background task ",
-}
-TEST_FILES = {
-    "nextflux": {
-        "unit": {
-            "test/article-swipe-back.test.mjs",
-            "test/auto-sync-deadline.test.mjs",
-            "test/background-policy.test.mjs",
-            "test/background-preemption.test.mjs",
-            "test/cache-core.test.mjs",
-            "test/cache-metadata.test.mjs",
-            "test/continuous-reading-motion.test.mjs",
-            "test/cover-cache-upgrade.test.mjs",
-            "test/design-tokens.test.mjs",
-            "test/foreground-gate.test.mjs",
-            "test/fulltext-adapter.test.mjs",
-            "test/fulltext-extraction.test.mjs",
-            "test/image-dimensions.test.mjs",
-            "test/image-sources.test.mjs",
-            "test/list-render-isolation.test.mjs",
-            "test/media-mime.test.mjs",
-            "test/native-hls-loader.test.mjs",
-            "test/navigation-transition.test.mjs",
-            "test/overlay-janitor.test.mjs",
-            "test/reading-client.test.mjs",
-            "test/reading-motion.test.mjs",
-            "test/reading-pipeline.test.mjs",
-            "test/runtime-behaviour.test.mjs",
-            "test/source-document.test.mjs",
-            "test/speech.test.mjs",
-            "test/swipe-gesture.test.mjs",
-            "test/sync-pagination.test.mjs",
-            "test/sync-priority.test.mjs",
-            "test/title-filter-rules.test.mjs",
-            "test/title-filter-scope.test.mjs",
-            "test/title-filter-server-rules.test.mjs",
-        },
-        "browser": {
-            "test/browser/article-navigation.spec.js",
-            "test/browser/controls.spec.js",
-            "test/browser/media-compat.spec.js",
-            "test/browser/packaged-startup.spec.js",
-            "test/browser/reading.spec.js",
-            "test/browser/startup.spec.js",
-            "test/browser/title-filter.spec.js",
-        },
-    },
-    "socialcoach": {
-        "unit": {"test/platform.test.ts", "test/minimax.test.ts", "test/reliability.test.ts"},
-        "browser": {"test/browser.spec.ts"},
-    },
-    "rss-scout": {
-        "unit": {
-            "test/app.test.mjs",
-            "test/extract-page.test.mjs",
-            "test/miniflux.test.mjs",
-            "test/network-charset.test.mjs",
-            "test/parse-feed.test.mjs",
-            "test/rules-sync.test.mjs",
-        },
-        "browser": set(),
-    },
-    "health-records": {
-        "unit": {"test/model.test.mjs", "test/ai.test.mjs"},
-        "browser": set(),
-    },
-    "github-actions-watcher": {
-        "unit": {"scripts/tests/watcher-reliability.test.cjs"},
-        "browser": {"examples/github-actions-watcher/tests/layout.py"},
-    },
-    **{name: {"unit": ({RUNTIME_PERFORMANCE_TEST} if name in RUNTIME_PERFORMANCE_TOOLS else set())
-                       | ({BUNDLED_TOOLS_TEST} if name in BUNDLED_TOOLS_PATTERNS else set()), "browser": set()}
-       for name in RUNTIME_PERFORMANCE_TOOLS | set(BUNDLED_TOOLS_PATTERNS)},
-    "game-2048": {"unit": {"tests/game-core.test.cjs", "tests/game-save.test.cjs"}, "browser": set()},
-}
 
 
-def available_tests(name, kind):
-    return {path for path in TEST_FILES[name][kind]
-            if (ROOT / path if path.startswith(("scripts/", "examples/")) else ROOT / "examples" / name / path).is_file()}
+def available_tests(name, kind, registry=None):
+    """Discover a tool's tests from the globs registered in tbx-targets.json.
+
+    Paths under scripts/ are repository-relative host tests shared by several tools; every other pattern is
+    relative to the tool directory.
+    """
+    config = (registry or targets())[name]
+    tool = ROOT / "examples" / name
+    found = set()
+    for pattern in config.get("tests", {}).get(kind, []):
+        if pattern.startswith("scripts/"):
+            if (ROOT / pattern).is_file():
+                found.add(pattern)
+        else:
+            found.update(path.relative_to(tool).as_posix() for path in tool.glob(pattern) if path.is_file())
+    return found
+
+
+def shared_tests(name, registry):
+    """Registered host tests under scripts/ that also cover this tool; a change to one selects the tool."""
+    return {path for path in registry[name].get("tests", {}).get("unit", []) if path.startswith("scripts/")}
 
 
 def targets():
@@ -124,9 +62,7 @@ def select_targets(registry, selection, changed=()):
             return sorted(registry)
         return sorted(name for name in registry
                       if any(path.startswith(f"examples/{name}/") for path in changed)
-                      or (name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed)
-                      or (name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed)
-                      or (name in BUNDLED_TOOLS_PATTERNS and BUNDLED_TOOLS_TEST in changed))
+                      or any(path in changed for path in shared_tests(name, registry)))
     requested = selection.split(",")
     requested = [name.strip() for name in requested]
     unknown = [name for name in requested if name not in registry]
@@ -188,11 +124,14 @@ def append_values(environment_file, values):
                 handle.write(f"{key}={value}\n")
 
 
-def selected_tests(name, changed, requested_filter, full):
+def selected_tests(name, changed, requested_filter, full, registry=None):
+    registry = registry or targets()
     result = {"full_tests": full, "unit_test_filter": "", "browser_test_filter": "", "watcher_reliability": False, "watcher_layout": False}
-    if full or name not in TEST_FILES:
+    if full or "tests" not in registry[name]:
         return result
-    unit_files, browser_files = available_tests(name, "unit"), available_tests(name, "browser")
+    # Small plain-JS tools: a script, page or style edit reruns all of their tests; a media edit runs none.
+    plain = registry[name].get("bundled", False) or name in {"stock-monitor", "kegel-trainer"}
+    unit_files, browser_files = available_tests(name, "unit", registry), available_tests(name, "browser", registry)
     allowed = unit_files | browser_files
     if requested_filter:
         requested = {value.strip() for value in requested_filter.split(",") if value.strip()}
@@ -203,9 +142,8 @@ def selected_tests(name, changed, requested_filter, full):
         selected = set()
         for path in local:
             relative = path.removeprefix(f"examples/{name}/")
-            full_path = path if name == "github-actions-watcher" else relative
-            if full_path in allowed:
-                selected.add(full_path)
+            if relative in allowed:
+                selected.add(relative)
             elif name == "rss-scout" and relative in {"package.json", "package-lock.json"}:
                 # RSS Scout's npm dependencies are test-only, so a dependency change must install and run them.
                 selected |= unit_files
@@ -223,9 +161,9 @@ def selected_tests(name, changed, requested_filter, full):
                 selected |= allowed
             elif name == "github-actions-watcher" and relative in {"app.js", "style.css", "github-model.js", "reliability.js", "index.html"}:
                 selected |= allowed
-            elif (name in RUNTIME_PERFORMANCE_TOOLS or name in BUNDLED_TOOLS_PATTERNS) and relative.endswith((".js", ".html", ".css")):
+            elif plain and relative.endswith((".js", ".html", ".css")):
                 selected |= allowed
-            elif (name in RUNTIME_PERFORMANCE_TOOLS or name in BUNDLED_TOOLS_PATTERNS) and relative.endswith((".png", ".svg", ".ogg")):
+            elif plain and relative.endswith((".png", ".svg", ".ogg")):
                 continue
             elif name == "game-2048" and relative.endswith((".js", ".html", ".css")):
                 selected |= allowed
@@ -236,15 +174,10 @@ def selected_tests(name, changed, requested_filter, full):
                 return {**result, "full_tests": True}
         if shared:
             selected |= allowed
-        if name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed:
-            selected.add("scripts/tests/watcher-reliability.test.cjs")
-        if name in RUNTIME_PERFORMANCE_TOOLS and RUNTIME_PERFORMANCE_TEST in changed:
-            selected.add(RUNTIME_PERFORMANCE_TEST)
-        if name in BUNDLED_TOOLS_PATTERNS and BUNDLED_TOOLS_TEST in changed:
-            selected.add(BUNDLED_TOOLS_TEST)
+        selected |= {path for path in shared_tests(name, registry) if path in changed}
     if name == "github-actions-watcher":
-        result["watcher_reliability"] = "scripts/tests/watcher-reliability.test.cjs" in selected
-        result["watcher_layout"] = "examples/github-actions-watcher/tests/layout.py" in selected
+        result["watcher_reliability"] = bool(selected & unit_files)
+        result["watcher_layout"] = bool(selected & browser_files)
     else:
         result["unit_test_filter"] = ",".join(sorted(selected & unit_files))
         result["browser_test_filter"] = ",".join(sorted(selected & browser_files))
@@ -269,8 +202,8 @@ def plan(selection, validation_scope="full", test_filter=""):
     for name in selected:
         metadata(name, registry[name])
     matrix = {"include": [
-        {"tool": name, "npm": registry[name].get("npm", False), **selected_tests(name, changed, test_filter,
-            full=selection != "changed" and validation_scope == "full")}
+        {"tool": name, "npm": registry[name].get("npm", False), "bundled": registry[name].get("bundled", False),
+         **selected_tests(name, changed, test_filter, full=selection != "changed" and validation_scope == "full", registry=registry)}
         for name in selected
     ]}
     if test_filter and not any(row["unit_test_filter"] or row["browser_test_filter"] or row["watcher_reliability"] or row["watcher_layout"] for row in matrix["include"]):
@@ -289,10 +222,12 @@ def execute(command, source):
 
 
 def run_selected_tests(name, test_filter, browser=False):
-    if name not in TEST_FILES:
+    registry = targets()
+    if "tests" not in registry.get(name, {}):
         raise ValueError(f"No registered tests for {name}")
     selected = [value.strip() for value in test_filter.split(",") if value.strip()]
-    allowed = available_tests(name, "browser" if browser else "unit")
+    allowed = available_tests(name, "browser" if browser else "unit", registry)
+    name_patterns = registry[name]["tests"].get("name_patterns", {})
     if not selected or any(value not in allowed for value in selected):
         raise ValueError(f"Invalid selected {'browser' if browser else 'unit'} tests for {name}")
     if browser:
@@ -309,10 +244,8 @@ def run_selected_tests(name, test_filter, browser=False):
         for path in selected:
             source = ROOT if path.startswith("scripts/") else ROOT / "examples" / name
             command = ["node"] + (["--import", "tsx"] if name == "socialcoach" else []) + ["--test"]
-            if path == RUNTIME_PERFORMANCE_TEST and name in RUNTIME_PERFORMANCE_TOOLS:
-                command += ["--test-name-pattern", {"stock-monitor": "^stock ", "notification-lab": "^notification lab ", "kegel-trainer": "^Kegel "}[name]]
-            if path == BUNDLED_TOOLS_TEST and name in BUNDLED_TOOLS_PATTERNS:
-                command += ["--test-name-pattern", BUNDLED_TOOLS_PATTERNS[name]]
+            if path in name_patterns:
+                command += ["--test-name-pattern", name_patterns[path]]
             command.append(path)
             completed = subprocess.run(command, cwd=source, text=True, capture_output=True)
             sys.stdout.write(completed.stdout)

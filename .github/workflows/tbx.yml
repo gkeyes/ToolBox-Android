@@ -9,8 +9,6 @@ on:
       - ".github/workflows/tbx.yml"
       - "scripts/ci/tbx.py"
       - "scripts/ci/tbx-targets.json"
-      - "scripts/tests/watcher-reliability.test.cjs"
-      - "scripts/tests/tool-runtime-performance.test.cjs"
       - "scripts/tests/bundled-tools.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
@@ -34,8 +32,6 @@ on:
       - ".github/workflows/tbx.yml"
       - "scripts/ci/tbx.py"
       - "scripts/ci/tbx-targets.json"
-      - "scripts/tests/watcher-reliability.test.cjs"
-      - "scripts/tests/tool-runtime-performance.test.cjs"
       - "scripts/tests/bundled-tools.test.cjs"
       - "scripts/package-tool.py"
       - "scripts/package-examples.sh"
@@ -65,7 +61,7 @@ on:
         options: [full, targeted, build]
         default: full
       test_filter:
-        description: "For targeted runs: comma-separated test paths relative to the tool; watcher accepts scripts/tests/watcher-reliability.test.cjs"
+        description: "For targeted runs: comma-separated test paths relative to the tool; tests are discovered from the globs in scripts/ci/tbx-targets.json"
         type: string
         required: false
 
@@ -123,10 +119,10 @@ jobs:
         run: npm test
       - name: Watcher reliability regressions
         if: ${{ matrix.tool == 'github-actions-watcher' && matrix.full_tests }}
-        run: node --test scripts/tests/watcher-reliability.test.cjs
+        run: node --test examples/github-actions-watcher/tests/reliability.test.cjs
       - name: Watcher selected reliability cases
         if: ${{ matrix.tool == 'github-actions-watcher' && !matrix.full_tests && matrix.watcher_reliability }}
-        run: python3 scripts/ci/tbx.py test-unit --tool github-actions-watcher --test-filter scripts/tests/watcher-reliability.test.cjs
+        run: python3 scripts/ci/tbx.py test-unit --tool github-actions-watcher --test-filter tests/reliability.test.cjs
       - name: Prepare watcher layout browser checks
         if: ${{ matrix.tool == 'github-actions-watcher' && (matrix.full_tests || matrix.watcher_layout) }}
         run: |
@@ -159,9 +155,9 @@ jobs:
         if: ${{ matrix.full_tests && (matrix.tool == 'stock-monitor' || matrix.tool == 'notification-lab' || matrix.tool == 'kegel-trainer') }}
         env:
           TBX_TOOL: ${{ matrix.tool }}
-        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/tool-runtime-performance.test.cjs
+        run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter tests/runtime-performance.test.cjs
       - name: Bundled tool behaviour regressions
-        if: ${{ matrix.full_tests && (matrix.tool == 'position-calculator' || matrix.tool == 'quick-notes' || matrix.tool == 'notification-lab' || matrix.tool == 'background-task-demo') }}
+        if: ${{ matrix.full_tests && matrix.bundled }}
         env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/bundled-tools.test.cjs

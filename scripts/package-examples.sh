@@ -3,7 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 output_dir="${TOOLBOX_EXAMPLE_OUTPUT_DIR:-${repo_root}/build/examples}"
-all_examples=(position-calculator quick-notes background-task-demo notification-lab)
+# The shipped examples are the targets marked "bundled" in scripts/ci/tbx-targets.json.
+# A read loop rather than mapfile keeps this working with the bash 3.2 that ships with macOS.
+all_examples=()
+while IFS= read -r name; do all_examples+=("${name}"); done < <(python3 -c '
+import json, sys
+registry = json.load(open(sys.argv[1], encoding="utf-8"))
+print("\n".join(name for name, config in registry.items() if config.get("bundled")))
+' "${repo_root}/scripts/ci/tbx-targets.json")
+[[ ${#all_examples[@]} -gt 0 ]] || { printf 'No bundled examples in tbx-targets.json\n' >&2; exit 1; }
 requested=("$@")
 output_override=""
 

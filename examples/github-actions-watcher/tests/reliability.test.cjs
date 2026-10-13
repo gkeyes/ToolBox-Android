@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const root = path.resolve(__dirname, '../../examples/github-actions-watcher');
+const root = path.resolve(__dirname, '..');
 const reliability = require(path.join(root, 'reliability.js'));
 const model = require(path.join(root, 'github-model.js'));
 const defer = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };

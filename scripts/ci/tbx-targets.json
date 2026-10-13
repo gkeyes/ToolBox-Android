@@ -1,6 +1,7 @@
 {
   "background-task-demo": {
     "manifest": "manifest.json",
+    "bundled": true,
     "javascript": [
       "*.js"
     ],
@@ -16,7 +17,15 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "scripts/tests/bundled-tools.test.cjs"
+      ],
+      "name_patterns": {
+        "scripts/tests/bundled-tools.test.cjs": "^background task "
+      }
+    }
   },
   "game-2048": {
     "manifest": "manifest.json",
@@ -36,7 +45,12 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ]
+    }
   },
   "github-actions-watcher": {
     "manifest": "manifest.json",
@@ -57,7 +71,15 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ],
+      "browser": [
+        "tests/layout.py"
+      ]
+    }
   },
   "health-records": {
     "manifest": "web/manifest.json",
@@ -69,7 +91,12 @@
       "bash",
       "package.sh",
       "{output}"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "test/*.test.mjs"
+      ]
+    }
   },
   "kegel-trainer": {
     "manifest": "manifest.json",
@@ -92,7 +119,12 @@
       "audio/relax.ogg",
       "audio/complete.ogg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ]
+    }
   },
   "nextflux": {
     "manifest": "manifest.json",
@@ -103,10 +135,19 @@
       "package.py",
       "--output",
       "{output}"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "test/*.test.mjs"
+      ],
+      "browser": [
+        "test/browser/*.spec.js"
+      ]
+    }
   },
   "notification-lab": {
     "manifest": "manifest.json",
+    "bundled": true,
     "javascript": [
       "*.js"
     ],
@@ -122,10 +163,20 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs",
+        "scripts/tests/bundled-tools.test.cjs"
+      ],
+      "name_patterns": {
+        "scripts/tests/bundled-tools.test.cjs": "^notification lab "
+      }
+    }
   },
   "position-calculator": {
     "manifest": "manifest.json",
+    "bundled": true,
     "javascript": [
       "*.js"
     ],
@@ -141,10 +192,19 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "scripts/tests/bundled-tools.test.cjs"
+      ],
+      "name_patterns": {
+        "scripts/tests/bundled-tools.test.cjs": "^position calculator "
+      }
+    }
   },
   "quick-notes": {
     "manifest": "manifest.json",
+    "bundled": true,
     "javascript": [
       "*.js"
     ],
@@ -160,7 +220,15 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "scripts/tests/bundled-tools.test.cjs"
+      ],
+      "name_patterns": {
+        "scripts/tests/bundled-tools.test.cjs": "^quick notes "
+      }
+    }
   },
   "rss-scout": {
     "manifest": "manifest.json",
@@ -183,7 +251,12 @@
       "rules.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "test/*.test.mjs"
+      ]
+    }
   },
   "socialcoach": {
     "manifest": "manifest.json",
@@ -193,7 +266,15 @@
       "bash",
       "package.sh",
       "{output}"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "test/*.test.ts"
+      ],
+      "browser": [
+        "test/*.spec.ts"
+      ]
+    }
   },
   "stock-monitor": {
     "manifest": "manifest.json",
@@ -213,6 +294,11 @@
       "app.js",
       "icon.svg",
       "integrity.json"
-    ]
+    ],
+    "tests": {
+      "unit": [
+        "tests/*.test.cjs"
+      ]
+    }
   }
 }

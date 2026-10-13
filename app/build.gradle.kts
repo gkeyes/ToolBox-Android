@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.tasks.Exec
 
@@ -31,13 +32,19 @@ check(!verifyWebViewDebugging || stableSigningValueCount == 0) {
     "WebView verification must use the temporary test signing key, without stable signing credentials."
 }
 
+// The shipped examples are the targets marked "bundled" in scripts/ci/tbx-targets.json.
+val tbxTargetsFile = rootProject.layout.projectDirectory.file("scripts/ci/tbx-targets.json")
+val bundledExampleNames: List<String> =
+    (JsonSlurper().parseText(providers.fileContents(tbxTargetsFile).asText.get()) as Map<*, *>)
+        .filterValues { (it as Map<*, *>)["bundled"] == true }
+        .keys
+        .map { it as String }
+
 val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     group = "build"
-    description = "Packages the four shipped ToolBox examples for Android assets."
-    inputs.dir(rootProject.layout.projectDirectory.dir("examples/position-calculator"))
-    inputs.dir(rootProject.layout.projectDirectory.dir("examples/quick-notes"))
-    inputs.dir(rootProject.layout.projectDirectory.dir("examples/background-task-demo"))
-    inputs.dir(rootProject.layout.projectDirectory.dir("examples/notification-lab"))
+    description = "Packages the shipped ToolBox examples for Android assets."
+    bundledExampleNames.forEach { name -> inputs.dir(rootProject.layout.projectDirectory.dir("examples/$name")) }
+    inputs.file(tbxTargetsFile)
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
     outputs.dir(bundledExamplesDir)
     workingDir = rootProject.projectDir
@@ -158,11 +165,11 @@ dependencies {
     implementation(libs.focus.api)
     implementation(libs.androidsvg)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.work:work-testing:2.12.0")
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.work.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
