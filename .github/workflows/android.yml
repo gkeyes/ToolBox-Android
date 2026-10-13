@@ -11,7 +11,7 @@ on:
     paths:
       - "**"
       - "!**.md"
-      - "sdk/help/manual.md"
+      - "sdk/help/**"
       - "!docs/**"
       - "!examples/**"
       - "examples/position-calculator/**"
@@ -29,7 +29,7 @@ on:
     paths:
       - "**"
       - "!**.md"
-      - "sdk/help/manual.md"
+      - "sdk/help/**"
       - "!docs/**"
       - "!examples/**"
       - "examples/position-calculator/**"

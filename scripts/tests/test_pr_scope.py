@@ -30,7 +30,7 @@ class PrScopeTest(unittest.TestCase):
 
     def test_code_bundled_tools_manual_and_android_workflow_need_gradle(self):
         for path in ("app/src/main/kotlin/io/toolbox/host/MainActivity.kt", "core-ui/build.gradle.kts",
-                     "gradle/libs.versions.toml", "examples/quick-notes/app.js", "sdk/help/manual.md",
+                     "gradle/libs.versions.toml", "examples/quick-notes/app.js", "sdk/help/manual.md", "sdk/help/faq.md",
                      ".github/workflows/android.yml", "scripts/package-examples.sh"):
             self.assertTrue(run([path])["gradle"], path)
 
