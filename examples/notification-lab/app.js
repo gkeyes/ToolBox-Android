@@ -34,13 +34,21 @@
   let restoreReason = "unknown";
   let runtimeForeground = false;
   let runtimeClosing = false;
+  let booted = false;
+  let liveStartedFor = null;
 
   const $ = (id) => document.getElementById(id);
   const toolbox = () => window.ToolBox;
 
-  function cleanText(value) {
-    return String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+  function cleanText(value, max = Infinity) {
+    const text = String(value ?? "").replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+    if (!(max > 0) || text.length <= max) return text;
+    const chars = Array.from(text);
+    return chars.length <= max ? text : `${chars.slice(0, Math.max(0, max - 1)).join("").trimEnd()}…`;
   }
+
+  const SESSION_LOST = new Set(["SESSION_ENDED", "INVALID_SESSION"]);
+  const sessionLost = (error) => SESSION_LOST.has(error?.code);
 
   function clock(value = Date.now()) {
     return new Intl.DateTimeFormat("zh-CN", {
@@ -100,10 +108,10 @@
     };
   }
 
-  function liveRequest() {
+  function liveRequest(sessionId = state.sessionId) {
     const sample = sampleFor();
     return {
-      sessionId: state.sessionId,
+      sessionId,
       title: cleanText(sample.title, 64),
       primaryText: cleanText(sample.primaryText, 32),
       secondaryText: cleanText(sample.secondaryText, 96),
@@ -126,7 +134,7 @@
   }
 
   function appendEvent(message, kind = "neutral") {
-    const event = { time: clock(), message: cleanText(message, 280), kind };
+    const event = { time: clock(), message: cleanText(message), kind };
     state.events[state.eventNext] = event;
     state.eventNext = (state.eventNext + 1) % MAX_EVENTS;
     state.eventCount = Math.min(MAX_EVENTS, state.eventCount + 1);
@@ -217,6 +225,7 @@
     $("sample-preview").dataset.tone = sample.tone;
     $("update-count").textContent = `第 ${state.tick} 次`;
     $("interval").value = String(state.intervalMs);
+    $("interval").disabled = state.busy;
     document.querySelectorAll(".preset").forEach((button) => {
       button.classList.toggle("active", button.dataset.preset === state.preset);
     });
@@ -267,6 +276,22 @@
     return state.sessionId;
   }
 
+  // SESSION_ENDED/INVALID_SESSION: the old sessionId can never be reused, so drop it and start a new one.
+  async function reacquireSession(error, staleId) {
+    if (state.sessionId === staleId) state.sessionId = null;
+    if (liveStartedFor === staleId) liveStartedFor = null;
+    appendEvent(`后台会话已失效（${error.code}），正在重新取得`, "neutral");
+    const sessionId = await ensureSession();
+    if (state.auto) await toolbox().background.setTimer(TIMER_KEY, state.intervalMs);
+    return sessionId;
+  }
+
+  async function startLiveIn(sessionId) {
+    const result = await toolbox().notifications.live.start(liveRequest(sessionId));
+    liveStartedFor = sessionId;
+    return result;
+  }
+
   async function publishStandard(update) {
     state.tick += update ? 1 : 0;
     const sample = sampleFor();
@@ -278,8 +303,12 @@
   }
 
   async function startLive() {
-    await ensureSession();
-    const result = await toolbox().notifications.live.start(liveRequest());
+    const sessionId = await ensureSession();
+    let result;
+    try { result = await startLiveIn(sessionId); } catch (error) {
+      if (!sessionLost(error)) throw error;
+      result = await startLiveIn(await reacquireSession(error, sessionId));
+    }
     state.live = true;
     applyLiveResult(result);
     await persist();
@@ -292,9 +321,15 @@
     updateInFlight = true;
     const work = (async () => { try {
       state.tick += 1;
-      const result = await toolbox().notifications.live.update(liveRequest());
+      const sessionId = await ensureSession();
+      let result;
+      try { result = await toolbox().notifications.live.update(liveRequest(sessionId)); } catch (error) {
+        if (!sessionLost(error)) throw error;
+        // The live notification belonged to the ended session; publish it again in the new one.
+        result = await startLiveIn(await reacquireSession(error, sessionId));
+      }
       applyLiveResult(result);
-      await persist();
+      // The tick lives in memory; it is saved on flush, on leaving the page and with other state changes.
       return result;
     } finally {
       updateInFlight = false;
@@ -319,9 +354,18 @@
     await persist();
   }
 
+  async function endLiveNotification() {
+    if (!state.live || !state.sessionId) return;
+    try { await toolbox().notifications.live.end(state.sessionId); } catch (error) {
+      if (sessionLost(error)) state.sessionId = null;
+      else if (error?.code !== "NOT_FOUND") throw error;
+    }
+    liveStartedFor = null;
+  }
+
   async function endLive() {
     if (state.auto) await setAuto(false);
-    if (state.live && state.sessionId) await toolbox().notifications.live.end(state.sessionId);
+    await endLiveNotification();
     state.live = false;
     state.liveResult = null;
     await persist();
@@ -329,28 +373,31 @@
 
   async function stopBackground() {
     if (state.auto) await setAuto(false);
-    if (state.live && state.sessionId) {
-      try { await toolbox().notifications.live.end(state.sessionId); } catch (error) {
-        if (error?.code !== "NOT_FOUND") throw error;
+    await endLiveNotification();
+    if (state.sessionId) {
+      try { await toolbox().background.stop(state.sessionId); } catch (error) {
+        if (!sessionLost(error) && error?.code !== "NOT_FOUND") throw error;
       }
     }
-    if (state.sessionId) await toolbox().background.stop(state.sessionId);
     state.sessionId = null;
+    liveStartedFor = null;
     state.live = false;
     state.auto = false;
     state.liveResult = null;
     await persist();
   }
 
-  async function reconcileSession() {
+  async function reconcileSession(force = false) {
     const sessions = await toolbox().background.listSessions();
     state.sessionId = sessions[0]?.sessionId || null;
     if (!state.sessionId) {
       state.live = false;
       state.auto = false;
+      liveStartedFor = null;
       return;
     }
-    if (state.live) applyLiveResult(await toolbox().notifications.live.start(liveRequest()));
+    // Boot and onRestore can both reconcile the same session; publish the live notification once.
+    if (state.live && (force || liveStartedFor !== state.sessionId)) applyLiveResult(await startLiveIn(state.sessionId));
     if (state.auto) await toolbox().background.setTimer(TIMER_KEY, state.intervalMs);
   }
 
@@ -381,8 +428,10 @@
     try {
       const ready = await toolbox().ready();
       toolbox().runtime.onStateChanged((snapshot) => {
+        const wasForeground = runtimeForeground;
         runtimeClosing = snapshot.closing;
         runtimeForeground = snapshot.foreground && !snapshot.closing;
+        if (wasForeground && !runtimeForeground && !runtimeClosing) persist();
         if (runtimeForeground) {
           render();
           renderLog();
@@ -400,7 +449,9 @@
     } catch (error) {
       appendEvent(`初始化失败 · ${errorLabel(error)}`, "error");
     }
+    booted = true;
     render();
+    if (restorePending && !runtimeClosing) resumeRestore();
   }
 
   document.querySelectorAll(".preset").forEach((button) => {
@@ -437,7 +488,7 @@
   ));
   $("live-end").addEventListener("click", () => runAction("结束实时展示", endLive));
   $("stop-background").addEventListener("click", () => runAction("停止后台环境", stopBackground));
-  $("refresh-session").addEventListener("click", () => runAction("同步后台会话", reconcileSession));
+  $("refresh-session").addEventListener("click", () => runAction("同步后台会话", () => reconcileSession(true)));
   $("clear-log").addEventListener("click", () => {
     state.events = new Array(MAX_EVENTS);
     state.eventCount = 0;
@@ -457,7 +508,8 @@
   }
 
   function resumeRestore() {
-      if (runtimeClosing || restoreWork || !restorePending) return;
+      // Wait for boot: it loads and reconciles the same state, so running both at once double-starts.
+      if (!booted || runtimeClosing || restoreWork || !restorePending) return;
       restorePending = false;
       const work = (async () => { try {
         await loadPersisted();
