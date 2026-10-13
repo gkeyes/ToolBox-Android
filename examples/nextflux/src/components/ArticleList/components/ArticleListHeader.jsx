@@ -50,12 +50,14 @@ function useTabsFit(ref, deps) {
       box.dataset.scroll = "true";
     };
     fit();
-    // Watch the list too: late fonts or a text-size change resize it without
-    // changing the space it is given.
+    // Watch the list and its tabs too: late fonts, a text-size change or a
+    // longer count resize them without changing the space it is given (once
+    // the list is capped, only the tabs themselves change size).
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
     observer?.observe(box);
     const list = box.querySelector(".tabs__list");
     if (list) observer?.observe(list);
+    for (const tab of list?.querySelectorAll(".tabs__tab") || []) observer?.observe(tab);
     return () => observer?.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
