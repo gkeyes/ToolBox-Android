@@ -31,7 +31,7 @@ check(!verifyWebViewDebugging || stableSigningValueCount == 0) {
     "WebView verification must use the temporary test signing key, without stable signing credentials."
 }
 
-val packageBundledExamples by tasks.registering(Exec::class) {
+val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     group = "build"
     description = "Packages the four shipped ToolBox examples for Android assets."
     inputs.dir(rootProject.layout.projectDirectory.dir("examples/position-calculator"))
