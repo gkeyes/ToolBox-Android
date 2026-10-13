@@ -23,8 +23,10 @@ run_module() {
   local module="$1" classes="${2:-}"
   prepare_visible_emulator "$module" || return 1
   if [ -n "$classes" ]; then
+    # Naming a class is an explicit request, so opt-in suites such as live-site checks run too.
     ./gradlew --no-daemon ":$module:connectedDebugAndroidTest" \
-      "-Pandroid.testInstrumentationRunnerArguments.class=$classes"
+      "-Pandroid.testInstrumentationRunnerArguments.class=$classes" \
+      "-Pandroid.testInstrumentationRunnerArguments.liveSites=true"
   else
     ./gradlew --no-daemon ":$module:connectedDebugAndroidTest"
   fi
@@ -50,4 +52,5 @@ done
 join() { local IFS=','; echo "$*"; }
 if [ "${#app_classes[@]}" -gt 0 ]; then run_module app "$(join "${app_classes[@]}")" || result=1; fi
 if [ "${#runtime_classes[@]}" -gt 0 ]; then run_module tool-runtime "$(join "${runtime_classes[@]}")" || result=1; fi
+python3 scripts/ci/check-android-results.py "$TOOLBOX_ANDROID_TEST_FILTER" || result=1
 exit "$result"
