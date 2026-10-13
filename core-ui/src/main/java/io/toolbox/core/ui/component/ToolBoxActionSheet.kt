@@ -1,7 +1,6 @@
 package io.toolbox.core.ui.component
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +56,12 @@ private val LocalSheetHeaderDrag = staticCompositionLocalOf<Modifier> { Modifier
  */
 internal val LocalToolBoxInGlassSheet = staticCompositionLocalOf { false }
 
+/**
+ * False where another overlay window sits between the page and a sheet (a sheet opened over the
+ * group folder): the sheet can only copy the page window, so it keeps the opaque panel there.
+ */
+val LocalToolBoxFrostedSheets = staticCompositionLocalOf { true }
+
 /** Sheets float this far from the screen edges (iOS 26/27). */
 private val SheetInset = 12.dp
 
@@ -84,19 +89,23 @@ fun ToolBoxActionSheet(
     // The sheet window cannot sample the page behind, so it blurs a copy taken on open.
     val hostView = LocalView.current
     // Pass frostedBackdrop = false over live content (a playing web page): the copy would freeze it.
-    val frosted = glass && containerColor == null && frostedBackdrop && materials.realBlurEnabled
+    val frosted = glass && containerColor == null && frostedBackdrop && LocalToolBoxFrostedSheets.current &&
+        materials.realBlurEnabled
     var backdrop by remember { mutableStateOf<WindowBackdrop?>(null) }
+    // Opaque until the copy lands, then eases into the lighter glass fill.
+    val frostAmount = remember { Animatable(0f) }
     val configuration = LocalConfiguration.current
     if (frosted) LaunchedEffect(hostView, configuration.screenWidthDp, configuration.screenHeightDp) {
-        // A resize (rotation, multi-window) makes the old copy the wrong size: retake it once the
-        // page has laid out at the new size.
+        // A resize (rotation, multi-window) makes the old copy the wrong size: drop it and go
+        // opaque at once, then retake it once the page has laid out at the new size.
         backdrop = null
+        frostAmount.snapTo(0f)
         withFrameNanos { }
         withFrameNanos { }
         backdrop = captureWindowBackdrop(hostView)
+        if (backdrop != null) frostAmount.animateTo(1f)
     }
-    // Opaque until the copy lands, then eases into the lighter glass fill.
-    val frost by animateFloatAsState(if (frosted && backdrop != null) 1f else 0f, label = "sheetFrost")
+    val frost = if (frosted) frostAmount.value else 0f
     // WindowBottomSheet has its own back handler and one shared dismissal callback.
     // A full-window Dialog gives Back a single route, independent of scrim/drag
     // dismissal, so an inner confirmation can return to its editor reliably.
