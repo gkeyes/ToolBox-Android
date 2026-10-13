@@ -22,12 +22,18 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          # The check reads both ends of the PR and their merge base.
+          # Full history with every branch: the check reads the PR head, the base branch as it is when the
+          # job runs (checkout fetches it now), and their merge base.
           fetch-depth: 0
       - name: Unit tests for the check
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/tests/test_version_bump.py -v
+      # Compared with the base branch as it is when the check runs, not as it was when the PR's event
+      # fired, so a version another PR merged meanwhile is caught (two PRs both moving to 0.9.0 show no
+      # git conflict). A merge to main after this check ran is not seen; re-run the check, or merge main
+      # into the PR, before merging when main has moved.
       - name: Require a version bump for shipped changes
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/ci/version_bump.py --base "$BASE_SHA" --head "$HEAD_SHA"
+        run: |
+          python3 scripts/ci/version_bump.py --base "$(git rev-parse "origin/$BASE_REF")" --head "$HEAD_SHA"
