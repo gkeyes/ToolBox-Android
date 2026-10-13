@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -152,14 +153,24 @@ internal fun SettingsNavRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SettingsIconTile(icon, tint, enabled = enabled)
-        SettingsRowLabels(title, summary, summaryColor, enabled, Modifier.weight(1f))
-        // An unweighted trailing value is measured first; capped so a long value or chip can
-        // never squeeze the title into a one-character column on narrow phones or large text.
-        trailing?.let {
-            Box(
-                Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * 0.4f).dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) { it() }
+        // When large text leaves too little width beside a value or chip, the value moves under
+        // the title instead of squeezing it into a one-character column.
+        val configuration = LocalConfiguration.current
+        val stackTrailing = trailing != null && configuration.screenWidthDp / LocalDensity.current.fontScale < 260f
+        if (stackTrailing) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SettingsRowLabels(title, summary, summaryColor, enabled, Modifier.fillMaxWidth())
+                trailing?.invoke()
+            }
+        } else {
+            SettingsRowLabels(title, summary, summaryColor, enabled, Modifier.weight(1f))
+            // An unweighted trailing value is measured first; capped so it never takes the title's room.
+            trailing?.let {
+                Box(
+                    Modifier.widthIn(max = (configuration.screenWidthDp * 0.4f).dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) { it() }
+            }
         }
         if (onClick != null) {
             ToolBoxIcon(
