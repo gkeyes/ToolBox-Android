@@ -72,8 +72,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          # A pull request compares its head with the commit it branched from.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          # A pull request compares its head with the commit it branched from (full history). The depth is
+          # quoted because a bare 0 is falsy and `&& 0 || 1` would always pick 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       - name: Select what this pull request needs
         id: pr
         if: ${{ github.event_name == 'pull_request' }}
