@@ -11,7 +11,6 @@ on:
       - "!**.md"
       - "sdk/help/manual.md"
       - "!docs/**"
-      - "!core-data/schemas/**"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -32,7 +31,6 @@ on:
       - "!**.md"
       - "sdk/help/manual.md"
       - "!docs/**"
-      - "!core-data/schemas/**"
       - "!examples/**"
       - "examples/position-calculator/**"
       - "examples/quick-notes/**"
@@ -53,7 +51,7 @@ on:
         type: boolean
         default: false
       android_test_filter:
-        description: "Optional: only these emulator tests, as module=Class or module=Class#method (module is app or tool-runtime; bare class means app), comma separated"
+        description: "Optional: only these emulator tests, as module=Class or module=Class#method (module is app, tool-runtime or core-data; bare class means app), comma separated"
         type: string
         required: false
 
@@ -82,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$ANDROID_TEST_FILTER" ]; then
-            printf '%s\n' "$ANDROID_TEST_FILTER" | grep -Eq '^((app|tool-runtime)=)?io\.toolbox\.[A-Za-z0-9_.#]+(,((app|tool-runtime)=)?io\.toolbox\.[A-Za-z0-9_.#]+)*$' \
+            printf '%s\n' "$ANDROID_TEST_FILTER" | grep -Eq '^((app|tool-runtime|core-data)=)?io\.toolbox\.[A-Za-z0-9_.#]+(,((app|tool-runtime|core-data)=)?io\.toolbox\.[A-Za-z0-9_.#]+)*$' \
               || { echo "Unexpected android_test_filter: $ANDROID_TEST_FILTER" >&2; exit 1; }
             checks=selected
           elif [ "$RUN_ANDROID_UI" = true ]; then
@@ -114,10 +112,12 @@ jobs:
         run: >-
           ./gradlew --no-daemon :app:lint :app:assembleDebug :app:assembleRelease
           :app:compileDebugAndroidTestKotlin :tool-runtime:compileDebugAndroidTestKotlin
+          :core-data:compileDebugAndroidTestKotlin
       - name: Run all JVM unit tests
         run: >-
           ./gradlew --no-daemon :core-data:testDebugUnitTest :core-ui:testDebugUnitTest
-          :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :app:testDebugUnitTest
+          :tool-package:testDebugUnitTest :tool-runtime:testDebugUnitTest :tool-api:testDebugUnitTest
+          :app:testDebugUnitTest
       - name: Generate actual Room v1 schema from the fixed installed baseline
         if: ${{ steps.scope.outputs.checks != 'build_and_unit_only' }}
         run: |
@@ -188,6 +188,8 @@ jobs:
           path: |
             tool-runtime/build/outputs/androidTest-results/connected/
             tool-runtime/build/reports/androidTests/connected/
+            core-data/build/outputs/androidTest-results/connected/
+            core-data/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
             app/build/outputs/**/button-preview-*.png

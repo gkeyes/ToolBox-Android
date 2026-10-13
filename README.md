@@ -35,7 +35,7 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 
 | 工作流 | 触发 | 内容 |
 | --- | --- | --- |
-| `android.yml` | 推送到 `main`、PR、手动 | 接口契约检查、浏览器脚本测试、Lint、Debug/Release 构建、全部 JVM 单元测试。手动运行可开启模拟器行为测试，也可以用 `android_test_filter` 只跑指定的类（`模块=完整类名#方法`，逗号分隔，模块为 `app` 或 `tool-runtime`，省略时为 `app`）。推送到 `main` 时另用正式签名构建 Release，在模拟器上冷启动验证后上传，并更新滚动预发布 `dev`（应用内“测试版”渠道）。 |
+| `android.yml` | 推送到 `main`、PR、手动 | 接口契约检查、浏览器脚本测试、Lint、Debug/Release 构建、全部 JVM 单元测试。手动运行可开启模拟器行为测试，也可以用 `android_test_filter` 只跑指定的类（`模块=完整类名#方法`，逗号分隔，模块为 `app`、`tool-runtime` 或 `core-data`，省略时为 `app`）。推送到 `main` 时另用正式签名构建 Release，在模拟器上冷启动验证后上传，并更新滚动预发布 `dev`（应用内“测试版”渠道）。 |
 | `tbx.yml` | 示例、SDK 或运行时变更，手动 | 按 `scripts/ci/tbx-targets.json` 选出受影响的工具，运行各自测试并打包 `.tbx`；在 `main` 上通过的包会同步到预发布 `dev`。 |
 | `webview-debugging.yml` | 相关文件的 PR，手动 | 在用户版系统镜像上验证 Debug / Release 的 WebView 调试状态。 |
 | `release.yml` | 手动 | 取一次成功的 Android CI 签名产物，可沿用上一版的 `.tbx`，发布 GitHub Release。 |
