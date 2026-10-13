@@ -375,21 +375,24 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     box-shadow: var(--nf-glass-rim);
   }
 }
-/* "More" sheet: compact cards, as many per row as fit (five on a phone). */
-.reader-more-grid { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 8px; padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+/* "More" sheet: a plain row of small icons over labels, like the dock — no
+   cards or coloured tiles. As many per row as fit (five on a phone). */
+.reader-more-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
 .button.reader-more-item {
   inline-size: 100%;
   min-inline-size: 0;
-  min-block-size: 68px;
-  gap: 6px;
-  padding: 10px 2px 8px;
-  border-radius: 16px;
-  background: var(--nf-sheet-card);
+  min-block-size: 56px;
+  gap: 5px;
+  padding: 8px 2px 6px;
+  border-radius: 14px;
+  background: transparent;
 }
-.button.reader-more-item[data-disabled="true"] { opacity: 0.45; }
-.reader-more-icon.nf-tile { inline-size: 30px; block-size: 30px; border-radius: 8px; }
-.reader-more-icon.nf-tile svg { inline-size: 18px; block-size: 18px; }
-.reader-more-label { font-size: 0.75rem; color: var(--ds-on-surface); }
+.button.reader-more-item[data-pressed="true"] { background: color-mix(in srgb, var(--ds-on-surface) 8%, transparent); }
+.button.reader-more-item[data-disabled="true"] { opacity: 0.4; }
+.reader-more-icon.nf-tile,
+.reader-more-icon.nf-tile[data-tone] { inline-size: 24px; block-size: 24px; border-radius: 0; background: none; color: var(--ds-on-surface); }
+.reader-more-icon.nf-tile svg { inline-size: 22px; block-size: 22px; color: var(--ds-on-surface); stroke-width: 1.9; }
+.reader-more-label { font-size: 0.6875rem; font-weight: 500; line-height: 1.2; color: var(--ds-on-surface); }
 
 /* ---------------------------------------------------------------- menus & sheets */
 .nextflux-context-menu {
@@ -564,3 +567,13 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 /* Inputs inside a group keep their intrinsic ~20ch width unless allowed to
    shrink, which pushed the trailing copy button off narrow screens. */
 .input-group > :is(input, .input-group__input) { min-inline-size: 0; flex: 1 1 0; }
+
+/* The visible track is 3–4px tall, so a finger on the knob or near the line
+   landed on the row instead and scrolled the page; a transparent band makes
+   the whole 40px strip around the line start a drag. */
+.slider[data-orientation="horizontal"] .slider__track { position: relative; overflow: visible; }
+.slider[data-orientation="horizontal"] .slider__track::before {
+  content: "";
+  position: absolute;
+  inset: -18px 0;
+}
