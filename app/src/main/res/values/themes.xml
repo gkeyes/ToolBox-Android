@@ -6,6 +6,8 @@
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowNoTitle">true</item>
+        <!-- The app's grouped background, so cold start shows no off-tone frame before Compose draws. -->
+        <item name="android:windowBackground">@color/toolbox_window_background</item>
         <item name="android:dialogTheme">@style/Theme.ToolBox.Dialog</item>
     </style>
     <!-- Compose Dialog resolves android:dialogTheme before its Window is created. -->

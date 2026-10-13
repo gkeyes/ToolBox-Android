@@ -108,11 +108,10 @@ fun ToolBoxActionSheet(
         frostAmount.snapTo(0f)
         withFrameNanos { }
         withFrameNanos { }
-        backdrop = captureWindowBackdrop(hostView)
-        if (backdrop != null) launch { frostAmount.animateTo(1f) }
         // The page can change under an open sheet (a favourite or group toggled from it): retake
         // the copy once the page window has stopped redrawing. A page that keeps animating (a
-        // spinner) keeps its last copy rather than being copied every frame.
+        // spinner) keeps its last copy rather than being copied every frame. The listener is in
+        // place before the first copy, so a change landing during it is not missed.
         val redraws = Channel<Unit>(Channel.CONFLATED)
         var copying = false
         var drewWhileCopying = false
@@ -121,20 +120,24 @@ fun ToolBoxActionSheet(
             if (copying) drewWhileCopying = true else redraws.trySend(Unit)
         }
         hostView.viewTreeObserver.addOnDrawListener(listener)
+        suspend fun copyPage() {
+            drewWhileCopying = false
+            copying = true
+            val fresh = try { captureWindowBackdrop(hostView) } finally { copying = false }
+            if (fresh != null) {
+                backdrop = fresh
+                if (frostAmount.targetValue < 1f) launch { frostAmount.animateTo(1f) }
+            }
+            // A draw during the copy may be the page's last change: copy once more. Only once
+            // in a row, since a copy can itself trigger a draw.
+            recopied = if (drewWhileCopying && !recopied) { redraws.trySend(Unit); true } else false
+        }
         try {
+            copyPage()
             while (true) {
                 redraws.receive()
                 while (withTimeoutOrNull(BackdropSettleMs) { redraws.receive() } != null) { }
-                drewWhileCopying = false
-                copying = true
-                val fresh = try { captureWindowBackdrop(hostView) } finally { copying = false }
-                if (fresh != null) {
-                    backdrop = fresh
-                    if (frostAmount.targetValue < 1f) launch { frostAmount.animateTo(1f) }
-                }
-                // A draw during the copy may be the page's last change: copy once more. Only once
-                // in a row, since a copy can itself trigger a draw.
-                recopied = if (drewWhileCopying && !recopied) { redraws.trySend(Unit); true } else false
+                copyPage()
             }
         } finally {
             hostView.viewTreeObserver.removeOnDrawListener(listener)
