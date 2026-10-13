@@ -28,7 +28,9 @@ export function referenceEditor(raw = "", onDirty = () => {}) {
     }
   }
   render();
-  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft) };
+  // draft(): best-effort text for an unsaved draft; an incomplete range keeps the original text.
+  const readDraft = () => { try { return formatReference(draft); } catch { return String(raw ?? ""); } };
+  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft), draft: readDraft };
 }
 
 function itemFields(item, onDirty) {
@@ -40,6 +42,7 @@ function itemFields(item, onDirty) {
   return {
     element: h("div", { class: "editor-fields" }, nameLabel, field("结果", value), field("单位", unit), reference.element),
     read: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.read() }),
+    draft: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.draft() }),
     name, unit, nameLabel,
   };
 }
@@ -127,7 +130,9 @@ export function createRecordEditor(record, { save, cancel, history, editing = fa
     } catch (e) { error.textContent = e.message || "保存失败，输入内容仍然保留"; error.hidden = false; error.scrollIntoView({ block: "nearest" }); }
     finally { saving = false; controls.disabled = false; form.setAttribute("aria-busy", "false"); saveButton.disabled = false; saveButton.textContent = editing ? "保存修改" : "保存记录"; }
   });
-  return { element: form, isDirty: () => dirty };
+  // Unvalidated copy of the current input, kept only if ToolBox closes the page mid-edit.
+  const snapshot = () => ({ id: record.id, date: date.value, type: type.value, items: rows.map((row) => row.fields.draft()) });
+  return { element: form, isDirty: () => dirty, snapshot };
 }
 
 export function createBatchEditor(metric, { save, cancel, backLabel = "返回趋势" }) {

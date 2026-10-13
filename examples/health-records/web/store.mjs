@@ -79,6 +79,8 @@ export function createStore(storage, makeId = () => crypto.randomUUID()) {
     load,
     get value() { if (!state) throw new HealthError("档案尚未加载"); return copy(state); },
     get revision() { return revision; },
+    // Resolves once every queued save has settled.
+    idle() { return tail; },
     update(mutator, { expectedRevision } = {}) {
       const pending = tail.then(() => commit(mutator, expectedRevision));
       tail = pending.catch(() => {});

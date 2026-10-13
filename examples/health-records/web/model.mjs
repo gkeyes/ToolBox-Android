@@ -263,19 +263,13 @@ export function assertNoNewDuplicateMetrics(before, after) {
   for (const [key, size] of count(after)) if (size > 1 && size > (previous.get(key) || 0)) throw new HealthError("修改后同一报告会新增重复指标，请核对名称和单位。原有重复项可保留并逐项修订");
 }
 
-export function renameMetric(archive, key, target) {
-  const name = text(target, "标准名称", true);
-  let changed = 0;
-  for (const record of archive.records) {
-    for (const item of record.items) {
-      if (metricKey(record.type, item) !== key || item.name === name) continue;
-      const targetKey = metricKey(record.type, { ...item, name });
-      if (record.items.some((other) => other !== item && metricKey(record.type, other) === targetKey)) throw new HealthError("同一报告中已存在目标指标，请先逐项核对，未进行合并");
-      item.name = name; changed++;
-    }
-  }
-  archive.aliasMap = { ...archive.aliasMap, [key]: name };
-  return changed;
+// Rebuilds an editor draft saved at shutdown; values stay unvalidated until the user saves.
+export function draftRecord(value) {
+  const draft = value?.draft;
+  if (!draft || typeof draft !== "object" || Array.isArray(draft) || !Array.isArray(draft.items)) return null;
+  const str = (v) => typeof v === "string" ? v : "";
+  const items = draft.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)).map((i) => ({ name: str(i.name), value: str(i.value), unit: str(i.unit), normal: str(i.normal) }));
+  return { id: typeof draft.id === "string" && draft.id ? draft.id : newId(), date: validDate(draft.date) ? draft.date : localDate(), type: typeof draft.type === "string" && Object.hasOwn(TYPES, draft.type) ? draft.type : "blood", items };
 }
 
 export function exportArchive(archive) {

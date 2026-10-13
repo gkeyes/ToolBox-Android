@@ -107,9 +107,34 @@ function parseFinalJson(text) {
   } catch { throw new HealthError("AI 结果格式不正确，请重试；原记录未修改", "AI_INVALID_JSON"); }
 }
 
+// A single non-streamed reply can legitimately take minutes (long history, thinking
+// models). This only releases a request that never answers; cancel works at any time.
+export const AI_RESPONSE_TIMEOUT_MS = 15 * 60_000;
+const cancelledAi = () => new HealthError("已取消本次 AI 请求，原记录未修改", "CANCELLED");
+
+// Native requests cannot be aborted once sent; stop waiting for them instead.
+export function untilAborted(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) { promise.catch(() => {}); return Promise.reject(cancelledAi()); }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(cancelledAi());
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function requestOnce(api, config, request, signal) {
+  try {
+    return await untilAborted(api.network.request({ ...request, timeoutMs: AI_RESPONSE_TIMEOUT_MS }), signal);
+  } catch (error) {
+    if (["TIMEOUT", "NETWORK_TIMEOUT"].includes(error?.code)) throw new HealthError(`${config.label} 超过 ${AI_RESPONSE_TIMEOUT_MS / 60_000} 分钟仍未返回结果，已超时停止等待；原记录未修改，请检查网络后重试`, "AI_TIMEOUT");
+    throw error;
+  }
+}
+
 export async function requestAi(api, settings, prompt, payload, image = null, onStage = () => {}, options = {}) {
   const selected = { ...settings }, config = getAiConfig(selected, Boolean(image));
-  if (options.signal?.aborted) throw new HealthError("已取消本次 AI 请求，原记录未修改", "CANCELLED");
+  if (options.signal?.aborted) throw cancelledAi();
   onStage("读取安全密钥");
   const key = await api.storage.secure.get(config.keyName);
   onStage("构造请求");
@@ -117,8 +142,8 @@ export async function requestAi(api, settings, prompt, payload, image = null, on
   const contract = options.mode ? aiContract(options.mode, payload) : null;
   const request = makeAiRequest(selected, key, prompt, payload, image, streaming, options.mode);
   onStage("等待服务返回");
-  const response = streaming ? await streamAiResponse(api.network, request, { ...options, onStage, expectedFunction: contract?.name }) : await api.network.request(request);
-  if (options.signal?.aborted) throw new HealthError("已取消本次 AI 请求，原记录未修改", "CANCELLED");
+  const response = streaming ? await streamAiResponse(api.network, request, { ...options, onStage, expectedFunction: contract?.name }) : await requestOnce(api, config, request, options.signal);
+  if (options.signal?.aborted) throw cancelledAi();
   onStage("解析服务响应");
   if (!Number.isInteger(response?.status)) throw new HealthError("AI 返回了不支持的响应格式");
   let envelope;
