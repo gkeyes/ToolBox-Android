@@ -85,7 +85,12 @@ case "$kind" in
     }
     current="$(lookup "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha)" \
       || { echo "Could not read where $tag points; not publishing." >&2; exit 1; }
-    if [ "$current" != "$GITHUB_SHA" ]; then
+    app_assets="$(lookup "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --paginate \
+      --jq '.[] | select(.name | test("^toolbox-v.*\\.apk$")) | .name')" \
+      || { echo "Could not list $tag assets; not publishing." >&2; exit 1; }
+    # Only an app publish moves the tag; one the TBX workflow created without an APK says nothing
+    # about which app build is newer.
+    if [ -n "$app_assets" ] && [ "$current" != "$GITHUB_SHA" ]; then
       order="$(lookup "repos/$GH_REPO/compare/${current}...${GITHUB_SHA}" --jq .status)" \
         || { echo "Could not compare ${current:0:7} with ${GITHUB_SHA:0:7}; not publishing." >&2; exit 1; }
       if [ "$order" = behind ]; then
