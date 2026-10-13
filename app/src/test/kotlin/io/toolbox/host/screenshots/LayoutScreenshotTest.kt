@@ -18,7 +18,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -118,6 +121,18 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         assertTextFits(name)
     }
 
+    /** Fails with the semantics tree when sample content never made it on screen. */
+    private fun assertShows(vararg texts: String) {
+        texts.forEach { text ->
+            val found = compose.onAllNodes(hasText(text), useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false)
+            assertTrue("\"$text\" is not on screen:\n" + compose.onAllNodes(isRoot()).fetchSemanticsNodes().joinToString("\n") { root ->
+                compose.onNode(hasTestTagOrRoot(root.id)).printToString(maxDepth = 40)
+            }, found.isNotEmpty())
+        }
+    }
+
+    private fun hasTestTagOrRoot(id: Int) = SemanticsMatcher("id $id") { it.id == id }
+
     private fun assertTextFits(name: String) {
         val nodes = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult), useUnmergedTree = true)
             .fetchSemanticsNodes(atLeastOneRootRequired = false)
@@ -189,9 +204,15 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         }
     }
 
-    @Test fun home() = render("home") { Primary(MainDestination.Home) }
+    @Test fun home() {
+        render("home") { Primary(MainDestination.Home) }
+        assertShows("NextFlux 阅读器", "工作效率")
+    }
 
-    @Test fun allTools() = render("tools") { Primary(MainDestination.Tools) }
+    @Test fun allTools() {
+        render("tools") { Primary(MainDestination.Tools) }
+        assertShows("番茄钟专注计时")
+    }
 
     @Test fun settings() = render("settings") { Primary(MainDestination.Settings) }
 
