@@ -66,7 +66,7 @@ class RuntimeBridgeAdmissionInstrumentationTest {
                 return RuntimePolicyDecision.Allowed
             }
         }
-        val session = RuntimeBridgeSession(identity, policy, RuntimeM1Handlers(storage = handler),
+        val session = RuntimeBridgeSession(identity, policy, RuntimeCoreHandlers(storage = handler),
             ordinaryDispatcher = dispatcher)
         var view: WebView? = null
         try {
@@ -168,7 +168,7 @@ class RuntimeBridgeAdmissionInstrumentationTest {
         }
         // The 800-character read fits 2 KiB alone; retaining its UTF-16 request
         // leaves less than one final storage.apply envelope until it finishes.
-        val session = RuntimeBridgeSession(identity, policy, RuntimeM1Handlers(storage = handler),
+        val session = RuntimeBridgeSession(identity, policy, RuntimeCoreHandlers(storage = handler),
             ordinaryBudget = RuntimeRequestBudget(2_048))
         var view: WebView? = null
         try {

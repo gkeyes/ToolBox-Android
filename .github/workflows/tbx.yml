@@ -113,6 +113,14 @@ jobs:
       - if: ${{ matrix.npm }}
         working-directory: examples/${{ matrix.tool }}
         run: npm ci --ignore-scripts
+      - name: Install RSS Scout test dependencies
+        if: ${{ matrix.tool == 'rss-scout' && (matrix.full_tests || matrix.unit_test_filter != '') }}
+        working-directory: examples/rss-scout
+        run: npm ci --ignore-scripts
+      - name: RSS Scout unit tests
+        if: ${{ matrix.tool == 'rss-scout' && matrix.full_tests }}
+        working-directory: examples/rss-scout
+        run: npm test
       - name: Watcher reliability regressions
         if: ${{ matrix.tool == 'github-actions-watcher' && matrix.full_tests }}
         run: node --test scripts/tests/watcher-reliability.test.cjs
@@ -153,6 +161,9 @@ jobs:
         env:
           TBX_TOOL: ${{ matrix.tool }}
         run: python3 scripts/ci/tbx.py test-unit --tool "$TBX_TOOL" --test-filter scripts/tests/bundled-tools.test.cjs
+      - name: 2048 game core and save tests
+        if: ${{ matrix.tool == 'game-2048' && matrix.full_tests }}
+        run: python3 scripts/ci/tbx.py test-unit --tool game-2048 --test-filter tests/game-core.test.cjs,tests/game-save.test.cjs
       - name: Verify selected tool unit cases
         if: ${{ !matrix.full_tests && matrix.unit_test_filter != '' }}
         env:

@@ -132,9 +132,9 @@ class CatalogLayoutWriteTest {
     @Test fun duplicateSubmissionIsIgnoredOnlyWhileItsOperationIsWriting() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
-        viewModel.dispatch(CatalogAction.CreateGroup("一次创建", "editor"))
+        viewModel.dispatch(CatalogAction.SaveGroup(null, "一次创建", emptyList(), "editor"))
         val first = settings.attempts.receive()
-        viewModel.dispatch(CatalogAction.CreateGroup("重复创建", "editor"))
+        viewModel.dispatch(CatalogAction.SaveGroup(null, "重复创建", emptyList(), "editor"))
         // A different operation still enters the existing write queue.
         viewModel.dispatch(CatalogAction.SetSort(CatalogSort.NAME, "sort"))
         first.complete()
@@ -149,8 +149,8 @@ class CatalogLayoutWriteTest {
     @Test fun forgottenSuccessAndFailureNeverReinsertStateOrShowGlobalFeedback() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
-        viewModel.dispatch(CatalogAction.RenameGroup("first", "不应保存", "failure"))
-        viewModel.dispatch(CatalogAction.RenameGroup("second", "仍会保存", "success"))
+        viewModel.dispatch(CatalogAction.SaveGroup("first", "不应保存", emptyList(), "failure"))
+        viewModel.dispatch(CatalogAction.SaveGroup("second", "仍会保存", emptyList(), "success"))
         val failure = settings.attempts.receive()
         viewModel.dispatch(CatalogAction.ForgetLayoutWrite("failure"))
         viewModel.dispatch(CatalogAction.ForgetLayoutWrite("success"))
@@ -173,10 +173,10 @@ class CatalogLayoutWriteTest {
     @Test fun reusedOperationIdCannotReceiveTheForgottenSubmissionResult() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)
-        viewModel.dispatch(CatalogAction.RenameGroup("first", "已提交的旧名称", "editor"))
+        viewModel.dispatch(CatalogAction.SaveGroup("first", "已提交的旧名称", emptyList(), "editor"))
         val old = settings.attempts.receive()
         viewModel.dispatch(CatalogAction.ForgetLayoutWrite("editor"))
-        viewModel.dispatch(CatalogAction.RenameGroup("first", "新的编辑", "editor"))
+        viewModel.dispatch(CatalogAction.SaveGroup("first", "新的编辑", emptyList(), "editor"))
         old.complete()
         val current = settings.attempts.receive()
         assertEquals(CatalogLayoutWriteStatus.Writing, viewModel.state.value.layoutWrites["editor"])

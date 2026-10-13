@@ -1,12 +1,15 @@
 import { chooseBestArticleCandidate } from "./analyze.mjs";
 import { fetchWebDocument } from "./extractors/source.mjs";
-import { extractWithDefuddle } from "./extractors/defuddle.mjs";
 import { extractWithMiniflux } from "./extractors/miniflux.mjs";
+
+// Defuddle is large and only needed when a reader asks for full text; keep it
+// out of the startup chunk and load it alongside the page request.
+const loadDefuddle=()=>import("./extractors/defuddle.mjs");
 
 export async function loadBestFullText({article,api,fetchSource=fetchWebDocument}){
   const miniflux=extractWithMiniflux({entryId:article.id,api});
   const defuddle=(async()=>{
-    const source=await fetchSource(article.url);
+    const [source,{extractWithDefuddle}]=await Promise.all([fetchSource(article.url),loadDefuddle()]);
     return extractWithDefuddle(source);
   })();
   const results=await Promise.allSettled([miniflux,defuddle]);

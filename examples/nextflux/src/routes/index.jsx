@@ -1,20 +1,9 @@
-import { createHashRouter } from "react-router-dom";
+import { createHashRouter } from "react-router";
 import App from "@/App";
 import ArticleList from "@/components/ArticleList/ArticleList";
 import LoginPage from "@/pages/LoginPage";
 import ErrorPage from "@/pages/ErrorPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
-
-const routerConfig = {
-  future: {
-    v7_startTransition: true,
-    v7_relativeSplatPath: true,
-    v7_fetcherPersist: true,
-    v7_normalizeFormMethod: true,
-    v7_partialHydration: true,
-    v7_skipActionErrorRevalidation: true,
-  },
-};
 
 export const router = createHashRouter(
   [
@@ -59,5 +48,4 @@ export const router = createHashRouter(
       ],
     },
   ],
-  routerConfig,
 );

@@ -1,4 +1,4 @@
-import {useNavigate, useRouteError} from "react-router-dom";
+import {useNavigate, useRouteError} from "react-router";
 import {Button} from "@heroui/react";
 import {useTranslation} from "react-i18next";
 import {

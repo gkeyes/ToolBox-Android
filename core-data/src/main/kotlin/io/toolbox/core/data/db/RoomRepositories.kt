@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.BackgroundTaskRepository
 import io.toolbox.core.data.CatalogEntry
+import io.toolbox.core.data.CatalogGrantEpoch
 import io.toolbox.core.data.CatalogInstallAttempt
 import io.toolbox.core.data.CatalogLifecycleRepository
 import io.toolbox.core.data.CatalogOrganizationRepository
@@ -106,7 +107,9 @@ internal class RoomCatalogLifecycleRepository(
                 }
                 database.versions().put(attempt.version.toEntity())
                 if (existingVersion != null) {
-                    database.backgroundTasks().deleteForTool(attempt.metadata.id)
+                    // Tasks scheduled by the old version must not run under the new one, but
+                    // their history (and results) stays visible after the update.
+                    database.backgroundTasks().cancelActiveForTool(attempt.metadata.id, attempt.version.installedAt)
                 }
                 val nextGrants = if (existingVersion == null) {
                     attempt.initialGrants.map(PermissionGrant::toEntity)
@@ -132,6 +135,8 @@ internal class RoomCatalogLifecycleRepository(
             throw cancelled
         } catch (_: Exception) {
             DataResult.Failure.StorageFailure("commitInstall")
+        } finally {
+            CatalogGrantEpoch.advance()
         }
     }
 
@@ -148,6 +153,8 @@ internal class RoomCatalogLifecycleRepository(
         throw cancelled
     } catch (_: Exception) {
         DataResult.Failure.StorageFailure("deleteToolCatalog")
+    } finally {
+        CatalogGrantEpoch.advance()
     }
 }
 
@@ -196,18 +203,8 @@ internal class RoomPermissionGrantRepository(
         throw cancelled
     } catch (_: Exception) {
         DataResult.Failure.StorageFailure("putGrant")
-    }
-
-    override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = try {
-        database.withTransaction {
-            if (database.tools().get(toolId) == null) return@withTransaction DataResult.Failure.NotFound("tool")
-            database.grants().delete(toolId, capability)
-            DataResult.Success(Unit)
-        }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        DataResult.Failure.StorageFailure("revokeGrant")
+    } finally {
+        CatalogGrantEpoch.advance()
     }
 }
 
@@ -428,18 +425,6 @@ internal class RoomBackgroundTaskRepository(
         catch (_: Exception) { DataResult.Failure.StorageFailure("claimBackgroundExecution") }
     }
 
-    override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
-        if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
-        return transitionTask(
-            taskId,
-            listOf(TaskState.QUEUED),
-            TaskState.RUNNING,
-            updatedAt,
-            null,
-            runAttempt,
-        )
-    }
-
     override suspend fun deferRetry(
         taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?,
     ): DataResult<Unit> {
@@ -569,13 +554,6 @@ internal class RoomBackgroundTaskRepository(
             null,
             task.runAttempt,
         )
-    }
-
-    override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int> {
-        if (cutoffMillis < 0) return DataResult.Failure.InvalidInput("cutoffMillis")
-        return storageQuery("pruneBackgroundTaskResults") {
-            database.taskResults().deleteCompletedBefore(cutoffMillis)
-        }
     }
 
     override suspend fun deleteForTool(toolId: String): DataResult<Unit> = try {

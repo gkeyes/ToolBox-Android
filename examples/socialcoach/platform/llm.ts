@@ -13,6 +13,10 @@ export function isMiniMaxM3(c: ByokConfig, model = c.smartModel): boolean {
 }
 
 function base(c: ByokConfig) { return c.baseUrl.trim() || (c.provider === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com/v1'); }
+/** The host a key is sent to: the typed base URL, or the provider's official one when blank. */
+export function keyOrigin(c: Pick<ByokConfig, 'provider' | 'baseUrl'>): string | null {
+  try { return new URL(base(c as ByokConfig)).origin; } catch { return null; }
+}
 function apiUrl(c: ByokConfig, path: string) {
   let root = base(c).replace(/\/+$/, '');
   const pathName = new URL(root).pathname;
@@ -33,7 +37,7 @@ function safeMessage(value: string, c: ByokConfig) {
   return (key ? value.split(key).join('[redacted]') : value).slice(0, 500);
 }
 export function byokError(e: unknown, c: ByokConfig): Error {
-  if (e instanceof Error && e.name === 'AbortError') return e;
+  if (e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError')) return e;
   if (e instanceof LLMError) return e;
   return new LLMError(safeMessage(e instanceof Error ? e.message : '模型服务连接失败，请检查网络、权限与 API 地址。', c), 503);
 }

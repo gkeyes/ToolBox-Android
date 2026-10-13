@@ -583,7 +583,7 @@ test("the overlay janitor never touches an open sheet", async ({ page }) => {
   await expect(sheet).toHaveCount(0);
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await expect(sheet).toBeVisible();
-  expect(await page.evaluate(() => window.__nextfluxOverlayJanitor.check())).toEqual([]);
+  expect(await page.evaluate(() => window.controlsOverlayJanitor.check())).toEqual([]);
   await page.waitForTimeout(1500);
   await expect(sheet).toBeVisible();
   expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);

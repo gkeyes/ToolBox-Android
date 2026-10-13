@@ -32,8 +32,8 @@ import io.toolbox.tool.runtime.RuntimeDataCleanupExecution
 import io.toolbox.tool.runtime.RuntimeGrantStateSource
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeIdentity
-import io.toolbox.tool.runtime.RuntimeM1Handlers
-import io.toolbox.tool.runtime.RuntimeM2Handlers
+import io.toolbox.tool.runtime.RuntimeCoreHandlers
+import io.toolbox.tool.runtime.RuntimeServiceHandlers
 import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeProfileManager
 import io.toolbox.tool.runtime.RuntimeQuotaChecker
@@ -250,8 +250,8 @@ class RuntimeMediaStreamingBehaviorTest {
                         entryLoaded.set(true)
                         report("RUNTIME_MEDIA_ENTRY_LOADED")
                     }, { loadFailure.set(it) }, { loadFailure.set("Runtime media renderer exited") }),
-                    RuntimeBridgeProvider { RuntimeBridgeConfiguration(authorization, RuntimeM1Handlers(), "1.0.0",
-                        m2Handlers = RuntimeM2Handlers(network = gateway)) })
+                    RuntimeBridgeProvider { RuntimeBridgeConfiguration(authorization, RuntimeCoreHandlers(), "1.0.0",
+                        serviceHandlers = RuntimeServiceHandlers(network = gateway)) })
                 page = when (created) {
                     is RuntimeWebViewCreationResult.Created -> created.webView
                     is RuntimeWebViewCreationResult.Failed -> error("Production WebView creation failed: ${created.message}")

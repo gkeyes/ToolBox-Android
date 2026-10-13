@@ -1,5 +1,4 @@
 import {keyStorage} from "@platform/storage";
-"use client";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Provider, TokenParam } from "./llm-core";
@@ -13,7 +12,7 @@ import type { Provider, TokenParam } from "./llm-core";
  * downloaded JSON. Separate key, separate lifecycle.
  *
  * Nothing here is ever sent to our server: when this is enabled the browser
- * calls the provider directly (see `llm-client.ts`).
+ * calls the provider directly (see `platform/llm.ts`).
  */
 export interface ByokConfig {
   enabled: boolean;

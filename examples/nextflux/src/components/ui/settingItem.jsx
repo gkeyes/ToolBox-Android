@@ -1,4 +1,5 @@
 import "@/components/Settings/settings.css";
+import { useState } from "react";
 import { updateSettings } from "@/stores/settingsStore.js";
 import { Button, cn, Dropdown, Kbd, Label, Slider, Switch, Tabs } from "@heroui/react";
 import { ChevronsUpDown } from "lucide-react";
@@ -124,14 +125,22 @@ export const SliderItem = ({
   step,
   description,
 }) => {
+  // Dragging only moves this slider; the setting (and every subscriber of the
+  // settings store) changes once when the drag or key press ends.
+  const [draft, setDraft] = useState(null);
+  const sliderValue = (value) => (Array.isArray(value) ? value[0] : value);
   return (
     <div className="nf-set-row nf-slider-row" data-static="true">
       {icon}
       <Slider
         aria-label={typeof label === "string" ? label : settingName}
         className="nf-slider"
-        value={[settingValue]}
-        onChange={(value) => updateSettings({ [settingName]: value[0] })}
+        value={[draft ?? settingValue]}
+        onChange={(value) => setDraft(sliderValue(value))}
+        onChangeEnd={(value) => {
+          setDraft(null);
+          void updateSettings({ [settingName]: sliderValue(value) }, { immediate: false });
+        }}
         maxValue={max}
         minValue={min}
         step={step}

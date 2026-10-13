@@ -1,10 +1,9 @@
-"use client";
 import { MotionConfig } from "framer-motion";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useApp, useLang } from "@/store/useApp";
 import { useByok } from "@/lib/byok";
-import { ModelSheet } from "./ModelSheet";
+import { ModelSheet } from "@platform/ModelSheet";
 import { Toaster } from "./ui";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
@@ -13,7 +12,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const settings = useApp((s) => s.settings);
   const router = useRouter();
   const path = usePathname();
-  const byok = useByok();
+  const sheetOpen = useByok((s) => s.sheetOpen);
+  const closeSheet = useByok((s) => s.closeSheet);
   const lang = useLang();
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <MotionConfig reducedMotion="user">
     <div className="sheet">
       {hydrated ? children : <div className="min-h-dvh" />}
-      <ModelSheet open={hydrated && byok.sheetOpen} onClose={byok.closeSheet} />
+      <ModelSheet open={hydrated && sheetOpen} onClose={closeSheet} />
       <Toaster />
     </div>
     </MotionConfig>

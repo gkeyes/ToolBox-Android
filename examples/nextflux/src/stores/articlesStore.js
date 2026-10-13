@@ -9,6 +9,8 @@ import {
 import minifluxAPI from "../api/miniflux.js";
 import { starredCounts, unreadCounts } from "./feedsStore.js";
 import { settingsState } from "./settingsStore.js";
+import { clearAllSummaries } from "./aiStore.js";
+import { toggleStarAcknowledged } from "../toolbox/star-toggle.mjs";
 
 export const filteredArticles = atom([]);
 export const activeArticle = atom(null);
@@ -61,6 +63,7 @@ export function resetArticleState() {
   activeArticle.set(null);
   articleContentRevision.set({});
   imageGalleryActive.set(false);
+  clearAllSummaries();
   queryTotal.set(null);
   hasMore.set(true);
   currentPage.set(1);
@@ -207,8 +210,12 @@ export function updateArticleStarred(article) {
     const current = await getArticleMetadata(article.id);
     check();
     if (!current) throw new Error("该文章已不在本地缓存，请刷新后重试。");
-    await minifluxAPI.updateEntryStarred(current, check);
-    await saveAcknowledged([{ id: current.id, starred: current.starred === 1 ? 0 : 1 }], check);
+    await toggleStarAcknowledged({
+      current,
+      toggle: () => minifluxAPI.updateEntryStarred(current, check),
+      fetchEntry: () => minifluxAPI.getEntry(current.id, check),
+      save: (starred) => saveAcknowledged([{ id: current.id, starred }], check),
+    });
   }, { priority: "manual" });
 }
 

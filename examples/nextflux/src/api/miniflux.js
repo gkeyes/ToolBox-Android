@@ -124,39 +124,12 @@ export const getFeed = async (feedId, check) => {
   return response.data;
 };
 
-// 获取指定订阅源的文章
-export const getFeedEntries = async (feedId, params = {}, check) => {
-  try {
-    const response = await runNetworkOperation(() => apiClient.get("/v1/feeds/" + feedId + "/entries", {
-      params: { direction: "desc", limit: 50, ...params },
-    }), check);
-    return response.data.entries;
-  } catch (error) {
-    console.error("获取文章失败:", error);
-    throw error;
-  }
-};
-
 export const updateEntriesStatus = async (entryIds, status, check) => {
   await runNetworkOperation(() => {
     // The request check may remove IDs superseded by a later manual intent.
     if (!entryIds.length) throw cancelled();
     return apiClient.put("/v1/entries", { entry_ids: [...entryIds], status });
   }, check);
-};
-
-// 更新文章阅读状态
-export const updateEntryStatus = async (entry, check) => {
-  try {
-    const status = entry.status === "read" ? "unread" : "read";
-    await updateEntriesStatus([entry.id], status, check);
-  } catch (error) {
-    console.error(
-      `标记文章${entry.status === "read" ? "已读" : "未读"}失败:`,
-      error,
-    );
-    throw error;
-  }
 };
 
 // 更新文章星标状态
@@ -167,6 +140,28 @@ export const updateEntryStarred = async (entry, check) => {
     console.error("更新文章星标状态失败:", error);
     throw error;
   }
+};
+
+// 读取单篇文章在服务器上的当前状态（收藏切换后以服务器结果为准）
+export const getEntry = async (entryId, check) => {
+  const id = Number(entryId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("文章编号无效。");
+  const response = await runNetworkOperation(() => apiClient.get(`/v1/entries/${id}`), check);
+  return response.data;
+};
+
+// Smallest ID among the server's read, unstarred entries, or Infinity when it
+// has none. Miniflux purges these oldest-first without a change record, so
+// local read, unstarred rows below this ID are gone from the server.
+export const getOldestReadEntryId = async (check) => {
+  const response = await runNetworkOperation(() => apiClient.get("/v1/entries", {
+    params: { status: "read", starred: false, order: "id", direction: "asc", limit: 1 },
+  }), check);
+  const entries = response.data?.entries;
+  if (!Array.isArray(entries)) throw new Error("服务器返回的文章列表无效。");
+  if (!entries.length) return Number(response.data.total) === 0 ? Infinity : null;
+  const id = Number(entries[0].id);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 };
 
 // Large Miniflux libraries are synchronized with bounded cursor pages instead of
@@ -231,18 +226,6 @@ export async function getEntriesInBatches(endpoint, params = {}, check, onPage) 
     if (batch.length < pageSize) return onPage ? undefined : entries;
   }
 }
-
-// 获取变更文章
-export const getChangedEntries = async (lastSyncTime, check, onPage) => {
-  const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { changed_after: timestamp }, check, onPage);
-};
-
-// 获取新文章
-export const getNewEntries = async (lastSyncTime, check, onPage) => {
-  const timestamp = Math.floor(new Date(lastSyncTime).getTime() / 1000);
-  return getEntriesInBatches("/v1/entries", { after: timestamp }, check, onPage);
-};
 
 // 优先同步自上次窗口以来仍为未读的文章；changed_after 也能覆盖
 // “旧文章被重新标为未读”的情况，而不必每次重拉全部未读历史。
@@ -409,30 +392,12 @@ export const importOPML = async (file) => {
   }
 };
 
-// 兼容旧调用：offset=0 使用首个游标页；新同步链路使用 getAllUnreadEntries。
-export const getUnreadEntriesByPage = async (offset = 0, limit = SYNC_PAGE_SIZE, check) => {
-  if (Number(offset) !== 0) throw new Error("新版同步已停用深 OFFSET 分页，请重新开始同步。");
-  const { data } = await fetchEntryPage("/v1/entries", { status: "unread", direction: "desc" }, 0,
-    Math.max(SYNC_MIN_PAGE_SIZE, Math.min(Number(limit) || SYNC_PAGE_SIZE, SYNC_PAGE_SIZE)), check);
-  return data;
-};
-
 // 刷新订阅源
 export const refreshFeed = async (feedId) => {
   try {
     await apiClient.put(`/v1/feeds/${feedId}/refresh`);
   } catch (error) {
     console.error("刷新订阅源失败:", error);
-    throw error;
-  }
-};
-
-// 刷新所有订阅源
-export const refreshAllFeeds = async () => {
-  try {
-    await apiClient.put("/v1/feeds/refresh");
-  } catch (error) {
-    console.error("刷新所有订阅源失败:", error);
     throw error;
   }
 };
@@ -488,12 +453,10 @@ export const getIconByFeedId = async (feedId) => {
 const minifluxApi = {
   getFeeds,
   getFeed,
-  getFeedEntries,
-  updateEntryStatus,
   updateEntriesStatus,
   updateEntryStarred,
-  getChangedEntries,
-  getNewEntries,
+  getEntry,
+  getOldestReadEntryId,
   getUnreadChangedEntries,
   getReadChangedEntries,
   getAllUnreadEntries,
@@ -508,9 +471,7 @@ const minifluxApi = {
   updateCategory,
   getCategories,
   importOPML,
-  getUnreadEntriesByPage,
   refreshFeed,
-  refreshAllFeeds,
   checkIntegrations,
   saveToThirdParty,
   discoverFeeds,

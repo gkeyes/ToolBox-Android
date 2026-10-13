@@ -5,6 +5,7 @@ import {makeByokLLM,listModels} from '../platform/llm';
 import {appStorage,keyStorage,flushStorage,storageFailure} from '../platform/storage';
 import {backupText,validateBackup,restoreBackup} from '../platform/backup';
 import {useApp} from '../src/store/useApp';
+import {hydrateApp} from '../src/store/persistence';
 import {useByok} from '../src/lib/byok';
 import {SCENARIOS,THEORIES,CASES} from '../src/data/corpus';
 import {SKILLS,CONTEXTS} from '../src/data/taxonomy';
@@ -61,6 +62,7 @@ test('one NPC checkpoint updates multiple fixed message IDs without duplicate li
 });
 test('long roleplay and 200 retained sessions expose parse, serialization and host-write work separately',async()=>{
   mockNative('');
+  await hydrateApp();
   const before=workSnapshot();
   const raw='@@npc\n'+'需要讨论具体安排。'.repeat(3000);
   assert.ok(parseRoleplay(raw,['npc']).utterances[0].text.length>20_000);

@@ -3,9 +3,8 @@
  * provider, and JSON extraction. No SDK imports and no `process.env`, so this
  * module runs identically on the server and in the browser.
  *
- * Each provider's request shape is defined here exactly once. The server client
- * (`llm.ts`) and the browser client (`llm-client.ts`) both build their calls
- * from these functions, so the two paths cannot drift.
+ * Each provider's request shape is defined here exactly once; the ToolBox
+ * client (`platform/llm.ts`) builds its calls from these functions.
  */
 import { fixUnescapedQuotes, parsePartialJSON } from "./partial-json";
 
@@ -133,7 +132,7 @@ export function extractJSON<T = unknown>(text: string): T {
   }
   try {
     return JSON.parse(s) as T;
-  } catch (first) {
+  } catch {
     // common LLM slips, in order: trailing commas; raw newlines/tabs inside strings; a truncated tail.
     const noTrailing = s.replace(/,\s*([}\]])/g, "$1");
     try {
@@ -147,10 +146,7 @@ export function extractJSON<T = unknown>(text: string): T {
     } catch {}
     const repaired = parsePartialJSON<T>(escapeControlCharsInStrings(noTrailing));
     if (repaired && Object.keys(repaired).length) return repaired as T;
-    const msg = first instanceof Error ? first.message : String(first);
-    const m = msg.match(/position (\d+)/);
-    const pos = m ? Number(m[1]) : -1;
-    console.error("[extractJSON] unparseable model output:", msg, pos >= 0 ? JSON.stringify(s.slice(Math.max(0, pos - 160), pos + 80)) : JSON.stringify(s.slice(-240)));
+    // Never log the model output itself: it carries the learner's conversation.
     throw new LLMError("The coach's notes came back garbled. Please try again.", 502, true);
   }
 }

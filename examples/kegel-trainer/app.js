@@ -244,9 +244,8 @@
   const clearDialog = $("clear-dialog");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-  let persistentStorage = getPersistentStorage();
-  let preferences = loadPreferences();
-  let history = loadHistory();
+  let preferences = sanitizePreferences({});
+  let history = [];
   let currentScreen = "setup";
   let currentSession = null;
   let frameId = null;
@@ -256,52 +255,52 @@
   let toastTimer = null;
   let runtimeForeground = false;
   let completionPending = null;
+  // Data lives in ToolBox.storage; it is only written after the saved copy was read, so an
+  // early or failed read can never overwrite the user's history.
+  // States: loading, ready (ToolBox.storage), legacy (storage permission off: keep using
+  // the pre-1.0.5 localStorage copy until it can be migrated) and unavailable.
+  let storageState = "loading";
+  let hostConnected = false;
+  let loadWork = null;
+  // Preferences as last read from ToolBox.storage (defaults before the first read). Values
+  // that differ from it were chosen while the saved copy was unknown and win over it.
+  let preferencesBase = sanitizePreferences({});
+  // The user cleared history before the saved copy was read: do not bring it back.
+  let historyCleared = false;
+  // The localStorage fallback was used this run, so its copy must be merged on recovery.
+  let legacyUsed = false;
+  // Fallback copy to remove once everything in memory has reached ToolBox.storage.
+  let pendingLegacyDrop = null;
+  const dirtyKeys = new Set();
+  let writeWork = null;
+  let hapticsWarned = false;
+  const wakeLockSupported = typeof navigator.wakeLock?.request === "function";
 
-  function getPersistentStorage() {
-    try {
-      const storage = window.localStorage;
-      if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") {
-        return null;
-      }
-      return storage;
-    } catch (_) {
-      return null;
-    }
+  function hostApi() {
+    return window.ToolBox;
   }
 
-  function readStoredJson(key, fallback) {
-    if (!persistentStorage) return fallback;
-    try {
-      const value = persistentStorage.getItem(key);
-      return value ? JSON.parse(value) : fallback;
-    } catch (_) {
-      persistentStorage = null;
-      return fallback;
-    }
-  }
-
-  function loadPreferences() {
-    const stored = readStoredJson(STORAGE_KEYS.preferences, {});
-    const selectedMode = [...Object.keys(PRESETS), "custom"].includes(stored.selectedMode)
-      ? stored.selectedMode
+  function sanitizePreferences(stored) {
+    const value = stored && typeof stored === "object" ? stored : {};
+    const selectedMode = [...Object.keys(PRESETS), "custom"].includes(value.selectedMode)
+      ? value.selectedMode
       : DEFAULT_PREFERENCES.selectedMode;
     return {
       selectedMode,
-      sound: typeof stored.sound === "boolean" ? stored.sound : DEFAULT_PREFERENCES.sound,
-      voice: typeof stored.voice === "boolean" ? stored.voice : DEFAULT_PREFERENCES.voice,
-      vibration: typeof stored.vibration === "boolean" ? stored.vibration : DEFAULT_PREFERENCES.vibration,
-      keepAwake: typeof stored.keepAwake === "boolean" ? stored.keepAwake : DEFAULT_PREFERENCES.keepAwake,
-      volume: clamp(Number.isFinite(stored.volume) ? stored.volume : DEFAULT_PREFERENCES.volume, 0, 100),
+      sound: typeof value.sound === "boolean" ? value.sound : DEFAULT_PREFERENCES.sound,
+      voice: typeof value.voice === "boolean" ? value.voice : DEFAULT_PREFERENCES.voice,
+      vibration: typeof value.vibration === "boolean" ? value.vibration : DEFAULT_PREFERENCES.vibration,
+      keepAwake: typeof value.keepAwake === "boolean" ? value.keepAwake : DEFAULT_PREFERENCES.keepAwake,
+      volume: clamp(Number.isFinite(value.volume) ? value.volume : DEFAULT_PREFERENCES.volume, 0, 100),
       custom: {
-        contract: positive(stored.custom?.contract, DEFAULT_PREFERENCES.custom.contract),
-        relax: positive(stored.custom?.relax, DEFAULT_PREFERENCES.custom.relax),
-        reps: positive(stored.custom?.reps, DEFAULT_PREFERENCES.custom.reps)
+        contract: positive(value.custom?.contract, DEFAULT_PREFERENCES.custom.contract),
+        relax: positive(value.custom?.relax, DEFAULT_PREFERENCES.custom.relax),
+        reps: positive(value.custom?.reps, DEFAULT_PREFERENCES.custom.reps)
       }
     };
   }
 
-  function loadHistory() {
-    const stored = readStoredJson(STORAGE_KEYS.history, []);
+  function sanitizeHistory(stored) {
     if (!Array.isArray(stored)) return [];
     return stored.filter((entry) => (
       entry
@@ -312,22 +311,234 @@
     ));
   }
 
-  function persistPreferences() {
-    if (!persistentStorage) return;
+  // Union of several history copies, newest first; a session present in more than one copy
+  // (same completion time and contents) is kept once.
+  function mergeHistory(...lists) {
+    const seen = new Set();
+    const merged = [];
+    for (const entry of lists.flatMap(sanitizeHistory)) {
+      const id = `${entry.completedAt}|${entry.mode}|${entry.reps}|${entry.durationMs}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      merged.push(entry);
+    }
+    return merged.sort((a, b) => (a.completedAt < b.completedAt ? 1 : a.completedAt > b.completedAt ? -1 : 0));
+  }
+
+  // Versions up to 1.0.4 kept data in WebView localStorage, which the host may not keep.
+  function readLegacyStorage() {
     try {
-      persistentStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify(preferences));
+      const storage = window.localStorage;
+      if (!storage || typeof storage.getItem !== "function") return null;
+      const read = (key) => {
+        const value = storage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      };
+      return { storage, preferences: read(STORAGE_KEYS.preferences), history: read(STORAGE_KEYS.history) };
     } catch (_) {
-      persistentStorage = null;
+      return null;
     }
   }
 
-  function persistHistory() {
-    if (!persistentStorage) return;
+  function dropLegacyStorage(legacy) {
     try {
-      persistentStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
-    } catch (_) {
-      persistentStorage = null;
+      legacy.storage.removeItem(STORAGE_KEYS.preferences);
+      legacy.storage.removeItem(STORAGE_KEYS.history);
+    } catch (_) {}
+  }
+
+  function preferenceEdits(base, current) {
+    const edits = {};
+    for (const key of Object.keys(current)) {
+      if (key !== "custom" && base[key] !== current[key]) edits[key] = current[key];
     }
+    const custom = {};
+    for (const key of Object.keys(current.custom)) {
+      if (base.custom[key] !== current.custom[key]) custom[key] = current.custom[key];
+    }
+    if (Object.keys(custom).length) edits.custom = custom;
+    return edits;
+  }
+
+  function applyPreferenceEdits(saved, edits) {
+    return { ...saved, ...edits, custom: { ...saved.custom, ...(edits.custom || {}) } };
+  }
+
+  // Returns false when the fallback copy could not be written (quota, blocked storage).
+  function writeLegacy() {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify(preferences));
+      window.localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // The fallback copy can no longer be written: say so instead of claiming it is kept.
+  // Everything stays in memory and is merged into ToolBox.storage once it is enabled.
+  function legacyWriteFailed() {
+    storageState = "unavailable";
+    dirtyKeys.add(STORAGE_KEYS.preferences);
+    dirtyKeys.add(STORAGE_KEYS.history);
+    showToast(hostConnected
+      ? "网页存储写入失败，训练记录仅保留在本次会话，请开启「存储」权限"
+      : "网页存储写入失败，训练记录仅保留在本次会话");
+    renderHistory();
+  }
+
+  // The storage permission was switched off after data loaded: keep everything in the
+  // localStorage fallback (merged back once it is enabled) instead of retrying forever.
+  function storagePermissionRevoked() {
+    storageState = "legacy";
+    legacyUsed = true;
+    pendingLegacyDrop = null;
+    dirtyKeys.clear();
+    if (!writeLegacy()) { legacyWriteFailed(); return; }
+    showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
+    renderHistory();
+  }
+
+  // Without a ToolBox host the trainer runs as a plain page: localStorage is its storage.
+  function useStandaloneStorage() {
+    const legacy = readLegacyStorage();
+    if (!legacy) {
+      storageState = "unavailable";
+      return;
+    }
+    adoptLoaded(legacy.preferences, [legacy.history]);
+    storageState = "legacy";
+    syncControls();
+    renderSetup();
+  }
+
+  // Adopts loaded data while keeping edits and sessions made before it could be read
+  // (during the read, or while ToolBox.storage was unavailable).
+  function adoptLoaded(savedPreferences, savedHistories) {
+    const edits = preferenceEdits(preferencesBase, preferences);
+    preferences = applyPreferenceEdits(sanitizePreferences(savedPreferences), edits);
+    const before = history.length;
+    history = historyCleared ? mergeHistory(history) : mergeHistory(history, ...savedHistories);
+    return {
+      preferences: Object.keys(edits).length > 0,
+      history: historyCleared || before > 0
+    };
+  }
+
+  function loadStoredData() {
+    if (!loadWork) loadWork = readStoredData().finally(() => { loadWork = null; });
+    return loadWork;
+  }
+
+  async function readStoredData() {
+    const api = hostApi();
+    let saved;
+    try {
+      saved = await api.storage.getMany([STORAGE_KEYS.preferences, STORAGE_KEYS.history]);
+    } catch (_) {
+      // An update from 1.0.4 adds the storage capability switched off. Keep showing and
+      // recording data in the old localStorage copy (never deleting it) until it is enabled.
+      const legacy = readLegacyStorage();
+      const wasLegacy = storageState === "legacy";
+      if (legacy) {
+        adoptLoaded(legacy.preferences, [legacy.history]);
+        storageState = "legacy";
+        legacyUsed = true;
+        if (!writeLegacy()) legacyWriteFailed();
+      } else {
+        storageState = "unavailable";
+      }
+      // legacyWriteFailed() already asked to enable storage; keep its warning visible.
+      if (!wasLegacy && (!legacy || storageState === "legacy")) showToast("请在工具权限中开启「存储」，训练记录会自动迁移并长期保存");
+      syncControls();
+      if (currentScreen === "setup") renderSetup();
+      renderHistory();
+      return;
+    }
+    let [savedPreferences, savedHistory] = saved;
+    // Sessions recorded in the fallback copy while storage was off are merged even when
+    // ToolBox.storage already holds older data.
+    const legacy = legacyUsed || (savedPreferences === null && savedHistory === null)
+      ? readLegacyStorage() : null;
+    const imported = Boolean(legacy && (legacy.preferences !== null || legacy.history !== null));
+    if (imported && savedPreferences === null) savedPreferences = legacy.preferences;
+    const changed = adoptLoaded(savedPreferences, imported ? [savedHistory, legacy.history] : [savedHistory]);
+    preferencesBase = sanitizePreferences(savedPreferences);
+    historyCleared = false;
+    legacyUsed = false;
+    storageState = "ready";
+    if (imported) {
+      try {
+        await api.storage.apply({ set: [
+          { key: STORAGE_KEYS.preferences, value: preferences },
+          { key: STORAGE_KEYS.history, value: history }
+        ] });
+        dropLegacyStorage(legacy);
+      } catch (_) {
+        // Remove the fallback copy only once a later write has saved everything.
+        pendingLegacyDrop = legacy;
+        dirtyKeys.add(STORAGE_KEYS.preferences);
+        dirtyKeys.add(STORAGE_KEYS.history);
+      }
+    } else {
+      if (changed.preferences) dirtyKeys.add(STORAGE_KEYS.preferences);
+      if (changed.history) dirtyKeys.add(STORAGE_KEYS.history);
+    }
+    void writeDirty();
+    syncControls();
+    if (currentScreen === "setup") renderSetup();
+    renderHistory();
+  }
+
+  // Coalesces rapid changes (e.g. dragging the volume slider) into one write per key;
+  // changes made while a write is in flight go out in the next write.
+  function writeDirty() {
+    if (writeWork) return writeWork;
+    if (storageState !== "ready" || dirtyKeys.size === 0) return Promise.resolve();
+    const keys = [...dirtyKeys];
+    dirtyKeys.clear();
+    const set = keys.map((key) => ({
+      key,
+      value: key === STORAGE_KEYS.preferences ? preferences : history
+    }));
+    writeWork = hostApi().storage.apply({ set }).then(() => true, (error) => {
+      if (error?.code === "PERMISSION_DENIED" || error?.code === "NOT_DECLARED") {
+        storagePermissionRevoked();
+        return false;
+      }
+      for (const key of keys) dirtyKeys.add(key);
+      return false;
+    }).then((saved) => {
+      writeWork = null;
+      if (saved && dirtyKeys.size === 0 && pendingLegacyDrop) {
+        dropLegacyStorage(pendingLegacyDrop);
+        pendingLegacyDrop = null;
+      }
+      return saved && dirtyKeys.size ? writeDirty() : undefined;
+    });
+    return writeWork;
+  }
+
+  function persistPreferences() {
+    if (storageState === "legacy") { if (!writeLegacy()) legacyWriteFailed(); return; }
+    dirtyKeys.add(STORAGE_KEYS.preferences);
+    void writeDirty();
+  }
+
+  function persistHistory() {
+    if (storageState === "legacy") { if (!writeLegacy()) legacyWriteFailed(); return; }
+    dirtyKeys.add(STORAGE_KEYS.history);
+    void writeDirty();
+  }
+
+  async function flushStorage() {
+    // Closing during the first read: wait for it so edits and sessions made meanwhile are
+    // merged into the saved copy and written, instead of being dropped with the WebView.
+    if (loadWork) await loadWork;
+    if (storageState !== "ready") return;
+    await writeDirty();
+    if (dirtyKeys.size) await writeDirty();
+    if (dirtyKeys.size) throw new Error("训练数据保存失败");
   }
 
   function getConfig(mode = preferences.selectedMode) {
@@ -445,15 +656,19 @@
 
   const audioFeedback = new AudioFeedback($("voice-player"));
 
+  const HAPTIC_EFFECTS = Object.freeze({ prepare: "click", contract: "confirm", relax: "click", complete: "confirm" });
+
+  function hapticsSupported() {
+    return typeof hostApi()?.haptics?.perform === "function";
+  }
+
   function vibrate(kind) {
-    if (!preferences.vibration || typeof navigator.vibrate !== "function") return;
-    const patterns = {
-      prepare: 35,
-      contract: 80,
-      relax: [30, 45, 30],
-      complete: [70, 60, 110]
-    };
-    navigator.vibrate(patterns[kind] || 30);
+    if (!preferences.vibration || !hapticsSupported()) return;
+    hostApi().haptics.perform(HAPTIC_EFFECTS[kind] || "click").catch((error) => {
+      if (hapticsWarned || (error?.code !== "PERMISSION_DENIED" && error?.code !== "NOT_DECLARED")) return;
+      hapticsWarned = true;
+      showToast("震动权限未开启，可在工具权限中打开");
+    });
   }
 
   function handlePhaseCue(phase) {
@@ -470,8 +685,6 @@
     onUpdate: renderTraining,
     onComplete: finishSession
   });
-
-  window.WenliTraining = Object.freeze({ TrainingEngine, PRESETS });
 
   function showScreen(name) {
     currentScreen = name;
@@ -519,7 +732,7 @@
     $("sound-toggle").checked = preferences.sound;
     $("voice-toggle").checked = preferences.voice;
     $("vibration-toggle").checked = preferences.vibration;
-    $("wake-toggle").checked = preferences.keepAwake;
+    $("wake-toggle").checked = preferences.keepAwake && wakeLockSupported;
     $("volume-range").value = String(preferences.volume);
     $("volume-output").textContent = `${preferences.volume}%`;
     $("contract-range").value = String(preferences.custom.contract);
@@ -530,19 +743,18 @@
     $("reps-output").textContent = `${preferences.custom.reps} 次`;
     $("custom-settings").hidden = preferences.selectedMode !== "custom";
     $("running-settings-note").hidden = currentScreen !== "training";
-    $("vibration-support-text").textContent = typeof navigator.vibrate === "function"
-      ? "用不同节奏提示动作切换"
-      : "当前浏览器不支持，将自动忽略";
-    $("wake-support-text").textContent = "wakeLock" in navigator
-      ? "暂停或离开页面时自动释放"
-      : "当前浏览器不支持，将自动忽略";
+    $("vibration-support-text").textContent = hapticsSupported()
+      ? "用不同力度提示动作切换"
+      : "当前环境不支持，将自动忽略";
   }
 
   function renderHistory() {
     const list = $("history-list");
     list.replaceChildren();
     $("clear-history-button").disabled = history.length === 0;
-    $("history-summary").textContent = persistentStorage
+    $("history-summary").textContent = storageState === "legacy" && hostConnected
+      ? `存储权限未开启：${history.length} 条记录暂存在网页存储，开启后自动迁移`
+      : storageState !== "unavailable"
       ? (history.length === 0 ? "还没有训练记录" : `已保存 ${history.length} 次完成记录`)
       : (history.length === 0 ? "训练记录只保留在本次会话" : `本次会话已完成 ${history.length} 次`);
 
@@ -566,56 +778,88 @@
     return Math.max(0, state.currentRep - 1);
   }
 
+  // The training view is painted every animation frame; only touch the DOM when a value
+  // actually changes (normally just the ring, plus the countdown once a second).
+  const trainingView = {
+    stage: $("rhythm-stage"),
+    phaseLabel: $("phase-label"),
+    phaseGuidance: $("phase-guidance"),
+    countdown: $("countdown"),
+    ring: $("ring-progress"),
+    sessionMode: $("session-mode"),
+    sessionRepetition: $("session-repetition"),
+    pauseLabel: $("pause-label"),
+    pauseNotice: $("pause-notice"),
+    activeFeedback: $("active-feedback"),
+    repProgress: $("rep-progress")
+  };
+  const paintedValues = new Map();
+
+  function paint(key, value, apply) {
+    if (paintedValues.get(key) === value) return;
+    paintedValues.set(key, value);
+    apply(value);
+  }
+
   function renderProgressDots(state) {
-    const container = $("rep-progress");
+    const container = trainingView.repProgress;
     const completed = completedRepetitions(state);
     const current = state.status === "complete" ? 0 : state.currentRep;
-    if (container.childElementCount !== state.config.reps) {
-      container.replaceChildren();
-      for (let index = 1; index <= state.config.reps; index += 1) {
-        const dot = document.createElement("span");
-        dot.className = "rep-dot";
-        dot.setAttribute("aria-hidden", "true");
-        container.append(dot);
+    paint("dots", `${state.config.reps}|${completed}|${current}`, () => {
+      if (container.childElementCount !== state.config.reps) {
+        container.replaceChildren();
+        for (let index = 1; index <= state.config.reps; index += 1) {
+          const dot = document.createElement("span");
+          dot.className = "rep-dot";
+          dot.setAttribute("aria-hidden", "true");
+          container.append(dot);
+        }
       }
-    }
-    [...container.children].forEach((dot, index) => {
-      const repetition = index + 1;
-      dot.classList.toggle("is-complete", repetition <= completed);
-      dot.classList.toggle("is-current", repetition === current);
+      [...container.children].forEach((dot, index) => {
+        const repetition = index + 1;
+        dot.classList.toggle("is-complete", repetition <= completed);
+        dot.classList.toggle("is-current", repetition === current);
+      });
+      container.setAttribute("aria-label", `已完成 ${completed} 次，共 ${state.config.reps} 次`);
     });
-    container.setAttribute("aria-label", `已完成 ${completed} 次，共 ${state.config.reps} 次`);
   }
 
   function renderTraining(state) {
     if (!runtimeForeground || !state.config || currentScreen !== "training") return;
+    const view = trainingView;
     const isPaused = state.status === "paused";
     const phase = isPaused ? "paused" : state.phase;
     const phaseMeta = PHASE_META[phase] || PHASE_META.prepare;
     const remainingSeconds = Math.max(1, Math.ceil(state.remainingMs / 1000));
     const ringProgress = reducedMotion.matches ? 1 : state.progress;
 
-    $("rhythm-stage").dataset.phase = phase;
-    $("phase-label").textContent = phaseMeta.label;
-    $("phase-guidance").textContent = phaseMeta.guidance;
-    $("countdown").textContent = String(remainingSeconds);
-    $("countdown").setAttribute("aria-label", `剩余 ${remainingSeconds} 秒`);
-    $("ring-progress").style.strokeDashoffset = String(100 - ringProgress * 100);
-    $("session-mode").textContent = currentSession.fullLabel;
-    $("session-repetition").textContent = state.currentRep === 0
+    paint("phase", phase, (value) => {
+      view.stage.dataset.phase = value;
+      view.phaseLabel.textContent = phaseMeta.label;
+      view.phaseGuidance.textContent = phaseMeta.guidance;
+    });
+    paint("countdown", remainingSeconds, (value) => {
+      view.countdown.textContent = String(value);
+      view.countdown.setAttribute("aria-label", `剩余 ${value} 秒`);
+    });
+    paint("ring", String(100 - ringProgress * 100), (value) => { view.ring.style.strokeDashoffset = value; });
+    paint("mode", currentSession.fullLabel, (value) => { view.sessionMode.textContent = value; });
+    paint("repetition", state.currentRep === 0
       ? `准备开始 · 共 ${state.config.reps} 次`
-      : `第 ${state.currentRep} / ${state.config.reps} 次`;
-    $("pause-label").textContent = isPaused ? "继续" : "暂停";
-    $("pause-notice").hidden = !isPaused;
-    $("pause-notice").textContent = isPaused ? (pauseMessage || "训练已暂停") : "";
+      : `第 ${state.currentRep} / ${state.config.reps} 次`, (value) => { view.sessionRepetition.textContent = value; });
+    paint("pauseLabel", isPaused ? "继续" : "暂停", (value) => { view.pauseLabel.textContent = value; });
+    paint("pauseNotice", isPaused ? (pauseMessage || "训练已暂停") : "", (value) => {
+      view.pauseNotice.hidden = !isPaused;
+      view.pauseNotice.textContent = value;
+    });
 
     const activeFeedback = [];
     if (preferences.sound) activeFeedback.push("提示音");
     if (preferences.voice) activeFeedback.push("中文语音");
     if (preferences.vibration) activeFeedback.push("震动");
-    $("active-feedback").textContent = activeFeedback.length
+    paint("feedback", activeFeedback.length
       ? `${activeFeedback.join(" · ")}已开启`
-      : "声音与震动均已关闭";
+      : "声音与震动均已关闭", (value) => { view.activeFeedback.textContent = value; });
     renderProgressDots(state);
   }
 
@@ -637,7 +881,7 @@
   }
 
   async function requestWakeLock() {
-    if (!runtimeForeground || !preferences.keepAwake || engine.status !== "running" || !("wakeLock" in navigator)) return;
+    if (!runtimeForeground || !preferences.keepAwake || engine.status !== "running" || !wakeLockSupported) return;
     try {
       if (wakeLockSentinel) await wakeLockSentinel.release();
       wakeLockSentinel = await navigator.wakeLock.request("screen");
@@ -664,6 +908,7 @@
     pauseMessage = "";
     audioFeedback.voiceFailed = false;
     audioFeedback.unlock();
+    paintedValues.clear();
     showScreen("training");
     const state = engine.start(currentSession);
     renderTraining(state);
@@ -726,7 +971,6 @@
     completionPending = null;
     cancelAnimationFrameLoop();
     releaseWakeLock();
-    navigator.vibrate?.(0);
     engine.stop();
     currentSession = null;
     pauseMessage = "";
@@ -789,7 +1033,6 @@
   });
   $("vibration-toggle").addEventListener("change", (event) => {
     preferences.vibration = event.target.checked;
-    if (!preferences.vibration) navigator.vibrate?.(0);
     persistPreferences();
     renderFeedbackStatus();
   });
@@ -850,40 +1093,74 @@
   $("keep-history-button").addEventListener("click", () => clearDialog.close());
   $("confirm-clear-button").addEventListener("click", () => {
     history = [];
+    if (storageState !== "ready") historyCleared = true;
     persistHistory();
     renderHistory();
     clearDialog.close();
     showToast("训练记录已清空");
   });
 
-  window.ToolBox.ready().then(() => {
-    window.ToolBox.runtime.onStateChanged((snapshot) => {
-      runtimeForeground = snapshot.foreground && !snapshot.closing;
-      if (!runtimeForeground) {
-        if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
-        cancelAnimationFrameLoop();
-        releaseWakeLock();
-      } else if (currentScreen === "training") {
-        if (completionPending) { showCompletion(completionPending, false); return; }
-        renderTraining(engine.tick());
-        if (engine.status === "running") {
-          requestWakeLock();
-          ensureAnimationFrame();
-        }
-      }
-    });
-    window.ToolBox.runtime.registerFlushHandler(async () => {
+  function handleRuntimeState(snapshot) {
+    runtimeForeground = snapshot.foreground && !snapshot.closing;
+    // Returning from the tool's permission page: retry ToolBox.storage and migrate.
+    if (runtimeForeground && hostConnected && (storageState === "legacy" || storageState === "unavailable")) {
+      void loadStoredData();
+    }
+    if (!runtimeForeground) {
       if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
       cancelAnimationFrameLoop();
-      await releaseWakeLock();
-      persistPreferences();
-      persistHistory();
+      releaseWakeLock();
+    } else {
+      showForegroundTraining();
+    }
+  }
+
+  // Back in the foreground (or the host handshake failed): continue a training screen
+  // whose frames and wake lock were skipped while not foreground.
+  function showForegroundTraining() {
+    if (currentScreen !== "training") return;
+    if (completionPending) { showCompletion(completionPending, false); return; }
+    renderTraining(engine.tick());
+    if (engine.status === "running") {
+      requestWakeLock();
+      ensureAnimationFrame();
+    }
+  }
+
+  // The setup screen is already rendered; the host only adds lifecycle, storage and haptics.
+  // Without a host (or if the handshake fails) the trainer still runs in the foreground.
+  function connectHost() {
+    const api = hostApi();
+    if (typeof api?.ready !== "function") {
+      runtimeForeground = true;
+      useStandaloneStorage();
+      renderHistory();
+      return;
+    }
+    api.ready().then(() => {
+      hostConnected = true;
+      api.runtime.onStateChanged(handleRuntimeState);
+      api.runtime.registerFlushHandler(async () => {
+        if (engine.status === "running") pauseSession("页面离开时已自动暂停，请手动继续", false);
+        cancelAnimationFrameLoop();
+        await releaseWakeLock();
+        await flushStorage();
+      });
+      syncControls();
+      return loadStoredData();
+    }).catch(() => {
+      runtimeForeground = true;
+      if (storageState === "loading") storageState = "unavailable";
+      renderHistory();
+      showForegroundTraining();
     });
-  });
+  }
 
   reducedMotion.addEventListener?.("change", () => renderTraining(engine.snapshot()));
 
+  if (!wakeLockSupported) $("wake-toggle").closest(".settings-section").hidden = true;
   syncControls();
   renderSetup();
   renderHistory();
+  connectHost();
 })();

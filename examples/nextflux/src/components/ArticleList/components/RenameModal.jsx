@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { renameModalOpen, currentCategoryId } from "@/stores/modalStore.js";
 import { useStore } from "@nanostores/react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { categories } from "@/stores/feedsStore";
 import { useTranslation } from "react-i18next";
 import CustomModal from "@/components/ui/CustomModal.jsx";

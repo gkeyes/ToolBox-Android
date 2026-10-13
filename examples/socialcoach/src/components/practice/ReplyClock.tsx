@@ -1,4 +1,3 @@
-"use client";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { clsx } from "clsx";
 import { t } from "@/lib/i18n";
@@ -26,8 +25,6 @@ interface Options {
   paused: boolean;
   /** Identity of the line being answered. A new one resets the clock. */
   turnKey: string | null;
-  /** The line is being read aloud; start once it has been heard, not when it appeared. */
-  waitForSpeech: boolean;
   onStage?: (stage: ClockStage) => void;
   onLapse: () => void;
 }
@@ -35,16 +32,6 @@ interface Options {
 /** Room to finish reading before the other side starts waiting. Longer on arrival. */
 const SETTLE_FIRST_MS = 2000;
 const SETTLE_MS = 900;
-/** A stuck `speechSynthesis.speaking` must not hold the scene hostage. */
-const SPEECH_WAIT_CAP_MS = 20000;
-
-const speechBusy = () => {
-  try {
-    return typeof speechSynthesis !== "undefined" && (speechSynthesis.speaking || speechSynthesis.pending);
-  } catch {
-    return false;
-  }
-};
 
 /**
  * The other side's patience, as a clock the learner cannot see the digits of.
@@ -59,7 +46,7 @@ const speechBusy = () => {
  * `lineRef` is the caller's element; only its transform is written, per frame,
  * so React never re-renders for time.
  */
-export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled, budgetMs, armed, paused, turnKey, waitForSpeech, onStage, onLapse }: Options) {
+export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled, budgetMs, armed, paused, turnKey, onStage, onLapse }: Options) {
   const elapsedRef = useRef(0);
   // -1 means "not yet published for this run": the first frame then always
   // writes the stage to state, so switching the mode off and back on for the
@@ -94,24 +81,15 @@ export function useReplyClock(lineRef: RefObject<HTMLElement | null>, { enabled,
     if (lineRef.current) lineRef.current.style.transform = "scaleX(1)";
   }, [turnKey, enabled, lineRef]);
 
-  // Settle, then (if the line is being spoken) wait for the voice to finish.
+  // Settle before the other side starts waiting.
   useEffect(() => {
     if (!enabled || !armed || !turnKey || readyFor === turnKey) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const startedAt = performance.now();
-    const poll = () => {
-      if (waitForSpeech && speechBusy() && performance.now() - startedAt < SPEECH_WAIT_CAP_MS) {
-        timer = setTimeout(poll, 200);
-        return;
-      }
-      setReadyFor(turnKey);
-    };
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       firstArmRef.current = false;
-      poll();
+      setReadyFor(turnKey);
     }, firstArmRef.current ? SETTLE_FIRST_MS : SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [enabled, armed, turnKey, readyFor, waitForSpeech]);
+  }, [enabled, armed, turnKey, readyFor]);
 
   const running = enabled && armed && ready && !paused && stage < 3;
 

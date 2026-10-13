@@ -1,4 +1,3 @@
-"use client";
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Bookmark, ChevronDown, Search, X } from "lucide-react";
@@ -9,6 +8,7 @@ import { SkillTag } from "@/components/SkillBits";
 import { CASES, THEORIES } from "@/data/corpus";
 import type { Case, Theory } from "@/data/corpus/types";
 import { skillById, type Lang } from "@/data/taxonomy";
+import { useShallow } from "zustand/react/shallow";
 import { useApp, useLang } from "@/store/useApp";
 import { t } from "@/lib/i18n";
 import { useIsDesktop } from "@/lib/use-media";
@@ -16,7 +16,7 @@ import { CaseBody, TheoryBody } from "@/components/Knowledge";
 
 export default function Learn() {
   const lang = useLang();
-  const { bookmarks, toggleBookmark, profile } = useApp();
+  const { bookmarks, toggleBookmark, profile } = useApp(useShallow((s) => ({ bookmarks: s.bookmarks, toggleBookmark: s.toggleBookmark, profile: s.profile })));
   const desktop = useIsDesktop();
   const [tab, setTab] = useState<"theories" | "cases" | "saved">("theories");
   const [q, setQ] = useState("");

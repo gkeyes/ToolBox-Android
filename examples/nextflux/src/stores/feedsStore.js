@@ -19,7 +19,12 @@ export const categoryExpandedState = persistentAtom(
   {},
   {
     encode: (value) => JSON.stringify(value),
-    decode: (str) => JSON.parse(str),
+    decode: (str) => {
+      try {
+        const value = JSON.parse(str);
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      } catch { return {}; }
+    },
   },
 );
 

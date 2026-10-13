@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { categories, feeds } from "@/stores/feedsStore";
 import { editFeedModalOpen, currentFeedId } from "@/stores/modalStore";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import minifluxAPI from "@/api/miniflux";
 import { backgroundSync, refreshSingleFeed, requestForegroundPriority } from "@/stores/syncStore";
 import { Check, Copy, ChevronDown } from "lucide-react";

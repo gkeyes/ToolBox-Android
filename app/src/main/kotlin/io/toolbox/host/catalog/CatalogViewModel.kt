@@ -143,13 +143,6 @@ internal class CatalogViewModel(
                     }
                 }
             } else rejectGroupName(action.operationId)
-            is CatalogAction.CreateGroup -> if (action.name.isNotBlank()) {
-                val id = UUID.randomUUID().toString()
-                changeLayout(action.operationId) { layout, _ -> layout.copy(groups = layout.groups + CatalogGroup(id, action.name.trim())) }
-            } else rejectGroupName(action.operationId)
-            is CatalogAction.RenameGroup -> if (action.name.isNotBlank()) changeLayout(action.operationId) { layout, _ ->
-                layout.copy(groups = layout.groups.map { if (it.id == action.groupId) it.copy(name = action.name.trim()) else it })
-            } else rejectGroupName(action.operationId)
             is CatalogAction.DeleteGroup -> changeLayout(action.operationId) { layout, _ -> layout.copy(groups = layout.groups.filterNot { it.id == action.groupId }) }
             is CatalogAction.SetGroupMembership -> changeLayout(action.operationId) { layout, installed ->
                 if (action.toolId in installed || !action.selected) layout.groupMembership(action.groupId, action.toolId, action.selected) else layout

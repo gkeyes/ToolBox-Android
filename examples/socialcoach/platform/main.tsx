@@ -2,9 +2,10 @@ import {Component,Suspense,lazy,useEffect,useState,type ReactNode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {AppProviders} from '@/components/AppProviders';
 import {useApp} from '@/store/useApp';
+import {hydrateApp} from '@/store/persistence';
 import {useByok} from '@/lib/byok';
 import {initializeHost,host,permissionMessage} from './bridge';
-import {initializeDrafts,storageFailure,flushStorage} from './storage';
+import {initializeDrafts,storageFailure,storageReadFailure,flushStorage} from './storage';
 import {usePathname} from './navigation';
 import {initializeRuntime} from './runtime';
 import '@/app/globals.css';
@@ -21,10 +22,13 @@ const pages: Record<string,React.LazyExoticComponent<React.ComponentType>>={
   '/practice':lazy(()=>import('@/app/practice/[id]/page')),
 };
 const Missing=lazy(()=>import('@/app/not-found'));
-class Boundary extends Component<{children:ReactNode},{error:string|null}> {
+/** One boundary per route (keyed on the path): a failing page leaves the rest of the app usable, and navigating away resets it. */
+class Boundary extends Component<{children:ReactNode;resetKey?:string},{error:string|null}> {
   state={error:null as string|null};
   static getDerivedStateFromError(error:Error){return {error:error.message};}
-  render(){return this.state.error?<div className="tbx-boot" role="alert"><h1>页面加载失败</h1><p>你的练习记录不会因此删除。请关闭后重新打开小工具。</p><button onClick={()=>location.reload()}>重新加载</button></div>:this.props.children;}
+  // The outer boundary is not keyed (that would remount the providers); it clears itself on navigation instead.
+  componentDidUpdate(prev:{resetKey?:string}){if(this.state.error&&prev.resetKey!==this.props.resetKey)this.setState({error:null});}
+  render(){return this.state.error?<div className="tbx-boot" role="alert"><h1>页面加载失败</h1><p>你的练习记录不会因此删除。可以返回首页，或重新加载小工具。</p><button onClick={()=>{location.hash='#/';}}>返回首页</button> <button onClick={()=>location.reload()}>重新加载</button></div>:this.props.children;}
 }
 function App(){
   const path=usePathname();
@@ -35,9 +39,9 @@ function App(){
     window.addEventListener('socialcoach-storage',onError);
     return ()=>window.removeEventListener('socialcoach-storage',onError);
   },[]);
-  return <Boundary><AppProviders>
+  return <Boundary resetKey={path}><AppProviders>
     {storageError&&<div role="alert" className="tbx-storage-warning">{storageError}<button onClick={()=>{void flushStorage().catch(()=>{});}}>重试保存</button></div>}
-    <Suspense fallback={<div className="tbx-boot" role="status">正在打开…</div>}><Page key={path}/></Suspense>
+    <Boundary key={path}><Suspense fallback={<div className="tbx-boot" role="status">正在打开…</div>}><Page/></Suspense></Boundary>
   </AppProviders></Boundary>;
 }
 function installExternalLinks(){
@@ -55,8 +59,9 @@ async function boot(){
   try{
     await initializeHost();
     initializeRuntime();
-    await Promise.all([useApp.persist.rehydrate(),useByok.persist.rehydrate(),initializeDrafts()]);
-    if(storageFailure())throw storageFailure();
+    await Promise.all([hydrateApp(),useByok.persist.rehydrate(),initializeDrafts()]);
+    // A failed read stops boot; a failed write (e.g. migration on a full disk) is the storage banner with retry, so data can still be opened and exported.
+    if(storageReadFailure())throw storageReadFailure();
     useApp.setState({hydrated:true});useByok.setState({hydrated:true});
     if(!location.hash.startsWith('#/'))history.replaceState(null,'','#/');
     installExternalLinks();

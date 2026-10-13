@@ -141,27 +141,19 @@ private class InMemoryCatalogLifecycleRepository(
             }
             val nextGrants = state.grants.value.filterKeys { it.first != attempt.metadata.id } +
                 installedGrants.associateBy { it.toolId to it.capability }
-            val replacedTaskIds = if (existing == null) {
-                emptySet()
-            } else {
-                state.tasks.value.values
-                    .filter { it.toolId == attempt.metadata.id }
-                    .mapTo(mutableSetOf()) { it.taskId }
-            }
-            val nextTasks = if (replacedTaskIds.isEmpty()) {
+            // Like Room: an update cancels the old version's active tasks but keeps history.
+            val nextTasks = if (existing == null) {
                 state.tasks.value
             } else {
-                state.tasks.value.filterKeys { it !in replacedTaskIds }
-            }
-            val nextResults = if (replacedTaskIds.isEmpty()) {
-                state.results.value
-            } else {
-                state.results.value.filterKeys { it !in replacedTaskIds }
+                state.tasks.value.mapValues { (_, task) ->
+                    if (task.toolId == attempt.metadata.id && (task.state == TaskState.QUEUED || task.state == TaskState.RUNNING)) {
+                        task.copy(state = TaskState.CANCELLED, updatedAt = maxOf(task.updatedAt, attempt.version.installedAt), nextRunAt = null)
+                    } else task
+                }
             }
             state.tools.value = state.tools.value + (attempt.metadata.id to nextTool)
             state.grants.value = nextGrants
             state.tasks.value = nextTasks
-            state.results.value = nextResults
             state.installs.value = state.installs.value + (
                 attempt.transactionId to transaction.copy(
                     state = InstallTransactionState.COMPLETED,
@@ -224,12 +216,6 @@ private class InMemoryPermissionGrantRepository(private val state: InMemoryCoreS
             return@withLock DataResult.Failure.InvalidInput("versionCode")
         }
         state.grants.value = state.grants.value + ((grant.toolId to grant.capability) to grant)
-        DataResult.Success(Unit)
-    }
-
-    override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = state.mutex.withLock {
-        if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
-        state.grants.value = state.grants.value - (toolId to capability)
         DataResult.Success(Unit)
     }
 }
@@ -400,11 +386,6 @@ private class InMemoryBackgroundTaskRepository(
         DataResult.Success(Unit)
     }
 
-    override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
-        if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
-        return transition(taskId, setOf(TaskState.QUEUED), TaskState.RUNNING, updatedAt, null, runAttempt)
-    }
-
     override suspend fun deferRetry(
         taskId: String,
         updatedAt: Long,
@@ -521,14 +502,6 @@ private class InMemoryBackgroundTaskRepository(
             current.runAttempt,
         )
     }
-
-    override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int> =
-        state.mutex.withLock {
-            if (cutoffMillis < 0) return@withLock DataResult.Failure.InvalidInput("cutoffMillis")
-            val expired = state.results.value.filterValues { it.completedAt < cutoffMillis }.keys
-            state.results.value = state.results.value.filterKeys { it !in expired }
-            DataResult.Success(expired.size)
-        }
 
     override suspend fun deleteForTool(toolId: String): DataResult<Unit> = state.mutex.withLock {
         val ids = state.tasks.value.values.filter { it.toolId == toolId }.mapTo(mutableSetOf()) { it.taskId }

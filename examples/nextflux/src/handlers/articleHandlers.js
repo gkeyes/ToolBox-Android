@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { runAccountOperation } from "../stores/syncStore.js";
+import { currentAccountCheck } from "../stores/syncStore.js";
 import {
   activeArticle,
   updateArticleStarred,
@@ -84,18 +84,21 @@ export const handleToggleContent = async (article) => {
     loadingOriginContent.set(true);
     const showOriginal = !article.shownOriginal;
 
-    await runAccountOperation(async (check) => {
-      const result = showOriginal
-        ? await loadBestFullText({ article, api: minifluxAPI })
-        : { content: article.originalContent, source: "rss" };
-      check(false);
-      if (activeArticle.get()?.id === article.id) {
-        activeArticle.set({ ...activeArticle.get(), content: result.content, shownOriginal: showOriginal,
-          fullTextSource: showOriginal ? result.source : null,
-          fullTextBaseUrl: showOriginal ? result.baseUrl : null,
-          fullTextCandidates: showOriginal ? result.candidates : null });
-      }
-    });
+    // The page fetch and parse can take seconds; they run outside the account
+    // queue so mark-read and star are not held behind them. The result is only
+    // applied if the account is unchanged and the article is still open.
+    const check = currentAccountCheck();
+    check(showOriginal);
+    const result = showOriginal
+      ? await loadBestFullText({ article, api: minifluxAPI })
+      : { content: article.originalContent, source: "rss" };
+    check(false);
+    if (activeArticle.get()?.id === article.id) {
+      activeArticle.set({ ...activeArticle.get(), content: result.content, shownOriginal: showOriginal,
+        fullTextSource: showOriginal ? result.source : null,
+        fullTextBaseUrl: showOriginal ? result.baseUrl : null,
+        fullTextCandidates: showOriginal ? result.candidates : null });
+    }
   } catch (error) {
     if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "操作失败，请检查网络后重试。");
   } finally {

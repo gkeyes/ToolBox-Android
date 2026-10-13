@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { useStore } from "@nanostores/react";
 import "react-photo-view/dist/react-photo-view.css";
 import "./ArticleView.css";

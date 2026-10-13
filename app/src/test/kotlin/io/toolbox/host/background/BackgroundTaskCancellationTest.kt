@@ -170,12 +170,10 @@ private class CancellationRepository(vararg initial: BackgroundTask) : Backgroun
         return DataResult.Success(Unit)
     }
     override suspend fun create(task: BackgroundTask): DataResult<Unit> = error("not used")
-    override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> = error("not used")
     override suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> = error("not used")
     override suspend fun deferRetry(taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?): DataResult<Unit> = error("not used")
     override suspend fun requeueInterruptedRun(taskId: String, updatedAt: Long): DataResult<Unit> = error("not used")
     override suspend fun finishRun(taskId: String, result: TaskRunResult, nextState: TaskState, nextRunAt: Long?, executionToken: String?): DataResult<Unit> = error("not used")
     override suspend fun cancel(taskId: String, updatedAt: Long): DataResult<Unit> = error("not used")
-    override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int> = error("not used")
     override suspend fun deleteForTool(toolId: String): DataResult<Unit> = error("not used")
 }

@@ -79,6 +79,14 @@ class MainActivity : ComponentActivity() {
                         dependenciesViewModel.onHostFirstFrame()
                         state.dependencies.runtimeSessions.recover("process")
                     }
+                    LaunchedEffect(state.dependencies) {
+                        state.dependencies.startupNotice.collect { notice ->
+                            if (notice != null) {
+                                android.widget.Toast.makeText(this@MainActivity, notice, android.widget.Toast.LENGTH_LONG).show()
+                                state.dependencies.startupNotice.value = null
+                            }
+                        }
+                    }
                     val featureFactory = remember(state.dependencies) {
                         HostFeatureViewModelFactory(state.dependencies)
                     }

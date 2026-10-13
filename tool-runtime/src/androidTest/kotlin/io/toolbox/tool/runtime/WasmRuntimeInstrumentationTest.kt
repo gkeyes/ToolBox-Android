@@ -247,7 +247,7 @@ class WasmRuntimeInstrumentationTest {
                 override suspend fun admit(identity: RuntimeSessionIdentity, method: MethodDescriptor, encodedBytes: Int): RuntimePolicyDecision =
                     RuntimePolicyDecision.Allowed
             },
-            handlers = RuntimeM1Handlers(),
+            handlers = RuntimeCoreHandlers(),
             hostVersion = "0.7.8",
         )
     }

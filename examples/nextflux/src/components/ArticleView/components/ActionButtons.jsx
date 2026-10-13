@@ -26,7 +26,7 @@ import {
   handleToggleContent,
 } from "@/handlers/articleHandlers.js";
 import { Button, CloseButton, cn, Spinner, Tooltip } from "@heroui/react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import {
   activeArticle,
@@ -46,6 +46,7 @@ import {
   appendSummaryChunk,
   setSummaryDone,
   setSummaryError,
+  finishCancelledSummary,
 } from "@/stores/aiStore.js";
 import { summarizeArticleStream } from "@/api/openai.js";
 
@@ -114,17 +115,26 @@ export default function ActionButtons() {
   };
 
   const summaryController = useRef(null);
-  useEffect(() => () => summaryController.current?.abort(), [$activeArticle?.id]);
+  useEffect(() => () => {
+    const running = summaryController.current;
+    if (!running) return;
+    running.stopReason = "switch";
+    running.abort();
+  }, [$activeArticle?.id]);
 
   // 处理AI总结
   const handleAISummarize = () => {
     if (!$activeArticle) return;
     const articleId = $activeArticle.id;
     if (currentSummaryState?.loading) {
-      summaryController.current?.abort();
+      if (summaryController.current) {
+        summaryController.current.stopReason = "user";
+        summaryController.current.abort();
+      }
       return;
     }
-    summaryController.current = new AbortController();
+    const controller = new AbortController();
+    summaryController.current = controller;
     setSummaryLoading(articleId);
 
     let rafId = null;
@@ -139,7 +149,7 @@ export default function ActionButtons() {
     };
 
     summarizeArticleStream($activeArticle, {
-      signal: summaryController.current.signal,
+      signal: controller.signal,
       onChunk: (chunk) => {
         pendingText += chunk;
         if (!rafId) rafId = requestAnimationFrame(flush);
@@ -148,9 +158,16 @@ export default function ActionButtons() {
         if (rafId) cancelAnimationFrame(rafId);
         flush();
         setSummaryDone(articleId);
+        if (summaryController.current === controller) summaryController.current = null;
       },
       onError: (error) => {
         if (rafId) cancelAnimationFrame(rafId);
+        if (summaryController.current === controller) summaryController.current = null;
+        if (error?.code === "CANCELLED" || controller.signal.aborted) {
+          flush();
+          finishCancelledSummary(articleId, { keepPartial: controller.stopReason === "user" });
+          return;
+        }
         setSummaryError(articleId, error.message);
         toast.error(error.message);
       },

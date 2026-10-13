@@ -1,5 +1,4 @@
 import {Select} from "@platform/Select";
-"use client";
 
 import { useState } from "react";
 import { Check, ChevronLeft, ChevronRight, RotateCcw, SlidersHorizontal } from "lucide-react";

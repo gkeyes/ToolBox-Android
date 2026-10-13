@@ -54,7 +54,7 @@ import io.toolbox.tool.runtime.RuntimeBackgroundTaskSpec
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskState
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskSummary
 import io.toolbox.tool.runtime.RuntimeHandlerException
-import io.toolbox.tool.runtime.RuntimeM2Handlers
+import io.toolbox.tool.runtime.RuntimeServiceHandlers
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
@@ -125,12 +125,14 @@ internal class ProductionHostPackageOperations(
         }
     }
 
-    override suspend fun recoverPendingMutations() {
-        when (packages.recoverPendingMutations(cleanup)) {
-            PackageRecoveryResult.Recovered -> Unit
-            is PackageRecoveryResult.Failed -> Unit
+    override suspend fun recoverPendingMutations(): String? =
+        when (val result = packages.recoverPendingMutations(cleanup)) {
+            PackageRecoveryResult.Recovered -> null
+            is PackageRecoveryResult.Failed -> {
+                android.util.Log.w(LOG_TAG, "Package recovery failed: ${result.failure.code} ${result.failure.message}")
+                "上次中断的工具安装或更新未能自动恢复（${importFailureMessage(result.failure)}）。请重启 ToolBox；问题持续时请重新安装相关工具。"
+            }
         }
-    }
 
     override suspend fun importPackage(input: PackageInput, control: PackageImportControl): HostImportResult =
         packages.importAndInstall(input, cleanup, control).toHostImportResult()
@@ -258,6 +260,7 @@ internal class ProductionHostPackageOperations(
     }
 
     private companion object {
+        const val LOG_TAG = "ToolBoxPackages"
         val BUNDLED_EXAMPLES = listOf(
             "position-calculator.tbx",
             "quick-notes.tbx",
@@ -280,12 +283,11 @@ internal class ProductionHostBackgroundOperations(
 ) : HostBackgroundOperations,
     HostPermissionSideEffects,
     HostBackgroundMaintenance,
-    HostRuntimeM2HandlerFactory {
+    HostRuntimeServiceHandlerFactory {
     private val applicationContext = context.applicationContext
     private val network = ToolNetworkProxy()
     private val networkRevocationCleanup = NetworkRevocationCleanup(repositories.keyValues)
-    private val networkCatalog = repositories.catalog
-    private val networkGrants = repositories.grants
+    private val networkGrantState = io.toolbox.host.runtime.RepositoryRuntimeGrantStateSource(repositories.catalog, repositories.grants)
     private val notifications = AndroidNotificationGateway(applicationContext)
     private val coordinator = BackgroundTaskCoordinator(
         workManager = WorkManager.getInstance(applicationContext),
@@ -349,13 +351,14 @@ internal class ProductionHostBackgroundOperations(
 
     override suspend fun reconcile() = coordinator.reconcile()
 
-    override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
+    override fun createHandlers(runtime: PreparedToolRuntime): RuntimeServiceHandlers = RuntimeServiceHandlers(
         network = RuntimeNetworkGateway(
             network, runtime.installedManifest.network,
             validateNetworkAccess = {
-                val current = networkCatalog.observeTool(runtime.toolId).first()
-                val granted = networkGrants.observeGrants(runtime.toolId).first().any { it.capability == "network" && it.granted }
-                if (current?.currentVersion?.versionCode != runtime.versionCode || !granted) {
+                // Runs before every request and every stream chunk; served from the grant snapshot.
+                if (networkGrantState.installedVersionCode(runtime.toolId) != runtime.versionCode ||
+                    !networkGrantState.isGranted(runtime.toolId, io.toolbox.tool.api.ToolBoxCapabilityId.NETWORK)
+                ) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "工具版本或网络权限已变更。")
                 }
             },
@@ -546,6 +549,8 @@ private fun TaskRunResult.toRuntimeResult(
     val payload = payloadJson?.let { encoded ->
         runCatching { JSONTokener(encoded).nextValue() as? JSONObject }.getOrNull()
     }
+    val httpPayload = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
+    val body = httpPayload?.optString("body")?.takeIf { it.isNotEmpty() }
     return RuntimeBackgroundTaskRunResult(
         taskId = taskId,
         outcome = when (outcome) {
@@ -554,12 +559,16 @@ private fun TaskRunResult.toRuntimeResult(
             RunOutcome.CANCELLED -> RuntimeBackgroundRunOutcome.CANCELLED
         },
         completedAt = completedAt,
-        status = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
-            ?.optInt("statusCode")
-            ?.takeIf { it > 0 },
-        body = payload?.takeIf { task.operation == io.toolbox.core.data.BackgroundOperation.HTTP_GET }
-            ?.optString("body")
-            ?.takeIf { it.isNotEmpty() },
+        status = httpPayload?.optInt("statusCode")?.takeIf { it > 0 },
+        body = body,
+        // Results stored by older hosts have no encoding; leave it absent rather than guess.
+        bodyEncoding = body?.let {
+            when (httpPayload?.optString("bodyEncoding")) {
+                "text" -> io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding.TEXT
+                "base64" -> io.toolbox.tool.runtime.RuntimeNetworkBodyEncoding.BASE64
+                else -> null
+            }
+        },
         error = errorCode?.let { code ->
             RuntimeBackgroundTaskError(code.toRuntimeErrorCode(), "后台任务未成功完成。")
         },
