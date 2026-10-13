@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,6 @@ import io.toolbox.core.ui.component.ToolBoxGroupDivider
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
-import io.toolbox.core.ui.component.ToolBoxRunningStatusButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.CatalogTool
@@ -216,6 +216,10 @@ private fun runningToolStatusLines(
     return RunningToolStatusLines("运行中")
 }
 
+/**
+ * Grouped-list row for a running session (iOS 27): the tool tile with a live dot, name and status
+ * lines, and a round stop button. Hairline separators are drawn by the surrounding list.
+ */
 @Composable
 internal fun RunningToolRow(
     session: RuntimeBackgroundSessionUi,
@@ -240,53 +244,109 @@ internal fun RunningToolRow(
                     .toolBoxPressFeedback(interaction, scale = io.toolbox.core.ui.component.ToolBoxMotion.RowPressScale)
                     .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onOpen)
                     .semantics { contentDescription = "打开${session.toolName}" } else Modifier)
-                .padding(horizontal = ToolBoxThemeTokens.spacing.md, vertical = ToolBoxThemeTokens.spacing.xs),
+                .padding(start = ToolBoxThemeTokens.spacing.md, end = ToolBoxThemeTokens.spacing.xs, top = ToolBoxThemeTokens.spacing.sm, bottom = ToolBoxThemeTokens.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CatalogToolGlyph(
-                toolId = session.toolId,
-                versionCode = tool?.versionCode,
-                visual = visual,
-                size = ToolBoxThemeTokens.sizes.compactToolGlyph,
-            )
+            RunningGlyphWithDot(session, tool, visual, stopping, size = 46.dp, ring = colors.surface)
             Spacer(Modifier.width(ToolBoxThemeTokens.spacing.sm))
             Column(
                 Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 AppText(
                     text = session.toolName,
-                    textStyle = ToolBoxThemeTokens.textStyles.title,
+                    textStyle = ToolBoxThemeTokens.textStyles.headline,
                     maxLines = 1,
                 )
                 val status = runningToolStatusLines(session, stopping)
                 AppText(
-                    text = if (stopping) status.primary else "● ${status.primary}",
+                    text = status.primary,
                     color = if (stopping) colors.textSecondary else colors.onSoftSuccess,
-                    textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                    textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 13.sp, lineHeight = 17.sp),
                     maxLines = 1,
                 )
                 status.secondary?.let { secondary ->
                     AppText(
                         text = secondary,
                         color = colors.textSecondary,
-                        textStyle = ToolBoxThemeTokens.textStyles.metadata,
+                        textStyle = ToolBoxThemeTokens.textStyles.metadata.copy(fontSize = 13.sp, lineHeight = 17.sp),
                         maxLines = 1,
                     )
                 }
             }
         }
-        ToolBoxRunningStatusButton(
+        RunningToolStopButton(
+            toolName = session.toolName,
             stopping = stopping,
-            enabled = canStop,
-            onClick = onStop,
-            modifier = Modifier
-                .padding(end = ToolBoxThemeTokens.spacing.md)
-                .semantics {
-                    contentDescription = "停止${session.toolName}后台运行"
-                    stateDescription = if (stopping) "停止中" else "运行中"
-                },
+            canStop = canStop,
+            onStop = onStop,
+            discSize = 38.dp,
+            modifier = Modifier.padding(end = 6.dp),
         )
+    }
+}
+
+/** Tool tile with a green live dot (grey while stopping), ringed in the surface colour. */
+@Composable
+private fun RunningGlyphWithDot(
+    session: RuntimeBackgroundSessionUi,
+    tool: CatalogTool?,
+    visual: ToolVisual,
+    stopping: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    ring: Color,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    Box {
+        CatalogToolGlyph(
+            toolId = session.toolId,
+            versionCode = tool?.versionCode,
+            visual = visual,
+            size = size,
+        )
+        Box(
+            Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(12.dp)
+                .clip(CircleShape).background(ring).padding(2.dp)
+                .clip(CircleShape).background(if (stopping) colors.textTertiary else Color(0xFF34C759)),
+        )
+    }
+}
+
+/** Round neutral stop button (48dp touch target) with a rounded-square stop glyph. */
+@Composable
+private fun RunningToolStopButton(
+    toolName: String,
+    stopping: Boolean,
+    canStop: Boolean,
+    onStop: () -> Unit,
+    discSize: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val dark = colors.surface.luminance() < 0.5f
+    val stopInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Box(
+        modifier.size(48.dp)
+            .clickable(enabled = canStop, interactionSource = stopInteraction, indication = null, role = Role.Button, onClick = onStop)
+            .semantics {
+                contentDescription = "停止${toolName}后台运行"
+                stateDescription = if (stopping) "停止中" else "运行中"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(discSize)
+                .toolBoxPressFeedback(stopInteraction, enabled = canStop, shape = CircleShape)
+                .clip(CircleShape)
+                .background(
+                    if (stopping) colors.danger.copy(alpha = if (dark) 0.18f else 0.10f)
+                    else Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (stopping) io.toolbox.core.ui.component.ToolBoxBusyIndicator()
+            else Box(Modifier.size(12.dp).clip(toolBoxShape(3.dp)).background(if (canStop) colors.onSoftSuccess else colors.textTertiary))
+        }
     }
 }
 
