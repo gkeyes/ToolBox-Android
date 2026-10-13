@@ -203,7 +203,7 @@ private fun AppearancePreview(mode: ThemeMode, systemColor: Boolean, reduceTrans
                 Modifier
                     .padding(start = 16.dp, end = 16.dp, top = 22.dp)
                     .fillMaxWidth()
-                    .height(76.dp)
+                    .heightIn(min = 76.dp)
                     .clip(panelShape)
                     .background(if (reduceTransparency) colors.raised else materials.glassTint)
                     .border(0.5.dp, if (reduceTransparency) Color.Transparent else materials.glassBorder, panelShape)
@@ -231,7 +231,7 @@ private fun AppearancePreview(mode: ThemeMode, systemColor: Boolean, reduceTrans
                 }
                 Box(
                     Modifier
-                        .height(30.dp)
+                        .heightIn(min = 30.dp)
                         .clip(toolBoxShape(15.dp))
                         .background(accent)
                         .padding(horizontal = 14.dp),
