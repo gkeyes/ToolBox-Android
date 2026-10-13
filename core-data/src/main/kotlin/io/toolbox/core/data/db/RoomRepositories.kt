@@ -206,20 +206,6 @@ internal class RoomPermissionGrantRepository(
     } finally {
         CatalogGrantEpoch.advance()
     }
-
-    override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = try {
-        database.withTransaction {
-            if (database.tools().get(toolId) == null) return@withTransaction DataResult.Failure.NotFound("tool")
-            database.grants().delete(toolId, capability)
-            DataResult.Success(Unit)
-        }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        DataResult.Failure.StorageFailure("revokeGrant")
-    } finally {
-        CatalogGrantEpoch.advance()
-    }
 }
 
 internal class RoomToolKvRepository(
@@ -439,18 +425,6 @@ internal class RoomBackgroundTaskRepository(
         catch (_: Exception) { DataResult.Failure.StorageFailure("claimBackgroundExecution") }
     }
 
-    override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
-        if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
-        return transitionTask(
-            taskId,
-            listOf(TaskState.QUEUED),
-            TaskState.RUNNING,
-            updatedAt,
-            null,
-            runAttempt,
-        )
-    }
-
     override suspend fun deferRetry(
         taskId: String, updatedAt: Long, nextRunAt: Long, runAttempt: Int, executionToken: String?,
     ): DataResult<Unit> {
@@ -580,13 +554,6 @@ internal class RoomBackgroundTaskRepository(
             null,
             task.runAttempt,
         )
-    }
-
-    override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int> {
-        if (cutoffMillis < 0) return DataResult.Failure.InvalidInput("cutoffMillis")
-        return storageQuery("pruneBackgroundTaskResults") {
-            database.taskResults().deleteCompletedBefore(cutoffMillis)
-        }
     }
 
     override suspend fun deleteForTool(toolId: String): DataResult<Unit> = try {

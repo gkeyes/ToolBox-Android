@@ -96,7 +96,6 @@ internal class PermissionTestFixture(scope: CoroutineScope) :
         return DataResult.Success(Unit)
     }
 
-    override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = error("unused")
 
     override suspend fun installedManifest(toolId: String): HostInstalledManifestResult {
         val tool = installed.value ?: return HostInstalledManifestResult.NotInstalled

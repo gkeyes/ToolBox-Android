@@ -74,9 +74,6 @@ internal interface PermissionGrantDao {
 
     @Query("DELETE FROM permission_grants WHERE toolId = :toolId")
     suspend fun deleteAll(toolId: String): Int
-
-    @Query("DELETE FROM permission_grants WHERE toolId = :toolId AND capability = :capability")
-    suspend fun delete(toolId: String, capability: String): Int
 }
 
 @Dao
@@ -190,7 +187,4 @@ internal interface TaskResultDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: TaskResultEntity)
-
-    @Query("DELETE FROM task_results WHERE completedAt < :cutoffMillis")
-    suspend fun deleteCompletedBefore(cutoffMillis: Long): Int
 }

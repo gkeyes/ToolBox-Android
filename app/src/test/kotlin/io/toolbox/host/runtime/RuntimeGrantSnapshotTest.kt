@@ -69,6 +69,5 @@ class RuntimeGrantSnapshotTest {
         override fun observeCatalogProjection(): Flow<List<CatalogEntry>> = flowOf(emptyList())
         override suspend fun put(grant: PermissionGrant): DataResult<Unit> = error("unused")
         override suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit> = error("unused")
-        override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = error("unused")
     }
 }

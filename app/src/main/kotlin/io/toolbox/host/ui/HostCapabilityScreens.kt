@@ -60,14 +60,6 @@ import io.toolbox.host.runtime.RuntimeUiState
 import io.toolbox.host.runtime.RuntimeViewModel
 import io.toolbox.host.runtime.RuntimeCloseUiState
 
-/** Keep the existing call signature, including positional and trailing-lambda callers. */
-@Composable
-internal fun RuntimeShellScreen(
-    viewModel: RuntimeViewModel,
-    onBack: () -> Unit,
-    onPresentationReady: () -> Unit,
-) = RuntimeShellScreen(viewModel, onBack, onPresentationReady, toolName = null)
-
 @Composable
 internal fun RuntimeShellScreen(
     viewModel: RuntimeViewModel,

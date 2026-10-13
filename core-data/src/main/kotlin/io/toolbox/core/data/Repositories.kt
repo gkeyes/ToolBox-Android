@@ -23,7 +23,6 @@ interface PermissionGrantRepository {
     suspend fun put(grant: PermissionGrant): DataResult<Unit>
     /** Version check and grant write share the same transaction as package updates. */
     suspend fun putForVersion(grant: PermissionGrant, expectedVersionCode: Int): DataResult<Unit>
-    suspend fun revoke(toolId: String, capability: String): DataResult<Unit>
 }
 
 /** Reads bounded groups of rows from one pinned database snapshot. */
@@ -71,7 +70,6 @@ interface BackgroundTaskRepository {
     fun observeResult(taskId: String): Flow<TaskRunResult?>
     suspend fun getTask(taskId: String): DataResult<BackgroundTask?>
     suspend fun create(task: BackgroundTask): DataResult<Unit>
-    suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>
     suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>
     suspend fun deferRetry(
         taskId: String,
@@ -90,7 +88,6 @@ interface BackgroundTaskRepository {
     ): DataResult<Unit>
     suspend fun finishCancelled(taskId: String, result: TaskRunResult, executionToken: String? = null): DataResult<Unit>
     suspend fun cancel(taskId: String, updatedAt: Long): DataResult<Unit>
-    suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int>
     suspend fun deleteForTool(toolId: String): DataResult<Unit>
 }
 

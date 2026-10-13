@@ -22,6 +22,7 @@
 - 后台 httpGet 任务结果新增 `bodyEncoding`（"text"/"base64"），二进制响应的 base64 正文不再与文本混淆；旧版本保存的结果不带此字段。不设大小上限。SDK 手册已同步。
 - 导入 macOS 访达压缩的 ZIP 时忽略 `__MACOSX/` 和 `._` 元数据文件，不再误报“发现 2 个 TBX 工具”。
 - 更新工具不再删除其后台任务历史和结果：旧版本排队或运行中的任务标记为已取消，已完成的记录保留。
+- 删除确认无调用的死代码：从未使用的结果清理接口 `pruneResultsCompletedBefore`（不自动清理历史；卸载工具时其任务和结果仍随工具删除）、`markRunning`、`revoke`、`CatalogAction.CreateGroup`/`RenameGroup`、`toolBoxTopGlassEffect`、`RuntimeShellScreen` 旧重载，以及 `CapabilityDescriptor` 中未读取的字段。
 
 ## 0.8.32 (65)
 

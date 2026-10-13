@@ -218,12 +218,6 @@ private class InMemoryPermissionGrantRepository(private val state: InMemoryCoreS
         state.grants.value = state.grants.value + ((grant.toolId to grant.capability) to grant)
         DataResult.Success(Unit)
     }
-
-    override suspend fun revoke(toolId: String, capability: String): DataResult<Unit> = state.mutex.withLock {
-        if (toolId !in state.tools.value) return@withLock DataResult.Failure.NotFound("tool")
-        state.grants.value = state.grants.value - (toolId to capability)
-        DataResult.Success(Unit)
-    }
 }
 
 private class InMemoryToolKvRepository(private val state: InMemoryCoreState) : ToolKvRepository {
@@ -392,11 +386,6 @@ private class InMemoryBackgroundTaskRepository(
         DataResult.Success(Unit)
     }
 
-    override suspend fun markRunning(taskId: String, updatedAt: Long, runAttempt: Int): DataResult<Unit> {
-        if (runAttempt < 1) return DataResult.Failure.InvalidInput("runAttempt")
-        return transition(taskId, setOf(TaskState.QUEUED), TaskState.RUNNING, updatedAt, null, runAttempt)
-    }
-
     override suspend fun deferRetry(
         taskId: String,
         updatedAt: Long,
@@ -513,14 +502,6 @@ private class InMemoryBackgroundTaskRepository(
             current.runAttempt,
         )
     }
-
-    override suspend fun pruneResultsCompletedBefore(cutoffMillis: Long): DataResult<Int> =
-        state.mutex.withLock {
-            if (cutoffMillis < 0) return@withLock DataResult.Failure.InvalidInput("cutoffMillis")
-            val expired = state.results.value.filterValues { it.completedAt < cutoffMillis }.keys
-            state.results.value = state.results.value.filterKeys { it !in expired }
-            DataResult.Success(expired.size)
-        }
 
     override suspend fun deleteForTool(toolId: String): DataResult<Unit> = state.mutex.withLock {
         val ids = state.tasks.value.values.filter { it.toolId == toolId }.mapTo(mutableSetOf()) { it.taskId }

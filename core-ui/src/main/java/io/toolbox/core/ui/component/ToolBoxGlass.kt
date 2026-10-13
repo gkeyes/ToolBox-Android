@@ -10,8 +10,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalView
@@ -93,30 +91,6 @@ fun Modifier.toolBoxGlassEffect(
                 Modifier
             },
         )
-}
-
-@Composable
-fun Modifier.toolBoxTopGlassEffect(state: ToolBoxGlassState): Modifier {
-    val materials = ToolBoxThemeTokens.materials
-    val canRenderLiveGlass = ToolBoxThemeTokens.style == ToolBoxThemeStyle.LiquidGlass &&
-        materials.realBlurEnabled &&
-        materials.topEdgeFadeEnabled &&
-        LocalToolBoxGlassActive.current &&
-        LocalView.current.isHardwareAccelerated
-    if (!canRenderLiveGlass) return toolBoxSolidGlass(RectangleShape)
-
-    return toolBoxGlassEffect(
-        state = state,
-        shape = RectangleShape,
-        mask = Brush.verticalGradient(
-            colorStops = arrayOf(
-                0f to Color.Black,
-                0.74f to Color.Black,
-                1f to Color.Transparent,
-            ),
-        ),
-        borderWidth = 0.dp,
-    )
 }
 
 @Composable
