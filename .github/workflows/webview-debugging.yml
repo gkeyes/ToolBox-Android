@@ -70,7 +70,7 @@ jobs:
             adb shell svc power stayon true
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
-            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }}
+            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }} > build/webview-debugging/connected-test.log 2>&1 || (tail -n 120 build/webview-debugging/connected-test.log; exit 1)
       - name: Require all twelve scenarios to run and pass
         run: |
           python3 - <<'PY'
@@ -98,6 +98,14 @@ jobs:
                           text = (node.get('message') or '') + ' ' + (node.text or '')
                           text = ' '.join(text.split())[:1500].replace('%', '%25')
                           print(f"::error title={case.get('name')}::{text}")
+          # Without test results the run stopped earlier: surface which setup step got that far.
+          evidence = Path('build/webview-debugging')
+          print('::error title=Evidence files::' + (', '.join(sorted(p.name for p in evidence.glob('*'))) or 'none'))
+          log = evidence / 'connected-test.log'
+          if log.exists():
+              lines = [line for line in log.read_text(errors='replace').splitlines()
+                       if any(key in line for key in ('FAILED', 'Exception', 'Error', 'error:', 'Crash', 'crash', 'Tests on', 'BUILD'))]
+              print('::error title=Connected test log::' + ' | '.join(lines[-25:]).replace('%', '%25')[:3500])
           PY
       - name: Retain behavior reports and environment evidence
         if: always()
