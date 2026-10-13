@@ -124,6 +124,8 @@ export function untilAborted(promise, signal) {
 }
 
 async function requestOnce(api, config, request, signal) {
+  // The key read is async; a cancel during it must stop the data from being sent at all.
+  if (signal?.aborted) throw cancelledAi();
   try {
     return await untilAborted(api.network.request({ ...request, timeoutMs: AI_RESPONSE_TIMEOUT_MS }), signal);
   } catch (error) {

@@ -158,6 +158,18 @@ export function referenceDraft(raw = "") {
   return { ...draft, mode: "raw" };
 }
 
+// Restores the reference editor's own inputs (mode and each field) from an unsaved draft,
+// so a half-typed range survives even though it cannot be formatted yet.
+export function restoreReferenceDraft(saved, raw = "") {
+  const result = referenceDraft(raw);
+  if (!saved || typeof saved !== "object" || Array.isArray(saved) || !["range", "single", "qualitative", "raw"].includes(saved.mode)) return result;
+  result.mode = saved.mode;
+  for (const key of ["min", "max", "limit", "raw"]) if (typeof saved[key] === "string") result[key] = saved[key];
+  if (["<", "≤", ">", "≥"].includes(saved.operator)) result.operator = saved.operator;
+  if (["阴性", "阳性", "未检出"].includes(saved.qualitative)) result.qualitative = saved.qualitative;
+  return result;
+}
+
 export function formatReference(draft) {
   if (draft.mode === "range") {
     const min = draft.min.trim(), max = draft.max.trim();
@@ -268,7 +280,8 @@ export function draftRecord(value) {
   const draft = value?.draft;
   if (!draft || typeof draft !== "object" || Array.isArray(draft) || !Array.isArray(draft.items)) return null;
   const str = (v) => typeof v === "string" ? v : "";
-  const items = draft.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)).map((i) => ({ name: str(i.name), value: str(i.value), unit: str(i.unit), normal: str(i.normal) }));
+  const items = draft.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)).map((i) => ({ name: str(i.name), value: str(i.value), unit: str(i.unit), normal: str(i.normal),
+    ...(i.referenceDraft && typeof i.referenceDraft === "object" ? { referenceDraft: restoreReferenceDraft(i.referenceDraft, str(i.normal)) } : {}) }));
   return { id: typeof draft.id === "string" && draft.id ? draft.id : newId(), date: validDate(draft.date) ? draft.date : localDate(), type: typeof draft.type === "string" && Object.hasOwn(TYPES, draft.type) ? draft.type : "blood", items };
 }
 

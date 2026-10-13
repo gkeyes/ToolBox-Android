@@ -129,3 +129,14 @@ test("without OffscreenCanvas the original is sent and reported truthfully", asy
   assert.equal(image.reencoded, false); assert.equal(image.compressed, false);
   assert.equal(image.data, Buffer.from(bytes).toString("base64"));
 });
+
+test("cancelling while the key is being read sends nothing", async () => {
+  const sent = [], controller = new AbortController();
+  let releaseKey;
+  const api = { storage: { secure: { get: () => new Promise((resolve) => { releaseKey = resolve; }) } }, network: { request: async (r) => { sent.push(r); return geminiReply("{}"); } } };
+  const pending = requestAi(api, settings, "p", {}, null, () => {}, { signal: controller.signal, mode: "summary" });
+  await new Promise(setImmediate);
+  controller.abort(); releaseKey("test-key");
+  await assert.rejects(pending, { code: "CANCELLED" });
+  assert.equal(sent.length, 0);
+});

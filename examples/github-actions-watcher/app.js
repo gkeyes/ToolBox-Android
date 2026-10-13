@@ -26,6 +26,8 @@
   let activeCursor = 0;
   // Anonymous quota is 60 requests/hour: alternate polls only re-read tracked runs.
   let anonymousPollCount = 0;
+  // Anonymous full polls have one list page: alternate front page and discovery queue.
+  let lastAnonymousListRead = null;
   let generation = 0;
   const discoveryVisited = new Set();
   let clockSessionId = null;
@@ -57,6 +59,7 @@
     lastDiscoveryAt = 0;
     lastActiveSweepAt = 0;
     lastFrontPageAt = 0;
+    lastAnonymousListRead = null;
     clockSessionId = null;
   }
 
@@ -470,14 +473,14 @@
     const responseRemaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
     const retryAfterSeconds = model.parseRetryAfter(headerValue(response.headers, "retry-after"));
     const failure = model.classifyApiStatus(response.status, responseRemaining, retryAfterSeconds);
-    if (failure === "rate_limit" && retryAfterSeconds !== null && retryAfterSeconds > 0) {
-      state.rateResetAt = Math.max(state.rateResetAt || 0, Date.now() + retryAfterSeconds * 1000);
-    }
     if (failure === "invalid_token") throw createError(failure, "GitHub Token 无效", response.status);
     if (failure === "rate_limit") {
-      // Wait for Retry-After / x-ratelimit-reset; without either, back off at least a minute.
+      // Polls stay blocked until rateResetAt. A secondary limit's Retry-After is the
+      // authoritative wait and is not combined with the hourly x-ratelimit-reset.
       state.rateRemaining = 0;
-      state.rateResetAt = Math.max(state.rateResetAt && state.rateResetAt > Date.now() ? state.rateResetAt : 0, Date.now() + 60_000);
+      state.rateResetAt = retryAfterSeconds !== null
+        ? Date.now() + retryAfterSeconds * 1000
+        : Math.max(state.rateResetAt && state.rateResetAt > Date.now() ? state.rateResetAt : 0, Date.now() + 60_000);
       throw createError(failure, "GitHub API rate limit exceeded", response.status);
     }
     if (failure === "permission") throw createError(failure, "GitHub Actions read permission required", response.status);
@@ -980,15 +983,19 @@
       // Always refresh the front page periodically, even if old cursors are still
       // draining. Otherwise a large backlog could hide builds started more recently.
       let freshPageReads = 0;
-      if (!skipExtras && Date.now() - lastFrontPageAt >= (state.hasToken ? 60_000 : 300_000) && lease.remaining() > 5_000) {
+      if (!skipExtras) queueDiscovery();
+      // With a single anonymous page, a due front page must not starve the discovery
+      // queue: after a front-page read, the next full poll reads a queued page instead.
+      const yieldToDiscovery = !state.hasToken && discoveryQueue.length > 0 && lastAnonymousListRead === "front";
+      if (!skipExtras && !yieldToDiscovery && Date.now() - lastFrontPageAt >= (state.hasToken ? 60_000 : 300_000) && lease.remaining() > 5_000) {
         const branch = state.config.branchMode === "branch" ? `&branch=${encodeURIComponent(state.config.branch)}` : "";
         const front = (await apiRequest(repoUrl(`/actions/runs?per_page=100${branch}`), undefined, lease)).data;
         if (!Array.isArray(front?.workflow_runs)) throw createError("github", "GitHub 响应缺少构建列表");
         acceptRuns(front.workflow_runs, lease);
         state.lastPollAt = lastFrontPageAt = Date.now();
         freshPageReads = 1;
+        lastAnonymousListRead = "front";
       }
-      if (!skipExtras) queueDiscovery();
       const pageBudget = skipExtras ? 0 : (state.hasToken ? 4 : 1) - freshPageReads;
       for (let page = 0; page < pageBudget && discoveryQueue.length && lease.remaining() > 5_000; page += 1) {
         const url = discoveryQueue[0];
@@ -997,6 +1004,7 @@
         acceptRuns(response.data.workflow_runs, lease);
         discoveryQueue.shift();
         discoveryVisited.add(url);
+        lastAnonymousListRead = "discovery";
         const next = model.parseNextLink(headerValue(response.headers, "link"));
         if (next && !discoveryVisited.has(next) && !discoveryQueue.includes(next)) discoveryQueue.push(next);
         state.lastPollAt = Date.now();

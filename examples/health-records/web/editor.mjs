@@ -1,11 +1,11 @@
 import { h, button, iconButton, field, sectionHeading } from "./dom.mjs";
-import { TYPES, referenceDraft, formatReference, normalizeRecord, assertNoNewDuplicateMetrics, specimen, canonicalUnit } from "./model.mjs";
+import { TYPES, restoreReferenceDraft, formatReference, normalizeRecord, assertNoNewDuplicateMetrics, specimen, canonicalUnit } from "./model.mjs";
 import { createChoice } from "./choice.mjs";
 import { createDatePicker } from "./date-picker.mjs";
 import { manualNameCandidates, confirmedNameAliases } from "./names.mjs";
 
-export function referenceEditor(raw = "", onDirty = () => {}) {
-  const draft = referenceDraft(raw), controls = h("div", { class: "reference-inputs" }), modes = h("div", { class: "reference-mode", role: "group", "aria-label": "参考范围输入方式" });
+export function referenceEditor(raw = "", onDirty = () => {}, saved = null) {
+  const draft = restoreReferenceDraft(saved, raw), controls = h("div", { class: "reference-inputs" }), modes = h("div", { class: "reference-mode", role: "group", "aria-label": "参考范围输入方式" });
   function input(key, label, placeholder) {
     return field(label, h("input", { class: "input", type: "text", inputmode: "decimal", value: draft[key], placeholder, "aria-label": label, onInput: (e) => { draft[key] = e.target.value; onDirty(); } }));
   }
@@ -30,7 +30,7 @@ export function referenceEditor(raw = "", onDirty = () => {}) {
   render();
   // draft(): best-effort text for an unsaved draft; an incomplete range keeps the original text.
   const readDraft = () => { try { return formatReference(draft); } catch { return String(raw ?? ""); } };
-  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft), draft: readDraft };
+  return { element: h("div", { class: "reference-editor" }, h("div", { class: "reference-heading" }, h("span", {}, "参考范围"), modes), controls), read: () => formatReference(draft), draft: readDraft, state: () => ({ ...draft }) };
 }
 
 function itemFields(item, onDirty) {
@@ -38,11 +38,11 @@ function itemFields(item, onDirty) {
   const value = h("input", { class: "input", value: item.value ?? "", required: true, placeholder: "数值或文字结果", onInput: onDirty });
   const unit = h("input", { class: "input", value: item.unit || "", placeholder: "按报告填写", onInput: onDirty });
   const nameLabel = field("指标名称", name); nameLabel.classList.add("wide");
-  const reference = referenceEditor(item.normal, onDirty);
+  const reference = referenceEditor(item.normal, onDirty, item.referenceDraft);
   return {
     element: h("div", { class: "editor-fields" }, nameLabel, field("结果", value), field("单位", unit), reference.element),
     read: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.read() }),
-    draft: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.draft() }),
+    draft: () => ({ name: name.value, value: value.value, unit: unit.value, normal: reference.draft(), referenceDraft: reference.state() }),
     name, unit, nameLabel,
   };
 }

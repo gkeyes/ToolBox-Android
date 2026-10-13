@@ -52,6 +52,7 @@ function harness(request) {
     showToast = function () {};
     window.testApi = { state, pollGitHub, clockTick, retireWork, processTerminalResults, liveRequestFor,
       saveEnteredToken, persist, restoreObject, acceptRuns, userAgent: USER_AGENT,
+      ageFrontPage: () => { lastFrontPageAt = 0; },
       setForeground: (value) => { runtimeForeground = value; }, clockPaints: () => clockPaints,
       expire: () => activePoll?.invalidate(reliability.timeoutError()),
       pendingPages: () => discoveryQueue.length };
@@ -328,5 +329,37 @@ test('User-Agent version comes from one constant that matches the manifest', () 
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
     assert.equal(h.userAgent, `ToolBox-GitHub-Actions-Watcher/${manifest.version}`);
+  } finally { h.close(); }
+});
+
+
+test('a short Retry-After is not stretched to the hourly primary reset', async () => {
+  const hourly = Math.floor(Date.now() / 1000) + 3_000;
+  const h = harness(() => ({ status: 403, body: '{"message":"secondary rate limit"}',
+    headers: { 'retry-after': '30', 'x-ratelimit-remaining': '40', 'x-ratelimit-reset': String(hourly) } }));
+  try {
+    await h.pollGitHub(false);
+    assert.equal(h.state.warning, 'rate_limit');
+    assert.ok(h.state.rateResetAt <= Date.now() + 31_000, `reset ${h.state.rateResetAt - Date.now()}ms away`);
+    assert.ok(h.state.rateResetAt >= Date.now() + 29_000);
+  } finally { h.close(); }
+});
+
+test('anonymous full polls alternate the due front page with queued discovery pages', async () => {
+  const h = harness();
+  const lists = (from) => h.calls.slice(from).map((o) => new URL(o.url)).filter((u) => !/\/runs\/\d+/.test(u.pathname))
+    .map((u) => u.pathname.includes('/workflows/') || u.searchParams.has('status') ? 'discovery' : u.pathname.endsWith('/actions/runs') ? 'front' : 'other');
+  try {
+    const kinds = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      h.ageFrontPage(); // simulate the 6-minute gap between anonymous full polls
+      const full = h.calls.length; await h.pollGitHub(false); kinds.push(...lists(full));
+      const light = h.calls.length; await h.pollGitHub(false);
+      assert.equal(h.calls.length - light, 1, 'light polls only re-read the tracked run');
+    }
+    assert.deepEqual(kinds, ['front', 'discovery', 'front', 'discovery']);
+    // Per hour: 10 full polls x (run + one list page + jobs) + 10 light polls x run.
+    const fullCost = 3, pollsPerHour = 3_600_000 / model.pollInterval(false, true);
+    assert.ok(pollsPerHour / 2 * fullCost + pollsPerHour / 2 < 60);
   } finally { h.close(); }
 });

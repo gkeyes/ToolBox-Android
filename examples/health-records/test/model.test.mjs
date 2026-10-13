@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   HealthError, normalizeArchive, normalizeRecord, emptyArchive, compareReference, numericValue, canonicalUnit, metricKey,
-  mergeArchive, buildIndex, assertNoNewDuplicateMetrics, draftRecord, monthlyDays, formatReference, referenceDraft,
+  mergeArchive, buildIndex, assertNoNewDuplicateMetrics, draftRecord, restoreReferenceDraft, monthlyDays, formatReference, referenceDraft,
 } from "../web/model.mjs";
 import { createStore } from "../web/store.mjs";
 import { APP_VERSION } from "../web/version.mjs";
@@ -108,6 +108,19 @@ test("unsaved editor drafts are rebuilt defensively", () => {
   assert.equal(draft.id, "r1"); assert.equal(draft.type, "blood");
   assert.match(draft.date, /^\d{4}-\d{2}-\d{2}$/);
   assert.deepEqual(draft.items, [{ name: "WBC", value: "", unit: "g", normal: "" }]);
+});
+
+test("a half-edited reference range survives a draft round-trip", () => {
+  // Lower bound changed, upper bound cleared: not formattable yet, but must not revert.
+  const saved = { mode: "range", min: "4.0", max: "", operator: "≤", limit: "", qualitative: "阴性", raw: "3.5-9.5" };
+  const draft = draftRecord(JSON.parse(JSON.stringify({ draft: { id: "r", date: "2024-01-01", type: "blood", items: [{ name: "WBC", value: "5", unit: "", normal: "3.5-9.5", referenceDraft: saved }] } })));
+  assert.deepEqual(draft.items[0].referenceDraft, saved);
+  assert.throws(() => formatReference(draft.items[0].referenceDraft), HealthError);
+  assert.deepEqual(restoreReferenceDraft({ mode: "single", operator: "≥", limit: "7" }, "").mode, "single");
+  assert.equal(restoreReferenceDraft({ mode: "single", operator: "≥", limit: "7" }, "").limit, "7");
+  assert.equal(restoreReferenceDraft({ mode: "evil", min: "1" }, "3-5").min, "3");
+  assert.equal(restoreReferenceDraft({ mode: "single", operator: "!=", limit: 7 }, "").operator, "≤");
+  assert.equal(restoreReferenceDraft(null, "<=0.5").limit, "0.5");
 });
 
 function memoryStorage() {
