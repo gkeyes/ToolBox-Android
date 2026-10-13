@@ -80,6 +80,7 @@ TEST_FILES = {
         "browser": {"examples/github-actions-watcher/tests/layout.py"},
     },
     **{name: {"unit": {RUNTIME_PERFORMANCE_TEST}, "browser": set()} for name in RUNTIME_PERFORMANCE_TOOLS},
+    "game-2048": {"unit": {"tests/game-core.test.cjs"}, "browser": set()},
 }
 
 
@@ -196,6 +197,10 @@ def selected_tests(name, changed, requested_filter, full):
             elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".js", ".html", ".css")):
                 selected |= allowed
             elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".png", ".svg", ".ogg")):
+                continue
+            elif name == "game-2048" and relative.endswith((".js", ".html", ".css")):
+                selected |= allowed
+            elif name == "game-2048" and relative.endswith(".svg"):
                 continue
             else:
                 # A path without a narrower mapping runs every registered test for this tool.

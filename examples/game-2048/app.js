@@ -30,6 +30,7 @@
   let previousState = null;
   let ready = false;
   let storageAvailable = false;
+  let saveFailed = false;
   let saveQueue = Promise.resolve();
   let gesture = null;
 
@@ -68,6 +69,7 @@
     if (!api?.ready || !api?.storage?.get) return null;
     try {
       await api.ready();
+      if (api.runtime?.registerFlushHandler) api.runtime.registerFlushHandler(flushSaves);
       const saved = await api.storage.get(SAVE_KEY);
       storageAvailable = true;
       return sanitizeSaved(saved);
@@ -78,18 +80,31 @@
   }
 
   function queueSave() {
-    if (!storageAvailable) return;
+    // Only write once the saved game was read, so a failed read never overwrites it.
+    if (!storageAvailable) return saveQueue;
     const value = snapshot();
     saveQueue = saveQueue
       .catch(() => undefined)
       .then(async () => {
         try {
           await toolbox().storage.set(SAVE_KEY, value);
+          if (saveFailed) {
+            saveFailed = false;
+            renderMeta();
+          }
         } catch (_) {
-          storageAvailable = false;
+          // A single failed write (e.g. BUSY) is retried with the next move or on close.
+          saveFailed = true;
           renderMeta();
         }
       });
+    return saveQueue;
+  }
+
+  async function flushSaves() {
+    if (saveFailed) queueSave();
+    await saveQueue;
+    if (saveFailed) throw new Error("棋局保存失败");
   }
 
   async function haptic(effect, fromTouch) {
@@ -160,7 +175,7 @@
     $("score").textContent = state.score.toLocaleString("zh-CN");
     $("best-score").textContent = state.best.toLocaleString("zh-CN");
     $("move-count").textContent = state.moveCount.toLocaleString("zh-CN");
-    $("save-state").textContent = storageAvailable ? "自动保存" : "当前会话";
+    $("save-state").textContent = !storageAvailable ? "当前会话" : saveFailed ? "保存失败，将重试" : "自动保存";
     $("undo").disabled = previousState === null;
   }
 
@@ -244,6 +259,7 @@
   }
 
   function startNewGame() {
+    if (!ready) return;
     const best = state.best;
     state = freshState(best);
     previousState = null;
@@ -255,7 +271,7 @@
   }
 
   function undo() {
-    if (!previousState) return;
+    if (!ready || !previousState) return;
     const retainedBest = state.best;
     state = snapshot(previousState);
     state.best = Math.max(retainedBest, state.best);
@@ -268,6 +284,7 @@
   }
 
   function askForNewGame() {
+    if (!ready) return;
     if (state.moveCount === 0) {
       startNewGame();
       return;
@@ -290,6 +307,7 @@
     $("confirm-new-game").addEventListener("click", startNewGame);
 
     $("result-primary").addEventListener("click", (event) => {
+      if (!ready) return;
       if (event.currentTarget.dataset.action === "continue") {
         state.wonAcknowledged = true;
         hideResult();
