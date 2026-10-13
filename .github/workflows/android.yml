@@ -307,19 +307,31 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      - name: Select what this pull request needs
+        id: pr
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/pr_scope.py --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           distribution: temurin
           java-version: "21"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         with:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-37.0 build-tools;37.0.0
       - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
       - name: Render screens and check text layout
+        if: ${{ steps.pr.outputs.gradle != 'false' }}
         run: ./gradlew --no-daemon :app:testDebugUnitTest -Ptoolbox.screenshots=true
       - name: Upload screenshots
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.pr.outputs.gradle != 'false' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: layout-screenshots-${{ github.sha }}
