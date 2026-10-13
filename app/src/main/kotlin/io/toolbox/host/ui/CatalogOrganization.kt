@@ -506,19 +506,30 @@ internal fun CatalogGroupFolderOverlay(
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         val blurPx = with(LocalDensity.current) { 40.dp.roundToPx() }
         var blurred by remember { mutableStateOf(false) }
-        DisposableEffect(window) {
+        // "降低透明度" turns live blur off, so the folder keeps the near-solid veil then.
+        val blurAllowed = materials.realBlurEnabled
+        DisposableEffect(window, blurAllowed) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
             window.setDimAmount(0f)
             // Like an iOS folder, the home page goes out of focus behind the open group. Window
-            // blur can be off (battery saver, some ROMs); then a near-solid backdrop keeps the
-            // page behind from showing through.
-            blurred = window.windowManager.isCrossWindowBlurEnabled
-            if (blurred) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.also { it.blurBehindRadius = blurPx }
+            // blur can be switched off at any time (battery saver, some ROMs); the listener keeps
+            // the flag and the veil in step, falling back to a near-solid veil without blur.
+            val applyBlur = java.util.function.Consumer<Boolean> { available ->
+                blurred = blurAllowed && available
+                if (blurred) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.attributes = window.attributes.also { it.blurBehindRadius = blurPx }
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                }
             }
-            onDispose { window.setDimAmount(previousDim) }
+            // Invoked immediately with the current state, then on every change.
+            window.windowManager.addCrossWindowBlurEnabledListener(applyBlur)
+            onDispose {
+                window.windowManager.removeCrossWindowBlurEnabledListener(applyBlur)
+                window.setDimAmount(previousDim)
+            }
         }
         val entrance = remember { Animatable(0f) }
         LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
