@@ -198,7 +198,8 @@ def selected_tests(name, changed, requested_filter, full):
             elif name in RUNTIME_PERFORMANCE_TOOLS and relative.endswith((".png", ".svg", ".ogg")):
                 continue
             else:
-                raise ValueError(f"No TBX test mapping for {path}")
+                # A path without a narrower mapping runs every registered test for this tool.
+                return {**result, "full_tests": True}
         if shared:
             selected |= allowed
         if name == "github-actions-watcher" and "scripts/tests/watcher-reliability.test.cjs" in changed:
