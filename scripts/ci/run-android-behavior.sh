@@ -35,16 +35,19 @@ run_module() {
 if [ -z "${TOOLBOX_ANDROID_TEST_FILTER:-}" ]; then
   run_module app || result=1
   run_module tool-runtime || result=1
+  run_module core-data || result=1
   exit "$result"
 fi
 
 app_classes=()
 runtime_classes=()
+data_classes=()
 IFS=',' read -ra entries <<< "$TOOLBOX_ANDROID_TEST_FILTER"
 for entry in "${entries[@]}"; do
   entry="${entry// /}"
   case "$entry" in
     tool-runtime=*) runtime_classes+=("${entry#tool-runtime=}") ;;
+    core-data=*) data_classes+=("${entry#core-data=}") ;;
     app=*) app_classes+=("${entry#app=}") ;;
     ?*) app_classes+=("$entry") ;;
   esac
@@ -52,5 +55,6 @@ done
 join() { local IFS=','; echo "$*"; }
 if [ "${#app_classes[@]}" -gt 0 ]; then run_module app "$(join "${app_classes[@]}")" || result=1; fi
 if [ "${#runtime_classes[@]}" -gt 0 ]; then run_module tool-runtime "$(join "${runtime_classes[@]}")" || result=1; fi
+if [ "${#data_classes[@]}" -gt 0 ]; then run_module core-data "$(join "${data_classes[@]}")" || result=1; fi
 python3 scripts/ci/check-android-results.py "$TOOLBOX_ANDROID_TEST_FILTER" || result=1
 exit "$result"
