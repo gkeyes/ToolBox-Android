@@ -540,7 +540,7 @@ internal fun CatalogGroupFolderOverlay(
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 24.dp),
+                .padding(horizontal = 16.dp, vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
@@ -564,14 +564,17 @@ internal fun CatalogGroupFolderOverlay(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     CatalogGroupStyleIcon(group, 30.dp, 18.dp)
-                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 1,
+                    // Two lines: at 320dp the two round buttons leave only ~4 large glyphs per line.
+                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 2,
                         textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold))
                     FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
                     FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
                 }
                 val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
-                    Modifier.fillMaxWidth()
+                    // Takes only what the header and footer leave, so a two-line title in a short
+                    // window shrinks the scrolling list instead of pushing the buttons off screen.
+                    Modifier.weight(1f, fill = false).fillMaxWidth()
                         .shadow(
                             elevation = 24.dp,
                             shape = panelShape,
