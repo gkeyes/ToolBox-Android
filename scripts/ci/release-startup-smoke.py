@@ -48,6 +48,26 @@ def capture_ui_hierarchy(adb, evidence):
     raise RuntimeError("Could not collect the initial home UI; see ui-dump/ui-pull evidence")
 
 
+def home_rendered(ui, package):
+    """Whether the host's home navigation is on screen yet; only decides when to stop waiting."""
+    try:
+        document = parse_hierarchy(ui)
+    except ValueError:
+        return False
+    labels = {node.get(key, "") for node in document.iter("node") if node.get("package") == package
+              for key in ("text", "content-desc")}
+    return {"首页", "全部工具", "设置"}.issubset(labels)
+
+
+def describe_screen(document, package):
+    """What was on screen instead, so a failure can be diagnosed from the job log alone."""
+    packages = sorted({node.get("package", "") for node in document.iter("node")} - {""})
+    labels = sorted({node.get(key, "") for node in document.iter("node") if node.get("package") == package
+                     for key in ("text", "content-desc")} - {""})
+    others = sorted({node.get("text", "") for node in document.iter("node") if node.get("package") != package} - {""})
+    return f"packages on screen: {packages}; host labels: {labels[:40]}; other text: {others[:20]}"
+
+
 def validate_startup(package, version, code, start, installed, logs, ui, pid):
     component = rf"{re.escape(package)}/(?:{re.escape(package)})?\.MainActivity"
     if not re.search(r"^Status: ok\s*$", start, re.M) or not re.search(component, start):
@@ -66,7 +86,7 @@ def validate_startup(package, version, code, start, installed, logs, ui, pid):
     host_nodes = [node for node in document.iter("node") if node.get("package") == package]
     labels = {node.get(key, "") for node in host_nodes for key in ("text", "content-desc")}
     if not {"首页", "全部工具", "设置"}.issubset(labels):
-        raise ValueError("Initial home navigation is missing from the rendered UI")
+        raise ValueError("Initial home navigation is missing from the rendered UI; " + describe_screen(document, package))
     if not any(node.get("selected") == "true" and any(
             child.get(key) == "首页" for child in node.iter("node")
             if child.get("package") == package for key in ("text", "content-desc")
@@ -123,7 +143,13 @@ def main():
             if f"Fully drawn {package}/" in logs:
                 break
             time.sleep(.5)
+        # "Fully drawn" can be reported before Compose has laid out the navigation, so keep
+        # capturing until it appears; the assertions below still decide pass or fail.
         ui = capture_ui_hierarchy(adb, evidence)
+        ui_deadline = time.monotonic() + 30
+        while not home_rendered(ui, package) and time.monotonic() < ui_deadline:
+            time.sleep(1)
+            ui = capture_ui_hierarchy(adb, evidence)
         logs = adb("logcat", "-b", "main", "-b", "system", "-b", "crash", "-d", record="startup-logcat.txt")
         pid = adb("shell", "pidof", package, record="host-pid.txt")
         validate_startup(package, version, code, start, installed, logs, ui, pid)

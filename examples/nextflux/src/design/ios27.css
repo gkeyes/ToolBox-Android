@@ -14,6 +14,10 @@
   --nf-glass: rgb(255 255 255 / 0.58);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.6), 0 6px 18px rgb(0 0 0 / 0.14);
+  /* Small floating controls (the reader close disc): same glass rims, but only
+     a faint contact shadow, like iOS's round close button. */
+  --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.95), inset 0 -1px 1px rgb(255 255 255 / 0.45),
+    inset 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
   --nf-glass-filter: blur(14px) saturate(180%);
   --nf-menu: rgb(255 255 255 / 0.84);
   --nf-menu-shadow: 0 18px 50px rgb(0 0 0 / 0.20), inset 0 1px 1px rgb(255 255 255 / 0.75), inset 0 0 0 0.5px rgb(255 255 255 / 0.75);
@@ -30,6 +34,8 @@
   --nf-glass: rgb(40 40 44 / 0.52);
   --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
     inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
+  --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 1px 3px rgb(0 0 0 / 0.30);
   --nf-menu: rgb(44 44 46 / 0.86);
   --nf-menu-shadow: 0 18px 50px rgb(0 0 0 / 0.55), inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
   --nf-seg-pill: rgb(255 255 255 / 0.18);
@@ -44,6 +50,8 @@
     --nf-glass: rgb(40 40 44 / 0.52);
     --nf-glass-rim: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
       inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 6px 18px rgb(0 0 0 / 0.45);
+    --nf-glass-rim-soft: inset 0 1px 1px rgb(255 255 255 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.10),
+      inset 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 1px 3px rgb(0 0 0 / 0.30);
     --nf-menu: rgb(44 44 46 / 0.86);
     --nf-seg-pill: rgb(255 255 255 / 0.18);
     --nf-tertiary: #636366;
@@ -100,11 +108,16 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   min-block-size: 60px;
   padding: 8px 16px;
 }
+/* The shared 48px toolbar-button box sets min/max sizes too; override all of
+   them so the trigger is a true 44px circle level with the capsules. */
 .article-list-header > [data-sidebar="trigger"] {
-  flex: none;
+  flex: 0 0 44px;
   inline-size: 44px;
   min-inline-size: 44px;
+  max-inline-size: 44px;
   block-size: 44px;
+  min-block-size: 44px;
+  max-block-size: 44px;
   border-radius: 50%;
 }
 .article-list-header > [data-sidebar="trigger"] svg { color: var(--ds-on-surface); }
@@ -115,9 +128,13 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   border-radius: 999px;
 }
 .article-list-actions .nextflux-toolbar-button {
+  flex: 0 0 40px;
   inline-size: 40px;
   min-inline-size: 40px;
+  max-inline-size: 40px;
   block-size: 40px;
+  min-block-size: 40px;
+  max-block-size: 40px;
   border-radius: 50%;
 }
 .article-list-actions .nextflux-toolbar-button svg { color: var(--ds-on-surface); }
@@ -333,6 +350,40 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   .dark .action-buttons .reader-dock { box-shadow: var(--nf-glass-rim); }
   .action-buttons .reader-dock .nextflux-toolbar-button::after { color: var(--ds-on-surface); font-weight: 600; }
   .action-buttons .reader-topbar-row { background: transparent; }
+  /* No bar behind the floating close button, so no hairline under it either
+     (it also outlived the hidden bar while reading). */
+  .action-buttons.reader-topbar::after { display: none; }
+  /* Close: a floating 44px glass disc like the list header's buttons, painted
+     by ::before so the whole 48px target stays pressable. */
+  .action-buttons .reader-topbar-row .nextflux-close-button {
+    position: relative;
+    isolation: isolate;
+    padding: 2px;
+    background-color: transparent;
+    color: var(--ds-on-surface);
+  }
+  .action-buttons .reader-topbar-row .nextflux-close-button::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: 50%;
+    background: var(--nf-glass);
+    -webkit-backdrop-filter: var(--nf-glass-filter);
+    backdrop-filter: var(--nf-glass-filter);
+    box-shadow: var(--nf-glass-rim-soft);
+    pointer-events: none;
+  }
+  .action-buttons .reader-topbar-row .nextflux-close-button[data-pressed="true"]::before { transform: scale(0.94); }
+  .action-buttons .reader-topbar-row .nextflux-close-button > svg { inline-size: 18px; block-size: 18px; }
+  /* The floating close button shares the first line with the feed name
+     instead of taking a row of its own: the bar keeps no space in the flow,
+     lets taps through beside the button, and the feed line steps right of it. */
+  .action-buttons.reader-topbar { margin-block-end: -60px; pointer-events: none; }
+  .action-buttons.reader-topbar > :not(.reader-topbar-row),
+  .action-buttons.reader-topbar .reader-topbar-row > * { pointer-events: auto; }
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed { min-block-size: 28px; padding-inline-start: 44px; }
+  .article-scroll-area .nextflux-article-header .nextflux-article-feed.justify-center { padding-inline: 44px; }
   .action-buttons .reader-speech-slot:has(.nextflux-speech-bar) {
     background: var(--nf-glass);
     -webkit-backdrop-filter: var(--nf-glass-filter);
@@ -340,20 +391,24 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
     box-shadow: var(--nf-glass-rim);
   }
 }
-/* "More" sheet: a 3-up grid of cards, each a coloured tile over its label. */
-.reader-more-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 4px 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+/* "More" sheet: a plain row of small icons over labels, like the dock — no
+   cards or coloured tiles. As many per row as fit (five on a phone). */
+.reader-more-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; padding: 0 12px calc(12px + env(safe-area-inset-bottom, 0px)); }
 .button.reader-more-item {
   inline-size: 100%;
-  min-block-size: 96px;
-  gap: 10px;
-  padding: 16px 4px 12px;
-  border-radius: 22px;
-  background: var(--nf-sheet-card);
+  min-inline-size: 0;
+  min-block-size: 56px;
+  gap: 5px;
+  padding: 8px 2px 6px;
+  border-radius: 14px;
+  background: transparent;
 }
-.button.reader-more-item[data-disabled="true"] { opacity: 0.45; }
-.reader-more-icon.nf-tile { inline-size: 34px; block-size: 34px; border-radius: 9px; }
-.reader-more-icon.nf-tile svg { inline-size: 20px; block-size: 20px; }
-.reader-more-label { font-size: 0.75rem; color: var(--ds-on-surface); }
+.button.reader-more-item[data-pressed="true"] { background: color-mix(in srgb, var(--ds-on-surface) 8%, transparent); }
+.button.reader-more-item[data-disabled="true"] { opacity: 0.4; }
+.reader-more-icon.nf-tile,
+.reader-more-icon.nf-tile[data-tone] { inline-size: 24px; block-size: 24px; border-radius: 0; background: none; color: var(--ds-on-surface); }
+.reader-more-icon.nf-tile svg { inline-size: 22px; block-size: 22px; color: var(--ds-on-surface); stroke-width: 1.9; }
+.reader-more-label { font-size: 0.6875rem; font-weight: 500; line-height: 1.2; color: var(--ds-on-surface); }
 
 /* ---------------------------------------------------------------- menus & sheets */
 .nextflux-context-menu {
@@ -392,18 +447,20 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .nf-tile[data-tone="neutral"] { background: linear-gradient(160deg, #A1A1A8, #6E6E76); color: #FFFFFF; }
 
 /* ---------------------------------------------------------------- switches */
-/* Flat iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. */
+/* iOS 26 switch: 64×28 capsule track, 40×24 knob, green when on. These
+   variables are the only switch geometry; nothing else may redefine them. */
 :root { --nf-switch-w: 64px; --nf-switch-h: 28px; --nf-switch-thumb: 24px; --nf-switch-knob-w: 40px; }
 .switch .switch__control,
 .nf-switch.switch__control {
   inline-size: var(--nf-switch-w);
   block-size: var(--nf-switch-h);
   border-radius: 999px;
-  background-color: rgb(120 120 128 / 0.16);
-  box-shadow: none;
+  background-color: rgb(120 120 128 / 0.2);
+  /* A faint inner shade so the off track reads as a recessed groove. */
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.08);
 }
 .dark .switch .switch__control,
-[data-theme="dark"] .switch .switch__control { background-color: rgb(120 120 128 / 0.32); }
+[data-theme="dark"] .switch .switch__control { background-color: rgb(120 120 128 / 0.36); }
 .switch[data-selected="true"] .switch__control,
 .switch[aria-checked="true"] .switch__control,
 .switch[data-selected="true"] .nf-switch.switch__control { background-color: #34C759; }
@@ -417,7 +474,8 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   margin-inline-start: 2px !important;
   border-radius: 999px;
   background: #FFFFFF;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.04);
+  /* Raised knob: a tight contact shadow plus a soft spread, as on iOS. */
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.04);
   transform: translate3d(0, 0, 0);
 }
 .switch[data-selected="true"] .switch__thumb,
@@ -519,3 +577,35 @@ html .nextflux-modal-surface { background: var(--nf-sheet-bg); }
 .nf-field :is(.input, .input-group) { min-block-size: 50px; }
 .ds-group-card .nf-field :is(.input, .textarea, .input-group) { background: var(--field-background); }
 .nextflux-close-header :is(h2, h3, [slot="title"]) { font-size: 1.0625rem; font-weight: 600; }
+
+/* ---------------------------------------------------------------- forms */
+/* A fieldset is min-content wide by default, so one long unbreakable value
+   (a feed URL, a rule) pushed whole forms past the edge on narrow phones. */
+fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
+/* Inputs inside a group keep their intrinsic ~20ch width unless allowed to
+   shrink, which pushed the trailing copy button off narrow screens. */
+.input-group > :is(input, .input-group__input) { min-inline-size: 0; flex: 1 1 0; }
+
+/* The visible track is 3–4px tall, so a finger on the knob or near the line
+   landed on the row instead and scrolled the page; a transparent band makes
+   the whole 40px strip around the line start a drag. */
+.slider[data-orientation="horizontal"] .slider__track { position: relative; overflow: visible; }
+.slider[data-orientation="horizontal"] .slider__track::before {
+  content: "";
+  position: absolute;
+  inset: -18px 0;
+}
+
+/* Sheets paint no close button (drag down closes them), so the title row
+   keeps no space for one. */
+.nextflux-mobile-sheet .nextflux-close-header { padding-inline-end: 1rem; }
+.nextflux-close-button.sr-only {
+  inline-size: 1px; block-size: 1px; min-inline-size: 0; min-block-size: 0;
+  max-inline-size: 1px; max-block-size: 1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%);
+}
+/* A keyboard or switch-control user still sees where focus is. */
+.nextflux-close-button.sr-only:focus-visible {
+  inline-size: 44px; block-size: 44px; max-inline-size: none; max-block-size: none;
+  margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: normal;
+}

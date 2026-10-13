@@ -41,7 +41,9 @@ async function readerAction(page, name) {
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
 }
 
-async function closeGeometry(button) {
+// Phones float the reader's close as a 44px glass disc painted by ::before;
+// every other close paints a 32px disc. Both keep the 48px target.
+async function closeGeometry(button, painted = 32) {
   await expect(button).toBeVisible();
   // HeroUI dialogs briefly scale during entrance. Visibility alone does not
   // mean that geometry is settled. Poll the same geometry assertions rather
@@ -56,12 +58,13 @@ async function closeGeometry(button) {
       visibleWidth: rounded(rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
       visibleHeight: rounded(rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)),
       clip: style.backgroundClip, shadow: style.boxShadow,
+      glass: getComputedStyle(el, "::before").backdropFilter.includes("blur"),
       centered: Math.abs(svg.x + svg.width / 2 - (rect.x + rect.width / 2)) < 1 &&
         Math.abs(svg.y + svg.height / 2 - (rect.y + rect.height / 2)) < 1,
     };
-  }), { message: "settled close control must keep a 48px target and centered 32px painted disc" }).toEqual({
-    width: 48, height: 48, visibleWidth: 32, visibleHeight: 32,
-    clip: "content-box", shadow: "none", centered: true,
+  }), { message: `settled close control must keep a 48px target and centered ${painted}px painted disc` }).toEqual({
+    width: 48, height: 48, visibleWidth: painted, visibleHeight: painted,
+    clip: "content-box", shadow: "none", glass: painted === 44, centered: true,
   });
 }
 
@@ -90,7 +93,7 @@ async function bounds(page) {
 for (const [width, theme, scale] of [[320, "light", 1], [393, "light", 1], [393, "dark", 1], [820, "light", 1], [393, "dark", 1.5]]) {
   test(`compact toolbar ${width}px ${theme} font ${scale}`, async ({ page }, info) => {
     await open(page, width, theme, scale);
-    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"));
+    await closeGeometry(page.locator(".action-buttons .nextflux-close-button"), width < 768 ? 44 : 32);
     await bounds(page);
     if (width < 768) {
       await page.getByRole("button", { name: "更多", exact: true }).click();
@@ -138,6 +141,24 @@ for (const width of [393, 820]) {
       await page.getByRole("button", { name: trigger, exact: true }).click();
       const dialog = page.getByRole("dialog");
       const close = dialog.locator(".nextflux-close-button");
+      if (width < 768) {
+        // A phone sheet closes by dragging down; its close button is only for
+        // screen readers and must not paint or take space in the title row.
+        const box = await close.boundingBox();
+        expect(box.width * box.height).toBeLessThanOrEqual(1);
+        await expect(dialog.getByRole("button", { name: /close|关闭/i })).toHaveCount(1);
+        const header = await dialog.locator(".nextflux-close-header").first().evaluate((el) => getComputedStyle(el).paddingInlineEnd);
+        expect(parseFloat(header)).toBeLessThanOrEqual(16);
+        if (trigger === "Open settings") await info.attach(`settings-${width}.png`, { body: await page.screenshot(), contentType: "image/png" });
+        // Keyboard focus reveals it, so focus never lands on an invisible target.
+        await close.evaluate((el) => el.focus({ focusVisible: true }));
+        await page.keyboard.press("Shift");
+        const focused = await close.evaluate((el) => el.matches(":focus-visible") ? el.getBoundingClientRect().width : -1);
+        expect(focused).toBeGreaterThanOrEqual(44);
+        await close.dispatchEvent("click");
+        await expect(dialog).toHaveCount(0);
+        continue;
+      }
       await closeGeometry(close);
       const header = dialog.locator(".nextflux-close-header").first();
       const overlap = await header.evaluate((el) => {
@@ -307,7 +328,7 @@ for (const reduced of [false, true]) {
     const openButton = page.getByRole("button", { name: "Open modal", exact: true });
 
     await openButton.click();
-    await page.getByRole("dialog").locator(".nextflux-close-button").click();
+    await page.getByRole("dialog").locator(".nextflux-close-button").dispatchEvent("click");
     await expectPageInteractive(page);
 
     await openButton.click();
@@ -355,11 +376,17 @@ async function dragSheetDown(page, distance = 260) {
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 4 });
   await page.mouse.up();
+  // The release point can sit over a dock button once the sheet is gone; a
+  // phone has no hover, so do not leave a desktop tooltip open there.
+  await page.mouse.move(0, 0);
 }
 
 async function openFromMore(page, name, heading) {
   await page.getByRole("button", { name: "更多", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  // Tap, as on a phone: a mouse click leaves the pointer resting where the
+  // compact sheet was, over a dock button whose desktop hover tooltip would
+  // then take the next Escape meant for the second sheet.
+  await page.getByRole("dialog").getByRole("button", { name, exact: true }).tap();
   // The second sheet opens only after the More sheet has gone.
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
   await expect(page.getByRole("dialog").filter({ hasText: heading })).toBeVisible();
@@ -373,7 +400,8 @@ for (const reduced of [false, true]) {
     // The full-text adapter fails fast in this fixture (no server), so its
     // sheet is closable; the title filter path is covered in title-filter.spec.
     await openFromMore(page, "全文适配", "AI 全文适配");
-    await page.getByRole("dialog").locator(".nextflux-close-button").click();
+    await page.getByRole("dialog").locator(".nextflux-close-button").dispatchEvent("click");
+    await page.mouse.move(0, 0); // the dock under a closed sheet must not keep a hover tooltip
     await expectUncovered(page);
 
     await openFromMore(page, "全文适配", "AI 全文适配");
@@ -423,7 +451,7 @@ test("rapid open and close of sheets never strands a backdrop", async ({ page })
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Open settings", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("dialog").locator(".nextflux-close-button").first().click();
+  await page.getByRole("dialog").locator(".nextflux-close-button").first().dispatchEvent("click");
   await expectUncovered(page);
   await expectPageInteractive(page);
 });
@@ -588,6 +616,7 @@ test("the overlay janitor never touches an open sheet", async ({ page }) => {
   await expect(sheet).toBeVisible();
   expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);
   await sheet.getByRole("button", { name: "全文适配", exact: true }).click();
+  await page.mouse.move(0, 0); // no hover tooltip on the dock below (see openFromMore)
   await expect(page.getByRole("dialog").filter({ hasText: "AI 全文适配" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expectUncovered(page);

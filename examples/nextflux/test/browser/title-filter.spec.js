@@ -32,6 +32,10 @@ async function readerAction(page, name) {
   if (await direct.isVisible()) return direct.click();
   await page.getByRole("button", { name: "更多", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name, exact: true }).click();
+  // Phones have no hover. Left in place, the mouse ends up over a dock button
+  // once the compact sheet closes and opens its desktop tooltip, which would
+  // take the next Escape meant for the editor.
+  await page.mouse.move(0, 0);
   await expect(page.getByRole("dialog").filter({ hasText: "这篇文章" })).toHaveCount(0);
 }
 const editor = async page => {
@@ -165,12 +169,16 @@ async function dragSheetDown(page, distance = 260) {
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + distance, { steps: 4 });
   await page.mouse.up();
+  // The release point can sit over a dock button once the sheet is gone; a
+  // phone has no hover, so do not leave a desktop tooltip open there.
+  await page.mouse.move(0, 0);
 }
 
 test("More sheet hands off to the editor and every close path frees the page", async ({ page }) => {
   await open(page);
   await editor(page);
-  await page.getByRole("dialog").locator(".nextflux-close-button").click();
+  await page.getByRole("dialog").locator(".nextflux-close-button").dispatchEvent("click");
+  await page.mouse.move(0, 0); // the dock under a closed sheet must not keep a hover tooltip
   await expectUncovered(page);
   await editor(page);
   await dragSheetDown(page);

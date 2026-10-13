@@ -59,8 +59,41 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
 }
 
 // BundledExamplesRegistryTest reads the registry at run time, so a registry change must re-run unit tests.
+// Layout screenshots render on the JVM (Robolectric) and run in their own CI job, so the main unit tests skip them.
+val layoutScreenshots = providers.gradleProperty("toolbox.screenshots").orNull == "true"
+
 tasks.withType<Test>().configureEach {
     inputs.file(tbxTargetsFile).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("tbxTargets")
+    if (layoutScreenshots) {
+        filter.includeTestsMatching("io.toolbox.host.screenshots.*")
+        systemProperty("roborazzi.test.record", "true")
+        // Hardware rendering makes Robolectric draw RenderNode layers (item animations, blur) in PixelCopy.
+        systemProperty("robolectric.pixelCopyRenderMode", "hardware")
+        val screenshotDir = rootProject.layout.buildDirectory.dir("screenshots")
+        systemProperty("toolbox.screenshots.dir", screenshotDir.get().asFile.absolutePath)
+        // Declared so a cached test result restores the PNGs too.
+        outputs.dir(screenshotDir).withPropertyName("layoutScreenshots")
+        maxHeapSize = "4g"
+        // Robolectric's interceptors reflect into JDK internals that Java 21 closes by default.
+        jvmArgs(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
+            "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+        )
+        testLogging {
+            events("failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+            showStackTraces = true
+            showCauses = true
+        }
+    } else {
+        exclude("io/toolbox/host/screenshots/**")
+    }
 }
 
 android {
@@ -72,8 +105,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 65
-        versionName = "0.8.32"
+        versionCode = 69
+        versionName = "0.9.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // In-app updates read this repository's releases and compare against the CI run that built the APK.
         buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")
@@ -119,6 +152,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 
     buildFeatures {
@@ -178,6 +215,12 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.work.testing)

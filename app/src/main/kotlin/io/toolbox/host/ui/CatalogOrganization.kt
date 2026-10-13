@@ -145,12 +145,13 @@ internal fun homeGridColumnCount(availableWidth: Float, fontScale: Float): Int =
     ((availableWidth + 12f) / (72f * fontScale.coerceAtLeast(1f) + 12f)).toInt().coerceAtLeast(1)
 
 /**
- * Folders: three per row on phones so a folder (about 110dp) stays secondary to the shortcut
- * icons above it; large text falls back to two, wide windows fit more.
+ * Groups are one-line capsules (two full icons, then a 2x2 cluster); a phone fits one per row,
+ * wider windows fit more. Icon sizes do not follow the font scale, so neither does the count.
  */
-internal fun homeFolderColumnCount(availableWidth: Float, fontScale: Float): Int =
-    ((availableWidth + FOLDER_GAP) / (100f * fontScale.coerceAtLeast(1f) + FOLDER_GAP)).toInt().coerceIn(2, 8)
+internal fun homeFolderColumnCount(availableWidth: Float, @Suppress("UNUSED_PARAMETER") fontScale: Float): Int =
+    ((availableWidth + FOLDER_GAP) / (GROUP_CAPSULE_MIN_WIDTH + FOLDER_GAP)).toInt().coerceIn(1, 4)
 
+private const val GROUP_CAPSULE_MIN_WIDTH = 260f
 private const val FOLDER_GAP = 12f
 
 internal fun LazyListScope.catalogHomeSections(
@@ -227,6 +228,7 @@ internal fun LazyListScope.catalogHomeSections(
                             onOpen = { onOpenGroup(group.id) },
                             onEdit = { onEditGroup(group.id) },
                             onMove = { onAction(CatalogAction.MoveGroup(group.id, it)) },
+                            onLaunch = { onAction(CatalogAction.RequestRuntimeLaunch(it.toolId)) },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -338,11 +340,11 @@ private fun CatalogGroupFolder(
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onMove: (Int) -> Unit,
+    onLaunch: (CatalogTool) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = ToolBoxThemeTokens.colors
     val style = catalogGroupColor(group.color)
-    val shape = toolBoxShape(ToolBoxThemeTokens.radii.card)
     val interactionSource = remember { MutableInteractionSource() }
     val editLabel = "编辑分组" + group.name
     Column(
@@ -352,14 +354,16 @@ private fun CatalogGroupFolder(
             .testTag("group:" + group.id),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val metrics = groupCapsuleMetrics(maxWidth)
+            val capsuleShape = RoundedCornerShape(metrics.radius)
             Box(
-                Modifier.matchParentSize()
-                    .toolBoxPressFeedback(interactionSource, shape = shape)
-                    .clip(shape)
+                Modifier.fillMaxWidth().height(metrics.height)
+                    .toolBoxPressFeedback(interactionSource, shape = capsuleShape)
+                    .clip(capsuleShape)
                     .background(lerp(colors.surface, style.bottom, 0.06f))
                     .testTag("catalog_group:" + group.id)
-                    .semantics(mergeDescendants = true) {
+                    .semantics {
                         contentDescription = "分组${group.name}，${members.size} 个工具"
                         customActions = buildList {
                             add(CustomAccessibilityAction(editLabel) { onEdit(); true })
@@ -374,9 +378,10 @@ private fun CatalogGroupFolder(
                             role = Role.Button, onClickLabel = "打开分组", onClick = onOpen,
                             onLongClick = onEdit, onLongClickLabel = editLabel),
                     )
-                    .padding(12.dp),
+                    .padding(horizontal = metrics.padding),
+                contentAlignment = Alignment.Center,
             ) {
-                CatalogGroupFolderPreview(group, members)
+                CatalogGroupCapsuleContent(group, members, metrics.slot, onLaunch = if (editing) null else onLaunch)
             }
             if (editing) {
                 Box(
@@ -410,32 +415,53 @@ private fun CatalogGroupFolder(
     }
 }
 
-/** 2x2 preview: up to four tools, or three plus a cluster of the next four; empty shows the group style. */
+internal class GroupCapsuleMetrics(val slot: Dp, val padding: Dp, val height: Dp, val radius: Dp)
+
+/** Three equal slots (two icons and the 2x2 cluster) inside a capsule of the given width. */
+internal fun groupCapsuleMetrics(width: Dp): GroupCapsuleMetrics {
+    val padding = 12.dp
+    val slot = ((width - padding * 2 - GROUP_SLOT_GAP * 2) / 3).coerceIn(44.dp, 72.dp)
+    val height = slot + padding * 2
+    return GroupCapsuleMetrics(slot, padding, height, height * 0.32f)
+}
+
+private val GROUP_SLOT_GAP = 14.dp
+
+/**
+ * One line: the first two tools as full icons that open the tool, then tools three onward as
+ * quarter-size icons in the third slot; past six tools the last quarter shows "+N". An empty
+ * group shows its style icon. Taps outside the two full icons open the group.
+ */
 @Composable
-private fun CatalogGroupFolderPreview(group: CatalogGroup, members: List<CatalogTool>) {
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun CatalogGroupCapsuleContent(group: CatalogGroup, members: List<CatalogTool>, slot: Dp, onLaunch: ((CatalogTool) -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (members.isEmpty()) {
-            CatalogGroupStyleIcon(group, maxWidth * 0.5f)
-            return@BoxWithConstraints
+            Box(Modifier.size(slot), contentAlignment = Alignment.Center) { CatalogGroupStyleIcon(group, slot) }
+            Spacer(Modifier.size(slot))
+            Spacer(Modifier.size(slot))
+            return@Row
         }
-        val gap = 8.dp
-        val cell = (minOf(maxWidth, maxHeight) - gap) / 2
-        val big = if (members.size > 4) members.take(3) else members.take(4)
-        val cluster = if (members.size > 4) members.drop(3).take(4) else emptyList()
-        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-            repeat(2) { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    repeat(2) { column ->
-                        val slot = row * 2 + column
-                        Box(Modifier.size(cell), contentAlignment = Alignment.Center) {
-                            when {
-                                slot < big.size -> PreviewGlyph(big[slot], cell)
-                                slot == big.size && cluster.isNotEmpty() -> PreviewCluster(cluster, cell)
-                            }
-                        }
-                    }
+        repeat(2) { position ->
+            val tool = members.getOrNull(position)
+            Box(Modifier.size(slot), contentAlignment = Alignment.Center) {
+                if (tool != null) {
+                    Box(
+                        if (onLaunch == null) Modifier.clearAndSetSemantics { }
+                        else Modifier.clip(toolBoxShape(slot * 0.24f))
+                            .clickable(role = Role.Button, onClickLabel = "打开" + tool.name) { onLaunch(tool) }
+                            .semantics { contentDescription = tool.name }
+                            .testTag("catalog_group_tool:" + tool.toolId),
+                    ) { PreviewGlyph(tool, slot) }
                 }
             }
+        }
+        Box(Modifier.size(slot).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
+            val rest = members.drop(2)
+            if (rest.isNotEmpty()) PreviewCluster(rest, slot)
         }
     }
 }
@@ -448,13 +474,33 @@ private fun PreviewGlyph(tool: CatalogTool, size: Dp) {
 
 @Composable
 private fun PreviewCluster(tools: List<CatalogTool>, size: Dp) {
-    val gap = 3.dp
-    val tiny = (size - 4.dp - gap) / 2
-    Column(Modifier.size(size).padding(2.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+    val gap = 4.dp
+    val tiny = (size - gap) / 2
+    // Four quarters; with more than four, the last quarter counts the tools not shown.
+    val shown = if (tools.size > 4) tools.take(3) else tools.take(4)
+    val hidden = tools.size - shown.size
+    Column(Modifier.size(size), verticalArrangement = Arrangement.spacedBy(gap)) {
         repeat(2) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                 repeat(2) { column ->
-                    Box(Modifier.size(tiny)) { tools.getOrNull(row * 2 + column)?.let { PreviewGlyph(it, tiny) } }
+                    val slot = row * 2 + column
+                    Box(Modifier.size(tiny), contentAlignment = Alignment.Center) {
+                        when {
+                            slot < shown.size -> PreviewGlyph(shown[slot], tiny)
+                            slot == 3 && hidden > 0 -> Box(
+                                Modifier.fillMaxSize().clip(toolBoxShape(tiny * 0.26f))
+                                    .background(ToolBoxThemeTokens.colors.surfaceMuted),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AppText("+$hidden", maxLines = 1, color = ToolBoxThemeTokens.colors.textSecondary,
+                                    textStyle = ToolBoxThemeTokens.textStyles.label.copy(
+                                        fontSize = with(LocalDensity.current) { (tiny * 0.38f).toSp() },
+                                        lineHeight = with(LocalDensity.current) { (tiny * 0.46f).toSp() },
+                                        fontWeight = FontWeight.SemiBold,
+                                    ))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -464,18 +510,19 @@ private fun PreviewCluster(tools: List<CatalogTool>, size: Dp) {
 @Composable
 private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = ToolBoxThemeTokens.colors
-    val shape = toolBoxShape(ToolBoxThemeTokens.radii.card)
     val interactionSource = remember { MutableInteractionSource() }
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(
-            Modifier.fillMaxWidth().aspectRatio(1f)
+    BoxWithConstraints(modifier) {
+        val metrics = groupCapsuleMetrics(maxWidth)
+        val shape = RoundedCornerShape(metrics.radius)
+        Row(
+            Modifier.fillMaxWidth().height(metrics.height)
                 .toolBoxPressFeedback(interactionSource, shape = shape)
                 .clip(shape)
                 .border(1.5.dp, colors.primary.copy(alpha = 0.45f), shape)
                 .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
                 .testTag("catalog_home_new_group_tile"),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             ToolBoxIcon(ToolBoxIconKey.Add, null, Modifier.size(24.dp), tint = colors.primary)
             AppText("新建分组", color = colors.primary, maxLines = 1,
@@ -540,7 +587,7 @@ internal fun CatalogGroupFolderOverlay(
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 24.dp),
+                .padding(horizontal = 16.dp, vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
@@ -564,14 +611,17 @@ internal fun CatalogGroupFolderOverlay(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     CatalogGroupStyleIcon(group, 30.dp, 18.dp)
-                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 1,
+                    // Two lines: at 320dp the two round buttons leave only ~4 large glyphs per line.
+                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 2,
                         textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold))
                     FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
                     FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
                 }
                 val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
-                    Modifier.fillMaxWidth()
+                    // Takes only what the header and footer leave, so a two-line title in a short
+                    // window shrinks the scrolling list instead of pushing the buttons off screen.
+                    Modifier.weight(1f, fill = false).fillMaxWidth()
                         .shadow(
                             elevation = 24.dp,
                             shape = panelShape,
