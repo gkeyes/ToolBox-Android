@@ -48,14 +48,14 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 
 ### 调试版与正式版
 
-「设置 → 开发者帮助」中的「小工具 WebView 调试」开关只显示编译版本的状态，应用内不可切换。构建需求为“调试版”时选择 Debug，为“正式版”时选择 Release：
+「设置 → 开发者帮助」中的「小工具 WebView 调试」开关：调试版固定开启；正式版默认关闭，可在应用内临时开启，应用进程重启后自动关闭。构建需求为“调试版”时选择 Debug，为“正式版”时选择 Release：
 
 | 版本 | 构建命令 | 小工具 WebView 调试状态 |
 | --- | --- | --- |
 | 调试版（Debug） | `./gradlew :app:assembleDebug` | 固定开启，无法关闭 |
-| 正式版（Release） | `./gradlew :app:assembleRelease` | 普通用户版 Android 上固定关闭，无法开启 |
+| 正式版（Release） | `./gradlew :app:assembleRelease` | 普通用户版 Android 上默认关闭；可在应用内临时开启，重启应用后自动关闭 |
 
-状态由 APK 的 `android:debuggable` 编译标志决定。需要切换时，重新构建并安装对应的已签名 APK；使用相同签名才能覆盖安装并保留已有数据。构建产物分别位于 `app/build/outputs/apk/debug/` 和 `app/build/outputs/apk/release/`。重启应用不改变调试状态，WebView 的 Dev / Stable 通道也不决定该状态。
+默认状态由 APK 的 `android:debuggable` 编译标志决定。正式版的应用内开关只保存在内存中，不写入设置或备份，只作用于主进程的小工具页面（不含内置浏览器）。构建产物分别位于 `app/build/outputs/apk/debug/` 和 `app/build/outputs/apk/release/`；使用相同签名才能覆盖安装并保留已有数据。WebView 的 Dev / Stable 通道不决定该状态。
 
 开发版 Android 系统（`userdebug` / `eng`）可能强制开启接口，正式版请求关闭也会被忽略；此时开关显示实际开启状态并注明系统限制。连接电脑检查页面的步骤见 [开发手册](sdk/help/manual.md) 中的「小工具 WebView 调试」。
 
