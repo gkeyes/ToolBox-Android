@@ -35,11 +35,11 @@ fun interface RuntimeBridgeProvider {
 
 data class RuntimeBridgeConfiguration(
     val authorization: RuntimeAuthorizationPolicy,
-    val handlers: RuntimeM1Handlers,
+    val handlers: RuntimeCoreHandlers,
     val hostVersion: String,
     val generation: String = "",
-    val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
-    val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    val serviceHandlers: RuntimeServiceHandlers = RuntimeServiceHandlers(),
+    val systemHandlers: RuntimeSystemHandlers = RuntimeSystemHandlers(),
     val browserLaunchGuard: () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
     },
@@ -53,9 +53,9 @@ data class RuntimeBridgeConfiguration(
 class RuntimeBridgeSession internal constructor(
     private val identity: RuntimeSessionIdentity,
     authorization: RuntimeAuthorizationPolicy,
-    handlers: RuntimeM1Handlers,
-    m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
-    m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    handlers: RuntimeCoreHandlers,
+    serviceHandlers: RuntimeServiceHandlers = RuntimeServiceHandlers(),
+    systemHandlers: RuntimeSystemHandlers = RuntimeSystemHandlers(),
     private val browserLaunchGuard: () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool is available")
     },
@@ -97,14 +97,14 @@ class RuntimeBridgeSession internal constructor(
         identity = identity,
         authorization = authorization,
         handlers = handlers,
-        m2Handlers = m2Handlers,
-        m3Handlers = m3Handlers,
+        serviceHandlers = serviceHandlers,
+        systemHandlers = systemHandlers,
         lifecycle = lifecycle,
         browserLaunchGuard = { browserLaunchGuard(); requireForegroundSession() },
         foregroundInteractionGuard = { withContext(Dispatchers.Main.immediate) { requireForegroundSession() } },
     )
-    private val sessionCleanup = m3Handlers.sessionCleanup
-    private val network = m2Handlers.network
+    private val sessionCleanup = systemHandlers.sessionCleanup
+    private val network = serviceHandlers.network
 
     private class ReplyDelivery(val epoch: Long, encoded: String, completed: () -> Unit) {
         private val message = AtomicReference<String?>(encoded)
@@ -1092,8 +1092,8 @@ internal fun createRuntimeBridgeSession(
         identity = identity,
         authorization = configuration.authorization,
         handlers = configuration.handlers,
-        m2Handlers = configuration.m2Handlers,
-        m3Handlers = configuration.m3Handlers,
+        serviceHandlers = configuration.serviceHandlers,
+        systemHandlers = configuration.systemHandlers,
         browserLaunchGuard = configuration.browserLaunchGuard,
     )
 }

@@ -1,7 +1,6 @@
 package io.toolbox.tool.runtime
 
 import io.toolbox.core.data.ResourceCapacity
-import io.toolbox.tool.api.ContractPhase
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxApiV1
 import io.toolbox.tool.api.ToolBoxCapabilityId
@@ -158,7 +157,8 @@ fun interface RuntimeClipboardWriteHandler {
     suspend fun writeText(text: String)
 }
 
-data class RuntimeM1Handlers(
+/** In-app features: toast, storage, device info, haptics, clipboard write. */
+data class RuntimeCoreHandlers(
     val toast: RuntimeToastHandler? = null,
     val storage: RuntimeStorageHandler? = null,
     val secureStorage: RuntimeStorageHandler? = null,
@@ -343,7 +343,8 @@ interface RuntimeAlarmHandler {
     suspend fun cancel(alarmId: String): Boolean
 }
 
-data class RuntimeM2Handlers(
+/** Network, notifications, background tasks/runtime and alarms. */
+data class RuntimeServiceHandlers(
     val network: RuntimeNetworkHandler? = null,
     val notifications: RuntimeNotificationHandler? = null,
     val background: RuntimeBackgroundTaskHandler? = null,
@@ -413,7 +414,8 @@ interface RuntimeLocationWatchHandler {
     suspend fun clearWatch(watchId: String): Boolean
 }
 
-data class RuntimeM3Handlers(
+/** Android system integrations: clipboard read, share, browser, files, shortcuts, camera, location. */
+data class RuntimeSystemHandlers(
     val clipboardRead: RuntimeClipboardReadHandler? = null,
     val shareText: RuntimeShareTextHandler? = null,
     val browserOpen: RuntimeBrowserOpenHandler? = null,
@@ -428,9 +430,9 @@ data class RuntimeM3Handlers(
 class RuntimeRpcDispatcher(
     private val identity: RuntimeSessionIdentity,
     private val authorization: RuntimeAuthorizationPolicy,
-    private val handlers: RuntimeM1Handlers,
-    private val m2Handlers: RuntimeM2Handlers = RuntimeM2Handlers(),
-    private val m3Handlers: RuntimeM3Handlers = RuntimeM3Handlers(),
+    private val handlers: RuntimeCoreHandlers,
+    private val serviceHandlers: RuntimeServiceHandlers = RuntimeServiceHandlers(),
+    private val systemHandlers: RuntimeSystemHandlers = RuntimeSystemHandlers(),
     private val lifecycle: RuntimeLifecycleHandler? = null,
     private val foregroundInteractionGuard: suspend () -> Unit = {
         throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "No foreground tool session is available")
@@ -472,20 +474,17 @@ class RuntimeRpcDispatcher(
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "ToolBox session identity is stale")
         }
         if (!authorization.isCurrent(identity)) {
-            m2Handlers.network?.cancelStreams()
+            serviceHandlers.network?.cancelStreams()
             return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
         }
         val method = ToolBoxApiV1.method(request.method)
             ?: return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Unknown ToolBox method")
-        if (method.contractPhase !in SUPPORTED_CONTRACT_PHASES) {
-            return failure(RuntimeRpcErrorCode.UNSUPPORTED, "Method is not available in this host milestone")
-        }
         // Cleanup remains callable after network access is revoked.
         val mediaCleanup = method.name == "network.closeMedia"
         val capability = try {
             lifecycle?.checkMethodAvailable(method.name)
             if (method.name == "files.read") {
-                requireHandler(m3Handlers.files).capabilityFor(
+                requireHandler(systemHandlers.files).capabilityFor(
                     request.params.requiredIdentifier("token"),
                 )
             } else {
@@ -502,11 +501,11 @@ class RuntimeRpcDispatcher(
                 return failure(RuntimeRpcErrorCode.NOT_DECLARED, "Capability is not declared by this tool")
             }
             if (!mediaCleanup && !authorization.isGranted(identity, capability)) {
-                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                if (capability == ToolBoxCapabilityId.NETWORK) serviceHandlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability is disabled for this tool")
             }
             if (!mediaCleanup && !authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
-                if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                if (capability == ToolBoxCapabilityId.NETWORK) serviceHandlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Required Android permission is unavailable")
             }
 
@@ -528,21 +527,21 @@ class RuntimeRpcDispatcher(
             // Read a fresh authorization stage after admission and the foreground dispatch.
             // The final version read also detects replacement during grant repository IO.
             if (!authorization.isCurrent(identity)) {
-                m2Handlers.network?.cancelStreams()
+                serviceHandlers.network?.cancelStreams()
                 return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
             }
             if (capability != null && !mediaCleanup) {
                 val descriptor = ToolBoxApiV1.capability(capability)
                 if (!authorization.isGranted(identity, capability)) {
-                    if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                    if (capability == ToolBoxCapabilityId.NETWORK) serviceHandlers.network?.cancelStreams()
                     return failure(RuntimeRpcErrorCode.PERMISSION_DENIED, "Capability was disabled before execution")
                 }
                 if (!authorization.hasSystemPermissions(identity, descriptor.systemPermissions)) {
-                    if (capability == ToolBoxCapabilityId.NETWORK) m2Handlers.network?.cancelStreams()
+                    if (capability == ToolBoxCapabilityId.NETWORK) serviceHandlers.network?.cancelStreams()
                     return failure(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "Android permission changed before execution")
                 }
                 if (!authorization.isCurrent(identity)) {
-                    m2Handlers.network?.cancelStreams()
+                    serviceHandlers.network?.cancelStreams()
                     return failure(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
                 }
             }
@@ -658,7 +657,7 @@ class RuntimeRpcDispatcher(
             RpcValue.Null
         }
         "network.request" -> {
-            val response = requireHandler(m2Handlers.network).request(params.toNetworkRequest())
+            val response = requireHandler(serviceHandlers.network).request(params.toNetworkRequest())
             retained += response.release
             requireNetworkStreamAuthorization()
             response.toRpcValue()
@@ -668,7 +667,7 @@ class RuntimeRpcDispatcher(
             val streamId = params.requiredNetworkStreamId()
             val networkRequest = (params.required("request") as? RpcValue.ObjectValue
                 ?: throw IllegalArgumentException("request")).toNetworkRequest()
-            val network = requireHandler(m2Handlers.network)
+            val network = requireHandler(serviceHandlers.network)
             val response = network.openStream(streamId, networkRequest)
             try {
                 require(response.streamId == streamId)
@@ -689,7 +688,7 @@ class RuntimeRpcDispatcher(
             val streamId = params.requiredNetworkStreamId()
             val expected = params.optionalLong("expectedChunkBytes", 1, MAX_SAFE_INTEGER)
             val rawBudget = runtimeNetworkStreamRawBudget(requestId, maxResponseBytes, expected)
-            val network = requireHandler(m2Handlers.network)
+            val network = requireHandler(serviceHandlers.network)
             val chunk = network.readStream(streamId, rawBudget)
             retained += chunk.release
             run {
@@ -705,7 +704,7 @@ class RuntimeRpcDispatcher(
         }
         "network.cancelStream" -> {
             params.requireOnly("streamId")
-            requireHandler(m2Handlers.network).cancelStream(params.requiredNetworkStreamId())
+            requireHandler(serviceHandlers.network).cancelStream(params.requiredNetworkStreamId())
             RpcValue.Null
         }
         "network.openMedia" -> {
@@ -713,7 +712,7 @@ class RuntimeRpcDispatcher(
             val sessionId = params.requiredNetworkMediaSessionId()
             val url = params.requiredNetworkMediaUrl()
             val kind = params.optionalString("kind", 5).also { require(it == null || it in setOf("audio", "video")) }
-            val network = requireHandler(m2Handlers.network)
+            val network = requireHandler(serviceHandlers.network)
             try {
                 currentCoroutineContext().ensureActive()
                 val session = network.openMedia(sessionId, url, kind)
@@ -735,12 +734,12 @@ class RuntimeRpcDispatcher(
         }
         "network.closeMedia" -> {
             params.requireOnly("sessionId")
-            requireHandler(m2Handlers.network).closeMedia(params.requiredNetworkMediaSessionId())
+            requireHandler(serviceHandlers.network).closeMedia(params.requiredNetworkMediaSessionId())
             RpcValue.Null
         }
         "notifications.post" -> {
             params.requireOnly("id", "title", "body")
-            requireHandler(m2Handlers.notifications).post(
+            requireHandler(serviceHandlers.notifications).post(
                 notificationId = params.requiredIdentifier("id"),
                 title = params.requiredString("title", maxResponseBytes),
                 body = params.requiredText("body", maxResponseBytes),
@@ -749,7 +748,7 @@ class RuntimeRpcDispatcher(
         }
         "notifications.update" -> {
             params.requireOnly("id", "title", "body")
-            requireHandler(m2Handlers.notifications).update(
+            requireHandler(serviceHandlers.notifications).update(
                 notificationId = params.requiredIdentifier("id"),
                 title = params.requiredString("title", maxResponseBytes),
                 body = params.requiredText("body", maxResponseBytes),
@@ -758,41 +757,41 @@ class RuntimeRpcDispatcher(
         }
         "notifications.cancel" -> {
             params.requireOnly("id")
-            requireHandler(m2Handlers.notifications).cancel(
+            requireHandler(serviceHandlers.notifications).cancel(
                 params.requiredIdentifier("id"),
             )
             RpcValue.Null
         }
         "notifications.live.start" -> {
-            requireHandler(m2Handlers.notifications)
+            requireHandler(serviceHandlers.notifications)
                 .startLive(params.toLiveNotificationRequest())
                 .toRpcValue()
         }
         "notifications.live.update" -> {
-            requireHandler(m2Handlers.notifications)
+            requireHandler(serviceHandlers.notifications)
                 .updateLive(params.toLiveNotificationRequest())
                 .toRpcValue()
         }
         "notifications.live.end" -> {
             params.requireOnly("sessionId")
-            requireHandler(m2Handlers.notifications).endLive(params.requiredSessionId())
+            requireHandler(serviceHandlers.notifications).endLive(params.requiredSessionId())
             RpcValue.Null
         }
         "background.enqueue" -> RpcValue.StringValue(
-            requireHandler(m2Handlers.background).enqueue(params.toBackgroundTaskSpec(periodic = false))
+            requireHandler(serviceHandlers.background).enqueue(params.toBackgroundTaskSpec(periodic = false))
                 .also { requireTaskId(it) },
         )
         "background.schedulePeriodic" -> {
             val spec = params.toBackgroundTaskSpec(periodic = true)
             val intervalMinutes = params.requiredLong("intervalMinutes", MIN_PERIODIC_INTERVAL_MINUTES, MAX_SAFE_INTEGER)
             RpcValue.StringValue(
-                requireHandler(m2Handlers.background).schedulePeriodic(spec, intervalMinutes)
+                requireHandler(serviceHandlers.background).schedulePeriodic(spec, intervalMinutes)
                     .also { requireTaskId(it) },
             )
         }
         "background.start" -> {
             params.requireOnly("restoreAfterProcessDeath", "restoreAfterReboot")
-            requireHandler(m2Handlers.continuousBackground).start(
+            requireHandler(serviceHandlers.continuousBackground).start(
                 RuntimeBackgroundStartOptions(
                     restoreAfterProcessDeath = params.optionalBoolean("restoreAfterProcessDeath") ?: true,
                     restoreAfterReboot = params.optionalBoolean("restoreAfterReboot") ?: false,
@@ -801,35 +800,35 @@ class RuntimeRpcDispatcher(
         }
         "background.stop" -> {
             params.requireOnly("sessionId")
-            if (!requireHandler(m2Handlers.continuousBackground).stop(params.requiredSessionId())) {
+            if (!requireHandler(serviceHandlers.continuousBackground).stop(params.requiredSessionId())) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background session was not found")
             }
             RpcValue.Null
         }
         "background.status" -> {
             params.requireOnly("sessionId")
-            requireHandler(m2Handlers.continuousBackground)
+            requireHandler(serviceHandlers.continuousBackground)
                 .status(params.requiredSessionId())
                 ?.toRpcValue()
                 ?: RpcValue.Null
         }
         "background.list" -> {
             params.requireOnly()
-            RpcValue.ArrayValue(requireHandler(m2Handlers.background).list().map { task -> task.toRpcValue() })
+            RpcValue.ArrayValue(requireHandler(serviceHandlers.background).list().map { task -> task.toRpcValue() })
         }
         "background.listSessions" -> {
             params.requireOnly()
             RpcValue.ArrayValue(
-                requireHandler(m2Handlers.continuousBackground).list().map { session -> session.toRpcValue() },
+                requireHandler(serviceHandlers.continuousBackground).list().map { session -> session.toRpcValue() },
             )
         }
         "background.updateActivity" -> {
-            requireHandler(m2Handlers.continuousBackground).updateActivity(params.toBackgroundActivityRequest())
+            requireHandler(serviceHandlers.continuousBackground).updateActivity(params.toBackgroundActivityRequest())
             RpcValue.Null
         }
         "background.getResult" -> {
             params.requireOnly("taskId")
-            requireHandler(m2Handlers.background)
+            requireHandler(serviceHandlers.background)
                 .getResult(params.requiredTaskId())
                 ?.toRpcValue()
                 ?: RpcValue.Null
@@ -837,7 +836,7 @@ class RuntimeRpcDispatcher(
         "background.cancel" -> {
             params.requireOnly("taskId")
             val taskId = params.requiredTaskId()
-            val cancelled = requireHandler(m2Handlers.background).cancel(taskId)
+            val cancelled = requireHandler(serviceHandlers.background).cancel(taskId)
             if (!cancelled) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Background task was not found")
             }
@@ -845,7 +844,7 @@ class RuntimeRpcDispatcher(
         }
         "background.setTimer" -> {
             params.requireOnly("key", "intervalMs")
-            requireHandler(m2Handlers.continuousBackground).setTimer(
+            requireHandler(serviceHandlers.continuousBackground).setTimer(
                 key = params.requiredIdentifier("key"),
                 intervalMillis = params.requiredLong("intervalMs", 1, MAX_SAFE_INTEGER),
             )
@@ -853,7 +852,7 @@ class RuntimeRpcDispatcher(
         }
         "background.cancelTimer" -> {
             params.requireOnly("key")
-            val cancelled = requireHandler(m2Handlers.continuousBackground).cancelTimer(
+            val cancelled = requireHandler(serviceHandlers.continuousBackground).cancelTimer(
                 params.requiredIdentifier("key"),
             )
             if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Timer was not found")
@@ -861,17 +860,17 @@ class RuntimeRpcDispatcher(
         }
         "clipboard.readText" -> {
             params.requireOnly()
-            RpcValue.StringValue(requireHandler(m3Handlers.clipboardRead).readText())
+            RpcValue.StringValue(requireHandler(systemHandlers.clipboardRead).readText())
         }
         "share.text" -> {
             params.requireOnly("text")
-            requireHandler(m3Handlers.shareText).shareText(params.requiredText("text", maxResponseBytes))
+            requireHandler(systemHandlers.shareText).shareText(params.requiredText("text", maxResponseBytes))
             RpcValue.Null
         }
         "browser.open" -> {
             params.requireOnly("url")
             val url = validateRuntimeBrowserUrl(params.requiredString("url", maxResponseBytes))
-            requireHandler(m3Handlers.browserOpen).open(url) {
+            requireHandler(systemHandlers.browserOpen).open(url) {
                 if (!authorization.isCurrent(identity)) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.INVALID_SESSION, "The installed tool version changed")
                 }
@@ -886,13 +885,13 @@ class RuntimeRpcDispatcher(
             }
             RpcValue.Null
         }
-        "files.open" -> requireHandler(m3Handlers.files)
+        "files.open" -> requireHandler(systemHandlers.files)
             .open(params.optionalMimeTypes())
             ?.toRpcValue()
             ?: RpcValue.Null
         "files.save" -> {
             params.requireOnly("suggestedName", "mimeType", "content")
-            requireHandler(m3Handlers.files).save(
+            requireHandler(systemHandlers.files).save(
                 suggestedName = params.requiredFileName(),
                 mimeType = params.requiredMimeType("mimeType"),
                 content = params.requiredBytes("content", maxResponseBytes),
@@ -900,7 +899,7 @@ class RuntimeRpcDispatcher(
         }
         "files.read" -> {
             params.requireOnly("token")
-            val content = requireHandler(m3Handlers.files).consume(
+            val content = requireHandler(systemHandlers.files).consume(
                 params.requiredIdentifier("token"),
                 runtimeFileReadRawBudget(requestId, maxResponseBytes),
             )
@@ -911,11 +910,11 @@ class RuntimeRpcDispatcher(
         }
         "shortcuts.pin" -> {
             params.requireOnly("name")
-            RpcValue.Bool(requireHandler(m3Handlers.shortcuts).pin(params.optionalDisplayName("name")))
+            RpcValue.Bool(requireHandler(systemHandlers.shortcuts).pin(params.optionalDisplayName("name")))
         }
         "camera.capture" -> {
             params.requireOnly()
-            requireHandler(m3Handlers.camera).capture()?.toRpcValue() ?: RpcValue.Null
+            requireHandler(systemHandlers.camera).capture()?.toRpcValue() ?: RpcValue.Null
         }
         "location.getCurrent" -> {
             params.requireOnly("accuracy", "timeoutMs")
@@ -924,7 +923,7 @@ class RuntimeRpcDispatcher(
                 "precise" -> true
                 else -> throw IllegalArgumentException("accuracy")
             }
-            requireHandler(m3Handlers.location).getCurrent(
+            requireHandler(systemHandlers.location).getCurrent(
                 precise = precise,
                 timeoutMillis = params.optionalLong("timeoutMs", MIN_LOCATION_TIMEOUT_MS, MAX_SAFE_INTEGER)
                     ?: DEFAULT_LOCATION_TIMEOUT_MS,
@@ -938,7 +937,7 @@ class RuntimeRpcDispatcher(
                 else -> throw IllegalArgumentException("accuracy")
             }
             RpcValue.StringValue(
-                requireHandler(m3Handlers.locationWatch).watch(
+                requireHandler(systemHandlers.locationWatch).watch(
                     RuntimeLocationWatchOptions(
                         precise = precise,
                         intervalMillis = params.optionalLong("intervalMs", 0, MAX_SAFE_INTEGER) ?: 0,
@@ -950,7 +949,7 @@ class RuntimeRpcDispatcher(
         }
         "location.clearWatch" -> {
             params.requireOnly("watchId")
-            val removed = requireHandler(m3Handlers.locationWatch).clearWatch(
+            val removed = requireHandler(systemHandlers.locationWatch).clearWatch(
                 params.requiredIdentifier("watchId"),
             )
             if (!removed) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Location watch was not found")
@@ -959,7 +958,7 @@ class RuntimeRpcDispatcher(
         "alarms.schedule" -> {
             params.requireOnly("id", "triggerAt")
             val now = System.currentTimeMillis()
-            requireHandler(m2Handlers.alarms).schedule(
+            requireHandler(serviceHandlers.alarms).schedule(
                 RuntimeAlarmSummary(
                     alarmId = params.requiredIdentifier("id"),
                     triggerAt = params.requiredLong("triggerAt", 0, MAX_SAFE_INTEGER),
@@ -969,11 +968,11 @@ class RuntimeRpcDispatcher(
         }
         "alarms.list" -> {
             params.requireOnly()
-            RpcValue.ArrayValue(requireHandler(m2Handlers.alarms).list().map { it.toRpcValue() })
+            RpcValue.ArrayValue(requireHandler(serviceHandlers.alarms).list().map { it.toRpcValue() })
         }
         "alarms.cancel" -> {
             params.requireOnly("id")
-            val cancelled = requireHandler(m2Handlers.alarms).cancel(
+            val cancelled = requireHandler(serviceHandlers.alarms).cancel(
                 params.requiredIdentifier("id"),
             )
             if (!cancelled) throw RuntimeHandlerException(RuntimeRpcErrorCode.NOT_FOUND, "Alarm was not found")
@@ -995,7 +994,7 @@ class RuntimeRpcDispatcher(
             !authorization.isCurrent(identity) -> RuntimeRpcErrorCode.INVALID_SESSION
             else -> return
         }
-        m2Handlers.network?.cancelStreams()
+        serviceHandlers.network?.cancelStreams()
         throw RuntimeHandlerException(code, "Network stream authorization changed before delivery")
     }
 
@@ -1504,7 +1503,6 @@ class RuntimeRpcDispatcher(
         .joinToString("") { "%02x".format(it) }
 
     private companion object {
-        val SUPPORTED_CONTRACT_PHASES = setOf(ContractPhase.M1, ContractPhase.M2, ContractPhase.M3)
         val HEADER_NAME = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
         val REQUEST_HEADER_NAME = HEADER_NAME
         val FORBIDDEN_RESPONSE_HEADERS = setOf("set-cookie", "set-cookie2", "proxy-authenticate")

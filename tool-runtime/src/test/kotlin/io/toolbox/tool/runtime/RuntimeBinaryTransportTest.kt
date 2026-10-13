@@ -57,7 +57,7 @@ class RuntimeBinaryTransportTest {
     }
 
     private suspend fun dispatch(value: RpcValue): RuntimeRpcResponse =
-        RuntimeRpcDispatcher(identity, allowAll, RuntimeM1Handlers()).dispatch(
+        RuntimeRpcDispatcher(identity, allowAll, RuntimeCoreHandlers()).dispatch(
             RuntimeRpcRequest("request", "crypto.sha256", identity.nonce, identity.toolId, identity.versionCode,
                 identity.generation, RpcValue.ObjectValue(mapOf("value" to value)), 100),
             RuntimeInboundContext(identity.exactOrigin, true),

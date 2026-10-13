@@ -43,10 +43,10 @@ internal class HostDependencies(
     private val runtimePreparerFactory: () -> ToolRuntimePreparer,
     private val runtimeProfileManagerFactory: () -> RuntimeProfileManager,
     private val runtimeBridgeProviderFactory: (
-        HostRuntimeM2HandlerFactory,
+        HostRuntimeServiceHandlerFactory,
         (io.toolbox.tool.runtime.PreparedToolRuntime) -> io.toolbox.host.runtime.HostRuntimeContinuityHandlers,
     ) -> io.toolbox.tool.runtime.RuntimeBridgeProvider,
-    private val runtimeM2HandlerFactory: HostRuntimeM2HandlerFactory,
+    private val runtimeServiceHandlerFactory: HostRuntimeServiceHandlerFactory,
     private val backupDatabase: io.toolbox.core.data.backup.BackupDatabase? = null,
 ) {
     val toolIcons = ToolIconLoader(repositories.catalog) { application.filesDir.toPath() }
@@ -77,7 +77,7 @@ internal class HostDependencies(
     }
 
     val runtimeBridgeProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runtimeBridgeProviderFactory(runtimeM2HandlerFactory, runtimeSessions::handlers)
+        runtimeBridgeProviderFactory(runtimeServiceHandlerFactory, runtimeSessions::handlers)
     }
 
     val runtimeSessions: RuntimeSessionManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -161,15 +161,15 @@ internal object ProductionHostDependenciesFactory : HostDependenciesFactory {
             permissionSideEffects = backgroundOperations,
             runtimePreparerFactory = { ToolRuntimePreparer(application.filesDir, BuildConfig.VERSION_NAME) },
             runtimeProfileManagerFactory = { RuntimeProfileManager(application.filesDir) },
-            runtimeBridgeProviderFactory = { m2Handlers, continuityHandlers ->
+            runtimeBridgeProviderFactory = { serviceHandlers, continuityHandlers ->
                 io.toolbox.host.runtime.HostRuntimeBridgeProvider(
                     context = application,
                     repositories = stores.repositories,
-                    m2HandlerFactory = m2Handlers,
+                    serviceHandlerFactory = serviceHandlers,
                     continuityHandlerFactory = continuityHandlers,
                 )
             },
-            runtimeM2HandlerFactory = backgroundOperations,
+            runtimeServiceHandlerFactory = backgroundOperations,
             backupDatabase = stores.backup,
         )
         backgroundOperations.attachRuntimeSessions(dependencies.runtimeSessions)

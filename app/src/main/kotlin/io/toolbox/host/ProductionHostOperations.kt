@@ -54,7 +54,7 @@ import io.toolbox.tool.runtime.RuntimeBackgroundTaskSpec
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskState
 import io.toolbox.tool.runtime.RuntimeBackgroundTaskSummary
 import io.toolbox.tool.runtime.RuntimeHandlerException
-import io.toolbox.tool.runtime.RuntimeM2Handlers
+import io.toolbox.tool.runtime.RuntimeServiceHandlers
 import io.toolbox.tool.runtime.RuntimeNotificationHandler
 import io.toolbox.tool.runtime.RuntimeLiveNotificationRequest
 import io.toolbox.tool.runtime.RuntimeLiveNotificationResult
@@ -283,7 +283,7 @@ internal class ProductionHostBackgroundOperations(
 ) : HostBackgroundOperations,
     HostPermissionSideEffects,
     HostBackgroundMaintenance,
-    HostRuntimeM2HandlerFactory {
+    HostRuntimeServiceHandlerFactory {
     private val applicationContext = context.applicationContext
     private val network = ToolNetworkProxy()
     private val networkRevocationCleanup = NetworkRevocationCleanup(repositories.keyValues)
@@ -351,7 +351,7 @@ internal class ProductionHostBackgroundOperations(
 
     override suspend fun reconcile() = coordinator.reconcile()
 
-    override fun createHandlers(runtime: PreparedToolRuntime): RuntimeM2Handlers = RuntimeM2Handlers(
+    override fun createHandlers(runtime: PreparedToolRuntime): RuntimeServiceHandlers = RuntimeServiceHandlers(
         network = RuntimeNetworkGateway(
             network, runtime.installedManifest.network,
             validateNetworkAccess = {

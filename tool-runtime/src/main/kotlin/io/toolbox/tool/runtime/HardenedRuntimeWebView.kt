@@ -154,7 +154,7 @@ object HardenedRuntimeWebView {
                 )
                 .build()
             val bridgeConfiguration = bridgeProvider.create(runtime)
-            network = bridgeConfiguration.m2Handlers.network
+            network = bridgeConfiguration.serviceHandlers.network
             runtimeClient = RuntimeWebViewClient(
                 runtime = runtime,
                 assetLoader = assetLoader,

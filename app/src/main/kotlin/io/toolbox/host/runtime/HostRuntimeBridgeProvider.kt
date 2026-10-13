@@ -18,7 +18,7 @@ import io.toolbox.core.data.ToolKvRepository
 import io.toolbox.host.BuildConfig
 import io.toolbox.host.HostInstalledManifestReader
 import io.toolbox.host.HostInstalledManifestResult
-import io.toolbox.host.HostRuntimeM2HandlerFactory
+import io.toolbox.host.HostRuntimeServiceHandlerFactory
 import io.toolbox.tool.runtime.RuntimeSessionCleanupHandler
 import io.toolbox.tool.api.MethodDescriptor
 import io.toolbox.tool.api.ToolBoxApiV1
@@ -35,7 +35,7 @@ import io.toolbox.tool.runtime.RuntimeDeviceBasicHandler
 import io.toolbox.tool.runtime.RuntimeGrantStateSource
 import io.toolbox.tool.runtime.RuntimeHandlerException
 import io.toolbox.tool.runtime.RuntimeHapticsHandler
-import io.toolbox.tool.runtime.RuntimeM1Handlers
+import io.toolbox.tool.runtime.RuntimeCoreHandlers
 import io.toolbox.tool.runtime.RuntimePolicyDecision
 import io.toolbox.tool.runtime.RuntimeQuotaChecker
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
@@ -66,7 +66,7 @@ import org.json.JSONTokener
 internal class HostRuntimeBridgeProvider(
     context: Context,
     repositories: CoreDataRepositories,
-    private val m2HandlerFactory: HostRuntimeM2HandlerFactory,
+    private val serviceHandlerFactory: HostRuntimeServiceHandlerFactory,
     private val continuityHandlerFactory: (PreparedToolRuntime) -> HostRuntimeContinuityHandlers,
     private val hostVersion: String = BuildConfig.VERSION_NAME,
     private val nowMillis: () -> Long = System::currentTimeMillis,
@@ -79,7 +79,7 @@ internal class HostRuntimeBridgeProvider(
 
     override fun create(runtime: PreparedToolRuntime): RuntimeBridgeConfiguration {
         val continuity = continuityHandlerFactory(runtime)
-        val m2Handlers = m2HandlerFactory.createHandlers(runtime).copy(
+        val serviceHandlers = serviceHandlerFactory.createHandlers(runtime).copy(
             continuousBackground = continuity.background,
             alarms = continuity.alarms,
         )
@@ -101,7 +101,7 @@ internal class HostRuntimeBridgeProvider(
                 }
             },
         )
-        val m3Handlers = foregroundHandlers.copy(
+        val systemHandlers = foregroundHandlers.copy(
             locationWatch = continuity.locationWatch,
         )
         val authorization = DefaultRuntimeAuthorizationPolicy(
@@ -111,16 +111,16 @@ internal class HostRuntimeBridgeProvider(
         )
         return RuntimeBridgeConfiguration(
             authorization = authorization,
-            handlers = createM1Handlers(runtime, continuity.requireForegroundRuntime),
-            m2Handlers = m2Handlers,
-            m3Handlers = m3Handlers,
+            handlers = createCoreHandlers(runtime, continuity.requireForegroundRuntime),
+            serviceHandlers = serviceHandlers,
+            systemHandlers = systemHandlers,
             hostVersion = hostVersion,
             generation = "${runtime.toolId}:${runtime.versionCode}:${UUID.randomUUID()}",
             browserLaunchGuard = continuity.requireForegroundRuntime,
         )
     }
 
-    private fun createM1Handlers(runtime: PreparedToolRuntime, requireForegroundRuntime: () -> Unit): RuntimeM1Handlers = RuntimeM1Handlers(
+    private fun createCoreHandlers(runtime: PreparedToolRuntime, requireForegroundRuntime: () -> Unit): RuntimeCoreHandlers = RuntimeCoreHandlers(
         toast = AndroidToastHandler(applicationContext),
         storage = StandardToolKvStorageHandler(
             toolId = runtime.toolId,

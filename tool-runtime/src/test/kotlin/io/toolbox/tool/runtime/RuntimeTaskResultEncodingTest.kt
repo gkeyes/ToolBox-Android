@@ -47,7 +47,7 @@ class RuntimeTaskResultEncodingTest {
                 taskId, RuntimeBackgroundRunOutcome.SUCCEEDED, 1L, 200, "AQID", null, encoding,
             )
         }
-        val response = RuntimeRpcDispatcher(identity, allowAll, RuntimeM1Handlers(), RuntimeM2Handlers(background = handler))
+        val response = RuntimeRpcDispatcher(identity, allowAll, RuntimeCoreHandlers(), RuntimeServiceHandlers(background = handler))
             .dispatch(
                 RuntimeRpcRequest("request", "background.getResult", identity.nonce, identity.toolId, identity.versionCode,
                     identity.generation, RpcValue.ObjectValue(mapOf("taskId" to RpcValue.StringValue("task-1"))), 100),
