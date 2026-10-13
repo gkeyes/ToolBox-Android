@@ -10,6 +10,8 @@ on:
       - "app/src/androidTest/kotlin/io/toolbox/host/DeveloperWebViewDebuggingBehaviorTest.kt"
       - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/RuntimeWebViewDebugging.kt"
       - "tool-runtime/src/main/kotlin/io/toolbox/tool/runtime/HardenedRuntimeWebView.kt"
+      - "scripts/ci/install-emulator.sh"
+      - "scripts/ci/webview-debugging-connected.sh"
   workflow_dispatch:
 
 permissions:
@@ -53,6 +55,8 @@ jobs:
           printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install the emulator and system image, retrying bad downloads
+        run: bash scripts/ci/install-emulator.sh 35 google_apis_playstore x86_64
       - name: Verify the full debugging test class on production Android
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
@@ -70,7 +74,7 @@ jobs:
             adb shell svc power stayon true
             adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
-            ./gradlew --no-daemon :app:connected${{ matrix.task-suffix }}AndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.toolbox.host.DeveloperWebViewDebuggingBehaviorTest ${{ matrix.arguments }} > build/webview-debugging/connected-test.log 2>&1 || (adb logcat -d -b crash > build/webview-debugging/logcat-crash.txt; adb logcat -d -v brief > build/webview-debugging/logcat.txt; tail -n 120 build/webview-debugging/connected-test.log; exit 1)
+            bash scripts/ci/webview-debugging-connected.sh connected${{ matrix.task-suffix }}AndroidTest ${{ matrix.arguments }}
       - name: Require the debugging scenarios to run and pass
         run: |
           python3 - <<'PY'
@@ -110,7 +114,8 @@ jobs:
               print('::error title=Connected test log::' + ' | '.join(lines[-25:]).replace('%', '%25')[:3500])
           crash = evidence / 'logcat-crash.txt'
           if crash.exists() and crash.read_text(errors='replace').strip():
-              print('::error title=Crash buffer::' + ' | '.join(crash.read_text(errors='replace').splitlines()[:60]).replace('%', '%25')[:3800])
+              lines = [line for line in crash.read_text(errors='replace').splitlines() if 'crashpad' not in line]
+              print('::error title=Crash buffer::' + ' | '.join(lines[:60]).replace('%', '%25')[:3800])
           full = evidence / 'logcat.txt'
           if full.exists():
               lines = [line for line in full.read_text(errors='replace').splitlines()
