@@ -66,7 +66,9 @@ class ToolBoxBackgroundWorker(
         if (storedTask.state == TaskState.COMPLETED || storedTask.state == TaskState.CANCELLED) {
             return if (storedTask.periodic) retireWork() else Result.success()
         }
-        val attempt = maxOf(runAttemptCount + 1, storedTask.runAttempt + 1)
+        // Count only claimed runs: claimExecution persists the attempt, so process death mid-run still counts, while
+        // the start-up and storage retries above (which bump WorkManager's runAttemptCount) do not eat the budget.
+        val attempt = storedTask.runAttempt + 1
         val task = storedTask.copy(executionToken = BackgroundExecutionLimiter.newToken())
         return BackgroundExecutionLimiter.run(task.taskId, requireNotNull(task.executionToken)) {
         try {
