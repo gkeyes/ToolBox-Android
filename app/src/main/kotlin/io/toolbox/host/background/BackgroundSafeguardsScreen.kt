@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -121,12 +125,18 @@ internal fun BackgroundSafeguardsScreen(
             appDetailsIntent(context),
         )
     }
+    val activity = LocalActivity.current
+    val notificationRationale = {
+        activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
+    }
+    var rationaleBeforeRequest by remember { mutableStateOf(false) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         safeguards.refresh()
-        // After two denials Android answers false without a dialog; send the user to settings instead.
-        if (!granted) openNotificationSettings()
+        // After two denials Android answers false without showing a dialog (no rationale before or
+        // after the request); only then send the user to settings, never after a first-time denial.
+        if (!granted && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
     }
 
     BackgroundSafeguardsContent(
@@ -144,6 +154,7 @@ internal fun BackgroundSafeguardsScreen(
         onDismissFeedback = runningTools::dismissFeedback,
         onOpenNotifications = {
             if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                rationaleBeforeRequest = notificationRationale()
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 openNotificationSettings()

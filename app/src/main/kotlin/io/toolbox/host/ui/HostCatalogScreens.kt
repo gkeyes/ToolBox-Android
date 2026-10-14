@@ -387,6 +387,14 @@ internal fun ToolDetailScreen(
     val entrance = rememberToolBoxEntrance("tool-detail")
     var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
     var deleteConfirmed by rememberSaveable(toolId) { mutableStateOf(false) }
+    // Feedback is catalog-wide; drop whatever an earlier screen left so this page only shows its own results.
+    var staleFeedbackCleared by rememberSaveable(toolId) { mutableStateOf(false) }
+    LaunchedEffect(toolId) {
+        if (!staleFeedbackCleared) {
+            staleFeedbackCleared = true
+            if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
+        }
+    }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
         if (deleteConfirmed && tool == null) onBack()
