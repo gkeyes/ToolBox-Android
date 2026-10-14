@@ -75,7 +75,16 @@
     const sources=[extra?.source.name,base?.source.name].filter(Boolean);
     // A half that failed is named here so a later scan syncs again instead of treating this cache as complete.
     const partial=!base?'base':settings.usePrivateRules&&!extra?'private':'';
-    return {sourceKey:sourceKey(settings),partial,source:sources.join(' + '),sourceURL:[extra?.source.url,base?.source.url].filter(Boolean).map(u=>{const x=new URL(u);return x.origin+x.pathname;}),rules,skipped,at:Date.now(),attempts,privateWarning:privateError?C.cleanText(privateError.message||'私人规则同步失败',300):''};
+    return {sourceKey:sourceKey(settings),partial,privateCount:extra?.parsed.rules.length||0,source:sources.join(' + '),sourceURL:[extra?.source.url,base?.source.url].filter(Boolean).map(u=>{const x=new URL(u);return x.origin+x.pathname;}),rules,skipped,at:Date.now(),attempts,privateWarning:privateError?C.cleanText(privateError.message||'私人规则同步失败',300):''};
   }
-  root.RSSScoutRules={PUBLIC_SOURCES,instanceURL,publicURL,sourceKey,cacheValid,basePlan,privateSource,sync};
+  // A partial sync keeps the other half from the previous cache, so sources failing on alternate tries never drop
+  // rules that already worked. The result stays partial, so the next scan still retries the failed half.
+  function keepCachedHalf(cache,previous){
+    if(!cache.partial||!previous||previous.sourceKey!==cache.sourceKey||previous.partial===cache.partial||!Number.isInteger(previous.privateCount)||!Array.isArray(previous.rules))return cache;
+    const base=cache.partial==='base';
+    const kept=base?previous.rules.slice(previous.privateCount):previous.rules.slice(0,previous.privateCount);
+    if(!kept.length)return cache;
+    return {...cache,rules:base?[...cache.rules,...kept]:[...kept,...cache.rules],privateCount:base?cache.privateCount:kept.length};
+  }
+  root.RSSScoutRules={PUBLIC_SOURCES,instanceURL,publicURL,sourceKey,cacheValid,basePlan,privateSource,sync,keepCachedHalf};
 })(window);

@@ -630,11 +630,16 @@ async function flushDraft() {
 }
 
 // The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
-// Repeated hide signals while one write is pending share that write.
+// A hide while a write is pending queues one more write after it, so edits made between the two hides are saved too.
 let hideFlush = null;
+let hideAgain = false;
 function flushOnHide() {
   if (!draftSlot) return;
-  hideFlush ||= flushDraft().catch(() => {}).finally(() => { hideFlush = null; });
+  if (hideFlush) { hideAgain = true; return; }
+  hideFlush = flushDraft().catch(() => {}).finally(() => {
+    hideFlush = null;
+    if (hideAgain) { hideAgain = false; flushOnHide(); }
+  });
 }
 
 async function offerDraft() {

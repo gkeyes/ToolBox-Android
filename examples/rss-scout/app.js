@@ -702,12 +702,13 @@
   async function syncRules(signal) {
     state.ruleAttempts = [];
     try {
-      const cache = await R.sync(state.network, state.settings, hubKey(), signal, (name, attempts) => {
+      const fetched = await R.sync(state.network, state.settings, hubKey(), signal, (name, attempts) => {
         state.ruleAttempts = attempts;
         status('rule-status', '正在读取：' + name + '…');
         renderRuleLog();
       });
       if (signal?.aborted) throw new DOMException('已停止', 'AbortError');
+      const cache = R.keepCachedHalf(fetched, state.cache);
       let persisted = true;
       try {
         await state.api.storage.set(KEYS.rules, cache);

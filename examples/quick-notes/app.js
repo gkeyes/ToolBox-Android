@@ -162,8 +162,8 @@
     const note = notes.find((candidate) => candidate.id === item.dataset.id);
     if (!note) return;
     if (button.classList.contains("edit")) {
-      // Typed text has no undo; replacing it needs the user's word unless it is already this note's text.
-      if (editingId !== note.id && currentDraft() && !window.confirm("编辑区有尚未保存的内容，打开这条笔记会替换它。确定继续吗？")) return;
+      // Typed text has no undo; replacing it needs the user's word (currentDraft() is null for this note's unchanged text).
+      if (currentDraft() && !window.confirm("编辑区有尚未保存的内容，打开这条笔记会替换它。确定继续吗？")) return;
       $("note-input").value = note.text; setEditing(note.id); $("note-input").focus(); return;
     }
     if (button.classList.contains("copy")) { await copy(note.text); return; }

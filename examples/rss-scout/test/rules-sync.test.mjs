@@ -49,3 +49,20 @@ test('a sync that loads only one half of the rules says which half is missing', 
   assert.ok(cache.rules.length > 0);
   assert.equal(cache.partial, 'base');
 });
+
+test('a partial sync keeps the half the previous cache already had', () => {
+  const { keepCachedHalf } = ctx.RSSScoutRules;
+  const radarOnly = { sourceKey: 'k', partial: 'private', privateCount: 0, rules: [{ id: 'radar' }] };
+  const privateOnly = { sourceKey: 'k', partial: 'base', privateCount: 1, rules: [{ id: 'private' }] };
+  const merged = keepCachedHalf(privateOnly, radarOnly);
+  assert.deepEqual(Array.from(merged.rules, r => r.id), ['private', 'radar']);
+  assert.equal(merged.privateCount, 1);
+  assert.equal(merged.partial, 'base');
+  const back = keepCachedHalf(radarOnly, merged);
+  assert.deepEqual(Array.from(back.rules, r => r.id), ['private', 'radar']);
+  assert.equal(back.privateCount, 1);
+  assert.equal(keepCachedHalf(privateOnly, { ...radarOnly, sourceKey: 'other' }), privateOnly);
+  assert.equal(keepCachedHalf(privateOnly, privateOnly), privateOnly);
+  const complete = { ...privateOnly, partial: '' };
+  assert.equal(keepCachedHalf(complete, radarOnly), complete);
+});
