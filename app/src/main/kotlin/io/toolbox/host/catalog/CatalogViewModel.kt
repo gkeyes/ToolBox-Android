@@ -17,6 +17,7 @@ import io.toolbox.host.HostPackageOperations
 import io.toolbox.host.HostTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -65,8 +66,32 @@ internal class CatalogViewModel(
     }
     private var pendingRuntimeLaunchToolId: String? = null
 
+    // Restarted by RetryLoad: a failed upstream flow ends the collection for good.
+    private var catalogCollection: Job? = null
+
     init {
+        collectCatalog()
         viewModelScope.launch {
+            for (write in layoutChanges) {
+                try {
+                    val status = if (layoutRepository?.update(write.change) is DataResult.Success) {
+                        CatalogLayoutWriteStatus.Succeeded
+                    } else {
+                        CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。")
+                    }
+                    completeLayoutWrite(write, status)
+                } catch (cancelled: CancellationException) {
+                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_CANCELLED", "保存已取消。"))
+                    throw cancelled
+                } catch (_: Exception) {
+                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。"))
+                }
+            }
+        }
+    }
+
+    private fun collectCatalog() {
+        catalogCollection = viewModelScope.launch {
             val toolsProjection = CatalogToolProjection()
             val listsProjection = CatalogListProjection()
             val tools = catalog.observeCatalogProjection().map(toolsProjection::project).distinctUntilChanged()
@@ -100,23 +125,15 @@ internal class CatalogViewModel(
                     }
                 }
         }
-        viewModelScope.launch {
-            for (write in layoutChanges) {
-                try {
-                    val status = if (layoutRepository?.update(write.change) is DataResult.Success) {
-                        CatalogLayoutWriteStatus.Succeeded
-                    } else {
-                        CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。")
-                    }
-                    completeLayoutWrite(write, status)
-                } catch (cancelled: CancellationException) {
-                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_CANCELLED", "保存已取消。"))
-                    throw cancelled
-                } catch (_: Exception) {
-                    completeLayoutWrite(write, CatalogLayoutWriteStatus.Failed("CATALOG_LAYOUT_WRITE", "布局未保存，请重试。"))
-                }
-            }
-        }
+    }
+
+    private fun retryLoad() {
+        if (!state.value.loadFailed || catalogCollection?.isActive == true) return
+        update { current -> current.copy(
+            isLoaded = false, loadFailed = false,
+            feedback = current.feedback.takeUnless { (it as? CatalogFeedback.Failure)?.code == "CATALOG_UNAVAILABLE" },
+        ) }
+        collectCatalog()
     }
 
     fun dispatch(action: CatalogAction) {
@@ -166,6 +183,7 @@ internal class CatalogViewModel(
             CatalogAction.CancelUninstall -> update { it.copy(uninstallConfirmation = null) }
             CatalogAction.ConfirmUninstall -> confirmUninstall()
             CatalogAction.DismissFeedback -> update { it.copy(feedback = null) }
+            CatalogAction.RetryLoad -> retryLoad()
         }
     }
 

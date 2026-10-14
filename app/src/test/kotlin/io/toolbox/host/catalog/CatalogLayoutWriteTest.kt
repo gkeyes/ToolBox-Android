@@ -68,6 +68,20 @@ class CatalogLayoutWriteTest {
         assertTrue(viewModel.state.value.loadFailed)
     }
 
+    @Test fun retryAfterInitialLoadErrorRestartsTheCatalogCollection() = layoutTest {
+        var reads = 0
+        val viewModel = loadedViewModel(ControlledLayoutSettings(original), flow {
+            if (reads++ == 0) throw java.io.IOException("catalog read failed")
+            emit(emptyList())
+        })
+        assertTrue(viewModel.state.value.loadFailed)
+
+        viewModel.dispatch(CatalogAction.RetryLoad)
+        val loaded = viewModel.state.first { it.isLoaded && !it.loadFailed }
+        assertEquals(2, reads)
+        assertNull(loaded.feedback)
+    }
+
     @Test fun delayedSaveStaysWritingAndKeepsOldLayoutUntilCommit() = layoutTest {
         val settings = ControlledLayoutSettings(original)
         val viewModel = loadedViewModel(settings)

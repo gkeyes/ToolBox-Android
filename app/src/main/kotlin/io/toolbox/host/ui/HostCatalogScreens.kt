@@ -258,6 +258,17 @@ internal fun ToolManagerContent(
 
             when {
                 !state.isLoaded -> item("loading") { CatalogStatusState("正在读取工具", loading = true) }
+                // A read failure must not look like the first-run empty catalog.
+                state.loadFailed -> item("load-failed") {
+                    CatalogStatusState(
+                        "工具列表暂时无法读取",
+                        icon = ToolBoxIconKey.Refresh,
+                        detail = "请稍后重试。",
+                        actionLabel = "重试",
+                        onAction = { onAction(CatalogAction.RetryLoad) },
+                        modifier = Modifier.testTag("catalog_load_failed"),
+                    )
+                }
                 state.tools.isEmpty() -> item("empty") {
                     Box(Modifier.toolBoxEntrance(entrance, 0)) { EmptyCatalogState(onImport, onInstallExamples) }
                 }
