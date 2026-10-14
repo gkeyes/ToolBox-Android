@@ -210,7 +210,11 @@ export function loadAccountFeedIcon(feedId) {
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("online", () => isOnline.set(true));
+  window.addEventListener("online", () => {
+    isOnline.set(true);
+    // The offline branch scheduled a full interval away; sync as soon as due.
+    if (autoSyncActive) resetSyncInterval();
+  });
   window.addEventListener("offline", () => isOnline.set(false));
 }
 
