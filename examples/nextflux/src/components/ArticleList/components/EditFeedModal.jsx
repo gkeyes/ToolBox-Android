@@ -109,7 +109,7 @@ export default function EditFeedModal() {
       void backgroundSync().catch(() => {});
     } catch (error) {
       console.error("更新订阅源失败:", error);
-      toast.error(error.message || "更新订阅源失败，请重试。");
+      if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "更新订阅源失败，请重试。");
     } finally {
       setLoading(false);
     }

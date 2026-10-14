@@ -183,7 +183,7 @@ export default function ActionButtons() {
       toast.success(t("common.success"));
     } catch (error) {
       console.error("保存到第三方服务失败:", error);
-      toast.error(error.message || "保存失败，请重试。");
+      if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "保存失败，请重试。");
     } finally {
       setSaveLoading(false);
     }

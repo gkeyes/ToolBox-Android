@@ -212,8 +212,11 @@ export function loadAccountFeedIcon(feedId) {
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
     isOnline.set(true);
-    // The offline branch scheduled a full interval away; sync as soon as due.
-    if (autoSyncActive) resetSyncInterval();
+    // The offline branch scheduled a full interval away, and a sync that failed
+    // when the connection dropped still holds its claim. Sync as soon as due.
+    if (!autoSyncActive) return;
+    autoDeadline.reset();
+    resetSyncInterval();
   });
   window.addEventListener("offline", () => isOnline.set(false));
 }

@@ -27,7 +27,7 @@ export default function CategoryChip({ category }) {
       toast.success(t("common.success"));
     } catch (error) {
       console.error("删除分类失败:", error);
-      toast.error(error.message || "删除分类失败，请重试。");
+      if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "删除分类失败，请重试。");
     } finally {
       setLoading(false);
     }
