@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams } from "react-router";
 import { useStore } from "@nanostores/react";
 import "react-photo-view/dist/react-photo-view.css";
@@ -197,6 +198,7 @@ const ArticleView = () => {
       page.dataset.readingMotion = "release";
       page.style.willChange = "transform";
       let completed = false;
+      let settling = true;
       const cancel = animateNavigationSettle(page, {
         from,
         to: width,
@@ -207,15 +209,23 @@ const ArticleView = () => {
           completed = true;
           shellMotionCancelRef.current = null;
           shellMovingRef.current = false;
+          // Hide the page before its off-screen transform is cleared. This
+          // runs from an animation callback, so a plain state update would
+          // paint one frame of the article back at rest over the list. (With
+          // reduced motion it runs inside this layout effect, before paint.)
+          const hide = () => {
+            setPageShown(false);
+            setPageMoving(false);
+            setReadingPaused(false);
+          };
+          if (settling) hide(); else flushSync(hide);
           clearNavigationVisual(page);
           page.style.willChange = "";
           delete page.dataset.readingMotion;
           navigationMachineRef.current.reset(NAVIGATION_STATES.IDLE);
-          setPageShown(false);
-          setPageMoving(false);
-          setReadingPaused(false);
         },
       });
+      settling = false;
       if (!completed) shellMotionCancelRef.current = cancel;
     }
   }, [cancelDeferredResume, isOpen, isMedium, reduceMotion, setNavigationState]);

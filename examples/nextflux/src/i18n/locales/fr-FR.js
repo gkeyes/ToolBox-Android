@@ -312,6 +312,7 @@ export default {
       titleLines: "Lignes de titre",
       textPreviewLines: "Lignes d'aperçu du texte",
       listFontSize: "Taille du texte de la liste",
+      feedFontSize: "Taille du texte des flux",
       showReadingTime: "Temps de lecture estimé",
       codeBlock: "BLOC DE CODE",
       showLineNumbers: "Afficher les numéros de ligne",

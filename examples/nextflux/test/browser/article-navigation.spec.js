@@ -107,6 +107,18 @@ test("the next page follows the first pull before the release threshold", async 
   await expect(page.getByTestId("route")).toHaveText("/article/1");
 });
 
+test("a long pull keeps the next page under the finger up to the top", async ({ page }) => {
+  await openArticle(page);
+  await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await touch(page, "touchstart", 150, 800);
+  // Past the old 390px cap: the page must keep rising, not stop part-way up.
+  for (let y = 760; y >= 160; y -= 40) await touch(page, "touchmove", 151, y);
+  await expect.poll(() => page.locator(".nextflux-continuous-next-page").evaluate((element) =>
+    new DOMMatrix(getComputedStyle(element).transform).m42 < element.clientHeight - 450)).toBe(true);
+  await touch(page, "touchcancel", 151, 160);
+  await expect(page.getByTestId("route")).toHaveText("/article/1");
+});
+
 test("handoff keeps the target page until the real first screen is ready", async ({ page }) => {
   const errors = await openArticle(page);
   await page.locator(".article-scroll-area").evaluate((element) => { element.scrollTop = element.scrollHeight; });

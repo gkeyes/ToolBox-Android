@@ -321,7 +321,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .sidebar-row {
   min-block-size: 44px;
   border-radius: 0;
-  font-size: 1.0625rem;
+  font-size: calc(1.0625rem * var(--nf-feed-scale, 1));
 }
 .sidebar-row[data-size="lg"] { min-block-size: 52px; }
 [data-sidebar="menu-badge"] { block-size: 44px; }
@@ -333,7 +333,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   background: linear-gradient(var(--ds-hairline), var(--ds-hairline)) no-repeat 16px 0 / calc(100% - 16px) 0.5px;
 }
 .sidebar-row[data-active="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--ds-on-surface); }
-.sidebar-badge { font-size: 0.9375rem; color: var(--nf-secondary); }
+.sidebar-badge { font-size: calc(0.9375rem * var(--nf-feed-scale, 1)); color: var(--nf-secondary); }
 .sidebar-profile { background: var(--surface) !important; }
 
 /* ---------------------------------------------------------------- reader */

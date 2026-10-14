@@ -310,6 +310,7 @@ export default {
       titleLines: "Başlık satırları",
       textPreviewLines: "Metin satırları",
       listFontSize: "Liste yazı boyutu",
+      feedFontSize: "Kaynak listesi yazı boyutu",
       showReadingTime: "Tahmini okuma süresi",
       codeBlock: "KOD BLOĞU",
       showLineNumbers: "Satır numaralarını göster",

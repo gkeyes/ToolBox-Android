@@ -63,7 +63,13 @@ const SidebarSwipeOpener = () => {
 
 const FeedListSidebar = () => {
   const $lastSync = useStore(lastSync);
-  const { showHiddenFeeds, floatingSidebar } = useStore(settingsState);
+  const { showHiddenFeeds, floatingSidebar, feedFontScale } = useStore(settingsState);
+
+  // The mobile sidebar renders in its own panel, so the scale lives on the root.
+  useEffect(() => {
+    const scale = Number.isFinite(feedFontScale) ? Math.min(1.3, Math.max(0.85, feedFontScale)) : 1;
+    document.documentElement.style.setProperty("--nf-feed-scale", String(scale));
+  }, [feedFontScale]);
 
   useEffect(() => {
     lastSync.set(getLastSyncTime());

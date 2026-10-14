@@ -313,6 +313,7 @@ export default {
       titleLines: "Title lines",
       textPreviewLines: "Summary lines",
       listFontSize: "List text size",
+      feedFontSize: "Feed list text size",
       showReadingTime: "Estimated reading time",
       codeBlock: "CODE BLOCK",
       showLineNumbers: "Show line numbers",

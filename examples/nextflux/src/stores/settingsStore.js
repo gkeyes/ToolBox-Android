@@ -21,6 +21,7 @@ const defaultValue = {
   titleLines: 2,
   textPreviewLines: 2,
   listFontScale: 1, // 文章列表字号倍数（0.85–1.3）
+  feedFontScale: 1, // 订阅源列表（侧边栏）字号倍数（0.85–1.3）
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "15", // 添加同步间隔设置，默认15分钟

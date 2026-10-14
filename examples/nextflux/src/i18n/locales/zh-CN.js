@@ -312,6 +312,7 @@ export default {
       titleLines: "标题行数",
       textPreviewLines: "摘要行数",
       listFontSize: "文章列表字号",
+      feedFontSize: "订阅源列表字号",
       showReadingTime: "估计阅读时间",
       codeBlock: "代码块",
       showLineNumbers: "显示行号",

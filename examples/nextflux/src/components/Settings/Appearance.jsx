@@ -40,6 +40,7 @@ export default function Appearance() {
     textPreviewLines,
     titleLines,
     listFontScale,
+    feedFontScale,
     showIndicator,
     floatingSidebar,
   } = useStore(settingsState);
@@ -113,6 +114,20 @@ export default function Appearance() {
           }
           settingName="floatingSidebar"
           settingValue={floatingSidebar}
+        />
+        <SliderItem
+          label={t("settings.appearance.feedFontSize")}
+          icon={
+            <SettingIcon variant="blue">
+              <ALargeSmall />
+            </SettingIcon>
+          }
+          settingName="feedFontScale"
+          settingValue={feedFontScale}
+          max={1.3}
+          min={0.85}
+          step={0.05}
+          formatOptions={{ style: "percent" }}
         />
       </ItemWrapper>
       <ItemWrapper title={t("settings.appearance.articleList")}>
