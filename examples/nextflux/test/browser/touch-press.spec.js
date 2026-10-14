@@ -75,3 +75,16 @@ test("mouse and keyboard keep their own path", async ({ page }) => {
   await page.keyboard.press("Space");
   await expect.poll(() => counts(page)).toEqual({ more: 1, close: 2, disabled: 0 });
 });
+
+test("tapping the link dialog's backdrop closes it without pointer events", async ({ page }) => {
+  await open(page, { withoutPointerEvents: true });
+  await tap(page, "链接");
+  const dialog = page.getByRole("dialog", { name: "链接操作" });
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + 4);
+  await page.waitForTimeout(150);
+  await expect(dialog).toBeVisible();
+  await page.touchscreen.tap(box.x + box.width / 2, Math.max(2, box.y - 20));
+  await expect(dialog).toHaveCount(0);
+});
