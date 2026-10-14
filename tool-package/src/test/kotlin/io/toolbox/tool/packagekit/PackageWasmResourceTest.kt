@@ -69,6 +69,64 @@ class PackageWasmResourceTest {
     }
 
     @Test
+    fun newerHostManifestIsRefusedForItsHostVersionBeforeStrictFieldValidation() = runBlocking {
+        val base = content().getValue("manifest.json").toString(Charsets.UTF_8)
+        val future = base.replace("\"minHostVersion\":\"0.2.0\",\"permissions\":[]",
+            "\"minHostVersion\":\"99.0.0\",\"permissions\":[{\"name\":\"future.capability\",\"reason\":\"New\"}],\"futureField\":true")
+        check(future != base)
+        withHarness {
+            val files = content().toMutableMap().apply { put("manifest.json", future.toByteArray()) }
+            assertRejected(PackageRejectionCode.UNSUPPORTED_HOST_VERSION, manager().importAndInstall(archive("future", files)))
+            assertTrue(repositories.catalog.observeTools().first().isEmpty())
+            assertClean()
+        }
+        // The same unknown capability for a host this old is still a malformed manifest.
+        withHarness {
+            val files = content().toMutableMap().apply {
+                put("manifest.json", future.replace("\"99.0.0\"", "\"0.2.0\"").toByteArray())
+            }
+            assertRejected(PackageRejectionCode.MANIFEST_INVALID, manager().importAndInstall(archive("unknown", files)))
+            assertClean()
+        }
+        assertEquals("99.0.0", ManifestValidator.declaredMinHostVersion(future.toByteArray()))
+        assertNull(ManifestValidator.declaredMinHostVersion("{\"minHostVersion\":\"latest\"}".toByteArray()))
+        assertNull(ManifestValidator.declaredMinHostVersion("[".toByteArray()))
+    }
+
+    @Test
+    fun utf8NamesWithoutTheUtf8FlagAreValidatedAndExtractedAlike() = runBlocking {
+        // macOS Archive Utility writes UTF-8 names without flag 0x800. Writing the UTF-8 bytes through
+        // an ISO-8859-1 ZipOutputStream reproduces that: same bytes, no flag.
+        fun flagless(name: String) = String(name.toByteArray(Charsets.UTF_8), Charsets.ISO_8859_1)
+        fun flaglessArchive(harness: Harness, label: String, files: Map<String, ByteArray>, integrityNames: Map<String, ByteArray>): FileInput {
+            val path = harness.packages.resolve("$label.tbx")
+            ZipOutputStream(Files.newOutputStream(path).buffered(), Charsets.ISO_8859_1).use { zip ->
+                files.forEach { (name, bytes) -> putBytes(zip, name, bytes) }
+                putBytes(zip, "integrity.json", integrity(integrityNames.mapValues { sha256(it.value) }).toByteArray())
+            }
+            return FileInput(path)
+        }
+        val icon = byteArrayOf(0x47, 0x49, 0x46, 0x38, 0x39, 0x61)
+        withHarness {
+            val content = content(resources = mapOf("图标/图标.gif" to icon))
+            val input = flaglessArchive(this, "flagless", content.mapKeys { flagless(it.key) }, content)
+            ZipFile(input.path.toFile()).use { zip ->
+                assertTrue("JDK ZipFile reads flagless names as UTF-8", zip.getEntry("图标/图标.gif") != null)
+            }
+            assertEquals(PackageInstallResult.Installed(TOOL_ID, 1, false), manager().importAndInstall(input))
+            assertArrayEquals(icon, Files.readAllBytes(bundle(1).resolve("图标/图标.gif")))
+            assertClean()
+        }
+        withHarness {
+            // 0x80 alone is not UTF-8: refused as an invalid path instead of a later extraction failure.
+            val content = content()
+            val files = content + ("\u0080.bin" to byteArrayOf(1))
+            assertRejected(PackageRejectionCode.PATH_INVALID, manager().importAndInstall(flaglessArchive(this, "cp437", files, content)))
+            assertClean()
+        }
+    }
+
+    @Test
     fun smallZip64WasmPackageInstallsThroughProductionLifecycle() = runBlocking {
         withHarness {
             val entries = content(resources = mapOf("module.wasm" to WASM_ADD)).toMutableMap()

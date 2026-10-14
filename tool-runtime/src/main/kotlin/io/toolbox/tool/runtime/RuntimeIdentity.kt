@@ -21,14 +21,28 @@ object RuntimeIdentity {
         return isExactLocalUrl(url, origin)
     }
 
+    /** Resource reads: the exact origin, and no fragment (a fetched resource never carries one). */
     fun isExactLocalUrl(url: String, expectedOrigin: URI): Boolean {
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
-        return uri.scheme == "https" &&
+        return isSameOrigin(uri, expectedOrigin) && uri.rawFragment == null
+    }
+
+    fun isLocalNavigationUrl(url: String, expectedOrigin: String): Boolean {
+        val origin = runCatching { URI(expectedOrigin) }.getOrNull() ?: return false
+        return isLocalNavigationUrl(url, origin)
+    }
+
+    /** Document navigation: the exact origin; a `#fragment` (help.html#faq) is allowed. */
+    fun isLocalNavigationUrl(url: String, expectedOrigin: URI): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        return isSameOrigin(uri, expectedOrigin)
+    }
+
+    private fun isSameOrigin(uri: URI, expectedOrigin: URI): Boolean =
+        uri.scheme == "https" &&
             uri.rawUserInfo == null &&
             uri.host == expectedOrigin.host &&
-            uri.port == -1 &&
-            uri.rawFragment == null
-    }
+            uri.port == -1
 
     private fun digest(toolId: String): ByteArray {
         require(toolId.isNotBlank()) { "Tool ID must not be blank" }

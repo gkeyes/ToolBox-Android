@@ -38,20 +38,21 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
   useEffect(() => {
     if (isOpen && menuRef.current && position) {
       const menu = menuRef.current;
-      const menuRect = menu.getBoundingClientRect();
+      // Layout size: the entrance animation scales the box, which
+      // getBoundingClientRect() would report as smaller than the menu.
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
 
       let { x, y } = position;
 
-      // Adjust horizontal position if menu would overflow
-      if (x + menuRect.width > viewportWidth) {
-        x = viewportWidth - menuRect.width - 10;
+      // Keep a 10px margin from the right and bottom edges
+      if (x + width > viewportWidth - 10) {
+        x = viewportWidth - width - 10;
       }
-
-      // Adjust vertical position if menu would overflow
-      if (y + menuRect.height > viewportHeight) {
-        y = viewportHeight - menuRect.height - 10;
+      if (y + height > viewportHeight - 10) {
+        y = viewportHeight - height - 10;
       }
 
       // Ensure menu doesn't go off the left or top edge
