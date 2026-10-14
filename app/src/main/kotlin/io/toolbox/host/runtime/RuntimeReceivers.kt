@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import io.toolbox.host.MainActivity
 import io.toolbox.host.R
 import io.toolbox.host.ToolBoxApplication
@@ -16,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
+private const val TAG = "RuntimeReceivers"
 
 internal class RuntimeAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -26,8 +29,11 @@ internal class RuntimeAlarmReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val dependencies = (context.applicationContext as ToolBoxApplication).hostDependencies()
-                dependencies.runtimeSessions.handleAlarm(toolId, versionCode, alarmId)
+                // Host start-up can fail on broken storage; that must not kill the process from a broadcast.
+                runCatching {
+                    val dependencies = (context.applicationContext as ToolBoxApplication).hostDependencies()
+                    dependencies.runtimeSessions.handleAlarm(toolId, versionCode, alarmId)
+                }.onFailure { Log.w(TAG, "Runtime alarm could not be delivered", it) }
             } finally {
                 pendingResult.finish()
             }
@@ -66,9 +72,11 @@ internal class RuntimeRestoreReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 try {
-                    (context.applicationContext as ToolBoxApplication).hostDependencies()
-                        .runtimeSessions
-                        .rescheduleAlarms()
+                    runCatching {
+                        (context.applicationContext as ToolBoxApplication).hostDependencies()
+                            .runtimeSessions
+                            .rescheduleAlarms()
+                    }.onFailure { Log.w(TAG, "Runtime alarms could not be rescheduled", it) }
                 } finally {
                     pendingResult.finish()
                 }
@@ -81,7 +89,7 @@ internal class RuntimeRestoreReceiver : BroadcastReceiver() {
                 runCatching {
                     (context.applicationContext as ToolBoxApplication).hostDependencies()
                         .runtimeSessions
-                        .recover("reboot")
+                        .recover(recoveryReason(intent.action))
                 }.onFailure {
                     runCatching { showRestoreNotice(context) }
                 }
@@ -115,6 +123,13 @@ internal class RuntimeRestoreReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        /**
+         * An app update replaces the package without a reboot: the old process simply died, so sessions follow
+         * their process-death opt-in instead of being dropped as non-restorable after a reboot.
+         */
+        internal fun recoveryReason(action: String?): String =
+            if (action == Intent.ACTION_MY_PACKAGE_REPLACED) "process" else "reboot"
+
         private const val CHANNEL_ID = "toolbox.runtime.restore.v1"
         private const val NOTIFICATION_ID = 0x544259
         private val RESTORE_ACTIONS = setOf(

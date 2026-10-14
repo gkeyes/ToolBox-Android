@@ -79,29 +79,37 @@ class BackgroundTaskCoordinator(
     internal suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult =
         cancellation.cancel(toolId, taskId)
 
+    /** Removing the tool's runtime state also removes everything it posted, including its notification channel. */
     suspend fun cancelTool(toolId: String) {
         completeBackgroundCancellation(
-            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get() } },
+            { cancelBackgroundWork(toolId) },
             { notifications.cancelTool(toolId) },
-            { cancellation.cancelStoredTasks(toolId) },
         )
     }
 
+    /**
+     * Turning background off stops tasks only. Cancelling an active task removes its own NOTIFY notification;
+     * notifications the tool posted in the foreground and its channel stay.
+     */
     suspend fun cancelAll(toolIds: Collection<String>) {
         completeBackgroundCancellation(
             { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(GLOBAL_TAG).result.get() } },
             *toolIds.distinct().map { toolId -> suspend {
-                completeBackgroundCancellation(
-                    { notifications.cancelTool(toolId) },
-                    { cancellation.cancelStoredTasks(toolId) },
-                )
+                cancellation.cancelStoredTasks(toolId)
             } }.toTypedArray(),
+        )
+    }
+
+    private suspend fun cancelBackgroundWork(toolId: String) {
+        completeBackgroundCancellation(
+            { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get() } },
+            { cancellation.cancelStoredTasks(toolId) },
         )
     }
 
     suspend fun revokeCapability(toolId: String, capability: String) {
         when (capability) {
-            "background.tasks" -> cancelTool(toolId)
+            "background.tasks" -> cancelBackgroundWork(toolId)
             "network" -> cancelOperations(toolId, BackgroundOperation.HTTP_GET)
             "notifications" -> {
                 cancelOperations(toolId, BackgroundOperation.NOTIFY)
@@ -166,6 +174,9 @@ class BackgroundTaskCoordinator(
     private suspend fun createAdmitted(toolId: String, versionCode: Int, request: BackgroundTaskRequest, intervalMinutes: Long?): EnqueueResult = enqueueMutex.withLock {
         if (toolId.isBlank() || request.key.isBlank()) return@withLock EnqueueResult.Rejected("INVALID_INPUT")
         if (!request.isValid()) return@withLock EnqueueResult.Rejected("INVALID_INPUT")
+        if (request is BackgroundTaskRequest.HttpGet) {
+            backgroundHttpEndpointError(request.url)?.let { return@withLock EnqueueResult.Rejected(it) }
+        }
         val policy = authorization.policyFor(toolId, versionCode)
             ?: return@withLock EnqueueResult.Rejected("TOOL_NOT_AVAILABLE")
         if (!policy.canRunBackground || policy.toolId != toolId || policy.versionCode != versionCode) {

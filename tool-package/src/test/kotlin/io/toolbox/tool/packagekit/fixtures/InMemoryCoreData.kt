@@ -138,7 +138,7 @@ private class InMemoryCatalogLifecycleRepository(
                 attempt.initialGrants
             } else {
                 attempt.initialGrants.map { declared ->
-                    state.grants.value[declared.toolId to declared.capability] ?: declared.copy(granted = false)
+                    state.grants.value[declared.toolId to declared.capability] ?: declared
                 }
             }
             val nextGrants = state.grants.value.filterKeys { it.first != attempt.metadata.id } +

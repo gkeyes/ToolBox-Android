@@ -200,42 +200,51 @@ internal class RuntimeNetworkGateway(
                     NetworkBodyEncoding.BASE64 -> RuntimeNetworkBodyEncoding.BASE64
                 },
             )
-            is NetworkExecution.RetryableFailure -> throw RuntimeHandlerException(
-                if (result.errorCode == "NETWORK_TIMEOUT") RuntimeRpcErrorCode.NETWORK_TIMEOUT
-                else RuntimeRpcErrorCode.NETWORK_UNAVAILABLE,
-                if (result.errorCode == "NETWORK_TIMEOUT") "网络请求超时，请稍后重试。"
-                else "网络连接或响应读取失败，请检查网络后重试。",
-            )
-            is NetworkExecution.TerminalFailure -> throw when (result.errorCode) {
-                "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络请求超时，请稍后重试。")
-                "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。")
-                "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络请求已取消。")
-                "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。")
-                "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(
-                    RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                    "当前可用内存不足，请使用分块流读取或释放内存后重试。",
-                )
-                "RESULT_TOO_LARGE" -> RuntimeHandlerException(
-                    RuntimeRpcErrorCode.QUOTA_EXCEEDED,
-                    "网络响应超过本次请求或可用内存预算；请使用分块流读取。",
-                )
-                "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(
-                    RuntimeRpcErrorCode.INVALID_REQUEST,
-                    "网络请求参数无效（${result.errorCode}）。",
-                )
-                else -> RuntimeHandlerException(
-                    RuntimeRpcErrorCode.NETWORK_BLOCKED,
-                    when (result.errorCode) {
-                        "HTTPS_REQUIRED" -> "仅支持 HTTPS 网络请求。"
-                        else -> "网络地址或重定向未通过检查（${result.errorCode}）。"
-                    },
-                )
-            }
+            is NetworkExecution.RetryableFailure -> throw networkFailureException(result.errorCode, retryable = true)
+            is NetworkExecution.TerminalFailure -> throw networkFailureException(result.errorCode, retryable = false)
         }
     }
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 0L
+    }
+}
+
+/** Maps a proxy failure code of a complete request; background httpGet results reuse it so both paths agree. */
+internal fun networkFailureException(errorCode: String, retryable: Boolean): RuntimeHandlerException = when {
+    errorCode == "NETWORK_TIMEOUT" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_TIMEOUT, "网络请求超时，请稍后重试。")
+    retryable || errorCode == "NETWORK_IO" -> RuntimeHandlerException(
+        RuntimeRpcErrorCode.NETWORK_UNAVAILABLE,
+        "网络连接或响应读取失败，请检查网络后重试。",
+    )
+    // Only background httpGet fails on an HTTP status; the status itself is reported with the result.
+    errorCode.startsWith("HTTP_") -> RuntimeHandlerException(
+        RuntimeRpcErrorCode.NETWORK_UNAVAILABLE,
+        "服务器返回 HTTP ${errorCode.removePrefix("HTTP_")}。",
+    )
+    else -> when (errorCode) {
+        "RESOURCE_UNAVAILABLE" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "网络执行环境暂不可用，请稍后重试。")
+        "CANCELLED" -> RuntimeHandlerException(RuntimeRpcErrorCode.CANCELLED, "网络请求已取消。")
+        "PROXY_AUTHENTICATION_REQUIRED" -> RuntimeHandlerException(RuntimeRpcErrorCode.NETWORK_UNAVAILABLE, "系统代理要求认证（407），请在系统或代理端配置。")
+        "INSUFFICIENT_MEMORY" -> RuntimeHandlerException(
+            RuntimeRpcErrorCode.QUOTA_EXCEEDED,
+            "当前可用内存不足，请使用分块流读取或释放内存后重试。",
+        )
+        "RESULT_TOO_LARGE" -> RuntimeHandlerException(
+            RuntimeRpcErrorCode.QUOTA_EXCEEDED,
+            "网络响应超过本次请求或可用内存预算；请使用分块流读取。",
+        )
+        "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT", "INVALID_URL" -> RuntimeHandlerException(
+            RuntimeRpcErrorCode.INVALID_REQUEST,
+            "网络请求参数无效（$errorCode）。",
+        )
+        else -> RuntimeHandlerException(
+            RuntimeRpcErrorCode.NETWORK_BLOCKED,
+            when (errorCode) {
+                "HTTPS_REQUIRED" -> "仅支持 HTTPS 网络请求。"
+                else -> "网络地址或重定向未通过检查（$errorCode）。"
+            },
+        )
     }
 }
 

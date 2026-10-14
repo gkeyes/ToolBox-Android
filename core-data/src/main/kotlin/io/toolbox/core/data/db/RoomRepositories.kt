@@ -116,7 +116,8 @@ internal class RoomCatalogLifecycleRepository(
                 } else {
                     val previousGrants = database.grants().getForTool(attempt.metadata.id).associateBy { it.capability }
                     attempt.initialGrants.map { declared ->
-                        previousGrants[declared.capability] ?: declared.copy(granted = false).toEntity()
+                        // A capability new in this version keeps the install default (basic capabilities are on).
+                        previousGrants[declared.capability] ?: declared.toEntity()
                     }
                 }
                 database.grants().deleteAll(attempt.metadata.id)

@@ -8,6 +8,7 @@ import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -142,12 +143,13 @@ class ToolNetworkProxy private constructor(
             }
             val media = stream.response.body.contentType()
             val subtype = media?.subtype?.lowercase(Locale.ROOT)
-            val text = media == null || media.type.equals("text", true) || subtype == "json" || subtype?.endsWith("+json") == true
+            // An undeclared type is binary: decoding unknown bytes as text would be lossy and irreversible.
+            val text = media != null && (media.type.equals("text", true) || subtype == "json" || subtype?.endsWith("+json") == true)
             return NetworkExecution.Success(
                 statusCode = stream.response.code,
                 finalUrl = stream.finalUrl,
                 contentType = stream.response.header("Content-Type")?.substringBefore(';'),
-                body = output.encodeBody(text),
+                body = output.encodeBody(if (text) media?.charset(Charsets.UTF_8) ?: Charsets.UTF_8 else null),
                 bodyEncoding = if (text) NetworkBodyEncoding.TEXT else NetworkBodyEncoding.BASE64,
                 headers = stream.response.exposedHeaders(),
                 release = release,
@@ -234,8 +236,9 @@ class ToolNetworkProxy private constructor(
 
 /** Encodes only the populated buffer; neither path clones the complete raw response. */
 private class NetworkResponseBuffer : ByteArrayOutputStream() {
-    fun encodeBody(text: Boolean): String {
-        if (text) return String(buf, 0, count, Charsets.UTF_8)
+    /** A non-null [charset] decodes text with the declared response charset; null encodes the bytes as base64. */
+    fun encodeBody(charset: Charset?): String {
+        if (charset != null) return String(buf, 0, count, charset)
         val encoded = Base64.getEncoder().encode(ByteBuffer.wrap(buf, 0, count))
         return String(encoded.array(), encoded.arrayOffset() + encoded.position(), encoded.remaining(), Charsets.ISO_8859_1)
     }
@@ -305,7 +308,9 @@ internal fun IOException.toStreamFailure(): ToolNetworkFailure = when {
 }
 internal fun Response.exposedHeaders(): Map<String, String> = headers.names().asSequence()
     .filterNot { it.lowercase(Locale.ROOT) in HIDDEN_RESPONSE_HEADERS }
-    .mapNotNull { name -> headers[name]?.let { name to it } }.toMap(linkedMapOf())
+    // Repeated fields (for example Link or WWW-Authenticate) are combined as an HTTP list, not reduced to the last one.
+    .mapNotNull { name -> headers.values(name).takeIf { it.isNotEmpty() }?.let { name to it.joinToString(", ") } }
+    .toMap(linkedMapOf())
 
 private suspend fun Call.awaitHeaders(): Response = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }

@@ -21,6 +21,8 @@ import io.toolbox.host.background.BackgroundManifestPolicyResolver
 import io.toolbox.host.background.BackgroundNotificationPermissionChecker
 import io.toolbox.host.background.BackgroundTaskCoordinator
 import io.toolbox.host.background.BackgroundTaskRequest
+import io.toolbox.host.background.backgroundHttpStatus
+import io.toolbox.host.background.backgroundTaskFailure
 import io.toolbox.host.background.EnqueueResult
 import io.toolbox.host.background.RepositoryBackgroundAuthorization
 import io.toolbox.host.background.RuntimeNetworkGateway
@@ -504,10 +506,7 @@ private class RuntimeBackgroundTaskAdapter(
         }
         return when (result) {
             is EnqueueResult.Enqueued -> result.taskId
-            is EnqueueResult.Rejected -> throw RuntimeHandlerException(
-                result.errorCode.toRuntimeErrorCode(),
-                "后台任务无法创建。",
-            )
+            is EnqueueResult.Rejected -> throw backgroundTaskFailure(result.errorCode, "后台任务无法创建。")
         }
     }
 
@@ -544,7 +543,7 @@ private fun TaskRunResult.toRuntimeResult(
             RunOutcome.CANCELLED -> RuntimeBackgroundRunOutcome.CANCELLED
         },
         completedAt = completedAt,
-        status = httpPayload?.optInt("statusCode")?.takeIf { it > 0 },
+        status = httpPayload?.optInt("statusCode")?.takeIf { it > 0 } ?: backgroundHttpStatus(errorCode),
         body = body,
         // Results stored by older hosts have no encoding; leave it absent rather than guess.
         bodyEncoding = body?.let {
@@ -555,7 +554,8 @@ private fun TaskRunResult.toRuntimeResult(
             }
         },
         error = errorCode?.let { code ->
-            RuntimeBackgroundTaskError(code.toRuntimeErrorCode(), "后台任务未成功完成。")
+            val failure = backgroundTaskFailure(code, "后台任务未成功完成。")
+            RuntimeBackgroundTaskError(failure.errorCode, failure.message)
         },
     )
 }
