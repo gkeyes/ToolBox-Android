@@ -106,8 +106,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 81
-        versionName = "0.13.6"
+        versionCode = 84
+        versionName = "0.13.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // In-app updates read this repository's releases and compare against the CI run that built the APK.
         buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")
