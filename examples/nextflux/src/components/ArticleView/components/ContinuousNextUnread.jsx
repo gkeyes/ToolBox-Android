@@ -246,7 +246,10 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
         layerRef.current.dataset.phase = "pulling";
         onTransitionStateChange?.(true);
       }
-      rawRef.current = Math.max(0, Math.min(CONTINUOUS_PULL_TRIGGER + CONTINUOUS_MAX_EXTRA, rawRef.current + move * 0.86));
+      // The next page follows the finger all the way to the top; a fixed cap
+      // froze it part-way up on tall screens while the finger kept moving.
+      const maxPull = Math.max(CONTINUOUS_PULL_TRIGGER + CONTINUOUS_MAX_EXTRA, heightRef.current);
+      rawRef.current = Math.max(0, Math.min(maxPull, rawRef.current + move * 0.86));
       event.preventDefault();
       schedulePaint();
     };

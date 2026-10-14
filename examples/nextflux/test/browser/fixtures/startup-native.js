@@ -19,6 +19,7 @@ export const STORED_SETTINGS = {
   titleLines: 2,
   textPreviewLines: 2,
   listFontScale: 1,
+  feedFontScale: 1,
   showReadingTime: true,
   autoHideToolbar: false,
   syncInterval: "30",
