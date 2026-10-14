@@ -39,6 +39,7 @@ class BackgroundTaskErrorsTest {
         assertNull(backgroundHttpStatus("NETWORK_IO"))
         assertNull(backgroundHttpStatus("HTTP_x"))
         assertNull(backgroundHttpStatus(null))
+        assertNull(backgroundHttpStatus("HTTP_799"))
     }
 
     @Test

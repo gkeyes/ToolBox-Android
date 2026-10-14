@@ -69,6 +69,8 @@ class AndroidNotificationGateway(
             ) {
                 NotificationResult.Rejected("SYSTEM_PERMISSION_DENIED")
             } else {
+                // An update to a notification posted before ids were keyed by tag replaces that copy instead of doubling it.
+                manager.cancel(toolId, notificationId.hashCode())
                 manager.notify(notificationTag(toolId, notificationId), TOOL_NOTIFICATION_ID, notification)
                 NotificationResult.Posted
             }

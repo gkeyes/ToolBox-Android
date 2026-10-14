@@ -38,10 +38,10 @@ internal fun backgroundTaskFailure(errorCode: String, fallbackMessage: String): 
     return RuntimeHandlerException(code, "${fallbackMessage.removeSuffix("。")}（$errorCode）。")
 }
 
-/** A background httpGet that failed on a non-2xx response keeps that status for the tool. */
+/** A background httpGet that failed on a non-2xx response keeps that status for the tool (only codes the RPC can carry). */
 internal fun backgroundHttpStatus(errorCode: String?): Int? {
     if (errorCode == null || !errorCode.startsWith("HTTP_")) return null
-    return errorCode.removePrefix("HTTP_").toIntOrNull()?.takeIf { it in 100..999 }
+    return errorCode.removePrefix("HTTP_").toIntOrNull()?.takeIf { it in 100..599 }
 }
 
 /** The same endpoint check the proxy applies before every request, so an unusable URL fails at enqueue. */
