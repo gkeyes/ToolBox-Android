@@ -141,6 +141,40 @@ for (const width of [393, 820]) {
       await page.getByRole("button", { name: trigger, exact: true }).click();
       const dialog = page.getByRole("dialog");
       const close = dialog.locator(".nextflux-close-button");
+      if (width < 768 && trigger === "Open settings") {
+        // The tall settings sheet paints its own close button, shaped like the
+        // back button, and keeps a single close target.
+        await expect(dialog.getByRole("button", { name: /close|关闭/i })).toHaveCount(1);
+        const visible = dialog.locator(".nextflux-close-header").getByRole("button", { name: /close|关闭/i });
+        const box = await visible.boundingBox();
+        expect(box.width).toBeGreaterThanOrEqual(40);
+        await info.attach(`settings-${width}.png`, { body: await page.screenshot(), contentType: "image/png" });
+        await visible.click();
+        await expect(dialog).toHaveCount(0);
+        // A touch without pointer events (some phone WebViews) still drags it closed.
+        await page.getByRole("button", { name: trigger, exact: true }).click();
+        await page.waitForTimeout(400);
+        await dialog.locator(".nextflux-close-header").evaluate(async (el) => {
+          const b = el.getBoundingClientRect();
+          const at = (y) => new Touch({ identifier: 9, target: el, clientX: b.left + 40, clientY: y });
+          const fire = (type, t, list) => el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: list, changedTouches: [t] }));
+          let t = at(b.top + 10);
+          fire("touchstart", t, [t]);
+          for (let i = 1; i <= 10; i++) { await new Promise((r) => setTimeout(r, 16)); t = at(b.top + 10 + i * 30); fire("touchmove", t, [t]); }
+          fire("touchend", t, []);
+        });
+        await expect(dialog).toHaveCount(0);
+        // With pointer events, the title row drags it closed too.
+        await page.getByRole("button", { name: trigger, exact: true }).click();
+        await page.waitForTimeout(400);
+        const title = await dialog.locator(".nextflux-close-header [role=heading], .nextflux-close-header h2").first().boundingBox();
+        await page.mouse.move(title.x + 10, title.y + 10);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(title.x + 10, title.y + 10 + i * 30);
+        await page.mouse.up();
+        await expect(dialog).toHaveCount(0);
+        continue;
+      }
       if (width < 768) {
         // A phone sheet closes by dragging down; its close button is only for
         // screen readers and must not paint or take space in the title row.
@@ -451,7 +485,7 @@ test("rapid open and close of sheets never strands a backdrop", async ({ page })
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Open settings", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("dialog").locator(".nextflux-close-button").first().dispatchEvent("click");
+  await page.getByRole("dialog").getByRole("button", { name: /close|关闭/i }).first().dispatchEvent("click");
   await expectUncovered(page);
   await expectPageInteractive(page);
 });

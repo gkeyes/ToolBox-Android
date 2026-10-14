@@ -20,6 +20,7 @@ import {
   Keyboard,
   Info,
   ArrowLeft,
+  X,
   ChevronRight,
 } from "lucide-react";
 import {
@@ -250,6 +251,18 @@ function MobileSettings() {
           <ArrowLeft className="size-5" />
         </Button>
       ) : null}
+      headerEnd={(
+        <Button
+          isIconOnly
+          size="sm"
+          variant="tertiary"
+          onPress={() => handleClose(false)}
+          className="size-10 min-w-10"
+          aria-label={t("common.close")}
+        >
+          <X className="size-5" />
+        </Button>
+      )}
     >
       <div key={openCount} className="t-settings-slide h-full" data-active={currentPage}>
         <div className="nf-collapse-hairline" data-collapsed={isCollapsed} />

@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { speechState } from "@/stores/speechStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import { speechController } from "@/toolbox/speech/speechController.js";
+import { useTouchSliderFallback } from "@/toolbox/touch-drag.js";
 
 const formatTime = (seconds) => {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -70,6 +71,15 @@ export function ArticleSpeechButton({ article }) {
 export function ArticleSpeechBar({ article }) {
   const state = useStore(speechState);
   const { speechPlaybackRate } = useStore(settingsState);
+  const canSeekNow = Number.isFinite(state.duration) && state.duration > 0
+    && state.phase !== "preparing" && state.phase !== "buffering" && state.phase !== "error";
+  const seekRef = useTouchSliderFallback({
+    min: 0,
+    max: canSeekNow ? state.duration : 1,
+    step: 0.1,
+    disabled: !canSeekNow,
+    onChange: (value) => speechController.seekTo(value),
+  });
   if (state.articleId !== String(article?.id ?? "") || state.phase === "idle") return null;
 
   const busy = state.phase === "preparing" || state.phase === "buffering";
@@ -112,7 +122,7 @@ export function ArticleSpeechBar({ article }) {
         <RotateCw className="size-3.5 text-muted" />
       </Button>
 
-      <div className="min-w-0 flex-1 px-1">
+      <div ref={seekRef} className="min-w-0 flex-1 px-1">
         <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-muted">
           <span className="truncate">{status}</span>
           {!busy && state.phase !== "error" && <span className="shrink-0 ds-tnum">{formatTime(state.currentTime)} / {formatTime(state.duration)}</span>}

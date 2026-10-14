@@ -57,12 +57,20 @@ export default function General() {
         />
       </ItemWrapper>
       <div className="nf-set-group">
-        <Button fullWidth size="lg" variant={activeBackground ? "danger" : "secondary"} isPending={changingBackground} onPress={async () => {
-          setChangingBackground(true);
-          try { if (activeBackground) await stopContinuousSync(); else await startContinuousSync(); }
-          catch (error) { toast.error(error.message || "后台同步操作失败，请重试。"); }
-          finally { setChangingBackground(false); }
-        }}>{activeBackground ? "停止后台同步" : "离开页面后继续同步"}</Button>
+        <div className="ds-group-card">
+          <Button
+            variant="ghost"
+            className="nf-set-row is-pressable nf-set-action"
+            data-tone={activeBackground ? "danger" : "accent"}
+            isPending={changingBackground}
+            onPress={async () => {
+              setChangingBackground(true);
+              try { if (activeBackground) await stopContinuousSync(); else await startContinuousSync(); }
+              catch (error) { toast.error(error.message || "后台同步操作失败，请重试。"); }
+              finally { setChangingBackground(false); }
+            }}
+          >{activeBackground ? "停止后台同步" : "离开页面后继续同步"}</Button>
+        </div>
         <p className="nf-set-footnote">后台同步使用持续通知，可随时停止。开启时会立即同步一次；同步间隔设为“手动”时，后台固定每 15 分钟同步。</p>
       </div>
       <ItemWrapper title={t("settings.general.feeds")}>

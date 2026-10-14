@@ -1,5 +1,6 @@
-import { startTransition, useLayoutEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Drawer, cn } from "@heroui/react";
+import { hadPointerDownFor } from "@/toolbox/touch-drag.js";
 
 // Release motion: settle back on the sheet spring, dismiss on the 220ms
 // accelerate curve (design system v2). Durations come from spring.mjs.
@@ -61,10 +62,13 @@ export default function MobileSheet({
   dialogClassName,
   bodyClassName,
   headerStart,
+  // Painted at the end of the title row. A sheet that passes its own visible
+  // close button here drops the hidden one, so there is a single close target.
+  headerEnd,
   // A short action sheet can drop the visible title row too; it stays for
-  // assistive tech. The close button is never painted: every sheet closes by
-  // dragging down, the backdrop or Escape, and the hidden button stays for
-  // screen readers.
+  // assistive tech. The built-in close button is never painted: sheets close
+  // by dragging down, the backdrop, Escape or their own headerEnd button, and
+  // the hidden button stays for screen readers.
   hideHeader = false,
   children,
   footer,
@@ -90,44 +94,65 @@ export default function MobileSheet({
     animateTranslate(dialog, pending.offscreen, 0, 440, () => { dialog.style.willChange = ""; });
   }, [open, dismissCheck]);
 
-  const onPointerDown = (event) => {
-    if (event.button !== 0) return;
+  // A drag is followed by pointer events, or by touch events on phones whose
+  // WebView sends no pointer events for a touch (see touch-drag.js).
+  const startDrag = (id, clientY, timeStamp) => {
     const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (!dialog) return false;
     dragRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      lastY: event.clientY,
-      lastTime: event.timeStamp,
+      id,
+      startY: clientY,
+      lastY: clientY,
+      lastTime: timeStamp,
       velocity: 0,
       distance: 0,
     };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
     // The finger owns the position: no CSS transition may lag behind it.
     dialog.style.transition = "none";
     dialog.style.willChange = "translate";
+    return true;
+  };
+
+  const moveDrag = (id, clientY, timeStamp) => {
+    const drag = dragRef.current;
+    const dialog = dialogRef.current;
+    if (!drag || drag.id !== id || !dialog) return false;
+    const distance = Math.max(0, clientY - drag.startY);
+    const dt = Math.max(1, timeStamp - drag.lastTime);
+    drag.velocity = ((clientY - drag.lastY) / dt) * 1000;
+    drag.lastY = clientY;
+    drag.lastTime = timeStamp;
+    drag.distance = distance;
+    dialog.style.translate = `0 ${distance}px`;
+    return true;
+  };
+
+  // Buttons in the title row (back, close) keep their taps; a drag starts
+  // anywhere else in the handle or title row.
+  const startsOnControl = (target) => Boolean(target?.closest?.("button, a, input, [role='button']"));
+
+  const onPointerDown = (event) => {
+    if (event.button !== 0 || startsOnControl(event.target)) return;
+    if (startDrag(`p${event.pointerId}`, event.clientY, event.timeStamp)) {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
   };
 
   const onPointerMove = (event) => {
-    const drag = dragRef.current;
-    const dialog = dialogRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !dialog) return;
-    const distance = Math.max(0, event.clientY - drag.startY);
-    const dt = Math.max(1, event.timeStamp - drag.lastTime);
-    drag.velocity = ((event.clientY - drag.lastY) / dt) * 1000;
-    drag.lastY = event.clientY;
-    drag.lastTime = event.timeStamp;
-    drag.distance = distance;
-    dialog.style.translate = `0 ${distance}px`;
-    event.preventDefault();
+    if (moveDrag(`p${event.pointerId}`, event.clientY, event.timeStamp)) event.preventDefault();
   };
 
-  const finishDrag = (event, cancelled = false) => {
+  const onPointerEnd = (event, cancelled = false) => {
+    if (dragRef.current?.id !== `p${event.pointerId}`) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    finishDrag(`p${event.pointerId}`, cancelled);
+  };
+
+  function finishDrag(id, cancelled = false) {
     const drag = dragRef.current;
     const dialog = dialogRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !dialog) return;
+    if (!drag || drag.id !== id || !dialog) return;
     dragRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
     const threshold = Math.max(FLICK_MIN_DISTANCE, Math.min(140, dialog.getBoundingClientRect().height * 0.22));
     // A flick dismisses only after a deliberate travel; tiny fast drags settle back.
     const dismiss = !cancelled && (drag.distance >= threshold || (drag.velocity >= 720 && drag.distance >= FLICK_MIN_DISTANCE));
@@ -170,7 +195,51 @@ export default function MobileSheet({
     } else {
       animateTranslate(dialog, from, 0, 440, () => { dialog.style.willChange = ""; });
     }
-  };
+  }
+
+  // Touch fallback for the handle and the title row. Native listeners: the
+  // move handler must be able to cancel scrolling, which React's passive
+  // touch listeners cannot.
+  const handlers = useRef({});
+  handlers.current = { startDrag, moveDrag, finishDrag, startsOnControl };
+  const [handleZone, setHandleZone] = useState(null);
+  const [headerZone, setHeaderZone] = useState(null);
+  useEffect(() => {
+    const zones = [handleZone, headerZone].filter(Boolean);
+    if (!zones.length) return undefined;
+    let touchId = null;
+    const find = (list) => Array.from(list).find((touch) => `t${touch.identifier}` === touchId);
+    const onStart = (event) => {
+      if (touchId || event.touches.length !== 1 || hadPointerDownFor(event) || handlers.current.startsOnControl(event.target)) return;
+      const touch = event.touches[0];
+      if (handlers.current.startDrag(`t${touch.identifier}`, touch.clientY, event.timeStamp)) touchId = `t${touch.identifier}`;
+    };
+    const onMove = (event) => {
+      const touch = touchId && find(event.changedTouches);
+      if (!touch) return;
+      if (handlers.current.moveDrag(touchId, touch.clientY, event.timeStamp) && event.cancelable) event.preventDefault();
+    };
+    const onEnd = (event) => {
+      if (!touchId || !find(event.changedTouches)) return;
+      const id = touchId;
+      touchId = null;
+      handlers.current.finishDrag(id, event.type === "touchcancel");
+    };
+    for (const zone of zones) {
+      zone.addEventListener("touchstart", onStart, { passive: true });
+      zone.addEventListener("touchmove", onMove, { passive: false });
+      zone.addEventListener("touchend", onEnd);
+      zone.addEventListener("touchcancel", onEnd);
+    }
+    return () => {
+      for (const zone of zones) {
+        zone.removeEventListener("touchstart", onStart);
+        zone.removeEventListener("touchmove", onMove);
+        zone.removeEventListener("touchend", onEnd);
+        zone.removeEventListener("touchcancel", onEnd);
+      }
+    };
+  }, [handleZone, headerZone]);
 
   return (
     <Drawer>
@@ -186,19 +255,29 @@ export default function MobileSheet({
             )}
           >
             <div
+              ref={setHandleZone}
               className="nextflux-sheet-handle-zone"
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
-              onPointerUp={(event) => finishDrag(event)}
-              onPointerCancel={(event) => finishDrag(event, true)}
-              onLostPointerCapture={(event) => finishDrag(event, true)}
+              onPointerUp={(event) => onPointerEnd(event)}
+              onPointerCancel={(event) => onPointerEnd(event, true)}
+              onLostPointerCapture={(event) => onPointerEnd(event, true)}
             >
               <Drawer.Handle className="p-1" />
             </div>
-            <Drawer.CloseTrigger className="nextflux-close-button sr-only" aria-label={closeLabel} />
-            <Drawer.Header className={cn("nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2", hideHeader && "sr-only")}>
+            {!headerEnd && <Drawer.CloseTrigger className="nextflux-close-button sr-only" aria-label={closeLabel} />}
+            <Drawer.Header
+              ref={setHeaderZone}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={(event) => onPointerEnd(event)}
+              onPointerCancel={(event) => onPointerEnd(event, true)}
+              onLostPointerCapture={(event) => onPointerEnd(event, true)}
+              className={cn("nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2", headerEnd && "has-header-end", hideHeader && "sr-only")}
+            >
               {headerStart}
-              <Drawer.Heading>{title}</Drawer.Heading>
+              <Drawer.Heading className={cn(headerEnd && "min-w-0 flex-1")}>{title}</Drawer.Heading>
+              {headerEnd}
             </Drawer.Header>
             <Drawer.Body className={cn("nextflux-modal-body m-0 p-0", bodyClassName)}>{children}</Drawer.Body>
             {footer && <Drawer.Footer className="nextflux-modal-footer p-4 m-0">{footer}</Drawer.Footer>}

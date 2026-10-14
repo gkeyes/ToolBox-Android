@@ -394,6 +394,8 @@
   translate: 0 0;
   will-change: auto;
 }
+/* The sheet title row drags the sheet down like the handle; it never scrolls. */
+.nextflux-mobile-sheet > .nextflux-close-header { touch-action: none; }
 .nextflux-sheet-handle-zone {
   min-block-size: 20px;
   display: grid;

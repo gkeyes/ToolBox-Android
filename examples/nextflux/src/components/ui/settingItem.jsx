@@ -1,6 +1,7 @@
 import "@/components/Settings/settings.css";
 import { useState } from "react";
 import { updateSettings } from "@/stores/settingsStore.js";
+import { useTouchSliderFallback } from "@/toolbox/touch-drag.js";
 import { Button, cn, Dropdown, Kbd, Label, Slider, Switch, Tabs } from "@heroui/react";
 import { ChevronsUpDown } from "lucide-react";
 
@@ -130,8 +131,16 @@ export const SliderItem = ({
   // settings store) changes once when the drag or key press ends.
   const [draft, setDraft] = useState(null);
   const sliderValue = (value) => (Array.isArray(value) ? value[0] : value);
+  const rowRef = useTouchSliderFallback({
+    min, max, step,
+    onChange: setDraft,
+    onChangeEnd: (value) => {
+      setDraft(null);
+      void updateSettings({ [settingName]: value }, { immediate: false });
+    },
+  });
   return (
-    <div className="nf-set-row nf-slider-row" data-static="true">
+    <div ref={rowRef} className="nf-set-row nf-slider-row" data-static="true">
       {icon}
       <Slider
         aria-label={typeof label === "string" ? label : settingName}
