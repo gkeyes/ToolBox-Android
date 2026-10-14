@@ -162,6 +162,8 @@
     const note = notes.find((candidate) => candidate.id === item.dataset.id);
     if (!note) return;
     if (button.classList.contains("edit")) {
+      // Typed text has no undo; replacing it needs the user's word unless it is already this note's text.
+      if (editingId !== note.id && currentDraft() && !window.confirm("编辑区有尚未保存的内容，打开这条笔记会替换它。确定继续吗？")) return;
       $("note-input").value = note.text; setEditing(note.id); $("note-input").focus(); return;
     }
     if (button.classList.contains("copy")) { await copy(note.text); return; }
@@ -193,4 +195,11 @@
   const restoring = restore();
   // Registered before restoration settles so a close during startup still waits for it and keeps what was typed meanwhile.
   try { toolbox()?.runtime?.registerFlushHandler?.(async () => { await restoring; await writeDraft(); }); } catch (_) {}
+  // The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
+  // Repeated hide signals while one write is pending share that write.
+  let hideWrite = null;
+  const saveOnHide = () => { hideWrite ||= restoring.then(writeDraft).catch(() => {}).finally(() => { hideWrite = null; }); };
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveOnHide(); });
+  window.addEventListener("pagehide", saveOnHide);
+  try { toolbox()?.runtime?.onStateChanged?.((state) => { if (state && state.foreground === false) saveOnHide(); }); } catch (_) {}
 })();

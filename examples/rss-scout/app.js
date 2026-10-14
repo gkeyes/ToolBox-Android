@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.6 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.7 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -149,6 +149,10 @@
   function cacheUsable() {
     return R.cacheValid(state.cache, state.settings);
   }
+  function partialNote() {
+    const missing = state.cache?.partial === 'base' ? 'Radar 规则' : state.cache?.partial === 'private' ? '私人规则' : '';
+    return missing ? '（缺' + missing + '，下次探测时重试）' : '';
+  }
   function topModal() {
     return state.modals.at(-1)?.id;
   }
@@ -290,7 +294,7 @@
             : '官方 Radar') +
         (state.settings.usePrivateRules ? ' + 私人规则' : '') +
         ' · ' +
-        (cacheUsable() ? state.cache.rules.length + ' 个匹配项' : '尚未同步');
+        (cacheUsable() ? state.cache.rules.length + ' 个匹配项' + partialNote() : '尚未同步');
     $('preferences-summary').textContent =
       (state.settings.checkHome ? '首页补查开启' : '仅检查当前页') +
       ' · ' +
@@ -307,7 +311,8 @@
           new Date(state.cache.at).toLocaleString('zh-CN', { hour12: false }) +
           ' 更新；跳过 ' +
           state.cache.skipped +
-          ' 项'
+          ' 项' +
+          partialNote()
       );
     } else status('rule-status', '尚未缓存匹配规则。首次探测或点击同步时获取。');
     summaries();
@@ -973,13 +978,17 @@
           }
           if (state.settings.useRadar) {
             $('scan-status').textContent = '正在匹配 RSSHub / RSSWorker 路由并验证候选…';
-            if (!cacheUsable()) {
+            // A cache that holds only one half of the rules syncs again here; until that succeeds, its half stays in use.
+            if (!cacheUsable() || state.cache.partial) {
               try {
                 await syncRules(signal);
               } catch (error) {
                 if (signal.aborted) throw error;
-                note('Radar 不可用，不影响原生源结果：' + safeError(error));
-                state.scanWarning += (state.scanWarning ? '；' : '') + 'RSSHub 规则暂不可用，原生源已继续检查';
+                if (cacheUsable()) note('规则重试未完成，继续使用已缓存的部分规则：' + safeError(error));
+                else {
+                  note('Radar 不可用，不影响原生源结果：' + safeError(error));
+                  state.scanWarning += (state.scanWarning ? '；' : '') + 'RSSHub 规则暂不可用，原生源已继续检查';
+                }
               }
             }
             if (cacheUsable()) {
@@ -1326,7 +1335,12 @@
     try {
       base = C.serviceBase(base);
     } catch (_) {}
-    if (state.hubAuth?.base !== base) $('hub-key').value = '';
+    // Only the field follows the address while typing: the saved key leaves the field for another host and comes back
+    // when the address matches again. Whether the stored key is kept is decided when the form is saved.
+    if (!state.hubAuth) return;
+    if (state.hubAuth.base === base) {
+      if (!$('hub-key').value) $('hub-key').value = state.hubAuth.key;
+    } else if ($('hub-key').value === state.hubAuth.key) $('hub-key').value = '';
   });
   for (const radio of document.querySelectorAll('[name=rule-mode]')) radio.addEventListener('change', toggleRuleField);
   $('use-private-rules').addEventListener('change', togglePrivateField);
@@ -1413,7 +1427,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.6\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.7\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })

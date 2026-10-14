@@ -152,11 +152,21 @@
     return provider === "twelve" ? "Twelve Data" : "腾讯行情";
   }
 
+  // Exchange by code range: 92/4/8 北交所; 5/6/9 (except 92) 上交所, incl. funds and B shares; 0/1/2/3 深交所, incl. funds and B shares.
+  function aShareExchange(symbol) {
+    if (!/^\d{6}$/.test(symbol)) return null;
+    if (/^(92|[48])/.test(symbol)) return "bj";
+    if (/^[569]/.test(symbol)) return "sh";
+    if (/^[0-3]/.test(symbol)) return "sz";
+    return null;
+  }
+
   function marketLabel(item) {
     if (item.provider === "twelve") return item.exchange || "全球市场";
-    if (/^[69]/.test(item.symbol)) return "上交所";
-    if (/^[03]/.test(item.symbol)) return "深交所";
-    if (/^[48]/.test(item.symbol)) return "北交所";
+    const exchange = aShareExchange(item.symbol);
+    if (exchange === "sh") return "上交所";
+    if (exchange === "sz") return "深交所";
+    if (exchange === "bj") return "北交所";
     return "A 股";
   }
 
@@ -412,9 +422,8 @@
 
   function tencentCode(symbol) {
     if (!/^\d{6}$/.test(symbol)) throw new Error("腾讯行情需要六位 A 股代码。");
-    if (/^[69]/.test(symbol)) return `sh${symbol}`;
-    if (/^[03]/.test(symbol)) return `sz${symbol}`;
-    if (/^[48]/.test(symbol)) return `bj${symbol}`;
+    const exchange = aShareExchange(symbol);
+    if (exchange) return `${exchange}${symbol}`;
     throw new Error("暂不识别此 A 股代码所属交易所。");
   }
 
@@ -660,18 +669,20 @@
   }
 
   async function stopMonitoring() {
-    if (state.sessionId) {
-      try { await toolbox().notifications.live.end(state.sessionId); } catch (_) {}
-    }
-    try { await toolbox().background.cancelTimer(TIMER_KEY); } catch (_) {}
+    // Stop the session first: if that fails, monitoring keeps its timer and live notification instead of running without them.
+    const sessionId = state.sessionId;
     try {
-      if (state.sessionId) await toolbox().background.stop(state.sessionId);
+      if (sessionId) await toolbox().background.stop(sessionId);
     } catch (error) {
       if (error?.code !== "NOT_FOUND") {
         setStatus(errorMessage(error, "停止后台监控失败。"), "error");
         return;
       }
     }
+    if (sessionId) {
+      try { await toolbox().notifications.live.end(sessionId); } catch (_) {}
+    }
+    try { await toolbox().background.cancelTimer(TIMER_KEY); } catch (_) {}
     state.monitoring = false;
     state.sessionId = null;
     try { await persist(); } catch (_) {}
@@ -764,6 +775,7 @@
 
     if (!symbol) { showFormError("请输入股票代码。"); return; }
     if (provider === "tencent" && !/^\d{6}$/.test(symbol)) { showFormError("腾讯行情需要六位 A 股代码。"); return; }
+    if (provider === "tencent" && !aShareExchange(symbol)) { showFormError("暂不识别此 A 股代码所属交易所，请检查代码。"); return; }
     if (provider === "twelve" && !/^[A-Z0-9./:_-]+$/.test(symbol)) { showFormError("Twelve Data 股票代码格式无效。"); return; }
     if (Number.isNaN(upper) || Number.isNaN(lower)) { showFormError("提醒价格必须是大于 0 的数字。"); return; }
     if (upper !== null && lower !== null && lower >= upper) { showFormError("低价提醒必须小于高价提醒。"); return; }
@@ -781,16 +793,18 @@
       const existing = existingIndex >= 0 ? state.items[existingIndex] : null;
       const duplicate = state.items.some((item) => item.id !== targetId && item.provider === provider && item.symbol === symbol);
       if (duplicate) { showFormError("这只股票已经在监控列表中。"); return; }
+      // A different stock keeps only the row id: its old quote and alert latches belong to the previous symbol.
+      const sameStock = existing && existing.provider === provider && existing.symbol === symbol;
       const updated = createItem({
-        ...existing,
+        ...(sameStock ? existing : existing ? { id: existing.id } : {}),
         provider,
         symbol,
         name,
         upper,
         lower,
         enabled: $("enabled").checked,
-        aboveLatched: existing?.upper === upper ? existing.aboveLatched : false,
-        belowLatched: existing?.lower === lower ? existing.belowLatched : false
+        aboveLatched: sameStock && existing.upper === upper ? existing.aboveLatched : false,
+        belowLatched: sameStock && existing.lower === lower ? existing.belowLatched : false
       });
       const nextItems = state.items.slice();
       if (existingIndex >= 0) nextItems.splice(existingIndex, 1, updated);
@@ -1060,7 +1074,8 @@
     testHook.api = {
       get state() { return state; },
       get status() { return statusMessage; },
-      dirtyItems, createItem, refreshAll, startMonitoring, persist, saveEditor, closeEditor,
+      dirtyItems, createItem, refreshAll, startMonitoring, stopMonitoring, persist, saveEditor, closeEditor,
+      tencentCode, marketLabel,
       chinaMarketClosedSince, skipWhileClosed,
       loaded: () => { stateLoaded = true; markStateLoaded(); },
       edit: (id) => { editingId = id; },
