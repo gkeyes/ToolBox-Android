@@ -122,6 +122,12 @@ export function showLinkActions(value) {
     backdropPress = event.target === dialog && outside(event);
   });
   dialog.addEventListener("pointercancel", () => { backdropPress = false; });
+  // Some Android WebViews send touch and click but no pointer events.
+  dialog.addEventListener("touchstart", (event) => {
+    const touch = event.touches[0];
+    backdropPress = event.target === dialog && !!touch && outside(touch);
+  }, { passive: true });
+  dialog.addEventListener("touchcancel", () => { backdropPress = false; });
   dialog.addEventListener("click", (event) => {
     if (!pending && backdropPress && event.target === dialog && outside(event)) dialog.close();
     backdropPress = false;

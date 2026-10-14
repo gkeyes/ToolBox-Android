@@ -33,10 +33,8 @@ const createApiClient = () => {
       if (error.response?.status === 401) {
         logout().catch(() => toast.error("登录已失效；请重试退出以清理本地缓存。"));
       }
-      const errorMessage = error.response?.data?.error_message;
-      if (errorMessage && error.response?.status !== 404) {
-        toast.error(errorMessage);
-      }
+      // Callers report failures themselves; a toast here doubled every error
+      // and showed toasts for sync retries that later succeeded.
       return Promise.reject(error);
     },
   );
