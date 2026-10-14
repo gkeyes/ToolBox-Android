@@ -233,6 +233,7 @@ internal data class RestorePlanCounts(val recoverable: Int, val overwritten: Int
 /** Skipped conflicts must never be counted as planned overwrites. */
 internal fun restorePlanCounts(tools: List<RestoreToolPlan>): RestorePlanCounts = RestorePlanCounts(
     recoverable = tools.count { it.skipped == null },
-    overwritten = tools.count { it.skipped == null && it.current != null },
+    // A kept tool restores only its data; its package is not overwritten.
+    overwritten = tools.count { it.skipped == null && it.current != null && !it.keepInstalled },
     skipped = tools.count { it.skipped != null },
 )

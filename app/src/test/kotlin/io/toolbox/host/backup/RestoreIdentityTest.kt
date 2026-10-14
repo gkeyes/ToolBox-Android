@@ -45,11 +45,11 @@ class RestoreIdentityTest {
     }
 
     @Test
-    fun keptInstallsStillCountAsRecoverable() {
+    fun keptInstallsCountAsRecoverableButNotOverwritten() {
         val preview = listOf(
             RestoreToolPlan("a", "A", "1.5", "1.5", keepInstalled = true),
             RestoreToolPlan("b", "B", "2.0", "1.0", skipped = "包身份无法验证"),
         )
-        assertEquals(RestorePlanCounts(recoverable = 1, overwritten = 1, skipped = 1), restorePlanCounts(preview))
+        assertEquals(RestorePlanCounts(recoverable = 1, overwritten = 0, skipped = 1), restorePlanCounts(preview))
     }
 }

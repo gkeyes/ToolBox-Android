@@ -40,16 +40,20 @@ internal class RuntimeAlarmService(
     }
 
     suspend fun removeAll(toolId: String) {
-        alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
-        persistAlarms(toolId)
-        firedLock.withLock { store.persistFiredAlarms(toolId, emptyList()) }
+        // Same lock as handleAlarm, so a receiver that already loaded the alarms cannot bring one back afterwards.
+        firedLock.withLock {
+            alarmsByTool.remove(toolId)?.values?.forEach { cancelScheduledAlarm(toolId, it.alarmId) }
+            persistAlarms(toolId)
+            store.persistFiredAlarms(toolId, emptyList())
+        }
     }
 
     suspend fun handleAlarm(toolId: String, versionCode: Int, alarmId: String) {
-        val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
-        val persisted = if (needsLoad) store.loadAlarms(toolId, versionCode) else emptyList()
-        // Held across the delivery decision so a page that finishes loading meanwhile still replays it.
+        // Held across loading and the delivery decision: removeAll cannot run in between, and a page that finishes
+        // loading meanwhile still replays the alarm.
         firedLock.withLock {
+            val needsLoad = withContext(Dispatchers.Main.immediate) { alarmsByTool[toolId] == null }
+            val persisted = if (needsLoad) store.loadAlarms(toolId, versionCode) else emptyList()
             val fired = withContext(Dispatchers.Main.immediate) {
                 if (persisted.isNotEmpty()) {
                     alarmsByTool.getOrPut(toolId, ::linkedMapOf).putAll(persisted.associateBy(StoredAlarm::alarmId))
