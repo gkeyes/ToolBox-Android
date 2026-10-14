@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -159,7 +160,7 @@ private fun BrowserAddressCapsule(
             }
             if (blocked > 0) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = 3.dp).heightIn(min = 16.dp).widthIn(min = 18.dp)
+                    Modifier.align(Alignment.TopEnd).clearAndSetSemantics {}.offset(x = 1.dp, y = 3.dp).heightIn(min = 16.dp).widthIn(min = 18.dp)
                         .clip(RoundedCornerShape(8.dp)).background(colors.primary).padding(horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
