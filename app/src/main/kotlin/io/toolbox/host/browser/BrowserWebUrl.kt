@@ -10,8 +10,9 @@ import java.util.Locale
  * http/https only, a host, no user info, a valid port and no raw or percent-escaped control characters.
  */
 internal object BrowserWebUrl {
-    /** Returns the lowercase host when [url] is a navigable web address, otherwise null. */
-    fun host(url: String): String? {
+    data class Parts(val scheme: String, val host: String, val port: Int?)
+
+    fun parse(url: String): Parts? {
         if (url.isEmpty() || url.any { it.isISOControl() || it.isWhitespace() || it == '\\' }) return null
         val separator = url.indexOf("://")
         if (separator <= 0) return null
@@ -22,22 +23,39 @@ internal object BrowserWebUrl {
         val authority = rest.substring(0, authorityEnd)
         if (authority.isEmpty() || '@' in authority || '%' in authority) return null
         if (ESCAPED_CONTROL.containsMatchIn(rest.substring(authorityEnd))) return null
-        val (host, port) = if (authority.startsWith('[')) {
+        val host: String
+        val portText: String?
+        if (authority.startsWith('[')) {
             val close = authority.indexOf(']')
             if (close < 0) return null
-            authority.substring(0, close + 1) to authority.substring(close + 1).removePrefix(":").takeIf { authority.length > close + 1 }
+            val literal = authority.substring(1, close)
+            // A bracketed host must be an IPv6 literal; anything after ']' must be a ":port".
+            if (':' !in literal || literal.any { !(it.isHexDigitAscii() || it == ':' || it == '.') }) return null
+            val suffix = authority.substring(close + 1)
+            if (suffix.isNotEmpty() && !suffix.startsWith(':')) return null
+            host = authority.substring(0, close + 1).lowercase(Locale.ROOT)
+            portText = suffix.takeIf { it.isNotEmpty() }?.substring(1)
         } else {
             val colon = authority.lastIndexOf(':')
-            if (colon < 0) authority to null else authority.substring(0, colon) to authority.substring(colon + 1)
+            val name = if (colon < 0) authority else authority.substring(0, colon)
+            if (name.any { !(it.isLetterOrDigit() || it == '-' || it == '.' || it == '_') }) return null
+            host = name.trimEnd('.').lowercase(Locale.ROOT)
+            portText = if (colon < 0) null else authority.substring(colon + 1)
         }
-        if (port != null && (port.isEmpty() || port.length > 5 || port.any { it !in '0'..'9' } || port.toInt() !in 1..65_535)) return null
-        val bare = host.trimEnd('.')
-        if (bare.isEmpty()) return null
-        if (!host.startsWith('[') && host.any { !(it.isLetterOrDigit() || it == '-' || it == '.' || it == '_') }) return null
-        return bare.lowercase(Locale.ROOT)
+        if (host.isEmpty()) return null
+        val port = portText?.let { text ->
+            if (text.isEmpty() || text.length > 5 || text.any { it !in '0'..'9' }) return null
+            text.toInt().takeIf { it in 1..65_535 } ?: return null
+        }
+        return Parts(scheme, host, port)
     }
 
-    fun valid(url: String): String? = url.takeIf { host(it) != null }
+    /** Returns the lowercase host when [url] is a navigable web address, otherwise null. */
+    fun host(url: String): String? = parse(url)?.host
+
+    fun valid(url: String): String? = url.takeIf { parse(it) != null }
+
+    private fun Char.isHexDigitAscii() = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 
     // %00-%1F, %7F and UTF-8 C1 controls (%C2%80-%C2%9F) decode to control characters.
     private val ESCAPED_CONTROL = Regex("%(?:[01][0-9a-fA-F]|7[fF])|%[cC]2%[89][0-9a-fA-F]")

@@ -19,6 +19,16 @@ class BrowserWebUrlTest {
             "", "https://", "https:///path", "ftp://example.com", "https://user@example.com", "https://example.com:0",
             "https://example.com:99999", "https://example.com:", "https://exa%6dple.com", "https://example.com/%0a",
             "https://example.com/%C2%85", "https://example.com/a b", "https://example.com\\@evil.com", "https://ex<ample.com",
+            "https://[]/", "https://[not-an-ip]/", "https://[::1]443/",
         )) assertNull(url, BrowserWebUrl.host(url))
+        assertEquals("[::1]", BrowserWebUrl.host("https://[::1]:8443/"))
+    }
+
+    @Test fun capabilityOriginsAndRuleSitesFollowTheSameGrammar() {
+        assertEquals("https://a_b.example.com:8443", BrowserCapabilityPolicy.origin("https://A_B.example.com:8443/a|b"))
+        assertEquals("https://example.com", BrowserCapabilityPolicy.origin("https://example.com/?q={x}"))
+        assertNull(BrowserCapabilityPolicy.origin("https://user@example.com/"))
+        assertEquals("a_b.example.com", BrowserFilterValidation.host("a_b.example.com", site = true))
+        assertNull(BrowserFilterValidation.host("a_b.example.com"))
     }
 }
