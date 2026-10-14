@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -131,32 +132,35 @@ private fun BrowserAddressCapsule(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val shieldInteraction = remember { MutableInteractionSource() }
-        Box(
-            Modifier.size(42.dp)
-                .toolBoxPressFeedback(shieldInteraction, enabled = canInteract, shape = CircleShape)
-                .clip(CircleShape)
-                .background(if (filtering && canInteract) colors.primary.copy(alpha = 0.12f) else Color.Transparent)
-                .clickable(enabled = canInteract, interactionSource = shieldInteraction, indication = null, role = Role.Button) {
-                    filters.stopPicker()
-                    filters.refresh()
-                    filters.sheet = true
-                }
-                .semantics { contentDescription = if (blocked > 0) "屏蔽 $blocked" else "屏蔽" },
-            contentAlignment = Alignment.Center,
-        ) {
-            ToolBoxIcon(
-                ToolBoxIconKey.Shield,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = when {
-                    !canInteract -> ToolBoxThemeTokens.disabledContent
-                    filtering -> colors.primary
-                    else -> colors.textSecondary
-                },
-            )
+        // The badge sits outside the clipped circle so the circle can't cut it off.
+        Box(Modifier.size(42.dp)) {
+            Box(
+                Modifier.matchParentSize()
+                    .toolBoxPressFeedback(shieldInteraction, enabled = canInteract, shape = CircleShape)
+                    .clip(CircleShape)
+                    .background(if (filtering && canInteract) colors.primary.copy(alpha = 0.12f) else Color.Transparent)
+                    .clickable(enabled = canInteract, interactionSource = shieldInteraction, indication = null, role = Role.Button) {
+                        filters.stopPicker()
+                        filters.refresh()
+                        filters.sheet = true
+                    }
+                    .semantics { contentDescription = if (blocked > 0) "屏蔽 $blocked" else "屏蔽" },
+                contentAlignment = Alignment.Center,
+            ) {
+                ToolBoxIcon(
+                    ToolBoxIconKey.Shield,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = when {
+                        !canInteract -> ToolBoxThemeTokens.disabledContent
+                        filtering -> colors.primary
+                        else -> colors.textSecondary
+                    },
+                )
+            }
             if (blocked > 0) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = 3.dp).heightIn(min = 16.dp).widthIn(min = 18.dp)
+                    Modifier.align(Alignment.TopEnd).clearAndSetSemantics {}.offset(x = 1.dp, y = 3.dp).heightIn(min = 16.dp).widthIn(min = 18.dp)
                         .clip(RoundedCornerShape(8.dp)).background(colors.primary).padding(horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
