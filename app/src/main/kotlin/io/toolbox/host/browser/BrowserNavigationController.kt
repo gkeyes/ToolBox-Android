@@ -40,6 +40,8 @@ internal class BrowserNavigationController(
         val actionLabel: String,
         val accept: () -> Unit,
         val cancel: () -> Unit = {},
+        /** Identifies an external-app target so one page cannot queue the same request twice. */
+        val externalTarget: String? = null,
     )
 
     private var decisions by mutableStateOf<List<Decision>>(emptyList())
@@ -52,7 +54,9 @@ internal class BrowserNavigationController(
         return when (BrowserLinkPolicy.classify(url)) {
             BrowserLinkKind.Web -> false
             BrowserLinkKind.External -> {
-                offerExternal(page, url)
+                // Only a tap in the top document may ask to leave for another app; frames and scripts
+                // without a user gesture would otherwise queue dialogs without limit.
+                if (request.isForMainFrame && request.hasGesture()) offerExternal(page, url)
                 true
             }
             BrowserLinkKind.Unsupported -> {
@@ -75,6 +79,8 @@ internal class BrowserNavigationController(
             else notify("此应用链接没有有效的目标地址。")
             return
         }
+        val targetKey = target.toString()
+        if (decisions.any { it.page === page && it.externalTarget == targetKey }) return
         decisions = decisions + Decision(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
             accept = {
@@ -90,6 +96,7 @@ internal class BrowserNavigationController(
                     else notify("系统未允许打开此应用链接。")
                 }
             },
+            externalTarget = targetKey,
         )
     }
 

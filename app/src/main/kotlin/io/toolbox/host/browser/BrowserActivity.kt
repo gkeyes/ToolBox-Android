@@ -190,7 +190,20 @@ class BrowserActivity : ComponentActivity() {
 
         hideFullScreen()
         filters.stopPicker()
-        state.webView?.let { page ->
+        val live = state.webView
+        if (live != null && !state.interaction.unresponsive) {
+            // Keep the page and its back/forward history; only the identity sent with the reload changes.
+            webViewFactory.applyUserAgent(live)
+            state.error = null
+            state.loadProgress = 0
+            state.interaction = state.interaction.pageStarted()
+            if (validBrowserUrl(live.url.orEmpty()) == null) navigatePage(live, currentAddress) else {
+                prepareNavigation(live, live.url)
+                live.reload()
+            }
+            return
+        }
+        live?.let { page ->
             page.stopLoading()
             destroyPage(page)
         }
