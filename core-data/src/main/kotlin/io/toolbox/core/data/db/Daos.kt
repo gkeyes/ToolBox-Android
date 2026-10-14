@@ -197,6 +197,13 @@ internal interface TaskResultDao {
     @Query(TASK_RESULT_HEADER)
     suspend fun header(taskId: String): TaskResultHeader?
 
+    /** The header plus only the first [prefixChars] characters of the payload, for list previews. */
+    @Query(
+        "SELECT taskId, outcome, completedAt, errorCode, attemptCount, substr(payloadJson, 1, :prefixChars) AS payloadPrefix " +
+            "FROM task_results WHERE taskId = :taskId",
+    )
+    fun observePreview(taskId: String, prefixChars: Int): Flow<TaskResultPreviewRow?>
+
     /** [start] is 1-based and both bounds count characters, like SQLite's substr on text. */
     @Query("SELECT substr(payloadJson, :start, :length) FROM task_results WHERE taskId = :taskId")
     suspend fun payloadSlice(taskId: String, start: Int, length: Int): String?

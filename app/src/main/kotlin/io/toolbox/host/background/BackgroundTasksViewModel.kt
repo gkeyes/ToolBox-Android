@@ -5,10 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.BackgroundTaskHistoryPage
-import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.RunOutcome
+import io.toolbox.core.data.TASK_RESULT_PREVIEW_CHARS
+import io.toolbox.core.data.TaskRunResultPreview
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -32,6 +36,29 @@ internal data class BackgroundTasksUiState(
     val loadingHistory: Boolean = false,
     val historyError: String? = null,
 )
+
+/** What a task row shows of the task's latest run result. */
+internal data class TaskResultSummaryUi(
+    val outcome: RunOutcome,
+    val errorCode: String?,
+    /** The payload's first characters on one line, or null when there is nothing to show. */
+    val preview: String?,
+) {
+    companion object {
+        fun of(result: TaskRunResultPreview) = TaskResultSummaryUi(
+            result.outcome, result.errorCode, result.payloadPrefix?.let(::resultPreviewText),
+        )
+    }
+}
+
+private val WHITESPACE = Regex("\\s+")
+
+/** Collapses whitespace over an already bounded prefix and keeps what one row can show. */
+internal fun resultPreviewText(payloadPrefix: String): String? =
+    payloadPrefix.take(TASK_RESULT_PREVIEW_CHARS).replace(WHITESPACE, " ").trim().take(RESULT_PREVIEW_CHARS)
+        .takeIf(String::isNotBlank)
+
+internal const val RESULT_PREVIEW_CHARS = 320
 
 /**
  * Owns the background task list of one tool: the live active/history queries, the
@@ -95,8 +122,14 @@ internal class BackgroundTasksViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), uiState(snapshot.value, sessions.value))
 
-    /** Latest run result of one task; collected lazily by each visible task row. */
-    fun result(taskId: String): Flow<TaskRunResult?> = operations.observeResult(taskId)
+    /**
+     * Latest run result of one task as its row shows it; collected lazily by each visible row.
+     * Only the start of the payload is read, and its whitespace is collapsed off the main thread.
+     */
+    fun resultSummary(taskId: String): Flow<TaskResultSummaryUi?> =
+        operations.observeResultPreview(taskId)
+            .map { preview -> preview?.let { TaskResultSummaryUi.of(it) } }
+            .flowOn(Dispatchers.Default)
 
     fun loadMoreHistory() {
         val current = snapshot.value

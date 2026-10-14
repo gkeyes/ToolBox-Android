@@ -1,6 +1,7 @@
 package io.toolbox.core.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 interface CatalogRepository {
     fun observeCatalogProjection(): Flow<List<CatalogEntry>>
@@ -67,7 +68,14 @@ interface BackgroundTaskRepository {
     fun observeRecentHistory(toolId: String): Flow<BackgroundTaskHistoryPage>
     fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>>
     suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): BackgroundTaskHistoryPage
+    /** The whole result, payload included; for callers that need all of it (getResult, export). */
     fun observeResult(taskId: String): Flow<TaskRunResult?>
+    /**
+     * The result with only the start of its payload, for list rows. Storage-backed implementations
+     * override this to read just that prefix; the default reads the whole result first.
+     */
+    fun observeResultPreview(taskId: String): Flow<TaskRunResultPreview?> =
+        observeResult(taskId).map { it?.preview() }
     suspend fun getTask(taskId: String): DataResult<BackgroundTask?>
     suspend fun create(task: BackgroundTask): DataResult<Unit>
     suspend fun claimExecution(taskId: String, versionCode: Int, previousToken: String?, executionToken: String, updatedAt: Long, runAttempt: Int): DataResult<Unit>

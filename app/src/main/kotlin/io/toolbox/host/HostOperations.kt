@@ -2,6 +2,8 @@ package io.toolbox.host
 
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.TaskRunResultPreview
+import io.toolbox.core.data.preview
 import io.toolbox.host.background.BackgroundCancellationResult
 import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
@@ -9,6 +11,7 @@ import io.toolbox.tool.runtime.PreparedToolRuntime
 import io.toolbox.tool.runtime.RuntimeServiceHandlers
 import io.toolbox.tool.runtime.RuntimePreparationCode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 internal data class HostManifestPermission(
     val capability: String,
@@ -81,6 +84,9 @@ internal interface HostBackgroundOperations {
     fun observeHistoryThrough(toolId: String, createdAt: Long, taskId: String): Flow<List<BackgroundTask>>
     suspend fun historyBefore(toolId: String, createdAt: Long, taskId: String): io.toolbox.core.data.BackgroundTaskHistoryPage
     fun observeResult(taskId: String): Flow<TaskRunResult?>
+    /** Only the start of the payload; production implementations read just that prefix from storage. */
+    fun observeResultPreview(taskId: String): Flow<TaskRunResultPreview?> =
+        observeResult(taskId).map { it?.preview() }
     suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult
     suspend fun cancelTool(toolId: String)
     suspend fun releaseRuntime(toolId: String) = cancelTool(toolId)

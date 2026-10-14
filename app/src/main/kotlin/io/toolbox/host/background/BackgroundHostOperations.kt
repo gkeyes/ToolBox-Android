@@ -2,6 +2,7 @@ package io.toolbox.host.background
 
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.TaskRunResultPreview
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.HostPermissionSideEffects
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,8 @@ internal class BackgroundHostOperations(
         coordinator.historyBefore(toolId, createdAt, taskId)
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> = coordinator.result(taskId)
+
+    override fun observeResultPreview(taskId: String): Flow<TaskRunResultPreview?> = coordinator.resultPreview(taskId)
 
     override suspend fun cancel(toolId: String, taskId: String) = coordinator.cancel(toolId, taskId)
 

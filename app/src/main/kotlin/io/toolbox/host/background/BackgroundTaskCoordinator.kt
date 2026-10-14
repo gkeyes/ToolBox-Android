@@ -58,6 +58,10 @@ class BackgroundTaskCoordinator(
     override fun result(taskId: String): Flow<TaskRunResult?> =
         repositories.backgroundTasks.observeResult(taskId)
 
+    /** Only the start of the payload, for the task list; [result] reads the whole of it. */
+    fun resultPreview(taskId: String): Flow<io.toolbox.core.data.TaskRunResultPreview?> =
+        repositories.backgroundTasks.observeResultPreview(taskId)
+
     suspend fun enqueue(
         toolId: String,
         versionCode: Int,

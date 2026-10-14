@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.toolbox.core.data.CoreDataFactory
 import io.toolbox.core.data.RunOutcome
 import io.toolbox.core.data.SecurityProfile
+import io.toolbox.core.data.TASK_RESULT_PREVIEW_CHARS
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,10 @@ class LargeTaskResultTest {
                 val result = stores.repositories.backgroundTasks.observeResult("big").first()
                 assertEquals(RunOutcome.SUCCEEDED, result?.outcome)
                 assertEquals(payload, result?.payloadJson)
+                // The task list reads only the payload's start, in SQL.
+                val preview = stores.repositories.backgroundTasks.observeResultPreview("big").first()
+                assertEquals(RunOutcome.SUCCEEDED, preview?.outcome)
+                assertEquals(payload.take(TASK_RESULT_PREVIEW_CHARS), preview?.payloadPrefix)
 
                 stores.backup.checkpoint(checkpoint)
                 stores.backup.restoreCheckpoint(checkpoint)

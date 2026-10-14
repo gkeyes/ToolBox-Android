@@ -4,7 +4,10 @@ import androidx.lifecycle.viewModelScope
 import io.toolbox.core.data.BackgroundOperation
 import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.BackgroundTaskHistoryPage
+import io.toolbox.core.data.RunOutcome
+import io.toolbox.core.data.TASK_RESULT_PREVIEW_CHARS
 import io.toolbox.core.data.TaskRunResult
+import io.toolbox.core.data.TaskRunResultPreview
 import io.toolbox.core.data.TaskState
 import io.toolbox.host.HostBackgroundOperations
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
@@ -15,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -117,6 +121,29 @@ class BackgroundTasksViewModelTest {
         assertNull(model.state.value.historyError)
     }
 
+    @Test fun resultRowReadsOnlyThePreviewAndCollapsesItsWhitespace() = runTest(dispatcher) {
+        val operations = FakeBackgroundOperations()
+        operations.preview = TaskRunResultPreview("a", RunOutcome.FAILED, 5, "{\n  \"body\":\t\"x\"\n}\n", "E_NET", 1)
+        val summary = model(operations).resultSummary("a").first()
+        assertEquals(TaskResultSummaryUi(RunOutcome.FAILED, "E_NET", "{ \"body\": \"x\" }"), summary)
+        assertEquals(listOf("a"), operations.previewRequests)
+        assertEquals(0, operations.fullResultReads)
+
+        operations.preview = TaskRunResultPreview("b", RunOutcome.SUCCEEDED, 5, " \n\t ", null, 1)
+        assertNull(model(operations).resultSummary("b").first()?.preview)
+        operations.preview = null
+        assertNull(model(operations).resultSummary("c").first())
+    }
+
+    @Test fun previewTextIsBoundedWhateverItIsGiven() {
+        val long = "word \n".repeat(TASK_RESULT_PREVIEW_CHARS)
+        val text = resultPreviewText(long)!!
+        assertEquals(RESULT_PREVIEW_CHARS, text.length)
+        assertFalse(text.contains('\n'))
+        assertTrue(text.startsWith("word word"))
+        assertNull(resultPreviewText(""))
+    }
+
     private fun model(
         operations: FakeBackgroundOperations,
         sessions: MutableStateFlow<List<RuntimeBackgroundSessionUi>> = MutableStateFlow(emptyList()),
@@ -146,7 +173,18 @@ class BackgroundTasksViewModelTest {
             historyRequests += createdAt to taskId
             return nextPage()
         }
-        override fun observeResult(taskId: String): Flow<TaskRunResult?> = flowOf(null)
+        var preview: TaskRunResultPreview? = null
+        val previewRequests = mutableListOf<String>()
+        var fullResultReads = 0
+
+        override fun observeResult(taskId: String): Flow<TaskRunResult?> {
+            fullResultReads++
+            return flowOf(null)
+        }
+        override fun observeResultPreview(taskId: String): Flow<TaskRunResultPreview?> {
+            previewRequests += taskId
+            return flowOf(preview)
+        }
         override suspend fun cancel(toolId: String, taskId: String): BackgroundCancellationResult = BackgroundCancellationResult.Cancelled
         override suspend fun cancelTool(toolId: String) = Unit
         override suspend fun cancelAll(toolIds: Collection<String>) = Unit
