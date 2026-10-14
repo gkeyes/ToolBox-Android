@@ -73,8 +73,9 @@ internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onRead
     LaunchedEffect(Unit) { onReady() }
     LaunchedEffect(state.pendingApk) {
         val apk = state.pendingApk ?: return@LaunchedEffect
-        viewModel.apkHandedOff()
         runCatching { ApkInstaller.install(context, apk) }
+            .onSuccess { viewModel.apkHandedOff() }
+            .onFailure { viewModel.apkHandOffFailed() }
     }
     UpdateContent(
         state = state,
@@ -83,7 +84,10 @@ internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onRead
         onRefresh = viewModel::refresh,
         onSelectChannel = viewModel::selectChannel,
         onInstallApp = viewModel::downloadApp,
-        onGrantInstall = { runCatching { ApkInstaller.openInstallPermissionSettings(context) } },
+        onGrantInstall = {
+            runCatching { ApkInstaller.openInstallPermissionSettings(context) }
+                .onFailure { viewModel.installSettingsUnavailable() }
+        },
         onInstallTool = viewModel::installTool,
         onUpdateAll = viewModel::updateAllTools,
         onCheckOnLaunchChange = viewModel::setCheckOnLaunch,

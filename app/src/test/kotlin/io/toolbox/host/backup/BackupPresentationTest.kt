@@ -1,6 +1,8 @@
 package io.toolbox.host.backup
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupPresentationTest {
@@ -25,5 +27,13 @@ class BackupPresentationTest {
             RestoreToolPlan("a", "A", "2", "1", "跳过"),
             RestoreToolPlan("b", "B", "2", null, "跳过"),
         )))
+    }
+
+    @Test
+    fun cancellingAnExportDoesNotTalkAboutRestore() {
+        assertFalse(cancelledResult(exporting = true, running = false).message.contains("恢复"))
+        assertFalse(cancelledResult(exporting = true, running = true).message.contains("恢复"))
+        assertTrue(cancelledResult(exporting = false, running = false).message.contains("未执行恢复"))
+        assertTrue(cancelledResult(exporting = false, running = true).message.contains("回滚"))
     }
 }

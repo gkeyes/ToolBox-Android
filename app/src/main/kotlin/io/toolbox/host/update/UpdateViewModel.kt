@@ -80,6 +80,9 @@ internal class UpdateViewModel(
 
     init {
         viewModelScope.launch {
+            // APKs left from earlier visits are never reused (each version has its own file name); nothing
+            // can be downloading yet, because downloads need the feed that refresh() below reads.
+            repository.clearDownloads()
             val channel = repository.channel()
             mutableState.update { it.copy(channel = channel, checkOnLaunch = repository.checkOnLaunch()) }
             refresh()
@@ -157,6 +160,11 @@ internal class UpdateViewModel(
     }
 
     fun apkHandedOff() = mutableState.update { it.copy(pendingApk = null) }
+
+    /** The system installer could not be opened; drop the APK hand-off so it is not retried silently. */
+    fun apkHandOffFailed() = mutableState.update { it.copy(pendingApk = null, message = "无法打开系统安装程序") }
+
+    fun installSettingsUnavailable() = mutableState.update { it.copy(message = "无法打开“安装未知应用”设置") }
 
     fun installTool(slug: String) {
         val row = mutableState.value.tools.firstOrNull { it.available.slug == slug } ?: return
