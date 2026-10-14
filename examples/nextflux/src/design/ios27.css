@@ -161,8 +161,9 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
   background: transparent;
   white-space: nowrap;
 }
-.article-list-tabs .tabs__tab[data-selected="true"] { color: var(--accent); }
-.article-list-tabs .tabs__tab > div { position: relative; z-index: 1; }
+.article-list-tabs .tabs__tab[data-selected="true"],
+.article-list-inline-tabs .article-list-tabs .tabs__tab[data-selected="true"] { color: var(--accent); }
+.article-list-tabs .tabs__tab > div:not(.tabs__indicator) { position: relative; z-index: 1; }
 .article-list-tabs .tabs__tab svg { display: inline-block; }
 .article-list-tabs .tabs__tab > div { gap: 3px; }
 .article-list-tabs .tabs__tab svg { inline-size: 10px; block-size: 10px; }
@@ -609,3 +610,7 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
   inline-size: 44px; block-size: 44px; max-inline-size: none; max-block-size: none;
   margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: normal;
 }
+
+/* Short screen or large text: the feed list keeps room and the whole drawer
+   scrolls, so the footer moves with the list instead of crowding it out. */
+.sidebar-mobile-panel [data-sidebar="content"] { min-block-size: min(40vh, 18rem); }
