@@ -125,6 +125,10 @@ internal class RuntimeLocationWatchService(
             return
         }
         if (HardenedRuntimeWebView.isClosing(host.webView)) return
+        val watch = watchesByTool[toolId]?.get(watchId) ?: return
+        // A foreground-only watch started while the tool was shown delivers nothing once it is hidden;
+        // otherwise a background session would keep receiving it without location.background.
+        if (!watch.allowBackground && !isForeground(toolId)) return
         val emitted = HardenedRuntimeWebView.emitEvent(
             host.webView,
             EVENT_LOCATION_CHANGED,
