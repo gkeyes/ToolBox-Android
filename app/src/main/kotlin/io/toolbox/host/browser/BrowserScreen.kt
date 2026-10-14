@@ -69,8 +69,8 @@ internal fun BrowserScreen(
     )
     // The bars slide over the page on their own layers; the page is resized once per toggle
     // (at once when the bars return, after they are gone when they leave), never per frame.
+    // The page runs to the top edge under the floating close button, as in the iOS 27 design.
     val reserveChrome by remember(chromeVisible) { derivedStateOf { chromeVisible || chromeShown > 0.001f } }
-    var topBarHeight by remember { mutableIntStateOf(0) }
     var bottomBarHeight by remember { mutableIntStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
@@ -78,21 +78,23 @@ internal fun BrowserScreen(
         Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding().clipToBounds()) {
             Box(
                 Modifier.fillMaxSize().padding(
-                    top = with(density) { if (reserveChrome) topBarHeight.toDp() else 0.dp },
                     bottom = with(density) { if (reserveChrome) bottomBarHeight.toDp() else 0.dp },
                 ),
             ) {
                 state.webView?.let { page -> key(page) { AndroidView(factory = { page }, modifier = Modifier.fillMaxSize()) } }
                 BrowserErrorOverlay(state, actions)
+                BrowserLoadProgress(state)
             }
             if (reserveChrome) {
-                Column(
-                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                        .onSizeChanged { topBarHeight = it.height }
-                        .graphicsLayer { translationY = -size.height * (1f - chromeShown) },
-                ) {
-                    BrowserToolbar(state, filters, actions)
-                    BrowserLoadProgress(state)
+                if (state.fullScreenView == null) {
+                    BrowserCloseButton(
+                        actions,
+                        Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 8.dp)
+                            .graphicsLayer {
+                                translationY = -(size.height + 8.dp.toPx()) * (1f - chromeShown)
+                                alpha = chromeShown
+                            },
+                    )
                 }
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
