@@ -45,10 +45,18 @@ class SecondaryBackStackTest {
     }
 
     @Test
-    fun onlyAFreshLaunchActsOnItsIntent() {
-        assertTrue(shouldOpenLaunchIntent(restored = false, intentFlags = 0))
+    fun onlyAFreshLaunchOrAnUnhandledIntentIsActedOn() {
+        assertTrue(shouldOpenLaunchIntent(restored = false, pendingWhenSaved = false, intentFlags = 0))
         // Rotation, dark/light switch or resize recreates the activity with the old launch intent.
-        assertFalse(shouldOpenLaunchIntent(restored = true, intentFlags = 0))
-        assertFalse(shouldOpenLaunchIntent(restored = false, intentFlags = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY))
+        assertFalse(shouldOpenLaunchIntent(restored = true, pendingWhenSaved = false, intentFlags = 0))
+        // Recreated before startup handled the notification: still open the tool.
+        assertTrue(shouldOpenLaunchIntent(restored = true, pendingWhenSaved = true, intentFlags = 0))
+        assertFalse(
+            shouldOpenLaunchIntent(
+                restored = false,
+                pendingWhenSaved = false,
+                intentFlags = Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY,
+            ),
+        )
     }
 }

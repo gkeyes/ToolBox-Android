@@ -51,8 +51,14 @@ class MainActivity : ComponentActivity() {
         applyHyperOsGestureNavigationImmersion()
         foregroundCapabilityBroker = ForegroundCapabilityBroker.attach(this)
         // A recreated activity (rotation, theme switch, resize) or a launch from Recents still
-        // carries the intent that first opened it; replaying it would reopen that tool.
-        if (shouldOpenLaunchIntent(restored = savedInstanceState != null, intentFlags = intent.flags)) {
+        // carries the intent that first opened it; replaying it would reopen that tool. A restore
+        // only picks it up again when it was still waiting to be handled (e.g. during startup).
+        if (shouldOpenLaunchIntent(
+                restored = savedInstanceState != null,
+                pendingWhenSaved = savedInstanceState?.getBoolean(STATE_LAUNCH_INTENT_PENDING) == true,
+                intentFlags = intent.flags,
+            )
+        ) {
             shortcutIntent.value = intent
         }
 
@@ -190,6 +196,11 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_LAUNCH_INTENT_PENDING, shortcutIntent.value != null)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -207,6 +218,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val ACTION_OPEN_TOOL = "io.toolbox.host.OPEN_TOOL"
         private const val EXTRA_TOOL_ID = "toolId"
+        private const val STATE_LAUNCH_INTENT_PENDING = "io.toolbox.host.launchIntentPending"
 
         internal fun openToolIntent(context: Context, toolId: String): Intent =
             Intent(context, MainActivity::class.java)
@@ -252,9 +264,12 @@ private fun ComponentActivity.applyLaunchNightMode(mode: ToolBoxThemeMode) {
     getSystemService(android.app.UiModeManager::class.java)?.setApplicationNightMode(nightMode)
 }
 
-/** Whether onCreate should act on its launch intent: only a fresh launch, not a restore or Recents relaunch. */
-internal fun shouldOpenLaunchIntent(restored: Boolean, intentFlags: Int): Boolean =
-    !restored && (intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+/**
+ * Whether onCreate should act on its launch intent: a fresh launch that isn't a Recents relaunch,
+ * or a restore whose previous instance had not handled the intent yet.
+ */
+internal fun shouldOpenLaunchIntent(restored: Boolean, pendingWhenSaved: Boolean, intentFlags: Int): Boolean =
+    if (restored) pendingWhenSaved else (intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
 private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
     ThemeMode.SYSTEM -> ToolBoxThemeMode.System
