@@ -203,9 +203,12 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       return event.defaultPrevented || isModalOpen.get() || imageGalleryActive.get() ||
         Boolean(selection?.rangeCount && !selection.isCollapsed);
     };
+    // A pull dragged back to zero still put the reader in continuous mode;
+    // it must be released too, or swipe-back stays disabled.
     const resetGesture = () => {
+      const pulling = gestureRef.current?.pulling;
       gestureRef.current = null;
-      if (!transitionRef.current && rawRef.current > 0) latestRef.current.cancelPull();
+      if (!transitionRef.current && (rawRef.current > 0 || pulling)) latestRef.current.cancelPull();
     };
     const onStart = (event) => {
       if (transitionRef.current) return;
@@ -264,7 +267,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       if (event.touches.length || !touch || blocked(event)) { resetGesture(); return; }
       if (performance.now() - gesture.lastT > 80) gesture.velocity = 0;
       if (gesture.direction === "vertical" && gesture.pulling && rawRef.current >= CONTINUOUS_PULL_TRIGGER && latestRef.current.nextUnread) latestRef.current.commit();
-      else if (rawRef.current > 0) latestRef.current.cancelPull();
+      else if (rawRef.current > 0 || gesture.pulling) latestRef.current.cancelPull();
       gestureRef.current = null;
     };
     syncInset();
