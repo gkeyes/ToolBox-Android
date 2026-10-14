@@ -9,7 +9,8 @@ The build on main starts from the last build published to the test channel: VERS
 and BUILD_COMMIT in the `dev` release's BUILD_RECEIPT.txt (written by verify_release.py, uploaded by
 publish-test-release.sh together with the APK and the tag move). It collects the fragments added between
 that commit and HEAD and raises the version by the largest bump among them (major > minor > patch; the
-lower parts reset to 0) with versionCode + 1. Without a new fragment the version stays the published one,
+lower parts reset to 0) with versionCode + 1, never below the version written in app/build.gradle.kts
+(which only matters for a bump written there before this scheme and not yet published). Without a new fragment the version stays the published one,
 which the publisher skips as already published; but a change that ships in the APK without a fragment
 fails. Only a missing `dev` release (HTTP 404), or one without an app build yet, falls back to the values
 written in app/build.gradle.kts, counted from the commit that last set them; any other lookup failure is
@@ -80,11 +81,12 @@ def bump_version(name, bumps):
     return f"{major}.{minor}.{patch + 1}"
 
 
-def compute(base_name, base_code, fragments, shipped):
+def compute(base_name, base_code, fragments, shipped, floor=None):
     """(name, code, changelog lines) for a build whose last published version is base_name (base_code).
 
     fragments: [(path, bump, line)] added since that build, oldest first; shipped: paths changed since then
-    that go into the APK.
+    that go into the APK. floor: (name, code) written in app/build.gradle.kts; a new version is never below
+    it, so a bump written there before versions were computed (and not yet published) is not undone.
     """
     if not fragments:
         if shipped:
@@ -95,7 +97,10 @@ def compute(base_name, base_code, fragments, shipped):
                 f"changelog fragment was added under {version_bump.FRAGMENTS} for them:\n{listed}\n"
                 f"Add one in a follow-up PR (see {version_bump.FRAGMENTS_README}); this build is not published.")
         return base_name, base_code, []
-    return bump_version(base_name, [bump for _, bump, _ in fragments]), base_code + 1, [line for _, _, line in fragments]
+    name, code = bump_version(base_name, [bump for _, bump, _ in fragments]), base_code + 1
+    if floor and floor[1] > code and version_bump.parse_semver(floor[0]) > version_bump.parse_semver(name):
+        name, code = floor
+    return name, code, [line for _, _, line in fragments]
 
 
 def parse_receipt(text):
@@ -185,6 +190,7 @@ def fragments_since(base, head, read_head):
 def main_compute(args):
     repo = os.environ["GH_REPO"]
     read_head = version_bump.reader(args.head)
+    written_code, written_name = version_bump.app_version(read_head(version_bump.APP_BUILD))
     published = read_dev(gh_api, repo)
     if published:
         if not has_commit(published["commit"]):
@@ -192,7 +198,7 @@ def main_compute(args):
         base_name, base_code, base = published["name"], published["code"], published["commit"]
         print(f"Last published build: ToolBox {base_name} ({base_code}) from {base[:7]}.")
     else:
-        base_code, base_name = version_bump.app_version(read_head(version_bump.APP_BUILD))
+        base_code, base_name = written_code, written_name
         base = git("log", "-1", "--format=%H", f"-G{VERSION_LINE_PATTERN}", args.head, "--",
                    version_bump.APP_BUILD).strip()
         print(f"dev has no app build yet; starting from {version_bump.APP_BUILD}: {base_name} ({base_code}), "
@@ -205,7 +211,7 @@ def main_compute(args):
         fragments = fragments_since(base, args.head, read_head)
     else:
         shipped, fragments = [], []
-    name, code, changes = compute(base_name, base_code, fragments, shipped)
+    name, code, changes = compute(base_name, base_code, fragments, shipped, floor=(written_name, written_code))
     outputs = {"name": name, "code": str(code), "base_name": base_name, "base_code": str(base_code),
                "base_commit": base if published else "", "changes": json.dumps(changes, ensure_ascii=False)}
     for key, value in outputs.items():

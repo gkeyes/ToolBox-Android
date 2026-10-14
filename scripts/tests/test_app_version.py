@@ -71,6 +71,15 @@ class ComputeTest(unittest.TestCase):
         fragments = [("changes/a.md", "minor", "新增。"), ("changes/b.md", "major", "重新设计。")]
         self.assertEqual(("1.0.0", 91, ["新增。", "重新设计。"]), app_version.compute("0.13.14", 90, fragments, []))
 
+    def test_never_below_the_version_written_in_gradle(self):
+        fragments = [("changes/a.md", "patch", "修正。")]
+        self.assertEqual(("0.13.14", 90, ["修正。"]),
+                         app_version.compute("0.13.10", 86, fragments, [], floor=("0.13.14", 90)))
+        self.assertEqual(("0.13.15", 91, ["修正。"]),
+                         app_version.compute("0.13.14", 90, fragments, [], floor=("0.13.14", 90)))
+        # Without a fragment the published version stands; the written one alone is not a new build.
+        self.assertEqual(("0.13.10", 86, []), app_version.compute("0.13.10", 86, [], [], floor=("0.13.14", 90)))
+
     def test_versions_count_numerically(self):
         self.assertEqual("0.9.10", app_version.bump_version("0.9.9", ["patch"]))
         self.assertEqual("0.10.0", app_version.bump_version("0.9.9", ["minor", "patch"]))
