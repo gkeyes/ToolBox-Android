@@ -102,8 +102,8 @@ export function createFeedTitleFilterControl({ React, createPortal, Button, load
     const needsReload = state.code === "UNCONFIRMED" || state.code === "CONFLICT";
     const serverRules = existingServerRules(state.feed);
     const footer = h(Fragment, null,
-      h(Button, { variant: "secondary", size: "lg", fullWidth: true, isDisabled: pending, onPress: close }, "取消"),
-      h(Button, { type: "submit", form: `nf-title-filter-${feedId}`, size: "lg", fullWidth: true, isPending: pending, isDisabled: disabled || Boolean(inputError) || needsReload }, pending ? "正在保存…" : "保存"));
+      h(Button, { variant: "tertiary", fullWidth: true, isDisabled: pending, onPress: close }, "取消"),
+      h(Button, { type: "submit", form: `nf-title-filter-${feedId}`, fullWidth: true, isPending: pending, isDisabled: disabled || Boolean(inputError) || needsReload }, pending ? "正在保存…" : "保存"));
     return h(Modal, { open: true, onOpenChange: next => { if (!next) close(); }, title: "标题过滤", footer },
       h("form", { id: `nf-title-filter-${feedId}`, className: "nf-title-filter-form", onSubmit: submit, "aria-busy": pending || state.phase === "loading" },
         h("p", { className: "nf-title-filter-feed", title: state.feed?.title || feedTitle }, state.feed?.title || feedTitle || "当前订阅"),

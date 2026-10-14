@@ -349,6 +349,9 @@ internal class RoomInstallTransactionRepository(
     }
 }
 
+// Characters per payload slice: at most 1 MB of UTF-8, inside one ~2 MB CursorWindow.
+private const val PAYLOAD_SLICE_CHARS = 256 * 1024
+
 internal class RoomBackgroundTaskRepository(
     private val database: ToolBoxDatabase,
 ) : BackgroundTaskRepository {
@@ -374,7 +377,26 @@ internal class RoomBackgroundTaskRepository(
     )
 
     override fun observeResult(taskId: String): Flow<TaskRunResult?> =
-        database.taskResults().observe(taskId).map { it?.toDomain() }
+        database.taskResults().observeHeader(taskId).map { header -> header?.let { readResult(taskId) } }
+
+    // One transaction, so a result replaced between slices can't mix two payloads.
+    private suspend fun readResult(taskId: String): TaskRunResult? = database.withTransaction {
+        val results = database.taskResults()
+        val header = results.header(taskId) ?: return@withTransaction null
+        val payload = header.payloadLength?.let { length ->
+            buildString(length) {
+                var start = 1
+                while (start <= length) {
+                    append(results.payloadSlice(taskId, start, PAYLOAD_SLICE_CHARS).orEmpty())
+                    start += PAYLOAD_SLICE_CHARS
+                }
+            }
+        }
+        TaskRunResult(
+            header.taskId, io.toolbox.core.data.RunOutcome.valueOf(header.outcome), header.completedAt,
+            payload, header.errorCode, header.attemptCount,
+        )
+    }
 
     override suspend fun getTask(taskId: String): DataResult<BackgroundTask?> {
         if (!taskId.isValidTaskId()) return DataResult.Failure.InvalidInput("taskId")

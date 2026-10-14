@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { Button } from "@heroui/react";
 import { installTouchPressCompat } from "@/toolbox/touch-press.js";
+import { showLinkActions } from "@/toolbox/actions.js";
 import "../../../src/index.css";
 
 // Production compatibility layer over real HeroUI (React Aria) buttons.
@@ -12,5 +13,6 @@ createRoot(document.getElementById("root")).render(
     <Button onPress={count("more")}>更多</Button>
     <Button aria-label="关闭" onPress={count("close")}>×</Button>
     <Button isDisabled onPress={count("disabled")}>不可用</Button>
+    <button type="button" onClick={() => showLinkActions("https://example.com/a")}>链接</button>
   </main>,
 );
