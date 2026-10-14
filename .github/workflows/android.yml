@@ -404,7 +404,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-          # Full history: the version check compares this push with the commit main was at before it.
+          # Full history: the version check compares this build with the last published one.
           fetch-depth: 0
       - name: Download the signed release from this run
         env:
@@ -434,14 +434,19 @@ jobs:
           if-no-files-found: error
           # Publish release reads it by run id; published builds also live on their Release.
           retention-days: 30
-      # The PR check cannot see a version another PR merged after it ran, so a push that changes what ships
+      # The PR check cannot see a version another PR merged after it ran, so a build that changes what ships
       # in the APK must itself raise the APK version; otherwise the publisher below would skip it silently as
-      # "already published". A manual run has no previous commit to compare with and relies on that skip.
-      - name: Require an app version bump for this push
-        if: ${{ github.event_name == 'push' }}
+      # "already published". Compare with the commit the test channel last published (only an app publish
+      # moves the `dev` tag), so a push whose run was dropped from the queue, or a manual run, is still
+      # checked against everything since the last published build.
+      - name: Require an app version bump since the last published build
         env:
-          PUSH_BEFORE: ${{ github.event.before }}
-        run: python3 scripts/ci/version_bump.py --push --base "$PUSH_BEFORE" --head "$GITHUB_SHA" --only app
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # --push falls back to the merge base or the first parent when the tag is missing or off this history.
+          base="$(gh api "repos/$GH_REPO/git/ref/tags/dev" --jq .object.sha 2>/dev/null || true)"
+          python3 scripts/ci/version_bump.py --push --base "$base" --head "$GITHUB_SHA" --only app
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}
