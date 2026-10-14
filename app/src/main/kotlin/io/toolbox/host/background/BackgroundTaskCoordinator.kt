@@ -100,6 +100,8 @@ class BackgroundTaskCoordinator(
         )
     }
 
+    suspend fun clearNotifications(toolId: String) = notifications.cancelTool(toolId)
+
     private suspend fun cancelBackgroundWork(toolId: String) {
         completeBackgroundCancellation(
             { withContext(Dispatchers.IO) { workManager.cancelAllWorkByTag(toolTag(toolId)).result.get() } },

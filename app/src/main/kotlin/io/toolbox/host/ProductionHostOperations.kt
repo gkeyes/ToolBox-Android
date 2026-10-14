@@ -368,6 +368,8 @@ internal class ProductionHostBackgroundOperations(
         )
     }
 
+    override suspend fun clearNotifications(toolId: String) = delegate.clearNotifications(toolId)
+
     override suspend fun onCapabilityDisabled(toolId: String, capability: String) {
         if (capability == "storage") awaitRuntimeStandardStorageIdle(toolId)
         if (capability == "storage.secure") {

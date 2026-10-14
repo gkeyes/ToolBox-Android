@@ -27,6 +27,8 @@ internal class BackgroundHostOperations(
 
     override suspend fun cancelAll(toolIds: Collection<String>) = coordinator.cancelAll(toolIds)
 
+    override suspend fun clearNotifications(toolId: String) = coordinator.clearNotifications(toolId)
+
     override suspend fun onCapabilityDisabled(toolId: String, capability: String) =
         coordinator.revokeCapability(toolId, capability)
 }
