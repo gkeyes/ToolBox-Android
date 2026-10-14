@@ -191,7 +191,9 @@ internal class RuntimeLocationWatchService(
             val watches = watchesByTool[toolId] ?: return@forEach
             watches.filterValues { !it.allowBackground && it.paused }.forEach { (watchId, watch) ->
                 val manager = locationManager
-                val requested = manager != null && runCatching {
+                // The location permission can be revoked while paused (the process usually dies then); any failure
+                // drops the watch.
+                val requested = manager != null && try {
                     manager.requestLocationUpdates(
                         watch.provider,
                         watch.intervalMillis,
@@ -199,7 +201,12 @@ internal class RuntimeLocationWatchService(
                         appContext.mainExecutor,
                         watch.listener,
                     )
-                }.isSuccess
+                    true
+                } catch (_: SecurityException) {
+                    false
+                } catch (_: RuntimeException) {
+                    false
+                }
                 if (requested) {
                     watch.paused = false
                 } else {
