@@ -2,13 +2,17 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-// Copies the pressed row for the lifted preview: no ids or data hooks, so app
-// code that looks rows up by attribute never finds the copy.
+// Attributes app code uses to find rows or press targets. The copy keeps
+// presentation attributes (data-read, data-active, ...) so it looks the same.
+const LOOKUP_ATTRIBUTES = ["data-article-id", "data-react-aria-pressable", "data-nextflux-press", "data-shared-article-title", "data-reading-local-anchor"];
+
+// Copies the pressed row for the lifted preview without ids or lookup hooks,
+// so app code that looks rows up by attribute never finds the copy.
 function liftedCopy(anchor) {
   const copy = anchor.cloneNode(true);
   for (const node of [copy, ...copy.querySelectorAll("*")]) {
     for (const { name } of [...node.attributes]) {
-      if (name === "id" || name.startsWith("data-") || name.startsWith("aria-")) node.removeAttribute(name);
+      if (name === "id" || name.startsWith("aria-") || LOOKUP_ATTRIBUTES.includes(name)) node.removeAttribute(name);
     }
   }
   return copy;

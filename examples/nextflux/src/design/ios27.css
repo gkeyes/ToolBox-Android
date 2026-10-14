@@ -665,5 +665,10 @@ html .nextflux-modal-surface.nextflux-floating-sheet {
   inline-size: calc(100% - 16px);
   margin-inline: auto;
   margin-block-end: calc(8px + env(safe-area-inset-bottom, 0px));
+  max-block-size: calc(var(--visual-viewport-height, 100dvh) - 2rem - 8px - env(safe-area-inset-bottom, 0px));
   border-radius: 38px;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .nextflux-context-scrim { background: rgb(0 0 0 / 0.32); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  html .nextflux-modal-surface.nextflux-floating-sheet { background: var(--nf-sheet-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
