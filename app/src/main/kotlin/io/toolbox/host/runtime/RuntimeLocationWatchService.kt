@@ -139,8 +139,8 @@ internal class RuntimeLocationWatchService(
             ),
         )
         if (!emitted) {
-            removeWatch(toolId, watchId)
             setRecoveryStatus(toolId, "定位事件积压，已停止该监听，请重新开启。")
+            removeWatch(toolId, watchId)
         }
     }
 

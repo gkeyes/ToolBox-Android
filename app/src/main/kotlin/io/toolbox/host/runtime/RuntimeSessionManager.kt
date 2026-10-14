@@ -94,7 +94,11 @@ internal class RuntimeSessionManager(
         appContext = appContext,
         grantsFor = { toolId -> repositories.grants.observeGrants(toolId).first().associate { it.capability to it.granted } },
         hostFor = { toolId -> hosts[toolId] },
-        isForeground = { toolId -> toolId in visibleTools && hosts[toolId]?.state == RuntimeHostState.ATTACHED },
+        isForeground = { toolId ->
+            val host = hosts[toolId]
+            hostActivityResumed && toolId in visibleTools && host != null && host.state == RuntimeHostState.ATTACHED &&
+                host.webView.isAttachedToWindow && host.webView.isShown && host.webView.hasWindowFocus()
+        },
         ensureCurrentRuntime = ::ensureCurrentRuntime,
         hasBackgroundSession = { toolId -> !sessionsByTool[toolId].isNullOrEmpty() },
         setRecoveryStatus = { toolId, status -> recoveryStatus[toolId] = status },
