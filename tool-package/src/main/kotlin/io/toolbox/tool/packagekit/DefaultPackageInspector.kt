@@ -18,6 +18,8 @@ internal class DefaultPackageInspector(
     private val temporaryRoot: Path,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
+    /** When set, a manifest for a newer host is refused as UNSUPPORTED_HOST_VERSION before strict validation. */
+    private val hostVersion: String? = null,
 ) : ToolPackageInspector {
     override suspend fun validate(input: PackageInput): PackageValidationResult = withContext(ioDispatcher) {
         when (val result = prepare(input)) {
@@ -69,6 +71,13 @@ internal class DefaultPackageInspector(
                 reject(PackageRejectionCode.INSUFFICIENT_RESOURCES, "manifest.json exceeds available memory")
             }
             val manifestBytes = Files.readAllBytes(manifestPath)
+            if (hostVersion != null) {
+                ManifestValidator.declaredMinHostVersion(manifestBytes)?.let { required ->
+                    if (!HostVersionPolicy.supports(hostVersion, required)) {
+                        reject(PackageRejectionCode.UNSUPPORTED_HOST_VERSION, "Package requires ToolBox $required or newer")
+                    }
+                }
+            }
             val manifest = try {
                 ManifestValidator.parse(manifestBytes)
             } catch (error: JsonFormatException) {

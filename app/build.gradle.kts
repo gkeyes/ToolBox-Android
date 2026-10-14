@@ -106,8 +106,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 79
-        versionName = "0.13.4"
+        versionCode = 86
+        versionName = "0.13.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // In-app updates read this repository's releases and compare against the CI run that built the APK.
         buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")
@@ -127,9 +127,8 @@ android {
         }
 
     buildTypes {
-        debug {
-            stableSigningConfig?.let { signingConfig = it }
-        }
+        // Debug keeps the default debug key: a debuggable build signed with the stable key could
+        // replace a user's release install and expose its tool data over adb.
         release {
             isDebuggable = false
             isMinifyEnabled = true

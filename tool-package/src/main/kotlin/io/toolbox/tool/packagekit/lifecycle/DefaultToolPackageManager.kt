@@ -48,6 +48,7 @@ internal class DefaultToolPackageManager(
     private val storage = LifecycleStorage(filesRoot, resourceProbe)
     private val inspector = DefaultPackageInspector(
         filesRoot.resolve("miniapps/.imports"), ioDispatcher = ioDispatcher, resourceProbe = resourceProbe,
+        hostVersion = hostVersion,
     )
     private val pendingConfirmations = mutableMapOf<String, PendingVersionConfirmation>()
 
