@@ -88,10 +88,14 @@ jobs:
           set -euo pipefail
           # The test channel's packages, checked against the digests GitHub recorded when they were uploaded.
           mkdir -p tbx-sources/dev
-          gh release download dev --pattern '*.tbx' -D tbx-sources/dev
           gh api "repos/$GH_REPO/releases/tags/dev" \
             --jq '.assets[] | select(.name | endswith(".tbx")) | "\((.digest // "") | ltrimstr("sha256:"))  \(.name)"' \
             > tbx-sources/dev/SHA256SUMS.txt
+          # A dev release with no packages yet is an empty source (the reused release can still supply them);
+          # `gh release download` would fail with "no assets match" instead.
+          if [ -s tbx-sources/dev/SHA256SUMS.txt ]; then
+            gh release download dev --pattern '*.tbx' -D tbx-sources/dev
+          fi
           if [ -n "$REUSE" ]; then
             mkdir -p tbx-sources/reused
             gh release download "$REUSE" --pattern '*.tbx' -D tbx-sources/reused
