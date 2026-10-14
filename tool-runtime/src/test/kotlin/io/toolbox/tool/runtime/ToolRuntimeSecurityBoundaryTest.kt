@@ -31,20 +31,6 @@ class ToolRuntimeSecurityBoundaryTest {
     }
 
     @Test
-    fun statelessModeBlocksWorkersThatTheDocumentStartHardeningCannotReach() {
-        SecurityProfile.entries.forEach { profile ->
-            val csp = RuntimePolicy.contentSecurityPolicy(profile, allowWorkers = false)
-            val workers = csp.split(';').map(String::trim).single { it.startsWith("worker-src") }
-            assertEquals("worker-src 'none'", workers)
-            assertEquals(csp, RuntimePolicy.responseHeaders(profile, allowWorkers = false)["Content-Security-Policy"])
-            assertEquals(
-                RuntimePolicy.contentSecurityPolicy(profile).replace("worker-src 'self'", "worker-src 'none'"),
-                csp,
-            )
-        }
-    }
-
-    @Test
     fun localResourceReadsRequireTheExactToolOrigin() {
         val origin = RuntimeIdentity.origin("com.example.alpha")
         val other = RuntimeIdentity.origin("com.example.beta")

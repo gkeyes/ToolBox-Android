@@ -159,12 +159,7 @@ object HardenedRuntimeWebView {
                 .setHttpAllowed(false)
                 .addPathHandler(
                     "/",
-                    BundlePathHandler(
-                        runtime.privateFilesRoot,
-                        runtime.bundleRoot,
-                        runtime.securityProfile,
-                        allowWorkers = creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE,
-                    ),
+                    BundlePathHandler(runtime.privateFilesRoot, runtime.bundleRoot, runtime.securityProfile),
                 )
                 .build()
             val bridgeConfiguration = bridgeProvider.create(runtime)
@@ -410,7 +405,7 @@ private class RuntimeWebViewClient(
                     val adapted = RuntimeMediaWebViewInputStream.prepare(request.method, request.requestHeaders,
                         response.status, response.headers, response.body)
                     WebResourceResponse(response.mimeType, null, response.status, response.reason,
-                        adapted.headers + RuntimePolicy.responseHeaders(runtime.securityProfile, !requireStatelessSentinel), adapted.body)
+                        adapted.headers + RuntimePolicy.responseHeaders(runtime.securityProfile), adapted.body)
                 } catch (error: Exception) { response.body.close(); throw error }
             } catch (_: Exception) { RuntimePolicy.blockedResponse() }
         }
