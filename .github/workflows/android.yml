@@ -404,6 +404,8 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          # Full history: the version check compares this push with the commit main was at before it.
+          fetch-depth: 0
       - name: Download the signed release from this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -432,6 +434,14 @@ jobs:
           if-no-files-found: error
           # Publish release reads it by run id; published builds also live on their Release.
           retention-days: 30
+      # The PR check cannot see a version another PR merged after it ran, so a push that changes what ships
+      # in the APK must itself raise the APK version; otherwise the publisher below would skip it silently as
+      # "already published". A manual run has no previous commit to compare with and relies on that skip.
+      - name: Require an app version bump for this push
+        if: ${{ github.event_name == 'push' }}
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: python3 scripts/ci/version_bump.py --push --base "$PUSH_BEFORE" --head "$GITHUB_SHA" --only app
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}

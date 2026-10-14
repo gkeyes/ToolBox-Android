@@ -6,11 +6,11 @@
 
 | 工作流 | 触发 | 内容 |
 | --- | --- | --- |
-| `android.yml` | 推送到 `main`、PR、手动 | 接口契约检查、浏览器脚本测试、Lint、Debug/Release 构建、全部 JVM 单元测试；PR 没有改到 Gradle 编译或打包的内容（只改 CI 脚本、文档或版本号）时跳过构建和 JVM 测试（`scripts/ci/pr_scope.py`）。手动运行可开启模拟器行为测试，也可以用 `android_test_filter` 只跑指定的类（`模块=完整类名#方法`，逗号分隔，模块为 `app`、`tool-runtime` 或 `core-data`，省略时为 `app`）。推送到 `main` 时另用正式签名构建 Release 并在模拟器上冷启动验证，与上面的检查同时进行；两者都通过后才上传并更新滚动预发布 `dev`（应用内“测试版”渠道）。推送到 `main` 的运行不会被后来的合并取消，连续合并时只有尚在排队的旧运行会被最新的一次取代。 |
-| `tbx.yml` | 示例、SDK 或运行时变更，手动 | 按 `scripts/ci/tbx-targets.json` 选出受影响的工具，运行各自测试并打包 `.tbx`；在 `main` 上通过的包会同步到预发布 `dev`。 |
+| `android.yml` | 推送到 `main`、PR、手动 | 接口契约检查、浏览器脚本测试、Lint、Debug/Release 构建、全部 JVM 单元测试；PR 没有改到 Gradle 编译或打包的内容（只改 CI 脚本、文档或版本号）时跳过构建和 JVM 测试（`scripts/ci/pr_scope.py`）。手动运行可开启模拟器行为测试，也可以用 `android_test_filter` 只跑指定的类（`模块=完整类名#方法`，逗号分隔，模块为 `app`、`tool-runtime` 或 `core-data`，省略时为 `app`）。推送到 `main` 时另用正式签名构建 Release 并在模拟器上冷启动验证，与上面的检查同时进行；两者都通过后才上传并更新滚动预发布 `dev`（应用内“测试版”渠道）；推送带来的改动会打进 APK 却没有提高宿主版本号时（例如两个 PR 先后合并成同一个版本号），发布前的版本检查失败，不更新 `dev`。推送到 `main` 的运行不会被后来的合并取消，连续合并时只有尚在排队的旧运行会被最新的一次取代。 |
+| `tbx.yml` | 示例、SDK 或运行时变更，手动 | 先跑 `scripts/tests` 下的 Python 脚本测试（只改 `tbx.yml` 或 `tbx.py` 的 PR 不触发 `android.yml`，这些守护测试在这里也会运行），再按 `scripts/ci/tbx-targets.json` 选出受影响的工具，运行各自测试并打包 `.tbx`。需要先构建的工具（`npm: true`）改了 `package.json` 或 `package-lock.json` 时跑该工具的全部测试。在 `main` 上通过的包会同步到预发布 `dev`：每个成功的打包任务都必须交出自己的 `.tbx`，下载不到即失败；推送改了某个工具会发布的文件却没提高它的版本号时，这个工具不发布（其它工具照常发布），任务最后失败。 |
 | `version-bump.yml` | 所有 PR | 按下文「版本号」的规则检查：改动了会打进 APK 或某个小工具 `.tbx` 的文件，却没有提高对应的版本号时失败，并在日志里写明要改哪个文件、改成多少。 |
 | `webview-debugging.yml` | 相关文件的 PR，手动 | 在用户版系统镜像上验证 Debug / Release 的 WebView 调试状态。镜像自带 WebView 的已知原生崩溃（`scripts/ci/webview-debugging-connected.sh` 里写明的特征）会让这项测试重跑一次，其它失败不重跑。 `app/build.gradle.kts` 只改版本号时跳过。 |
-| `release.yml` | 手动 | 取一次成功的 Android CI 签名产物，可沿用上一版的 `.tbx`，发布 GitHub Release。 |
+| `release.yml` | 手动 | 取一次成功的 Android CI 签名产物发布 GitHub Release 并设为最新正式版。新标签必须按版本号严格高于当前的 `releases/latest`。每个登记的小工具都按该次构建所在提交里清单的版本附上 `.tbx`：先从 `dev` 取（按 GitHub 记录的 SHA-256 校验），`dev` 已经换成更新版本时再从 `reuse_tbx_from` 指定的旧版 Release 取（按它的 `SHA256SUMS.txt` 校验）；包内清单的 ID 和版本也要一致，哪个工具找不到对应版本就整个发布失败，不会带上旧包（`scripts/ci/stable_release.py`）。 |
 
 编译、JVM 单测和 TBX 打包通过，不等于设备运行通过。
 
@@ -31,6 +31,8 @@ PR 改动了会发布出去的内容，就要在同一个 PR 里提高版本号�
 - 只改测试、文档、CHANGELOG、CI 工作流或仓库脚本时不需要改版本号。
 
 检查分不出修复和新功能，只要求两个版本号都高于目标分支；该提哪一段由提交者按上面的规则决定。
+
+PR 检查看不到它运行之后别的 PR 合并进来的版本号，所以推送到 `main` 时发布前会再查一次（`version_bump.py --push`，与推送前的 `main` 比较）：APK 在 `android.yml` 的发布任务里查，小工具在 `tbx.yml` 的发布任务里逐个查。新建分支（推送前为全零）或强制推送后旧提交已不在历史里时，改为与推送前后两者的共同祖先比较，再不行就只与该提交的第一个父提交比较。手动运行没有推送前的提交，不做这项检查。
 
 ## 发布与更新渠道
 

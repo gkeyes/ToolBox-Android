@@ -231,12 +231,14 @@ def regression_problem(label, version_file, base, head):
     return None
 
 
-def check(changed, read_base, read_head, read_fork=None):
+def check(changed, read_base, read_head, read_fork=None, only=None):
     """Returns (problems, notes). read_base/read_head map a repository path to its text, or None if absent.
 
     read_fork reads the commit the PR branched from. A version the PR did not touch is compared with
     that commit, so a bump that landed on the base branch meanwhile does not fail a PR that never
     changed that app or tool; merging the base branch in brings the bump along.
+
+    only, when given, limits the problems to those packages ("app" or a tool directory name).
     """
     read_fork = read_fork or read_base
     base_registry = json.loads(read_base(REGISTRY) or "{}")
@@ -247,7 +249,7 @@ def check(changed, read_base, read_head, read_fork=None):
 
     base_app, head_app = app_version(read_base(APP_BUILD)), app_version(read_head(APP_BUILD))
     fork_app = app_version(read_fork(APP_BUILD))
-    if base_app and head_app:
+    if base_app and head_app and (only is None or "app" in only):
         problem = (bump_problem("ToolBox app (APK)", APP_BUILD, base_app, head_app, shipped["app"], "app")
                    if "app" in shipped else
                    fork_app and regression_problem("ToolBox app (APK)", APP_BUILD, fork_app, head_app))
@@ -255,6 +257,8 @@ def check(changed, read_base, read_head, read_fork=None):
             problems.append(problem)
 
     for name in sorted(set(base_registry) & set(head_registry)):
+        if only is not None and name not in only:
+            continue
         base_path = f"examples/{name}/{base_registry[name].get('manifest', 'manifest.json')}"
         head_path = f"examples/{name}/{head_registry[name].get('manifest', 'manifest.json')}"
         base_tool, head_tool = tool_version(read_base(base_path)), tool_version(read_head(head_path))
@@ -280,19 +284,67 @@ def reader(revision):
     return read
 
 
+ZERO_SHA = "0" * 40
+
+
+def push_base(before, head, run_git):
+    """(commit to compare a push with, or None when there is nothing to compare; notice or None).
+
+    before is the push event's `before`: all zeros when the push created the branch, and possibly missing
+    or not an ancestor of head after a force push. Those cases fall back to what can still be compared (the
+    merge base of before and head, else head's first parent) instead of skipping the check.
+    run_git(*arguments) returns (returncode, stdout).
+    """
+    def resolve(revision):
+        code, out = run_git("rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
+        return out.strip() if code == 0 and out.strip() else None
+
+    known = before and before != ZERO_SHA and resolve(before)
+    if known:
+        if run_git("merge-base", "--is-ancestor", known, head)[0] == 0:
+            return known, None
+        code, out = run_git("merge-base", known, head)
+        if code == 0 and out.strip():
+            return out.strip(), f"{before[:7]} is not an ancestor of {head[:7]} (force push); comparing with their merge base"
+    reason = ("the push created the branch" if not before or before == ZERO_SHA else
+              f"{before[:7]} is not available or shares no history with {head[:7]}")
+    parent = resolve(f"{head}^")
+    if parent:
+        return parent, f"{reason}; comparing with {head[:7]}'s first parent only"
+    return None, f"{reason}, and {head[:7]} has no parent; nothing to compare"
+
+
+def run_git(*arguments):
+    result = subprocess.run(["git", *arguments], cwd=ROOT, capture_output=True)
+    return result.returncode, result.stdout.decode("utf-8", "replace")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--base", required=True, help="Base branch commit (the PR's target)")
     parser.add_argument("--head", required=True, help="PR head commit")
     parser.add_argument("--quiet", action="store_true", help="Print only problems")
+    parser.add_argument("--push", action="store_true",
+                        help="--base is a push event's `before` (all zeros for a new branch, possibly gone after a "
+                             "force push); see push_base()")
+    parser.add_argument("--only", action="append", metavar="PACKAGE",
+                        help="Report problems only for this package: app or a tool directory name (repeatable)")
     args = parser.parse_args(argv)
+    if args.push:
+        args.base, notice = push_base(args.base, args.head, run_git)
+        if notice:
+            print(f"Version check: {notice}.")
+        if args.base is None:
+            print("Version check passed.")
+            return 0
     try:
         # Paths this PR changed since it branched (three dots); versions are compared with the base
         # branch itself, so a PR must also be above a bump that landed on main meanwhile.
         changed = [path for path in git("diff", "--name-only", "-z", "--no-renames", f"{args.base}...{args.head}", "--")
                    .decode("utf-8").split("\0") if path]
         fork = git("merge-base", args.base, args.head).decode("utf-8").strip()
-        problems, notes = check(changed, reader(args.base), reader(args.head), reader(fork))
+        problems, notes = check(changed, reader(args.base), reader(args.head), reader(fork),
+                                only=set(args.only) if args.only else None)
     except (ValueError, subprocess.CalledProcessError) as failure:
         detail = getattr(failure, "stderr", b"") or b""
         print(f"Version check could not run: {failure} {detail.decode('utf-8', 'replace')}".strip(), file=sys.stderr)

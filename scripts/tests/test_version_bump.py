@@ -43,6 +43,27 @@ def run(changed, base=None, head=None):
     return version_bump.check(changed, base.get, head.get)
 
 
+class FakeGit:
+    """Answers the git commands push_base runs from a small commit graph."""
+
+    def __init__(self, commits, ancestors, parents, merge_bases=None):
+        self.commits, self.ancestors, self.parents = commits, ancestors, parents
+        self.merge_bases = merge_bases or {}
+
+    def __call__(self, *arguments):
+        if arguments[:3] == ("rev-parse", "--verify", "--quiet"):
+            revision = arguments[3].removesuffix("^{commit}")
+            if revision.endswith("^"):
+                revision = self.parents.get(revision[:-1])
+            return (0, revision + "\n") if revision in self.commits else (1, "")
+        if arguments[:2] == ("merge-base", "--is-ancestor"):
+            return (0, "") if tuple(arguments[2:]) in self.ancestors else (1, "")
+        if arguments[0] == "merge-base":
+            found = self.merge_bases.get(tuple(arguments[1:]))
+            return (0, found + "\n") if found else (1, "")
+        raise AssertionError(arguments)
+
+
 class VersionBumpTest(unittest.TestCase):
     def assertNeeds(self, changed, label, head=None):
         problems, _ = run(changed, head=head)
@@ -192,6 +213,35 @@ class VersionBumpTest(unittest.TestCase):
                 self.assertFalse({path for path in shipped if path.startswith(("test/", "tests/"))})
                 for expected in set(config.get("expected_files", [])) - {"integrity.json"}:
                     self.assertIn(expected, shipped)
+
+    def test_only_limits_problems_to_the_named_packages(self):
+        changed = ["app/src/main/kotlin/io/toolbox/host/MainActivity.kt", "examples/game-2048/game.js"]
+        problems, _ = version_bump.check(changed, tree().get, tree().get, only={"app"})
+        self.assertEqual(["ToolBox app (APK)"], [problem.split(":")[0] for problem in problems])
+        problems, _ = version_bump.check(changed, tree().get, tree().get, only={"game-2048"})
+        self.assertEqual(["Mini-tool game-2048"], [problem.split(":")[0] for problem in problems])
+        problems, _ = version_bump.check(changed, tree().get, tree().get, only={"nextflux"})
+        self.assertEqual([], problems)
+
+    def test_push_base_compares_a_normal_push_with_before(self):
+        git = FakeGit(commits={"b" * 40, "h" * 40, "p" * 40}, ancestors={("b" * 40, "h" * 40)}, parents={"h" * 40: "p" * 40})
+        self.assertEqual(("b" * 40, None), version_bump.push_base("b" * 40, "h" * 40, git))
+
+    def test_push_base_falls_back_for_a_new_branch_or_a_force_push(self):
+        head, parent, gone, rewritten, fork = "h" * 40, "p" * 40, "g" * 40, "r" * 40, "f" * 40
+        git = FakeGit(commits={head, parent, rewritten, fork}, ancestors=set(), parents={head: parent},
+                      merge_bases={(rewritten, head): fork})
+        base, notice = version_bump.push_base(version_bump.ZERO_SHA, head, git)
+        self.assertEqual(parent, base)
+        self.assertIn("created the branch", notice)
+        base, notice = version_bump.push_base(gone, head, git)
+        self.assertEqual(parent, base)
+        self.assertIn("not available", notice)
+        base, notice = version_bump.push_base(rewritten, head, git)
+        self.assertEqual(fork, base)
+        self.assertIn("force push", notice)
+        root = FakeGit(commits={head}, ancestors=set(), parents={})
+        self.assertIsNone(version_bump.push_base(version_bump.ZERO_SHA, head, root)[0])
 
     def test_reads_modules_from_settings(self):
         modules = version_bump.gradle_modules((ROOT / "settings.gradle.kts").read_text(encoding="utf-8"))

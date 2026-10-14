@@ -29,8 +29,9 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/tests/test_version_bump.py -v
       # Compared with the base branch as it is when the check runs, not as it was when the PR's event
       # fired, so a version another PR merged meanwhile is caught (two PRs both moving to 0.9.0 show no
-      # git conflict). A merge to main after this check ran is not seen; re-run the check, or merge main
-      # into the PR, before merging when main has moved.
+      # git conflict). A merge to main after this check ran is not seen here; re-run the check, or merge main
+      # into the PR, before merging when main has moved. The publish jobs in android.yml and tbx.yml repeat
+      # the check on every push to main (--push) and refuse to publish an unbumped change.
       - name: Require a version bump for shipped changes
         env:
           BASE_REF: ${{ github.base_ref }}

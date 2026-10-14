@@ -46,6 +46,8 @@ val packageBundledExamples = tasks.register<Exec>("packageBundledExamples") {
     bundledExampleNames.forEach { name -> inputs.dir(rootProject.layout.projectDirectory.dir("examples/$name")) }
     inputs.file(tbxTargetsFile)
     inputs.file(rootProject.layout.projectDirectory.file("scripts/package-examples.sh"))
+    // package-examples.sh hands every staged example to the shared packager, so a packager change repackages them.
+    inputs.file(rootProject.layout.projectDirectory.file("scripts/package-tool.py"))
     outputs.dir(bundledExamplesDir)
     // Start from an empty directory so a renamed or un-bundled example's old .tbx is never shipped.
     val outputDirectory = bundledExamplesDir.get().asFile
