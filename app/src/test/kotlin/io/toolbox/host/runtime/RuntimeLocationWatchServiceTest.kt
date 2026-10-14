@@ -24,14 +24,15 @@ class RuntimeLocationWatchServiceTest {
     private val locationManager = app.getSystemService(LocationManager::class.java)
     private var foreground = true
     private var hostLookups = 0
+    private var backgroundSession = false
 
     private val service = RuntimeLocationWatchService(
         appContext = app,
-        grantsFor = { emptyMap() },
+        grantsFor = { mapOf("location" to true, "location.background" to true, "background.runtime" to true) },
         hostFor = { hostLookups++; null },
         isForeground = { foreground },
         ensureCurrentRuntime = { _, _ -> },
-        hasBackgroundSession = { false },
+        hasBackgroundSession = { backgroundSession },
         setRecoveryStatus = { _, _ -> },
         refreshForegroundService = {},
     )
@@ -78,8 +79,53 @@ class RuntimeLocationWatchServiceTest {
         assertEquals(0, service.watchCount(TOOL))
     }
 
-    private fun options() = RuntimeLocationWatchOptions(
-        precise = true, intervalMillis = 1_000L, minDistanceMeters = 0f, allowBackground = false,
+    @Test
+    fun foregroundOnlyWatchStopsWhileTheActivityIsPausedAndResumesWithTheToolShown() {
+        runBlocking { handler.watch(options()) }
+
+        service.onHostActivityResumed(resumed = false, visibleTools = setOf(TOOL))
+        deliver()
+        assertEquals("no updates are requested while paused", 0, hostLookups)
+        assertEquals(1, service.watchCount(TOOL))
+        assertEquals(1, service.pausedWatchCount(TOOL))
+
+        service.onHostActivityResumed(resumed = true, visibleTools = setOf(TOOL))
+        assertEquals(0, service.pausedWatchCount(TOOL))
+        deliver()
+        assertEquals("updates are requested again on resume", 1, hostLookups)
+    }
+
+    @Test
+    fun pausedWatchOfAToolNoLongerShownIsNotRequestedAgain() {
+        runBlocking { handler.watch(options()) }
+        service.onHostActivityResumed(resumed = false, visibleTools = setOf(TOOL))
+        service.onHostActivityResumed(resumed = true, visibleTools = emptySet())
+        deliver()
+        assertEquals(0, hostLookups)
+        assertEquals(1, service.pausedWatchCount(TOOL))
+
+        service.clearForegroundOnlyWatches(TOOL)
+        assertEquals(0, service.watchCount(TOOL))
+    }
+
+    @Test
+    fun backgroundWatchKeepsRunningWhileTheActivityIsPaused() {
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        backgroundSession = true
+        foreground = false
+        val backgroundHandler = service.handler(
+            TOOL, versionCode = 1, declaredCapabilities = setOf("location", "location.background", "background.runtime"),
+        )
+        runBlocking { backgroundHandler.watch(options(allowBackground = true)) }
+
+        service.onHostActivityResumed(resumed = false, visibleTools = emptySet())
+        assertEquals(0, service.pausedWatchCount(TOOL))
+        deliver()
+        assertEquals("the background watch still receives updates", 1, hostLookups)
+    }
+
+    private fun options(allowBackground: Boolean = false) = RuntimeLocationWatchOptions(
+        precise = true, intervalMillis = 1_000L, minDistanceMeters = 0f, allowBackground = allowBackground,
     )
 
     private fun deliver() {

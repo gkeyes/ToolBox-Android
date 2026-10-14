@@ -103,6 +103,9 @@ internal class RuntimeLocationWatchService(
             watchesByTool.getOrPut(toolId, ::linkedMapOf)[watchId] = ActiveLocationWatch(
                 listener = listener,
                 allowBackground = options.allowBackground,
+                provider = provider,
+                intervalMillis = options.intervalMillis,
+                minDistanceMeters = options.minDistanceMeters,
             )
             if (options.allowBackground) refreshForegroundService()
             watchId
@@ -128,6 +131,8 @@ internal class RuntimeLocationWatchService(
         val watch = watchesByTool[toolId]?.get(watchId) ?: return
         // A foreground-only watch started while the tool was shown delivers nothing once it is hidden;
         // otherwise a background session would keep receiving it without location.background.
+        // Its updates are also stopped while the Activity is paused (onHostActivityResumed); this
+        // check stays as the safety net for any update that still arrives.
         if (!watch.allowBackground && !isForeground(toolId)) return
         val emitted = HardenedRuntimeWebView.emitEvent(
             host.webView,
@@ -167,6 +172,48 @@ internal class RuntimeLocationWatchService(
         return candidates.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
     }
 
+    /**
+     * A foreground-only watch can deliver nothing while the host Activity is paused, so its
+     * LocationManager updates are stopped then (no GPS running for nothing) and requested again
+     * when the Activity resumes with its tool still in [visibleTools]. Background watches are untouched.
+     */
+    fun onHostActivityResumed(resumed: Boolean, visibleTools: Set<String>) {
+        if (!resumed) {
+            watchesByTool.values.forEach { watches ->
+                watches.values.filter { !it.allowBackground && !it.paused }.forEach { watch ->
+                    locationManager?.removeUpdates(watch.listener)
+                    watch.paused = true
+                }
+            }
+            return
+        }
+        visibleTools.forEach { toolId ->
+            val watches = watchesByTool[toolId] ?: return@forEach
+            watches.filterValues { !it.allowBackground && it.paused }.forEach { (watchId, watch) ->
+                val manager = locationManager
+                val requested = manager != null && runCatching {
+                    manager.requestLocationUpdates(
+                        watch.provider,
+                        watch.intervalMillis,
+                        watch.minDistanceMeters,
+                        appContext.mainExecutor,
+                        watch.listener,
+                    )
+                }.isSuccess
+                if (requested) {
+                    watch.paused = false
+                } else {
+                    watches.remove(watchId)
+                    setRecoveryStatus(toolId, "定位监听未能恢复，请重新开启。")
+                }
+            }
+            if (watches.isEmpty()) watchesByTool.remove(toolId)
+        }
+    }
+
+    /** Foreground-only watches whose updates are stopped while the host Activity is paused. */
+    fun pausedWatchCount(toolId: String): Int = watchesByTool[toolId]?.values?.count(ActiveLocationWatch::paused) ?: 0
+
     fun clearForegroundOnlyWatches(toolId: String) {
         val watches = watchesByTool[toolId] ?: return
         val foregroundOnly = watches.filterValues { !it.allowBackground }.keys
@@ -186,10 +233,16 @@ internal class RuntimeLocationWatchService(
         refreshForegroundService()
     }
 
-    private data class ActiveLocationWatch(
+    private class ActiveLocationWatch(
         val listener: LocationListener,
         val allowBackground: Boolean,
-    )
+        val provider: String,
+        val intervalMillis: Long,
+        val minDistanceMeters: Float,
+    ) {
+        /** Updates are stopped because the host Activity is paused; only foreground-only watches. */
+        var paused = false
+    }
 
     private companion object {
         const val EVENT_LOCATION_CHANGED = "location.onChanged"
