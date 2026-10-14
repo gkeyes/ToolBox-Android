@@ -625,3 +625,45 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 .card-source-title { min-inline-size: 3em; }
 .card-time-wrapper { min-inline-size: 0; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
+
+/* Long-press menu, iOS style: the page blurs, the pressed row lifts, the menu
+   sits under it with its icons trailing. */
+.nextflux-context-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgb(0 0 0 / 0.08);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  animation: nf-context-fade var(--ds-dur-scrim, 200ms) var(--ds-ease-standard, ease) both;
+}
+.nextflux-context-lift {
+  position: fixed;
+  z-index: 9998;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 22px;
+  background: var(--nf-sheet-card, var(--surface));
+  box-shadow: var(--nf-menu-shadow);
+  transform: scale(1.03);
+  transition: transform 200ms var(--ds-ease-standard, ease);
+}
+.nextflux-context-lift > * { inline-size: 100%; block-size: 100%; margin: 0; }
+@keyframes nf-context-fade { from { opacity: 0; } }
+/* Dropdown menus: label first, icon trailing. */
+.dropdown__popover [role="menuitem"] > svg { order: 2; margin-inline-start: auto; }
+
+/* Form sheets (add / edit feed, title filter, rename) float on glass like the
+   boards: 8px from the edges, every corner round; fields stay on solid cards. */
+html .nextflux-modal-surface.nextflux-floating-sheet {
+  background: var(--nf-menu);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: var(--nf-menu-shadow);
+}
+.drawer__dialog[data-placement="bottom"].nextflux-floating-sheet {
+  inline-size: calc(100% - 16px);
+  margin-inline: auto;
+  margin-block-end: calc(8px + env(safe-area-inset-bottom, 0px));
+  border-radius: 38px;
+}

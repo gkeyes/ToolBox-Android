@@ -54,7 +54,7 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
     e.preventDefault();
     setContextMenu({
       isOpen: true,
-      position: { x: e.clientX, y: e.clientY },
+      position: { x: e.clientX, y: e.clientY, anchor: e.currentTarget },
     });
   };
 

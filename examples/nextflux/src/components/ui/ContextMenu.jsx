@@ -1,9 +1,35 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
+// Copies the pressed row for the lifted preview: no ids or data hooks, so app
+// code that looks rows up by attribute never finds the copy.
+function liftedCopy(anchor) {
+  const copy = anchor.cloneNode(true);
+  for (const node of [copy, ...copy.querySelectorAll("*")]) {
+    for (const { name } of [...node.attributes]) {
+      if (name === "id" || name.startsWith("data-") || name.startsWith("aria-")) node.removeAttribute(name);
+    }
+  }
+  return copy;
+}
+
+// position.anchor (the pressed row) gives the iOS presentation: the page
+// blurs, the row lifts, and the menu sits under it. Without one the menu opens
+// at the pointer.
 const ContextMenu = ({ isOpen, onClose, position, children }) => {
   const menuRef = useRef(null);
+  const liftRef = useRef(null);
+  const anchor = position?.anchor?.isConnected ? position.anchor : null;
+
+  useLayoutEffect(() => {
+    const lift = liftRef.current;
+    if (!isOpen || !anchor || !lift) return;
+    const rect = anchor.getBoundingClientRect();
+    Object.assign(lift.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    lift.replaceChildren(liftedCopy(anchor));
+    return () => lift.replaceChildren();
+  }, [isOpen, anchor]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -46,6 +72,13 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
       const viewportHeight = window.innerHeight;
 
       let { x, y } = position;
+      if (anchor) {
+        // Under the row; above it when there is no room below.
+        const rect = anchor.getBoundingClientRect();
+        x = rect.left + 8;
+        y = rect.bottom + 8;
+        if (y + height > viewportHeight - 10 && rect.top - height - 8 >= 10) y = rect.top - height - 8;
+      }
 
       // Keep a 10px margin from the right and bottom edges
       if (x + width > viewportWidth - 10) {
@@ -62,11 +95,14 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
       menu.style.left = `${x}px`;
       menu.style.top = `${y}px`;
     }
-  }, [isOpen, position]);
+  }, [isOpen, position, anchor]);
 
   if (!isOpen) return null;
 
   return createPortal(
+    <>
+    {anchor && <div className="nextflux-context-scrim" aria-hidden="true" onClick={onClose} />}
+    {anchor && <div ref={liftRef} className="nextflux-context-lift" aria-hidden="true" inert />}
     <div
       ref={menuRef}
       className={cn(
@@ -79,7 +115,8 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
       }}
     >
       {children}
-    </div>,
+    </div>
+    </>,
     document.body,
   );
 };
@@ -102,8 +139,8 @@ const ContextMenuItem = ({ onClick, children, className, startContent }) => {
         className,
       )}
     >
+      <span className="min-w-0 flex-1">{children}</span>
       {startContent}
-      {children}
     </div>
   );
 };
