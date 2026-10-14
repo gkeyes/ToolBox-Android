@@ -46,6 +46,7 @@ import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.PrimaryScreen
 import io.toolbox.host.ui.RuntimeShellPreviewContent
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
 // Full-width travel needs a finer settle threshold than the default 1% to avoid a final jump.
@@ -57,6 +58,21 @@ internal const val PredictiveBackTravel = 1f
 internal const val IosParallax = 0.3f
 internal const val IosDim = 0.12f
 internal val PushShadowElevation = 18.dp
+
+/**
+ * Pushes [route] onto the secondary stack. Only the top page can be a running tool, so opening a
+ * tool (for example from a notification or shortcut while another tool is open) replaces the
+ * tool page already on the stack instead of stacking a second one beneath it.
+ */
+internal fun MutableList<NavKey>.pushSecondary(route: ToolBoxRoute) {
+    if (lastOrNull() == route) return
+    if (route is RuntimeRoute) removeAll { it is RuntimeRoute }
+    add(route)
+}
+
+/** Pages drawn beneath the top: never a tool page, which only renders as the top layer. */
+internal fun retainedSecondaryRoutes(routes: List<ToolBoxRoute>): List<ToolBoxRoute> =
+    routes.filterNot { it is RuntimeRoute }
 
 /** Shared-axis travel, read inside graphics layers (Density receiver). */
 private val androidx.compose.ui.graphics.GraphicsLayerScope.PageShiftPx: Float
@@ -81,9 +97,7 @@ internal fun ToolBoxNavigation(
     val coroutineScope = rememberCoroutineScope()
     val onPickPackage = rememberPackageImportPicker(importViewModel, contentResolver)
 
-    fun navigate(route: ToolBoxRoute) {
-        if (secondaryBackStack.lastOrNull() != route) secondaryBackStack.add(route)
-    }
+    fun navigate(route: ToolBoxRoute) = secondaryBackStack.pushSecondary(route)
 
     fun navigateMain(destination: MainDestination) {
         homeEditing = false
@@ -121,7 +135,7 @@ internal fun ToolBoxNavigation(
             catalogViewModel.state.value.tools.firstOrNull { it.toolId == id }?.name
         }
     }
-    val retainedRoutes = if (runtimeRoute == null) allSecondaryRoutes else allSecondaryRoutes.dropLast(1)
+    val retainedRoutes = retainedSecondaryRoutes(allSecondaryRoutes)
     // Each retained page's push progress (1 = hidden, 0 = shown) is hoisted so the page beneath
     // it can fade out as it fades in (fade-through); two top bars never overlap mid-transition.
     val pageProgress = remember { HashMap<ToolBoxRoute, Animatable<Float, AnimationVector1D>>() }

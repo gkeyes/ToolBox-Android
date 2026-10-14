@@ -92,8 +92,13 @@ internal class RuntimeSessionManager(
     )
     private val locationWatches = RuntimeLocationWatchService(
         appContext = appContext,
-        repositories = repositories,
+        grantsFor = { toolId -> repositories.grants.observeGrants(toolId).first().associate { it.capability to it.granted } },
         hostFor = { toolId -> hosts[toolId] },
+        isForeground = { toolId ->
+            val host = hosts[toolId]
+            hostActivityResumed && toolId in visibleTools && host != null && host.state == RuntimeHostState.ATTACHED &&
+                host.webView.isAttachedToWindow && host.webView.isShown && host.webView.hasWindowFocus()
+        },
         ensureCurrentRuntime = ::ensureCurrentRuntime,
         hasBackgroundSession = { toolId -> !sessionsByTool[toolId].isNullOrEmpty() },
         setRecoveryStatus = { toolId, status -> recoveryStatus[toolId] = status },
@@ -591,6 +596,8 @@ internal class RuntimeSessionManager(
     }
 
     private fun destroyHost(toolId: String) {
+        // Watches belong to the runtime being destroyed; its replacement starts its own.
+        locationWatches.clearAllWatches(toolId)
         hosts.remove(toolId)?.let { host ->
             publishedHosts.value = hosts.toMap()
             host.state = RuntimeHostState.STOPPED

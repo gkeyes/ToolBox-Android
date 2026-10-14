@@ -2,7 +2,7 @@ import { forwardRef, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useStore } from "@nanostores/react";
 import { PhotoProvider } from "react-photo-view";
-import { releaseStuckGallery } from "@/toolbox/galleryRelease.js";
+import { cancelGalleryRelease, releaseStuckGallery } from "@/toolbox/galleryRelease.js";
 import ArticleHeader from "@/components/ArticleView/components/ArticleHeader.jsx";
 import ProgressiveArticle from "@/components/ArticleView/components/ProgressiveArticle.jsx";
 import Attachments from "@/components/ArticleView/components/Attachments.jsx";
@@ -74,7 +74,8 @@ const ArticlePageContent = forwardRef(function ArticlePageContent(
         bannerVisible={!passive}
         onVisibleChange={(visible) => {
           if (!passive) imageGalleryActive.set(visible);
-          if (!visible) releaseStuckGallery();
+          if (visible) cancelGalleryRelease();
+          else releaseStuckGallery(() => imageGalleryActive.get());
         }}
         maskOpacity={0.8}
         loop={false}
