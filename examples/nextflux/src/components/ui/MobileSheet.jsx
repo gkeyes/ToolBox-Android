@@ -127,8 +127,12 @@ export default function MobileSheet({
     return true;
   };
 
+  // Buttons in the title row (back, close) keep their taps; a drag starts
+  // anywhere else in the handle or title row.
+  const startsOnControl = (target) => Boolean(target?.closest?.("button, a, input, [role='button']"));
+
   const onPointerDown = (event) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || startsOnControl(event.target)) return;
     if (startDrag(`p${event.pointerId}`, event.clientY, event.timeStamp)) {
       event.currentTarget.setPointerCapture?.(event.pointerId);
     }
@@ -197,7 +201,7 @@ export default function MobileSheet({
   // move handler must be able to cancel scrolling, which React's passive
   // touch listeners cannot.
   const handlers = useRef({});
-  handlers.current = { startDrag, moveDrag, finishDrag };
+  handlers.current = { startDrag, moveDrag, finishDrag, startsOnControl };
   const [handleZone, setHandleZone] = useState(null);
   const [headerZone, setHeaderZone] = useState(null);
   useEffect(() => {
@@ -206,7 +210,7 @@ export default function MobileSheet({
     let touchId = null;
     const find = (list) => Array.from(list).find((touch) => `t${touch.identifier}` === touchId);
     const onStart = (event) => {
-      if (touchId || event.touches.length !== 1 || hadPointerDownFor(event)) return;
+      if (touchId || event.touches.length !== 1 || hadPointerDownFor(event) || handlers.current.startsOnControl(event.target)) return;
       const touch = event.touches[0];
       if (handlers.current.startDrag(`t${touch.identifier}`, touch.clientY, event.timeStamp)) touchId = `t${touch.identifier}`;
     };
@@ -264,6 +268,11 @@ export default function MobileSheet({
             {!headerEnd && <Drawer.CloseTrigger className="nextflux-close-button sr-only" aria-label={closeLabel} />}
             <Drawer.Header
               ref={setHeaderZone}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={(event) => onPointerEnd(event)}
+              onPointerCancel={(event) => onPointerEnd(event, true)}
+              onLostPointerCapture={(event) => onPointerEnd(event, true)}
               className={cn("nextflux-close-header px-4 pt-0 pb-1 flex flex-row items-center gap-2", headerEnd && "has-header-end", hideHeader && "sr-only")}
             >
               {headerStart}

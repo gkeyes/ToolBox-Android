@@ -164,6 +164,15 @@ for (const width of [393, 820]) {
           fire("touchend", t, []);
         });
         await expect(dialog).toHaveCount(0);
+        // With pointer events, the title row drags it closed too.
+        await page.getByRole("button", { name: trigger, exact: true }).click();
+        await page.waitForTimeout(400);
+        const title = await dialog.locator(".nextflux-close-header [role=heading], .nextflux-close-header h2").first().boundingBox();
+        await page.mouse.move(title.x + 10, title.y + 10);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(title.x + 10, title.y + 10 + i * 30);
+        await page.mouse.up();
+        await expect(dialog).toHaveCount(0);
         continue;
       }
       if (width < 768) {
