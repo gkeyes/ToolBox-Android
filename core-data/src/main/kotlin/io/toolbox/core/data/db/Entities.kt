@@ -155,3 +155,13 @@ internal data class TaskResultEntity(
     val errorCode: String?,
     val attemptCount: Int,
 )
+
+/** A task_results row without its payload; [payloadLength] is in characters, null without a payload. */
+internal data class TaskResultHeader(
+    val taskId: String,
+    val outcome: String,
+    val completedAt: Long,
+    val errorCode: String?,
+    val attemptCount: Int,
+    val payloadLength: Int?,
+)
