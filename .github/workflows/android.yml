@@ -444,8 +444,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # --push falls back to the merge base or the first parent when the tag is missing or off this history.
-          base="$(gh api "repos/$GH_REPO/git/ref/tags/dev" --jq .object.sha 2>/dev/null || true)"
+          # Only a missing tag falls back (to the merge base or first parent, inside --push); any other lookup
+          # failure retries and then stops the publish rather than comparing against too little history.
+          base=""
+          for attempt in 1 2 3; do
+            if base="$(gh api "repos/$GH_REPO/git/ref/tags/dev" --jq .object.sha 2>lookup.err)"; then break; fi
+            base=""
+            if grep -q "HTTP 404" lookup.err; then break; fi
+            [ "$attempt" = 3 ] && { cat lookup.err >&2; echo "Could not read the dev tag; not publishing." >&2; exit 1; }
+            sleep $((attempt * 5))
+          done
           python3 scripts/ci/version_bump.py --push --base "$base" --head "$GITHUB_SHA" --only app
       - name: Publish to the in-app test channel
         env:
