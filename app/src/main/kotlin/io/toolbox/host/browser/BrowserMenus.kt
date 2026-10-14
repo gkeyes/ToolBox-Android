@@ -40,13 +40,28 @@ internal fun BrowserMenuSheet(state: BrowserUiState, actions: BrowserScreenActio
             ToolBoxActionSheetHeader {
                 Spacer(Modifier.height(2.dp))
             }
+            val canInteract = !state.clearing && !state.interaction.unresponsive && !state.interaction.restarting
+            // Forward, share and copy link moved here from the old five-button dock.
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BrowserMenuTile("前进", ToolBoxIconKey.ChevronRight, Modifier.weight(1f), enabled = state.canForward && canInteract) {
+                    state.menu = false
+                    actions.traverseHistory(forward = true)
+                }
+                BrowserMenuTile("分享", ToolBoxIconKey.Share, Modifier.weight(1f), enabled = canInteract) {
+                    state.menu = false
+                    actions.share()
+                }
+                BrowserMenuTile("复制链接", ToolBoxIconKey.Clipboard, Modifier.weight(1f)) {
+                    actions.copyAddress()
+                    state.menu = false
+                }
+            }
             BrowserMenuAction("使用系统浏览器", ToolBoxIconKey.Globe) {
                 state.menu = false
                 actions.openSystemBrowser()
-            }
-            BrowserMenuAction("复制链接", ToolBoxIconKey.Clipboard) {
-                actions.copyAddress()
-                state.menu = false
             }
             BrowserMenuAction(
                 "网站兼容性 · ${state.userAgentMode.shortLabel}",
@@ -552,6 +567,39 @@ private fun BrowserMenuAction(
                 fontWeight = FontWeight.Normal,
                 color = if (destructive && enabled) colors.danger else contentColor,
             ),
+        )
+    }
+}
+
+@Composable
+private fun BrowserMenuTile(
+    label: String,
+    icon: ToolBoxIconKey,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val colors = ToolBoxThemeTokens.colors
+    val tint = if (enabled) colors.textPrimary else ToolBoxThemeTokens.disabledContent
+    val interaction = remember { MutableInteractionSource() }
+    val shape = io.toolbox.core.ui.component.toolBoxShape(ToolBoxThemeTokens.radii.denseSurface)
+    Column(
+        modifier.heightIn(min = 64.dp)
+            .toolBoxPressFeedback(interaction, enabled = enabled, shape = shape)
+            .clip(shape)
+            .background(colors.textSecondary.copy(alpha = 0.08f))
+            .clickable(enabled = enabled, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ToolBoxIcon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = tint)
+        Spacer(Modifier.height(4.dp))
+        ToolBoxText(
+            label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 12.sp, lineHeight = 16.sp, color = tint),
         )
     }
 }

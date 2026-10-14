@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,7 +49,7 @@ import io.toolbox.host.background.LiveNotificationSupportState
 import io.toolbox.host.browser.BrowserBottomBar
 import io.toolbox.host.browser.BrowserFilterController
 import io.toolbox.host.browser.BrowserScreenActions
-import io.toolbox.host.browser.BrowserToolbar
+import io.toolbox.host.browser.BrowserCloseButton
 import io.toolbox.host.browser.BrowserUiState
 import io.toolbox.host.browser.BrowserUserAgentMode
 import io.toolbox.host.catalog.CatalogTool
@@ -345,7 +346,7 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         }
         val filters = androidx.compose.runtime.remember { BrowserFilterController(context, scope) }
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            Box(Modifier.statusBarsPadding()) { BrowserToolbar(state, filters, NoBrowserActions) }
+            Box(Modifier.statusBarsPadding().padding(start = 16.dp, top = 8.dp)) { BrowserCloseButton(NoBrowserActions) }
             Box(Modifier.navigationBarsPadding()) { BrowserBottomBar(state, filters, NoBrowserActions) }
         }
     }
