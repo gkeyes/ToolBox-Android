@@ -54,9 +54,12 @@ internal class BrowserNavigationController(
         return when (BrowserLinkPolicy.classify(url)) {
             BrowserLinkKind.Web -> false
             BrowserLinkKind.External -> {
-                // Only a tap in the top document may ask to leave for another app; frames and scripts
-                // without a user gesture would otherwise queue dialogs without limit.
-                if (request.isForMainFrame && request.hasGesture()) offerExternal(page, url)
+                // Only the top document may ask to leave for another app, one request at a time; frames
+                // would otherwise queue dialogs without limit. Script redirects without a gesture stay
+                // allowed because login and payment pages hand off to apps that way.
+                if (request.isForMainFrame && decisions.none { it.page === page && it.externalTarget != null }) {
+                    offerExternal(page, url)
+                }
                 true
             }
             BrowserLinkKind.Unsupported -> {
