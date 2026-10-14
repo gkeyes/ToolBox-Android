@@ -50,7 +50,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         applyHyperOsGestureNavigationImmersion()
         foregroundCapabilityBroker = ForegroundCapabilityBroker.attach(this)
-        shortcutIntent.value = intent
+        // A recreated activity (rotation, theme switch, resize) or a launch from Recents still
+        // carries the intent that first opened it; replaying it would reopen that tool.
+        if (shouldOpenLaunchIntent(restored = savedInstanceState != null, intentFlags = intent.flags)) {
+            shortcutIntent.value = intent
+        }
 
         val dependenciesViewModel = ViewModelProvider(this)[HostDependenciesViewModel::class.java]
         setContent {
@@ -247,6 +251,10 @@ private fun ComponentActivity.applyLaunchNightMode(mode: ToolBoxThemeMode) {
     }
     getSystemService(android.app.UiModeManager::class.java)?.setApplicationNightMode(nightMode)
 }
+
+/** Whether onCreate should act on its launch intent: only a fresh launch, not a restore or Recents relaunch. */
+internal fun shouldOpenLaunchIntent(restored: Boolean, intentFlags: Int): Boolean =
+    !restored && (intentFlags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
 private fun ThemeMode.toToolBoxThemeMode(): ToolBoxThemeMode = when (this) {
     ThemeMode.SYSTEM -> ToolBoxThemeMode.System
