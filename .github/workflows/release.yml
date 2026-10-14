@@ -29,7 +29,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: publish-release-${{ inputs.tag }}
+  # One group for every tag, so two dispatches can never both pass the latest-release check and move stable backwards.
+  group: publish-release
   cancel-in-progress: false
 
 jobs:
