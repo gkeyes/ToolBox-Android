@@ -156,7 +156,7 @@ fun toolBoxLargeTitleHeight(subtitle: String = ""): Dp {
 }
 
 /** Latin ascender/descender plus a CJK glyph, which uses the taller fallback font metrics. */
-private const val LINE_SAMPLE = "国Ag
+private const val LINE_SAMPLE = "国Ag"
 
 /**
  * Screen top bar (design system v2 scaffold): a fixed 56dp bar holding navigation, actions and
