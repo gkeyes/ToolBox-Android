@@ -2,6 +2,7 @@ package io.toolbox.host.permissions
 
 import android.app.AlarmManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,9 +74,17 @@ internal fun PermissionCenterScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val alarmManager = remember(context) { context.getSystemService(AlarmManager::class.java) }
     var exactAlarmsAllowed by remember { mutableStateOf(runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)) }
+    // Stored grants alone stay ON after the user revokes the Android permission in system settings.
+    var systemGranted by remember { mutableStateOf<(String) -> Boolean>({ true }) }
+    val refreshSystemGranted = {
+        systemGranted = { permission -> context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED }
+    }
     DisposableEffect(lifecycleOwner, alarmManager) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) exactAlarmsAllowed = runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                exactAlarmsAllowed = runCatching { alarmManager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+                refreshSystemGranted()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -116,6 +125,17 @@ internal fun PermissionCenterScreen(
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         viewModel.systemPermissionResult(pendingRequestId, results)
         pendingRequestId = ""
+        refreshSystemGranted()
+    }
+    // Android 11+ denies background location outright unless foreground location is granted first.
+    val foregroundLocationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+        if (results.values.any { it }) {
+            launcher.launch(arrayOf(BACKGROUND_LOCATION_PERMISSION))
+        } else {
+            viewModel.systemPermissionResult(pendingRequestId, mapOf(BACKGROUND_LOCATION_PERMISSION to false))
+            pendingRequestId = ""
+            refreshSystemGranted()
+        }
     }
     LaunchedEffect(viewModel) {
         viewModel.requests.collect { request ->
@@ -133,7 +153,10 @@ internal fun PermissionCenterScreen(
                 }
             } else {
                 pendingRequestId = request.id
-                launcher.launch(request.permissions.toTypedArray())
+                val needsForeground = request.capability == "location.background" &&
+                    FOREGROUND_LOCATION_PERMISSIONS.none { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+                if (needsForeground) foregroundLocationLauncher.launch(FOREGROUND_LOCATION_PERMISSIONS)
+                else launcher.launch(request.permissions.toTypedArray())
             }
         }
     }
@@ -146,6 +169,7 @@ internal fun PermissionCenterScreen(
         onSetEnabled = viewModel::setEnabled,
         onRetryCleanup = viewModel::retryCleanup,
         exactAlarmsAllowed = exactAlarmsAllowed,
+        systemGranted = systemGranted,
         onOpenExactAlarmSettings = openExactAlarmSettings,
         onOpenSystemSettings = {
             context.startActivity(
@@ -164,6 +188,7 @@ internal fun PermissionCenterContent(
     onSetEnabled: (String, Boolean) -> Unit,
     onOpenSystemSettings: () -> Unit,
     exactAlarmsAllowed: Boolean = true,
+    systemGranted: (String) -> Boolean = { true },
     onOpenExactAlarmSettings: () -> Unit = {},
     onRetryCleanup: (String) -> Unit = {},
 ) {
@@ -255,11 +280,14 @@ internal fun PermissionCenterContent(
                             ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2 + groupIndex * 2)) {
                                 items.forEachIndexed { index, item ->
                                     val busy = item.capability in state.busyCapabilities
+                                    val systemOff = item.capability != "alarms" && item.enabled && !item.systemAllowed(systemGranted)
                                     SettingsSwitchRow(
                                         title = item.title,
-                                        summary = if (item.capability == "alarms" && !exactAlarmsAllowed) {
-                                            "${item.reason}\n系统尚未允许闹钟和提醒。"
-                                        } else item.reason,
+                                        summary = when {
+                                            item.capability == "alarms" && !exactAlarmsAllowed -> "${item.reason}\n系统尚未允许闹钟和提醒。"
+                                            systemOff -> "${item.reason}\n系统权限已关闭，工具暂时无法使用。"
+                                            else -> item.reason
+                                        },
                                         checked = item.enabled,
                                         enabled = !busy,
                                         onCheckedChange = { enabled ->
@@ -298,6 +326,13 @@ internal fun PermissionCenterContent(
                                     if (item.capability == "alarms" && item.enabled && !exactAlarmsAllowed) {
                                         ToolBoxTextButton("允许闹钟和提醒", onOpenExactAlarmSettings)
                                     }
+                                    if (systemOff) {
+                                        ToolBoxTextButton(
+                                            "前往系统设置",
+                                            onOpenSystemSettings,
+                                            modifier = Modifier.testTag("permission_system_settings:${item.capability}"),
+                                        )
+                                    }
                                     if (index != items.lastIndex) SettingsRowSeparator()
                                 }
                             }
@@ -312,6 +347,19 @@ internal fun PermissionCenterContent(
             }
         }
     }
+}
+
+private const val BACKGROUND_LOCATION_PERMISSION = "android.permission.ACCESS_BACKGROUND_LOCATION"
+private val FOREGROUND_LOCATION_PERMISSIONS = arrayOf(
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.ACCESS_FINE_LOCATION",
+)
+
+/** Location works with either coarse or fine; every other capability needs all of its Android permissions. */
+internal fun PermissionItem.systemAllowed(granted: (String) -> Boolean): Boolean = when {
+    androidPermissions.isEmpty() -> true
+    capability == "location" -> androidPermissions.any(granted)
+    else -> androidPermissions.all(granted)
 }
 
 private fun List<PermissionItem>.permissionGroups(): List<Pair<String, List<PermissionItem>>> {

@@ -114,9 +114,20 @@ internal fun BackgroundSafeguardsScreen(
         if (granted) backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         else openAppSettings()
     }
+    val openNotificationSettings = {
+        context.openFirstSupported(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            appDetailsIntent(context),
+        )
+    }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { safeguards.refresh() }
+    ) { granted ->
+        safeguards.refresh()
+        // After two denials Android answers false without a dialog; send the user to settings instead.
+        if (!granted) openNotificationSettings()
+    }
 
     BackgroundSafeguardsContent(
         settings = settings,
@@ -135,11 +146,7 @@ internal fun BackgroundSafeguardsScreen(
             if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                context.openFirstSupported(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-                    appDetailsIntent(context),
-                )
+                openNotificationSettings()
             }
         },
         onOpenBackgroundLocation = {
