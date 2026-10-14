@@ -227,8 +227,14 @@ internal class HostBackupService(
             val installed = current.firstOrNull { it.metadata.id == tool.id }?.currentVersion
             var keepInstalled = false
             if (skipped == null && installed != null) {
-                val installedKey = try { InstalledPackageIdentity.signingKey(files, installed, resourceProbe) to false }
-                    catch (_: Exception) { null to true }
+                // Hashing a large installed bundle must stop when the user cancels the restore preview.
+                val installedKey = try {
+                    runInterruptible(Dispatchers.IO) { InstalledPackageIdentity.signingKey(files, installed, resourceProbe) } to false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null to true
+                }
                 when (val identity = restoreIdentity(installed, installedKey.first, installedKey.second, result.signingKeyId, result.manifest.versionCode, result.integrityHash)) {
                     RestoreIdentity.Replace -> Unit
                     RestoreIdentity.KeepInstalled -> {

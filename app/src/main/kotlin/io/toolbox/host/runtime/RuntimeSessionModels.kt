@@ -164,17 +164,25 @@ internal data class StoredAlarm(
     }
 }
 
-/** An alarm that fired while its tool had no loaded page; it is emitted as an `alarm` event on the next load. */
+/**
+ * An alarm that fired while its tool had no loaded page; it is emitted as an `alarm` event on the next load of the
+ * same package version. [versionCode] is the version that scheduled it, so a replacement never receives it.
+ */
 internal data class StoredFiredAlarm(
     val alarm: StoredAlarm,
     val firedAt: Long,
+    val versionCode: Int,
 ) {
     fun toEvent() = alarm.toEvent(firedAt)
 
-    fun toJson(): JSONObject = alarm.toJson().put("firedAt", firedAt)
+    fun toJson(): JSONObject = alarm.toJson().put("firedAt", firedAt).put("versionCode", versionCode)
 
     companion object {
-        fun fromJson(value: JSONObject) = StoredFiredAlarm(StoredAlarm.fromJson(value), value.getLong("firedAt"))
+        fun fromJson(value: JSONObject) = StoredFiredAlarm(
+            StoredAlarm.fromJson(value),
+            value.getLong("firedAt"),
+            value.getInt("versionCode"),
+        )
     }
 }
 

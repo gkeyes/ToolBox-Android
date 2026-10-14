@@ -56,7 +56,7 @@ internal class RuntimeAlarmService(
                 }
                 val alarm = alarmsByTool[toolId]?.remove(alarmId) ?: return@withContext null
                 persistAlarms(toolId)
-                val record = StoredFiredAlarm(alarm, nowMillis())
+                val record = StoredFiredAlarm(alarm, nowMillis(), versionCode)
                 val delivered = hostFor(toolId)?.let { host ->
                     host.versionCode == versionCode && host.mainEntryLoaded &&
                         HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, record.toEvent())
@@ -83,7 +83,8 @@ internal class RuntimeAlarmService(
             val remaining = withContext(Dispatchers.Main.immediate) {
                 if (hostFor(toolId) !== host || !host.mainEntryLoaded) return@withContext fired
                 var open = true
-                fired.filterNot { alarm ->
+                // An alarm queued by another package version (an update raced the receiver) is dropped, not delivered.
+                fired.filter { it.versionCode == host.versionCode }.filterNot { alarm ->
                     open = open && HardenedRuntimeWebView.emitEvent(host.webView, EVENT_ALARM, alarm.toEvent())
                     open
                 }

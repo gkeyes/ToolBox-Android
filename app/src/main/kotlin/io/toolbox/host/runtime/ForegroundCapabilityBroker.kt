@@ -206,11 +206,15 @@ internal class ForegroundCapabilityBroker private constructor(
                 requireForegroundRuntime()
                 // An uninstall disables the id and requestPinShortcut throws for a disabled id; a reinstall
                 // also issues a new token. Re-enable and refresh the existing pinned shortcut first.
-                val existing = manager.pinnedShortcuts.firstOrNull { it.id == route.shortcutId }
-                if (existing != null) {
+                // These ShortcutManager calls can block for seconds on a slow launcher, so they run off the main thread.
+                republished = withContext(Dispatchers.IO) {
+                    val existing = manager.pinnedShortcuts.firstOrNull { it.id == route.shortcutId }
+                        ?: return@withContext false
                     if (!existing.isEnabled) manager.enableShortcuts(listOf(route.shortcutId))
-                    republished = manager.updateShortcuts(listOf(shortcut))
+                    manager.updateShortcuts(listOf(shortcut))
                 }
+                ensureActive()
+                requireForegroundRuntime()
                 manager.requestPinShortcut(shortcut, null)
             }
             return accepted
