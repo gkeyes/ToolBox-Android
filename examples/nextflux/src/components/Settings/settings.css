@@ -256,7 +256,7 @@
   }
   .ds-group-card .nf-segmented .tabs__list { background: color-mix(in srgb, var(--ds-on-surface) 6%, transparent); }
   .nf-segmented .tabs__tab {
-    block-size: 32px;
+    min-block-size: 32px;
     min-inline-size: 44px;
     padding-inline: 12px;
     border-radius: 11px;

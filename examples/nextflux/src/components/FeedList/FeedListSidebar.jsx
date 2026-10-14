@@ -95,8 +95,10 @@ const FeedListSidebar = () => {
                 <span className="ds-title truncate">Nextflux</span>
                 <SyncStatusLine />
               </div>
-              <SyncButton />
-              <AddFeedButton />
+              <div className="article-list-actions sidebar-header-actions flex shrink-0">
+                <SyncButton />
+                <AddFeedButton />
+              </div>
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
