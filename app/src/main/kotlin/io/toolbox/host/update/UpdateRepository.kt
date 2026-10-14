@@ -113,8 +113,10 @@ internal class UpdateRepository(
     }
 
     /** Removes downloaded files that are no longer needed. */
+    /** APKs from the last hour stay: the system installer may still be reading one it was handed. */
     suspend fun clearDownloads() = withContext(Dispatchers.IO) {
-        File(context.cacheDir, UpdateCacheDirectory).listFiles()?.forEach { it.delete() }
+        val cutoff = System.currentTimeMillis() - HandedOffApkGraceMillis
+        File(context.cacheDir, UpdateCacheDirectory).listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
     }
 
     private fun release(path: String): ParsedRelease? {
@@ -172,3 +174,5 @@ internal suspend fun UpdateRepository.launchUpdateHint(catalog: io.toolbox.core.
 } catch (_: Exception) {
     null
 }
+
+private const val HandedOffApkGraceMillis = 60 * 60 * 1000L

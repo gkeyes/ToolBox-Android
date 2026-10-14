@@ -193,6 +193,8 @@ class BrowserActivity : ComponentActivity() {
         val live = state.webView
         if (live != null && !state.interaction.unresponsive) {
             // Keep the page and its back/forward history; only the identity sent with the reload changes.
+            // Stop first: changing the user agent restarts an in-flight load, and the reload below would repeat it.
+            live.stopLoading()
             webViewFactory.applyUserAgent(live)
             state.error = null
             state.loadProgress = 0
