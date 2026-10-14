@@ -147,6 +147,16 @@ internal data class BackgroundTaskEntity(
         ),
     ],
 )
+/** A task_results row without its payload; [payloadLength] is in characters, null without a payload. */
+internal data class TaskResultHeader(
+    val taskId: String,
+    val outcome: String,
+    val completedAt: Long,
+    val errorCode: String?,
+    val attemptCount: Int,
+    val payloadLength: Int?,
+)
+
 internal data class TaskResultEntity(
     @androidx.room.PrimaryKey val taskId: String,
     val outcome: String,
