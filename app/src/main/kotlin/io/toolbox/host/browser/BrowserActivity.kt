@@ -197,7 +197,8 @@ class BrowserActivity : ComponentActivity() {
             state.error = null
             state.loadProgress = 0
             state.interaction = state.interaction.pageStarted()
-            if (validBrowserUrl(live.url.orEmpty()) == null) navigatePage(live, currentAddress) else {
+            // data:, blob: and about:blank documents reload in place too; only a page with no document navigates.
+            if (live.url.isNullOrEmpty()) navigatePage(live, currentAddress) else {
                 prepareNavigation(live, live.url)
                 live.reload()
             }

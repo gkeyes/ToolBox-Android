@@ -45,6 +45,8 @@ internal class BrowserNavigationController(
     )
 
     private var decisions by mutableStateOf<List<Decision>>(emptyList())
+    /** App targets the user declined on the current document; a page timer must not re-ask after every dismissal. */
+    private val declinedExternal = mutableSetOf<String>()
     val hasPrompt get() = decisions.isNotEmpty()
 
     /** Returns false for navigations that the engine should perform without host rewriting. */
@@ -83,7 +85,7 @@ internal class BrowserNavigationController(
             return
         }
         val targetKey = target.toString()
-        if (decisions.any { it.page === page && it.externalTarget == targetKey }) return
+        if (targetKey in declinedExternal || decisions.any { it.page === page && it.externalTarget == targetKey }) return
         decisions = decisions + Decision(
             page, "在其他应用中打开", "网页请求打开 ${target.scheme.orEmpty()} 链接。", "打开应用",
             accept = {
@@ -153,8 +155,12 @@ internal class BrowserNavigationController(
         // A double click on an obsolete dialog must not approve the next queued request.
         if (decisions.firstOrNull() !== decision) return
         decisions = decisions.drop(1)
+        if (!allow) decision.externalTarget?.let(declinedExternal::add)
         if (allow && isCurrentPage(decision.page)) decision.accept() else decision.cancel()
     }
+
+    /** A new main-frame document may ask again for targets declined on the previous one. */
+    fun documentStarted() = declinedExternal.clear()
 
     @Composable
     fun Prompt() {

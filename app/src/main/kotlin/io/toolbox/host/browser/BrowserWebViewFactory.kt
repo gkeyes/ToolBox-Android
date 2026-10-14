@@ -109,6 +109,7 @@ internal class BrowserWebViewFactory(
                     navigation.cancelPage(view)
                 }
                 validBrowserUrl(url)?.let { state.address = it }
+                navigation.documentStarted()
                 filters.navigated(url)
                 state.title = ""
                 state.error = null
