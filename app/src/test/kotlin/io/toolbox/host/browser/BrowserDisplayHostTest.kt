@@ -4,20 +4,41 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class BrowserDisplayHostTest {
+    /** A small stand-in for the public suffix list. */
+    private val suffixes = setOf("com", "net", "uk", "co.uk", "cn", "com.cn", "github.io", "s3.amazonaws.com")
+    private val psl: (String) -> String? = { host ->
+        val labels = host.split('.')
+        (1 until labels.size).firstNotNullOfOrNull { i ->
+            labels.drop(i).joinToString(".").takeIf { it in suffixes }?.let { labels.drop(i - 1).joinToString(".") }
+        }
+    }
+    private fun show(host: String) = browserDisplayHost(host, psl)
+
     @Test fun shortensFromTheLeftButKeepsOneLabelBeforeTheDomain() {
-        assertEquals("newsmth.net", browserDisplayHost("www.newsmth.net"))
-        assertEquals("newsmth.net", browserDisplayHost("m.newsmth.net"))
-        assertEquals("…b.example.com", browserDisplayHost("a.b.example.com"))
-        assertEquals("example.com", browserDisplayHost("example.com"))
-        assertEquals("example.co.uk", browserDisplayHost("www.example.co.uk"))
-        assertEquals("news.example.com.cn", browserDisplayHost("news.example.com.cn"))
-        assertEquals("evil.github.io", browserDisplayHost("evil.github.io"))
+        assertEquals("newsmth.net", show("www.newsmth.net"))
+        assertEquals("newsmth.net", show("m.newsmth.net"))
+        assertEquals("…b.example.com", show("a.b.example.com"))
+        assertEquals("example.com", show("example.com"))
+        assertEquals("example.co.uk", show("www.example.co.uk"))
+        assertEquals("news.example.com.cn", show("news.example.com.cn"))
+        assertEquals("evil.github.io", show("evil.github.io"))
+    }
+
+    @Test fun keepsTheRegistrantOnMultiLabelSuffixes() {
+        assertEquals("signin.attacker.s3.amazonaws.com", show("signin.attacker.s3.amazonaws.com"))
+        assertEquals("…signin.attacker.s3.amazonaws.com", show("a.signin.attacker.s3.amazonaws.com"))
+    }
+
+    @Test fun doesNotShortenWithoutAnAnswerFromTheList() {
+        assertEquals("a.b.c.unknown", browserDisplayHost("a.b.c.unknown") { null })
+        assertEquals("a.b.c.unknown", browserDisplayHost("a.b.c.unknown") { error("no list") })
+        assertEquals("s3.amazonaws.com", show("s3.amazonaws.com"))
     }
 
     @Test fun keepsAddressesAndSingleLabelsAsTheyAre() {
-        assertEquals("192.168.1.10", browserDisplayHost("192.168.1.10"))
-        assertEquals("[::1]", browserDisplayHost("[::1]"))
-        assertEquals("localhost", browserDisplayHost("localhost"))
-        assertEquals("", browserDisplayHost(""))
+        assertEquals("192.168.1.10", show("192.168.1.10"))
+        assertEquals("[::1]", show("[::1]"))
+        assertEquals("localhost", show("localhost"))
+        assertEquals("", show(""))
     }
 }

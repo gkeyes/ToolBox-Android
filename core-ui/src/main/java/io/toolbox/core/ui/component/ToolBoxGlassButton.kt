@@ -31,8 +31,10 @@ fun ToolBoxGlassIconButton(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     iconSize: Dp = 20.dp,
+    enabled: Boolean = true,
 ) {
     val colors = ToolBoxThemeTokens.colors
+    val iconTint = if (enabled) colors.textPrimary else colors.textTertiary
     val live = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
     val described = modifier
         .size(size)
@@ -42,21 +44,22 @@ fun ToolBoxGlassIconButton(
             onClick = onClick,
             backdrop = glassState.backdrop,
             modifier = described,
+            enabled = enabled,
             surfaceColor = ToolBoxThemeTokens.materials.glassTint,
             // A round icon button centres its glyph; the default 16dp text padding would leave
             // only 12dp of a 44dp button for a 20dp icon.
             contentPadding = PaddingValues(0.dp),
         ) {
-            ToolBoxIcon(icon = icon, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(iconSize))
+            ToolBoxIcon(icon = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
         }
     } else {
         Box(
             described
                 .toolBoxSolidGlass(CircleShape)
-                .clickable(role = Role.Button, onClick = onClick),
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            ToolBoxIcon(icon = icon, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(iconSize))
+            ToolBoxIcon(icon = icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(iconSize))
         }
     }
 }

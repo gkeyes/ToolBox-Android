@@ -112,13 +112,14 @@ internal fun UpdateContent(
         title = "软件更新",
         onBack = onBack,
         actions = { glassState ->
-            // Refresh is ignored while a check is already running.
+            // Refresh is disabled while a check is already running.
             ToolBoxGlassIconButton(
                 icon = ToolBoxIconKey.Refresh,
                 contentDescription = "重新检查",
                 onClick = onRefresh,
                 glassState = glassState,
                 modifier = Modifier.testTag("update_refresh"),
+                enabled = !state.loading,
             )
         },
     ) { padding ->
