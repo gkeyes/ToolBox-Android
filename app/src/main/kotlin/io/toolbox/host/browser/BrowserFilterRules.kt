@@ -1,7 +1,6 @@
 package io.toolbox.host.browser
 
 import java.net.IDN
-import java.net.URI
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -68,10 +67,10 @@ object BrowserFilterValidation {
         if (normalized.length > 253 || normalized.split('.').any { it.isEmpty() || it.length > 63 }) null else normalized
     }.getOrNull()
 
-    fun urlHost(value: String): String? = runCatching {
-        val uri = URI(value)
-        if (uri.scheme?.lowercase(Locale.ROOT) !in setOf("http", "https")) null else uri.host?.let(::host)
-    }.getOrNull()
+    /** Page and request hosts may contain underscores, which the STD3 rules used for rule input reject. */
+    fun urlHost(value: String): String? = BrowserWebUrl.host(value)?.let { raw ->
+        if (raw.startsWith('[')) raw else runCatching { IDN.toASCII(raw).lowercase(Locale.ROOT) }.getOrNull()
+    }
 
     /** CSS is emitted into a style sheet, so reject declaration/rule injection before DOM validation. */
     fun selectorAllowed(value: String): Boolean = value.isNotBlank() && value.length <= MAX_SELECTOR_LENGTH &&
