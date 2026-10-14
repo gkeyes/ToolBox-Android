@@ -592,7 +592,8 @@ private fun ToolDetailHero(
                 modifier = Modifier.semantics { contentDescription = "打开工具" },
             )
             DetailCapsule(
-                label = if (favorite) "已收藏" else "收藏",
+                // Fixed label: the state is spoken once, from stateDescription, and shown by the star.
+                label = "收藏",
                 onClick = onToggleFavorite,
                 container = colors.surface,
                 content = if (favorite) colors.warning else colors.textPrimary,
