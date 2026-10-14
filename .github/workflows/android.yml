@@ -100,9 +100,12 @@ jobs:
   verify:
     name: Build APKs and verify host behavior
     needs: [version]
+    # Lint and tests still report when the version job refused the build (nothing is published then).
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     env:
-      # Blank on pull requests: Gradle then uses the version written in app/build.gradle.kts.
+      # Blank on pull requests (and when the version job failed): Gradle then uses the version written in
+      # app/build.gradle.kts.
       TOOLBOX_VERSION_NAME: ${{ needs.version.outputs.name }}
       TOOLBOX_VERSION_CODE: ${{ needs.version.outputs.code }}
     outputs:
