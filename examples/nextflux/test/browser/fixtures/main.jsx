@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PhotoProvider } from "react-photo-view";
 import "react-photo-view/dist/react-photo-view.css";
-import { releaseStuckGallery } from "../../../src/toolbox/galleryRelease.js";
+import { cancelGalleryRelease, releaseStuckGallery } from "../../../src/toolbox/galleryRelease.js";
 import "./style.css";
 import "../../../src/components/ArticleView/ArticleView.css";
 import "../../../src/reading/reading.css";
@@ -83,7 +83,7 @@ function ReadingFixture() {
       <output data-testid="returns">{returns}</output>
       <main id="reading-surface" data-account-epoch={accountEpoch}>
         <p id="selectable-text">Select part of this article without navigating away.</p>
-        <PhotoProvider onVisibleChange={(visible) => { imageGalleryActive.set(visible); if (!visible) releaseStuckGallery(); }}>
+        <PhotoProvider onVisibleChange={(visible) => { imageGalleryActive.set(visible); if (visible) cancelGalleryRelease(); else releaseStuckGallery(() => imageGalleryActive.get()); }}>
           <section className="article-content prose max-w-none" data-testid="image-fixture" data-mounted={String(mounted)}>
             {mounted && <ArticleImage key={generation} imgNode={{ attribs }} />}
             <p data-testid="after-image">The article continues here.</p>
