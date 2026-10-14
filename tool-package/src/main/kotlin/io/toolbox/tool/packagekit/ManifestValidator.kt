@@ -39,12 +39,7 @@ internal object ManifestValidator {
         }
         val network = root["network"]?.let { parseNetwork(it) }
         val categories = root["categories"]?.let(::parseCategories).orEmpty()
-        val ui = root["ui"]?.let(::parseUi) ?: ManifestUi(
-            orientation = null,
-            allowFullscreen = false,
-            statusBarStyle = ManifestStatusBarStyle.AUTO,
-            showHostToolbar = true,
-        )
+        val ui = root["ui"]?.let(::parseUi) ?: ManifestUi()
         return ToolManifest(
             schemaVersion = schemaVersion,
             id = id,
@@ -133,11 +128,13 @@ internal object ManifestValidator {
                 else -> throw JsonFormatException("Invalid ui.statusBarStyle")
             }
         } ?: ManifestStatusBarStyle.AUTO
+        // Deprecated and ignored (the host shows no toolbar over a running tool); still type-checked
+        // and accepted so packages that declare it keep installing and verifying.
+        ui["showHostToolbar"]?.asBoolean("ui.showHostToolbar")
         return ManifestUi(
             orientation = orientation,
             allowFullscreen = ui["allowFullscreen"]?.asBoolean("ui.allowFullscreen") ?: false,
             statusBarStyle = statusBarStyle,
-            showHostToolbar = ui["showHostToolbar"]?.asBoolean("ui.showHostToolbar") ?: true,
         )
     }
 
