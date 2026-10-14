@@ -12,7 +12,7 @@ ToolBox 是 Android 工具宿主。宿主负责本地工具目录、TBX 安装�
 | 网络与后台任务 | 工具授权后的 API | `RuntimeNetworkGateway` → `ToolNetworkProxy`；`BackgroundTaskCoordinator` | OkHttp、WorkManager、Room |
 | 权限、设置和备份 | 设置及工具详情 | `PermissionCenterViewModel`、`SettingsViewModel`、`HostBackupService` | 授权存储、DataStore、本机文档选择器 |
 | 普通网页浏览 | 工具的浏览器能力 | `BrowserLauncher` → `BrowserActivity` | 独立 WebView、站点规则、系统下载器 |
-| 宿主界面 | 上述原生页面 | `core-ui` 的主题 token、按钮、卡片、对话框与动效 | Compose、用户可选的 Miuix / Liquid Glass 外观 |
+| 宿主界面 | 上述原生页面 | `core-ui` 的主题 token、按钮、卡片、对话框与动效 | Compose、统一外观（主题模式与降低透明度设置） |
 
 Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-runtime`、`tool-api` 六个模块。TBX 是独立工具包，不是 Android 模块。`examples/` 中的 12 个工具由 `scripts/ci/tbx-targets.json` 登记；其中仓位计算器、快速笔记、后台任务演示、通知实验室四个在 APK 构建时打包为内置示例，其余工具单独分发。
 
@@ -54,7 +54,7 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 
 ## 版本
 
-当前版本为 ToolBox 0.8.32 / 65，与 NextFlux 1.0.50 / 71 一同发布。版本历史见 [CHANGELOG](CHANGELOG.md)。
+当前版本号以 `app/build.gradle.kts` 的 versionName / versionCode 为准，版本历史见 [CHANGELOG](CHANGELOG.md)。
 
 ## 授权
 

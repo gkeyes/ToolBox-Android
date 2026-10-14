@@ -17,6 +17,41 @@
     "permissions",
     "securityProfile"
   ],
+  "allOf": [
+    {
+      "description": "background.runtime, location.background and alarms require minHostVersion 0.3.0 or newer.",
+      "if": {
+        "required": [
+          "permissions"
+        ],
+        "properties": {
+          "permissions": {
+            "contains": {
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "enum": [
+                    "background.runtime",
+                    "location.background",
+                    "alarms"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "minHostVersion": {
+            "pattern": "^(?:0*[1-9][0-9]*\\.[0-9]+|0+\\.0*(?:[3-9]|[1-9][0-9]+))\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "schemaVersion": {
       "const": 1
@@ -445,12 +480,12 @@
     "relativeHtmlPath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+\\.html$"
+      "pattern": "^(?:(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]{1,255}/)*(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]{0,250}\\.html$"
     },
     "relativeAssetPath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+$"
+      "pattern": "^(?:(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]{1,255}/)*(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]{1,255}$"
     }
   }
 }
