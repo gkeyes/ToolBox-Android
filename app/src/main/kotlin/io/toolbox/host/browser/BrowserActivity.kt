@@ -437,7 +437,7 @@ class BrowserActivity : ComponentActivity() {
             state.clearConfirmation = false
             state.canBack = false
             state.canForward = false
-            state.error = "浏览器网站数据已清除。重新加载后可重新登录。"
+            state.showNotice("浏览器网站数据已清除。重新加载后可重新登录。")
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
             // Includes cookies, IndexedDB, service worker storage and network cache.
@@ -447,7 +447,7 @@ class BrowserActivity : ComponentActivity() {
             CookieManager.getInstance().removeAllCookies {
                 completed.run()
                 if (!isFinishing && !isDestroyed) {
-                    state.error = "网站登录、缓存及常规存储已清除。当前系统 WebView 不支持完整清除，请更新 WebView 后再次清除。"
+                    state.showNotice("网站登录、缓存及常规存储已清除。当前系统 WebView 不支持完整清除，请更新 WebView 后再次清除。")
                 }
             }
         }

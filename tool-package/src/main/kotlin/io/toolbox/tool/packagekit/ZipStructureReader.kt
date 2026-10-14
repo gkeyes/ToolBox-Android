@@ -3,7 +3,6 @@ package io.toolbox.tool.packagekit
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
-import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -95,7 +94,7 @@ internal object ZipStructureReader {
             val externalAttributes = u32(fixed, 38)
             var localOffset = u32(fixed, 42)
             val nameBytes = ByteArray(nameLength).also(file::readFully)
-            val rawName = decodeName(nameBytes, flags and 0x800 != 0)
+            val rawName = decodeName(nameBytes)
             val extra = ByteArray(extraLength).also(file::readFully)
             val zip64 = zip64Extra(extra)
             var position = 0
@@ -151,7 +150,7 @@ internal object ZipStructureReader {
         val nameLength = u16(fixed, 26)
         val extraLength = u16(fixed, 28)
         if (file.filePointer + nameLength + extraLength > file.length()) reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Local ZIP header is truncated")
-        val localName = decodeName(ByteArray(nameLength).also(file::readFully), flags and 0x800 != 0)
+        val localName = decodeName(ByteArray(nameLength).also(file::readFully))
         if (localName != name) reject(PackageRejectionCode.MALFORMED_ARCHIVE, "Local and central entry names disagree")
         val localExtra = ByteArray(extraLength).also(file::readFully)
         val payloadEnd = addExact(file.filePointer, compressed)
@@ -281,8 +280,11 @@ internal object ZipStructureReader {
         reject(PackageRejectionCode.MALFORMED_ARCHIVE, "ZIP end-of-central-directory record is missing")
     }
 
-    private fun decodeName(bytes: ByteArray, utf8: Boolean): String = try {
-        (if (utf8) StandardCharsets.UTF_8 else Charset.forName("CP437")).newDecoder()
+    // ZipArchiveReader's java.util.zip.ZipFile decodes names as UTF-8 whether or not flag 0x800 is set,
+    // so the validated name must be decoded the same way or getEntry misses it (macOS Archive Utility
+    // writes UTF-8 names without the flag). ASCII reads the same in CP437; invalid UTF-8 is PATH_INVALID.
+    private fun decodeName(bytes: ByteArray): String = try {
+        StandardCharsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
             .onUnmappableCharacter(CodingErrorAction.REPORT)
             .decode(ByteBuffer.wrap(bytes)).toString()
