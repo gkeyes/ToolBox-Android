@@ -182,6 +182,11 @@
   .button.nf-set-row .nf-tile svg { inline-size: 18px; block-size: 18px; margin: 0; }
   .button.nf-set-row .nf-set-row-chevron { inline-size: 16px; block-size: 16px; margin: 0; }
 
+  /* iOS grouped action row: centred tinted label in a white card. */
+  .button.nf-set-row.nf-set-action { justify-content: center; text-align: center; }
+  .button.nf-set-row.nf-set-action[data-tone="accent"] { --button-fg: var(--ds-accent); color: var(--ds-accent); }
+  .button.nf-set-row.nf-set-action[data-tone="danger"] { --button-fg: var(--ds-tone-danger-fg); color: var(--ds-tone-danger-fg); }
+
   /* Interactive rows: press scale + state layer. */
   .nf-set-row.is-pressable {
     cursor: var(--cursor-interactive, pointer);
