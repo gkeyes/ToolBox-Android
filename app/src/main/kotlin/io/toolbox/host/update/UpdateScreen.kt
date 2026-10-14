@@ -363,8 +363,8 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
 }
 
 /**
- * Version row: the title always shows in full, and the version with its build number sits in
- * the remaining width as one line that scrolls sideways when it does not fit. The status note
+ * Version row: the title always shows in full, and the version with its build number sits beside
+ * it when it fits, otherwise on its own line that scrolls sideways if still too long. The status note
  * runs under the title across the whole row.
  */
 @Composable
@@ -378,15 +378,25 @@ private fun VersionRow(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val textStyles = ToolBoxThemeTokens.textStyles
-    Column(
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .heightIn(min = if (summary == null) 52.dp else 60.dp)
             .padding(start = 16.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.Center,
+        contentAlignment = Alignment.CenterStart,
     ) {
+    // The version moves to its own line whenever it would not fit beside the title, so the build
+    // number (what tells test builds apart) is never cut mid-glyph; that line still scrolls sideways.
+    val fitsBeside = with(density) {
+        val titleWidth = measurer.measure(title, textStyles.body, maxLines = 1).size.width.toDp()
+        val valueWidth = measurer.measure(value, textStyles.body, maxLines = 1).size.width.toDp()
+        30.dp + 12.dp + titleWidth + 12.dp + valueWidth <= maxWidth
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Center) {
         // Large text on a narrow phone: the version gets its own line so most of it stays visible.
-        val stacked = LocalConfiguration.current.screenWidthDp / LocalDensity.current.fontScale < 260f
+        val stacked = !fitsBeside || LocalConfiguration.current.screenWidthDp / LocalDensity.current.fontScale < 260f
         val valueText = @Composable { modifier: Modifier ->
             ToolBoxText(
                 value,
@@ -415,6 +425,7 @@ private fun VersionRow(
                 style = textStyles.sectionTitle.copy(color = colors.textSecondary),
             )
         }
+    }
     }
 }
 
