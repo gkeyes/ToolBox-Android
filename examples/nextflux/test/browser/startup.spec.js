@@ -163,7 +163,7 @@ for (const [width, scale] of [[300, 1], [320, 1.3], [320, 2], [320, 3], [360, 1]
       return {
         trigger: box('.article-list-header > [data-sidebar="trigger"]'),
         list: box(".article-list-inline-tabs .tabs__list"),
-        actions: box(".article-list-actions"),
+        actions: box(".article-list-header .article-list-actions"),
         clipped: list.scrollWidth > list.clientWidth + 1,
         scrollable: getComputedStyle(list).overflowX === "auto",
         overflow: document.documentElement.scrollWidth > innerWidth + 1,
