@@ -9,7 +9,13 @@ interface PackageInput {
 }
 
 sealed interface PackageValidationResult {
-    data class Valid(val manifest: ToolManifest, val archive: ArchiveSummary) : PackageValidationResult
+    /** [signingKeyId] is null for an unsigned package; [integrityHash] uses the installed catalog digest format. */
+    data class Valid(
+        val manifest: ToolManifest,
+        val archive: ArchiveSummary,
+        val signingKeyId: String? = null,
+        val integrityHash: String? = null,
+    ) : PackageValidationResult
     data class Rejected(val rejection: PackageRejection) : PackageValidationResult
 }
 

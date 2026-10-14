@@ -14,6 +14,19 @@ import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
+/** Host-side read of an installed tool's signing identity, e.g. for a backup-restore preview. */
+object InstalledPackageIdentity {
+    /**
+     * The verified signing key id of the installed bundle, or null when it is unsigned.
+     * Throws when the bundle no longer matches its catalog entry or cannot be read.
+     */
+    fun signingKey(
+        filesRoot: java.io.File,
+        version: ToolVersion,
+        resourceProbe: PackageResourceProbe = FileSystemPackageResourceProbe,
+    ): String? = installedSigningKey(filesRoot.toPath(), version, resourceProbe)
+}
+
 /** Derive continuity from the hash-pinned installed bundle, not from an unverified keyId or trust DB. */
 internal fun installedSigningKey(
     filesRoot: Path,

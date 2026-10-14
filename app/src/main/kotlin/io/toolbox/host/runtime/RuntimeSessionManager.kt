@@ -516,6 +516,14 @@ internal class RuntimeSessionManager(
             stateFlow(toolId).value = current.toUiState()
             restoreReason?.let { reason -> current.emitRestore(reason) }
             refreshForegroundService()
+            // The page can receive events now; replay alarms that fired while the tool was not running.
+            try {
+                alarmService.deliverFired(toolId, current)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Undelivered alarms stay stored and are retried on the next load.
+            }
         }
     }
 

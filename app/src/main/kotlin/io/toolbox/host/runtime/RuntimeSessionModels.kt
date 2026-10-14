@@ -164,6 +164,20 @@ internal data class StoredAlarm(
     }
 }
 
+/** An alarm that fired while its tool had no loaded page; it is emitted as an `alarm` event on the next load. */
+internal data class StoredFiredAlarm(
+    val alarm: StoredAlarm,
+    val firedAt: Long,
+) {
+    fun toEvent() = alarm.toEvent(firedAt)
+
+    fun toJson(): JSONObject = alarm.toJson().put("firedAt", firedAt)
+
+    companion object {
+        fun fromJson(value: JSONObject) = StoredFiredAlarm(StoredAlarm.fromJson(value), value.getLong("firedAt"))
+    }
+}
+
 internal data class PersistedToolState(
     val toolId: String,
     val toolName: String,

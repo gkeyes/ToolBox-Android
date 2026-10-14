@@ -176,15 +176,19 @@ internal class ForegroundCapabilityBroker private constructor(
 
     private suspend fun pinShortcut(toolId: String, label: String, requireForegroundRuntime: () -> Unit): Boolean {
         ensureActive()
+        // One stable token per tool: the launcher keeps the intent of an already pinned shortcut,
+        // so rotating the token would leave that home-screen icon holding a dead token.
+        var created = false
         val route = withContext(Dispatchers.IO) {
-            val token = randomToken()
             val preferences = shortcutPreferences(activity)
-            val update = preferences.edit()
-            preferences.all.filterValues { it == toolId }.keys.forEach(update::remove)
-            update.putString(token, toolId).apply()
+            val token = preferences.all.entries.firstOrNull { it.value == toolId }?.key ?: randomToken().also { fresh ->
+                created = true
+                preferences.edit().putString(fresh, toolId).apply()
+            }
             ShortcutRoute(token, shortcutId(toolId))
         }
         var accepted = false
+        var republished = false
         try {
             accepted = withContext(Dispatchers.Main.immediate) {
                 ensureActive()
@@ -200,11 +204,18 @@ internal class ForegroundCapabilityBroker private constructor(
                     .setIntent(launchIntent)
                     .build()
                 requireForegroundRuntime()
+                // An uninstall disables the id and requestPinShortcut throws for a disabled id; a reinstall
+                // also issues a new token. Re-enable and refresh the existing pinned shortcut first.
+                val existing = manager.pinnedShortcuts.firstOrNull { it.id == route.shortcutId }
+                if (existing != null) {
+                    if (!existing.isEnabled) manager.enableShortcuts(listOf(route.shortcutId))
+                    republished = manager.updateShortcuts(listOf(shortcut))
+                }
                 manager.requestPinShortcut(shortcut, null)
             }
             return accepted
         } finally {
-            if (!accepted) {
+            if (!accepted && created && !republished) {
                 withContext(NonCancellable + Dispatchers.IO) {
                     shortcutPreferences(activity).edit().remove(route.token).apply()
                 }

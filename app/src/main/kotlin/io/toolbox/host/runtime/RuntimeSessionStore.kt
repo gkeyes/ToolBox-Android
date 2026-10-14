@@ -46,6 +46,30 @@ internal class RuntimeSessionStore(
         }
     }
 
+    suspend fun persistFiredAlarms(toolId: String, snapshot: List<StoredFiredAlarm>) {
+        withContext(Dispatchers.IO) {
+            val result = if (snapshot.isEmpty()) {
+                repositories.keyValues.remove(toolId, RUNTIME_FIRED_ALARMS_KEY)
+            } else {
+                repositories.keyValues.put(
+                    toolId,
+                    RUNTIME_FIRED_ALARMS_KEY,
+                    JSONArray().also { array -> snapshot.forEach { array.put(it.toJson()) } }.toString(),
+                    nowMillis(),
+                )
+            }
+            requirePersistence(result, allowMissingTool = snapshot.isEmpty())
+        }
+    }
+
+    /** Fired-but-undelivered alarms, oldest first. */
+    suspend fun loadFiredAlarms(toolId: String): List<StoredFiredAlarm> =
+        withContext(Dispatchers.IO) {
+            repositories.keyValues.observe(toolId, RUNTIME_FIRED_ALARMS_KEY).first()?.valueJson
+                ?.let(::parseFiredAlarms)
+                .orEmpty()
+        }
+
     private fun requirePersistence(result: DataResult<Unit>, allowMissingTool: Boolean) {
         when (result) {
             is DataResult.Success -> Unit
@@ -99,8 +123,14 @@ internal class RuntimeSessionStore(
         List(array.length()) { index -> StoredAlarm.fromJson(array.getJSONObject(index)) }
     }.getOrDefault(emptyList())
 
+    private fun parseFiredAlarms(value: String): List<StoredFiredAlarm> = runCatching {
+        val array = JSONArray(value)
+        List(array.length()) { index -> StoredFiredAlarm.fromJson(array.getJSONObject(index)) }
+    }.getOrDefault(emptyList())
+
     private companion object {
         const val RUNTIME_SESSIONS_KEY = "__toolbox.host.runtime-sessions.v1"
+        const val RUNTIME_FIRED_ALARMS_KEY = "__toolbox.host.fired-alarms.v1"
         const val RUNTIME_ALARMS_KEY = "__toolbox.host.alarms.v1"
     }
 }

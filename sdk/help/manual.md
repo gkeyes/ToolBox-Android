@@ -338,6 +338,8 @@ self.onmessage = async ({ data }) => {
 
 background.start 启动持续运行环境；stop 停止。工具应由用户明确开始需要持续执行的工作，并提供停止入口。位置监听、闹钟和通知还需要对应工具/系统权限。精确闹钟的系统入口在工具权限页。
 
+alarms.schedule 登记的闹钟到点时，如果工具页面正在运行，立即触发 onAlarm；如果工具没有运行或页面尚未加载完成，宿主会保存这次触发并发出一条提醒通知，等工具下次打开、页面加载完成后再以 `alarm` 事件（含 firedAt）补发给 onAlarm。已触发的闹钟不再出现在 alarms.list() 中。在页面加载时尽早注册 onAlarm，即可收到这些补发事件；同一个闹钟只会交付一次。卸载、更新工具或关闭闹钟权限会一并清除尚未补发的记录。
+
 background.enqueue/schedulePeriodic 是委托原生系统的 httpGet/notify 任务。WorkManager 周期至少 15 分钟是所用调度器的要求；短间隔持续任务使用 background.runtime 的计时器。Android 可以因进程生命周期或后台执行规则停止任务，宿主不会以任意总时长提前停止正常任务。httpGet 结果的 body 与 network.request 一样：文本响应原样返回，二进制响应为 base64，用 TaskRunResult.bodyEncoding 区分。
 
 普通通知和实时通知沿用 notifications。实时通知绑定持续会话；Android 和桌面决定最终显示与固定快捷方式的结果。接口成功不表示用户已经看见通知、浏览器已加载页面或快捷方式已经固定。

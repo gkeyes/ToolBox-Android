@@ -92,7 +92,7 @@ internal class ImportViewModel(
         runImport {
             when (val result = operations.installBundledExamples()) {
                 is HostExampleInstallResult.Installed -> ImportUiState(
-                    message = "已安装 ${result.count} 个范例",
+                    message = bundledExamplesMessage(result),
                     outcome = ImportOutcome.Success,
                 )
                 is HostExampleInstallResult.Failed -> ImportUiState(message = result.message)
@@ -155,4 +155,16 @@ internal class ImportViewModel(
         is HostImportResult.ConfirmationRequired -> ImportUiState(confirmation = confirmation)
         is HostImportResult.Failed -> ImportUiState(message = message)
     }
+}
+
+/** "Updated" and "already current" are reported separately so an unchanged old example is never shown as freshly installed. */
+internal fun bundledExamplesMessage(result: HostExampleInstallResult.Installed): String {
+    val fresh = result.count - result.updated - result.alreadyCurrent
+    if (result.updated == 0 && result.alreadyCurrent == 0) return "已安装 ${result.count} 个范例"
+    val parts = buildList {
+        if (fresh > 0) add("新安装 $fresh 个")
+        if (result.updated > 0) add("更新 ${result.updated} 个")
+        if (result.alreadyCurrent > 0) add("${result.alreadyCurrent} 个已是最新")
+    }
+    return "范例已就绪：${parts.joinToString("，")}"
 }

@@ -62,7 +62,8 @@ internal sealed interface HostDeleteResult {
 }
 
 internal sealed interface HostExampleInstallResult {
-    data class Installed(val count: Int) : HostExampleInstallResult
+    /** [count] examples are available; [updated] of them were replaced by a newer bundled version, [alreadyCurrent] were left as they were. */
+    data class Installed(val count: Int, val updated: Int = 0, val alreadyCurrent: Int = 0) : HostExampleInstallResult
     data class Failed(val code: String, val message: String) : HostExampleInstallResult
 }
 

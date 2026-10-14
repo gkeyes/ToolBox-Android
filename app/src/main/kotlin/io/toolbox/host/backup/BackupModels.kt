@@ -8,7 +8,43 @@ import java.io.InputStream
 import java.security.MessageDigest
 
 internal data class BackupExport(val file: File, val warnings: List<String>)
-internal data class RestoreToolPlan(val id: String, val name: String, val incoming: String, val current: String?, val skipped: String? = null)
+/** [keepInstalled]: the installed package stays and only the tool's data is restored. */
+internal data class RestoreToolPlan(
+    val id: String, val name: String, val incoming: String, val current: String?, val skipped: String? = null,
+    val keepInstalled: Boolean = false,
+)
+
+/** How a backed-up package may treat an installed tool with the same id. */
+internal sealed interface RestoreIdentity {
+    /** Not installed, the same signing key, or a byte-identical package: install as usual. */
+    data object Replace : RestoreIdentity
+    /** Unsigned installed tool, backup at the same or an older version: keep the installed code, restore data. */
+    data object KeepInstalled : RestoreIdentity
+    data class Skip(val reason: String) : RestoreIdentity
+}
+
+/**
+ * A restore never swaps in code whose author cannot be shown to match the installed tool: a crafted
+ * backup would otherwise inherit its grants and secure storage. A signed install keeps the update rule
+ * (same key only); an unsigned install accepts only a byte-identical package and otherwise keeps its own code.
+ * [installedKey] is null for an unsigned install; [installedKeyUnreadable] when its bundle could not be verified.
+ */
+internal fun restoreIdentity(
+    installed: ToolVersion?,
+    installedKey: String?,
+    installedKeyUnreadable: Boolean,
+    incomingKey: String?,
+    incomingVersionCode: Int,
+    incomingIntegrityHash: String?,
+): RestoreIdentity = when {
+    installed == null -> RestoreIdentity.Replace
+    installedKeyUnreadable -> RestoreIdentity.Skip("包身份无法验证：本机已安装的工具包无法校验，已保留本机工具和数据")
+    installedKey != null -> if (incomingKey == installedKey) RestoreIdentity.Replace
+        else RestoreIdentity.Skip("签名与本机已安装版本不一致，已保留本机工具和数据")
+    incomingVersionCode == installed.versionCode && incomingIntegrityHash == installed.integrityHash -> RestoreIdentity.Replace
+    incomingVersionCode <= installed.versionCode -> RestoreIdentity.KeepInstalled
+    else -> RestoreIdentity.Skip("包身份无法验证：备份中的版本较新，本机工具未签名，无法确认来自同一作者，已保留本机工具和数据")
+}
 internal data class RestorePreview(
     val prepared: PreparedBackup, val tools: List<RestoreToolPlan>,
     val currentVersions: Map<String, ToolVersion>, val runtimeIds: Set<String>, val activeTaskIds: Set<String>,
@@ -75,6 +111,7 @@ internal fun backupMessage(failure: Throwable): String = when ((failure as? Back
     "PACKAGE_SOURCE_READ_FAILED", "PACKAGE_TEMPORARY_IO_FAILED" -> "工具包临时文件读写失败。请检查空间和访问权限后重试。"
     "PACKAGE_CLEANUP_FAILED" -> "工具包临时文件未能清理。请检查设备空间和访问权限后重试。"
     "PACKAGE" -> "工具包未通过现有安装校验，恢复已撤销。请检查原工具包后重新导出。"
+    "PACKAGE_SIGNING_IDENTITY_CHANGED" -> "备份中的工具签名与本机已安装版本不一致，恢复已撤销。请重新检查后再恢复。"
     "PREVIEW_CHANGED" -> "本机工具或任务已变化，请重新核对下方覆盖清单。"
     "ROLLBACK" -> "回滚尚未完成，旧数据快照仍保留，已暂停工具与写入。请释放空间并重启 ToolBox；不要卸载或清除应用数据。"
     "DESTINATION_CLEANUP" -> "导出未完成，文件提供器也未能删除不完整文件。请在文件管理器中删除刚创建的文件，再选择本地存储重试。"
