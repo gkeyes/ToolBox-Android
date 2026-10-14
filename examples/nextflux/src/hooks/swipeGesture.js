@@ -9,6 +9,10 @@ const EXCLUDED_SELECTOR = [
 export const SWIPE_DIRECTION_LOCK = 8;
 export const SWIPE_HORIZONTAL_RATIO = 1.25;
 const VELOCITY_WINDOW_MS = 80;
+// A touch that lands while content is still flinging gets uncancelable
+// touchmoves from Chrome (its fling intervention), even though the browser
+// will not scroll horizontally. Scroll events this recent mark such a touch.
+const FLING_SCROLL_MS = 120;
 
 export function resolveSwipeDirection(deltaX, deltaY) {
   if (Math.abs(deltaX) < SWIPE_DIRECTION_LOCK && Math.abs(deltaY) < SWIPE_DIRECTION_LOCK) return null;
@@ -35,6 +39,7 @@ export function shouldExcludeSwipeTarget(target) {
 // Current options avoid React renders and document listener replacement.
 export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked = () => false }) {
   let ignoreUntilEnd = false;
+  let lastScrollAt = -Infinity;
   const enabled = (event) => {
     const value = getOptions().enabled;
     return typeof value === "function" ? value(event) : value !== false;
@@ -93,6 +98,7 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
       direction: null,
       started: false,
       travelDirection: 0,
+      flinging: (Number(event.timeStamp) || 0) - lastScrollAt < FLING_SCROLL_MS,
       samples: [{ x: touch.clientX, y: touch.clientY, timeStamp: Number(event.timeStamp) || 0 }],
     };
   };
@@ -115,8 +121,9 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
       );
     }
     if (gesture.direction !== "horizontal") return;
-    // The browser may already own a scroll. Do not turn its final touchend into back.
-    if (!event.cancelable) {
+    // The browser may already own a scroll. Do not turn its final touchend into
+    // back, unless the touch only stopped a fling (see FLING_SCROLL_MS).
+    if (!event.cancelable && !gesture.flinging) {
       cancel(event, "browser-scroll");
       return;
     }
@@ -127,7 +134,7 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
       }
       gesture.started = true;
     }
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
     getOptions().onMove?.(detail(gesture, event));
   };
 
@@ -156,6 +163,8 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
     cancel(event, "touchcancel");
   };
 
+  const handleScroll = (event) => { lastScrollAt = Number(event.timeStamp) || 0; };
+  document.addEventListener("scroll", handleScroll, { capture: true, passive: true });
   document.addEventListener("touchstart", handleTouchStart, { passive: true });
   document.addEventListener("touchmove", handleTouchMove, { passive: false });
   document.addEventListener("touchend", handleTouchEnd);
@@ -163,6 +172,7 @@ export function attachSwipeGesture(document, { gestureRef, getOptions, isBlocked
 
   return () => {
     cancel(undefined, "detach");
+    document.removeEventListener("scroll", handleScroll, { capture: true });
     document.removeEventListener("touchstart", handleTouchStart);
     document.removeEventListener("touchmove", handleTouchMove);
     document.removeEventListener("touchend", handleTouchEnd);

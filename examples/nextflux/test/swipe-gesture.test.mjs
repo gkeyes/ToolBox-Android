@@ -191,6 +191,22 @@ test("browser-owned scroll and events already handled by a control cancel naviga
   }
 });
 
+test("a touch that stops a fling still swipes although its moves are uncancelable", () => {
+  const h = harness();
+  h.dispatch("scroll", [], [], { timeStamp: 1000 });
+  h.start(0, 0, { timeStamp: 1050 });
+  h.move(40, 2, { cancelable: false, timeStamp: 1066 });
+  h.move(80, 3, { cancelable: false, timeStamp: 1082 });
+  h.end(80, 3, { timeStamp: 1098 });
+  assert.equal(h.calls(), 1);
+  // Long after the last scroll, an uncancelable move still means the browser owns it.
+  h.start(0, 0, { timeStamp: 2000 });
+  h.move(80, 0, { cancelable: false, timeStamp: 2016 });
+  h.end(80, 0, { timeStamp: 2032 });
+  assert.equal(h.calls(), 1);
+  h.detach();
+});
+
 test("current callback and threshold apply without listener rebinding; teardown removes handlers", () => {
   const h = harness();
   let currentCalls = 0;
