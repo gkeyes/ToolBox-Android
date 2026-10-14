@@ -40,7 +40,12 @@ const FeedItem = ({ feed, active, count }) => {
     e.preventDefault();
     setContextMenu({
       isOpen: true,
-      position: { x: e.clientX, y: e.clientY, anchor: e.currentTarget },
+      position: {
+        x: e.clientX,
+        y: e.clientY,
+        // The whole row, with its count and chevron, not just the link.
+        anchor: e.currentTarget.closest('[data-sidebar="menu-item"]') || e.currentTarget,
+      },
     });
   };
 

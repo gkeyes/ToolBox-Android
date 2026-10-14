@@ -31,6 +31,10 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
     if (!isOpen || !anchor || !lift) return;
     const rect = anchor.getBoundingClientRect();
     Object.assign(lift.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    // Row styles are scoped by the list style; carry it to the portal.
+    const listStyle = anchor.closest("[data-list-style]")?.getAttribute("data-list-style");
+    if (listStyle) lift.setAttribute("data-list-style", listStyle);
+    else lift.removeAttribute("data-list-style");
     lift.replaceChildren(liftedCopy(anchor));
     return () => lift.replaceChildren();
   }, [isOpen, anchor]);
