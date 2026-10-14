@@ -128,7 +128,9 @@ internal class CatalogViewModel(
     }
 
     private fun retryLoad() {
-        if (!state.value.loadFailed || catalogCollection?.isActive == true) return
+        // loadFailed is cleared synchronously, so a second tap cannot start a second collection.
+        if (!state.value.loadFailed) return
+        catalogCollection?.cancel()
         update { current -> current.copy(
             isLoaded = false, loadFailed = false,
             feedback = current.feedback.takeUnless { (it as? CatalogFeedback.Failure)?.code == "CATALOG_UNAVAILABLE" },
