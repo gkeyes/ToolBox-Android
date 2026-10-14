@@ -18,6 +18,7 @@ import {
   InputGroup,
 } from "@heroui/react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useStore } from "@nanostores/react";
 import { categories, feeds } from "@/stores/feedsStore";
 import { editFeedModalOpen, currentFeedId } from "@/stores/modalStore";
@@ -108,6 +109,7 @@ export default function EditFeedModal() {
       void backgroundSync().catch(() => {});
     } catch (error) {
       console.error("更新订阅源失败:", error);
+      if (error.code !== "ACCOUNT_CHANGED") toast.error(error.message || "更新订阅源失败，请重试。");
     } finally {
       setLoading(false);
     }
