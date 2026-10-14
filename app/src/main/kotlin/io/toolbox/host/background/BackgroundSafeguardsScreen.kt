@@ -499,15 +499,11 @@ private fun Context.openHyperOsBatteryPolicy() {
 }
 
 private fun Context.openFirstSupported(vararg intents: Intent) {
-    val selected = intents.firstOrNull { intent ->
-        intent.resolveActivity(packageManager) != null
-    } ?: return
-    runCatching { startActivity(selected.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        .onFailure {
-            intents.lastOrNull()?.takeIf { it !== selected }?.let { fallback ->
-                runCatching { startActivity(fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            }
-        }
+    // Start each candidate directly: resolveActivity can miss vendor pages hidden by package
+    // visibility, so an unresolvable intent is detected by its start failure instead.
+    for (intent in intents) {
+        if (runCatching { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) return
+    }
 }
 
 private fun appDetailsIntent(context: Context) = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
