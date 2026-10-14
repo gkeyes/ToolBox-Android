@@ -39,7 +39,7 @@ internal data class HelpBlock(
 )
 
 internal fun parseHelpDocument(source: String): HelpDocument {
-    var title = "开发帮助"
+    var title = "开发者帮助"
     val introduction = mutableListOf<String>()
     val chapters = mutableListOf<HelpChapter>()
     var chapterTitle: String? = null
