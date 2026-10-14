@@ -107,6 +107,3 @@ internal fun TaskRunResult.toEntity() = TaskResultEntity(
     taskId, outcome.name, completedAt, payloadJson, errorCode, attemptCount,
 )
 
-internal fun TaskResultEntity.toDomain() = TaskRunResult(
-    taskId, RunOutcome.valueOf(outcome), completedAt, payloadJson, errorCode, attemptCount,
-)

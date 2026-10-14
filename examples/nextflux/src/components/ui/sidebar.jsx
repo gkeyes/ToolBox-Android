@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@heroui/react";
 
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "18rem";
+// Leave a strip of page to tap closed, even at the largest text size.
+const SIDEBAR_WIDTH_MOBILE = "min(18rem, calc(100vw - 56px))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 

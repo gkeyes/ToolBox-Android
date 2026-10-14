@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import io.toolbox.core.data.CoreDataRepositories
 import io.toolbox.tool.runtime.HardenedRuntimeWebView
 import io.toolbox.tool.runtime.RpcValue
 import io.toolbox.tool.runtime.RuntimeHandlerException
@@ -15,14 +14,15 @@ import io.toolbox.tool.runtime.RuntimeLocationWatchOptions
 import io.toolbox.tool.runtime.RuntimeRpcErrorCode
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /** Location watches per tool, foreground-only or kept alive by a background session. Main thread only. */
 internal class RuntimeLocationWatchService(
     private val appContext: Context,
-    private val repositories: CoreDataRepositories,
+    private val grantsFor: suspend (toolId: String) -> Map<String, Boolean>,
     private val hostFor: (toolId: String) -> RuntimeHost?,
+    /** The tool is open and shown, the only state in which a foreground-only watch may start. */
+    private val isForeground: (toolId: String) -> Boolean,
     private val ensureCurrentRuntime: (toolId: String, versionCode: Int) -> Unit,
     private val hasBackgroundSession: (toolId: String) -> Boolean,
     private val setRecoveryStatus: (toolId: String, status: String) -> Unit,
@@ -51,7 +51,7 @@ internal class RuntimeLocationWatchService(
                         "后台定位需要声明 location.background 与 background.runtime",
                     )
                 }
-                val grants = repositories.grants.observeGrants(toolId).first().associate { it.capability to it.granted }
+                val grants = grantsFor(toolId)
                 if (grants["location.background"] != true || grants["background.runtime"] != true) {
                     throw RuntimeHandlerException(RuntimeRpcErrorCode.PERMISSION_DENIED, "后台定位权限未开启")
                 }
@@ -65,6 +65,11 @@ internal class RuntimeLocationWatchService(
             }
             if (appContext.checkSelfPermission(foregroundPermission) != PackageManager.PERMISSION_GRANTED) {
                 throw RuntimeHandlerException(RuntimeRpcErrorCode.SYSTEM_PERMISSION_DENIED, "位置权限不可用")
+            }
+            if (!options.allowBackground && !isForeground(toolId)) {
+                // A hidden tool kept alive by a background session would otherwise get location
+                // without the location.background grant, and nothing would stop the watch.
+                throw RuntimeHandlerException(RuntimeRpcErrorCode.SESSION_ENDED, "前台定位需要工具在前台打开")
             }
             if (options.allowBackground) {
                 if (!hasBackgroundSession(toolId)) {
@@ -113,8 +118,17 @@ internal class RuntimeLocationWatchService(
     }
 
     private fun emitLocation(toolId: String, watchId: String, location: Location) {
-        val host = hostFor(toolId) ?: return
+        val host = hostFor(toolId)
+        if (host == null) {
+            // The runtime that started this watch is gone, so no one can clear it: stop the updates.
+            removeWatch(toolId, watchId)
+            return
+        }
         if (HardenedRuntimeWebView.isClosing(host.webView)) return
+        val watch = watchesByTool[toolId]?.get(watchId) ?: return
+        // A foreground-only watch started while the tool was shown delivers nothing once it is hidden;
+        // otherwise a background session would keep receiving it without location.background.
+        if (!watch.allowBackground && !isForeground(toolId)) return
         val emitted = HardenedRuntimeWebView.emitEvent(
             host.webView,
             EVENT_LOCATION_CHANGED,
@@ -129,11 +143,20 @@ internal class RuntimeLocationWatchService(
             ),
         )
         if (!emitted) {
-            watchesByTool[toolId]?.remove(watchId)?.let { locationManager?.removeUpdates(it.listener) }
             setRecoveryStatus(toolId, "定位事件积压，已停止该监听，请重新开启。")
-            refreshForegroundService()
+            removeWatch(toolId, watchId)
         }
     }
+
+    private fun removeWatch(toolId: String, watchId: String) {
+        val watches = watchesByTool[toolId] ?: return
+        val watch = watches.remove(watchId) ?: return
+        locationManager?.removeUpdates(watch.listener)
+        if (watches.isEmpty()) watchesByTool.remove(toolId)
+        refreshForegroundService()
+    }
+
+    fun watchCount(toolId: String): Int = watchesByTool[toolId]?.size ?: 0
 
     private fun chooseProvider(manager: LocationManager, precise: Boolean): String? {
         val candidates = if (precise) {
@@ -158,7 +181,8 @@ internal class RuntimeLocationWatchService(
     }
 
     fun clearAllWatches(toolId: String) {
-        watchesByTool.remove(toolId)?.values?.forEach { locationManager?.removeUpdates(it.listener) }
+        val watches = watchesByTool.remove(toolId) ?: return
+        watches.values.forEach { locationManager?.removeUpdates(it.listener) }
         refreshForegroundService()
     }
 

@@ -180,10 +180,26 @@ internal interface BackgroundTaskDao {
     suspend fun deleteForTool(toolId: String): Int
 }
 
+private const val TASK_RESULT_HEADER = """
+    SELECT taskId, outcome, completedAt, errorCode, attemptCount, length(payloadJson) AS payloadLength
+    FROM task_results WHERE taskId = :taskId
+"""
+
+/**
+ * A payload can be larger than Android's ~2 MB CursorWindow, which fails the whole row read. Rows
+ * are read without it, and the payload separately in slices that each fit a window.
+ */
 @Dao
 internal interface TaskResultDao {
-    @Query("SELECT * FROM task_results WHERE taskId = :taskId")
-    fun observe(taskId: String): Flow<TaskResultEntity?>
+    @Query(TASK_RESULT_HEADER)
+    fun observeHeader(taskId: String): Flow<TaskResultHeader?>
+
+    @Query(TASK_RESULT_HEADER)
+    suspend fun header(taskId: String): TaskResultHeader?
+
+    /** [start] is 1-based and both bounds count characters, like SQLite's substr on text. */
+    @Query("SELECT substr(payloadJson, :start, :length) FROM task_results WHERE taskId = :taskId")
+    suspend fun payloadSlice(taskId: String, start: Int, length: Int): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: TaskResultEntity)
