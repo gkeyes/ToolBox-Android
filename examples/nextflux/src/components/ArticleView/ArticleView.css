@@ -296,7 +296,7 @@ div.force-dark-code-theme .shiki span {
 }
 .nextflux-article-header .article-title .nextflux-article-title-link { font-weight: 700; }
 .nextflux-article-header .nextflux-article-date {
-  color: var(--ds-text-tertiary, var(--muted));
+  color: var(--ds-text-secondary, var(--muted));
   font-variant-numeric: tabular-nums;
 }
 .nextflux-article-header-gap { block-size: var(--ds-space-md, 16px); }

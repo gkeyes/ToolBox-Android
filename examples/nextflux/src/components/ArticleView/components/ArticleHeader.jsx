@@ -80,7 +80,7 @@ export default function ArticleHeader({
         )}
       </h1>
 
-      <div className="nextflux-article-date text-muted opacity-60 text-sm">
+      <div className="nextflux-article-date text-sm">
         <time dateTime={article.published_at} key={t.language}>
           {generateReadableDate(article.published_at)}
         </time>
