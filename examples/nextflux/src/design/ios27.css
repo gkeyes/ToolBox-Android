@@ -520,7 +520,7 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 .ds-group-card .nf-segmented .tabs__list { padding: 2px; border-radius: 999px; background: rgb(118 118 128 / 0.12); }
 .dark .nf-segmented .tabs__list,
 [data-theme="dark"] .nf-segmented .tabs__list { background: rgb(118 118 128 / 0.24); }
-.nf-segmented .tabs__tab { block-size: 30px; border-radius: 999px; color: var(--ds-on-surface); }
+.nf-segmented .tabs__tab { min-block-size: 30px; block-size: auto; padding-block: 4px; border-radius: 999px; color: var(--ds-on-surface); }
 .nf-segmented .tabs__indicator { border-radius: 999px; background: var(--nf-seg-pill); box-shadow: 0 1px 3px rgb(0 0 0 / 0.10); }
 
 /* Sliders: accent fill on a 4px track, white lozenge knob. */
@@ -621,9 +621,15 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 
 /* Card meta at large text: the feed icon and a few characters of the feed name
    stay; the time gives way first. */
-.card-source-content > :not(.card-source-title) { flex-shrink: 0; }
+.card-source-content > :not(.card-source-title) { flex-shrink: 0; max-inline-size: none; }
 .card-source-title { min-inline-size: 3em; }
-.card-time-wrapper { min-inline-size: 0; }
+.card-meta > .card-source {
+  flex: 1 1000 auto;
+  min-inline-size: min(50%, 8em);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.card-time-wrapper { flex: 0 1 auto; min-inline-size: 0; }
 .card-time { overflow: hidden; text-overflow: ellipsis; }
 
 /* Long-press menu, iOS style: the page blurs, the pressed row lifts, the menu

@@ -89,13 +89,13 @@ const FeedListSidebar = () => {
       <SidebarHeader className="sidebar-header standalone:pt-safe-or-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <div className="flex items-center gap-2 pl-1">
+            <div className="flex flex-wrap items-center gap-2 pl-1">
               <img src={logo} alt="" className="nf-app-icon size-9" />
-              <div className="grid min-w-0 flex-1 text-left leading-tight">
+              <div className="grid min-w-[5em] flex-1 text-left leading-tight">
                 <span className="ds-title truncate">Nextflux</span>
                 <SyncStatusLine />
               </div>
-              <div className="article-list-actions sidebar-header-actions flex shrink-0">
+              <div className="article-list-actions sidebar-header-actions ml-auto flex shrink-0">
                 <SyncButton />
                 <AddFeedButton />
               </div>
