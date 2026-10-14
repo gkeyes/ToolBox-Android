@@ -614,3 +614,14 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 /* Short screen or large text: the feed list keeps room and the whole drawer
    scrolls, so the footer moves with the list instead of crowding it out. */
 .sidebar-mobile-panel [data-sidebar="content"] { min-block-size: min(40vh, 18rem); }
+
+/* The in-feed filter capsule spans the row in three equal segments. */
+.article-list-scoped-tabs :is(.article-list-tabs, .tabs, .tabs__list-container, .tabs__list) { inline-size: 100%; }
+.article-list-scoped-tabs .tabs__tab { flex: 1 1 0; justify-content: center; }
+
+/* Card meta at large text: the feed icon and a few characters of the feed name
+   stay; the time gives way first. */
+.card-source-content > :not(.card-source-title) { flex-shrink: 0; }
+.card-source-title { min-inline-size: 3em; }
+.card-time-wrapper { min-inline-size: 0; }
+.card-time { overflow: hidden; text-overflow: ellipsis; }
