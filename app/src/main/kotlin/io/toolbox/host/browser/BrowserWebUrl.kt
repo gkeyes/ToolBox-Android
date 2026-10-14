@@ -31,6 +31,8 @@ internal object BrowserWebUrl {
             val literal = authority.substring(1, close)
             // A bracketed host must be an IPv6 literal; anything after ']' must be a ":port".
             if (':' !in literal || literal.any { !(it.isHexDigitAscii() || it == ':' || it == '.') }) return null
+            // java.net.URI fully validates the IPv6 literal structure (group count, a single "::").
+            if (runCatching { java.net.URI("http://[$literal]/").host }.getOrNull() == null) return null
             val suffix = authority.substring(close + 1)
             if (suffix.isNotEmpty() && !suffix.startsWith(':')) return null
             host = authority.substring(0, close + 1).lowercase(Locale.ROOT)
