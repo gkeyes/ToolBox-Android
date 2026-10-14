@@ -275,7 +275,7 @@ internal fun ToolBoxNavigation(
                         },
                         organizeEditing = selectedDestination == MainDestination.Home && homeEditing,
                         onOrganize = if (selectedDestination == MainDestination.Home) ({ homeEditing = !homeEditing }) else null,
-                        onCreateGroup = if (selectedDestination == MainDestination.Home && homeEditing) ({ homeCreatingGroup = true }) else null,
+                        onCreateGroup = if (selectedDestination == MainDestination.Home) ({ homeCreatingGroup = true }) else null,
                         listStates = mapOf(
                             MainDestination.Home to homeListState,
                             MainDestination.Tools to toolsListState,
