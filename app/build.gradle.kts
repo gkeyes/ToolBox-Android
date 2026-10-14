@@ -64,6 +64,18 @@ val layoutScreenshots = providers.gradleProperty("toolbox.screenshots").orNull =
 
 tasks.withType<Test>().configureEach {
     inputs.file(tbxTargetsFile).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("tbxTargets")
+    // Robolectric's interceptors reflect into JDK internals that Java 21 closes by default; the
+    // screenshots and the LocationManager-driven tests both need them.
+    jvmArgs(
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
+        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+    )
     if (layoutScreenshots) {
         filter.includeTestsMatching("io.toolbox.host.screenshots.*")
         systemProperty("roborazzi.test.record", "true")
@@ -74,17 +86,6 @@ tasks.withType<Test>().configureEach {
         // Declared so a cached test result restores the PNGs too.
         outputs.dir(screenshotDir).withPropertyName("layoutScreenshots")
         maxHeapSize = "4g"
-        // Robolectric's interceptors reflect into JDK internals that Java 21 closes by default.
-        jvmArgs(
-            "--add-opens=java.base/java.lang=ALL-UNNAMED",
-            "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
-            "--add-opens=java.base/java.io=ALL-UNNAMED",
-            "--add-opens=java.base/java.util=ALL-UNNAMED",
-            "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
-            "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED",
-            "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
-            "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
-        )
         testLogging {
             events("failed")
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
@@ -105,8 +106,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 77
-        versionName = "0.13.2"
+        versionCode = 78
+        versionName = "0.13.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // In-app updates read this repository's releases and compare against the CI run that built the APK.
         buildConfigField("String", "UPDATE_REPOSITORY", "\"gkeyes/toolbox-android\"")
