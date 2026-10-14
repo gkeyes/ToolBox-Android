@@ -196,9 +196,16 @@
   // Registered before restoration settles so a close during startup still waits for it and keeps what was typed meanwhile.
   try { toolbox()?.runtime?.registerFlushHandler?.(async () => { await restoring; await writeDraft(); }); } catch (_) {}
   // The host flushes only on an orderly close; also keep the draft when the page is hidden, so a background kill does not lose it.
-  // Repeated hide signals while one write is pending share that write.
+  // A hide while a write is pending queues one more write after it, so text typed between two hides is saved too.
   let hideWrite = null;
-  const saveOnHide = () => { hideWrite ||= restoring.then(writeDraft).catch(() => {}).finally(() => { hideWrite = null; }); };
+  let hideAgain = false;
+  const saveOnHide = () => {
+    if (hideWrite) { hideAgain = true; return; }
+    hideWrite = restoring.then(writeDraft).catch(() => {}).finally(() => {
+      hideWrite = null;
+      if (hideAgain) { hideAgain = false; saveOnHide(); }
+    });
+  };
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveOnHide(); });
   window.addEventListener("pagehide", saveOnHide);
   try { toolbox()?.runtime?.onStateChanged?.((state) => { if (state && state.foreground === false) saveOnHide(); }); } catch (_) {}
