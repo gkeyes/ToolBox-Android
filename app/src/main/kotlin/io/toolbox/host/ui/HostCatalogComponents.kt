@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import io.toolbox.core.ui.component.ToolBoxCard
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
@@ -62,9 +63,11 @@ internal fun ToolGlyph(
                 contentScale = ContentScale.Crop,
             )
         } else {
+            // Scales with the tile, from quarter thumbnails up to large home tiles.
             ToolBoxIcon(
                 icon = icon,
                 contentDescription = null,
+                modifier = Modifier.size(size * 0.5f),
                 tint = Color.White,
             )
         }
@@ -104,6 +107,27 @@ internal fun SectionHeader(title: String, action: String = "") {
             color = ToolBoxThemeTokens.colors.textSecondary,
             modifier = Modifier.weight(1f).semantics { heading() },
             textStyle = ToolBoxThemeTokens.textStyles.sectionTitle,
+        )
+        if (action.isNotEmpty()) {
+            AppText(action, color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)
+        }
+    }
+}
+
+/**
+ * Section heading for content screens (tool detail, safeguards, permissions, update): 20/25 bold
+ * like the boards' `<h2>`. Settings pages keep the 13pt grey [SectionHeader] caption.
+ */
+@Composable
+internal fun ContentSectionHeader(title: String, action: String = "") {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ToolBoxThemeTokens.spacing.two),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppText(
+            title,
+            modifier = Modifier.weight(1f).semantics { heading() },
+            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold),
         )
         if (action.isNotEmpty()) {
             AppText(action, color = ToolBoxThemeTokens.colors.textSecondary, textStyle = ToolBoxThemeTokens.textStyles.metadata)

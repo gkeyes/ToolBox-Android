@@ -387,7 +387,7 @@ internal fun ToolDetailScreen(
     val entrance = rememberToolBoxEntrance("tool-detail")
     var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
 
-    DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
+    DetailScreen(title = "工具详情", onBack = onBack, largeTitle = false) { chromePadding ->
         LazyColumn(
             state = rememberTitleBoundListState(),
             modifier = Modifier
@@ -428,7 +428,7 @@ internal fun ToolDetailScreen(
                     ToolDetailStats(tool, memberOf.size, Modifier.padding(top = 20.dp).toolBoxEntrance(entrance, 1))
                 }
                 item("before-management") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
-                item("management-title") { SectionHeader("管理") }
+                item("management-title") { ContentSectionHeader("管理") }
                 item("management-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("management") {
                     ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 2)) {
@@ -438,7 +438,7 @@ internal fun ToolDetailScreen(
                     }
                 }
                 item("before-organization") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
-                item("organization-title") { SectionHeader("收藏与分组") }
+                item("organization-title") { ContentSectionHeader("收藏与分组") }
                 item("organization-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("organization") {
                     ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 3)) {
@@ -450,6 +450,7 @@ internal fun ToolDetailScreen(
                             icon = ToolBoxIconKey.Star,
                             modifier = Modifier.testTag("tool_detail_favorite"),
                         )
+                        ToolBoxGroupDivider()
                         ToolBoxSettingRow(
                             title = "加入分组",
                             summary = when {
@@ -487,14 +488,15 @@ internal fun ToolDetailScreen(
                     }
                 }
                 item("before-information") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.section)) }
-                item("information-title") { SectionHeader("信息") }
+                item("information-title") { ContentSectionHeader("信息") }
                 item("information-gap") { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one)) }
                 item("information") {
                     ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 4)) {
+                        // Dividers start with the row text, 16dp in.
                         ToolBoxValueRow(title = "版本", value = tool.versionName)
-                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.md)
                         ToolBoxValueRow(title = "工具大小", value = tool.bundleBytes.fileSizeLabel())
-                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.oneHalf)
+                        ToolBoxGroupDivider(startPadding = ToolBoxThemeTokens.spacing.md)
                         ToolBoxValueRow(title = "最近打开", value = tool.lastOpenedAt.lastOpenedLabel())
                     }
                 }
@@ -953,15 +955,18 @@ internal fun CatalogStatusState(
 
 internal data class ToolVisual(val icon: ToolBoxIconKey, val accent: Color, val imageResource: Int? = null)
 
-internal fun CatalogTool.visual(primary: Color): ToolVisual = when (toolId) {
+internal fun CatalogTool.visual(primary: Color): ToolVisual = toolVisual(toolId, name, primary)
+
+/** Fallback artwork and accent for a tool id, for screens that have the id and name but no [CatalogTool]. */
+internal fun toolVisual(toolId: String, name: String, primary: Color): ToolVisual = when (toolId) {
     "io.toolbox.positioncalculator" -> ToolVisual(ToolBoxIconKey.Calculator, primary, R.drawable.example_position_calculator)
     "io.toolbox.quicknotes" -> ToolVisual(ToolBoxIconKey.Note, Color(0xFF6A78B7), R.drawable.example_quick_notes)
     "io.toolbox.backgroundtaskdemo" -> ToolVisual(ToolBoxIconKey.Code, Color(0xFF317F87), R.drawable.example_background_tasks)
     "io.toolbox.notificationlab" -> ToolVisual(ToolBoxIconKey.Notifications, Color(0xFF526A9C), R.drawable.example_notification_lab)
-    else -> fallbackVisual(primary)
+    else -> fallbackVisual(toolId, name, primary)
 }
 
-private fun CatalogTool.fallbackVisual(primary: Color): ToolVisual = when {
+private fun fallbackVisual(toolId: String, name: String, primary: Color): ToolVisual = when {
     toolId.contains("position", ignoreCase = true) || name.contains("计算") -> ToolVisual(ToolBoxIconKey.Calculator, primary)
     toolId.contains("note", ignoreCase = true) || name.contains("笔记") -> ToolVisual(ToolBoxIconKey.Note, Color(0xFFFFB000))
     toolId.contains("background", ignoreCase = true) || name.contains("后台") -> ToolVisual(ToolBoxIconKey.Code, Color(0xFF0A8F6A))

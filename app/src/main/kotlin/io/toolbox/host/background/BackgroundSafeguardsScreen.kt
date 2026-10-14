@@ -71,7 +71,7 @@ import io.toolbox.host.settings.SettingsViewModel
 import io.toolbox.host.settings.BackgroundSettingsFeedback
 import io.toolbox.host.settings.backgroundProgressSummary
 import io.toolbox.host.ui.AppText
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 
 @Composable
 internal fun BackgroundSafeguardsScreen(
@@ -225,7 +225,7 @@ internal fun BackgroundSafeguardsContent(
                     modifier = Modifier.toolBoxEntrance(entrance, 0).padding(bottom = ToolBoxThemeTokens.spacing.one),
                 )
             }
-            item("master-title") { Box(Modifier.toolBoxEntrance(entrance, 0)) { SectionHeader("运行") } }
+            item("master-title") { Box(Modifier.toolBoxEntrance(entrance, 0)) { ContentSectionHeader("运行") } }
             item("master") {
                 ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 1)) {
                     SettingsSwitchRow(
@@ -242,7 +242,7 @@ internal fun BackgroundSafeguardsContent(
             }
 
             item("sessions-title") {
-                Column(Modifier.toolBoxEntrance(entrance, 2).padding(top = ToolBoxThemeTokens.spacing.two)) { SectionHeader("正在运行", "${sessions.size} 个") }
+                Column(Modifier.toolBoxEntrance(entrance, 2).padding(top = ToolBoxThemeTokens.spacing.two)) { ContentSectionHeader("正在运行", "${sessions.size} 个") }
             }
             runningState.feedback?.let { feedback ->
                 item("stop-error") { FeedbackSurface(feedback.message, FeedbackTone.Error, true, onDismissFeedback) }
@@ -259,12 +259,14 @@ internal fun BackgroundSafeguardsContent(
                                     stopping = runningState.stoppingSessionId == session.sessionId,
                                     canStop = runningState.stoppingSessionId == null,
                                     onOpen = null, onStop = { onStopSession(session) },
+                                    dangerStop = true,
                                 )
                             }
-                            if (index != sessions.lastIndex) SettingsRowSeparator(start = ToolBoxThemeTokens.spacing.md)
+                            // Inset to the text start: 16dp padding + 46dp tile + 12dp gap.
+                            if (index != sessions.lastIndex) SettingsRowSeparator(start = RunningRowTextInset)
                         }
                         if (sessions.isNotEmpty()) {
-                            SettingsRowSeparator(start = ToolBoxThemeTokens.spacing.md)
+                            SettingsRowSeparator(start = RunningRowTextInset)
                             Box(Modifier.fillMaxWidth().padding(ToolBoxThemeTokens.spacing.oneHalf), contentAlignment = Alignment.CenterEnd) {
                                 ToolBoxDestructiveButton(
                                     label = "全部停止", onClick = onStopAll,
@@ -277,7 +279,7 @@ internal fun BackgroundSafeguardsContent(
             }
 
             item("permissions-title") {
-                Column(Modifier.toolBoxEntrance(entrance, 4).padding(top = ToolBoxThemeTokens.spacing.two)) { SectionHeader("系统保障") }
+                Column(Modifier.toolBoxEntrance(entrance, 4).padding(top = ToolBoxThemeTokens.spacing.two)) { ContentSectionHeader("系统保障") }
             }
             item("permissions") {
                 Column(Modifier.toolBoxEntrance(entrance, 5)) {
@@ -329,7 +331,7 @@ internal fun BackgroundSafeguardsContent(
             }
 
             item("hyperos-title") {
-                Column(Modifier.toolBoxEntrance(entrance, 6).padding(top = ToolBoxThemeTokens.spacing.two)) { SectionHeader("HyperOS") }
+                Column(Modifier.toolBoxEntrance(entrance, 6).padding(top = ToolBoxThemeTokens.spacing.two)) { ContentSectionHeader("HyperOS") }
             }
             item("hyperos") {
                 ToolBoxGroupedSurface(Modifier.toolBoxEntrance(entrance, 7)) {
@@ -395,7 +397,14 @@ private fun SafeguardStatusCard(
         animationSpec = io.toolbox.core.ui.component.ToolBoxMotion.spatial(),
         label = "safeguard ring",
     )
-    val ringColor = if (allOk) colors.success else colors.warning
+    // With background running off, the ring, glyph and chip read neutral "已关闭" so they never
+    // contradict the title, whatever the system permissions say.
+    val off = !backgroundEnabled
+    val ringColor = when {
+        off -> colors.textTertiary
+        allOk -> colors.success
+        else -> colors.warning
+    }
     val track = colors.surfaceMuted
     Row(
         modifier
@@ -415,7 +424,9 @@ private fun SafeguardStatusCard(
                 drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
                 drawArc(ringColor, -90f, 360f * progress, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
             }
-            if (allOk) {
+            if (off) {
+                io.toolbox.core.ui.component.ToolBoxIcon(ToolBoxIconKey.Stop, null, Modifier.size(28.dp), tint = colors.textSecondary)
+            } else if (allOk) {
                 io.toolbox.core.ui.component.ToolBoxIcon(ToolBoxIconKey.Check, null, Modifier.size(28.dp), tint = colors.success)
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -425,12 +436,18 @@ private fun SafeguardStatusCard(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ToolBoxThemeTokens.spacing.xxs)) {
-            SystemChip(if (allOk) "全部就绪" else "需要注意", allOk)
+            if (off) {
+                io.toolbox.core.ui.component.ToolBoxStatusChip("已关闭", io.toolbox.core.ui.component.ToolBoxTone.Neutral)
+            } else {
+                SystemChip(if (allOk) "全部就绪" else "需要注意", allOk)
+            }
             AppText(title, textStyle = ToolBoxThemeTokens.textStyles.headline)
             AppText(detail, textStyle = ToolBoxThemeTokens.textStyles.sectionTitle, color = colors.textSecondary)
         }
     }
 }
+
+private val RunningRowTextInset = 74.dp
 
 @Composable
 private fun SystemChip(label: String, ok: Boolean) {

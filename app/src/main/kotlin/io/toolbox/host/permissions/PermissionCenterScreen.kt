@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,7 +61,7 @@ import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.HostTestTags
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.CatalogStatusState
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 
 @Composable
 internal fun PermissionCenterScreen(
@@ -246,7 +247,7 @@ internal fun PermissionCenterContent(
                         }
                     } else permissionGroups.forEachIndexed { groupIndex, (title, items) ->
                         item("permission-title:$title") {
-                            Box(Modifier.toolBoxEntrance(entrance, 1 + groupIndex * 2)) { SectionHeader("$title · ${items.size}") }
+                            Box(Modifier.toolBoxEntrance(entrance, 1 + groupIndex * 2)) { ContentSectionHeader("$title · ${items.size}") }
                         }
                         item("permission-title-gap:$title") {
                             Spacer(Modifier.height(ToolBoxThemeTokens.spacing.one))
@@ -296,7 +297,11 @@ internal fun PermissionCenterContent(
                                         }
                                     }
                                     if (item.capability == "alarms" && item.enabled && !exactAlarmsAllowed) {
-                                        ToolBoxTextButton("允许闹钟和提醒", onOpenExactAlarmSettings)
+                                        // Aligned with the row text above, not flush with the card edge.
+                                        ToolBoxTextButton(
+                                            "允许闹钟和提醒", onOpenExactAlarmSettings,
+                                            modifier = Modifier.padding(start = 58.dp, end = 16.dp, bottom = 12.dp),
+                                        )
                                     }
                                     if (index != items.lastIndex) SettingsRowSeparator()
                                 }

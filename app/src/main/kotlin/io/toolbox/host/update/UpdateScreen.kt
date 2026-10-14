@@ -37,7 +37,7 @@ import io.toolbox.core.ui.component.ToolBoxBanner
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIcon
-import io.toolbox.core.ui.component.ToolBoxIconButton
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import io.toolbox.core.ui.component.ToolBoxIconKey
 import io.toolbox.core.ui.component.ToolBoxMotion
 import io.toolbox.core.ui.component.ToolBoxPrimaryButton
@@ -55,10 +55,12 @@ import io.toolbox.host.settings.SettingsNavRow
 import io.toolbox.host.settings.SettingsRowSeparator
 import io.toolbox.host.settings.SettingsSwitchRow
 import io.toolbox.host.ui.AppText
+import io.toolbox.host.ui.CatalogToolGlyph
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 import io.toolbox.host.ui.mergePadding
 import io.toolbox.host.ui.rememberTitleBoundListState
+import io.toolbox.host.ui.toolVisual
 
 @Composable
 internal fun UpdateScreen(viewModel: UpdateViewModel, onBack: () -> Unit, onReady: () -> Unit) {
@@ -109,8 +111,15 @@ internal fun UpdateContent(
     DetailScreen(
         title = "软件更新",
         onBack = onBack,
-        actions = {
-            ToolBoxIconButton(ToolBoxIconKey.Refresh, "重新检查", onRefresh, Modifier.testTag("update_refresh"), enabled = !state.loading)
+        actions = { glassState ->
+            // Refresh is ignored while a check is already running.
+            ToolBoxGlassIconButton(
+                icon = ToolBoxIconKey.Refresh,
+                contentDescription = "重新检查",
+                onClick = onRefresh,
+                glassState = glassState,
+                modifier = Modifier.testTag("update_refresh"),
+            )
         },
     ) { padding ->
         LazyColumn(
@@ -225,10 +234,10 @@ internal fun UpdateContent(
     }
 }
 
-/** Section title spaced like the other settings pages (26dp above, 7dp to the card). */
+/** Content-screen section heading, spaced 26dp above and 7dp to the card. */
 @Composable
 private fun GroupHeader(title: String, first: Boolean = false) {
-    Box(Modifier.padding(top = if (first) 4.dp else 26.dp, bottom = 7.dp)) { SectionHeader(title) }
+    Box(Modifier.padding(top = if (first) 4.dp else 26.dp, bottom = 7.dp)) { ContentSectionHeader(title) }
 }
 
 /** iOS Settings choice row: coloured tile, title and summary, accent checkmark when chosen. */
@@ -337,6 +346,8 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
 @Composable
 private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall: (String) -> Unit) {
     val slug = row.available.slug
+    // Installed tools use their own icon; a tool not installed yet uses the id it will install under.
+    val toolId = row.toolId ?: "io.toolbox." + slug.replace("-", "")
     SettingsNavRow(
         title = row.name,
         icon = ToolBoxIconKey.Tools,
@@ -351,6 +362,9 @@ private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall
             ToolRowState.NOT_INSTALLED -> "可安装 ${row.available.version}"
         },
         modifier = Modifier.testTag("update_tool_$slug"),
+        leading = {
+            CatalogToolGlyph(toolId, null, toolVisual(toolId, row.name, ToolBoxThemeTokens.colors.primary), size = 30.dp)
+        },
         trailing = {
             when {
                 slug in progress -> ToolBoxBusyIndicator(Modifier.size(24.dp))

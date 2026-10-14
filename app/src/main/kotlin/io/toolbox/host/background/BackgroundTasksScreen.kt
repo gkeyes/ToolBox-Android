@@ -45,7 +45,7 @@ import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.CatalogLazyGroupItem
 import io.toolbox.host.ui.DetailScreen
-import io.toolbox.host.ui.SectionHeader
+import io.toolbox.host.ui.ContentSectionHeader
 import io.toolbox.host.ui.SurfaceCard
 import io.toolbox.host.ui.mergePadding
 import java.text.DateFormat
@@ -141,7 +141,7 @@ internal fun BackgroundTasksContent(
                 if (page.runtimeSessions.isNotEmpty()) {
                     item("runtime-title") {
                         Column(Modifier.padding(bottom = ToolBoxThemeTokens.spacing.one)) {
-                            SectionHeader("持续运行 · ${page.runtimeSessions.size}")
+                            ContentSectionHeader("持续运行 · ${page.runtimeSessions.size}")
                         }
                     }
                     itemsIndexed(
@@ -150,7 +150,7 @@ internal fun BackgroundTasksContent(
                         contentType = { _, _ -> "runtime-session" },
                     ) { index, session ->
                         CatalogLazyGroupItem(index = index, count = page.runtimeSessions.size,
-                            modifier = Modifier.toolBoxEntrance(entrance, index)) {
+                            modifier = Modifier.toolBoxEntrance(entrance, index), dividerStart = EntryTextInset) {
                             RuntimeSessionCard(
                                 session = session,
                                 stopping = stoppingSessionId == session.sessionId,
@@ -166,7 +166,7 @@ internal fun BackgroundTasksContent(
                             top = if (page.runtimeSessions.isNotEmpty()) ToolBoxThemeTokens.spacing.section else 0.dp,
                             bottom = ToolBoxThemeTokens.spacing.one,
                         )) {
-                            SectionHeader("已登记任务 · ${page.tasks.size}")
+                            ContentSectionHeader("已登记任务 · ${page.tasks.size}")
                         }
                     }
                     itemsIndexed(
@@ -179,7 +179,7 @@ internal fun BackgroundTasksContent(
                                 fadeInSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
                                 placementSpec = io.toolbox.core.ui.component.ToolBoxMotion.ItemPlacement,
                                 fadeOutSpec = io.toolbox.core.ui.component.ToolBoxMotion.effects(),
-                            ).toolBoxEntrance(entrance, page.runtimeSessions.size + index + 1)) {
+                            ).toolBoxEntrance(entrance, page.runtimeSessions.size + index + 1), dividerStart = EntryTextInset) {
                             BackgroundTaskCard(
                                 task = task,
                                 result = resultFor(task),
@@ -298,6 +298,9 @@ private fun BackgroundTaskCard(
         TaskResultSummary(result)
     }
 }
+
+/** Separators start under the text: 16dp padding + 30dp tile + 12dp gap. */
+private val EntryTextInset = 58.dp
 
 @Composable
 private fun BackgroundEntryLayout(
