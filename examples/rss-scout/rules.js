@@ -80,7 +80,7 @@
   // A partial sync keeps the other half from the previous cache, so sources failing on alternate tries never drop
   // rules that already worked. The result stays partial, so the next scan still retries the failed half.
   function keepCachedHalf(cache,previous){
-    if(!cache.partial||!previous||previous.sourceKey!==cache.sourceKey||previous.partial===cache.partial||!Number.isInteger(previous.privateCount)||!Array.isArray(previous.rules))return cache;
+    if(!cache.partial||!previous||previous.sourceKey!==cache.sourceKey||!Number.isInteger(previous.privateCount)||!Array.isArray(previous.rules))return cache;
     const base=cache.partial==='base';
     const kept=base?previous.rules.slice(previous.privateCount):previous.rules.slice(0,previous.privateCount);
     if(!kept.length)return cache;

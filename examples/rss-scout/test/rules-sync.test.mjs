@@ -63,6 +63,8 @@ test('a partial sync keeps the half the previous cache already had', () => {
   assert.equal(back.privateCount, 1);
   assert.equal(keepCachedHalf(privateOnly, { ...radarOnly, sourceKey: 'other' }), privateOnly);
   assert.equal(keepCachedHalf(privateOnly, privateOnly), privateOnly);
+  const again = keepCachedHalf(privateOnly, merged);
+  assert.deepEqual(Array.from(again.rules, r => r.id), ['private', 'radar'], 'a second private-only retry keeps the cached Radar half');
   const complete = { ...privateOnly, partial: '' };
   assert.equal(keepCachedHalf(complete, radarOnly), complete);
 });
