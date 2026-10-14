@@ -127,8 +127,8 @@ android {
         applicationId = "io.toolbox.host"
         minSdk = 33
         targetSdk = 37
-        versionCode = 93
-        versionName = "0.13.17"
+        versionCode = 94
+        versionName = "0.13.18"
         computedVersionCode?.let { versionCode = it.toInt() }
         computedVersionName?.let { versionName = it }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

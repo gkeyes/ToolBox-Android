@@ -23,7 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
 import io.toolbox.core.ui.theme.ToolBoxTheme
-import io.toolbox.host.runtime.browserViewIntent
+import io.toolbox.host.runtime.systemBrowserIntent
 import io.toolbox.host.ui.applyHyperOsGestureNavigationImmersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -399,7 +399,9 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun openSystemBrowser() {
-        try { startActivity(browserViewIntent(state.address)) }
+        // The address may hold characters only the page grammar accepts (underscore hosts, `|^{}`).
+        val address = validBrowserUrl(state.address) ?: return unsupported("此链接不是可浏览的网页地址。")
+        try { startActivity(systemBrowserIntent(address)) }
         catch (_: android.content.ActivityNotFoundException) { unsupported("没有可用的系统浏览器。") }
         catch (_: SecurityException) { unsupported("系统阻止了外部浏览器启动。") }
     }

@@ -1,7 +1,6 @@
 package io.toolbox.host.browser
 
 import java.net.IDN
-import java.net.URI
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -61,17 +60,23 @@ object BrowserFilterValidation {
     const val MAX_RULES = 500
     const val MAX_SELECTOR_LENGTH = 1024
 
-    fun host(value: String): String? = runCatching {
+    /** [site] hosts may contain underscores like the pages they belong to; blocked request hosts stay STD3-strict. */
+    fun host(value: String, site: Boolean = false): String? = runCatching {
         val raw = value.trim().trimEnd('.')
         if (raw.isEmpty() || raw.any { it in "/:?#@*\\" || it.isWhitespace() }) return null
-        val normalized = IDN.toASCII(raw, IDN.USE_STD3_ASCII_RULES).lowercase(Locale.ROOT)
+        val normalized = if (site) {
+            IDN.toASCII(raw).lowercase(Locale.ROOT).takeIf { name -> name.all { it in 'a'..'z' || it in '0'..'9' || it in "-._" } }
+                ?: return null
+        } else {
+            IDN.toASCII(raw, IDN.USE_STD3_ASCII_RULES).lowercase(Locale.ROOT)
+        }
         if (normalized.length > 253 || normalized.split('.').any { it.isEmpty() || it.length > 63 }) null else normalized
     }.getOrNull()
 
-    fun urlHost(value: String): String? = runCatching {
-        val uri = URI(value)
-        if (uri.scheme?.lowercase(Locale.ROOT) !in setOf("http", "https")) null else uri.host?.let(::host)
-    }.getOrNull()
+    /** Page and request hosts may contain underscores, which the STD3 rules used for rule input reject. */
+    fun urlHost(value: String): String? = BrowserWebUrl.host(value)?.let { raw ->
+        if (raw.startsWith('[')) raw else runCatching { IDN.toASCII(raw).lowercase(Locale.ROOT) }.getOrNull()
+    }
 
     /** CSS is emitted into a style sheet, so reject declaration/rule injection before DOM validation. */
     fun selectorAllowed(value: String): Boolean = value.isNotBlank() && value.length <= MAX_SELECTOR_LENGTH &&
@@ -80,7 +85,7 @@ object BrowserFilterValidation {
         value.split(',').none { it.trim().lowercase(Locale.ROOT) in setOf("*", "html", "body", ":root") }
 
     fun normalize(rule: BrowserFilterRule): BrowserFilterRule? {
-        val site = host(rule.site) ?: return null
+        val site = host(rule.site, site = true) ?: return null
         val value = when (rule.kind) {
             BrowserFilterKind.Cosmetic -> rule.value.trim().takeIf(::selectorAllowed)
             BrowserFilterKind.NetworkHost -> host(rule.value)
