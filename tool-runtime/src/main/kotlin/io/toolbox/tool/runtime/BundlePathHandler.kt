@@ -14,6 +14,7 @@ internal class BundlePathHandler(
     private val privateFilesRoot: Path,
     private val bundleRoot: Path,
     private val securityProfile: SecurityProfile,
+    private val allowWorkers: Boolean = true,
 ) : WebViewAssetLoader.PathHandler {
     override fun handle(path: String): WebResourceResponse {
         val resource = resolveRegularFile(path) ?: return RuntimePolicy.blockedResponse(404, "Not Found")
@@ -37,7 +38,7 @@ internal class BundlePathHandler(
                     mime.encoding,
                     200,
                     "OK",
-                    RuntimePolicy.responseHeaders(securityProfile),
+                    RuntimePolicy.responseHeaders(securityProfile, allowWorkers),
                     input,
                 )
             } catch (failure: Exception) {

@@ -5,7 +5,11 @@ import io.toolbox.core.data.SecurityProfile
 import java.io.ByteArrayInputStream
 
 object RuntimePolicy {
-    fun contentSecurityPolicy(profile: SecurityProfile): String {
+    /**
+     * [allowWorkers] is false in ORIGIN_ONLY_STATELESS mode: the document-start hardening cannot reach
+     * worker globals, and a worker would otherwise get native IndexedDB and Cache Storage.
+     */
+    fun contentSecurityPolicy(profile: SecurityProfile, allowWorkers: Boolean = true): String {
         val script = when (profile) {
             SecurityProfile.STRICT -> "script-src 'self' 'wasm-unsafe-eval'"
             SecurityProfile.COMPAT -> "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
@@ -22,13 +26,13 @@ object RuntimePolicy {
             "object-src 'none'",
             "base-uri 'none'",
             "form-action 'none'",
-            "worker-src 'self'",
+            if (allowWorkers) "worker-src 'self'" else "worker-src 'none'",
             "upgrade-insecure-requests",
         ).joinToString("; ", postfix = ";")
     }
 
-    fun responseHeaders(profile: SecurityProfile): Map<String, String> = mapOf(
-        "Content-Security-Policy" to contentSecurityPolicy(profile),
+    fun responseHeaders(profile: SecurityProfile, allowWorkers: Boolean = true): Map<String, String> = mapOf(
+        "Content-Security-Policy" to contentSecurityPolicy(profile, allowWorkers),
         "X-Content-Type-Options" to "nosniff",
         "Referrer-Policy" to "no-referrer",
         "Permissions-Policy" to "camera=(), microphone=(), geolocation=(), payment=(), usb=()",

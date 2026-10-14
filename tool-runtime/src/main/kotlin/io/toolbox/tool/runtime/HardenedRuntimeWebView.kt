@@ -130,6 +130,15 @@ object HardenedRuntimeWebView {
                     setOf(runtime.origin.removeSuffix("/")),
                 )
             }
+            // Every tool WebView, both isolation modes: CSP and request interception never see WebRTC traffic.
+            check(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                "WebRTC hardening is unavailable"
+            }
+            WebViewCompat.addDocumentStartJavaScript(
+                createdWebView,
+                RuntimeHardeningScripts.webRtc(context),
+                setOf(runtime.origin.removeSuffix("/")),
+            )
             hardenSettings(createdWebView, creationPermit.isolationMode)
             if (creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE) {
                 val profile = requireNotNull(ProfileStore.getInstance().getProfile(runtime.profileName)) {
@@ -150,7 +159,12 @@ object HardenedRuntimeWebView {
                 .setHttpAllowed(false)
                 .addPathHandler(
                     "/",
-                    BundlePathHandler(runtime.privateFilesRoot, runtime.bundleRoot, runtime.securityProfile),
+                    BundlePathHandler(
+                        runtime.privateFilesRoot,
+                        runtime.bundleRoot,
+                        runtime.securityProfile,
+                        allowWorkers = creationPermit.isolationMode == RuntimeIsolationMode.DEDICATED_PROFILE,
+                    ),
                 )
                 .build()
             val bridgeConfiguration = bridgeProvider.create(runtime)
@@ -379,9 +393,13 @@ private class RuntimeWebViewClient(
     }
 
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
-        if (!RuntimeIdentity.isExactLocalUrl(request.url.toString(), expectedOrigin)) {
-            return RuntimePolicy.blockedResponse()
+        // A main-frame load may still carry the fragment of an allowed navigation (help.html#faq).
+        val local = if (request.isForMainFrame) {
+            RuntimeIdentity.isLocalNavigationUrl(request.url.toString(), expectedOrigin)
+        } else {
+            RuntimeIdentity.isExactLocalUrl(request.url.toString(), expectedOrigin)
         }
+        if (!local) return RuntimePolicy.blockedResponse()
         if (request.url.path?.startsWith(RuntimeNetworkMediaRoute.PREFIX) == true) {
             if (request.isForMainFrame) return RuntimePolicy.blockedResponse()
             return try {
@@ -392,7 +410,7 @@ private class RuntimeWebViewClient(
                     val adapted = RuntimeMediaWebViewInputStream.prepare(request.method, request.requestHeaders,
                         response.status, response.headers, response.body)
                     WebResourceResponse(response.mimeType, null, response.status, response.reason,
-                        adapted.headers + RuntimePolicy.responseHeaders(runtime.securityProfile), adapted.body)
+                        adapted.headers + RuntimePolicy.responseHeaders(runtime.securityProfile, !requireStatelessSentinel), adapted.body)
                 } catch (error: Exception) { response.body.close(); throw error }
             } catch (_: Exception) { RuntimePolicy.blockedResponse() }
         }
@@ -400,11 +418,11 @@ private class RuntimeWebViewClient(
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-        !RuntimeIdentity.isExactLocalUrl(request.url.toString(), expectedOrigin)
+        !RuntimeIdentity.isLocalNavigationUrl(request.url.toString(), expectedOrigin)
 
     @Deprecated("WebView compatibility callback")
     override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-        !RuntimeIdentity.isExactLocalUrl(url, expectedOrigin)
+        !RuntimeIdentity.isLocalNavigationUrl(url, expectedOrigin)
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
         RuntimeJavaScriptDialogs.dismiss(view)
@@ -501,4 +519,14 @@ private class RuntimeWebChromeClient(private val runtime: PreparedToolRuntime) :
 
     override fun onJsPrompt(view: WebView, url: String, message: String, defaultValue: String, result: JsPromptResult): Boolean =
         RuntimeJavaScriptDialogs.show(view, runtime, url, message, RuntimeJavaScriptDialogs.Kind.PROMPT, result, defaultValue)
+}
+
+/** Document-start hardening shared by every tool WebView; the asset is read once per process. */
+internal object RuntimeHardeningScripts {
+    private const val WEBRTC_ASSET = "toolbox-runtime/webrtc-hardening.js"
+    @Volatile private var webRtcCached: String? = null
+
+    fun webRtc(context: Context): String = webRtcCached ?: context.assets.open(WEBRTC_ASSET)
+        .use { it.readBytes().toString(Charsets.UTF_8) }
+        .also { webRtcCached = it }
 }
