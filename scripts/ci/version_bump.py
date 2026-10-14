@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail a pull request that changes shipped content without raising the version that ships it.
+"""Fail a pull request that changes shipped content without declaring the version change it needs.
 
 Rule: every update that ships carries a new version number; one version number never ships with two
 different contents. The test channel (`dev`) is rebuilt from every merge to `main`, so a merge that
@@ -9,13 +9,21 @@ Versions follow MAJOR.MINOR.PATCH, compared numerically:
   - a bug fix raises PATCH;
   - a new feature or a noticeable UI change raises MINOR and resets PATCH to 0;
   - only a major redesign raises MAJOR.
-versionCode always goes up by at least 1. This check cannot tell a fix from a feature, so it only
-requires both numbers to be strictly higher than on the base branch, and states the rule on failure.
+versionCode always goes up by at least 1.
+
+The APK's version is not edited by pull requests (every open PR would conflict on the same two lines).
+A PR that changes what ships in the APK adds one changelog fragment, changes/<unique name>.md, that names
+the bump (patch, minor or major) and carries the changelog line; the build on main computes the version
+from the fragments added since the last published build (scripts/ci/app_version.py). This check requires
+such a PR to add a valid fragment, and refuses any PR that edits versionCode / versionName in
+app/build.gradle.kts. Mini-tools still raise their own manifest version: this check cannot tell a fix from
+a feature, so it only requires both numbers to be strictly higher than on the base branch, and states the
+rule on failure.
 
 What counts as shipped (everything else, e.g. tests, docs, CHANGELOG, CI workflows and repository
-scripts, needs no bump):
+scripts, needs no bump or fragment):
 
-APK ("app", version in app/build.gradle.kts):
+APK ("app", needs a changelog fragment in changes/):
   - every file of a Gradle module included from settings.gradle.kts (app, core-*, tool-*), except its
     test source sets (src/test, src/androidTest, src/testFixtures), Markdown outside src/, and
     <module>/schemas/ (exported Room schemas, which core-data adds only to the androidTest APK);
@@ -48,6 +56,10 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_BUILD = "app/build.gradle.kts"
+# Changelog fragments: one Markdown file per APK change, directly in this folder (README.md explains them).
+FRAGMENTS = "changes/"
+FRAGMENTS_README = "changes/README.md"
+BUMPS = ("patch", "minor", "major")
 REGISTRY = "scripts/ci/tbx-targets.json"
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
@@ -98,6 +110,48 @@ def tool_version(text):
     manifest = json.loads(text)
     code = manifest.get("versionCode")
     return (code if type(code) is int else None), manifest.get("version")
+
+
+def is_fragment(path):
+    """A changelog fragment: a Markdown file directly in changes/, other than its README."""
+    name = path[len(FRAGMENTS):] if path.startswith(FRAGMENTS) else None
+    return bool(name) and "/" not in name and name.endswith(".md") and path != FRAGMENTS_README
+
+
+def parse_fragment(text):
+    """(bump, changelog line) from a fragment, or ValueError saying what is wrong.
+
+    The format (see changes/README.md) is a front matter with only `bump: patch|minor|major`, then the
+    changelog text in Simplified Chinese without a version prefix; its lines are joined into one entry.
+    """
+    lines = text.replace("\r\n", "\n").split("\n")
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("must start with a '---' line opening the front matter")
+    end = next((index for index, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
+    if end is None:
+        raise ValueError("the front matter has no closing '---' line")
+    fields = {}
+    for line in lines[1:end]:
+        if not line.strip():
+            continue
+        key, colon, value = line.partition(":")
+        if not colon or key.strip() != "bump" or "bump" in fields:
+            raise ValueError(f"unexpected front matter line {line.strip()!r}; only one 'bump: patch|minor|major' line")
+        fields["bump"] = value.strip()
+    bump = fields.get("bump")
+    if bump not in BUMPS:
+        raise ValueError(f"bump must be one of {', '.join(BUMPS)}, but is {bump!r}")
+    body = ""
+    for line in (line.strip() for line in lines[end + 1:]):
+        # Wrapped Chinese text joins without a space; a space only between two ASCII characters.
+        if line:
+            body += (" " if body and body[-1].isascii() and line[0].isascii() else "") + line
+    body = re.sub(r"^[-*]\s+", "", body)
+    if not body:
+        raise ValueError("the changelog text after the front matter is empty")
+    if re.match(r"版本\s*[0-9]|v?[0-9]+\.[0-9]+\.[0-9]+", body):
+        raise ValueError("leave out the version prefix; the version is computed when the build is published")
+    return bump, body
 
 
 def gradle_modules(settings):
@@ -231,6 +285,60 @@ def regression_problem(label, version_file, base, head):
     return None
 
 
+FRAGMENT_EXAMPLE = """---
+bump: patch
+---
+修正……（一句话说明这次改动，简体中文，不写版本号）"""
+
+
+def app_problems(changed, read_fork, read_head, shipped):
+    """Problems with the APK side of a change: version lines edited, bad fragments, or a missing fragment.
+
+    Compared with the commit the PR branched from, so only what the PR itself changed counts.
+    """
+    label = "ToolBox app (APK)"
+    problems, added = [], []
+    fork_app, head_app = app_version(read_fork(APP_BUILD)), app_version(read_head(APP_BUILD))
+    if fork_app and head_app and fork_app != head_app:
+        problems.append(f"{label}: do not edit versionCode / versionName in {APP_BUILD} (changed from "
+                        f"{fork_app[1]} ({fork_app[0]}) to {head_app[1]} ({head_app[0]})). The build on main computes "
+                        f"the version from the fragments in {FRAGMENTS}; restore both lines and add a fragment instead.")
+    for path in sorted(set(changed)):
+        if not path.startswith(FRAGMENTS) or path == FRAGMENTS_README:
+            continue
+        text = read_head(path)
+        if text is None:
+            continue  # Removing a fragment is allowed (e.g. one added by mistake before it was published).
+        if not is_fragment(path):
+            problems.append(f"{label}: {path} is not a fragment; fragments are Markdown files directly in {FRAGMENTS}")
+            continue
+        try:
+            parse_fragment(text)
+        except ValueError as problem:
+            problems.append(f"{label}: changelog fragment {path}: {problem}. Expected:\n{FRAGMENT_EXAMPLE}")
+            continue
+        if read_fork(path) is None:
+            added.append(path)
+    if shipped and not added:
+        listed = "\n".join(f"    {path}" for path in shipped[:10]) + (
+            f"\n    ... and {len(shipped) - 10} more" if len(shipped) > 10 else "")
+        problems.append(f"{label}: this change modifies files that ship in the APK, so it must add a changelog "
+                        f"fragment {FRAGMENTS}<unique name>.md (see {FRAGMENTS_README}).\n"
+                        f"  Shipped files changed:\n{listed}\n"
+                        f"  Fix: add for example {FRAGMENTS}<branch name>.md containing\n{FRAGMENT_EXAMPLE}\n"
+                        f"  with bump: patch for a bug fix, minor for a new feature or noticeable UI change, "
+                        f"major only for a major redesign.")
+    return problems
+
+
+def app_shipped(changed, read_base, read_head):
+    """The changed paths that ship in the APK (scripts/ci/app_version.py uses this on main)."""
+    base_registry = json.loads(read_base(REGISTRY) or "{}")
+    head_registry = json.loads(read_head(REGISTRY) or "{}")
+    modules = gradle_modules(read_base("settings.gradle.kts")) | gradle_modules(read_head("settings.gradle.kts"))
+    return classify(sorted(set(changed)), base_registry, head_registry, modules)[0].get("app", [])
+
+
 def check(changed, read_base, read_head, read_fork=None, only=None):
     """Returns (problems, notes). read_base/read_head map a repository path to its text, or None if absent.
 
@@ -247,14 +355,8 @@ def check(changed, read_base, read_head, read_fork=None, only=None):
     shipped, notes = classify(sorted(set(changed)), base_registry, head_registry, modules)
     problems = []
 
-    base_app, head_app = app_version(read_base(APP_BUILD)), app_version(read_head(APP_BUILD))
-    fork_app = app_version(read_fork(APP_BUILD))
-    if base_app and head_app and (only is None or "app" in only):
-        problem = (bump_problem("ToolBox app (APK)", APP_BUILD, base_app, head_app, shipped["app"], "app")
-                   if "app" in shipped else
-                   fork_app and regression_problem("ToolBox app (APK)", APP_BUILD, fork_app, head_app))
-        if problem:
-            problems.append(problem)
+    if only is None or "app" in only:
+        problems.extend(app_problems(changed, read_fork, read_head, shipped.get("app", [])))
 
     for name in sorted(set(base_registry) & set(head_registry)):
         if only is not None and name not in only:
@@ -354,8 +456,9 @@ def main(argv=None):
         for path in sorted(notes):
             print(f"  {path}: {'; '.join(notes[path])}")
     if problems:
-        print("\nVersion bump required. Every shipped change needs a new version; the same version must "
-              "never ship twice with different content.\n", file=sys.stderr)
+        print("\nVersion check failed. Every shipped change needs a new version (a changelog fragment for the "
+              "APK, a manifest bump for a mini-tool); the same version must never ship twice with different "
+              "content.\n", file=sys.stderr)
         print("\n\n".join(problems), file=sys.stderr)
         return 1
     print("Version check passed.")

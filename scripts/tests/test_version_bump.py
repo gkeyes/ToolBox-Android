@@ -27,9 +27,12 @@ def manifest(version, code):
     return json.dumps({"id": "io.toolbox.x", "version": version, "versionCode": code})
 
 
-def tree(app=(65, "0.8.32"), tools=None, registry=None):
+FRAGMENT = "---\nbump: patch\n---\n修正首页闪退。\n"
+
+
+def tree(app=(65, "0.8.32"), tools=None, registry=None, fragments=None):
     files = {"settings.gradle.kts": SETTINGS, "app/build.gradle.kts": gradle(*app),
-             "scripts/ci/tbx-targets.json": json.dumps(registry or REGISTRY)}
+             "scripts/ci/tbx-targets.json": json.dumps(registry or REGISTRY)} | (fragments or {})
     versions = {"quick-notes": ("1.0.3", 4), "game-2048": ("1.0.4", 5), "health-records": ("1.0.15", 16),
                 "nextflux": ("1.0.54", 75)} | (tools or {})
     for name, (version, code) in versions.items():
@@ -91,29 +94,73 @@ class VersionBumpTest(unittest.TestCase):
                            "examples/health-records/test/model.test.mjs", "examples/nextflux/test/browser/a.spec.js",
                            "examples/nextflux/README.md", "examples/unregistered/app.js", "core-ui/README.md"])
 
-    def test_app_bump_needs_both_numbers_strictly_higher(self):
-        changed = ["app/src/main/kotlin/x.kt"]
-        self.assertPasses(changed, head=tree(app=(66, "0.8.33")))
-        self.assertPasses(changed, head=tree(app=(66, "0.9.0")))
-        self.assertPasses(changed, head=tree(app=(70, "1.0.0")))
-        for app in ((66, "0.8.32"), (65, "0.8.33"), (66, "0.8.31"), (66, "0.9"), (66, "0.9.0-beta"), (66, "v0.9.0")):
-            with self.subTest(app=app):
-                self.assertNeeds(changed, "ToolBox app (APK)", head=tree(app=app))
+    def test_app_change_passes_with_an_added_fragment(self):
+        for bump in ("patch", "minor", "major"):
+            with self.subTest(bump=bump):
+                fragment = {"changes/fix-home.md": f"---\nbump: {bump}\n---\n修正首页闪退。\n"}
+                self.assertPasses(["app/src/main/kotlin/x.kt", "changes/fix-home.md"], head=tree(fragments=fragment))
 
-    def test_semver_is_compared_numerically(self):
-        self.assertPasses(["app/src/main/x.kt"], base=tree(app=(65, "0.8.9")), head=tree(app=(66, "0.8.10")))
-        problems, _ = run(["app/src/main/x.kt"], base=tree(app=(65, "0.10.0")), head=tree(app=(66, "0.9.9")))
+    def test_app_change_without_an_added_fragment_fails(self):
+        # Editing a fragment that was already there, or only the README, is not a new entry.
+        old = {"changes/older.md": FRAGMENT}
+        problems, _ = run(["app/src/main/kotlin/x.kt", "changes/older.md"], base=tree(fragments=old),
+                          head=tree(fragments={"changes/older.md": FRAGMENT.replace("闪退", "卡顿")}))
+        self.assertTrue(any(problem.startswith("ToolBox app (APK)") for problem in problems), problems)
+        readme = {"changes/README.md": "说明"}
+        problems, _ = run(["app/src/main/kotlin/x.kt", "changes/README.md"], head=tree(fragments=readme))
         self.assertTrue(problems)
 
-    def test_failure_names_the_file_numbers_and_semver_rule(self):
+    def test_editing_the_app_version_lines_fails(self):
+        fragment = {"changes/x.md": FRAGMENT}
+        for app in ((66, "0.8.33"), (65, "0.9.0"), (64, "0.8.31")):
+            with self.subTest(app=app):
+                problems = self.assertNeeds(["app/src/main/x.kt", "app/build.gradle.kts", "changes/x.md"],
+                                            "ToolBox app (APK)", head=tree(app=app, fragments=fragment))
+                self.assertIn("do not edit versionCode / versionName", problems[0])
+        problems, _ = run(["app/build.gradle.kts", "CHANGELOG.md"], head=tree(app=(66, "0.8.33")))
+        self.assertTrue(any("do not edit" in problem for problem in problems), problems)
+
+    def test_bad_fragments_fail_even_without_an_app_change(self):
+        bad = {
+            "no front matter": "修正首页闪退。\n",
+            "unclosed front matter": "---\nbump: patch\n修正首页闪退。\n",
+            "unknown bump": "---\nbump: feature\n---\n新增分组。\n",
+            "missing bump": "---\n---\n新增分组。\n",
+            "other key": "---\nbump: minor\ntitle: x\n---\n新增分组。\n",
+            "empty body": "---\nbump: minor\n---\n\n  \n",
+            "version prefix": "---\nbump: patch\n---\n版本 0.13.15（91）：修正首页闪退。\n",
+        }
+        for case, text in bad.items():
+            with self.subTest(case=case):
+                problems, _ = run(["changes/x.md"], head=tree(fragments={"changes/x.md": text}))
+                self.assertTrue(any("changelog fragment changes/x.md" in problem for problem in problems), problems)
+        for path in ("changes/x.txt", "changes/sub/x.md"):
+            with self.subTest(path=path):
+                problems, _ = run([path], head=tree(fragments={path: FRAGMENT}))
+                self.assertTrue(any("is not a fragment" in problem for problem in problems), problems)
+        # Removing a fragment is allowed.
+        self.assertPasses(["changes/x.md"], base=tree(fragments={"changes/x.md": FRAGMENT}))
+
+    def test_parse_fragment(self):
+        self.assertEqual(("minor", "新增分组排序。拖动即可。"),
+                         version_bump.parse_fragment("---\r\nbump: minor\r\n---\r\n- 新增分组排序。\r\n拖动即可。\r\n"))
+        self.assertEqual(("major", "首页重新设计。"), version_bump.parse_fragment("---\nbump:  major \n---\n首页重新设计。"))
+
+    def test_app_failure_names_the_files_and_the_fragment_rule(self):
         problems = self.assertNeeds(["core-ui/src/main/kotlin/x.kt"], "ToolBox app (APK)")
         message = problems[0]
-        self.assertIn("app/build.gradle.kts", message)
         self.assertIn("core-ui/src/main/kotlin/x.kt", message)
-        self.assertIn("versionCode to at least 66", message)
-        self.assertIn("bug fix -> 0.8.33", message)
-        self.assertIn("noticeable UI change -> 0.9.0", message)
-        self.assertIn("major redesign -> 1.0.0", message)
+        self.assertIn("changes/", message)
+        self.assertIn("bump: patch", message)
+        self.assertIn("minor for a new feature or noticeable UI change", message)
+        self.assertIn("major only for a major redesign", message)
+
+    def test_tool_semver_is_compared_numerically(self):
+        base = tree(tools={"game-2048": ("1.0.9", 5)})
+        self.assertPasses(["examples/game-2048/game.js"], base=base, head=tree(tools={"game-2048": ("1.0.10", 6)}))
+        problems, _ = run(["examples/game-2048/game.js"], base=tree(tools={"game-2048": ("1.10.0", 5)}),
+                          head=tree(tools={"game-2048": ("1.9.9", 6)}))
+        self.assertTrue(problems)
 
     def test_tool_with_fixed_file_list_ships_exactly_those_files(self):
         self.assertNeeds(["examples/game-2048/game.js"], "Mini-tool game-2048")
@@ -155,8 +202,8 @@ class VersionBumpTest(unittest.TestCase):
     def test_bundled_tool_change_also_ships_in_the_apk(self):
         problems = self.assertNeeds(["examples/quick-notes/app.js"], "ToolBox app (APK)")
         self.assertTrue(any(problem.startswith("Mini-tool quick-notes") for problem in problems))
-        self.assertPasses(["examples/quick-notes/app.js"],
-                          head=tree(app=(66, "0.8.33"), tools={"quick-notes": ("1.0.4", 5)}))
+        self.assertPasses(["examples/quick-notes/app.js", "changes/notes.md"],
+                          head=tree(tools={"quick-notes": ("1.0.4", 5)}, fragments={"changes/notes.md": FRAGMENT}))
 
     def test_changing_which_examples_are_bundled_ships_in_the_apk(self):
         registry = json.loads(json.dumps(REGISTRY))
@@ -178,10 +225,8 @@ class VersionBumpTest(unittest.TestCase):
         self.assertPasses(["examples/health-records/web/.DS_Store", "examples/nextflux/test/cache-core.test.mjs",
                            "examples/nextflux/.gitignore"])
 
-    def test_version_may_change_without_content_but_only_upwards(self):
-        self.assertPasses(["app/build.gradle.kts"], head=tree(app=(66, "0.8.33")))
-        problems, _ = run(["CHANGELOG.md"], head=tree(app=(64, "0.8.31")))
-        self.assertTrue(problems)
+    def test_tool_version_may_change_without_content_but_only_upwards(self):
+        self.assertPasses(["examples/game-2048/manifest.json"], head=tree(tools={"game-2048": ("1.0.5", 6)}))
         problems, _ = run(["examples/game-2048/manifest.json"], head=tree(tools={"game-2048": ("1.0.5", 5)}))
         self.assertTrue(problems)
 

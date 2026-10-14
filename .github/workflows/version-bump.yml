@@ -1,7 +1,8 @@
 name: Version check
 
-# Every pull request, whatever it touches: a change to anything that ships in the APK or in a mini-tool's
-# .tbx must raise that package's versionCode and its MAJOR.MINOR.PATCH version above the base branch.
+# Every pull request, whatever it touches: a change to anything that ships in the APK must add a changelog
+# fragment in changes/ (the version is computed on main; editing versionCode / versionName fails), and a
+# change to a mini-tool's .tbx must raise its versionCode and MAJOR.MINOR.PATCH version above the base branch.
 # The rules and what counts as shipped are in scripts/ci/version_bump.py and CONTRIBUTING.md.
 on:
   pull_request:
@@ -26,13 +27,13 @@ jobs:
           # job runs (checkout fetches it now), and their merge base.
           fetch-depth: 0
       - name: Unit tests for the check
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/tests/test_version_bump.py -v
-      # Compared with the base branch as it is when the check runs, not as it was when the PR's event
-      # fired, so a version another PR merged meanwhile is caught (two PRs both moving to 0.9.0 show no
-      # git conflict). A merge to main after this check ran is not seen here; re-run the check, or merge main
-      # into the PR, before merging when main has moved. The publish jobs in android.yml and tbx.yml repeat
-      # the check on every push to main (--push) and refuse to publish an unbumped change.
-      - name: Require a version bump for shipped changes
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest scripts/tests/test_version_bump.py scripts/tests/test_app_version.py -v
+      # Tool versions are compared with the base branch as it is when the check runs, not as it was when the
+      # PR's event fired, so a tool version another PR merged meanwhile is caught. The APK needs no such
+      # comparison: its version is computed on main from the fragments, so PRs never collide on it. On every
+      # push to main, android.yml's version job refuses an APK change without a fragment and tbx.yml's publish
+      # job refuses an unbumped tool (--push).
+      - name: Require a changelog fragment or version bump for shipped changes
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

@@ -54,7 +54,7 @@ Gradle 项目包含 `app`、`core-ui`、`core-data`、`tool-package`、`tool-run
 
 ## 版本
 
-当前版本号以 `app/build.gradle.kts` 的 versionName / versionCode 为准，版本历史见 [CHANGELOG](CHANGELOG.md)。
+版本号由 `main` 上的 CI 在发布时按 [`changes/`](changes/README.md) 里的更新说明计算（规则见 [CONTRIBUTING](CONTRIBUTING.md#版本号)），已发布构建的版本号和更新内容见其 `BUILD_RECEIPT.txt` 与 Release 说明；`app/build.gradle.kts` 里的 versionName / versionCode 只用于本地构建。早期版本历史见 [CHANGELOG](CHANGELOG.md)。
 
 ## 授权
 
