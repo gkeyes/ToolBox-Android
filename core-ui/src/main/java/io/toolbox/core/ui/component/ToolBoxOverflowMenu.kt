@@ -37,6 +37,11 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
 import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.BlendMode
 
 data class ToolBoxMenuAction(
     val label: String,
@@ -116,7 +121,7 @@ fun ToolBoxOverflowMenu(
                     action?.invoke()
                 },
             ) {
-                // The nested MiuixTheme may re-provide its own indication; keep the flat iOS highlight.
+                // The nested MiuixTheme may re-provide its own indication; items draw their own glow.
                 CompositionLocalProvider(LocalIndication provides ToolBoxPressIndication) {
                     ToolBoxContextMenuPanel(glass) {
                         actions.forEachIndexed { index, action ->
@@ -161,13 +166,16 @@ private fun ToolBoxContextMenuPanel(glass: ToolBoxWindowGlass, content: @Composa
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
+    // Miuix clips the popup to this padded box (a 16dp rounded reveal), so the shadow must stay
+    // inside the 10dp padding: a deeper one is cut into a hard edge that slides across the panel's
+    // corners as the menu opens and closes.
     Box(Modifier.padding(10.dp)) {
         Column(
             Modifier
                 .width(250.dp)
-                .shadow(elevation = 18.dp, shape = ContextMenuShape, clip = false,
-                    ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                    spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f))
+                .shadow(elevation = 5.dp, shape = ContextMenuShape, clip = false,
+                    ambientColor = Color.Black.copy(alpha = if (dark) 0.5f else 0.16f),
+                    spotColor = Color.Black.copy(alpha = if (dark) 0.5f else 0.16f))
                 .clip(ContextMenuShape)
                 .toolBoxWindowGlassEffect(glass, 26.dp, fill = materials.menuFill, fallback = materials.menuFallback)
                 .border(0.5.dp, materials.overlayBorder, ContextMenuShape)
@@ -189,12 +197,25 @@ private fun ToolBoxContextMenuItem(
 ) {
     val colors = ToolBoxThemeTokens.colors
     val tint = if (destructive) colors.danger else colors.textPrimary
+    val dark = colors.surface.luminance() < 0.5f
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val glow by animateFloatAsState(if (pressed && enabled) 1f else 0f, ToolBoxMotion.effects(), label = "menu item glow")
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(ContextMenuItemShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            // Glass press: the row lights up under the finger instead of a grey highlight.
+            .drawBehind {
+                if (glow > 0.001f) {
+                    drawRect(
+                        Color.White.copy(alpha = (if (dark) 0.16f else 0.55f) * glow),
+                        blendMode = if (dark) BlendMode.Plus else BlendMode.SrcOver,
+                    )
+                }
+            }
+            .clickable(enabled = enabled, role = Role.Button, interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
