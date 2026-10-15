@@ -390,8 +390,10 @@ internal fun ToolDetailScreen(
     var deleteConfirmed by rememberSaveable(toolId) { mutableStateOf(false) }
     // Feedback is catalog-wide: a message the list was already showing stays for the list, and this
     // page only shows results that arrive while it is open.
-    val entryFeedback = remember(toolId) { state.feedback }
-    val ownFeedback = state.feedback?.takeIf { it !== entryFeedback }
+    // Saved by text so a rotation doesn't reclassify this page's own message as the list's.
+    var entryMessage by rememberSaveable(toolId) { mutableStateOf(state.feedback?.message) }
+    LaunchedEffect(state.feedback == null) { if (state.feedback == null) entryMessage = null }
+    val ownFeedback = state.feedback?.takeIf { it.message != entryMessage }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
         if (deleteConfirmed && tool == null) onBack()

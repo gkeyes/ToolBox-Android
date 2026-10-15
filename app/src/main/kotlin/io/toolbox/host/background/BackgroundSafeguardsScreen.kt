@@ -133,6 +133,7 @@ internal fun BackgroundSafeguardsScreen(
     // A first dialog dismissed with Back also leaves no rationale, so settings only open once ToolBox
     // has asked here before.
     var askedBefore by remember { mutableStateOf(false) }
+    var requestedAt by remember { mutableStateOf(0L) }
     val requestRecord = remember(context) { context.getSharedPreferences(PermissionRequestRecord, Context.MODE_PRIVATE) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -140,7 +141,10 @@ internal fun BackgroundSafeguardsScreen(
         safeguards.refresh()
         // After two denials Android answers false without showing a dialog (no rationale before or
         // after the request); only then send the user to settings, never after a first-time denial.
-        if (!granted && askedBefore && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
+        // An answer faster than a person can react means Android showed no dialog at all, which also
+        // covers denials from before this record existed.
+        val noDialog = android.os.SystemClock.elapsedRealtime() - requestedAt < InstantAnswerMillis
+        if (!granted && (askedBefore || noDialog) && !rationaleBeforeRequest && !notificationRationale()) openNotificationSettings()
     }
 
     BackgroundSafeguardsContent(
@@ -161,6 +165,7 @@ internal fun BackgroundSafeguardsScreen(
                 rationaleBeforeRequest = notificationRationale()
                 askedBefore = requestRecord.getBoolean(NotificationsAskedKey, false)
                 requestRecord.edit().putBoolean(NotificationsAskedKey, true).apply()
+                requestedAt = android.os.SystemClock.elapsedRealtime()
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
                 openNotificationSettings()
@@ -539,3 +544,4 @@ private fun appDetailsIntent(context: Context) = Intent(Settings.ACTION_APPLICAT
 
 private const val PermissionRequestRecord = "permission_requests"
 private const val NotificationsAskedKey = "notifications_asked"
+private const val InstantAnswerMillis = 400L
