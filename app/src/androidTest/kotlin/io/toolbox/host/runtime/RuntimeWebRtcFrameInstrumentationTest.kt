@@ -48,7 +48,9 @@ class RuntimeWebRtcFrameInstrumentationTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val suffix = UUID.randomUUID().toString().replace("-", "")
         val toolId = "com.example.webrtc.t$suffix"
-        val root = context.filesDir.toPath()
+        // Not under filesDir/miniapps: MainActivity's startup maintenance deletes bundles of tools the
+        // catalog does not know, which raced this test's bundle and served the entry as a 404.
+        val root = context.filesDir.toPath().resolve("webrtc-frame-test-$suffix")
         val bundle = root.resolve(RuntimeIdentity.expectedBundleLocator(toolId, 1))
         val manager = RuntimeProfileManager(context.filesDir)
         val scenario = ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java))
@@ -84,6 +86,20 @@ class RuntimeWebRtcFrameInstrumentationTest {
                 window.namedHtmlProbe = childProbe(() => {
                   document.body.insertAdjacentHTML('beforeend', '<iframe name="rtcNamed"></iframe>');
                 }, () => window.rtcNamed);
+                // Known residual (SEC-X1, docs/runtime.md): a custom-element reaction runs inside the
+                // insertion, before its lock. Pinned so a WebView that closes it shows up here.
+                window.reactionProbe = null;
+                customElements.define('rtc-reaction-probe', class extends HTMLElement {
+                  connectedCallback() {
+                    if (window.reactionProbe !== null) return;
+                    try { window.reactionProbe = typeof window[window.length - 1].RTCPeerConnection; }
+                    catch (error) { window.reactionProbe = 'threw:' + error; }
+                  }
+                });
+                const reactionHost = document.createElement('div');
+                reactionHost.append(document.createElement('iframe'), document.createElement('rtc-reaction-probe'));
+                document.body.appendChild(reactionHost);
+                window.afterReactionProbe = typeof window[window.length - 1].RTCPeerConnection;
                 window.srcdocProbe = null;
                 window.addEventListener('message', event => {
                   if (event.data && typeof event.data.rtcProbe === 'string') window.srcdocProbe = event.data.rtcProbe;
@@ -152,6 +168,9 @@ class RuntimeWebRtcFrameInstrumentationTest {
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.indexedProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.framesProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.namedHtmlProbe"))
+            assertEquals("A custom-element reaction inside the insertion still sees the unlocked frame (known residual)",
+                "\"function\"", evaluate(view, "window.reactionProbe"))
+            assertEquals("\"undefined\"", evaluate(view, "window.afterReactionProbe"))
             await { evaluate(view, "window.srcdocProbe !== null") == "true" }
             val srcdoc = evaluate(view, "window.srcdocProbe")
             assertTrue("The sandboxed srcdoc frame must be opaque: $srcdoc", srcdoc.endsWith("|null\""))
@@ -169,7 +188,7 @@ class RuntimeWebRtcFrameInstrumentationTest {
             runBlocking { manager.clearThenRun(toolId) { Unit } }.let {
                 assertTrue("Runtime profile cleanup failed: $it", it is RuntimeDataCleanupExecution.Completed)
             }
-            bundle.parent.parent.parent.toFile().deleteRecursively()
+            root.toFile().deleteRecursively()
         }
     }
 
