@@ -86,6 +86,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      # android.yml skips a change that only touches tbx.yml or tbx.py, so the guard tests for this workflow
+      # and its scripts run here too.
+      - name: Verify CI and packaging scripts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
       - id: targets
         env:
           TBX_SELECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.tool || 'changed' }}
@@ -228,15 +232,48 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+          # Full history: the version check compares this push with the commit main was at before it.
+          fetch-depth: 0
       - name: Publish the packages built by this run
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PUSH_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
           set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" --pattern "*-$GITHUB_SHA" -D "$RUNNER_TEMP/artifacts" || true
           mkdir -p "$RUNNER_TEMP/tbx"
-          find "$RUNNER_TEMP/artifacts" -name '*.tbx' -exec cp {} "$RUNNER_TEMP/tbx/" \; 2>/dev/null || true
+          # Every package job that succeeded must hand over exactly its own package; a failed download is an
+          # error, not "nothing to publish" (later pushes only rebuild the tools they change).
+          succeeded="$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "success") | .name | select(startswith("TBX · ")) | ltrimstr("TBX · ")')"
+          if [ -z "$succeeded" ]; then
+            echo "No package job succeeded; nothing to publish."
+            exit 0
+          fi
+          for tool in $succeeded; do
+            [[ "$tool" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || { echo "Unexpected tool name: $tool" >&2; exit 1; }
+            gh run download "$GITHUB_RUN_ID" -n "$tool-$GITHUB_SHA" -D "$RUNNER_TEMP/artifacts/$tool"
+            packages=("$RUNNER_TEMP/artifacts/$tool/$tool"-v*.tbx)
+            [ "${#packages[@]}" -eq 1 ] && [ -f "${packages[0]}" ] \
+              || { echo "The $tool package job succeeded, but its artifact has no single $tool .tbx" >&2; exit 1; }
+            (cd "$RUNNER_TEMP/artifacts/$tool" && sha256sum -c SHA256SUMS.txt)
+            cp "${packages[0]}" "$RUNNER_TEMP/tbx/"
+          done
+          # A push to main must raise the version of every tool whose shipped files it changed (the PR check
+          # cannot see a version another PR merged after it ran). Such a tool is held back and the job fails
+          # after publishing the others; a manual run has no previous commit to compare with.
+          held=""
+          if [ -n "$PUSH_BEFORE" ]; then
+            for package in "$RUNNER_TEMP/tbx"/*.tbx; do
+              tool="$(basename "$package")"
+              tool="${tool%%-v[0-9]*}"
+              if ! python3 scripts/ci/version_bump.py --push --base "$PUSH_BEFORE" --head "$GITHUB_SHA" --only "$tool" --quiet; then
+                echo "Not publishing $(basename "$package"): it changed without a version bump." >&2
+                rm -f "$package"
+                held="$held $tool"
+              fi
+            done
+          fi
           # Leave tools that later commits on main changed to those commits' own runs.
           newer="$(gh api "repos/$GH_REPO/compare/$GITHUB_SHA...main" \
             --jq 'if .ahead_by == 0 then empty elif (.files | length) >= 300 then "scripts/ci/tbx.py" else .files[].filename end' \
@@ -245,3 +282,7 @@ jobs:
             find "$RUNNER_TEMP/tbx" -name "$tool-v*.tbx" -print -delete | sed 's/^/Superseded by a newer commit: /'
           done
           bash scripts/ci/publish-test-release.sh tools "$RUNNER_TEMP/tbx"
+          if [ -n "$held" ]; then
+            echo "Held back without a version bump:$held" >&2
+            exit 1
+          fi
