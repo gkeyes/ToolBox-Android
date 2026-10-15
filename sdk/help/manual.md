@@ -177,7 +177,7 @@ SDK 自动注入，不要把类型声明放进 script 标签。四个内置范�
 
 先在 manifest.permissions 声明，再由用户在工具权限页控制。接口没有隐式授权方法；工具授权与 Android 系统权限分别生效。新增能力默认关闭，已有授权在同身份更新中按声明继承。关闭安全存储权限或卸载工具会清理相应安全数据。
 
-需要前台交互的剪贴板、分享、浏览器、文件选择、相机、快捷方式和震动，由当前可见且有窗口焦点的工具发起。授权后没有触屏倒计时或每分钟调用额度。系统文件选择器、相机、分享及桌面确认仍由 Android 处理。
+需要前台交互的剪贴板、分享、浏览器、文件选择、相机、快捷方式、震动和单次定位（location.getCurrent），由当前可见且有窗口焦点的工具发起。后台取得位置请在持续会话中使用 location.watch({ allowBackground: true })，并需要 location.background 授权。授权后没有触屏倒计时或每分钟调用额度。系统文件选择器、相机、分享及桌面确认仍由 Android 处理。
 
 网络通过 ToolBox 原生 HTTPS 接口访问；TLS 验证和跨源重定向凭据剥离继续生效。外部网页、iframe 和 Worker 不获得 ToolBox bridge。
 
@@ -238,7 +238,7 @@ audio/video 播放使用 `network.openMedia({ url, kind? }, { signal? })`，将�
 
 HTML 入口不要求以 doctype 或 html 标签起始，可以包含 BOM、注释及前导空白；文件路径与原生载荷、归档内容检查仍保留。图标支持设备能解码的位图，动图显示静态首帧；SVG 使用 AndroidSVG 1.4 的静态能力，允许纯本地引用、裁剪、蒙版及样式，不执行脚本或读取外部资源，不承诺渲染器未实现的滤镜。
 
-媒体自动播放仍要求用户手势，这是防打扰策略。宿主备份目前只接受本地文档位置；尚未提供云文档备份语义。缺少独立 WebView profile 能力时使用无状态隔离，标准网页存储不可用，可使用已授权的 ToolBox 存储接口。HTTPS、精确来源、能力授权、签名与原生载荷检查继续生效。
+媒体自动播放仍要求用户手势，这是防打扰策略。宿主备份目前只接受本地文档位置；尚未提供云文档备份语义。缺少独立 WebView profile 能力时使用无状态隔离，标准网页存储不可用，可使用已授权的 ToolBox 存储接口。工具页面不提供 WebRTC（RTCPeerConnection 等），网络访问只走声明并授权的 ToolBox 网络接口。HTTPS、精确来源、能力授权、签名与原生载荷检查继续生效。
 
 独立后台任务可并行；每次执行有独立宿主身份，取消或更新后到达的旧结果不会覆盖新结果。瞬时错误最多自动重试 3 次（总计最多 4 次尝试），并遵守 WorkManager 调度；一个工具的持续 runtime 会话会复用，不代表整个宿主只能运行一个工具。
 
@@ -791,7 +791,7 @@ export interface ToolBoxApi {
     text(text: string): Promise<void>;
   };
   browser: {
-    /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser. Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. Uploads, downloads and website device permissions are unsupported; the menu offers an explicit system-browser fallback. */
+    /** Opens an absolute HTTP/HTTPS URL (without credentials or control characters) in ToolBox's isolated in-app browser. Requires the separate, default-off browser capability and the current visible foreground tool. No per-minute allowance, browsing deadline, or fixed page-size quota applies. No network capability or Android runtime permission is required. Resolves when the browser Activity starts, not when the page loads. Website cookies are shared across browser sessions and tools, separate from tool storage, until expiry or explicit browser-data clearing. Remote pages have no ToolBox bridge. File inputs open Android's document picker (direct camera capture is not implemented); HTTP(S) downloads go to the system download manager after confirmation (generated blob/data downloads are not transferable); camera, microphone, location and MIDI requests are asked per website and name it. The menu also offers an explicit system-browser fallback. */
     open(url: string): Promise<void>;
   };
   files: {

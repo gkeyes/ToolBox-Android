@@ -168,7 +168,7 @@ internal object StrictJson {
             val start = index
             consume('-')
             if (consume('0')) {
-                if (index < text.length && text[index].isDigit()) fail("Leading zero in number")
+                if (index < text.length && text[index] in '0'..'9') fail("Leading zero in number")
             } else {
                 readDigits(required = true)
             }
@@ -187,7 +187,7 @@ internal object StrictJson {
 
         private fun readDigits(required: Boolean) {
             val start = index
-            while (index < text.length && text[index].isDigit()) index++
+            while (index < text.length && text[index] in '0'..'9') index++
             if (required && start == index) fail("Expected digit")
         }
 

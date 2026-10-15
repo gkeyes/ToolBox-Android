@@ -36,8 +36,10 @@ import io.toolbox.tool.packagekit.PackageInput
 import io.toolbox.tool.packagekit.AndroidPackageResourceProbe
 import io.toolbox.tool.packagekit.lifecycle.PackageImportControl
 import io.toolbox.tool.packagekit.PackageRejection
+import io.toolbox.tool.packagekit.PackageRejectionCode
 import io.toolbox.tool.packagekit.lifecycle.PackageInstallResult
 import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailure
+import io.toolbox.tool.packagekit.lifecycle.PackageOperationFailureCode
 import io.toolbox.tool.packagekit.lifecycle.PackageRecoveryResult
 import io.toolbox.tool.packagekit.lifecycle.PackageUninstallResult
 import io.toolbox.tool.packagekit.lifecycle.PackageVersionConfirmationKind
@@ -241,22 +243,50 @@ internal class ProductionHostPackageOperations(
         }
     }
 
-    private fun importFailureMessage(rejection: PackageRejection): String = when (rejection.code.name) {
-        "SIGNATURE_INVALID" -> "工具包签名无效，无法安装。"
-        "INSUFFICIENT_SPACE" -> "存储空间不足，请释放空间后重新安装。"
-        "INSUFFICIENT_RESOURCES" -> "设备可用内存不足，请关闭部分应用后重新安装。"
-        "RESOURCE_CHECK_FAILED" -> "无法读取设备可用资源，请稍后重试。"
-        "CLEANUP_FAILED" -> "临时安装文件未能清理，请稍后重试。"
-        else -> "工具包无法安装，请检查文件后重试。"
+    // Exhaustive over both enums: a new code must choose its message here instead of falling to a default.
+    private fun importFailureMessage(rejection: PackageRejection): String = when (rejection.code) {
+        PackageRejectionCode.SIGNATURE_INVALID -> "工具包签名无效，无法安装。"
+        PackageRejectionCode.INSUFFICIENT_SPACE -> "存储空间不足，请释放空间后重新安装。"
+        PackageRejectionCode.INSUFFICIENT_RESOURCES -> "设备可用内存不足，请关闭部分应用后重新安装。"
+        PackageRejectionCode.RESOURCE_CHECK_FAILED -> "无法读取设备可用资源，请稍后重试。"
+        PackageRejectionCode.CLEANUP_FAILED -> "临时安装文件未能清理，请稍后重试。"
+        PackageRejectionCode.UNSUPPORTED_HOST_VERSION -> "此工具需要更高版本的 ToolBox。"
+        PackageRejectionCode.SOURCE_READ_FAILED,
+        PackageRejectionCode.TEMPORARY_IO_FAILED,
+        PackageRejectionCode.MALFORMED_ARCHIVE,
+        PackageRejectionCode.UNSUPPORTED_ZIP_FEATURE,
+        PackageRejectionCode.PATH_INVALID,
+        PackageRejectionCode.PATH_TOO_LONG,
+        PackageRejectionCode.PATH_COLLISION,
+        PackageRejectionCode.SYMLINK,
+        PackageRejectionCode.SPECIAL_FILE,
+        PackageRejectionCode.NESTED_ARCHIVE,
+        PackageRejectionCode.NATIVE_OR_DYNAMIC_CODE,
+        PackageRejectionCode.EXTRACTION_FAILED,
+        PackageRejectionCode.MANIFEST_MISSING,
+        PackageRejectionCode.MANIFEST_TOO_LARGE,
+        PackageRejectionCode.MANIFEST_INVALID,
+        PackageRejectionCode.ENTRY_MISSING,
+        PackageRejectionCode.ENTRY_MIME_INVALID,
+        PackageRejectionCode.INTEGRITY_MALFORMED,
+        PackageRejectionCode.INTEGRITY_FILE_SET_MISMATCH,
+        PackageRejectionCode.INTEGRITY_HASH_MISMATCH,
+        PackageRejectionCode.SIGNATURE_MALFORMED,
+        PackageRejectionCode.SIGNATURE_KEY_ID_MISMATCH,
+        -> "工具包无法安装，请检查文件后重试。"
     }
 
-    private fun importFailureMessage(failure: PackageOperationFailure): String = when (failure.code.name) {
-        "CONFIRMATION_EXPIRED" -> "安装确认已失效，请重新选择工具包。"
-        "SIGNING_IDENTITY_CHANGED" -> "更新包的签名身份与原工具不同，已保留原工具和数据。请使用原作者签名的更新包。"
-        "UNSUPPORTED_HOST_VERSION" -> "此工具需要更高版本的 ToolBox。"
-        "BUSY" -> "正在处理另一个工具包，请稍后重试。"
-        "CLEANUP_FAILURE" -> "临时安装状态未能清理，请稍后重试。"
-        else -> "安装未完成，请重试。"
+    private fun importFailureMessage(failure: PackageOperationFailure): String = when (failure.code) {
+        PackageOperationFailureCode.CONFIRMATION_EXPIRED -> "安装确认已失效，请重新选择工具包。"
+        PackageOperationFailureCode.SIGNING_IDENTITY_CHANGED ->
+            "更新包的签名身份与原工具不同，已保留原工具和数据。请使用原作者签名的更新包。"
+        PackageOperationFailureCode.UNSUPPORTED_HOST_VERSION -> "此工具需要更高版本的 ToolBox。"
+        PackageOperationFailureCode.UNSUPPORTED_REQUIRED_CAPABILITY -> "此工具需要当前 ToolBox 不支持的能力，请更新 ToolBox 后重试。"
+        PackageOperationFailureCode.BUSY -> "正在处理另一个工具包，请稍后重试。"
+        PackageOperationFailureCode.CLEANUP_FAILURE -> "临时安装状态未能清理，请稍后重试。"
+        PackageOperationFailureCode.DATA_FAILURE,
+        PackageOperationFailureCode.STORAGE_FAILURE,
+        -> "安装未完成，请重试。"
     }
 
     internal companion object {
