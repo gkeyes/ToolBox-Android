@@ -51,7 +51,11 @@ internal class BrowserSslSession<Page : Any>(
 
     private var page: Page? = null
     private var awaitingStart = false
-    /** The user allowed a connection since the last page start; that start's page inherits the warning. */
+    /**
+     * The user allowed a connection since the last navigation request or page start; the page that
+     * starts next inherits the warning. The warning itself only changes when a page starts, never on a
+     * request, so a navigation that never commits (a 204, a download, window.stop()) cannot clear it.
+     */
     private var proceededBeforeStart = false
     private var nextId = 0L
     private val warnings = ArrayDeque<Warning<Page>>()
@@ -74,6 +78,7 @@ internal class BrowserSslSession<Page : Any>(
             // engine may normalize the URL or follow a redirect before delivering this start;
             // URL equality cannot identify a navigation operation.
             awaitingStart = false
+            bypassChanged(proceededBeforeStart)
             proceededBeforeStart = false
             return false
         }
@@ -81,7 +86,7 @@ internal class BrowserSslSession<Page : Any>(
         // when the allowance was really for the previous page this errs on the side of warning.
         val carry = proceededBeforeStart
         replaceSession(view)
-        if (carry) bypassChanged(true)
+        bypassChanged(carry)
         return true
     }
 
@@ -116,8 +121,8 @@ internal class BrowserSslSession<Page : Any>(
         if (view !== page) return
         page = null
         awaitingStart = false
-        // No bypassChanged(false): Stop also lands here and leaves the allowed document on screen.
-        // The warning ends with the next navigation, which starts a new session.
+        // Stop also lands here and leaves the allowed document on screen, so the warning stays until
+        // the next page starts.
         clearPreferences(view)
         cancelOutstanding()
     }
@@ -127,8 +132,6 @@ internal class BrowserSslSession<Page : Any>(
         page = view
         awaitingStart = false
         proceededBeforeStart = false
-        // The certificate exception ends with the session, so the toolbar's warning does too.
-        bypassChanged(false)
         if (previous != null && previous !== view) clearPreferences(previous)
         clearPreferences(view)
         cancelOutstanding()
