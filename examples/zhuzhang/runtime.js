@@ -77,6 +77,8 @@ window.ZZRuntime = (() => {
     if (!(bytes instanceof Uint8Array)) throw new Error('文件读取接口未返回字节数据。');
     return new TextDecoder('utf-8', {fatal:true}).decode(bytes).replace(/^\uFEFF/, '');
   }
-  return Object.freeze({init,get,set,remove,saveFile,openFile,explain,
+  // ToolBox 0.8.28+ awaits this before an orderly close; older hosts and the browser preview ignore it.
+  function onFlush(handler) { try { native?.runtime?.registerFlushHandler?.(handler); } catch (_) {} }
+  return Object.freeze({init,get,set,remove,saveFile,openFile,explain,onFlush,
     get isNative(){return Boolean(native);}, get info(){return info;}});
 })();

@@ -18,6 +18,7 @@
   const rawMoney = cents => cents == null ? '' : (cents/100).toFixed(cents%100?2:0);
   const uid = prefix => prefix + '-' + (globalThis.crypto?.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
   const nowDate = () => {const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+  const localDay = iso => {const d=new Date(iso);return isNaN(d)?String(iso??'').slice(0,10):`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   const dateText = d => {const a=d.split('-');return `${Number(a[1])}月${Number(a[2])}日`;};
   const validDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d)) && new Date(d+'T12:00:00Z').toISOString().slice(0,10)===d;
   function fixed(value, scale=2, name='金额') {
@@ -68,7 +69,7 @@
       if(net<0)fail('备份中退款超过了关联项目已付金额。');if(i.status==='estimate'&&net>0)fail('有净付款的费用项不能标记为未确认。');
       if(i.status==='settled'&&i.costMode!=='actual'&&(i.price===null||net!==i.price))fail('已结算项目的金额与净付款不一致。');
     }
-    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c.date,40),itemId:string(c.itemId,100),note:string(c.note,2500)}));
+    if(Array.isArray(source.changes))out.changes=source.changes.map(c=>({date:string(c?.date,40),itemId:string(c?.itemId,100),note:string(c?.note,2500)}));
     const total=out.items.reduce((s,i)=>s+i.budget+(i.price??0),0)+out.payments.reduce((s,t)=>s+t.amount,0);
     if(!Number.isSafeInteger(total))fail('备份合计超出精确计算范围。');
     return out;
@@ -77,7 +78,7 @@
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
   let data=emptyLedger(),busy=false;
   let entryValues={};
-  let drafts=[],activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
+  let draftsUnreadable=false,drafts=[],activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve();
 
   let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
@@ -96,6 +97,7 @@
       if(!storageOK)throw new Error(bootError||'存储未就绪；记录未保存，请重试连接。');
       if(restoreError)throw new Error('原始账本无法解析。请先导出原始数据，再导入有效备份。');
       if(activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
+      next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||drafts.some(d=>d.id===id));
       next=validate(next);next.revision=(data.revision||0)+1;
       await runtime.set(KEY,next);
       data=next;
@@ -204,7 +206,7 @@
     }).join('')}</section>`).join('');
     if(ui.ledgerTab==='payments'){
       const ids=new Set(items.map(i=>i.id)),ts=data.payments.filter(p=>ids.has(p.itemId)).sort((a,b)=>b.date.localeCompare(a.date)),months=[...new Set(ts.map(p=>p.date.slice(0,7)))];
-      content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${money(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+(p.kind==='refund'?-p.amount:p.amount),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(rowActivity).join('')}</section>`).join('');
+      content=months.map(m=>`<section class="card list-card" style="margin-bottom:17px"><div class="month-heading">${m.replace('-','年')}月 <span class="muted caption">净支出 ${(n=>(n<0?'−':'')+money(Math.abs(n)))(ts.filter(p=>p.date.startsWith(m)).reduce((v,p)=>v+(p.kind==='refund'?-p.amount:p.amount),0))}</span></div>${ts.filter(p=>p.date.startsWith(m)).map(rowActivity).join('')}</section>`).join('');
     }
     if(ui.ledgerTab==='due'){
       const ds=items.filter(i=>i.status!=='estimate'&&remaining(i)>0).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
@@ -308,10 +310,10 @@
     if(carry['item-category'])v.category=carry['item-category'];if(carry['item-room'])v.room=carry['item-room'];
     const field=mode==='plan'?'budget':'price',label=mode==='plan'?'项目预算':'预计费用';
     const amount=carry[field]??rawMoney(v[field]);
-    const legacy=carry.__legacy==='true'&&fresh?(mode==='plan'?'price':'budget'):'';
+    const legacy=fresh?(mode==='plan'?'price':'budget'):'';
     const retained=legacy&&carry[legacy]!==undefined&&carry[legacy]!==''?String(carry[legacy]):'';
     const title=mode==='info'?'编辑资料':fresh?(mode==='plan'?'新增项目预算':'新增费用预算'):(mode==='plan'?'修改项目预算':'修改预计费用');
-    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保留原草稿中的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
+    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保存另一页填写的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
   }
   async function submitItem(form){
     const f=new FormData(form),id=String(f.get('id')||''),old=data.items.find(i=>i.id===id),mode=String(f.get('record-mode')||'estimate');
@@ -320,7 +322,7 @@
     const due=String(f.get('due')||'');if(due&&!validDate(due))throw new Error('计划付清日期无效，请重新选择。');
     const item=old?clone(old):{id:uid('e'),budget:null,price:null,costMode:'estimated',status:'estimate'};
     Object.assign(item,{name,category:String(f.get('item-category')),room:String(f.get('item-room')),merchant:String(f.get('merchant')||'').trim(),due,note:String(f.get('note')||'').trim()});
-    if(mode==='plan')item.budget=fixed(f.get('budget'),2,'项目预算');
+    if(mode==='plan')item.budget=String(f.get('budget')||'').trim()===''?null:fixed(f.get('budget'),2,'项目预算');
     else if(mode==='estimate'){
       const value=String(f.get('price')||'').trim();item.price=value===''?null:fixed(value,2,'预计费用');item.costMode=value===''&&old?.costMode==='actual'?'actual':'estimated';
       const confirmed=f.get('quote-confirmed')==='on'||Boolean(old&&paid(old)>0);
@@ -421,7 +423,7 @@
     const i=data.items.find(x=>x.id===id);if(!i)return;
     const ps=data.payments.filter(t=>t.itemId===id).sort((a,b)=>b.date.localeCompare(a.date)),changes=data.changes.filter(c=>c.itemId===id).slice(-4).reverse();
     dialog(i.name,`<div class="detail-meta"><span class="caption muted">${cat(i.category).name} · ${esc(i.room)}</span>${badge(i)}</div><section class="detail-hero"><div class="caption muted">${i.status==='settled'?'结算费用':i.costMode==='actual'?'实际支出':'预计费用'}</div><div class="value num">${i.costMode==='actual'?money(paid(i)):priceText(i)}</div><div class="between caption"><span class="muted">项目预算 ${budgetText(i)}</span>${i.budget!==null?`<span class="${expected(i)>i.budget?'negative':missingPrice(i)?'muted':'positive'}">${expected(i)>i.budget?'超出 '+money(expected(i)-i.budget):missingPrice(i)?'结余待确认':'结余 '+money(i.budget-expected(i))}</span>`:''}</div><div class="detail-grid"><div><span>累计净支出</span><b class="num">${money(paid(i))}</b></div><div><span>${overpaid(i)?'支出超出预计':'待付金额'}</span><b class="num">${missingPrice(i)?'待确认':money(overpaid(i)||remaining(i))}</b></div></div></section>
-    <div class="detail-edit-links"><button class="text-button" data-action="edit-plan" data-id="${esc(id)}">${i.budget===null?'设置':'修改'}项目预算</button><button class="text-button" data-action="edit-estimate" data-id="${esc(id)}">${i.costMode==='actual'||i.price===null?'设置':'修改'}预计费用</button><button class="text-button" data-action="edit-item" data-id="${esc(id)}">编辑资料</button></div>${i.merchant?`<div class="summary-pair"><span class="muted">商家或施工方</span><span>${esc(i.merchant)}</span></div>`:''}${i.due?`<div class="summary-pair"><span class="muted">计划付清日期</span><span>${esc(window.ZZCalendar.display(i.due))}</span></div>`:''}${i.note?`<p class="form-hint">备注：${esc(i.note)}</p>`:''}<div class="detail-section">支出记录 <span class="muted caption">${ps.length} 笔</span></div><div class="detail-list">${ps.map(rowActivity).join('')||'<div class="empty">暂无支出记录</div>'}</div>${changes.length?`<div class="detail-section">变更记录</div>${changes.map(c=>`<p class="form-hint">${esc(c.date.slice(0,10))} · ${esc(c.note)}</p>`).join('')}`:''}
+    <div class="detail-edit-links"><button class="text-button" data-action="edit-plan" data-id="${esc(id)}">${i.budget===null?'设置':'修改'}项目预算</button><button class="text-button" data-action="edit-estimate" data-id="${esc(id)}">${i.costMode==='actual'||i.price===null?'设置':'修改'}预计费用</button><button class="text-button" data-action="edit-item" data-id="${esc(id)}">编辑资料</button></div>${i.merchant?`<div class="summary-pair"><span class="muted">商家或施工方</span><span>${esc(i.merchant)}</span></div>`:''}${i.due?`<div class="summary-pair"><span class="muted">计划付清日期</span><span>${esc(window.ZZCalendar.display(i.due))}</span></div>`:''}${i.note?`<p class="form-hint">备注：${esc(i.note)}</p>`:''}<div class="detail-section">支出记录 <span class="muted caption">${ps.length} 笔</span></div><div class="detail-list">${ps.map(rowActivity).join('')||'<div class="empty">暂无支出记录</div>'}</div>${changes.length?`<div class="detail-section">变更记录</div>${changes.map(c=>`<p class="form-hint">${esc(localDay(c.date))} · ${esc(c.note)}</p>`).join('')}`:''}
     <div class="detail-admin-actions">${i.status!=='settled'?`<button class="text-button" data-action="settle-item" data-id="${esc(id)}">确认结算</button>`:''}<button class="text-button text-danger" data-action="delete-item" data-id="${esc(id)}">删除项目</button></div><div class="dialog-actions"><button class="button primary" data-action="payment" data-id="${esc(id)}">${icon('plus','small-icon')}记录实际支出</button></div>`);
   }
   function openSettlement(id){
@@ -439,20 +441,24 @@
   }
 
   function openTransaction(id){const t=data.payments.find(t=>t.id===id);if(!t)return;const i=data.items.find(i=>i.id===t.itemId);dialog('流水详情',`<div class="detail-hero"><div class="caption muted">${t.kind==='refund'?'已收到退款':'已付款'} · ${esc(i.name)}</div><div class="value num ${t.kind==='refund'?'positive':''}">${t.kind==='refund'?'+':'−'}${money(t.amount)}</div></div><div class="summary-pair"><span class="muted">日期</span><span>${t.date}</span></div><div class="summary-pair"><span class="muted">类别</span><span>${cat(i.category).name}</span></div><div class="summary-pair"><span class="muted">备注</span><span style="max-width:70%;overflow-wrap:anywhere">${esc(t.note||'未填写')}</span></div><p class="form-hint">${i.costMode==='actual'?'删除将移除该笔流水，并重新汇总实际费用。':'删除仅移除该笔流水，不修改手动填写的预计费用。'}发生退款时请新增退款记录，保留原支出记录。</p><div class="dialog-actions"><button class="button outline" data-action="detail" data-id="${esc(i.id)}">查看费用项</button><button class="button danger-button" data-action="delete-payment" data-id="${esc(t.id)}">删除记录</button></div>`);}
-  function openProject(){const t=totals();dialog('项目与预算',`<form data-form="project"><p class="dialog-sub">设置装修项目资料与总预算。修改设置不影响已有记录。</p><label class="field"><span>项目名称</span><input class="plain" name="name" value="${esc(data.project.name)}" maxlength="60" required></label><div class="field-grid form-row"><label class="field"><span>面积（㎡）</span><input class="plain" name="area" inputmode="decimal" value="${esc(data.project.area)}" placeholder="选填"></label><label class="field"><span>户型</span><input class="plain" name="layout" value="${esc(data.project.layout)}" maxlength="60" placeholder="选填"></label><label class="field wide"><span>总预算上限（元，含预备金）</span><input class="plain" inputmode="decimal" name="budget" value="${data.project.budget?rawMoney(data.project.budget):''}" placeholder="选填，不影响记录支出"></label></div><div class="edit-budget-note">预备金 = 总预算上限 − 已分配到费用项的预算，不额外累加。</div><div class="project-budget-preview"><span class="muted">已分配预算<b class="num" style="color:var(--ink)">${money(t.budget)}</b></span><span class="muted">${!data.project.budget?'未设总预算':t.budget>data.project.budget?'预算超额分配':'当前预备金'}<b class="num ${t.budget>data.project.budget?'negative':'positive'}">${data.project.budget?money(Math.abs(data.project.budget-t.budget)):'—'}</b></span></div><div class="dialog-actions"><button class="button primary" type="submit">保存设置</button></div></form>`);}
+  function openProject(){const t=totals();dialog('项目与预算',`<form data-form="project"><p class="dialog-sub">设置装修项目资料与总预算。修改设置不影响已有记录。</p><label class="field"><span>项目名称</span><input class="plain" name="name" value="${esc(data.project.name)}" maxlength="60" required></label><div class="field-grid form-row"><label class="field"><span>面积（㎡）</span><input class="plain" name="area" inputmode="decimal" value="${esc(data.project.area)}" maxlength="20" placeholder="选填"></label><label class="field"><span>户型</span><input class="plain" name="layout" value="${esc(data.project.layout)}" maxlength="60" placeholder="选填"></label><label class="field wide"><span>总预算上限（元，含预备金）</span><input class="plain" inputmode="decimal" name="budget" value="${data.project.budget?rawMoney(data.project.budget):''}" placeholder="选填，不影响记录支出"></label></div><div class="edit-budget-note">预备金 = 总预算上限 − 已分配到费用项的预算，不额外累加。</div><div class="project-budget-preview"><span class="muted">已分配预算<b class="num" style="color:var(--ink)">${money(t.budget)}</b></span><span class="muted">${!data.project.budget?'未设总预算':t.budget>data.project.budget?'预算超额分配':'当前预备金'}<b class="num ${t.budget>data.project.budget?'negative':'positive'}">${data.project.budget?money(Math.abs(data.project.budget-t.budget)):'—'}</b></span></div><div class="dialog-actions"><button class="button primary" type="submit">保存设置</button></div></form>`);}
 
   function confirmation(title,message,action,id='',button='确认删除'){dialog(title,`<p class="dialog-sub">${esc(message)}</p><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button danger-button" data-action="${action}" data-id="${esc(id)}">${button}</button></div>`);}
+  let exporting=false;
   async function exportFile(filename,text,type){
+    if(exporting)return false;
+    exporting=true;
     try{
       const ok=await runtime.saveFile(filename,type,text);
       if(ok)toast(runtime.isNative?'文件已保存': '已发起下载，请查看浏览器下载列表');
       else toast('已取消导出');
       return ok;
     }catch(error){if(error?.code==='CANCELLED'){toast('已取消导出');return false;}showError(runtime.explain(error));return false;}
+    finally{exporting=false;}
   }
-  async function exportJSON(){await exportFile('筑账_备份_'+nowDate()+'.json',JSON.stringify(data,null,2),'application/json;charset=utf-8');}
+  async function exportJSON(){if(restoreError)throw new Error('账本未能读取，请使用「导出原始数据」。');await exportFile('筑账_备份_'+nowDate()+'.json',JSON.stringify(data,null,2),'application/json;charset=utf-8');}
 
-  async function exportCSV(){
+  async function exportCSV(){if(restoreError)throw new Error('账本未能读取，请使用「导出原始数据」。');
     const cell=v=>{let str=String(v??'');if(/^[=+\-@\t\r]/.test(str))str="'"+str;return '"'+str.replaceAll('"','""')+'"';};
     const rows=[['名称','类别','空间','商家','状态','项目预算（元）','预计费用（元）','计入费用合计（元）','实际净支出（元）','待付金额（元）','支出超出预计（元，待核对）','计划付清日期','费用统计方式','备注'],...data.items.map(i=>[i.name,cat(i.category).name,i.room,i.merchant,statusText(i),i.budget===null?'未设置':(i.budget/100).toFixed(2),i.costMode==='actual'?'不适用':i.price===null?'待估价':(i.price/100).toFixed(2),(expected(i)/100).toFixed(2),(paid(i)/100).toFixed(2),missingPrice(i)?'待确认':(remaining(i)/100).toFixed(2),(overpaid(i)/100).toFixed(2),i.due,i.costMode==='actual'?'按净支出汇总':'按预计费用与净支出较高者汇总',i.note])];
     await exportFile('筑账_费用明细_'+nowDate()+'.csv','\uFEFF'+rows.map(r=>r.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');
@@ -558,7 +564,7 @@
       if(form.dataset.form==='item')await submitItem(form);
       if(form.dataset.form==='settlement')await submitSettlement(form);
       if(form.dataset.form==='project'){
-        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area)fixed(area,2,'面积');const next=clone(data);next.project={name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
+        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area.length>20)throw new Error('面积最多 20 个字符。');if(area)fixed(area,2,'面积');const next=clone(data);next.project={name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
       }
       if(form.dataset.form==='apply'){
         const f=new FormData(form),id=String(f.get('apply-target')),next=clone(data),item=next.items.find(i=>i.id===id);if(!applyResult)throw new Error('测算结果已失效，请重新计算。');
@@ -582,6 +588,7 @@
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
+  runtime.onFlush(async()=>{flushCalc();if(isFormDirty())await saveDraftNow().catch(()=>{});await calcQueue.catch(()=>{});await draftQueue.catch(()=>{});});
   const viewport=window.visualViewport;
   const syncViewport=()=>{const h=viewport?.height||window.innerHeight;const editing=/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName||'');document.documentElement.style.setProperty('--viewport-height',h+'px');document.body.classList.toggle('keyboard-open',editing&&window.innerHeight-h>120);};
   viewport?.addEventListener('resize',syncViewport);document.addEventListener('focusin',syncViewport);document.addEventListener('focusout',()=>setTimeout(syncViewport,80));syncViewport();
@@ -635,6 +642,7 @@
   }
   function mutateDrafts(change){
     draftQueue=draftQueue.catch(()=>{}).then(async()=>{
+      if(draftsUnreadable)throw new Error('已保存的草稿未能读取；为免覆盖，暂不保存新草稿。');
       const next=change(drafts);
       if(next.length)await runtime.set('draft.v1',{schemaVersion:2,records:next});else await runtime.remove('draft.v1');
       drafts=next;updateDraftBanner();
@@ -657,7 +665,7 @@
   function openDraftList(){
     const list=availableDrafts();if(!list.length){toast('暂无未完成的草稿');return;}
     if(list.length===1){restoreDraft(list[0].id);return;}
-    dialog('未完成的草稿',`<p class="dialog-sub">草稿未计入预算或支出统计。提交一份草稿不会删除其他草稿。</p>${list.map(d=>{const v=Object.fromEntries(d.fields),name=v.name||data.items.find(i=>i.id===(v.id||v['payment-item']))?.name||d.title;return `<div class="draft-list-row"><button class="menu-row" data-action="restore-draft" data-id="${esc(d.id)}">${icon('edit')}<div><strong>${esc(name)}</strong><p>${esc(d.title)}${d.time?' · '+esc(d.time.slice(0,10)):''}</p></div>${icon('right')}</button><button class="icon-button text-danger" data-action="delete-draft" data-id="${esc(d.id)}" aria-label="删除 ${esc(name)} 草稿">${icon('trash')}</button></div>`;}).join('')}`);
+    dialog('未完成的草稿',`<p class="dialog-sub">草稿未计入预算或支出统计。提交一份草稿不会删除其他草稿。</p>${list.map(d=>{const v=Object.fromEntries(d.fields),name=v.name||data.items.find(i=>i.id===(v.id||v['payment-item']))?.name||d.title;return `<div class="draft-list-row"><button class="menu-row" data-action="restore-draft" data-id="${esc(d.id)}">${icon('edit')}<div><strong>${esc(name)}</strong><p>${esc(d.title)}${d.time?' · '+esc(localDay(d.time)):''}</p></div>${icon('right')}</button><button class="icon-button text-danger" data-action="delete-draft" data-id="${esc(d.id)}" aria-label="删除 ${esc(name)} 草稿">${icon('trash')}</button></div>`;}).join('')}`);
   }
   function restoreDraft(id){
     const source=availableDrafts().find(d=>d.id===id);
@@ -689,7 +697,7 @@
     const baseNow=activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
     activeDraftId=draft.id;activeDraftBase=baseNow;activeDraftReview=conflict;
     if(conflict)appendDraftReview();
-    draftSnapshot='__restored_draft__';$('#draft-status').textContent='草稿已恢复';
+    draftSnapshot=conflict?'__restored_draft__':formSnapshot();$('#draft-status').textContent='草稿已恢复';
   }
   function appendDraftReview(){
     const form=$('#sheet form[data-form]');if(!form||form.querySelector('.draft-conflict'))return;
@@ -707,17 +715,22 @@
     const rows=[['project','home','项目设置','项目资料与总预算'],['export','download','导出账本备份','JSON · 项目、预算、支出与变更记录'],['import','upload','恢复账本备份','核对备份后替换当前账本'],['csv','list','导出费用明细','CSV · 分项预算与费用汇总'],['csv-payments','wallet','导出支出流水','CSV · 支出与退款记录']];
     if(availableDrafts().length)rows.push(['resume-draft','edit','继续编辑草稿','未提交内容不计入统计']);
     if(bootError)rows.unshift(['retry-storage','reset','重新连接存储','开启存储权限后重试']);
-    if(restoreError)rows.push(['export-raw','download','导出原始数据','保留原始文件用于恢复']);
+    if(restoreError){for(let k=rows.length-1;k>=0;k--)if(['export','csv','csv-payments'].includes(rows[k][0]))rows.splice(k,1);rows.push(['export-raw','download','导出原始数据','保留原始文件用于恢复']);}
     dialog('项目与数据',`<div class="settings-identity"><span class="brand-mark">${icon('home')}</span><div><h3>筑账 <span class="version">${VERSION}</span></h3><p>装修预算与支出管理</p></div></div><div class="form-options">${rows.map(([a,i,l,n])=>`<button class="menu-row" data-action="${a}">${icon(i)}<div><strong>${l}</strong><p>${n}</p></div>${icon('right')}</button>`).join('')}</div><div class="privacy-note">${icon('info','small-icon')}<p>账本仅保存在本地，不上传云端。清除应用数据或卸载前，请导出账本备份。备份不包含未提交草稿。</p></div>${storageOK?'<button class="text-button text-danger" data-action="new-ledger">清空账本</button>':''}`);
   }
 
   function previewImport(text){
     if(typeof text!=='string')throw new Error('没有读取到 JSON 文本。');
-    pendingImport=validate(JSON.parse(text.replace(/^\uFEFF/,'')));
+    let parsed;
+    try{parsed=validate(JSON.parse(text.replace(/^\uFEFF/,'')));}
+    catch(error){if(error instanceof SyntaxError||error instanceof TypeError)throw new Error('文件不是有效的筑账备份，未更改当前数据。');throw error;}
+    for(const i of parsed.items)assertCashTimeline(parsed,i.id);
+    if(parsed.payments.some(p=>p.date>nowDate()))throw new Error('备份中存在晚于今天的收支记录，未更改当前数据。');
+    pendingImport=parsed;
     const t=totals(pendingImport);
     dialog('确认恢复备份',`<p class="dialog-sub">结构校验已通过。恢复会替换当前账本，而不是叠加导入；请确认现有数据已备份。</p><div class="detail-hero"><h3>${esc(pendingImport.project.name)}</h3><div class="value num">${money(t.expected)}</div><div class="caption muted">${pendingImport.items.length} 个费用项 · ${pendingImport.payments.length} 条流水${t.unknown?' · '+t.unknown+' 项待估价':''}</div></div><div class="dialog-actions"><button class="button outline" data-action="close-dialog">取消</button><button class="button primary" data-action="import-confirm">恢复并替换</button></div>`);
   }
-  async function exportPayments(){
+  async function exportPayments(){if(restoreError)throw new Error('账本未能读取，请使用「导出原始数据」。');
     const cell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
     const rows=[['日期','类型','费用项','类别','空间','商家','金额（元）','备注'],...data.payments.map(p=>{const item=data.items.find(i=>i.id===p.itemId);return[p.date,p.kind==='refund'?'退款':'付款',item?.name||'',cat(item?.category).name,item?.room||'',item?.merchant||'',(p.amount/100).toFixed(2),p.note];})];
     await exportFile('筑账_付款流水_'+nowDate()+'.csv','\uFEFF'+rows.map(row=>row.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');
@@ -747,7 +760,7 @@
       await runtime.init();rawBackup=await runtime.get(KEY);storageOK=true;
       if(rawBackup!==null){try{data=validate(typeof rawBackup==='string'?JSON.parse(rawBackup):rawBackup);}catch(error){restoreError='账本校验失败，原数据未覆盖。请在「项目与数据」导出原始数据并恢复有效备份。';data=emptyLedger();}}
       else data=emptyLedger();
-      try{loadDrafts(await runtime.get('draft.v1'));}catch(_){drafts=[];}
+      try{loadDrafts(await runtime.get('draft.v1'));}catch(_){drafts=[];draftsUnreadable=true;}
       try{loadCalc(await runtime.get('calculator.v1'));}catch(_){}
     }catch(error){bootError=runtime.explain(error);}
     render();
