@@ -217,7 +217,9 @@ div.force-dark-code-theme .shiki span {
   contain: layout paint;
   box-shadow: 0 -6px 20px rgb(0 0 0 / 6%);
 }
-.nextflux-continuous-layer[data-phase="idle"] .nextflux-continuous-next-page { visibility: hidden; }
+.nextflux-continuous-layer[data-phase="idle"] :is(.nextflux-continuous-next-page, .nextflux-continuous-chrome) { visibility: hidden; }
+.nextflux-continuous-chrome { position: absolute; inset: 0; pointer-events: none; }
+.nextflux-continuous-chrome * { pointer-events: none !important; }
 .nextflux-continuous-layer:not([data-phase="idle"]) .nextflux-continuous-next-page { will-change: transform; }
 .nextflux-continuous-next-page-inner { min-height: 100%; margin-top: calc(-1 * var(--nf-continuous-shift, 0px)); }
 .nextflux-continuous-progress-dock {
