@@ -22,11 +22,14 @@ internal object BrowserSslPromptPolicy {
         else reasons.joinToString("；") + "。"
     }
 
-    fun connectionLabel(url: String): String = runCatching {
-        val uri = URI(url)
-        val host = uri.host ?: return@runCatching "未知地址"
-        "${uri.scheme}://$host" + if (uri.port >= 0) ":${uri.port}" else ""
-    }.getOrDefault("未知地址")
+    /** Scheme, host and port only, parsed like navigation so every page the browser loads gets a label. */
+    fun connectionLabel(url: String): String {
+        // Never show credentials; drop them so the remaining address can be parsed.
+        val parts = BrowserWebUrl.parse(url.replaceFirst(USER_INFO, "$1")) ?: return "未知地址"
+        return "${parts.scheme}://${parts.host}" + (parts.port?.let { ":$it" } ?: "")
+    }
+
+    private val USER_INFO = Regex("^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]*@")
 
 }
 

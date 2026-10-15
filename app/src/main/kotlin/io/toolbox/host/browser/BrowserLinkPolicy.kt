@@ -1,6 +1,5 @@
 package io.toolbox.host.browser
 
-import java.net.URI
 import java.util.Locale
 
 internal enum class BrowserLinkKind { Web, External, Unsupported }
@@ -18,9 +17,13 @@ internal object BrowserLinkPolicy {
             "blob", "data" -> BrowserLinkKind.Web
             "file", "content", "javascript", "" -> BrowserLinkKind.Unsupported
             "intent" -> BrowserLinkKind.External
-            else -> if (runCatching { URI(url).isAbsolute }.getOrDefault(false)) {
+            // App schemes follow RFC 3986 scheme syntax; the rest is the app's own business (Chromium passes
+            // characters like | through unescaped, which java.net.URI would reject).
+            else -> if (APP_SCHEME.matches(scheme) && url.length > scheme.length + 1) {
                 BrowserLinkKind.External
             } else BrowserLinkKind.Unsupported
         }
     }
+
+    private val APP_SCHEME = Regex("[a-z][a-z0-9+.-]*")
 }
