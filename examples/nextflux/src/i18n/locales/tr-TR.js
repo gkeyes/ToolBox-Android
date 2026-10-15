@@ -338,6 +338,7 @@ export default {
       articleTitle: "BAŞLIK",
       titleAlign: "Hizalama",
       titleFontSize: "Boyut",
+      articleTitleLines: "Satır",
       reset: "Sıfırla",
     },
     speech: {

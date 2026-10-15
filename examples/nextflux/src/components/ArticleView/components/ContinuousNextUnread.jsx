@@ -195,7 +195,19 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       const layer = layerRef.current;
       if (!layer) return;
       const bottom = viewport.querySelector(".action-buttons")?.getBoundingClientRect().bottom ?? 0;
-      layer.style.top = `${Math.max(0, bottom)}px`;
+      const top = Math.max(0, bottom);
+      layer.style.top = `${top}px`;
+      // The preview starts below the title bar, but the real page's content
+      // starts under it. Shift the preview up by that gap so its title lands
+      // exactly where the real one will be; otherwise the handoff jumps.
+      // Compare the two article surfaces, not their titles: the outgoing and
+      // incoming feed rows can differ in height.
+      const viewportTop = viewport.getBoundingClientRect().top;
+      const surface = surfaceRef.current;
+      const realOffset = surface ? surface.getBoundingClientRect().top - viewportTop + viewport.scrollTop : 0;
+      let shift = top - viewportTop - realOffset;
+      shift = Math.round(shift);
+      layer.style.setProperty("--nf-continuous-shift", `${Math.max(0, shift)}px`);
       heightRef.current = layer.clientHeight;
     };
     const blocked = (event) => {

@@ -7,6 +7,7 @@ export const STORED_SETTINGS = {
   fontFamily: "system-ui",
   titleFontSize: 1.6,
   titleAlignType: "left",
+  articleTitleLines: 5,
   feedIconShape: "square",
   useGrayIcon: false,
   sortDirection: "desc",

@@ -22,7 +22,7 @@ export default function ArticleHeader({
   className,
 }) {
   const { t } = useTranslation();
-  const { fontSize, fontFamily, titleFontSize, titleAlignType } = useStore(settingsState);
+  const { fontSize, fontFamily, titleFontSize, titleAlignType, articleTitleLines } = useStore(settingsState);
   if (!article) return null;
 
   const feedId = feedIdOf(article);
@@ -63,8 +63,12 @@ export default function ArticleHeader({
       <h1
         {...sharedTitle}
         data-font-block=""
-        className="article-title my-2 leading-tight"
-        style={{ fontSize: `${titleFontSize * fontSize}px`, ...(sharedTitle.style || {}) }}
+        className="article-title nf-article-title-clamp my-2 leading-tight"
+        style={{
+          fontSize: `${titleFontSize * fontSize}px`,
+          "--nf-article-title-lines": Math.min(5, Math.max(1, Math.round(Number(articleTitleLines) || 5))),
+          ...(sharedTitle.style || {}),
+        }}
       >
         {interactive && safeUrl ? (
           <a
