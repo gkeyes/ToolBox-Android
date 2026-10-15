@@ -109,7 +109,7 @@ private class WindowCopyBackdrop(
     /** Null: measure the scale of the layers the glass sits in (a popup zooming in on its own). */
     private val layerScale: (() -> Float)?,
     /** Drawn over the copy (made legible like the panel's): the panel's own fill, for controls on it. */
-    private val overlay: Color? = null,
+    private val overlay: (() -> Color)? = null,
     /** Read on every draw, so a control moving with its panel (a slide, a drag) is redrawn in register. */
     private val motion: () -> Unit = {},
 ) : Backdrop {
@@ -143,7 +143,7 @@ private class WindowCopyBackdrop(
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
             }
         }
-        if (overlay != null) drawRect(legibleFill(overlay, regionLuminance))
+        if (overlay != null) drawRect(legibleFill(overlay(), regionLuminance))
     }
 }
 
@@ -156,7 +156,7 @@ private class WindowCopyBackdrop(
 @Composable
 internal fun ProvideWindowButtonBackdrop(
     copy: WindowBackdrop?,
-    fill: Color,
+    fill: () -> Color,
     blurRadius: Dp,
     motion: () -> Unit = {},
     content: @Composable () -> Unit,
@@ -165,8 +165,9 @@ internal fun ProvideWindowButtonBackdrop(
         content()
         return
     }
+    val currentFill by rememberUpdatedState(fill)
     val currentMotion by rememberUpdatedState(motion)
-    val backdrop = remember(copy, fill) { WindowCopyBackdrop(copy, null, fill) { currentMotion() } }
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy, null, { currentFill() }) { currentMotion() } }
     CompositionLocalProvider(
         LocalToolBoxButtonBackdrop provides backdrop,
         LocalToolBoxButtonBlur provides blurRadius,
@@ -182,7 +183,7 @@ fun ProvideToolBoxWindowButtonBackdrop(
     blurRadius: Dp = 28.dp,
     motion: () -> Unit = {},
     content: @Composable () -> Unit,
-) = ProvideWindowButtonBackdrop(glass.copy, fill, blurRadius, motion, content)
+) = ProvideWindowButtonBackdrop(glass.copy, { fill }, blurRadius, motion, content)
 
 /**
  * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,

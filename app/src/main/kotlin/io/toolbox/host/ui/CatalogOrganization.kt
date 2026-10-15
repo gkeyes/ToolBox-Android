@@ -664,7 +664,7 @@ internal fun CatalogGroupFolderOverlay(
                                 AppText("这个分组还没有工具", color = colors.textPrimary.copy(alpha = 0.8f), align = TextAlign.Center,
                                     textStyle = ToolBoxThemeTokens.textStyles.metadata)
                                 ProvideToolBoxWindowButtonBackdrop(glass, motion = { entrance.value }) {
-                                    ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
+                                    ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"))
                                 }
                             }
                         } else {
