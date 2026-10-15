@@ -1,7 +1,7 @@
 /*
  * Vendored from Kyant0/AndroidLiquidGlass (https://github.com/Kyant0/AndroidLiquidGlass),
  * catalog app @ 65ab177, Copyright Kyant, licensed under the Apache License 2.0
- * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours and padding exposed as parameters.
+ * (http://www.apache.org/licenses/LICENSE-2.0). Package renamed; theme colours, padding and height exposed as parameters.
  */
 package io.toolbox.core.ui.liquid
 
@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
@@ -47,6 +48,7 @@ fun LiquidButton(
     tint: Color = Color.Unspecified,
     surfaceColor: Color = Color.Unspecified,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16f.dp),
+    height: Dp = 48f.dp,
     content: @Composable RowScope.() -> Unit
 ) {
     val animationScope = rememberCoroutineScope()
@@ -121,7 +123,7 @@ fun LiquidButton(
                     Modifier
                 }
             )
-            .height(48f.dp)
+            .height(height)
             .padding(contentPadding),
         horizontalArrangement = Arrangement.spacedBy(8f.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,

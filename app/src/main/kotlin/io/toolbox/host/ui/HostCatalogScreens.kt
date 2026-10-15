@@ -124,6 +124,8 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import io.toolbox.core.ui.component.ToolBoxGlassCapsule
+import io.toolbox.core.ui.component.toolBoxClearGlassFill
 
 @Composable
 internal fun ToolManagerContent(
@@ -718,7 +720,7 @@ private fun ToolDetailHero(
             DetailCapsule(
                 label = "打开",
                 onClick = onOpen,
-                container = colors.primary,
+                container = colors.primary.copy(alpha = 0.9f),
                 content = colors.onPrimary,
                 modifier = Modifier.semantics { contentDescription = "打开工具" },
             )
@@ -727,7 +729,7 @@ private fun ToolDetailHero(
                 // hear the fixed name plus stateDescription, so the state is spoken once.
                 label = if (favorite) "已收藏" else "收藏",
                 onClick = onToggleFavorite,
-                container = colors.surface,
+                container = toolBoxClearGlassFill(),
                 content = if (favorite) colors.warning else colors.textPrimary,
                 icon = if (favorite) ToolBoxIconKey.StarFilled else ToolBoxIconKey.Star,
                 modifier = Modifier.testTag("tool_detail_favorite_capsule").semantics {
@@ -738,7 +740,7 @@ private fun ToolDetailHero(
             DetailCapsule(
                 label = null,
                 onClick = onGroups,
-                container = colors.surface,
+                container = toolBoxClearGlassFill(),
                 content = colors.textPrimary,
                 icon = ToolBoxIconKey.Folder,
                 modifier = Modifier.semantics { contentDescription = "加入分组" },
@@ -747,6 +749,7 @@ private fun ToolDetailHero(
     }
 }
 
+/** iOS 26 glass capsule (44, a circle when it has no label): prominent glass for 打开, clear glass otherwise. */
 @Composable
 private fun DetailCapsule(
     label: String?,
@@ -756,23 +759,13 @@ private fun DetailCapsule(
     modifier: Modifier = Modifier,
     icon: ToolBoxIconKey? = null,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val shape = toolBoxShape(ToolBoxThemeTokens.radii.full)
     val haptics = rememberToolBoxHaptics()
-    Row(
-        modifier
-            .heightIn(min = 40.dp)
-            .then(if (label == null) Modifier.width(40.dp) else Modifier)
-            .toolBoxPressFeedback(interactionSource, shape = shape)
-            .clip(shape)
-            .background(container)
-            .clickable(interactionSource = interactionSource, indication = null, role = Role.Button) {
-                haptics.tick()
-                onClick()
-            }
-            .padding(horizontal = if (label == null) 0.dp else 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
+    ToolBoxGlassCapsule(
+        onClick = { haptics.tick(); onClick() },
+        modifier = modifier.then(if (label == null) Modifier.width(44.dp) else Modifier),
+        surface = container,
+        height = 44.dp,
+        contentPadding = PaddingValues(horizontal = if (label == null) 0.dp else 18.dp),
     ) {
         if (icon != null) ToolBoxIcon(icon, null, Modifier.size(18.dp), tint = content)
         if (label != null) {

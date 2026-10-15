@@ -44,7 +44,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
-import top.yukonga.miuix.kmp.basic.IconButton
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 
 enum class ToolBoxIconKey {
     Tools,
@@ -104,18 +111,22 @@ fun ToolBoxIconButton(
     enabled: Boolean = true,
     tint: Color = ToolBoxThemeTokens.colors.textSecondary,
 ) {
-    IconButton(
-        onClick = onClick,
+    // iOS borderless glyph button: the glyph dims under the finger, with no grey plate.
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    Box(
         modifier = modifier
             .size(48.dp)
+            .clickable(enabled = enabled, role = Role.Button, interactionSource = interactionSource, indication = null, onClick = onClick)
             .semantics {
                 this.contentDescription = contentDescription
                 role = Role.Button
                 if (!enabled) disabled()
             },
-        enabled = enabled,
+        contentAlignment = Alignment.Center,
     ) {
         ToolBoxIcon(icon = icon, contentDescription = null,
+            modifier = Modifier.graphicsLayer { alpha = if (pressed) 0.35f else 1f },
             tint = if (enabled) tint else ToolBoxThemeTokens.disabledContent)
     }
 }

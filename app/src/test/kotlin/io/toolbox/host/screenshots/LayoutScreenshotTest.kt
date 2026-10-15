@@ -99,6 +99,14 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import io.toolbox.core.ui.component.ToolBoxPrimaryButton
+import io.toolbox.core.ui.component.ToolBoxSecondaryButton
+import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxDestructiveButton
+import io.toolbox.core.ui.component.ToolBoxGlassIconButton
+import io.toolbox.core.ui.component.ToolBoxIconKey
 
 /**
  * Renders the main host screens on a narrow phone (320dp) at normal and the largest font size,
@@ -265,6 +273,34 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         SheetBackdropPage()
         ToolBoxModalDialog(onDismissRequest = {}, title = "删除工具") {
             AppText("删除「番茄钟专注计时」？它的数据也会一起删除。")
+        }
+    }
+
+    /** Every button role as iOS 26 glass, over the page canvas: rim highlight, tint, soft shadow. */
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun glassButtonsPhone() = render("glass_buttons_phone") { GlassButtons() }
+
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun glassButtonsPhoneDark() = render("glass_buttons_phone_dark") {
+        ToolBoxTheme(mode = ToolBoxThemeMode.Dark) { GlassButtons() }
+    }
+
+    @Composable private fun GlassButtons() {
+        Column(
+            Modifier.fillMaxSize().toolBoxOpenDesignCanvas().statusBarsPadding().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ToolBoxPrimaryButton("安装", {}, Modifier.fillMaxWidth())
+            ToolBoxSecondaryButton("取消", {}, Modifier.fillMaxWidth())
+            ToolBoxTextButton("重试", {}, Modifier.fillMaxWidth())
+            ToolBoxDestructiveButton("停止后台运行", {}, Modifier.fillMaxWidth())
+            ToolBoxPrimaryButton("确认删除", {}, Modifier.fillMaxWidth(), destructive = true)
+            ToolBoxPrimaryButton("安装", {}, Modifier.fillMaxWidth(), enabled = false)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                ToolBoxGlassIconButton(ToolBoxIconKey.Back, "返回", {})
+                ToolBoxGlassIconButton(ToolBoxIconKey.Close, "关闭", {})
+                ToolBoxPrimaryButton("完成", {}, compact = true)
+            }
         }
     }
 

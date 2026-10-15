@@ -54,6 +54,10 @@ import io.toolbox.core.ui.component.toolBoxPressFeedback
 import androidx.compose.animation.animateContentSize
 import java.text.DateFormat
 import java.util.Date
+import io.toolbox.core.ui.component.toolBoxClearGlass
+import io.toolbox.core.ui.component.toolBoxGlassPress
+import io.toolbox.core.ui.component.toolBoxClearGlassFill
+import androidx.compose.ui.graphics.compositeOver
 
 @Composable
 internal fun CatalogRunningTools(
@@ -341,11 +345,11 @@ private fun RunningToolStopButton(
     ) {
         Box(
             Modifier.size(discSize)
-                .toolBoxPressFeedback(stopInteraction, enabled = canStop, shape = CircleShape)
-                .clip(CircleShape)
-                .background(
-                    if (stopping || danger) colors.danger.copy(alpha = if (dark) 0.18f else 0.10f)
-                    else Color(0xFF767680).copy(alpha = if (dark) 0.24f else 0.12f),
+                .toolBoxGlassPress(stopInteraction, enabled = canStop)
+                .toolBoxClearGlass(
+                    CircleShape,
+                    tint = if (stopping || danger) colors.danger.copy(alpha = if (dark) 0.18f else 0.10f).compositeOver(ToolBoxThemeTokens.materials.glassTint)
+                    else toolBoxClearGlassFill(),
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -381,8 +385,7 @@ internal fun RunningToolCapsule(
             // Grows with large text so the two-line name and status are never cut off.
             .heightIn(min = 52.dp)
             .height(IntrinsicSize.Min)
-            .clip(capsule)
-            .background(colors.surface)
+            .toolBoxClearGlass(capsule, tint = ToolBoxThemeTokens.materials.glassTint.compositeOver(colors.surface.copy(alpha = 0.7f)))
             .padding(start = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -432,9 +435,8 @@ internal fun RunningToolCapsule(
         ) {
             Box(
                 Modifier.size(32.dp)
-                    .toolBoxPressFeedback(stopInteraction, enabled = canStop, shape = CircleShape)
-                    .clip(CircleShape)
-                    .background(colors.surfaceMuted),
+                    .toolBoxGlassPress(stopInteraction, enabled = canStop)
+                    .toolBoxClearGlass(CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 if (stopping) io.toolbox.core.ui.component.ToolBoxBusyIndicator()

@@ -68,7 +68,7 @@ internal fun CatalogListHeader(state: CatalogUiState, onAction: (CatalogAction) 
             io.toolbox.core.ui.component.ToolBoxActionSheetHeader {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     AppText("排序", Modifier.weight(1f).semantics { heading() }, textStyle = ToolBoxThemeTokens.textStyles.headline)
-                    ToolBoxIconButton(ToolBoxIconKey.Close, "关闭排序", { choosingSort = false })
+                    io.toolbox.core.ui.component.ToolBoxGlassIconButton(ToolBoxIconKey.Close, "关闭排序", { choosingSort = false })
                 }
             }
             CatalogSort.entries.forEach { sort ->
