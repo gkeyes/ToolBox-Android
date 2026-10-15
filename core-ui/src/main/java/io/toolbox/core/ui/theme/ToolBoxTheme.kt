@@ -22,6 +22,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
+import androidx.compose.ui.graphics.lerp
 
 enum class ToolBoxThemeMode {
     System,
@@ -572,3 +573,21 @@ private fun ToolBoxThemeMode.toMiuixMode(): ColorSchemeMode = when (this) {
     ToolBoxThemeMode.MonetLight -> ColorSchemeMode.MonetLight
     ToolBoxThemeMode.MonetDark -> ColorSchemeMode.MonetDark
 }
+
+/**
+ * Secondary and tertiary text on see-through glass (sheets, dialogs): the page shows through the
+ * fill, so a saturated tile or a page of the other tone under grey text drops it below 4.5:1.
+ * Pulls both halfway toward primary text; solid materials keep the normal tokens.
+ */
+@Composable
+fun ProvideToolBoxGlassText(content: @Composable () -> Unit) {
+    val colors = LocalToolBoxColors.current
+    if (!LocalToolBoxMaterials.current.realBlurEnabled) return content()
+    CompositionLocalProvider(LocalToolBoxColors provides colors.onGlass(), content = content)
+}
+
+/** [ProvideToolBoxGlassText]'s colours, for a component that reads them before providing them. */
+fun ToolBoxColorScheme.onGlass(): ToolBoxColorScheme = copy(
+    textSecondary = lerp(textSecondary, textPrimary, 0.5f),
+    textTertiary = lerp(textTertiary, textSecondary, 0.5f),
+)

@@ -38,6 +38,8 @@ import com.kyant.backdrop.highlight.Highlight
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.toSize
 
 /**
  * Liquid Glass for a panel in an overlay window (a dialog). The overlay cannot sample the page
@@ -108,6 +110,10 @@ private class WindowCopyBackdrop(
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
+    /** Luminance of the page under the glass as last drawn; the fill reads it in the same frame. */
+    var regionLuminance: Float = copy.luminance
+        private set
+
     override fun DrawScope.drawBackdrop(
         density: Density,
         coordinates: LayoutCoordinates?,
@@ -116,6 +122,7 @@ private class WindowCopyBackdrop(
         val node = coordinates?.takeIf { it.isAttached } ?: return
         // On screen, not in window: popups and dialogs need not share the page window's origin.
         val origin = node.positionOnScreen() - copy.rootOnScreen
+        regionLuminance = copy.luminanceIn(Rect(origin, node.size.toSize()))
         val pageSize = IntSize(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
@@ -168,19 +175,19 @@ internal fun Modifier.snapshotGlass(
             motion()
             draw()
         },
-        onDrawSurface = { drawRect(legibleFill(fill(), copy.luminance)) },
+        onDrawSurface = { drawRect(legibleFill(fill(), backdrop.regionLuminance)) },
     )
 }
 
 /**
- * A light panel over a dark page (or a dark one over a light page, such as a web page behind a
- * dark-theme dialog) lets the page's tone through and washes out secondary text: make the fill
- * nearly opaque then.
+ * A light panel over dark content (or a dark one over light content, such as a web article
+ * behind a dark-theme dialog) lets that tone through and washes out secondary text: make the
+ * fill nearly opaque then. [pageLuminance] is measured under the panel, not across the page.
  */
 private fun legibleFill(fill: Color, pageLuminance: Float): Color {
     val darkPanel = fill.copy(alpha = 1f).luminance() < 0.5f
     val opposite = if (darkPanel) pageLuminance > 0.45f else pageLuminance < 0.25f
-    return if (opposite && fill.alpha < 0.88f) fill.copy(alpha = 0.88f) else fill
+    return if (opposite && fill.alpha < 0.92f) fill.copy(alpha = 0.92f) else fill
 }
 
 /**

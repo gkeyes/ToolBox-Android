@@ -24,6 +24,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.CatalogAction
 import io.toolbox.host.catalog.CatalogTool
 import io.toolbox.host.catalog.CatalogUiState
+import io.toolbox.core.ui.component.toolBoxGlassPress
 
 @Composable
 internal fun CatalogFavoritesPicker(
@@ -109,7 +110,7 @@ private fun FavoritePickerCell(
     val selected = order != null
     Column(
         modifier
-            .toolBoxPressFeedback(interaction, enabled = enabled, shape = toolBoxShape(16.dp))
+            .toolBoxGlassPress(interaction, enabled = enabled, shape = toolBoxShape(16.dp))
             .toggleable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox,
                 onValueChange = { haptics.toggle(it); onChecked(it) })
             .semantics { if (busy) stateDescription = "正在保存" }

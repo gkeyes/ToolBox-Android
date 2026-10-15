@@ -169,16 +169,18 @@ private fun ToolBoxActionButton(
         label = "toolbox-action-press",
     )
     // Filled (only with 实色材质 on): an opaque capsule that dims its label under the finger.
-    // Bare text: the iOS borderless button, whose label dims; neither shrinks nor greys.
+    // Bare text: grows with a soft glass glow under the finger, like the glass buttons.
     val pressedOverlay = if (filled) palette.content.copy(alpha = (if (emphasized) 0.14f else 0.10f) * press.coerceIn(0f, 1f)) else Color.Transparent
     val background = if (filled) pressedOverlay.compositeOver(palette.container) else Color.Transparent
+    val glassPress = !filled && ToolBoxThemeTokens.materials.realBlurEnabled
 
     Box(
         modifier = modifier
             .sizeIn(minWidth = 48.dp)
             .heightIn(min = height)
+            .then(if (glassPress) Modifier.toolBoxGlassPress(interactionSource, enabled, shape, glow = toolBoxBareGlow()) else Modifier)
             .graphicsLayer {
-                alpha = (if (enabled) 1f else 0.42f) * (if (filled) 1f else 1f - 0.65f * press)
+                alpha = (if (enabled) 1f else 0.42f) * (if (filled || glassPress) 1f else 1f - 0.65f * press)
             }
             .clip(shape)
             .background(background)
@@ -230,8 +232,10 @@ private fun toolBoxGlassActionColors(tone: ToolBoxActionTone, contentColorOverri
     return when (tone) {
         ToolBoxActionTone.Primary -> prominentGlassColors(colors.primary, colors.background)
         ToolBoxActionTone.DangerConfirmation -> prominentGlassColors(colors.danger, colors.background)
+        // Dark mode keeps the accent faint: at 18% over the dark glass tint the capsule read as a
+        // solid navy pill, not as clear glass.
         ToolBoxActionTone.Tonal -> ToolBoxActionColors(
-            colors.primary.copy(alpha = if (dark) 0.18f else 0.10f).compositeOver(clear),
+            colors.primary.copy(alpha = if (dark) 0.11f else 0.10f).compositeOver(clear),
             contentColorOverride ?: colors.primary,
         )
         ToolBoxActionTone.Neutral -> ToolBoxActionColors(
@@ -239,7 +243,7 @@ private fun toolBoxGlassActionColors(tone: ToolBoxActionTone, contentColorOverri
             contentColorOverride ?: colors.textPrimary,
         )
         ToolBoxActionTone.Danger -> ToolBoxActionColors(
-            colors.danger.copy(alpha = if (dark) 0.18f else 0.10f).compositeOver(clear),
+            colors.danger.copy(alpha = if (dark) 0.12f else 0.10f).compositeOver(clear),
             colors.danger,
         )
     }
