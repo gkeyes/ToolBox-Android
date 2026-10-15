@@ -126,7 +126,7 @@ private fun CatalogToolOptionsSession(
                         }
                     }
                 }
-                ToolBoxTextButton("新建分组", { page = "create" }, Modifier.fillMaxWidth().testTag("catalog_group_create"), outlined = false)
+                ToolBoxTextButton("新建分组", { page = "create" }, Modifier.fillMaxWidth().testTag("catalog_group_create"))
             }
             else -> LazyColumn(
                 Modifier.fillMaxWidth().testTag("catalog_tool_options"),
