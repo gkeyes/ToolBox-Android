@@ -493,3 +493,23 @@ body[data-page=home] .workspace{padding-bottom:0}
 .bottom-nav::before,.calc-dock::before,.top-actions>.icon-button::before,.nav-plus::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;background:var(--glass);box-shadow:var(--rim),inset 0 0 0 1px var(--glass-line);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%)}
 @supports (backdrop-filter:url(#zz) blur(2px)){.bottom-nav::before,.calc-dock::before,.top-actions>.icon-button::before,.nav-plus::before{backdrop-filter:var(--zz-lens,) blur(8px) saturate(180%) brightness(1.04)}}
 }
+
+/* 1.4.0 · audit recheck-27: lens after a light blur over a thinner tint so the rim visibly bends; stronger rim; text contrast */
+:root{--lens-tint:#ffffff94;--rim2:inset 0 1px 0 #fffffff2,inset 0 -1px 0 #ffffff80,inset 1px 0 0 #ffffffa6,inset -1px 0 0 #ffffff73,inset 0 0 12px -4px #ffffffb3}
+@media (prefers-color-scheme:dark){:root{--lens-tint:#1e232194;--rim2:inset 0 1px 0 #ffffff4d,inset 0 -1px 0 #ffffff1f,inset 1px 0 0 #ffffff29,inset -1px 0 0 #ffffff1f,inset 0 0 12px -4px #ffffff33}}
+@media(max-width:700px){
+@supports (backdrop-filter:url(#zz) blur(2px)){
+ .bottom-nav::before,.calc-dock::before,.top-actions>.icon-button::before,.nav-plus::before{background:var(--lens-tint);box-shadow:var(--rim2),inset 0 0 0 1px var(--glass-line);backdrop-filter:blur(7px) var(--zz-lens,) saturate(180%) brightness(1.04)}
+}
+ .bottom-nav button{color:#4f5c4e}
+ .bottom-nav button.active{color:#1d5a48}
+ .calc-dock .caption{color:#56655d}
+ .nav-plus{color:#1d5a48}
+}
+@media(max-width:700px) and (prefers-color-scheme:dark){
+ .bottom-nav button{color:#b8c3b7}
+ .bottom-nav button.active{color:#97d8c5}
+ .calc-dock .caption{color:#aeb8b2}
+ .nav-plus{color:#97d8c5}
+}
+@media (prefers-color-scheme:dark){.primary{background:#2f7d63}}
