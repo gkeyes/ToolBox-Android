@@ -75,6 +75,8 @@ class DeveloperWebViewDebuggingBehaviorTest(
                     DeveloperHelpScreen(onBack = {}, onInstallExamples = {})
                 }
             }
+            // The debugging card sits below the manual's chapters.
+            compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("debugging")
             val toggle = compose.onNodeWithTag(DeveloperHelpTestTags.WebViewDebugging)
             if (status.userToggleable) {
                 toggle.assertIsDisplayed().assertIsEnabled().assertIsOff()
@@ -94,7 +96,7 @@ class DeveloperWebViewDebuggingBehaviorTest(
                 views += createRuntime(root, "new")
                 awaitDebugEndpoint(true)
 
-                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
+                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("debugging")
                 compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
                 toggle.assertIsDisplayed().assertIsEnabled().assertIsOn().performTouchInput { click() }
                 toggle.assertIsOff()
@@ -113,7 +115,7 @@ class DeveloperWebViewDebuggingBehaviorTest(
                 assertEquals(status, RuntimeWebViewDebugging.status(compose.activity))
                 awaitDebugEndpoint(status.enabled)
 
-                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("intro")
+                compose.onNodeWithTag(DeveloperHelpTestTags.List).performScrollToKey("debugging")
                 compose.onNodeWithTag(DeveloperHelpTestTags.Search).assertIsDisplayed()
                 toggle.assertIsDisplayed().assertIsNotEnabled().performTouchInput { click() }
                 if (status.enabled) toggle.assertIsOn() else toggle.assertIsOff()
