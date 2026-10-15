@@ -78,8 +78,8 @@
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
   let data=emptyLedger(),busy=false;
   let entryValues={};
-  let draftsUnreadable=false,drafts=[],activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
-  let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve();
+  let draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
+  let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
 
   let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'items',category:'all',room:'all',merchant:null,query:'',statsGroup:'category',calcMode:'area',calc:{quantity:'',price:'',loss:'0',labor:'0',auxiliary:'0',freight:'0',install:'0',pack:'',packing:false,fixed:''},baseline:null};
@@ -97,7 +97,7 @@
       if(!storageOK)throw new Error(bootError||'存储未就绪；记录未保存，请重试连接。');
       if(restoreError)throw new Error('原始账本无法解析。请先导出原始数据，再导入有效备份。');
       if(activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
-      next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||drafts.some(d=>d.id===id));
+      if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
       await runtime.set(KEY,next);
       data=next;
@@ -151,7 +151,7 @@
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
     if(!$('#sheet').open)$('#sheet').showModal();
     $('#sheet-body').scrollTop=0;
-    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftBase=draftBase();activeDraftReview=false;
+    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftBase=draftBase();activeDraftReview=false;
     $('#draft-status').textContent='';
     // Opening a sheet never summons the soft keyboard without a field tap.
     $('#sheet [data-action="close-dialog"]').focus({preventScroll:true});
@@ -497,7 +497,7 @@
       else if(a==='edit-plan'){entryValues={};openItem(id,'plan');}
       else if(a==='edit-estimate'){entryValues={};openItem(id,'estimate');}
       else if(a==='settle-item')openSettlement(id);
-      else if(a==='entry-mode'){const draftId=activeDraftId,base=activeDraftBase,review=activeDraftReview;const values=collectEntry();if(b.dataset.mode==='expense')openPayment('',false,values);else openItem(values.id||'',b.dataset.mode,values);activeDraftId=draftId;activeDraftBase=base;activeDraftReview=review;if(review)appendDraftReview();draftSnapshot='__mode_switch__';markDraft();}
+      else if(a==='entry-mode'){const draftId=activeDraftId,original=activeDraftOriginal,base=activeDraftBase,review=activeDraftReview;const values=collectEntry();if(b.dataset.mode==='expense')openPayment('',false,values);else openItem(values.id||'',b.dataset.mode,values);activeDraftId=draftId;activeDraftOriginal=original;activeDraftBase=base;activeDraftReview=review;if(review)appendDraftReview();draftSnapshot='__mode_switch__';markDraft();}
       else if(a==='payment-target'){updatePaymentTarget(b.dataset.target);markDraft();}
       else if(a==='date-picker'){const field=$('#'+b.dataset.field);window.ZZCalendar.open({value:field.value,label:$('#'+b.dataset.field+'-caption').textContent,required:b.dataset.required==='true',trigger:b,onChange:value=>{field.value=value;refreshDateFields();field.dispatchEvent(new Event('input',{bubbles:true}));}});}
       else if(a==='project')openProject();
@@ -588,7 +588,12 @@
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
-  runtime.onFlush(async()=>{flushCalc();if(isFormDirty())await saveDraftNow().catch(()=>{});await calcQueue.catch(()=>{});await draftQueue.catch(()=>{});});
+  runtime.onFlush(async()=>{
+    let failure=null;flushCalc();const calcWrite=calcSaving;
+    if(isFormDirty())await saveDraftNow().catch(error=>{failure=error;});else await draftQueue.catch(()=>{});
+    if(!await calcWrite)failure=failure||new Error('测算输入未保存');
+    if(failure){showError('关闭前保存失败：'+runtime.explain(failure));throw failure;}
+  });
   const viewport=window.visualViewport;
   const syncViewport=()=>{const h=viewport?.height||window.innerHeight;const editing=/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName||'');document.documentElement.style.setProperty('--viewport-height',h+'px');document.body.classList.toggle('keyboard-open',editing&&window.innerHeight-h>120);};
   viewport?.addEventListener('resize',syncViewport);document.addEventListener('focusin',syncViewport);document.addEventListener('focusout',()=>setTimeout(syncViewport,80));syncViewport();
@@ -629,7 +634,7 @@
   async function finishGuard(keep){
     if(draftBusy)return;draftBusy=true;const controls=$$('#guard button');controls.forEach(b=>b.disabled=true);
     try{
-      if(keep)await saveDraftNow();else await clearDraft(activeDraftId);
+      if(keep)await saveDraftNow();else if(activeDraftOriginal){const original=clone(activeDraftOriginal);clearTimeout(draftTimer);await mutateDrafts(list=>[original,...list.filter(d=>d.id!==original.id)]);}else await clearDraft(activeDraftId);
       const next=pendingNavigation;pendingNavigation=null;closeGuard();closeDialog(true);render();
       if(keep)toast('草稿已保留，未计入账本');
       draftBusy=false;if(next)next();
@@ -645,7 +650,7 @@
       if(draftsUnreadable)throw new Error('已保存的草稿未能读取；为免覆盖，暂不保存新草稿。');
       const next=change(drafts);
       if(next.length)await runtime.set('draft.v1',{schemaVersion:2,records:next});else await runtime.remove('draft.v1');
-      drafts=next;updateDraftBanner();
+      drafts=next;storedDraftIds=new Set(next.map(d=>d.id));updateDraftBanner();
     });return draftQueue;
   }
   function saveDraftNow(){
@@ -659,7 +664,7 @@
   function validDraft(d){return d&&['payment','item','project','apply','settlement'].includes(d.type)&&Array.isArray(d.fields)&&d.fields.every(e=>Array.isArray(e)&&e.length===2&&typeof e[0]==='string'&&typeof e[1]==='string')&&Number.isSafeInteger(d.baseRevision);}
   function loadDrafts(record){
     const list=record?.schemaVersion===2&&Array.isArray(record.records)?record.records:record?[record]:[];
-    const seen=new Set();
+    const seen=new Set();storedDraftIds=new Set(list.filter(validDraft).map(d=>d.id).filter(id=>typeof id==='string'));
     drafts=list.filter(validDraft).map(d=>({...d,id:typeof d.id==='string'&&d.id.length<=100?d.id:uid('d')})).filter(d=>{if(seen.has(d.id)||(data.completedDrafts||[]).includes(d.id))return false;seen.add(d.id);return true;});
   }
   function openDraftList(){
@@ -695,7 +700,7 @@
     }
     if(draft.type==='apply')updateApplyDiff();refreshDateFields();
     const baseNow=activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
-    activeDraftId=draft.id;activeDraftBase=baseNow;activeDraftReview=conflict;
+    activeDraftId=draft.id;activeDraftOriginal=clone(source);activeDraftBase=baseNow;activeDraftReview=conflict;
     if(conflict)appendDraftReview();
     draftSnapshot=conflict?'__restored_draft__':formSnapshot();$('#draft-status').textContent='草稿已恢复';
   }
@@ -740,8 +745,8 @@
     clearTimeout(calcTimer);if(!storageOK)return;
     const record={mode:ui.calcMode,calc:clone(ui.calc),baseline:clone(ui.baseline)};
     calcQueue=calcQueue.catch(()=>{}).then(()=>runtime.set('calculator.v1',record)).catch(error=>{
-      showError('测算输入未保存：'+runtime.explain(error));
-    });
+      showError('测算输入未保存：'+runtime.explain(error));throw error;
+    });calcSaving=calcQueue.then(()=>true,()=>false);
   }
   function loadCalc(record){
     if(!record||!['area','unit','fixed'].includes(record.mode)||!record.calc)return;
