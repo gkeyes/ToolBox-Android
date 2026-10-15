@@ -111,14 +111,17 @@ class ReadDevTest(unittest.TestCase):
 
     def test_this_runs_own_half_published_apk_is_not_a_mismatch(self):
         # An earlier attempt of this run swapped in its APK and stopped before the receipt.
-        api = FakeApi(release("toolbox-v0.13.15-dev.apk", "BUILD_RECEIPT.txt"), receipt())
+        published = release("toolbox-v0.13.15-dev.apk", "BUILD_RECEIPT.txt")
+        published["assets"][0]["digest"] = "sha256:" + "a" * 64
+        api = FakeApi(published, receipt())
         with self.assertRaises(app_version.LookupFailed):
             self.read(api)
         self.assertEqual({"name": "0.13.14", "code": 90, "commit": COMMIT},
-                         app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_version="0.13.15"))
-        # Someone else's newer APK is still a mismatch.
-        with self.assertRaises(app_version.LookupFailed):
-            app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_version="0.13.16")
+                         app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_apk=("0.13.15", "a" * 64)))
+        # Another build of the same version (other bytes), or a newer one, is still a mismatch.
+        for own in (("0.13.15", "b" * 64), ("0.13.16", "a" * 64)):
+            with self.subTest(own=own), self.assertRaises(app_version.LookupFailed):
+                app_version.read_dev(api, REPO, sleep=lambda seconds: None, own_apk=own)
 
     def test_missing_release_is_no_build(self):
         self.assertIsNone(self.read(FakeApi()))

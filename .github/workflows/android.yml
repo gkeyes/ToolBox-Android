@@ -499,7 +499,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BASE_COMMIT: ${{ needs.version.outputs.base_commit }}
-        run: python3 scripts/ci/app_version.py check-dev --base-commit "$BASE_COMMIT" --head "$GITHUB_SHA" --version "$TOOLBOX_VERSION_NAME"
+        run: python3 scripts/ci/app_version.py check-dev --base-commit "$BASE_COMMIT" --head "$GITHUB_SHA" --version "$TOOLBOX_VERSION_NAME" \
+            --apk "$(find build/ci-delivery -maxdepth 1 -name 'toolbox-v*-release.apk' -print -quit)"
       - name: Publish to the in-app test channel
         env:
           GH_TOKEN: ${{ github.token }}

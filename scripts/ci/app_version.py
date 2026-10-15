@@ -26,6 +26,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -115,11 +116,11 @@ def parse_receipt(text):
     return {"name": name, "code": int(code), "commit": commit}
 
 
-def read_dev(api, repo, sleep=time.sleep, own_version=None):
+def read_dev(api, repo, sleep=time.sleep, own_apk=None):
     """The last published app build on `dev` as {name, code, commit}, or None when there is none.
 
-    own_version: the version this run publishes. An APK of that version left by an earlier attempt of this
-    run that stopped before its receipt is not an inconsistency: the publisher finishes it (same digest).
+    own_apk: (version, sha256 hex) of the APK this run publishes. That exact APK on `dev`, left by an earlier
+    attempt of this run that stopped before its receipt, is not an inconsistency: the publisher finishes it.
 
     api(path, accept) returns (returncode, stdout, stderr) of `gh api`. Only a missing release (HTTP 404)
     or a release without any app build counts as none; anything else is retried and then raises.
@@ -140,9 +141,8 @@ def read_dev(api, repo, sleep=time.sleep, own_version=None):
         return None
     assets = json.loads(release).get("assets", [])
     receipt = next((asset for asset in assets if asset.get("name") == RECEIPT), None)
-    apks = [match[1] for match in (DEV_APK.match(asset.get("name", "")) for asset in assets) if match]
-    if own_version is not None and own_version in apks:
-        apks = [name for name in apks if name != own_version]
+    apks = [match[1] for asset, match in ((asset, DEV_APK.match(asset.get("name", ""))) for asset in assets)
+            if match and not (own_apk and match[1] == own_apk[0] and asset.get("digest") == f"sha256:{own_apk[1]}")]
     if receipt is None:
         if apks:
             raise LookupFailed(f"dev has an APK but no {RECEIPT}; an earlier publish stopped halfway. Re-run that "
@@ -150,7 +150,7 @@ def read_dev(api, repo, sleep=time.sleep, own_version=None):
         return None  # Created by the TBX workflow before any app build was published.
     build = parse_receipt(call(f"repos/{repo}/releases/assets/{receipt['id']}", "application/octet-stream"))
     highest = max(apks, key=lambda name: version_bump.parse_semver(name) or (-1,), default=None)
-    if highest is not None and highest != build["name"] or highest is None and own_version is None:
+    if highest is not None and highest != build["name"] or highest is None and own_apk is None:
         raise LookupFailed(f"dev's APK ({highest}) and {RECEIPT} ({build['name']}) disagree; an earlier publish "
                            "stopped halfway. Re-run that publish before building a new version.")
     return build
@@ -238,7 +238,11 @@ def main_compute(args):
 
 def main_check_dev(args):
     """Fails when `dev` moved after compute read it: this build's version would then not be new."""
-    published = read_dev(gh_api, os.environ["GH_REPO"], own_version=args.version or None)
+    own_apk = None
+    if args.apk:
+        with open(args.apk, "rb") as handle:
+            own_apk = (args.version, hashlib.sha256(handle.read()).hexdigest())
+    published = read_dev(gh_api, os.environ["GH_REPO"], own_apk=own_apk)
     current = published["commit"] if published else ""
     if current == args.base_commit:
         print("dev still has the build this version was computed from.")
@@ -261,8 +265,9 @@ def main(argv=None):
     check_parser = commands.add_parser("check-dev")
     check_parser.add_argument("--base-commit", required=True, help="base_commit from compute (empty: no app build)")
     check_parser.add_argument("--head", required=True)
-    check_parser.add_argument("--version", default="", help="the version this run publishes (its own APK may be "
-                              "on dev from an attempt that stopped before the receipt)")
+    check_parser.add_argument("--version", default="", help="the version this run publishes")
+    check_parser.add_argument("--apk", default="", help="the APK this run publishes; that exact file may be on dev "
+                              "from an attempt that stopped before the receipt")
     args = parser.parse_args(argv)
     try:
         return main_compute(args) if args.command == "compute" else main_check_dev(args)
