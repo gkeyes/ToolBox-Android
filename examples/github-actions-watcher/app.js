@@ -4,7 +4,7 @@
   const API_ROOT = "https://api.github.com";
   const API_VERSION = "2026-03-10";
   // Keep in sync with manifest.json "version" (checked by watcher-reliability tests).
-  const TOOL_VERSION = "1.1.12";
+  const TOOL_VERSION = "1.1.13";
   const USER_AGENT = `ToolBox-GitHub-Actions-Watcher/${TOOL_VERSION}`;
   const STORAGE_KEY = "github-actions-watcher-state-v1";
   const TOKEN_KEY = "github-actions-watcher-token";
@@ -577,6 +577,7 @@
       const activeWorkflows = workflows.filter((workflow) => workflow.state === "active");
       if (!activeWorkflows.length) throw createError("github", "仓库没有启用中的 GitHub Actions workflow");
       const repo = repositoryResponse.data;
+      const previousRepository = String(state.repository?.fullName || state.config?.fullName || "").toLowerCase();
       state.repository = {
         owner: parsed.owner,
         repo: parsed.repo,
@@ -589,6 +590,9 @@
       if (!state.monitoring && state.config && String(state.config.fullName || "").toLowerCase() !== state.repository.fullName.toLowerCase()) {
         state.config = null;
       }
+      // A manually typed branch also belongs to the previous repository: startWatching() prefers it over the
+      // branch picker, so leaving it would silently watch that branch name in the new repository.
+      if (previousRepository !== state.repository.fullName.toLowerCase()) $("branch-manual").value = "";
       state.workflows = activeWorkflows.map((workflow) => ({
         id: Number(workflow.id),
         name: cleanText(workflow.name || workflow.path || "Workflow"),
@@ -1772,6 +1776,7 @@
     state.discoveryRuns = [];
     state.config = null;
     $("repo-input").value = "";
+    $("branch-manual").value = "";
     renderAll();
     persist().catch((error) => showToast(errorLabel(error)));
     $("repo-input").focus();

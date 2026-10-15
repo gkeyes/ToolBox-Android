@@ -174,6 +174,43 @@ test('a stray keystroke in the RSSHub address keeps the saved instance key', asy
   assert.deepEqual(secure['rss-scout.hub-auth.v1'], { base: 'https://rsshub.app', key: 'saved-key' });
 });
 
+test('a key typed with no saved auth does not follow the RSSHub address to another instance', async () => {
+  const secure = {};
+  const { window, $ } = await boot({ secure });
+  $('edit-hub').click();
+  const type = (id, value) => { $(id).value = value; $(id).dispatchEvent(new window.Event('input')); };
+  type('hub-key', 'typed-key');
+  type('rsshub-base', 'https://other.example.com');
+  assert.equal($('hub-key').value, '');
+  type('rsshub-base', 'https://rsshub.app');
+  assert.equal($('hub-key').value, '');
+  type('rsshub-base', 'https://other.example.com');
+  $('hub-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle(window);
+  assert.equal('rss-scout.hub-auth.v1' in secure, false);
+});
+
+test('a new key replacing the saved one is dropped on another address; the saved key returns only on its own', async () => {
+  const secure = { 'rss-scout.hub-auth.v1': { base: 'https://rsshub.app', key: 'saved-key' } };
+  const { window, $ } = await boot({ secure });
+  $('edit-hub').click();
+  const type = (id, value) => { $(id).value = value; $(id).dispatchEvent(new window.Event('input')); };
+  type('hub-key', 'new-key');
+  type('rsshub-base', 'https://other.example.com');
+  assert.equal($('hub-key').value, '');
+  type('rsshub-base', 'https://rsshub.app/');
+  assert.equal($('hub-key').value, 'saved-key');
+  // A key typed for the other address is kept while the address stays put, and is saved for that address.
+  type('rsshub-base', 'https://other.example.com');
+  type('hub-key', 'other-key');
+  type('rsshub-base', 'https://other.example.com/');
+  assert.equal($('hub-key').value, 'other-key');
+  $('hub-form').dispatchEvent(new window.Event('submit', { cancelable: true }));
+  await settle(window);
+  // The stored object comes from the jsdom realm, so compare its fields rather than its prototype.
+  assert.deepEqual({ ...secure['rss-scout.hub-auth.v1'] }, { base: 'https://other.example.com', key: 'other-key' });
+});
+
 test('a rule cache missing one half says so in the summary', async () => {
   const rules = loadScripts(['core.js', 'rules.js']).RSSScoutRules;
   const sourceKey = rules.sourceKey({ hubBase: 'https://rsshub.app', ruleMode: 'auto', ruleUrl: '', usePrivateRules: true,

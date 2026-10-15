@@ -1,4 +1,4 @@
-/* RSS Scout 1.4.7 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
+/* RSS Scout 1.4.8 — unified RSSHub instance + additive private rules + Radar + Miniflux discovery. */
 (function () {
   'use strict';
   const C = window.RSSScoutCore,
@@ -626,6 +626,7 @@
     $('rsshub-base').value = s.hubBase;
     $('rssworker-base').value = s.workerBase || '';
     $('hub-key').value = hubKey();
+    hubKeyBase = draftHubBase();
     $('use-radar').checked = s.useRadar;
     $('rule-url').value = s.ruleUrl;
     $('use-private-rules').checked = !!s.usePrivateRules;
@@ -645,6 +646,16 @@
   }
   function togglePrivateField() {
     $('private-rule-field').hidden = !$('use-private-rules').checked;
+  }
+  // The address the hub form's key field currently belongs to (see the hub-key / rsshub-base input handlers).
+  let hubKeyBase = '';
+  function draftHubBase() {
+    const raw = $('rsshub-base').value.trim() || defaults.hubBase;
+    try {
+      return C.serviceBase(raw);
+    } catch (_) {
+      return raw;
+    }
   }
   function readHub() {
     const mode = document.querySelector('[name=rule-mode]:checked').value;
@@ -1331,17 +1342,18 @@
   $('hub-form').addEventListener('submit', saveHub);
   $('sync-rules').addEventListener('click', syncManually);
   $('stop-sync').addEventListener('click', () => state.syncController?.abort());
+  // The key in the form belongs to the address it was shown or typed for: readHub() pairs it with whatever address is
+  // in the form on save, so a key must never survive a change of address (it would be sent to another instance).
+  $('hub-key').addEventListener('input', () => {
+    hubKeyBase = draftHubBase();
+  });
   $('rsshub-base').addEventListener('input', () => {
-    let base = $('rsshub-base').value;
-    try {
-      base = C.serviceBase(base);
-    } catch (_) {}
-    // Only the field follows the address while typing: the saved key leaves the field for another host and comes back
-    // when the address matches again. Whether the stored key is kept is decided when the form is saved.
-    if (!state.hubAuth) return;
-    if (state.hubAuth.base === base) {
-      if (!$('hub-key').value) $('hub-key').value = state.hubAuth.key;
-    } else if ($('hub-key').value === state.hubAuth.key) $('hub-key').value = '';
+    const base = draftHubBase();
+    if (base === hubKeyBase) return;
+    // Another address drops the draft key; the saved key comes back only on the address it was saved for. Whether the
+    // stored key is kept is decided when the form is saved.
+    $('hub-key').value = hubKey(base);
+    hubKeyBase = base;
   });
   for (const radio of document.querySelectorAll('[name=rule-mode]')) radio.addEventListener('change', toggleRuleField);
   $('use-private-rules').addEventListener('change', togglePrivateField);
@@ -1428,7 +1440,7 @@
     nativeAction(async () => {
       if (!state.api) throw new Error('请在 ToolBox 中使用复制功能');
       const text =
-        'RSS Scout 1.4.7\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
+        'RSS Scout 1.4.8\n' + redact($('log').textContent) + '\n规则同步\n' + redact($('rule-log').textContent);
       await state.api.clipboard.writeText(text);
       toast('已复制诊断信息（密钥已隐藏）');
     })
