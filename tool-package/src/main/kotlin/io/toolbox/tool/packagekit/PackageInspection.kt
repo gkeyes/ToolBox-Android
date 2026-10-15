@@ -49,11 +49,15 @@ data class ManifestNetwork(
     val maxResponseBytes: Long?,
     val timeoutMs: Int,
 )
+/**
+ * The manifest `ui` block the runtime screen applies. `showHostToolbar` is still accepted by the
+ * parser so already-installed packages keep verifying, but it is not modelled: the host never draws
+ * a toolbar over a running tool, so there is nothing for it to show or hide.
+ */
 data class ManifestUi(
-    val orientation: ManifestOrientation?,
-    val allowFullscreen: Boolean,
-    val statusBarStyle: ManifestStatusBarStyle,
-    val showHostToolbar: Boolean,
+    val orientation: ManifestOrientation? = null,
+    val allowFullscreen: Boolean = false,
+    val statusBarStyle: ManifestStatusBarStyle = ManifestStatusBarStyle.AUTO,
 )
 enum class ManifestOrientation { UNSPECIFIED, PORTRAIT, LANDSCAPE }
 enum class ManifestStatusBarStyle { AUTO, LIGHT, DARK }

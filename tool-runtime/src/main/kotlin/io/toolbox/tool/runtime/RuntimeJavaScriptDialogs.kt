@@ -122,7 +122,7 @@ internal object RuntimeJavaScriptDialogs {
         return true
     }
 
-    private fun activity(context: Context): Activity? {
+    internal fun activity(context: Context): Activity? {
         var current = context
         while (current is ContextWrapper) {
             if (current is Activity) return current

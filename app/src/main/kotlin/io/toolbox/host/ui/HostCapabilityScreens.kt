@@ -116,6 +116,7 @@ internal fun RuntimeShellScreen(
         if (state is RuntimeUiState.Error) onPresentationReady()
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
+    (state as? RuntimeUiState.Ready)?.let { ApplyRuntimeManifestUi(it.runtime.installedManifest.ui) }
 
     closeState?.let { saving ->
         key(exitRevision) {

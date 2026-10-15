@@ -455,11 +455,13 @@
             "unspecified",
             "portrait",
             "landscape"
-          ]
+          ],
+          "description": "Screen orientation while the tool is on screen. portrait locks portrait, landscape allows either landscape side, unspecified (or omitted) follows the device."
         },
         "allowFullscreen": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "description": "Whether element fullscreen (requestFullscreen, a video's fullscreen button) may cover the tool and hide the system bars. When false the request is refused and the page leaves fullscreen at once."
         },
         "statusBarStyle": {
           "enum": [
@@ -467,11 +469,13 @@
             "light",
             "dark"
           ],
-          "default": "auto"
+          "default": "auto",
+          "description": "Status bar icon colour while the tool is on screen: light draws light icons for a dark page, dark draws dark icons for a light page, auto follows the ToolBox theme."
         },
         "showHostToolbar": {
           "type": "boolean",
-          "default": true
+          "default": true,
+          "description": "Ignored. The host never draws a toolbar over a running tool; still accepted so existing packages keep installing."
         }
       }
     }

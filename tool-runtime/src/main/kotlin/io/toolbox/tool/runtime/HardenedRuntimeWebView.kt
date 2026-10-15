@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
 import android.os.Trace
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -172,7 +173,10 @@ object HardenedRuntimeWebView {
                 network = network,
             )
             createdWebView.webViewClient = runtimeClient
-            createdWebView.webChromeClient = RuntimeWebChromeClient(runtime)
+            createdWebView.webChromeClient = RuntimeWebChromeClient(
+                runtime,
+                RuntimeCustomViewFullscreen(createdWebView, runtime.installedManifest.ui.allowFullscreen),
+            )
             createRuntimeBridgeSession(runtime, bridgeConfiguration).attach(createdWebView)
             creationPermit.attach(createdWebView)
             runtimeClient.beginFirstMainFrameTrace()
@@ -488,7 +492,14 @@ private class RuntimeWebViewClient(
     }
 }
 
-private class RuntimeWebChromeClient(private val runtime: PreparedToolRuntime) : WebChromeClient() {
+private class RuntimeWebChromeClient(
+    private val runtime: PreparedToolRuntime,
+    private val fullscreen: RuntimeCustomViewFullscreen,
+) : WebChromeClient() {
+    override fun onShowCustomView(view: View, callback: CustomViewCallback) = fullscreen.show(view, callback)
+
+    override fun onHideCustomView() = fullscreen.exit()
+
     override fun onShowFileChooser(
         webView: WebView,
         filePathCallback: ValueCallback<Array<Uri>>,
