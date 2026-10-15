@@ -147,6 +147,7 @@ internal fun RuntimeShellScreen(
     val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
     // When a finger last lifted on the page; a touch ends a run of Backs the page took (see RuntimeExitConfirmation).
     var pageTouchedAt by remember { mutableLongStateOf(0L) }
+    var pageTouchFromEdge by remember { mutableStateOf(false) }
     ToolBoxRuntimeScaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -165,15 +166,32 @@ internal fun RuntimeShellScreen(
                 is RuntimeUiState.Ready -> key(current.webView) {
                     AndroidView(
                         factory = { context ->
-                            // Watches only. A finger lifted on the page counts as a touch; an edge Back
-                            // swipe also starts as a touch on the page, but the system cancels it rather
-                            // than lifting it, so it never counts.
+                            // Watches only. A finger lifted on the page counts as a touch. An edge Back
+                            // swipe also starts as a touch on the page; the system normally cancels it.
+                            // In case some gesture system lifts it instead, a touch that started inside
+                            // the side system gesture insets is marked, and PageBackStreak ignores it
+                            // when a Back follows it closely.
                             object : android.widget.FrameLayout(context) {
+                                private var downInGestureEdge = false
+
                                 override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-                                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
-                                        pageTouchedAt = SystemClock.elapsedRealtime()
+                                    when (event.actionMasked) {
+                                        android.view.MotionEvent.ACTION_DOWN -> downInGestureEdge = inGestureEdge(event)
+                                        android.view.MotionEvent.ACTION_UP -> {
+                                            pageTouchedAt = SystemClock.elapsedRealtime()
+                                            pageTouchFromEdge = downInGestureEdge
+                                        }
                                     }
                                     return super.dispatchTouchEvent(event)
+                                }
+
+                                private fun inGestureEdge(event: android.view.MotionEvent): Boolean {
+                                    val insets = androidx.core.view.ViewCompat.getRootWindowInsets(this)
+                                        ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemGestures())
+                                        ?: return false
+                                    // Back swipes come from the side edges only.
+                                    val x = event.x + IntArray(2).also(::getLocationInWindow)[0]
+                                    return x < insets.left || x > rootView.width - insets.right
                                 }
                             }.also { container ->
                                 (current.webView.parent as? android.view.ViewGroup)?.removeView(current.webView)
@@ -201,6 +219,7 @@ internal fun RuntimeShellScreen(
                     toolName = toolName,
                     askPage = ready?.webView?.let { webView -> { answer: (Boolean) -> Unit -> askPageToHandleBack(webView, answer) } },
                     pageTouchedAt = { pageTouchedAt },
+                    pageTouchFromEdge = { pageTouchFromEdge },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
                 )
             }
@@ -385,9 +404,6 @@ private const val RUNTIME_PAGE_BACK_SCRIPT =
 /** A page busy for longer than this is treated as not handling Back, so Back never feels dead. */
 private const val RUNTIME_PAGE_BACK_TIMEOUT_MS = 400L
 
-/** Backs in a row the page may take, with no touch on the page between them, before the host takes the next one. */
-private const val PAGE_BACK_STREAK = 2
-
 /**
  * Back is offered to the page first through [askPage] (see [askPageToHandleBack]); only a Back the
  * page leaves alone counts here. The first such Back is consumed and only shows a short hint. A
@@ -404,6 +420,7 @@ internal fun RuntimeExitConfirmation(
     modifier: Modifier = Modifier,
     askPage: ((answer: (Boolean) -> Unit) -> Unit)? = null,
     pageTouchedAt: () -> Long = { 0L },
+    pageTouchFromEdge: () -> Boolean = { false },
 ) {
     val hintText = remember(toolName) { runtimeExitHint(toolName) }
     var lastBackAt by remember { mutableLongStateOf(0L) }
@@ -429,11 +446,7 @@ internal fun RuntimeExitConfirmation(
     // While the page is deciding, one further Back waits for its answer instead of being lost.
     var askingPage by remember { mutableStateOf(false) }
     var pendingBackAt by remember { mutableLongStateOf(0L) }
-    // After the page took two Backs in a row, the next one goes to the host however slowly they
-    // came, so a page that cancels every Back can't trap the user. A touch on the page (opening
-    // another panel) or a Back the host took starts the count again.
-    var pageBackStreak by remember { mutableIntStateOf(0) }
-    var pageTookLastBackAt by remember { mutableLongStateOf(0L) }
+    val pageBackStreak = remember { PageBackStreak() }
     var disposed by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { disposed = true } }
     val currentAskPage by rememberUpdatedState(askPage)
@@ -452,12 +465,11 @@ internal fun RuntimeExitConfirmation(
 
     fun offerBack(now: Long) {
         val ask = currentAskPage
-        if (pageTouchedAt() > pageTookLastBackAt) pageBackStreak = 0
-        val pageKeepsBack = pageBackStreak >= PAGE_BACK_STREAK
+        val pageKeepsBack = pageBackStreak.hostTakes(now, pageTouchedAt(), pageTouchFromEdge())
         // While the exit hint shows, the next Back confirms it rather than going to the page again.
         val hintShowing = shouldExitRuntimeOnBack(lastBackAt, now)
         if (ask == null || pageKeepsBack || hintShowing) {
-            pageBackStreak = 0
+            pageBackStreak.reset()
             exitBack(now)
             return
         }
@@ -466,11 +478,10 @@ internal fun RuntimeExitConfirmation(
             if (disposed) return@ask
             askingPage = false
             if (handled) {
-                pageBackStreak++
                 // The press time: a touch while the page was still answering also restarts the count.
-                pageTookLastBackAt = now
+                pageBackStreak.pageTook(now)
             } else {
-                pageBackStreak = 0
+                pageBackStreak.reset()
                 exitBack(now)
             }
             val pending = pendingBackAt
