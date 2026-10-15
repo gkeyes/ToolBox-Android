@@ -561,8 +561,32 @@ body { font-family: var(--nf-sans); -webkit-tap-highlight-color: transparent; }
 }
 html [data-sonner-toaster] [data-sonner-toast].nextflux-toast { border-radius: 999px; }
 
-/* Sheets are grouped pages: grey ground, white cards (raised greys in dark). */
-html .nextflux-modal-surface { background: var(--nf-sheet-bg); }
+/* Every sheet, alert and loading dialog is floating glass (frosted, menu
+   rims); the grouped cards inside stay solid for legibility. */
+html .nextflux-modal-surface {
+  background: var(--nf-menu);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: var(--nf-menu-shadow);
+}
+/* Toasts float on the same glass. */
+html [data-sonner-toaster][data-sonner-theme],
+html [data-sonner-toaster][data-theme] { --normal-bg: var(--nf-menu); }
+html [data-sonner-toaster] [data-sonner-toast].nextflux-toast,
+html .nf-title-filter-toast {
+  background: var(--nf-menu);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--nf-menu-shadow);
+}
+/* The link-actions dialog (native <dialog>): the same glass and white rims. */
+html .toolbox-link-dialog {
+  background: var(--nf-menu);
+  border-color: transparent;
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: var(--nf-menu-shadow);
+}
 .nextflux-modal-surface .ds-group-card,
 .nextflux-modal-surface .nf-set-group > .ds-group-card { background: var(--nf-sheet-card); }
 .nextflux-modal-surface .nf-set-group > .ds-group-card > * + * { box-shadow: inset 58px 0 0 var(--nf-sheet-card), inset 0 0.5px 0 var(--ds-hairline); }
@@ -686,15 +710,8 @@ fieldset, .fieldset { min-inline-size: 0; max-inline-size: 100%; }
 /* Dropdown menus: label first, icon trailing. */
 .dropdown__popover [role="menuitem"] > svg { order: 2; margin-inline-start: auto; }
 
-/* Form sheets (add / edit feed, title filter, rename) float on glass like the
-   boards: 8px from the edges, every corner round. Fields keep their light
-   translucent fill. */
-html .nextflux-modal-surface.nextflux-floating-sheet {
-  background: var(--nf-menu);
-  -webkit-backdrop-filter: blur(30px) saturate(190%);
-  backdrop-filter: blur(30px) saturate(190%);
-  box-shadow: var(--nf-menu-shadow);
-}
+/* Phone sheets float like the boards: 8px from the edges, every corner round.
+   Fields keep their light translucent fill. */
 .drawer__dialog[data-placement="bottom"].nextflux-floating-sheet {
   inline-size: calc(100% - 16px);
   margin-inline: auto;
@@ -709,7 +726,10 @@ html .nextflux-modal-surface.nextflux-floating-sheet {
 [data-theme="dark"] .nextflux-floating-sheet .nf-advanced-toggle { color: #C7C7CC; }
 @media (prefers-reduced-transparency: reduce) {
   .nextflux-context-scrim { background: rgb(0 0 0 / 0.32); -webkit-backdrop-filter: none; backdrop-filter: none; }
-  html .nextflux-modal-surface.nextflux-floating-sheet { background: var(--nf-sheet-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  html .nextflux-modal-surface,
+  html .toolbox-link-dialog,
+  html .nf-title-filter-toast,
+  html [data-sonner-toaster] [data-sonner-toast].nextflux-toast { background: var(--nf-sheet-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* ------------------------------------------------- immersive status bar */
