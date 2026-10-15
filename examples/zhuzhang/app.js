@@ -115,7 +115,7 @@
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
       // A slow store gets a word after 10 s, but the write keeps the lock until it settles so nothing can overtake it.
-      const slow=setTimeout(()=>{const m='存储响应很慢，仍在等待保存完成，请不要关闭。';if(background){if(!$('#sheet').open&&!$('#guard').open)toast(m,null,true);}else showError(m);},10000);
+      const slow=setTimeout(()=>{const m='存储响应很慢，仍在等待保存完成，请不要关闭。';showError(m);},10000);
       try{await runtime.set(KEY,next);}finally{clearTimeout(slow);}
       data=next;
       return true;
@@ -641,7 +641,8 @@
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
     // One tap waits for a background save; further taps meanwhile are dropped so nothing runs twice.
-    if(busy&&a!=='nav'){if(actionWaiting)return;actionWaiting=true;try{for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));}finally{actionWaiting=false;}if(busy){showError('我的家还在保存，请稍后再试。');return;}}
+    if(actionWaiting)return;
+    if(busy&&a!=='nav'){actionWaiting=true;try{for(let n=0;n<200&&busy;n++)await new Promise(r=>setTimeout(r,50));}finally{actionWaiting=false;}if(busy){showError('我的家还在保存，请稍后再试。');return;}}
     if(['nav','detail','transaction','payment','add-item','edit-item','edit-plan','edit-estimate','settle-item','project','settings','apply-preview'].includes(a)&&isFormDirty()){pendingNavigation=()=>{if(b.isConnected)b.click();};closeDialog();return;}
     try{
       if(a==='nav')navigate(b.dataset.page);
