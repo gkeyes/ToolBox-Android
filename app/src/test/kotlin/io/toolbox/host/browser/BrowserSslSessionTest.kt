@@ -79,7 +79,10 @@ class BrowserSslSessionTest {
         f.request()
         f.session.resolve(requireNotNull(f.session.first).id, true)
         assertTrue(f.bypassed)
+        // Stop cancels the requests but the allowed document stays visible, and so does its warning.
         f.session.destroyPage(f.view)
+        assertTrue(f.bypassed)
+        f.session.navigationRequested(f.view, "https://example.test/again")
         assertFalse(f.bypassed)
     }
 

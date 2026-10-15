@@ -116,7 +116,8 @@ internal class BrowserSslSession<Page : Any>(
         if (view !== page) return
         page = null
         awaitingStart = false
-        bypassChanged(false)
+        // No bypassChanged(false): Stop also lands here and leaves the allowed document on screen.
+        // The warning ends with the next navigation, which starts a new session.
         clearPreferences(view)
         cancelOutstanding()
     }
