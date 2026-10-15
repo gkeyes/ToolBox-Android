@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.7';
+  const VERSION = '1.5.8';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -658,8 +658,8 @@
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
     // One tap waits for a background save; further taps meanwhile are dropped so nothing runs twice.
-    // Switching tabs, ✕, 继续编辑, back and Escape always work and drop a tap that is still waiting; other taps meanwhile are ignored.
-    const cancels=a==='nav'||a==='close-dialog'||a==='continue-edit';
+    // Switching tabs, ✕ (sheet or picker), 继续编辑, back and Escape always work and drop a tap that is still waiting; other taps meanwhile are ignored.
+    const cancels=['nav','close-dialog','close-picker','continue-edit'].includes(a);
     if(cancels&&actionWaiting)cancelWait();
     else if(actionWaiting)return;
     if(busy&&!cancels){
@@ -767,6 +767,8 @@
     if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else d.close();}
   });
   $('#sheet').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
+  // However the picker closes (✕, Escape, backdrop), a pick still waiting on a 我的家 save is dropped.
+  $('#picker').addEventListener('close',cancelWait);
   $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
