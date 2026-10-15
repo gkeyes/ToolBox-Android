@@ -35,13 +35,18 @@ internal data class AppPackage(
 )
 
 internal data class ToolPackage(val slug: String, val version: String, val asset: ReleaseAsset) {
-    /**
-     * Release files are named after the example directory; tool ids are `io.toolbox.<directory without dashes>`.
-     * Tools the user built and imported before they became examples (筑账, 有余) keep their original
-     * `io.gkeyes.<name>` id so their stored data survives the update, so that namespace matches too.
-     */
-    fun matches(toolId: String): Boolean = slug.replace("-", "").let { name ->
-        toolId == "io.toolbox.$name" || toolId == "io.gkeyes.$name"
+    /** The id the released package installs under; see [LEGACY_TOOL_IDS] for examples that keep an older id. */
+    val toolId: String get() = LEGACY_TOOL_IDS[slug] ?: "io.toolbox." + slug.replace("-", "")
+
+    fun matches(toolId: String): Boolean = toolId == this.toolId
+
+    companion object {
+        /**
+         * Release files are named after the example directory and tool ids are normally
+         * `io.toolbox.<directory without dashes>`. Tools the user built and imported before they became examples
+         * keep their original id so their stored data survives the update; their manifests declare these ids.
+         */
+        val LEGACY_TOOL_IDS = mapOf("zhuzhang" to "io.gkeyes.zhuzhang")
     }
 }
 

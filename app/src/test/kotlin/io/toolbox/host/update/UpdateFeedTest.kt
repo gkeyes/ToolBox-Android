@@ -48,10 +48,10 @@ class UpdateFeedTest {
         val asset = ReleaseAsset("zhuzhang-v1.2.0.tbx", "u", 0, null)
         val zhuzhang = ToolPackage("zhuzhang", "1.2.0", asset)
         assertTrue(zhuzhang.matches("io.gkeyes.zhuzhang"))
-        assertTrue(zhuzhang.matches("io.toolbox.zhuzhang"))
-        assertFalse(zhuzhang.matches("io.gkeyes.youyu"))
+        assertFalse(zhuzhang.matches("io.toolbox.zhuzhang"))
         assertFalse(zhuzhang.matches("com.someone.zhuzhang"))
-        assertTrue(ToolPackage("game-2048", "1.0.0", asset).matches("io.gkeyes.game2048"))
+        // Other examples ship as io.toolbox.*, so an unrelated io.gkeyes tool must not be offered their update.
+        assertFalse(ToolPackage("game-2048", "1.0.0", asset).matches("io.gkeyes.game2048"))
     }
 
     @Test

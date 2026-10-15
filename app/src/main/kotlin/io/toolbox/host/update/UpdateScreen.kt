@@ -350,7 +350,7 @@ private fun AppSection(state: UpdateUiState, canInstallApk: Boolean, onInstallAp
 private fun ToolRow(row: ToolUpdateRow, progress: Map<String, Float?>, onInstall: (String) -> Unit) {
     val slug = row.available.slug
     // Installed tools use their own icon; a tool not installed yet uses the id it will install under.
-    val toolId = row.toolId ?: "io.toolbox." + slug.replace("-", "")
+    val toolId = row.toolId ?: row.available.toolId
     SettingsNavRow(
         title = row.name,
         icon = ToolBoxIconKey.Tools,
