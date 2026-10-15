@@ -175,6 +175,7 @@ class BrowserActivity : ComponentActivity() {
         (8f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
 
     private fun updateBrowserChromeForTouch(page: WebView, event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_UP) navigation.pageTapped()
         state.chrome.onTouch(
             locked = browserChromeLocked(),
             scrollY = page.scrollY,

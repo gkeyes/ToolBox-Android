@@ -190,8 +190,8 @@ private fun BrowserAddressCapsule(
             Spacer(Modifier.width(4.dp))
             ToolBoxText(
                 (if (state.interaction.unresponsive) "未响应 · " else "") +
-                    // Read so the capsule shortens the host once the public suffix list has loaded.
-                    browserDisplayHost(uri.host.orEmpty()).takeIf { BrowserPublicSuffix.ready } ?: uri.host.orEmpty(),
+                    // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
+                    if (BrowserPublicSuffix.ready) browserDisplayHost(uri.host.orEmpty()) else uri.host.orEmpty(),
                 modifier = Modifier.weight(1f, fill = false),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

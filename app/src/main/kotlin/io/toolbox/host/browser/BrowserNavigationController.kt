@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.SafeBrowsingResponse
 import android.webkit.URLUtil
@@ -47,6 +48,10 @@ internal class BrowserNavigationController(
     /** Apps the user declined while the browser is open; a page timer or reload must not re-ask after every dismissal. */
     private val declinedExternal = mutableSetOf<String>()
     val hasPrompt get() = decisions.isNotEmpty()
+    /** When the page was last tapped; WebView may report no gesture for a request a tap started. */
+    private var lastTapAt = Long.MIN_VALUE / 2
+
+    fun pageTapped() { lastTapAt = SystemClock.uptimeMillis() }
 
     /** Returns false for navigations that the engine should perform without host rewriting. */
     fun handle(page: WebView, request: WebResourceRequest): Boolean {
@@ -59,10 +64,11 @@ internal class BrowserNavigationController(
                 // login or payment frame), may ask to leave for another app, one request at a time; frames
                 // without a gesture would otherwise queue dialogs without limit. Script redirects without a
                 // gesture stay allowed in the top document because login and payment pages hand off that way.
-                if ((request.isForMainFrame || request.hasGesture()) &&
+                val userTap = request.hasGesture() || SystemClock.uptimeMillis() - lastTapAt < RecentTapMillis
+                if ((request.isForMainFrame || userTap) &&
                     decisions.none { it.page === page && it.externalTarget != null }
                 ) {
-                    offerExternal(page, url, request.hasGesture())
+                    offerExternal(page, url, userTap)
                 }
                 true
             }
@@ -182,3 +188,6 @@ internal class BrowserNavigationController(
 /** One key per app a page can hand off to: the intent's package when it names one, else its scheme. */
 internal fun externalTargetKey(scheme: String?, packageName: String?): String =
     packageName?.takeIf { it.isNotBlank() }?.let { "package:$it" } ?: "scheme:${scheme.orEmpty().lowercase()}"
+
+/** How long after a tap on the page an app-link request still counts as the user's. */
+private const val RecentTapMillis = 2_000L
