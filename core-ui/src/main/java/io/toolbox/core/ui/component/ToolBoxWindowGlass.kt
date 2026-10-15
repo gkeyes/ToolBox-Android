@@ -258,7 +258,7 @@ fun Modifier.toolBoxWindowFrost(
     if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
         return background(fallback)
     }
-    val backdrop = remember(copy) { WindowCopyBackdrop(copy) { 1f } }
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy, layerScale = { 1f }) }
     return drawBackdrop(
         backdrop = backdrop,
         shape = { RectangleShape },
