@@ -65,7 +65,10 @@ def validate_path(relative):
 
 def check_payload(relative, path):
     """Name and content rules the host applies to every file, whatever its extension."""
-    suffix = Path(relative).suffix.lower()
+    # PackagePathPolicy.forbiddenCode: everything after the last '.' of the whole path, so dot-named
+    # files such as ".so" or "sub/.zip" count too (Path.suffix would see no extension there).
+    lower = relative.lower()
+    suffix = "." + lower.rsplit(".", 1)[1] if "." in lower else ""
     if suffix in ARCHIVES:
         raise ValueError(f"Remove nested archives: {relative}")
     with path.open("rb") as stream:
