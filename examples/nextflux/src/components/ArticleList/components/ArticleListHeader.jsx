@@ -183,7 +183,9 @@ export default function ArticleListHeader({ collapsed = false }) {
     const apply = () => page.style.setProperty("--list-header-h", `${wrap.offsetHeight}px`);
     apply();
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
-    observer?.observe(wrap);
+    // Border box: the status-bar inset arrives later as padding, which leaves
+    // the content box unchanged.
+    observer?.observe(wrap, { box: "border-box" });
     return () => observer?.disconnect();
   }, []);
   const actions = (

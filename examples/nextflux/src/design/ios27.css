@@ -708,3 +708,26 @@ html .nextflux-modal-surface.nextflux-floating-sheet {
   .nextflux-context-scrim { background: rgb(0 0 0 / 0.32); -webkit-backdrop-filter: none; backdrop-filter: none; }
   html .nextflux-modal-surface.nextflux-floating-sheet { background: var(--nf-sheet-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* ------------------------------------------------- immersive status bar */
+/* ToolBox draws the page under the status bar (manifest ui.edgeToEdge) and
+   passes the bar's height as --toolbox-safe-area-top; installed as a PWA the
+   browser's own inset applies. Outside both it is 0 and nothing moves. */
+:root { --nf-safe-top: max(env(safe-area-inset-top, 0px), var(--toolbox-safe-area-top, 0px)); }
+.article-list-header-wrap { padding-block-start: var(--nf-safe-top); }
+.sidebar-header { padding-block-start: calc(var(--nf-safe-top) + 0.5rem); }
+@media (max-width: 767px) {
+  .action-buttons.reader-topbar { padding-block-start: var(--nf-safe-top); }
+  /* Tucked away, the close button clears the status bar too. */
+  .article-scroll-area[data-chrome="hidden"] .reader-topbar-row { transform: translate3d(0, calc(-100% - var(--nf-safe-top)), 0); }
+  /* Text scrolling up fades out under the status bar icons instead of
+     running into them; the strip stays when the bars tuck away. */
+  .action-buttons.reader-topbar::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    block-size: var(--nf-safe-top);
+    background: linear-gradient(to bottom, var(--ds-reader, var(--background)) 55%, transparent);
+    pointer-events: none;
+  }
+}
