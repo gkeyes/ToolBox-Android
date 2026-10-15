@@ -85,7 +85,6 @@ import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxModalDialog
 import io.toolbox.core.ui.component.ToolBoxDestructiveButton
-import io.toolbox.core.ui.component.ToolBoxSearchField
 import io.toolbox.core.ui.component.ToolBoxSettingRow
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxValueRow
@@ -112,21 +111,14 @@ import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import java.text.DateFormat
 import java.util.Date
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.runtime.mutableIntStateOf
-import io.toolbox.core.ui.component.toolBoxLargeTitleHeight
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import io.toolbox.core.ui.component.ToolBoxGlassCapsule
 import io.toolbox.core.ui.component.toolBoxClearGlassFill
 import io.toolbox.core.ui.component.glassRendersLive
 import io.toolbox.core.ui.component.toolBoxClearGlass
+import io.toolbox.core.ui.component.ToolBoxPinnedSearchField
+import io.toolbox.core.ui.component.rememberToolBoxListBackdrop
 
 @Composable
 internal fun ToolManagerContent(
@@ -198,53 +190,24 @@ internal fun ToolManagerContent(
         val density = LocalDensity.current
         // Off while a pushed page or a running tool covers this one, like the rest of its glass.
         val searchGlassLive = glassRendersLive()
-        val listBackdrop = rememberLayerBackdrop()
+        val listBackdrop = rememberToolBoxListBackdrop()
         var searchHeightPx by remember { mutableIntStateOf(0) }
         val searchHeight = if (searchHeightPx > 0) with(density) { searchHeightPx.toDp() } else ToolBoxThemeTokens.sizes.touchTarget
         if (!home) {
-            val contentTopPx = with(density) { contentPadding.calculateTopPadding().roundToPx() }
-            val pinnedTopPx = contentTopPx - with(density) { toolBoxLargeTitleHeight().roundToPx() }
-            val searchRadius = ToolBoxThemeTokens.radii.control
-            val searchTint = ToolBoxThemeTokens.materials.glassTint
-            ToolBoxSearchField(
+            ToolBoxPinnedSearchField(
                 value = state.query,
                 onValueChange = { onAction(CatalogAction.SetQuery(it)) },
                 placeholder = "搜索工具",
-                containerColor = if (searchGlassLive) Color.Transparent else Color.Unspecified,
+                listState = listState,
+                listBackdrop = listBackdrop,
+                contentTop = contentPadding.calculateTopPadding(),
+                onHeightChanged = { searchHeightPx = it },
                 modifier = Modifier
-                    .zIndex(1f)
                     .padding(
                         start = contentPadding.calculateStartPadding(direction),
                         end = contentPadding.calculateEndPadding(direction),
                     )
-                    .offset {
-                        val info = listState.layoutInfo
-                        val item = info.visibleItemsInfo.firstOrNull { it.key == "search" }
-                        val natural = when {
-                            item != null -> item.offset + info.beforeContentPadding
-                            info.visibleItemsInfo.isEmpty() -> contentTopPx
-                            else -> pinnedTopPx
-                        }
-                        IntOffset(0, maxOf(natural, pinnedTopPx))
-                    }
-                    .onSizeChanged { searchHeightPx = it.height }
-                    .toolBoxEntrance(entrance, 0)
-                    .then(
-                        if (searchGlassLive) {
-                            Modifier.drawBackdrop(
-                                backdrop = listBackdrop,
-                                shape = { RoundedCornerShape(searchRadius) },
-                                effects = {
-                                    vibrancy()
-                                    blur(8.dp.toPx())
-                                    lens(12.dp.toPx(), 24.dp.toPx())
-                                },
-                                onDrawSurface = { drawRect(searchTint) },
-                            )
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .toolBoxEntrance(entrance, 0),
             )
         }
         LazyColumn(
