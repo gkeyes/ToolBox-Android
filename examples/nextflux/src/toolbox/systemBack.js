@@ -57,11 +57,12 @@ export function closeTopLayer({ doc = document, win = window } = {}) {
   // Native modal dialogs (the link dialog) sit in the top layer, above all.
   const native = [...doc.querySelectorAll("dialog[open]")].pop();
   if (native) {
-    // A dialog that refuses (the link dialog while a share is answering) is
-    // busy: back goes to the host rather than being swallowed.
+    // A dialog handling cancel itself (LoadingModal dismisses in its own
+    // handler) keeps the back. One that refuses while busy (the link dialog
+    // while a share is answering, marked aria-busy) leaves it to the host.
     const cancel = new Event("cancel", { cancelable: true });
-    if (!native.dispatchEvent(cancel)) return false;
-    native.close();
+    if (native.dispatchEvent(cancel)) native.close();
+    else if (native.getAttribute("aria-busy") === "true") return false;
     return true;
   }
 
