@@ -277,7 +277,9 @@ internal fun DeveloperHelpContent(
             listState.scrollToItem(0, pinScrollPx)
         }
     }
-    LaunchedEffect(searching, pinScrollPx) {
+    // Keyed on the query too: two queries can lay out alike, and snapshotFlow wouldn't re-emit the
+    // same measurement after the reset above.
+    LaunchedEffect(searching, pinScrollPx, query) {
         if (!searching) return@LaunchedEffect
         snapshotFlow { searchRoom(listState.layoutInfo, pinScrollPx) }.collect { room ->
             if (room != null) searchRoomPx = room
