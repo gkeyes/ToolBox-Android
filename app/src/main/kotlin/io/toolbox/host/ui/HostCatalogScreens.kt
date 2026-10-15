@@ -116,7 +116,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.platform.LocalView
 import io.toolbox.core.ui.component.toolBoxLargeTitleHeight
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -126,6 +125,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import io.toolbox.core.ui.component.ToolBoxGlassCapsule
 import io.toolbox.core.ui.component.toolBoxClearGlassFill
+import io.toolbox.core.ui.component.glassRendersLive
 
 @Composable
 internal fun ToolManagerContent(
@@ -195,7 +195,8 @@ internal fun ToolManagerContent(
         // 全部工具: the search field is chrome, pinned under the collapsed top bar, and is glass
         // over the list (recorded into its own backdrop) while the tools scroll beneath it.
         val density = LocalDensity.current
-        val searchGlassLive = ToolBoxThemeTokens.materials.realBlurEnabled && LocalView.current.isHardwareAccelerated
+        // Off while a pushed page or a running tool covers this one, like the rest of its glass.
+        val searchGlassLive = glassRendersLive()
         val listBackdrop = rememberLayerBackdrop()
         var searchHeightPx by remember { mutableIntStateOf(0) }
         val searchHeight = if (searchHeightPx > 0) with(density) { searchHeightPx.toDp() } else ToolBoxThemeTokens.sizes.touchTarget
