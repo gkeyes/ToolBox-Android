@@ -49,6 +49,8 @@ import io.toolbox.core.ui.component.*
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.catalog.*
 import io.toolbox.core.ui.component.toolBoxGlassPress
+import io.toolbox.core.ui.component.ProvideToolBoxWindowButtonBackdrop
+import io.toolbox.core.ui.component.toolBoxClearGlass
 
 internal val CatalogSort.label: String get() = when (this) {
     CatalogSort.NAME -> "名称首字母"
@@ -524,7 +526,8 @@ private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
         val shape = RoundedCornerShape(metrics.radius)
         Row(
             Modifier.fillMaxWidth().height(metrics.height)
-                .toolBoxPressFeedback(interactionSource, shape = shape)
+                .toolBoxGlassPress(interactionSource, shape = shape)
+                .toolBoxClearGlass(shape)
                 .clip(shape)
                 .border(1.5.dp, colors.primary.copy(alpha = 0.45f), shape)
                 .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
@@ -660,7 +663,9 @@ internal fun CatalogGroupFolderOverlay(
                                 CatalogGroupStyleIcon(group, 64.dp, 32.dp)
                                 AppText("这个分组还没有工具", color = colors.textPrimary.copy(alpha = 0.8f), align = TextAlign.Center,
                                     textStyle = ToolBoxThemeTokens.textStyles.metadata)
-                                ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
+                                ProvideToolBoxWindowButtonBackdrop(glass, motion = { entrance.value }) {
+                                    ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"))
+                                }
                             }
                         } else {
                             BoxWithConstraints(Modifier.fillMaxWidth()) {

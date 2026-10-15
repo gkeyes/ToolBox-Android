@@ -38,6 +38,8 @@ import com.kyant.backdrop.highlight.Highlight
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Size
 
 /**
  * Liquid Glass for a panel in an overlay window (a dialog). The overlay cannot sample the page
@@ -105,14 +107,25 @@ private class WindowCopyBackdrop(
     private val copy: WindowBackdrop,
     /** Null: measure the scale of the layers the glass sits in (a popup zooming in on its own). */
     private val layerScale: (() -> Float)?,
+    /** Drawn over the copy: the panel's own fill, for controls that sit on the panel. */
+    private val overlay: (() -> Color)? = null,
+    /** Read on every draw, so a control moving with its panel (a slide, a drag) is redrawn in register. */
+    private val motion: () -> Unit = {},
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
+
+    private val layerProbe by lazy { GraphicsLayerScope() }
 
     override fun DrawScope.drawBackdrop(
         density: Density,
         coordinates: LayoutCoordinates?,
         layerBlock: (GraphicsLayerScope.() -> Unit)?,
     ) {
+        motion()
+        // A pressed button grows through layerBlock, a layer the node's coordinates already sit
+        // in (so the origin and scale below compensate for it); read it so every frame of the
+        // press redraws the copy in register instead of stretching the last one.
+        if (layerBlock != null) layerProbe.layerBlock()
         val node = coordinates?.takeIf { it.isAttached } ?: return
         // On screen, not in window: popups and dialogs need not share the page window's origin.
         val origin = node.positionOnScreen() - copy.rootOnScreen
@@ -120,18 +133,59 @@ private class WindowCopyBackdrop(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
         )
-        val scale = layerScale?.invoke() ?: run {
-            val width = node.size.width.toFloat()
-            if (width <= 0f) 1f else (node.localToRoot(Offset(width, 0f)) - node.localToRoot(Offset.Zero)).x / width
-        }
-        val inverse = 1f / scale.coerceAtLeast(0.01f)
-        scale(inverse, inverse, pivot = Offset.Zero) {
+        // Each axis on its own: a button stretched by a drag scales x and y differently.
+        val fixed = layerScale?.invoke()
+        val zero = node.localToRoot(Offset.Zero)
+        val width = node.size.width.toFloat()
+        val height = node.size.height.toFloat()
+        val scaleX = fixed ?: if (width <= 0f) 1f else (node.localToRoot(Offset(width, 0f)) - zero).x / width
+        val scaleY = fixed ?: if (height <= 0f) 1f else (node.localToRoot(Offset(0f, height)) - zero).y / height
+        scale(1f / scaleX.coerceAtLeast(0.01f), 1f / scaleY.coerceAtLeast(0.01f), pivot = Offset.Zero) {
             translate(-origin.x, -origin.y) {
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
             }
         }
+        // Past the control's bounds too: blur and lens sample a padded region around it.
+        if (overlay != null) drawRect(overlay(), topLeft = Offset(-OverlayBleed, -OverlayBleed), size = Size(size.width + 2 * OverlayBleed, size.height + 2 * OverlayBleed))
     }
 }
+
+/**
+ * Buttons on a panel of window glass (a sheet, a dialog, the group panel) refract what the panel
+ * shows: the page copy under the panel's [fill], blurred as much as the panel. Without a copy
+ * (实色材质, or before it lands) they keep the clear backdrop. [motion] reads whatever moves the
+ * panel, as for the panel's own glass.
+ */
+@Composable
+internal fun ProvideWindowButtonBackdrop(
+    copy: WindowBackdrop?,
+    fill: () -> Color,
+    blurRadius: Dp,
+    motion: () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    val currentFill by rememberUpdatedState(fill)
+    val currentMotion by rememberUpdatedState(motion)
+    val backdrop = remember(copy) {
+        copy?.let { WindowCopyBackdrop(it, null, { legibleFill(currentFill(), it.luminance) }) { currentMotion() } }
+    }
+    // One provider either way, so the content keeps its state while the copy comes and goes.
+    CompositionLocalProvider(
+        LocalToolBoxButtonBackdrop provides (backdrop ?: LocalToolBoxButtonBackdrop.current),
+        LocalToolBoxButtonBlur provides (if (backdrop != null) blurRadius else LocalToolBoxButtonBlur.current),
+        content = content,
+    )
+}
+
+/** [ProvideWindowButtonBackdrop] for a panel drawn with [toolBoxWindowGlassEffect]. */
+@Composable
+fun ProvideToolBoxWindowButtonBackdrop(
+    glass: ToolBoxWindowGlass,
+    fill: Color = ToolBoxThemeTokens.materials.overlayFill,
+    blurRadius: Dp = 28.dp,
+    motion: () -> Unit = {},
+    content: @Composable () -> Unit,
+) = ProvideWindowButtonBackdrop(glass.copy, { fill }, blurRadius, motion, content)
 
 /**
  * Liquid Glass over a copy of the page: the page frosted by [blurRadius] (colours and shapes stay,
@@ -220,7 +274,7 @@ fun Modifier.toolBoxWindowFrost(
     if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
         return background(fallback)
     }
-    val backdrop = remember(copy) { WindowCopyBackdrop(copy) { 1f } }
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy, layerScale = { 1f }) }
     return drawBackdrop(
         backdrop = backdrop,
         shape = { RectangleShape },
@@ -230,3 +284,6 @@ fun Modifier.toolBoxWindowFrost(
         onDrawSurface = { drawRect(tint) },
     )
 }
+
+/** How far a control's panel overlay extends past it, beyond any blur or lens padding. */
+private const val OverlayBleed = 4096f

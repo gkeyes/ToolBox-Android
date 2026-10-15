@@ -94,6 +94,9 @@ internal val ToolBoxNeutralFill = Color(0xFF767680)
  */
 val LocalToolBoxButtonBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
+/** Blur of [LocalToolBoxButtonBackdrop] under a button: light over a live page, heavy over a panel's page copy. */
+val LocalToolBoxButtonBlur = staticCompositionLocalOf { 2.dp }
+
 @Composable
 private fun ToolBoxActionButton(
     label: String,
@@ -137,15 +140,18 @@ private fun ToolBoxActionButton(
         LiquidButton(
             onClick = tap,
             backdrop = LocalToolBoxButtonBackdrop.current ?: emptyBackdrop(),
-            modifier = modifier
-                .sizeIn(minWidth = 48.dp)
-                .graphicsLayer { alpha = if (enabled) 1f else 0.42f },
+            modifier = modifier.sizeIn(minWidth = 48.dp),
             enabled = enabled,
-            surfaceColor = glass.container,
+            // Disabled fades the fill and label, not a layer around the button: a layer alpha
+            // would clip the capsule's shadow to a hard rectangle.
+            surfaceColor = if (enabled) glass.container else glass.container.copy(alpha = glass.container.alpha * 0.42f),
+            blurRadius = LocalToolBoxButtonBlur.current,
             contentPadding = PaddingValues(horizontal = if (compact) 14.dp else 20.dp),
             height = height,
         ) {
-            ToolBoxActionLabel(label, icon, iconColorOverride ?: glass.content, labelStyle.copy(color = glass.content), compact)
+            val content = if (enabled) glass.content else glass.content.copy(alpha = glass.content.alpha * 0.42f)
+            ToolBoxActionLabel(label, icon, (iconColorOverride ?: glass.content).let { if (enabled) it else it.copy(alpha = it.alpha * 0.42f) },
+                labelStyle.copy(color = content), compact)
         }
         return
     }
