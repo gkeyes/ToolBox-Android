@@ -250,7 +250,10 @@ internal class ForegroundCapabilityBroker private constructor(
                     val existing = manager.pinnedShortcuts.firstOrNull { it.id == route.shortcutId }
                         ?: return@withContext false
                     if (!existing.isEnabled) manager.enableShortcuts(listOf(route.shortcutId))
-                    manager.updateShortcuts(listOf(shortcut))
+                    manager.updateShortcuts(listOf(shortcut)).also { updated ->
+                        // Without the new intent the icon still holds the removed token; keep it disabled.
+                        if (!updated && !existing.isEnabled) manager.disableShortcuts(listOf(route.shortcutId))
+                    }
                 }
                 ensureActive()
                 requireForegroundRuntime()

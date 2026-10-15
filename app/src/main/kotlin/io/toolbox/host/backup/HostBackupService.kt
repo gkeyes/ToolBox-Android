@@ -239,7 +239,7 @@ internal class HostBackupService(
                     RestoreIdentity.Replace -> Unit
                     RestoreIdentity.KeepInstalled -> {
                         keepInstalled = true
-                        warnings += "${tool.name}：包身份无法验证，保留本机版本 ${installed.version}，仅恢复备份中的数据。"
+                        warnings += "${tool.name}：包身份无法验证，保留本机版本 ${installed.version}，仅恢复普通数据；安全存储（登录凭据等）不会交给无法确认作者的本机版本。"
                     }
                     is RestoreIdentity.Skip -> skipped = identity.reason
                 }
@@ -369,6 +369,8 @@ internal class HostBackupService(
 
     /** Decides and encrypts secure data after the package (and its grants) is installed. */
     private suspend fun prepareSecure(folder: File, plan: RestoreToolPlan, warnings: MutableList<String>): SecureRestore {
+        // An unverified installed package may not be the backup's author, so it never receives the backup's secrets.
+        if (plan.keepInstalled) return SecureRestore.Keep
         val secure = File(folder, "data/secure.json")
         if (secure.exists()) {
             val manifest = packages.installedManifest(plan.id) as? HostInstalledManifestResult.Found
