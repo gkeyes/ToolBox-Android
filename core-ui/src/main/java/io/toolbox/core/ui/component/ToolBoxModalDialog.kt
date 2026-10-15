@@ -24,8 +24,9 @@ fun ToolBoxModalDialog(
     title: String = "对话框",
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Dialogs open over live pages (browser, running tools), where a one-time copy would freeze them.
-    ToolBoxActionSheet(title = title, onDismissRequest = onDismissRequest, frostedBackdrop = false) {
+    // Liquid glass over a copy of the page. Over a live page (browser, running tool) the copy is a
+    // frozen frame of it, as iOS freezes the frame behind an alert.
+    ToolBoxActionSheet(title = title, onDismissRequest = onDismissRequest) {
         Column(Modifier.fillMaxWidth()) {
             // Grabber, then a 12dp breath before the first line of content, as on iOS sheets.
             ToolBoxActionSheetHeader { Spacer(Modifier.height(ToolBoxThemeTokens.spacing.sm)) }

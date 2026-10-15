@@ -1,5 +1,8 @@
 package io.toolbox.host.ui
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -535,6 +538,9 @@ private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+/** How long the group overlay waits for its page copy before opening with solid glass. */
+private const val GlassCopyWaitMs = 250L
+
 /** App Library style glass overlay listing one group's tools; organizing reorders them here. */
 @Composable
 internal fun CatalogGroupFolderOverlay(
@@ -556,9 +562,10 @@ internal fun CatalogGroupFolderOverlay(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        // Liquid glass: the panel refracts a frosted copy of the home page (colours and shapes, no
-        // readable text) and carries all of the group's text; around it the page stays sharp under
-        // a light veil. With 实色材质 on, the veil is near-solid and the panel opaque.
+        // Liquid glass: the panel refracts a copy of the home page and carries all of the group's
+        // text; around it the same copy is frosted under a light veil, so the home page reads as
+        // colour and shape, never as text beside the group's own. With 实色材质 on, the veil is
+        // near-solid and the panel opaque.
         val seeThrough = materials.realBlurEnabled
         DisposableEffect(window) {
             if (window == null) return@DisposableEffect onDispose { }
@@ -567,121 +574,153 @@ internal fun CatalogGroupFolderOverlay(
             onDispose { window.setDimAmount(previousDim) }
         }
         val entrance = remember { Animatable(0f) }
-        LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
+        LaunchedEffect(entrance) {
+            // Opens once the page copy is in, so the glass doesn't flip from solid mid-animation.
+            if (seeThrough) withTimeoutOrNull(GlassCopyWaitMs) { snapshotFlow { glass.ready }.first { it } }
+            entrance.animateTo(1f, ToolBoxMotion.DialogEnter)
+        }
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
-        Box(
-            Modifier.fillMaxSize()
-                .background(colors.background.copy(alpha = if (seeThrough) 0.45f else 0.9f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
-                    onClickLabel = "关闭分组", onClick = onDismiss)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            val panelRadius = ToolBoxThemeTokens.radii.sheet
-            val panelShape = toolBoxShape(panelRadius)
-            Column(
-                Modifier.widthIn(max = 480.dp).fillMaxWidth()
-                    .graphicsLayer {
-                        val progress = entrance.value
-                        alpha = progress.coerceIn(0f, 1f)
-                        val scale = 0.6f + 0.4f * progress
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    // Taps on the panel itself must not reach the dismissing scrim.
-                    .pointerInput(Unit) { detectTapGestures { } }
-                    .semantics { paneTitle = "分组 " + group.name }
-                    .testTag("catalog_group_folder")
-                    .shadow(
-                        elevation = 24.dp,
-                        shape = panelShape,
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                        spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                    )
-                    .clip(panelShape)
-                    .toolBoxWindowGlassEffect(glass, panelRadius)
-                    .border(0.5.dp, materials.overlayBorder, panelShape)
-                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+        val panelScale = { 0.6f + 0.4f * entrance.value }
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = entrance.value.coerceIn(0f, 1f) }
+                    .toolBoxWindowFrost(
+                        glass,
+                        tint = colors.background.copy(alpha = 0.3f),
+                        fallback = colors.background.copy(alpha = 0.9f),
+                    ),
+            )
+            Box(
+                Modifier.fillMaxSize()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                        onClickLabel = "关闭分组", onClick = onDismiss)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CatalogGroupStyleIcon(group, 30.dp, 18.dp)
-                    // Two lines: at 320dp the two round buttons leave only ~4 large glyphs per line.
-                    AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 2,
-                        textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold))
-                    FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
-                    FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
-                }
-                Box(
-                    // Takes only what the header and footer leave, so a two-line title in a short
-                    // window shrinks the scrolling list instead of pushing the buttons off screen.
-                    Modifier.weight(1f, fill = false).fillMaxWidth(),
-                ) {
-                    if (members.isEmpty()) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            CatalogGroupStyleIcon(group, 64.dp, 32.dp)
-                            AppText("这个分组还没有工具", color = colors.textSecondary, align = TextAlign.Center,
-                                textStyle = ToolBoxThemeTokens.textStyles.metadata)
-                            ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
+                val panelRadius = ToolBoxThemeTokens.radii.sheet
+                val panelShape = toolBoxShape(panelRadius)
+                Column(
+                    Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = entrance.value.coerceIn(0f, 1f)
+                            val scale = panelScale()
+                            scaleX = scale
+                            scaleY = scale
                         }
-                    } else {
-                        BoxWithConstraints(Modifier.fillMaxWidth()) {
-                            val columns = homeGridColumnCount(maxWidth.value, LocalDensity.current.fontScale).coerceIn(1, 3)
-                            val listState = rememberLazyListState()
-                            val drag = rememberCatalogHomeDragState(editing, listState, PaddingValues(0.dp))
-                            Box(Modifier.fillMaxWidth()) {
-                                LazyColumn(
-                                    state = listState,
-                                    userScrollEnabled = drag.active == null,
-                                    modifier = Modifier.fillMaxWidth().heightIn(max = maxListHeight)
-                                        .testTag("catalog_group_folder_list")
-                                        .catalogDragSurface(drag, editing),
-                                ) {
-                                    homeToolGrid(
-                                        members, "member:" + group.id, "members:" + group.id, columns, editing, drag,
-                                        onAction, onOptions,
-                                        iconSize = 60.dp,
-                                        onOpen = { tool ->
-                                            onDismiss()
-                                            onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId))
-                                        },
-                                        onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) },
-                                    )
+                        // Taps on the panel itself must not reach the dismissing scrim.
+                        .pointerInput(Unit) { detectTapGestures { } }
+                        .semantics { paneTitle = "分组 " + group.name }
+                        .testTag("catalog_group_folder")
+                        .shadow(
+                            elevation = 24.dp,
+                            shape = panelShape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                            spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                        )
+                        .clip(panelShape)
+                        // The copy is drawn unscaled, so it stays in register with the page as the panel zooms.
+                        .toolBoxWindowGlassEffect(glass, panelRadius, layerScale = panelScale) { entrance.value }
+                        .border(0.5.dp, materials.overlayBorder, panelShape)
+                        .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        CatalogGroupStyleIcon(group, 30.dp, 18.dp)
+                        // Two lines: at 320dp the two round buttons leave only ~4 large glyphs per line.
+                        AppText(group.name, Modifier.weight(1f).semantics { heading() }, maxLines = 2,
+                            textStyle = ToolBoxThemeTokens.textStyles.title.copy(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold))
+                        FolderRoundButton(glass, ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"), panelScale)
+                        FolderRoundButton(glass, ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"), panelScale)
+                    }
+                    Box(
+                        // Takes only what the header and footer leave, so a two-line title in a short
+                        // window shrinks the scrolling list instead of pushing the buttons off screen.
+                        Modifier.weight(1f, fill = false).fillMaxWidth(),
+                    ) {
+                        if (members.isEmpty()) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                CatalogGroupStyleIcon(group, 64.dp, 32.dp)
+                                AppText("这个分组还没有工具", color = colors.textPrimary.copy(alpha = 0.72f), align = TextAlign.Center,
+                                    textStyle = ToolBoxThemeTokens.textStyles.metadata)
+                                ToolBoxTextButton("添加工具", onEdit, Modifier.testTag("catalog_group_folder_add"), outlined = false)
+                            }
+                        } else {
+                            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                val columns = homeGridColumnCount(maxWidth.value, LocalDensity.current.fontScale).coerceIn(1, 3)
+                                val listState = rememberLazyListState()
+                                val drag = rememberCatalogHomeDragState(editing, listState, PaddingValues(0.dp))
+                                Box(Modifier.fillMaxWidth()) {
+                                    LazyColumn(
+                                        state = listState,
+                                        userScrollEnabled = drag.active == null,
+                                        modifier = Modifier.fillMaxWidth().heightIn(max = maxListHeight)
+                                            .testTag("catalog_group_folder_list")
+                                            .catalogDragSurface(drag, editing),
+                                    ) {
+                                        homeToolGrid(
+                                            members, "member:" + group.id, "members:" + group.id, columns, editing, drag,
+                                            onAction, onOptions,
+                                            iconSize = 60.dp,
+                                            onOpen = { tool ->
+                                                onDismiss()
+                                                onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId))
+                                            },
+                                            onMove = { tool, offset -> onAction(CatalogAction.MoveMember(group.id, tool.toolId, offset)) },
+                                        )
+                                    }
+                                    CatalogDragPreview(drag)
                                 }
-                                CatalogDragPreview(drag)
                             }
                         }
                     }
+                    AppText(
+                        if (editing) "长按拖动排序，点击工具可收藏、分组与管理" else "长按工具可收藏、分组与管理",
+                        Modifier.fillMaxWidth(), color = colors.textPrimary.copy(alpha = 0.85f), align = TextAlign.Center,
+                        textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                    )
                 }
-                AppText(
-                    if (editing) "长按拖动排序，点击工具可收藏、分组与管理" else "长按工具可收藏、分组与管理",
-                    Modifier.fillMaxWidth(), color = colors.textPrimary.copy(alpha = 0.72f), align = TextAlign.Center,
-                    textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
-                )
             }
         }
     }
 }
 
 @Composable
-private fun FolderRoundButton(icon: ToolBoxIconKey, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun FolderRoundButton(
+    glass: ToolBoxWindowGlass,
+    icon: ToolBoxIconKey,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    layerScale: () -> Float = { 1f },
+) {
     val colors = ToolBoxThemeTokens.colors
+    val materials = ToolBoxThemeTokens.materials
     val interactionSource = remember { MutableInteractionSource() }
-    // Solid glass disc: the overlay window has no recorded backdrop to refract.
+    // Liquid glass disc over the same page copy as the panel: a clearer lens with its own rim and
+    // highlight, so it stands out from the panel glass around it.
     Box(
         modifier.size(44.dp)
             .toolBoxPressFeedback(interactionSource, shape = CircleShape)
-            .toolBoxSolidGlass(CircleShape)
+            .shadow(6.dp, CircleShape, clip = false)
+            .clip(CircleShape)
+            .toolBoxWindowGlassEffect(
+                glass, 22.dp, blurRadius = 16.dp,
+                fill = materials.glassTint,
+                fallback = materials.glassTint.copy(alpha = 0.92f).compositeOver(colors.background),
+                layerScale = layerScale,
+            )
+            .border(0.75.dp, materials.glassBorder, CircleShape)
             .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,

@@ -158,7 +158,7 @@ fun ToolBoxActionSheet(
             // No window blur: FLAG_BLUR_BEHIND / setBackgroundBlurRadius blur everything under this
             // full-screen window, but the page behind an iOS 26 sheet stays sharp. The sheet is its
             // own window, so it cannot sample the app's recorded ToolBoxGlassState layer either;
-            // it draws the denser translucent overlay fallback instead (see ToolBoxMaterialTokens).
+            // its liquid glass refracts a copy of the page instead (snapshotGlass).
             // Entry is driven by Compose springs; the exit is a window animation so it also
             // plays when the caller removes the sheet directly (a selection, a guard, Back).
             window.setWindowAnimations(io.toolbox.core.ui.R.style.ToolBox_SheetWindowAnimation)
@@ -277,11 +277,14 @@ fun ToolBoxActionSheet(
                         .clip(shape)
                         .then(
                             backdrop?.takeIf { frosted }?.let {
-                                Modifier.windowBackdrop(it, SheetBlur) { entrance.value; dragOffset }
-                            } ?: Modifier,
-                        )
-                        .background(
-                            containerColor ?: lerp(materials.overlayFallback, materials.overlayFill, frost),
+                                // Liquid glass over the page copy; the fill eases from opaque as it lands.
+                                Modifier.snapshotGlass(
+                                    it, sheetRadius, SheetBlur,
+                                    fill = { lerp(materials.overlayFallback, materials.overlayFill, frostAmount.value) },
+                                ) { entrance.value; dragOffset }
+                            } ?: Modifier.background(
+                                containerColor ?: lerp(materials.overlayFallback, materials.overlayFill, frost),
+                            ),
                         )
                         .border(0.5.dp, materials.overlayBorder, shape)
                         .pointerInput(Unit) { detectTapGestures { /* Consume taps on the sheet, not its scrim. */ } }

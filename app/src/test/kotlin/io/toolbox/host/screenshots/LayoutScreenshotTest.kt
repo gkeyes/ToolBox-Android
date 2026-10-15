@@ -42,6 +42,8 @@ import io.toolbox.core.data.BackgroundTask
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.data.CatalogLayout
 import io.toolbox.core.data.TaskState
+import io.toolbox.core.ui.component.ToolBoxModalDialog
+import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.core.ui.theme.ToolBoxThemeMode
 import io.toolbox.host.background.BackgroundSafeguardsContent
@@ -69,6 +71,7 @@ import io.toolbox.host.permissions.PermissionLoadState
 import io.toolbox.host.runtime.RuntimeBackgroundSessionUi
 import io.toolbox.host.settings.SettingsContent
 import io.toolbox.host.settings.SettingsUiState
+import io.toolbox.host.ui.AppText
 import io.toolbox.host.ui.CatalogGroupFolderOverlay
 import io.toolbox.host.ui.MainDestination
 import io.toolbox.host.ui.PrimaryScreen
@@ -252,6 +255,19 @@ class LayoutScreenshotTest(private val fontScale: Float) {
         ToolBoxTheme(reduceTransparency = true) { SheetBackdropPage() }
     }
 
+    /** Phone height: the tool list sits right behind the sheet's liquid glass. */
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun sortSheetPhone() = render("sort_sheet_phone", dialog = true, interact = ::openSort) { SheetBackdropPage() }
+
+    /** A confirmation dialog is the same glass sheet. */
+    @Config(qualifiers = "w320dp-h800dp-xxhdpi")
+    @Test fun modalDialogPhone() = render("modal_dialog_phone", dialog = true) {
+        SheetBackdropPage()
+        ToolBoxModalDialog(onDismissRequest = {}, title = "删除工具") {
+            AppText("删除「番茄钟专注计时」？它的数据也会一起删除。")
+        }
+    }
+
     private fun openSort() {
         compose.onAllNodes(hasText("排序 · ", substring = true)).onFirst().performClick()
     }
@@ -278,7 +294,8 @@ class LayoutScreenshotTest(private val fontScale: Float) {
     }
 
     @Composable private fun GroupFolderOverHome() {
-        Box(Modifier.fillMaxSize()) { Catalog(home = true) }
+        // The page canvas, as in the app: the dark home is black, not the light test window.
+        Box(Modifier.fillMaxSize().toolBoxOpenDesignCanvas()) { Catalog(home = true) }
         CatalogGroupFolderOverlay(groups[0], tools.filter { it.toolId in groups[0].members }, editing = false, {}, {}, {}, {})
     }
 
