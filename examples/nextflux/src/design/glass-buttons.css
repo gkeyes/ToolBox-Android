@@ -137,7 +137,8 @@
 /* A held segment that isn't selected yet answers under the finger. */
 .tabs__tab:not([aria-selected="true"]):is(:active, [data-pressed="true"], [data-nf-pressed="true"]) {
   border-radius: 999px;
-  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.18) 70%);
+  /* Light glass is already near white: an accent tint shows the press there. */
+  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--accent) 12%, transparent) 70%);
   scale: 1.04;
   transition: scale var(--nf-press-in);
 }

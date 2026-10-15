@@ -16,18 +16,26 @@
   /* Secondary text on floating glass: #6C6C70 / #98989F fall under 4.5:1
      once busy content shows through, so panels use a stronger grey. */
   --nf-panel-secondary: #48484A;
+  /* The rim is lightly tinted so the lens has something to bend; the core
+     (::after) adds the rest of the --nf-menu tint under the content. */
+  --nf-panel-rim: rgb(255 255 255 / 0.6);
+  --nf-panel-core: rgb(255 255 255 / 0.6);
 }
 .dark,
 [data-theme="dark"] {
   --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
   --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
   --nf-panel-secondary: #C7C7CC;
+  --nf-panel-rim: rgb(44 44 46 / 0.62);
+  --nf-panel-core: rgb(44 44 46 / 0.63);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
     --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
     --nf-panel-secondary: #C7C7CC;
+    --nf-panel-rim: rgb(44 44 46 / 0.62);
+    --nf-panel-core: rgb(44 44 46 / 0.63);
   }
 }
 
@@ -46,11 +54,30 @@ html .nextflux-modal-surface::before {
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  background: var(--nf-menu);
+  background: var(--nf-panel-rim);
   box-shadow: var(--nf-menu-inset);
-  /* The lens first, then the frost (blur before url() loses the bend). */
-  -webkit-backdrop-filter: var(--nf-lens, blur(24px)) blur(12px) saturate(190%);
-  backdrop-filter: var(--nf-lens, blur(24px)) blur(12px) saturate(190%);
+  /* Rim: the lens, then only a light frost, so what it bends stays visible
+     (under the old 12px frost and full tint the bend was invisible). */
+  -webkit-backdrop-filter: var(--nf-lens, blur(24px)) blur(3px) saturate(190%);
+  backdrop-filter: var(--nf-lens, blur(24px)) blur(3px) saturate(190%);
+}
+/* Core: a heavy frost and the rest of the tint over everything but the rim,
+   feathered in from ~10px, so text behind the panel stays unreadable. */
+html .nextflux-modal-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--nf-panel-core);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  --nf-feather: linear-gradient(to right, transparent 6px, #000 28px, #000 calc(100% - 28px), transparent calc(100% - 6px));
+  -webkit-mask: var(--nf-feather), linear-gradient(to bottom, transparent 6px, #000 28px, #000 calc(100% - 28px), transparent calc(100% - 6px));
+  -webkit-mask-composite: source-in;
+  mask: var(--nf-feather), linear-gradient(to bottom, transparent 6px, #000 28px, #000 calc(100% - 28px), transparent calc(100% - 6px));
+  mask-composite: intersect;
 }
 @media (prefers-reduced-transparency: reduce) {
   html .nextflux-modal-surface::before {
@@ -58,6 +85,7 @@ html .nextflux-modal-surface::before {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+  html .nextflux-modal-surface::after { display: none; }
 }
 
 /* Secondary text inside floating panels. */
@@ -77,7 +105,20 @@ html .toolbox-link-dialog .toolbox-link-primary {
   border-color: transparent;
 }
 
+/* Filled buttons in panels: a solid, darker fill keeps white labels over
+   4.5:1 (注销 was 3.0:1, 保存 4.2:1 on the translucent fills). */
+html .nextflux-modal-surface .button.button--primary:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--accent) 80%, black); }
+html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--nf-btn-danger) 80%, black); }
+
 /* ------------------------------------------------------- open and close */
+/* The link dialog, the toasts and the title-filter toast carry their own
+   frost, so fading their opacity in thinned it; they move in at full frost
+   (fading out on close is fine: it reveals what they covered). */
+html .toolbox-link-dialog[open] { animation-name: nf-link-in; }
+@keyframes nf-link-in { from { transform: translateY(10px) scale(0.98); } }
+html [data-sonner-toaster] [data-sonner-toast].nextflux-toast[data-mounted="false"]:not([data-removed="true"]) { opacity: 1; }
+html .nf-title-filter-toast { animation-name: nf-title-filter-toast-pop; }
+@keyframes nf-title-filter-toast-pop { from { scale: 0.94; } }
 /* Sheets: the backdrop transitions its colour, never its opacity. */
 html .drawer__backdrop.nextflux-modal-backdrop { transition-property: background-color; }
 html .drawer__backdrop.nextflux-modal-backdrop:is([data-entering="true"], [data-exiting="true"]) {
