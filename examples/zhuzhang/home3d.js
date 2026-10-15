@@ -511,11 +511,11 @@ export function createHome(api) {
   }
   // A failed save puts the piece back where the ledger has it, so the screen never shows a spot that will not survive a restart.
   const saveGen = new Map();
-  function saveModel(e) { const gen = (saveGen.get(e.id) || 0) + 1; saveGen.set(e.id, gen); api.saveModel(e.id, { ...e.model }).then(ok => { if (ok || saveGen.get(e.id) !== gen) return; api.toast('没保存上，已放回原位，请再试一次', null, true); if (drag && drag.e === e) e.rollback = true; else rollback(e); }); }
+  function saveModel(e) { const gen = (saveGen.get(e.id) || 0) + 1; saveGen.set(e.id, gen); api.saveModel(e.id, { ...e.model }).then(ok => { if (ok || saveGen.get(e.id) !== gen) return; if (drag && drag.e === e) { e.rollback = true; return; } api.toast('没保存上，已放回原位，请再试一次', null, true); rollback(e); }); }
   // Back to the ledger's spot for this one piece; the others keep what they saved.
   function rollback(e) { e.rollback = false; const i = api.data().items.find(x => x.id === e.id); if (i?.model) { e.model = { ...i.model }; placeEntry(e); applyFit(); } updateRing(); invalidate(); }
   // A failure that lands mid-drag waits for the finger: a real move saves anew, a mere touch rolls back.
-  function endDrag() { const d = drag; drag = null; d.e.g.position.y = 0; if (d.moved) { d.e.rollback = false; saveModel(d.e); } else if (d.e.rollback) rollback(d.e); }
+  function endDrag() { const d = drag; drag = null; d.e.g.position.y = 0; if (d.moved) { d.e.rollback = false; saveModel(d.e); } else if (d.e.rollback) { api.toast('没保存上，已放回原位，请再试一次', null, true); rollback(d.e); } }
   let homeTimer = 0;
   function saveHome() { clearTimeout(homeTimer); homeTimer = setTimeout(() => api.saveHome({ template: T.key, sizes: HM.sizesOf(T) }).then(ok => { if (!ok) api.toast('户型没保存上，下次打开会回到上次保存的样子，请再调整一次', null, true); }), 300); }
 
