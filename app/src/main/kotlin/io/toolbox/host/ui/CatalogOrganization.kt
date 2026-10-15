@@ -551,6 +551,7 @@ internal fun CatalogGroupFolderOverlay(
     onOptions: (String) -> Unit,
     onEdit: () -> Unit,
     onDismiss: () -> Unit,
+    onWindowView: (android.view.View?) -> Unit = {},
 ) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
@@ -561,7 +562,12 @@ internal fun CatalogGroupFolderOverlay(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        val folderView = LocalView.current
+        val window = (folderView.parent as? DialogWindowProvider)?.window
+        DisposableEffect(folderView) {
+            onWindowView(folderView)
+            onDispose { onWindowView(null) }
+        }
         // Liquid glass: the panel refracts a copy of the home page and carries all of the group's
         // text; around it the same copy is frosted under a light veil, so the home page reads as
         // colour and shape, never as text beside the group's own. With 实色材质 on, the veil is

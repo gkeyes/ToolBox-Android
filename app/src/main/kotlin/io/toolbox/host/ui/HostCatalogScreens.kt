@@ -13,7 +13,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.stateDescription
 import io.toolbox.core.data.CatalogGroup
 import io.toolbox.core.ui.component.ToolBoxSwitchSettingRow
-import io.toolbox.core.ui.component.LocalToolBoxFrostedSheets
+import io.toolbox.core.ui.component.LocalToolBoxSheetBackdropView
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -330,8 +330,11 @@ internal fun ToolManagerContent(
     LaunchedEffect(state.isLoaded, openGroupId, openGroup) {
         if (state.isLoaded && openGroupId != null && openGroup == null) openGroupId = null
     }
+    // The folder's own window: sheets opened over it copy that, so they refract the folder.
+    var groupWindowView by remember { mutableStateOf<android.view.View?>(null) }
     if (home && openGroup != null) CatalogGroupFolderOverlay(
         group = openGroup,
+        onWindowView = { groupWindowView = it },
         members = openGroup.members.mapNotNull(toolsById::get),
         editing = editing,
         onAction = onAction,
@@ -340,8 +343,7 @@ internal fun ToolManagerContent(
         onDismiss = { openGroupId = null },
     )
     if (addingFavorites) CatalogFavoritesPicker(state, onAction) { addingFavorites = false }
-    // Over the folder window the sheet cannot copy the folder, so it stays opaque there.
-    if (selectedTool != null) CompositionLocalProvider(LocalToolBoxFrostedSheets provides (openGroup == null)) {
+    if (selectedTool != null) CompositionLocalProvider(LocalToolBoxSheetBackdropView provides groupWindowView.takeIf { openGroup != null }) {
         CatalogToolOptions(selectedTool, state, onAction,
             onDismiss = { selectedToolId = null },
             onManage = { selectedToolId = null; openGroupId = null; onOpenDetails(selectedTool.toolId) },

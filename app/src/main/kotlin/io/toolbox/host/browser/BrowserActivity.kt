@@ -12,17 +12,22 @@ import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewRenderProcessClient
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewFeature
+import io.toolbox.core.ui.component.ToolBoxToastHost
+import io.toolbox.core.ui.component.ToolBoxToasts
 import io.toolbox.core.ui.theme.ToolBoxTheme
 import io.toolbox.host.R
 import io.toolbox.host.runtime.systemBrowserIntent
@@ -52,7 +57,7 @@ class BrowserActivity : ComponentActivity() {
         context = this,
         isCurrentPage = { it === state.webView },
         navigate = ::navigatePage,
-        notify = { Toast.makeText(this, it, Toast.LENGTH_LONG).show() },
+        notify = { ToolBoxToasts.show(this, it, long = true) },
     )
     private val hasBrowserPrompt get() = ssl.hasPrompt || capabilities.hasPrompt || navigation.hasPrompt
     private val browserPreferences by lazy { getSharedPreferences(BROWSER_PREFERENCES, MODE_PRIVATE) }
@@ -123,15 +128,18 @@ class BrowserActivity : ComponentActivity() {
                 reduceTransparency = appearance.reduceTransparency,
             ) {
                 BackHandler { goBack() }
-                BrowserScreen(
-                    state = state,
-                    filters = filters,
-                    ssl = ssl,
-                    capabilities = capabilities,
-                    navigation = navigation,
-                    hasBrowserPrompt = { hasBrowserPrompt },
-                    actions = screenActions,
-                )
+                Box(Modifier.fillMaxSize()) {
+                    BrowserScreen(
+                        state = state,
+                        filters = filters,
+                        ssl = ssl,
+                        capabilities = capabilities,
+                        navigation = navigation,
+                        hasBrowserPrompt = { hasBrowserPrompt },
+                        actions = screenActions,
+                    )
+                    ToolBoxToastHost(Modifier.align(Alignment.BottomCenter))
+                }
             }
         }
     }
@@ -297,7 +305,7 @@ class BrowserActivity : ComponentActivity() {
         getSystemService(ClipboardManager::class.java)
             .setPrimaryClip(ClipData.newPlainText("ToolBox 媒体诊断", state.mediaDiagnosticsReport))
         if (android.os.Build.VERSION.SDK_INT < 33) {
-            Toast.makeText(this, "诊断报告已复制", Toast.LENGTH_SHORT).show()
+            ToolBoxToasts.show(this, "诊断报告已复制")
         }
     }
 
@@ -431,12 +439,12 @@ class BrowserActivity : ComponentActivity() {
         page.destroy()
     }
 
-    private fun unsupported(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+    private fun unsupported(message: String) { ToolBoxToasts.show(this, message, long = true) }
 
     private fun copyAddress() {
         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("网址", state.address))
         // Android 13+ supplies its own clipboard confirmation.
-        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(this, "链接已复制", Toast.LENGTH_SHORT).show()
+        if (android.os.Build.VERSION.SDK_INT < 33) ToolBoxToasts.show(this, "链接已复制")
     }
 
     private fun openSystemBrowser() {

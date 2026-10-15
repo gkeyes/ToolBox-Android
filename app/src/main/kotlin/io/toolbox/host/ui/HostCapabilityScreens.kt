@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -96,6 +97,9 @@ import io.toolbox.core.ui.component.ToolBoxPrimaryButton
 import io.toolbox.core.ui.component.ToolBoxRuntimeScaffold
 import io.toolbox.core.ui.component.ToolBoxSecondaryButton
 import io.toolbox.core.ui.component.ToolBoxTextButton
+import io.toolbox.core.ui.component.ToolBoxWindowGlass
+import io.toolbox.core.ui.component.rememberToolBoxWindowGlass
+import io.toolbox.core.ui.component.toolBoxWindowGlassEffect
 import io.toolbox.core.ui.component.toolBoxShape
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import io.toolbox.host.runtime.RuntimeCloseUiState
@@ -351,12 +355,20 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
     var leaving by remember { mutableStateOf(false) }
     var hintRevision by remember { mutableIntStateOf(0) }
     var hintVisible by remember { mutableStateOf(false) }
+    val hostView = LocalView.current
+    val glass = rememberToolBoxWindowGlass(hostView, active = false)
+    val realBlur = ToolBoxThemeTokens.materials.realBlurEnabled
 
     LaunchedEffect(hintRevision) {
         if (hintRevision == 0) return@LaunchedEffect
+        // Copy the page before the capsule shows: the capsule refracts that copy.
+        if (!hintVisible && realBlur) glass.capture(hostView)
         hintVisible = true
-        delay(RUNTIME_EXIT_BACK_WINDOW_MS)
+        // The confirmation window started at the Back press, not after the copy: hide on time.
+        delay((RUNTIME_EXIT_BACK_WINDOW_MS - (SystemClock.elapsedRealtime() - lastBackAt)).coerceAtLeast(0L))
         hintVisible = false
+        delay(400L)
+        if (!hintVisible) glass.release()
     }
 
     BackHandler(enabled = !leaving) {
@@ -378,12 +390,12 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
         enter = fadeIn() + scaleIn(initialScale = 0.9f) + slideInVertically { it / 2 },
         exit = fadeOut() + scaleOut(targetScale = 0.96f),
     ) {
-        RuntimeExitHintCapsule(hintText)
+        RuntimeExitHintCapsule(hintText, glass)
     }
 }
 
 @Composable
-private fun RuntimeExitHintCapsule(text: String) {
+private fun RuntimeExitHintCapsule(text: String, glass: ToolBoxWindowGlass) {
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
@@ -400,7 +412,7 @@ private fun RuntimeExitHintCapsule(text: String) {
                 spotColor = Color.Black.copy(alpha = if (dark) 0.55f else 0.18f),
             )
             .clip(shape)
-            .background(materials.overlayFallback)
+            .toolBoxWindowGlassEffect(glass, 25.dp)
             .border(0.5.dp, materials.overlayBorder, shape)
             .padding(start = 8.dp, end = 20.dp, top = 8.dp, bottom = 8.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
