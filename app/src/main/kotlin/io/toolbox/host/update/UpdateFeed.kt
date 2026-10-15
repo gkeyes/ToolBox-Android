@@ -35,8 +35,14 @@ internal data class AppPackage(
 )
 
 internal data class ToolPackage(val slug: String, val version: String, val asset: ReleaseAsset) {
-    /** Release files are named after the example directory; tool ids are `io.toolbox.<directory without dashes>`. */
-    fun matches(toolId: String): Boolean = toolId == "io.toolbox." + slug.replace("-", "")
+    /**
+     * Release files are named after the example directory; tool ids are `io.toolbox.<directory without dashes>`.
+     * Tools the user built and imported before they became examples (筑账, 有余) keep their original
+     * `io.gkeyes.<name>` id so their stored data survives the update, so that namespace matches too.
+     */
+    fun matches(toolId: String): Boolean = slug.replace("-", "").let { name ->
+        toolId == "io.toolbox.$name" || toolId == "io.gkeyes.$name"
+    }
 }
 
 internal data class ChannelFeed(val channel: UpdateChannel, val app: AppPackage?, val tools: List<ToolPackage>)
