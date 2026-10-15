@@ -39,7 +39,8 @@ import org.junit.runner.RunWith
 /**
  * SEC-X1: WebRTC must be gone in every frame of a real tool WebView, including a sandboxed
  * srcdoc iframe whose origin is opaque, a same-origin about:blank iframe, and an iframe reached in
- * the same task as its insertion through contentWindow/contentDocument, window[i], frames[i] or its name.
+ * the same task as its insertion through contentWindow/contentDocument, window[i], frames[i], its name or
+ * window.open('', name).
  */
 @RunWith(AndroidJUnit4::class)
 class RuntimeWebRtcFrameInstrumentationTest {
@@ -86,6 +87,12 @@ class RuntimeWebRtcFrameInstrumentationTest {
                 window.namedHtmlProbe = childProbe(() => {
                   document.body.insertAdjacentHTML('beforeend', '<iframe name="rtcNamed"></iframe>');
                 }, () => window.rtcNamed);
+                // window.open with an existing frame's name returns that frame without navigating it.
+                window.openNamedProbe = childProbe(() => {
+                  const frame = document.createElement('iframe');
+                  frame.name = 'rtcOpened';
+                  document.body.appendChild(frame);
+                }, () => window.open('', 'rtcOpened'));
                 // Known residual (SEC-X1, docs/runtime.md): a custom-element reaction runs inside the
                 // insertion, before its lock. Pinned so a WebView that closes it shows up here.
                 window.reactionProbe = null;
@@ -168,6 +175,7 @@ class RuntimeWebRtcFrameInstrumentationTest {
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.indexedProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.framesProbe"))
             assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.namedHtmlProbe"))
+            assertEquals("\"undefined|blocked|true\"", evaluate(view, "window.openNamedProbe"))
             assertEquals("A custom-element reaction inside the insertion still sees the unlocked frame (known residual)",
                 "\"function\"", evaluate(view, "window.reactionProbe"))
             assertEquals("\"undefined\"", evaluate(view, "window.afterReactionProbe"))

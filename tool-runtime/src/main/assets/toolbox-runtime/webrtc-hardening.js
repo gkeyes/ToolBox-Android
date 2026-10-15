@@ -189,11 +189,28 @@
     for (let i = 0; i < insertSetters.length; i++) wrap(insertSetters[i][0], insertSetters[i][1], true);
   };
 
+  // window.open('', name) hands back an existing frame (or a new same-origin window) by name, without
+  // navigating it or touching a frame element, so its result is locked before the page gets it.
+  const wrapOpen = scope => {
+    const descriptor = getOwn(scope, 'open');
+    if (!descriptor || descriptor.configurable === false) return;
+    const original = descriptor.value;
+    if (typeof original !== 'function' || apply(weakHas, ownWrappers, [original])) return;
+    const wrapper = { open(...args) {
+      const win = apply(original, this, args);
+      return lockFrame(win) ? win : null;
+    } }.open;
+    apply(weakAdd, ownWrappers, [wrapper]);
+    define(scope, 'open', { __proto__: null, value: wrapper, writable: descriptor.writable,
+      enumerable: descriptor.enumerable, configurable: true });
+  };
+
   // The one lock, used for this frame and for every same-origin child reached through a frame element.
   const harden = scope => {
     for (let i = 0; i < names.length; i++) lockName(scope, names[i]);
     for (let i = 0; i < frameTypes.length; i++) wrapFrameAccessors(scope, frameTypes[i]);
     wrapInsertions(scope);
+    wrapOpen(scope);
     define(scope, MARK, { __proto__: null, value: true, writable: false, enumerable: false, configurable: false });
   };
 

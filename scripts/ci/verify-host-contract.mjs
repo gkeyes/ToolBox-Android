@@ -421,6 +421,18 @@ insertParent.laterWindow = vm.runInContext('globalThis', later);
 vm.runInContext('new Element().appendChild(laterWindow)', insertParent);
 assert.equal(vm.runInContext('typeof RTCPeerConnection', later), 'undefined');
 
+// window.open('', name) returns a frame by name without any accessor or insertion call.
+const openerRealm = vm.createContext({});
+vm.runInContext(`globalThis.RTCPeerConnection = class RTCPeerConnection {};
+  globalThis.open = function open(url, name) { return namedFrames[name] || null; };
+  globalThis.namedFrames = {};`, openerRealm);
+vm.runInContext(webRtcHardening, openerRealm);
+const opened = vm.createContext({});
+vm.runInContext('globalThis.RTCPeerConnection = class RTCPeerConnection {};', opened);
+openerRealm.namedFrames.target = vm.runInContext('globalThis', opened);
+assert.equal(vm.runInContext("open('', 'target') !== null", openerRealm), true);
+assert.equal(vm.runInContext('typeof RTCPeerConnection', opened), 'undefined', 'window.open must lock the window it returns');
+
 const forbidden = [/\.addJavascriptInterface\s*\(/, /setAllowUniversalAccessFromFileURLs\(true\)/, /allowUniversalAccessFromFileURLs\s*=\s*true/];
 for (const module of ['app', 'tool-runtime']) {
   const base = resolve(root, module, 'src/main');
