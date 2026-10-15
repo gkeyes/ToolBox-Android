@@ -13,10 +13,10 @@ class BrowserPublicSuffixTest {
     @Test fun loadedListShortensRealHosts() {
         BrowserPublicSuffix.load(RuntimeEnvironment.getApplication())
         assertTrue(BrowserPublicSuffix.ready)
-        assertEquals("…example.com", browserDisplayHost("news.example.com"))
+        assertEquals("example.com", browserDisplayHost("news.example.com"))
         assertEquals("example.co.uk", browserDisplayHost("www.example.co.uk"))
         assertEquals("evil.github.io", browserDisplayHost("evil.github.io"))
-        assertEquals("…evil.com", browserDisplayHost("github.com.evil.com"))
+        assertEquals("evil.com", browserDisplayHost("github.com.evil.com"))
         assertEquals("192.168.1.10", browserDisplayHost("192.168.1.10"))
     }
 }
