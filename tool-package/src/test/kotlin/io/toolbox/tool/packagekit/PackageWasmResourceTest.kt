@@ -88,6 +88,22 @@ class PackageWasmResourceTest {
             assertRejected(PackageRejectionCode.MANIFEST_INVALID, manager().importAndInstall(archive("unknown", files)))
             assertClean()
         }
+        // ARC-2: backup restore preview builds its inspector through ToolPackageInspectors and must see the same code.
+        withHarness {
+            val files = content().toMutableMap().apply { put("manifest.json", future.toByteArray()) }
+            val input = archive("future-backup", files)
+            val probe = PackageResourceProbe { PackageResourceSnapshot(Long.MAX_VALUE, false) }
+            val inspections = host.resolve("inspection").toFile()
+            val withHost = ToolPackageInspectors.create(inspections, probe, hostVersion = "0.13.0").validate(input)
+            assertEquals(PackageRejectionCode.UNSUPPORTED_HOST_VERSION,
+                (withHost as PackageValidationResult.Rejected).rejection.code)
+            val withoutHost = ToolPackageInspectors.create(inspections, probe).validate(input)
+            assertEquals(PackageRejectionCode.MANIFEST_INVALID,
+                (withoutHost as PackageValidationResult.Rejected).rejection.code)
+            val current = ToolPackageInspectors.create(inspections, probe, hostVersion = "0.13.0")
+                .validate(archive("current-backup", content()))
+            assertTrue(current is PackageValidationResult.Valid)
+        }
         assertEquals("99.0.0", ManifestValidator.declaredMinHostVersion(future.toByteArray()))
         assertNull(ManifestValidator.declaredMinHostVersion("{\"minHostVersion\":\"latest\"}".toByteArray()))
         assertNull(ManifestValidator.declaredMinHostVersion("[".toByteArray()))

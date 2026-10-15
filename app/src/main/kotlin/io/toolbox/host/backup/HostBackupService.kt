@@ -208,19 +208,23 @@ internal class HostBackupService(
         val warnings = prepared.contents.warnings.toMutableList()
         val current = repositories.catalog.observeTools().first()
         BackupDataCodec.settings(repositories.settings.settings.first(), J.read(File(prepared.directory, "host/settings.json")), warnings)
-        val inspector = ToolPackageInspectors.create(File(prepared.directory.parentFile, "inspection"), resourceProbe)
+        // The host version makes a tool for a newer ToolBox a per-tool skip instead of failing the whole preview.
+        val inspector = ToolPackageInspectors.create(
+            File(prepared.directory.parentFile, "inspection"), resourceProbe, hostVersion = BuildConfig.VERSION_NAME,
+        )
         val taskIds = mutableSetOf<String>()
         val plans = prepared.contents.tools.mapIndexed { index, tool ->
             val folder = File(prepared.directory, "tools/${tool.id}")
-            val result = validatePackage(inspector, File(folder, "package.tbx"))
-            if (result.manifest.id != tool.id || result.manifest.versionCode != tool.versionCode || result.manifest.version != tool.version) throw BackupException("INDEX")
+            val manifest = restorablePackage(inspector.validate(FilePackageInput(File(folder, "package.tbx"))))?.manifest
+            if (manifest != null && (manifest.id != tool.id || manifest.versionCode != tool.versionCode || manifest.version != tool.version)) throw BackupException("INDEX")
             val metadata = J.read(File(folder, "metadata.json"))
             if (metadata["id"] != tool.id || J.int(metadata["versionCode"]) != tool.versionCode) throw BackupException("INDEX")
             BackupArchive.unknown(metadata, METADATA_KEYS, warnings)
             var skipped = when {
                 tool.dataVersion != 1 || J.int(metadata["dataVersion"]) != 1 -> "数据格式较新，请升级 ToolBox 后恢复"
-                !HostVersionPolicy.supports(BuildConfig.VERSION_NAME, result.manifest.minHostVersion) -> "需要 ToolBox ${result.manifest.minHostVersion} 或更高版本"
-                result.manifest.permissions.any { it.required && it.name !in SupportedToolCapabilities.All } -> "当前宿主缺少该工具要求的能力"
+                manifest == null -> NEWER_HOST_REQUIRED
+                !HostVersionPolicy.supports(BuildConfig.VERSION_NAME, manifest.minHostVersion) -> "需要 ToolBox ${manifest.minHostVersion} 或更高版本"
+                manifest.permissions.any { it.required && it.name !in SupportedToolCapabilities.All } -> "当前宿主缺少该工具要求的能力"
                 else -> null
             }
             if (skipped == null) validatePresentation(metadata)
@@ -466,6 +470,16 @@ internal class HostBackupService(
             }, point = point,
         )
         private fun synced(file: File, text: String) { FileOutputStream(file).use { it.write(text.toByteArray()); it.fd.sync() } }
+        /** Same meaning as the install message for UNSUPPORTED_HOST_VERSION. */
+        internal const val NEWER_HOST_REQUIRED = "此工具需要更高版本的 ToolBox，请升级后恢复"
+
+        /** Restore preview: a package for a newer host is a per-tool skip (null); any other rejection fails the preview. */
+        internal fun restorablePackage(result: PackageValidationResult): PackageValidationResult.Valid? = when (result) {
+            is PackageValidationResult.Valid -> result
+            is PackageValidationResult.Rejected ->
+                if (result.rejection.code == PackageRejectionCode.UNSUPPORTED_HOST_VERSION) null
+                else throw BackupException("PACKAGE_${result.rejection.code.name}")
+        }
         private val METADATA_KEYS = setOf("dataVersion", "id", "versionCode", "installedAt", "versionInstalledAt", "lastOpenedAt", "pinnedOrder", "categoryId", "grants")
         private val TASK_KEYS = setOf("dataVersion", "taskId", "versionCode", "key", "operation", "specJson", "periodic", "intervalMinutes", "state", "createdAt", "updatedAt", "runAttempt", "result")
     }
