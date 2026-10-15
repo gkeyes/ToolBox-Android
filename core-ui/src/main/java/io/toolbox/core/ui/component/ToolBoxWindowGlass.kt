@@ -267,7 +267,8 @@ private const val DarkPanelLegibleAlpha = 0.77f
 
 /**
  * Draws [glass] behind this node (see [snapshotGlass]). Before the copy lands, or with 实色材质
- * on, it draws the opaque [fallback] instead.
+ * on, it draws the opaque [fallback] instead. Only the panel itself records the page tone; a
+ * control drawn from the same [glass] passes [panel] = false so it can't overwrite it.
  */
 @Composable
 fun Modifier.toolBoxWindowGlassEffect(
@@ -277,13 +278,14 @@ fun Modifier.toolBoxWindowGlassEffect(
     fill: Color = ToolBoxThemeTokens.materials.overlayFill,
     fallback: Color = ToolBoxThemeTokens.materials.overlayFallback,
     layerScale: (() -> Float)? = null,
+    panel: Boolean = true,
     motion: () -> Unit = {},
 ): Modifier {
     val copy = glass.copy
     if (copy == null || !ToolBoxThemeTokens.materials.realBlurEnabled || !LocalView.current.isHardwareAccelerated) {
         return background(fallback)
     }
-    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, layerScale, motion, glass.tone)
+    return snapshotGlass(copy, cornerRadius, blurRadius, { fill }, layerScale, motion, if (panel) glass.tone else null)
 }
 
 /**

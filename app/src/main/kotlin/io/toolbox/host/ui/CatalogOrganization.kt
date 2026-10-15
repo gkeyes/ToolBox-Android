@@ -732,6 +732,7 @@ private fun FolderRoundButton(
                 fill = materials.glassTint,
                 fallback = materials.glassTint.copy(alpha = 0.92f).compositeOver(colors.background),
                 layerScale = layerScale,
+                panel = false,
             )
             .border(0.75.dp, materials.glassBorder, CircleShape)
             .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)

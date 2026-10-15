@@ -558,7 +558,13 @@ private const val SearchRoomKey = "search-room"
 private fun searchRoom(info: LazyListLayoutInfo, pinScrollPx: Int): Int? {
     val items = info.visibleItemsInfo
     val first = items.firstOrNull()?.takeIf { it.index == 0 } ?: return null
-    val room = items.firstOrNull { it.key == SearchRoomKey } ?: return 0
+    val room = items.firstOrNull { it.key == SearchRoomKey } ?: run {
+        // The room is below the screen: only drop it once the content on screen alone already
+        // reaches past the pin; otherwise keep the provisional room until it can be measured.
+        val last = items.last()
+        val shown = info.beforeContentPadding + (last.offset + last.size - first.offset) + info.afterContentPadding
+        return if (shown >= info.viewportSize.height + pinScrollPx) 0 else null
+    }
     val contentBeforeRoom = info.beforeContentPadding + (room.offset - first.offset) + info.afterContentPadding
     return (info.viewportSize.height + pinScrollPx - contentBeforeRoom).coerceAtLeast(0)
 }
