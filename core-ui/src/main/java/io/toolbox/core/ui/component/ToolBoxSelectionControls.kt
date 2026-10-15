@@ -65,6 +65,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
 
@@ -126,13 +128,18 @@ fun ToolBoxSegmentedControl(
         // Only a press on the thumb is ours: it lifts under the finger, follows a horizontal drag
         // (a vertical one is left to the scrolling parent) and picks the segment it's released
         // on. Taps elsewhere, keys and accessibility go through each segment's selectable.
-        val gestures = if (!enabled) Modifier else Modifier.pointerInput(segmentPx, lastIndex) {
+        val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+        val gestures = if (!enabled) Modifier else Modifier.pointerInput(segmentPx, lastIndex, rtl) {
+            // Pointer x measured from the layout start, matching the Row and the thumb's offset.
+            fun fromStart(x: Float) = if (rtl) size.width - x else x
             awaitEachGesture {
                 val down = awaitFirstDown()
-                if ((down.position.x / segmentPx).toInt().coerceIn(0, lastIndex) != currentSelected) return@awaitEachGesture
-                var under = currentSelected
+                // Hit-test the thumb where it is now, even mid-slide.
+                val thumbStart = thumbX.value
+                if (fromStart(down.position.x) !in thumbStart..thumbStart + segmentPx) return@awaitEachGesture
+                var under = (thumbStart / segmentPx).roundToInt().coerceIn(0, lastIndex)
                 fun follow(fingerX: Float) {
-                    val x = (fingerX - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
+                    val x = (fromStart(fingerX) - segmentPx / 2f).coerceIn(0f, segmentPx * lastIndex)
                     scope.launch { thumbX.snapTo(x) }
                     val now = (x / segmentPx).roundToInt().coerceIn(0, lastIndex)
                     if (now != under) {
@@ -159,7 +166,9 @@ fun ToolBoxSegmentedControl(
             }
         }
         Row(
-            Modifier.fillMaxSize().selectableGroup().then(gestures)
+            // Clipped to the capsule so the recorded track has no square corners; the thumb is a
+            // sibling, so it can still overflow.
+            Modifier.fillMaxSize().clip(CircleShape).selectableGroup().then(gestures)
                 .then(if (live) Modifier.layerBackdrop(trackBackdrop) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {

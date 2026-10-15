@@ -158,7 +158,7 @@ private const val FullTurnReach = 0.5f
  * turns to the finger's side (the shader lights both ends of the axis, so angles repeat every
  * 180°) and brightens. The direction is measured in the button's own proportions, so on a wide
  * capsule a press left of centre lights the left rim, not the round ends; and it turns only as far
- * as the finger is from the centre, so a press near the middle doesn't flip the light around.
+ * as the finger is from the centre, so a press near the middle barely moves the light.
  */
 internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     val progress = interaction.pressProgress.fastCoerceIn(0f, 1f)
@@ -168,14 +168,18 @@ internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     // -1..1 across each axis, so the angle follows the button's shape rather than raw pixels.
     val dx = (touch.x - size.width / 2f) / (size.width / 2f)
     val dy = (touch.y - size.height / 2f) / (size.height / 2f)
-    val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-    // Shortest turn on the 180° period, scaled by how far off centre the finger is.
-    val turn = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
-    val reach = (hypot(dx, dy) / FullTurnReach).fastCoerceIn(0f, 1f)
+    val touchAngle = atan2(dy, dx)
+    // Blend the resting and finger orientations as doubled-angle vectors: the light repeats every
+    // 180°, so this stays continuous where a signed shortest turn would flip across its cut.
+    val weight = (hypot(dx, dy) / FullTurnReach).fastCoerceIn(0f, 1f) * progress
+    val rest = Math.toRadians(2.0 * RestingHighlightAngle).toFloat()
+    val x = lerp(cos(rest), cos(2f * touchAngle), weight)
+    val y = lerp(sin(rest), sin(2f * touchAngle), weight)
+    val angle = if (x * x + y * y < 1e-6f) RestingHighlightAngle else Math.toDegrees(atan2(y, x).toDouble()).toFloat() / 2f
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),
-            angle = RestingHighlightAngle + turn * reach * progress,
+            angle = angle,
         ),
     )
 }
