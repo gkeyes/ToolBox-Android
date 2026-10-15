@@ -78,7 +78,7 @@
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
   let data=emptyLedger(),busy=false;
   let entryValues={};
-  let draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
+  let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
 
   let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
@@ -151,7 +151,7 @@
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
     if(!$('#sheet').open)$('#sheet').showModal();
     $('#sheet-body').scrollTop=0;
-    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftBase=draftBase();activeDraftReview=false;
+    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftWritten=false;activeDraftBase=draftBase();activeDraftReview=false;
     $('#draft-status').textContent='';
     // Opening a sheet never summons the soft keyboard without a field tap.
     $('#sheet [data-action="close-dialog"]').focus({preventScroll:true});
@@ -530,7 +530,7 @@
       else if(a==='csv')await exportCSV();
       else if(a==='csv-payments')await exportPayments();
       else if(a==='export-raw'){await exportFile('筑账_原始数据_'+nowDate()+'.txt',typeof rawBackup==='string'?rawBackup:JSON.stringify(rawBackup,null,2),'text/plain;charset=utf-8');}
-      else if(a==='import'){if(runtime.isNative){let text;try{text=await runtime.openFile();}catch(error){throw new Error(error?.code?runtime.explain(error):'文件不是有效的筑账备份，未更改当前数据。');}if(text!==null)previewImport(text);else toast('已取消导入');}else{$('#import-file').value='';$('#import-file').click();}}
+      else if(a==='import'){if(runtime.isNative){let text;try{text=await runtime.openFile();}catch(error){if(error instanceof TypeError&&!error.code)throw new Error('文件不是有效的筑账备份，未更改当前数据。');throw error;}if(text!==null)previewImport(text);else toast('已取消导入');}else{$('#import-file').value='';$('#import-file').click();}}
       else if(a==='import-confirm'){if(pendingImport){const err=restoreError;restoreError='';if(!await replaceLedger(pendingImport,'备份已恢复'))restoreError=err;}}
       else if(a==='retry-storage'){closeDialog(true);await boot();}
       else if(a==='resume-draft'){openDraftList();}
@@ -643,7 +643,7 @@
   }
   function markDraft(){
     if(busy)return;
-    if(!isFormDirty()){if(activeDraftId&&!activeDraftOriginal&&$('#sheet').open&&drafts.some(d=>d.id===activeDraftId)){$('#draft-status').textContent='';clearDraft(activeDraftId).catch(()=>{});}return;}
+    if(!isFormDirty()){clearTimeout(draftTimer);if(activeDraftId&&!activeDraftOriginal&&activeDraftWritten&&$('#sheet').open){activeDraftWritten=false;$('#draft-status').textContent='';clearDraft(activeDraftId).catch(()=>{});}return;}
     $('#draft-status').textContent='草稿待保存';clearTimeout(draftTimer);
     draftTimer=setTimeout(()=>saveDraftNow().catch(error=>{if($('#sheet').open){$('#draft-status').textContent='草稿未保存';showError('草稿保存失败：'+runtime.explain(error));}}),450);
   }
@@ -658,7 +658,7 @@
   function saveDraftNow(){
     clearTimeout(draftTimer);const form=$('#sheet form[data-form]');
     if(!form||!isFormDirty()||busy)return Promise.resolve();
-    const id=activeDraftId||(activeDraftId=uid('d'));
+    const id=activeDraftId||(activeDraftId=uid('d'));activeDraftWritten=true;
     const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(form.dataset.form==='apply'?draftBase():activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues)};
     return mutateDrafts(list=>[record,...list.filter(d=>d.id!==id)]).then(()=>{if($('#sheet').open&&activeDraftId===id&&isFormDirty())$('#draft-status').textContent='草稿已保存';});
   }
