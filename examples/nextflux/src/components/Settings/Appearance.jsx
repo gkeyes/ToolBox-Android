@@ -124,8 +124,8 @@ export default function Appearance() {
           }
           settingName="feedFontScale"
           settingValue={feedFontScale}
-          max={1.3}
-          min={0.85}
+          max={1.5}
+          min={0.5}
           step={0.05}
           formatOptions={{ style: "percent" }}
         />
