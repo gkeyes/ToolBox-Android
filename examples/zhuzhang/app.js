@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.6.0';
+  const VERSION = '1.6.1';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -796,7 +796,10 @@
   window.addEventListener('pagehide',()=>{flushCalc();if(isFormDirty())saveDraftNow().catch(()=>{});});
   runtime.onFlush(async()=>{
     let failure=null;flushCalc();const calcWrite=calcSaving;
-    if(isFormDirty())await saveDraftNow({resume:true}).catch(error=>{failure=error;});else await draftQueue.catch(()=>{});
+    if(isFormDirty())await saveDraftNow({resume:true}).catch(error=>{failure=error;});
+    // An unchanged form that is a saved draft (e.g. reopened from the list) reopens next time too.
+    else if($('#sheet').open&&activeDraftId&&storedDraftIds.has(activeDraftId)){closing=true;const id=activeDraftId;await mutateDrafts(list=>list.map(x=>x.id===id?{...x,resume:true}:x)).catch(error=>{failure=error;});}
+    else await draftQueue.catch(()=>{});
     if(!await calcWrite)failure=failure||new Error('测算输入未保存');
     if(failure){showError('关闭前保存失败：'+runtime.explain(failure));throw failure;}
   });
