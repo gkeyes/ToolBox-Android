@@ -270,18 +270,24 @@ internal fun DeveloperHelpContent(
     // While searching, the list ends in just enough room to scroll the field to its pinned spot:
     // a screen until measured (so a short result list never clamps the scroll), then exactly
     // what the results leave, so there is no screen of blank to scroll into.
-    var searchRoomPx by remember { mutableStateOf<Int?>(null) }
+    // Reset during composition, so the first frame of a new query never measures the old room.
+    var searchRoomPx by remember(query) { mutableStateOf<Int?>(null) }
     LaunchedEffect(query) {
-        searchRoomPx = null
         if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > pinScrollPx) {
             listState.scrollToItem(0, pinScrollPx)
         }
     }
     // Keyed on the query too: two queries can lay out alike, and snapshotFlow wouldn't re-emit the
     // same measurement after the reset above.
-    LaunchedEffect(searching, pinScrollPx, query) {
+    // The search item's height, so the room can still be measured once the pin scrolls it away
+    // (at large font scales the pin offset is taller than the field).
+    val searchItemPx = with(density) {
+        (if (searchHeightPx > 0) searchHeightPx else ToolBoxThemeTokens.sizes.touchTarget.roundToPx()) +
+            ToolBoxThemeTokens.spacing.sm.roundToPx()
+    }
+    LaunchedEffect(searching, pinScrollPx, query, searchItemPx) {
         if (!searching) return@LaunchedEffect
-        snapshotFlow { searchRoom(listState.layoutInfo, pinScrollPx) }.collect { room ->
+        snapshotFlow { searchRoom(listState.layoutInfo, pinScrollPx, searchItemPx) }.collect { room ->
             if (room != null) searchRoomPx = room
         }
     }
@@ -557,16 +563,22 @@ private const val SearchRoomKey = "search-room"
  * can't be measured (the first item or the room is off screen in a way that hides the content's
  * length). A list long enough to scroll past the pin by itself needs none.
  */
-private fun searchRoom(info: LazyListLayoutInfo, pinScrollPx: Int): Int? {
+private fun searchRoom(info: LazyListLayoutInfo, pinScrollPx: Int, searchItemPx: Int): Int? {
     val items = info.visibleItemsInfo
-    val first = items.firstOrNull()?.takeIf { it.index == 0 } ?: return null
+    val visible = items.firstOrNull() ?: return null
+    // Where item 0 (the search field's place, [searchItemPx] tall) starts, even if scrolled away.
+    val start = when (visible.index) {
+        0 -> visible.offset
+        1 -> visible.offset - searchItemPx
+        else -> return null
+    }
     val room = items.firstOrNull { it.key == SearchRoomKey } ?: run {
         // The room is below the screen: only drop it once the content on screen alone already
         // reaches past the pin; otherwise keep the provisional room until it can be measured.
         val last = items.last()
-        val shown = info.beforeContentPadding + (last.offset + last.size - first.offset) + info.afterContentPadding
+        val shown = info.beforeContentPadding + (last.offset + last.size - start) + info.afterContentPadding
         return if (shown >= info.viewportSize.height + pinScrollPx) 0 else null
     }
-    val contentBeforeRoom = info.beforeContentPadding + (room.offset - first.offset) + info.afterContentPadding
+    val contentBeforeRoom = info.beforeContentPadding + (room.offset - start) + info.afterContentPadding
     return (info.viewportSize.height + pinScrollPx - contentBeforeRoom).coerceAtLeast(0)
 }
