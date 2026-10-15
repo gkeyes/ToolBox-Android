@@ -36,9 +36,8 @@ class ToolPermissionSummaryTest {
             PermissionGrant("t", "network", true, 1), PermissionGrant("t", "notifications", true, 1), PermissionGrant("t", "location", true, 1),
         ))
         val revoked = stored.withSystemState { false }
-        val expectedNotifications = if (android.os.Build.VERSION.SDK_INT >= 33) 1 else 2
-        assertEquals(expectedNotifications, (revoked as ToolPermissionSummary.Ready).enabled)
-        assertEquals("已允许 $expectedNotifications / 3 项 · ${3 - expectedNotifications} 项关闭", revoked.label)
+        assertEquals(1, (revoked as ToolPermissionSummary.Ready).enabled)
+        assertEquals("已允许 1 / 3 项 · 2 项关闭", revoked.label)
         assertEquals(3, (stored.withSystemState { true } as ToolPermissionSummary.Ready).enabled)
     }
 
