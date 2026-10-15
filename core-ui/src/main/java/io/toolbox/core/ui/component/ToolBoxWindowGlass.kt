@@ -37,6 +37,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.luminance
 
 /**
  * Liquid Glass for a panel in an overlay window (a dialog). The overlay cannot sample the page
@@ -102,7 +103,8 @@ fun rememberToolBoxWindowGlass(hostView: View, active: Boolean = true): ToolBoxW
  */
 private class WindowCopyBackdrop(
     private val copy: WindowBackdrop,
-    private val layerScale: () -> Float,
+    /** Null: measure the scale of the layers the glass sits in (a popup zooming in on its own). */
+    private val layerScale: (() -> Float)?,
 ) : Backdrop {
     override val isCoordinatesDependent: Boolean = true
 
@@ -118,7 +120,11 @@ private class WindowCopyBackdrop(
             (copy.image.width / copy.scale).roundToInt(),
             (copy.image.height / copy.scale).roundToInt(),
         )
-        val inverse = 1f / layerScale().coerceAtLeast(0.01f)
+        val scale = layerScale?.invoke() ?: run {
+            val width = node.size.width.toFloat()
+            if (width <= 0f) 1f else (node.localToRoot(Offset(width, 0f)) - node.localToRoot(Offset.Zero)).x / width
+        }
+        val inverse = 1f / scale.coerceAtLeast(0.01f)
         scale(inverse, inverse, pivot = Offset.Zero) {
             translate(-origin.x, -origin.y) {
                 drawImage(copy.image, dstOffset = IntOffset.Zero, dstSize = pageSize)
@@ -138,11 +144,11 @@ internal fun Modifier.snapshotGlass(
     cornerRadius: Dp,
     blurRadius: Dp,
     fill: () -> Color,
-    layerScale: () -> Float = { 1f },
+    layerScale: (() -> Float)? = null,
     motion: () -> Unit = {},
 ): Modifier {
     val scale by rememberUpdatedState(layerScale)
-    val backdrop = remember(copy) { WindowCopyBackdrop(copy) { scale() } }
+    val backdrop = remember(copy) { WindowCopyBackdrop(copy, layerScale?.let { { scale?.invoke() ?: 1f } }) }
     val lensShape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
     return drawBackdrop(
         backdrop = backdrop,
@@ -162,8 +168,19 @@ internal fun Modifier.snapshotGlass(
             motion()
             draw()
         },
-        onDrawSurface = { drawRect(fill()) },
+        onDrawSurface = { drawRect(legibleFill(fill(), copy.luminance)) },
     )
+}
+
+/**
+ * A light panel over a dark page (or a dark one over a light page, such as a web page behind a
+ * dark-theme dialog) lets the page's tone through and washes out secondary text: make the fill
+ * nearly opaque then.
+ */
+private fun legibleFill(fill: Color, pageLuminance: Float): Color {
+    val darkPanel = fill.copy(alpha = 1f).luminance() < 0.5f
+    val opposite = if (darkPanel) pageLuminance > 0.45f else pageLuminance < 0.25f
+    return if (opposite && fill.alpha < 0.88f) fill.copy(alpha = 0.88f) else fill
 }
 
 /**
@@ -177,7 +194,7 @@ fun Modifier.toolBoxWindowGlassEffect(
     blurRadius: Dp = 28.dp,
     fill: Color = ToolBoxThemeTokens.materials.overlayFill,
     fallback: Color = ToolBoxThemeTokens.materials.overlayFallback,
-    layerScale: () -> Float = { 1f },
+    layerScale: (() -> Float)? = null,
     motion: () -> Unit = {},
 ): Modifier {
     val copy = glass.copy

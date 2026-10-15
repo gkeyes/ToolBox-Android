@@ -542,7 +542,7 @@ internal fun liquidGlassMaterials(
         },
         glassFallback = colors.surface,
         glassBorder = if (dark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f),
-        overlayFill = overlay(if (dark) 0.62f else 0.58f),
+        overlayFill = overlay(if (dark) 0.68f else 0.66f),
         // Overlay windows (sheets, dialogs, menus, the group folder) cannot sample the page behind,
         // so without a real blur their panels are opaque: rows, labels and web pages behind must
         // never read through the panel's own text.

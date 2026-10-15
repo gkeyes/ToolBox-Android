@@ -36,6 +36,7 @@ import io.toolbox.core.ui.theme.ToolBoxThemeTokens
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ToolBoxMenuAction(
     val label: String,
@@ -78,11 +79,27 @@ fun ToolBoxOverflowMenu(
         }
         // Miuix draws an opaque 16dp surface behind the list; make it transparent so the iOS
         // context-menu panel below supplies the shape, material, rim and shadow.
-        // The menu is its own popup window: its glass refracts a copy of the page, taken on open.
-        val glass = rememberToolBoxWindowGlass(LocalView.current, active = expanded)
+        // The menu is its own popup window: its glass refracts a copy of the page. The copy is
+        // taken fresh before the menu shows (up to a short wait), so it opens as glass rather than
+        // solid, and never on the last opening's stale copy.
+        val hostView = LocalView.current
+        val glass = rememberToolBoxWindowGlass(hostView, active = false)
+        val realBlur = ToolBoxThemeTokens.materials.realBlurEnabled
+        var showing by remember { mutableStateOf(false) }
+        LaunchedEffect(expanded) {
+            if (expanded) {
+                if (realBlur) {
+                    glass.release()
+                    withTimeoutOrNull(MenuCopyWaitMs) { glass.capture(hostView) }
+                }
+                showing = true
+            } else {
+                showing = false
+            }
+        }
         MiuixTheme(colors = MiuixTheme.colorScheme.copy(surfaceContainer = Color.Transparent)) {
             WindowListPopup(
-                show = expanded,
+                show = showing,
                 alignment = PopupPositionProvider.Align.End,
                 enableWindowDim = false,
                 popupModifier = Modifier.testTag(menuTestTag).semantics { paneTitle = contentDescription },
@@ -93,6 +110,7 @@ fun ToolBoxOverflowMenu(
                     }
                 },
                 onDismissFinished = {
+                    if (!expanded) glass.release()
                     val action = pendingAction
                     pendingAction = null
                     action?.invoke()
@@ -125,6 +143,9 @@ fun ToolBoxOverflowMenu(
         }
     }
 }
+
+/** Longest the menu waits for its page copy before it opens solid. */
+private const val MenuCopyWaitMs = 250L
 
 private val ContextMenuShape = ToolBoxContinuousShape(26.dp)
 private val ContextMenuItemShape = ToolBoxContinuousShape(20.dp)
