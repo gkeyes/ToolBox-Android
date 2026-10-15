@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -67,6 +70,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -116,7 +120,10 @@ internal fun RuntimeShellScreen(
         if (state is RuntimeUiState.Error) onPresentationReady()
         if ((state as? RuntimeUiState.Ready)?.mainEntryLoaded == true) onPresentationReady()
     }
-    ApplyRetainedRuntimeManifestUi((state as? RuntimeUiState.Ready)?.runtime?.installedManifest?.ui)
+    val ready = state as? RuntimeUiState.Ready
+    ApplyRetainedRuntimeManifestUi(ready?.runtime?.installedManifest?.ui)
+    val edgeToEdge = ready?.runtime?.installedManifest?.ui?.edgeToEdge == true
+    if (ready != null && edgeToEdge) PublishRuntimeSafeAreaTop(ready.webView, ready.mainEntryLoaded)
 
     closeState?.let { saving ->
         key(exitRevision) {
@@ -130,6 +137,7 @@ internal fun RuntimeShellScreen(
             .background(ToolBoxThemeTokens.colors.background)
             .testTag(HostTestTags.RuntimeShell),
         immersiveNavigationBar = immersiveNavigationBar,
+        immersiveStatusBar = edgeToEdge,
     ) {
         Box(
             modifier = Modifier
@@ -169,6 +177,26 @@ internal fun RuntimeShellScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * An edge-to-edge tool draws under the status bar, so it is told the bar's height as the CSS variable
+ * `--toolbox-safe-area-top` (CSS px equal dp at the runtime's 100% zoom). Set again after every main
+ * entry load, since a reload starts a fresh document, and whenever the inset changes.
+ */
+@Composable
+private fun PublishRuntimeSafeAreaTop(webView: android.webkit.WebView, mainEntryLoaded: Boolean) {
+    val density = LocalDensity.current
+    val topPx = WindowInsets.statusBars.union(WindowInsets.displayCutout).getTop(density)
+    val topDp = with(density) { topPx.toDp().value }
+    LaunchedEffect(webView, mainEntryLoaded, topDp) {
+        if (!mainEntryLoaded) return@LaunchedEffect
+        val value = String.format(java.util.Locale.ROOT, "%.2fpx", topDp)
+        webView.evaluateJavascript(
+            "document.documentElement.style.setProperty('--toolbox-safe-area-top','$value')",
+            null,
+        )
     }
 }
 

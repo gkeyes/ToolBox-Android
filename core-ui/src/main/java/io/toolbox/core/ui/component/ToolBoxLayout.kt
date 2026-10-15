@@ -87,9 +87,15 @@ fun ToolBoxAppScaffold(
 fun ToolBoxRuntimeScaffold(
     modifier: Modifier = Modifier,
     immersiveNavigationBar: Boolean = false,
+    // The tool draws under the status bar itself; side cutouts (landscape) still pad.
+    immersiveStatusBar: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    var insets = WindowInsets.statusBars.union(WindowInsets.displayCutout)
+    var insets = if (immersiveStatusBar) {
+        WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)
+    } else {
+        WindowInsets.statusBars.union(WindowInsets.displayCutout)
+    }
     if (!immersiveNavigationBar) {
         insets = insets.union(WindowInsets.navigationBars)
     }
