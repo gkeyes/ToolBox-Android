@@ -109,10 +109,11 @@ html .toolbox-link-dialog .toolbox-link-primary {
    4.5:1 (注销 was 3.0:1, 保存 4.2:1 on the translucent fills). */
 html .nextflux-modal-surface .button.button--primary:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--accent) 80%, black); }
 html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--nf-btn-danger) 80%, black); }
-/* Disabled, they turn into the grey tonal button with secondary text instead
-   of fading to half opacity (搜索 before a query was white at 2.6:1). */
-html .nextflux-modal-surface .button:is(.button--primary, .button--danger):not(.nf-set-row):is(:disabled, [aria-disabled="true"]) {
-  --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface, currentColor) 8%, transparent);
+/* Disabled buttons in panels all share one look instead of fading to half
+   opacity (搜索 before a query was white at 2.6:1): a fill fainter than the
+   enabled grey button's 8%, with secondary text. */
+html .nextflux-modal-surface .button:not(.nf-set-row):is(:disabled, [aria-disabled="true"]) {
+  --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface, currentColor) 4%, transparent);
   color: var(--nf-panel-secondary);
   opacity: 1;
 }

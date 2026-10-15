@@ -31,6 +31,7 @@ import {
 import { createArticleScrollReset, startArticleRead } from "@/lib/articleReadingState.js";
 import { toast } from "sonner";
 import { speechController } from "@/toolbox/speech/speechController.js";
+import { registerBackHandler } from "@/toolbox/systemBack.js";
 
 const ArticleView = () => {
   const { articleId } = useParams();
@@ -314,6 +315,9 @@ const ArticleView = () => {
     const basePath = (window.location.hash.slice(1).split("?")[0] || "/").split("/article/")[0];
     navigate(basePath || "/");
   }, [navigate]);
+
+  // System back leaves the article like the back button does.
+  useEffect(() => (isOpen ? registerBackHandler(handleBack) : undefined), [isOpen, handleBack]);
 
   const handleTakeoverEntrance = useCallback(() => {
     const page = pageRef.current;

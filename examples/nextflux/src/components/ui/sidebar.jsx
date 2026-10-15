@@ -7,6 +7,7 @@ import {
 
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import { registerBackHandler } from "@/toolbox/systemBack.js";
 import { Button } from "@heroui/react";
 
 const SIDEBAR_WIDTH = "16rem";
@@ -41,6 +42,8 @@ const SidebarProvider = React.forwardRef(
   ) => {
     const { isMobile } = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
+    // System back closes the phone sidebar, like a tap on its scrim.
+    React.useEffect(() => (isMobile && openMobile ? registerBackHandler(() => setOpenMobile(false)) : undefined), [isMobile, openMobile]);
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.

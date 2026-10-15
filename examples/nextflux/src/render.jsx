@@ -11,6 +11,7 @@ import { Toaster } from "sonner";
 import { isModalOpen } from "@/stores/modalStore.js";
 import { imageGalleryActive } from "@/stores/articlesStore.js";
 import { installOverlayJanitor } from "@/toolbox/overlayJanitor.js";
+import { installSystemBack } from "@/toolbox/systemBack.js";
 import { installGlassPress, installLens } from "@/design/lens.js";
 import {
   Info,
@@ -25,6 +26,8 @@ initTheme();
 // Release any floating layer left over the page after its close path was
 // interrupted (see overlayJanitor.js); never while an overlay is meant to be open.
 installOverlayJanitor({ isOverlayExpected: () => isModalOpen.get() || imageGalleryActive.get() });
+// System back closes the top panel or the reader before the host exits.
+installSystemBack();
 // Edge refraction on the floating glass chrome and buttons, and the glass
 // buttons' press state (see design/lens.js, design/glass-buttons.css).
 installLens();

@@ -26,7 +26,7 @@ function fullscreenElement(doc) {
 }
 
 // A dialog that is legitimately open: not exiting and actually on screen.
-function hasVisibleDialog(element, win) {
+export function hasVisibleDialog(element, win) {
   const { width, height } = viewport(win);
   const dialogs = element.matches?.("[role='dialog'], [role='alertdialog']")
     ? [element]
