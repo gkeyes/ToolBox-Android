@@ -450,6 +450,22 @@ class PackageWasmResourceTest {
     }
 
     @Test
+    fun updateThatAddsCapabilitiesGrantsOnlyTheBasicOnesLikeAFreshInstall() = runBlocking {
+        withHarness {
+            installPreviousVersion()
+            val permissions = """[{"name":"storage","reason":"Save notes","required":false},""" +
+                """{"name":"notifications","reason":"Remind","required":false}]"""
+            assertEquals(
+                PackageInstallResult.Installed(TOOL_ID, 2, true),
+                install(archive("added-capabilities", content(version = 2, permissions = permissions)),
+                    PackageResourceProbe { PackageResourceSnapshot(Long.MAX_VALUE, false) }),
+            )
+            val grants = repositories.grants.observeGrants(TOOL_ID).first().associate { it.capability to it.granted }
+            assertEquals(mapOf("storage" to true, "notifications" to false), grants)
+        }
+    }
+
+    @Test
     fun signedWasmUpdatesKeepTheSigningIdentityAndRejectAReplacementKey() = runBlocking {
         withHarness {
             val manager = manager()
@@ -588,8 +604,8 @@ class PackageWasmResourceTest {
             }
         }
 
-        fun content(version: Int = 1, resources: Map<String, ByteArray> = emptyMap()): Map<String, ByteArray> = linkedMapOf(
-            "manifest.json" to """{"schemaVersion":1,"id":"$TOOL_ID","name":"Wasm fixture","version":"1.0.$version","versionCode":$version,"entry":"index.html","apiVersion":"1.0","minHostVersion":"0.2.0","permissions":[],"securityProfile":"strict"}""".toByteArray(),
+        fun content(version: Int = 1, resources: Map<String, ByteArray> = emptyMap(), permissions: String = "[]"): Map<String, ByteArray> = linkedMapOf(
+            "manifest.json" to """{"schemaVersion":1,"id":"$TOOL_ID","name":"Wasm fixture","version":"1.0.$version","versionCode":$version,"entry":"index.html","apiVersion":"1.0","minHostVersion":"0.2.0","permissions":$permissions,"securityProfile":"strict"}""".toByteArray(),
             "index.html" to HTML,
         ).apply { putAll(resources) }
 

@@ -12,6 +12,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.Source
 import okio.Timeout
@@ -23,7 +24,7 @@ class ToolNetworkResponseEncodingTest {
     @Test
     fun completeTextPreservesUtf8AcrossReadsAndMalformedInput() = runBlocking {
         val cases = listOf(
-            null to ByteArray(0),
+            "text/plain" to ByteArray(0),
             "text/plain" to "雪😀é\u0000</script>".toByteArray(),
             "application/json" to ("x".repeat(65_535) + "雪😀é").toByteArray(),
             "application/problem+json" to byteArrayOf(0xF0.toByte(), 0x28, 0x8C.toByte(), 0x28, 0xE2.toByte(), 0x82.toByte()),
@@ -39,6 +40,50 @@ class ToolNetworkResponseEncodingTest {
             } finally { result.release(); result.release() }
             assertEquals(0L, resources.reservedBytes)
         }
+    }
+
+    @Test
+    fun textUsesTheDeclaredCharsetAndAnUndeclaredTypeIsBinary() = runBlocking {
+        val cases = listOf(
+            "text/html; charset=ISO-8859-1" to Charsets.ISO_8859_1,
+            "application/json; charset=UTF-16" to Charsets.UTF_16,
+            "text/plain; charset=unknown-charset" to Charsets.UTF_8,
+        )
+        for ((contentType, charset) in cases) {
+            val bytes = "café ünïcödé".toByteArray(charset)
+            val resources = NetworkResources(availableHeap = { 64L * 1024 * 1024 })
+            val result = proxy(resources, contentType, fragmented(bytes, 3))
+                .httpGet("https://example.test/data") as NetworkExecution.Success
+            try {
+                assertEquals(NetworkBodyEncoding.TEXT, result.bodyEncoding)
+                assertEquals(String(bytes, charset), result.body)
+            } finally { result.release() }
+        }
+        val bytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0xFF.toByte(), 0x00)
+        val resources = NetworkResources(availableHeap = { 64L * 1024 * 1024 })
+        val result = proxy(resources, null, fragmented(bytes, 2)).httpGet("https://example.test/data") as NetworkExecution.Success
+        try {
+            assertEquals(NetworkBodyEncoding.BASE64, result.bodyEncoding)
+            assertArrayEquals(bytes, Base64.getDecoder().decode(result.body))
+        } finally { result.release() }
+    }
+
+    @Test
+    fun repeatedResponseHeadersAreJoinedInOrder() = runBlocking {
+        val resources = NetworkResources(availableHeap = { 64L * 1024 * 1024 })
+        val proxy = ToolNetworkProxy(ToolNetworkTransport { request, _ ->
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+                .addHeader("Link", "<https://example.test/?page=2>; rel=\"next\"")
+                .addHeader("link", "<https://example.test/?page=9>; rel=\"last\"")
+                .addHeader("Set-Cookie", "hidden=1")
+                .body(ByteArray(0).toResponseBody("text/plain".toMediaTypeOrNull())).build()
+        }, resources = resources)
+        val result = proxy.httpGet("https://example.test/data") as NetworkExecution.Success
+        try {
+            val link = result.headers.entries.single { it.key.equals("Link", true) }.value
+            assertEquals("<https://example.test/?page=2>; rel=\"next\", <https://example.test/?page=9>; rel=\"last\"", link)
+            assertTrue(result.headers.keys.none { it.equals("Set-Cookie", true) })
+        } finally { result.release() }
     }
 
     @Test

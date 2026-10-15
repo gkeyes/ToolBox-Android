@@ -85,6 +85,8 @@ internal interface HostBackgroundOperations {
     suspend fun cancelTool(toolId: String)
     suspend fun releaseRuntime(toolId: String) = cancelTool(toolId)
     suspend fun cancelAll(toolIds: Collection<String>)
+    /** Removes everything the tool posted, including its channel (cancelAll stops tasks only). */
+    suspend fun clearNotifications(toolId: String) = Unit
 }
 
 internal interface HostPermissionSideEffects {
