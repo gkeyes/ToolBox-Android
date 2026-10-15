@@ -194,11 +194,12 @@
     $('#sheet [data-action="close-dialog"]').focus({preventScroll:true});
   }
   function closeDialog(force=false){
-    if(busy&&!busyBackground||draftBusy&&!force)return;
+    // A form save (body.saving) keeps the sheet even while it waits behind a 我的家 save.
+    if(busy&&!busyBackground||document.body.classList.contains('saving')||draftBusy&&!force)return;
+    cancelWait();
     if(!force&&isFormDirty()){
       $('#guard').showModal();$('#guard [data-action="continue-edit"]').focus({preventScroll:true});return;
     }
-    cancelWait();
     if(window.ZZCalendar?.isOpen)window.ZZCalendar.close();
     if($('#picker').open)$('#picker').close();
     if($('#sheet').open)$('#sheet').close();
@@ -657,8 +658,8 @@
   document.addEventListener('click',async e=>{
     const b=e.target.closest('[data-action]');if(!b||b.disabled||(busy&&!busyBackground)||draftBusy)return;const a=b.dataset.action,id=b.dataset.id||'';
     // One tap waits for a background save; further taps meanwhile are dropped so nothing runs twice.
-    // Switching tabs, ✕, back and Escape always work and drop a tap that is still waiting; other taps meanwhile are ignored.
-    const cancels=a==='nav'||a==='close-dialog';
+    // Switching tabs, ✕, 继续编辑, back and Escape always work and drop a tap that is still waiting; other taps meanwhile are ignored.
+    const cancels=a==='nav'||a==='close-dialog'||a==='continue-edit';
     if(cancels&&actionWaiting)cancelWait();
     else if(actionWaiting)return;
     if(busy&&!cancels){
@@ -766,7 +767,7 @@
     if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(d.id==='sheet')closeDialog();else d.close();}
   });
   $('#sheet').addEventListener('cancel',e=>{e.preventDefault();closeDialog();});
-  $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;pendingNavigation=null;closeGuard();});
+  $('#guard').addEventListener('cancel',e=>{e.preventDefault();if(draftBusy)return;cancelWait();pendingNavigation=null;closeGuard();});
   document.addEventListener('input',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('change',e=>{if(e.target.closest('#sheet form'))markDraft();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden){if(isFormDirty())saveDraftNow().catch(()=>{});flushCalc();}});
