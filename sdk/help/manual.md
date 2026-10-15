@@ -193,6 +193,18 @@ registerFlushHandler 用于确实销毁或主动重载之前保存：停止生�
 
 每 WebView 的 JS 未订阅事件独立限 1MiB／4096 条，原始字符串按 32 条／2ms 在新 task 重放。该空间不受原生全局 8MiB 覆盖，renderer 和 native 内存另计。容量耗尽时派发 toolbox:runtime.error，晚订阅抛出 EVENT_BACKLOG_OVERFLOW 并附带 event/droppedCount；即时 DOM 事件仍交付，禁止伪装成无丢失。runtime.ackEvents／runtime.flushComplete 是 SDK 内部控制方法，仍经过原点、主框架、nonce、工具版本和 generation 检查，不供工具直接调用。
 
+### 系统返回先交给页面
+
+用户按系统返回键或侧滑返回时，宿主先在页面的 window 上派发一个可取消的 `toolboxback` 事件。页面开着面板、对话框或子页面时，在监听里同步关闭它并调用 `event.preventDefault()`，这次返回就到此为止；没有调用时（或页面 400ms 内没有响应），宿主照旧显示「再按一次退出」。
+
+```js
+window.addEventListener("toolboxback", function (event) {
+  if (closeTopPanel()) event.preventDefault(); // closeTopPanel：关闭最上层面板，关了就返回 true
+});
+```
+
+监听必须同步决定，不能 await 后再调用 preventDefault。只在主框架派发。不监听的工具行为不变；旧版宿主不会派发这个事件，因此不需要提高 minHostVersion。
+
 ### 数据与资源
 
 不设置统一的包大小、解压大小、笔记条数或持续任务时长额度。宿主在分配和写入前检查当前进程可用堆与目标磁盘空间，安装仍保持事务与回滚。调用方明确填写的网络请求预算继续生效；工具不必填写 network 预算。
@@ -826,6 +838,10 @@ export interface ToolBoxApi {
 declare global {
   interface Window {
     ToolBox: ToolBoxApi;
+  }
+  interface WindowEventMap {
+    /** 系统返回先交给页面；页面处理了就调用 preventDefault()。 */
+    toolboxback: Event;
   }
 }
 ```

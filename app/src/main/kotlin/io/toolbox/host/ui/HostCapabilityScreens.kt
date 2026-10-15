@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -186,6 +187,7 @@ internal fun RuntimeShellScreen(
                 RuntimeExitConfirmation(
                     onConfirm = { viewModel.requestExit(onBack) },
                     toolName = toolName,
+                    askPage = ready?.webView?.let { webView -> { answer: (Boolean) -> Unit -> askPageToHandleBack(webView, answer) } },
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
                 )
             }
@@ -347,15 +349,45 @@ private fun RuntimeIndeterminateBar(modifier: Modifier = Modifier) {
 internal fun RuntimeExitConfirmation(onConfirm: () -> Unit) = RuntimeExitConfirmation(onConfirm, toolName = null)
 
 /**
- * The first host-level Back is consumed and only shows a short hint. A second Back
- * within the confirmation window leaves the tool. The running WebView is untouched
+ * Back goes to the page first: the host dispatches a cancelable `toolboxback` event on the page's
+ * window, and a page with something to close (a panel, a dialog) calls `preventDefault()` on it.
+ * [answer] gets true when the page took it. A page that doesn't listen, or doesn't answer in time,
+ * gets the usual exit confirmation.
+ */
+internal fun askPageToHandleBack(webView: android.webkit.WebView, answer: (Boolean) -> Unit) {
+    var answered = false
+    val reply = { handled: Boolean ->
+        if (!answered) {
+            answered = true
+            answer(handled)
+        }
+    }
+    webView.evaluateJavascript(RUNTIME_PAGE_BACK_SCRIPT) { result -> reply(result == "true") }
+    webView.postDelayed({ reply(false) }, RUNTIME_PAGE_BACK_TIMEOUT_MS)
+}
+
+private const val RUNTIME_PAGE_BACK_SCRIPT =
+    "(function(){try{var e=new Event('toolboxback',{cancelable:true});return !window.dispatchEvent(e);}catch(_){return false;}})()"
+
+/** A page busy for longer than this is treated as not handling Back, so Back never feels dead. */
+private const val RUNTIME_PAGE_BACK_TIMEOUT_MS = 400L
+
+/**
+ * Back is offered to the page first through [askPage] (see [askPageToHandleBack]); only a Back the
+ * page leaves alone counts here. The first such Back is consumed and only shows a short hint. A
+ * second one within the confirmation window leaves the tool. The running WebView is untouched
  * until that second Back, so an accidental edge swipe never detaches the page.
  *
  * The hint is a floating glass capsule over the tool (iOS 27 toast); it takes no touches and
  * disappears when the confirmation window closes.
  */
 @Composable
-internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, modifier: Modifier = Modifier) {
+internal fun RuntimeExitConfirmation(
+    onConfirm: () -> Unit,
+    toolName: String?,
+    modifier: Modifier = Modifier,
+    askPage: ((answer: (Boolean) -> Unit) -> Unit)? = null,
+) {
     val hintText = remember(toolName) { runtimeExitHint(toolName) }
     var lastBackAt by remember { mutableLongStateOf(0L) }
     var leaving by remember { mutableStateOf(false) }
@@ -377,8 +409,11 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
         if (!hintVisible) glass.release()
     }
 
-    BackHandler(enabled = !leaving) {
-        val now = SystemClock.elapsedRealtime()
+    // While the page is deciding, further Backs are swallowed rather than queued.
+    var askingPage by remember { mutableStateOf(false) }
+    val currentAskPage by rememberUpdatedState(askPage)
+    fun exitBack(now: Long) {
+        if (leaving) return
         if (shouldExitRuntimeOnBack(lastBackAt, now)) {
             lastBackAt = 0L
             leaving = true
@@ -387,6 +422,21 @@ internal fun RuntimeExitConfirmation(onConfirm: () -> Unit, toolName: String?, m
         } else {
             lastBackAt = now
             hintRevision++
+        }
+    }
+
+    BackHandler(enabled = !leaving) {
+        // The press time, not the answer time, counts towards the confirmation window.
+        val now = SystemClock.elapsedRealtime()
+        val ask = currentAskPage
+        if (ask == null) {
+            exitBack(now)
+        } else if (!askingPage) {
+            askingPage = true
+            ask { handled ->
+                askingPage = false
+                if (!handled) exitBack(now)
+            }
         }
     }
 
