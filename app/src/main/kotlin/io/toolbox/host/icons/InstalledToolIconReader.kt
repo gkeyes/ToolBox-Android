@@ -1,6 +1,8 @@
 package io.toolbox.host.icons
 
 import io.toolbox.core.data.InstalledTool
+import io.toolbox.core.data.SecurityProfile
+import io.toolbox.tool.packagekit.InstalledManifest
 import io.toolbox.tool.packagekit.InstalledManifestVerification
 import io.toolbox.tool.packagekit.InstalledManifestVerifier
 import io.toolbox.tool.runtime.RuntimeIdentity
@@ -26,20 +28,34 @@ internal class InstalledToolIconReader(
         if (version.toolId != tool.metadata.id) return null
         val locator = RuntimeIdentity.expectedBundleLocator(version.toolId, version.versionCode)
         if (version.bundleLocator.value != locator) return null
-        val root = privateFilesRoot().toAbsolutePath().normalize()
-        val bundle = safePath(root, locator, directory = true) ?: return null
-        val manifestFile = safePath(bundle, "manifest.json") ?: return null
-        val manifestBytes = readBounded(manifestFile) ?: return null
-        val verified = InstalledManifestVerifier.verify(
-            manifestBytes, tool.metadata.id, version.versionCode, tool.metadata.securityProfile,
-        ) as? InstalledManifestVerification.Verified ?: return null
-        val description = verified.manifest.description?.replace(WHITESPACE, " ")?.trim()
+        val (bundle, manifest) = readManifest(tool.metadata.id, version.versionCode, tool.metadata.securityProfile)
+            ?: return null
+        val description = manifest.description?.replace(WHITESPACE, " ")?.trim()
             ?.take(160)?.takeIf(String::isNotBlank)
-        val icon = verified.manifest.icon ?: return InstalledToolPresentation(null, description)
+        val icon = manifest.icon ?: return InstalledToolPresentation(null, description)
         val file = safePath(bundle, icon) ?: return InstalledToolPresentation(null, description)
         val isSvg = icon.substringAfterLast('.', "").equals("svg", ignoreCase = true)
         val bytes = readBounded(file) ?: return InstalledToolPresentation(null, description)
         return InstalledToolPresentation(ToolIconSource(bytes, isSvg), description)
+    }
+
+    /** Every `categories` entry of the installed version's verified manifest, for catalog search. */
+    fun readCategories(toolId: String, versionCode: Int, securityProfile: SecurityProfile): List<String>? =
+        readManifest(toolId, versionCode, securityProfile)?.second?.categories
+
+    private fun readManifest(
+        toolId: String,
+        versionCode: Int,
+        securityProfile: SecurityProfile,
+    ): Pair<Path, InstalledManifest>? {
+        val locator = RuntimeIdentity.expectedBundleLocator(toolId, versionCode)
+        val root = privateFilesRoot().toAbsolutePath().normalize()
+        val bundle = safePath(root, locator, directory = true) ?: return null
+        val manifestFile = safePath(bundle, "manifest.json") ?: return null
+        val manifestBytes = readBounded(manifestFile) ?: return null
+        val verified = InstalledManifestVerifier.verify(manifestBytes, toolId, versionCode, securityProfile)
+            as? InstalledManifestVerification.Verified ?: return null
+        return bundle to verified.manifest
     }
 
     private fun safePath(root: Path, relative: String, directory: Boolean = false): Path? {

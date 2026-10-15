@@ -41,6 +41,7 @@ internal class CatalogViewModel(
     private val now: () -> Long = System::currentTimeMillis,
     private val settings: HostSettingsRepository? = null,
     private val layoutRepository: CatalogLayoutRepository? = null,
+    private val manifestCategories: (CatalogEntry) -> List<String>? = { null },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = mutableState.asStateFlow()
@@ -92,7 +93,7 @@ internal class CatalogViewModel(
 
     private fun collectCatalog() {
         catalogCollection = viewModelScope.launch {
-            val toolsProjection = CatalogToolProjection()
+            val toolsProjection = CatalogToolProjection(categoriesOf = manifestCategories)
             val listsProjection = CatalogListProjection()
             val tools = catalog.observeCatalogProjection().map(toolsProjection::project).distinctUntilChanged()
             val layout = (settings?.settings ?: flowOf(HostSettings()))
@@ -302,23 +303,37 @@ internal class CatalogViewModel(
     }
 }
 
-/** Owned by one catalog collector; removed tools and their name keys are not retained. */
-internal class CatalogToolProjection(private val nameSortKey: (String) -> String = ::catalogNameSortKey) {
+/**
+ * Owned by one catalog collector; removed tools and their name keys are not retained.
+ * The database keeps only a manifest's first category, so the full list is read once per installed
+ * version from its manifest (no migration needed); an unreadable manifest falls back to the stored one
+ * and is read again on the next emission.
+ */
+internal class CatalogToolProjection(
+    private val categoriesOf: (CatalogEntry) -> List<String>? = { null },
+    private val nameSortKey: (String) -> String = ::catalogNameSortKey,
+) {
     private var previousTools = emptyMap<String, CatalogTool>()
+    private var categoryCache = emptyMap<Pair<String, Int>, List<String>>()
 
     fun project(entries: List<CatalogEntry>): List<CatalogTool> {
+        val categories = HashMap<Pair<String, Int>, List<String>>()
         val tools = entries.map { entry ->
             val previous = previousTools[entry.toolId]
             val key = previous?.takeIf { it.name == entry.name }?.nameSortKey ?: nameSortKey(entry.name)
-            val tool = entry.toCatalogTool(key)
+            val version = entry.toolId to entry.versionCode
+            val read = categoryCache[version] ?: runCatching { categoriesOf(entry) }.getOrNull()
+            read?.let { categories[version] = it }
+            val tool = entry.toCatalogTool(key, read ?: listOfNotNull(entry.categoryId))
             previous?.takeIf { it == tool } ?: tool
         }
         previousTools = tools.associateBy { it.toolId }
+        categoryCache = categories
         return tools
     }
 }
 
-private fun CatalogEntry.toCatalogTool(nameSortKey: String) = CatalogTool(
+private fun CatalogEntry.toCatalogTool(nameSortKey: String, categories: List<String>) = CatalogTool(
     toolId = toolId,
     name = name,
     versionCode = versionCode,
@@ -327,7 +342,7 @@ private fun CatalogEntry.toCatalogTool(nameSortKey: String) = CatalogTool(
     lastOpenedAt = lastOpenedAt,
     installedAt = installedAt,
     nameSortKey = nameSortKey,
-    category = categoryId,
+    categories = categories,
 )
 
 /** Android's ICU transliterator handles Han names without a bundled dictionary or network access. */

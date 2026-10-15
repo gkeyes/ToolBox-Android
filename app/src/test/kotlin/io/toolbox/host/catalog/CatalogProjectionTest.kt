@@ -95,13 +95,30 @@ class CatalogProjectionTest {
         assertEquals(listOf("阿里", "北京", "上海", "北京", "上海"), calculatedNames)
     }
 
-    @Test fun searchMatchesTheManifestCategory() {
+    @Test fun searchMatchesTheStoredCategoryWhenTheManifestIsUnreadable() {
         val projected = CatalogToolProjection { it }.project(
             listOf(entry("a", "构建守望").copy(categoryId = "开发"), entry("b", "笔记")),
         )
-        assertEquals("开发", projected.first().category)
+        assertEquals(listOf("开发"), projected.first().categories)
         assertEquals(listOf("a"), projected.filteredBy("开发").map { it.toolId })
         assertEquals(listOf("b"), projected.filteredBy("笔记").map { it.toolId })
+    }
+
+    @Test fun searchMatchesEveryManifestCategoryAndReadsEachVersionOnce() {
+        val reads = mutableListOf<String>()
+        val projection = CatalogToolProjection(categoriesOf = { entry ->
+            reads += "${entry.toolId}@${entry.versionCode}"
+            if (entry.toolId == "notes") listOf("效率", "文本") else listOf("金融", "监控")
+        }) { it }
+        val notes = entry("notes", "速记").copy(categoryId = "效率")
+        val stocks = entry("stocks", "盯盘").copy(categoryId = "金融")
+        val projected = projection.project(listOf(notes, stocks))
+        assertEquals(listOf("notes"), projected.filteredBy("文本").map { it.toolId })
+        assertEquals(listOf("stocks"), projected.filteredBy("监控").map { it.toolId })
+        projection.project(listOf(notes, stocks))
+        assertEquals(listOf("notes@1", "stocks@1"), reads)
+        projection.project(listOf(notes.copy(versionCode = 2), stocks))
+        assertEquals(listOf("notes@1", "stocks@1", "notes@2"), reads)
     }
 
     @Test fun cachedListsMatchFreshDerivationAcrossEverySortAndCatalogMutation() {
