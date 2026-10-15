@@ -23,6 +23,7 @@ export default function CustomModal({
         closeLabel={t("common.close")}
         fixedHeight={fixedHeight}
         footer={footer}
+        dialogClassName="nextflux-floating-sheet"
       >
         {children}
       </MobileSheet>

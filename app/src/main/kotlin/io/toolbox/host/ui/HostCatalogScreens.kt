@@ -397,6 +397,19 @@ internal fun ToolDetailScreen(
     val confirmation = state.uninstallConfirmation?.takeIf { it.toolId == toolId }
     val entrance = rememberToolBoxEntrance("tool-detail")
     var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
+    var deleteConfirmed by rememberSaveable(toolId) { mutableStateOf(false) }
+    // Feedback is catalog-wide; drop whatever an earlier screen left so this page only shows its own results.
+    var staleFeedbackCleared by rememberSaveable(toolId) { mutableStateOf(false) }
+    LaunchedEffect(toolId) {
+        if (!staleFeedbackCleared) {
+            staleFeedbackCleared = true
+            if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
+        }
+    }
+    // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
+    LaunchedEffect(deleteConfirmed, tool == null) {
+        if (deleteConfirmed && tool == null) onBack()
+    }
 
     DetailScreen(title = "工具详情", onBack = onBack) { chromePadding ->
         LazyColumn(
@@ -418,6 +431,18 @@ internal fun ToolDetailScreen(
             ),
             overscrollEffect = null,
         ) {
+            // Favorite, group and delete results started here have no operation id, so they land in feedback.
+            state.feedback?.let { feedback ->
+                item("detail-feedback") {
+                    FeedbackSurface(
+                        message = feedback.message,
+                        tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
+                        dismissible = true,
+                        onDismiss = { onAction(CatalogAction.DismissFeedback) },
+                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
+                    )
+                }
+            }
             if (tool == null) {
                 item("missing") {
                     CatalogStatusState("该工具已不存在", icon = ToolBoxIconKey.Tools, detail = "它可能已被删除或正在更新。")
@@ -533,7 +558,11 @@ internal fun ToolDetailScreen(
                     title = "删除 ${it.toolName}？",
                     summary = "工具文件、权限、存储和后台任务都会一并删除。",
                     confirmLabel = "确认删除",
-                    onConfirm = { onAction(CatalogAction.ConfirmUninstall) },
+                    onConfirm = {
+                        if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
+                        deleteConfirmed = true
+                        onAction(CatalogAction.ConfirmUninstall)
+                    },
                     onCancel = { onAction(CatalogAction.CancelUninstall) },
                     destructive = true,
                 )

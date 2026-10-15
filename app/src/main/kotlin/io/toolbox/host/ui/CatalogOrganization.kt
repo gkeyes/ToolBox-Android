@@ -184,9 +184,7 @@ internal fun LazyListScope.catalogHomeSections(
             onMove = { tool, offset -> onAction(CatalogAction.MoveFavorite(tool.toolId, offset)) },
         )
     } else {
-        val shortcuts = (favorites + state.recentTools)
-            .distinctBy(CatalogTool::toolId)
-            .take(HOME_SHORTCUT_LIMIT)
+        val shortcuts = homeShortcuts(favorites, state.recentTools)
         item("shortcuts-heading") { HomeSectionHeader("常用") }
         if (shortcuts.isEmpty()) item("favorites-empty") {
             HomeEmptySection("把常用工具放在首页", "添加收藏", onAddFavorites)
@@ -241,6 +239,13 @@ internal fun LazyListScope.catalogHomeSections(
 }
 
 private const val HOME_SHORTCUT_LIMIT = 8
+
+/** Every favorite stays on Home (the picker has no cap); recent tools only fill the free slots up to the limit. */
+internal fun homeShortcuts(favorites: List<CatalogTool>, recent: List<CatalogTool>): List<CatalogTool> {
+    val favoriteIds = favorites.mapTo(HashSet(), CatalogTool::toolId)
+    val fill = recent.filterNot { it.toolId in favoriteIds }.distinctBy(CatalogTool::toolId)
+    return favorites + fill.take(maxOf(0, HOME_SHORTCUT_LIMIT - favorites.size))
+}
 private val HOME_SECTION_GAP = 24.dp
 
 /** Lazy rows retain one continuous card surface without nesting another vertical scroll container. */
