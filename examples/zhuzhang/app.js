@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.5.2';
+  const VERSION = '1.5.3';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -709,7 +709,7 @@
   });
   document.addEventListener('compositionend',e=>{if(e.target.id==='ledger-search'){ui.query=e.target.value;render();$('#ledger-search').focus({preventScroll:true});}});
   document.addEventListener('submit',async e=>{
-    const form=e.target;if(!form.dataset.form)return;e.preventDefault();if(busy)return;$('#sheet-body>.error-message')?.remove();form.querySelector('.error-message')?.remove();
+    const form=e.target;if(!form.dataset.form)return;e.preventDefault();if(busy&&!busyBackground)return;$('#sheet-body>.error-message')?.remove();form.querySelector('.error-message')?.remove();
     try{
       const conflict=form.querySelector('[name=confirm-draft-update]');if(conflict&&!conflict.checked)throw new Error('请先核对当前记录，并确认保存草稿中的修改。');
       if(form.dataset.form==='payment')await submitPayment(form);
