@@ -41,6 +41,7 @@ import version_bump  # noqa: E402  (shares the fragment format and what counts a
 ROOT = Path(__file__).resolve().parents[2]
 RECEIPT = "BUILD_RECEIPT.txt"
 DEV_APK = re.compile(r"^toolbox-v(.+)-dev\.apk$")
+APP_APK = re.compile(r"^toolbox-v.+\.apk$")
 # Lines in app/build.gradle.kts that set the fallback version; the commit that last changed one is where
 # fragments are counted from when `dev` has no app build.
 VERSION_LINE_PATTERN = r"^\s*version(Code|Name)\s*="
@@ -156,6 +157,15 @@ def read_dev(api, repo, sleep=time.sleep, own_apk=None):
     return build
 
 
+def released_apps(api, repo):
+    """Tags of releases other than `dev` that carry a ToolBox APK. Any failure to list them raises."""
+    code, out, err = api(f"repos/{repo}/releases?per_page=100")
+    if code != 0:
+        raise LookupFailed(f"Could not list releases: {err.strip()}")
+    return [release["tag_name"] for release in json.loads(out) if release.get("tag_name") != "dev"
+            and any(APP_APK.match(asset.get("name", "")) for asset in release.get("assets", []))]
+
+
 def gh_api(path, accept=None):
     command = ["gh", "api", path] + (["-H", f"Accept: {accept}"] if accept else [])
     result = subprocess.run(command, cwd=ROOT, capture_output=True)
@@ -208,6 +218,13 @@ def main_compute(args):
         base_name, base_code, base = published["name"], published["code"], published["commit"]
         print(f"Last published build: ToolBox {base_name} ({base_code}) from {base[:7]}.")
     else:
+        # Counting from the Gradle literal is only right before the first publish. Once ToolBox has shipped,
+        # a lost or recreated `dev` would compute a version that reuses or undercuts one already on phones.
+        shipped_releases = released_apps(gh_api, repo)
+        if shipped_releases:
+            raise LookupFailed(f"dev has no app build, but ToolBox has already shipped ({', '.join(shipped_releases[:3])}). "
+                               "Restore the last published APK and BUILD_RECEIPT.txt to the dev release (they are in the "
+                               "last successful main run's artifacts) and re-run, so the version continues from it.")
         base_code, base_name = written_code, written_name
         base = git("log", "-1", "--format=%H", f"-G{VERSION_LINE_PATTERN}", args.head, "--",
                    version_bump.APP_BUILD).strip()

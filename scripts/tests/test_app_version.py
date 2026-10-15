@@ -189,11 +189,12 @@ class ComputeFromHistoryTest(unittest.TestCase):
         self.git("commit", "-q", "--allow-empty", "-m", message)
         return self.git("rev-parse", "HEAD")
 
-    def compute(self, dev):
+    def compute(self, dev, released=()):
         output = Path(self.directory.name) / "output.txt"
         output.write_text("")
         stderr = io.StringIO()
         with patch.object(app_version, "read_dev", lambda api, repo: dev), \
+                patch.object(app_version, "released_apps", lambda api, repo: list(released)), \
                 patch.dict(os.environ, {"GH_REPO": REPO, "GITHUB_OUTPUT": str(output), "GITHUB_STEP_SUMMARY": ""}), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
             code = app_version.main(["compute", "--head", self.git("rev-parse", "HEAD")])
@@ -231,6 +232,21 @@ class ComputeFromHistoryTest(unittest.TestCase):
         # Counted from the commit that last set the version lines, so the old fragment there is not counted.
         self.assertEqual(("0.13.15", "91", "", ["修正甲。"]),
                          (values["name"], values["code"], values["base_commit"], json.loads(values["changes"])))
+
+    def test_missing_dev_build_after_a_release_fails_closed(self):
+        # dev was deleted or recreated by the TBX workflow: the Gradle literal would reuse a shipped number.
+        self.commit("fix", {"app/src/main/a.kt": "a", "changes/fix.md": fragment("patch", "修正甲。")})
+        code, _, stderr = self.compute(None, released=["v0.8.32"])
+        self.assertEqual(2, code)
+        self.assertIn("dev has no app build, but ToolBox has already shipped (v0.8.32)", stderr)
+
+    def test_released_apps_ignores_dev_and_tool_only_releases(self):
+        releases = [{"tag_name": "dev", "assets": [{"name": "toolbox-v0.14.1-dev.apk"}]},
+                    {"tag_name": "ui-screenshots", "assets": [{"name": "home.png"}]},
+                    {"tag_name": "v0.8.32", "assets": [{"name": "toolbox-v0.8.32-release.apk"}, {"name": "x.tbx"}]}]
+        self.assertEqual(["v0.8.32"], app_version.released_apps(lambda path, accept=None: (0, json.dumps(releases), ""), REPO))
+        with self.assertRaises(app_version.LookupFailed):
+            app_version.released_apps(lambda path, accept=None: (1, "", "HTTP 500"), REPO)
 
     def test_published_commit_missing_from_history_fails_closed(self):
         code, _, stderr = self.compute({"name": "0.13.14", "code": 90, "commit": "d" * 40})
