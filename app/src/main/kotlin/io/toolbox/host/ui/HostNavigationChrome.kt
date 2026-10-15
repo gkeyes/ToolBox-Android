@@ -3,7 +3,7 @@ package io.toolbox.host.ui
 import androidx.compose.foundation.layout.navigationBars
 import io.toolbox.core.ui.component.ToolBoxGlassIconButton
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
@@ -40,8 +40,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.component.toolBoxOpenDesignCanvas
@@ -341,9 +339,9 @@ private fun DestinationItem(
             .width(ToolBoxThemeTokens.sizes.mediumNavigationItemWidth)
             .heightIn(min = ToolBoxThemeTokens.sizes.compactChrome)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(ToolBoxThemeTokens.radii.denseSurface))
-            .clickable(role = Role.Tab) { onDestination(destination) }
-            .testTag(destination.testTag)
-            .semantics { contentDescription = "${destination.label}标签${if (selected) "，已选择" else ""}" },
+            // The merged label names the tab; selection is announced from `selected`, not text.
+            .selectable(selected = selected, role = Role.Tab) { onDestination(destination) }
+            .testTag(destination.testTag),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

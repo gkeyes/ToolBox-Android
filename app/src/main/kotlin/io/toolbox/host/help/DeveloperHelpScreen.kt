@@ -134,7 +134,7 @@ internal fun DeveloperHelpPage(
     onWebViewDebuggingChange: (Boolean) -> Unit = {},
 ) {
     DetailScreen(
-        title = "开发帮助",
+        title = "开发者帮助",
         onBack = onBack,
         modifier = Modifier.testTag(DeveloperHelpTestTags.Screen),
     ) { chromePadding ->
@@ -227,7 +227,7 @@ internal fun DeveloperHelpContent(
                 onCopy(text)
             } else {
                 val clipboard = checkNotNull(context.getSystemService(ClipboardManager::class.java))
-                clipboard.setPrimaryClip(ClipData.newPlainText("ToolBox 开发帮助", text))
+                clipboard.setPrimaryClip(ClipData.newPlainText("ToolBox 开发者帮助", text))
             }
             copiedKey = key
             false
