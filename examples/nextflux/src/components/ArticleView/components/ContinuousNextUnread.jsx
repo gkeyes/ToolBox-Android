@@ -22,6 +22,9 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   const layerRef = useRef(null);
   const nextPageRef = useRef(null);
   const dockRef = useRef(null);
+  const chromeRef = useRef(null);
+  const realCloseRef = useRef(null);
+  const hiddenCloseRef = useRef(null);
   const textRef = useRef(null);
   const hintStateRef = useRef(null);
   const rawRef = useRef(0);
@@ -85,12 +88,27 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     rawRef.current = 0;
     gestureRef.current = null;
     if (layerRef.current) layerRef.current.dataset.phase = "idle";
+    showRealClose();
     if (nextPageRef.current) {
       nextPageRef.current.style.transform = "translate3d(0,100%,0)";
       nextPageRef.current.style.opacity = "";
     }
     setProgress(0);
     if (!transitionRef.current) onTransitionStateChange?.(false);
+  };
+  // The next page slides up under the floating close button, so a copy of
+  // the button stays on top of it; the real one hides meanwhile, or the two
+  // glass discs would stack. Opacity, not visibility: the real button stays
+  // in the accessibility tree, since the whole layer is aria-hidden.
+  const hideRealClose = () => {
+    const button = chromeRef.current?.firstChild ? realCloseRef.current : null;
+    if (!button) return;
+    button.style.opacity = "0";
+    hiddenCloseRef.current = button;
+  };
+  const showRealClose = () => {
+    if (hiddenCloseRef.current) hiddenCloseRef.current.style.opacity = "";
+    hiddenCloseRef.current = null;
   };
   const cancelPull = () => {
     cancelPaint();
@@ -163,7 +181,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
   };
 
   useLayoutEffect(() => {
-    latestRef.current = { nextUnread, paint, clearVisuals, cancelPull, commit, finishHandoff, abortHandoff, revealActualPage };
+    latestRef.current = { nextUnread, paint, hideRealClose, showRealClose, clearVisuals, cancelPull, commit, finishHandoff, abortHandoff, revealActualPage };
   });
 
   useLayoutEffect(() => {
@@ -194,21 +212,47 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     const syncInset = () => {
       const layer = layerRef.current;
       if (!layer) return;
-      const bottom = viewport.querySelector(".action-buttons")?.getBoundingClientRect().bottom ?? 0;
-      const top = Math.max(0, bottom);
-      layer.style.top = `${top}px`;
-      // The preview starts below the title bar, but the real page's content
-      // starts under it. Shift the preview up by that gap so its title lands
-      // exactly where the real one will be; otherwise the handoff jumps.
-      // Compare the two article surfaces, not their titles: the outgoing and
-      // incoming feed rows can differ in height.
+      // The preview covers the whole reading area, title bar included: the
+      // real page's feed row and title start under the floating close
+      // button, and a preview clipped at the bar's bottom edge left that
+      // strip to switch in one frame at the handoff.
       const viewportTop = viewport.getBoundingClientRect().top;
+      const top = Math.max(0, viewportTop);
+      layer.style.top = `${top}px`;
+      // Line the preview up with the real article surface so the handoff
+      // doesn't jump.
       const surface = surfaceRef.current;
       const realOffset = surface ? surface.getBoundingClientRect().top - viewportTop + viewport.scrollTop : 0;
-      let shift = top - viewportTop - realOffset;
-      shift = Math.round(shift);
-      layer.style.setProperty("--nf-continuous-shift", `${Math.max(0, shift)}px`);
+      layer.style.setProperty("--nf-continuous-shift", `${Math.round(top - viewportTop - realOffset)}px`);
       heightRef.current = layer.clientHeight;
+      const chrome = chromeRef.current;
+      if (chrome && !transitionRef.current) {
+        chrome.replaceChildren();
+        // A pull started before the last one sprang back still has the
+        // real button hidden; the copy must not inherit that.
+        latestRef.current.showRealClose();
+        const bar = viewport.querySelector(".action-buttons");
+        const row = bar?.querySelector(".reader-topbar-row");
+        const button = row?.querySelector(".nextflux-close-button");
+        const rect = button?.getBoundingClientRect();
+        realCloseRef.current = null;
+        // Skip it while the bar is tucked away or still sliding back.
+        if (rect && rect.top >= 0 && rect.height > 0) {
+          const barRect = bar.getBoundingClientRect();
+          const copy = bar.cloneNode(false);
+          const copyRow = row.cloneNode(false);
+          const copyButton = button.cloneNode(true);
+          for (const node of [copy, copyRow, copyButton, ...copyButton.querySelectorAll("[id]")]) node.removeAttribute("id");
+          // The copy stays usable: a handoff can wait on a slow first screen,
+          // and the close button must still close the reader meanwhile.
+          copyButton.addEventListener("click", (event) => { event.preventDefault(); button.click(); });
+          copy.style.cssText = `position:absolute;top:${barRect.top - top}px;left:${barRect.left}px;width:${barRect.width}px;margin:0;`;
+          copyRow.append(copyButton);
+          copy.append(copyRow);
+          chrome.append(copy);
+          realCloseRef.current = button;
+        }
+      }
     };
     const blocked = (event) => {
       const selection = document.getSelection();
@@ -234,6 +278,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
       const touch = event.touches[0];
       gestureRef.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY,
         lastY: touch.clientY, lastT: performance.now(), direction: null, velocity: 0, pulling: rawRef.current > 0 };
+      if (rawRef.current > 0) latestRef.current.hideRealClose();
     };
     const onMove = (event) => {
       const gesture = gestureRef.current;
@@ -259,6 +304,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
         if (move <= 0 || viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 2) return;
         gesture.pulling = true;
         layerRef.current.dataset.phase = "pulling";
+        latestRef.current.hideRealClose();
         onTransitionStateChange?.(true);
       }
       // The next page follows the finger all the way to the top; a fixed cap
@@ -305,6 +351,7 @@ export default function ContinuousNextUnread({ articleId, scrollAreaRef, surface
     <section ref={nextPageRef} className="nextflux-continuous-next-page">
       {visibleNextArticle && <ArticlePageContent article={visibleNextArticle} passive className="nextflux-continuous-next-page-inner" />}
     </section>
+    <div ref={chromeRef} className="nextflux-continuous-chrome" />
     <div ref={dockRef} className="nextflux-continuous-progress-dock">
       <span className="nextflux-continuous-progress-icon">↑</span>
       <span ref={textRef}>{t("articleView.continuousReading.nextUnread")}</span>
