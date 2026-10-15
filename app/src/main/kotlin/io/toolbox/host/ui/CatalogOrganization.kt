@@ -1,5 +1,6 @@
 package io.toolbox.host.ui
 
+import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -554,28 +555,52 @@ internal fun CatalogGroupFolderOverlay(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        // See-through glass like the design draft: the home page stays sharp behind the group (no
-        // window blur), under a veil deep enough that its titles and icons don't read through the
-        // group's own text. "降低透明度" turns both the veil and the panel near-solid.
+        val blurPx = with(LocalDensity.current) { 20.dp.roundToPx() }
+        var blurred by remember { mutableStateOf(false) }
+        // Liquid glass: the home page stays visible behind the group, its colours and shapes intact,
+        // under a light blur that only makes its text unreadable. All of the group's own text sits on
+        // the panel. The in-app 实色材质 switch keeps the near-solid veil and an opaque panel.
         val seeThrough = materials.realBlurEnabled
-        DisposableEffect(window) {
+        DisposableEffect(window, seeThrough) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
             window.setDimAmount(0f)
-            onDispose { window.setDimAmount(previousDim) }
+            // Window blur can be switched off at any time (battery saver, some ROMs); the listener
+            // keeps the flag and the veil in step, falling back to a deeper veil without blur.
+            val applyBlur = java.util.function.Consumer<Boolean> { available ->
+                blurred = seeThrough && available
+                if (blurred) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    window.attributes = window.attributes.also { it.blurBehindRadius = blurPx }
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                }
+            }
+            // Invoked immediately with the current state, then on every change.
+            window.windowManager.addCrossWindowBlurEnabledListener(applyBlur)
+            onDispose {
+                window.windowManager.removeCrossWindowBlurEnabledListener(applyBlur)
+                window.setDimAmount(previousDim)
+            }
         }
         val entrance = remember { Animatable(0f) }
         LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
+        val veilAlpha = when {
+            !seeThrough -> 0.9f
+            blurred -> 0.42f
+            else -> 0.82f
+        }
         Box(
             Modifier.fillMaxSize()
-                .background(colors.background.copy(alpha = if (seeThrough) 0.62f else 0.9f))
+                .background(colors.background.copy(alpha = veilAlpha))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
+            val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
             Column(
                 Modifier.widthIn(max = 480.dp).fillMaxWidth()
                     .graphicsLayer {
@@ -588,11 +613,23 @@ internal fun CatalogGroupFolderOverlay(
                     // Taps on the panel itself must not reach the dismissing scrim.
                     .pointerInput(Unit) { detectTapGestures { } }
                     .semantics { paneTitle = "分组 " + group.name }
-                    .testTag("catalog_group_folder"),
+                    .testTag("catalog_group_folder")
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = panelShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                        spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
+                    )
+                    .clip(panelShape)
+                    // Translucent glass: the blurred page tints it, never reads through it.
+                    .background(materials.overlayFallback.copy(alpha = if (seeThrough) 0.86f else 1f))
+                    .border(0.5.dp, materials.overlayBorder, panelShape)
+                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().padding(start = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -603,23 +640,10 @@ internal fun CatalogGroupFolderOverlay(
                     FolderRoundButton(ToolBoxIconKey.More, "编辑分组" + group.name, onEdit, Modifier.testTag("catalog_group_folder_edit"))
                     FolderRoundButton(ToolBoxIconKey.Close, "关闭分组", onDismiss, Modifier.testTag("catalog_group_folder_close"))
                 }
-                val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
                 Box(
                     // Takes only what the header and footer leave, so a two-line title in a short
                     // window shrinks the scrolling list instead of pushing the buttons off screen.
-                    Modifier.weight(1f, fill = false).fillMaxWidth()
-                        .shadow(
-                            elevation = 24.dp,
-                            shape = panelShape,
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                            spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
-                        )
-                        .clip(panelShape)
-                        // Translucent glass over the veil: the page shows through faintly, never legibly.
-                        .background(materials.overlayFallback.copy(alpha = if (seeThrough) 0.8f else 1f))
-                        .border(0.5.dp, materials.overlayBorder, panelShape)
-                        .padding(start = 12.dp, end = 12.dp, top = 22.dp, bottom = 18.dp),
+                    Modifier.weight(1f, fill = false).fillMaxWidth(),
                 ) {
                     if (members.isEmpty()) {
                         Column(
@@ -663,7 +687,7 @@ internal fun CatalogGroupFolderOverlay(
                 }
                 AppText(
                     if (editing) "长按拖动排序，点击工具可收藏、分组与管理" else "长按工具可收藏、分组与管理",
-                    Modifier.fillMaxWidth(), color = colors.textSecondary, align = TextAlign.Center,
+                    Modifier.fillMaxWidth(), color = colors.textPrimary.copy(alpha = 0.72f), align = TextAlign.Center,
                     textStyle = ToolBoxThemeTokens.textStyles.label.copy(fontSize = 13.sp, lineHeight = 18.sp),
                 )
             }
