@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
@@ -12,8 +13,10 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.content.Context
 import android.content.pm.PackageManager
+import io.toolbox.host.MainActivity
 import io.toolbox.host.R
 import io.toolbox.host.ToolBoxApplication
+import io.toolbox.host.runtime.RuntimeForegroundService
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -60,6 +63,7 @@ class AndroidNotificationGateway(
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))
+            .setContentIntent(toolNotificationContentIntent(appContext, toolId, notificationId))
             .setAutoCancel(true)
             .build()
         BackgroundPreparedNotification {
@@ -156,6 +160,17 @@ data class LiveNotificationSupportState(
     val androidLiveAvailable: Boolean,
     val androidLiveAllowed: Boolean,
 )
+
+/** Tapping a tool notification opens that tool through the host's validated launch route. */
+internal fun toolNotificationContentIntent(context: Context, toolId: String, notificationId: String): PendingIntent =
+    PendingIntent.getActivity(
+        context,
+        notificationId.hashCode(),
+        // Tool + notification id in the data keeps each notification's intent distinct.
+        MainActivity.openToolIntent(context, toolId)
+            .setData(RuntimeForegroundService.actionUri(toolId, notificationId, "notification")),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
 internal fun isValidNotification(notificationId: String, title: String): Boolean =
     notificationId.isNotBlank() && title.isNotBlank()
