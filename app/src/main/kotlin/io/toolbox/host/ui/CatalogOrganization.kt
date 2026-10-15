@@ -1,6 +1,5 @@
 package io.toolbox.host.ui
 
-import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -550,57 +549,37 @@ internal fun CatalogGroupFolderOverlay(
     val colors = ToolBoxThemeTokens.colors
     val materials = ToolBoxThemeTokens.materials
     val dark = colors.surface.luminance() < 0.5f
+    // Read outside the Dialog: this is the home page's view, which the panel glass copies.
+    val glass = rememberToolBoxWindowGlass(LocalView.current)
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        val blurPx = with(LocalDensity.current) { 20.dp.roundToPx() }
-        var blurred by remember { mutableStateOf(false) }
-        // Liquid glass: the home page stays visible behind the group, its colours and shapes intact,
-        // under a light blur that only makes its text unreadable. All of the group's own text sits on
-        // the panel. The in-app 实色材质 switch keeps the near-solid veil and an opaque panel.
+        // Liquid glass: the panel refracts a frosted copy of the home page (colours and shapes, no
+        // readable text) and carries all of the group's text; around it the page stays sharp under
+        // a light veil. With 实色材质 on, the veil is near-solid and the panel opaque.
         val seeThrough = materials.realBlurEnabled
-        DisposableEffect(window, seeThrough) {
+        DisposableEffect(window) {
             if (window == null) return@DisposableEffect onDispose { }
             val previousDim = window.attributes.dimAmount
             window.setDimAmount(0f)
-            // Window blur can be switched off at any time (battery saver, some ROMs); the listener
-            // keeps the flag and the veil in step, falling back to a deeper veil without blur.
-            val applyBlur = java.util.function.Consumer<Boolean> { available ->
-                blurred = seeThrough && available
-                if (blurred) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes = window.attributes.also { it.blurBehindRadius = blurPx }
-                } else {
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                }
-            }
-            // Invoked immediately with the current state, then on every change.
-            window.windowManager.addCrossWindowBlurEnabledListener(applyBlur)
-            onDispose {
-                window.windowManager.removeCrossWindowBlurEnabledListener(applyBlur)
-                window.setDimAmount(previousDim)
-            }
+            onDispose { window.setDimAmount(previousDim) }
         }
         val entrance = remember { Animatable(0f) }
         LaunchedEffect(entrance) { entrance.animateTo(1f, ToolBoxMotion.DialogEnter) }
         val maxListHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
-        val veilAlpha = when {
-            !seeThrough -> 0.9f
-            blurred -> 0.42f
-            else -> 0.82f
-        }
         Box(
             Modifier.fillMaxSize()
-                .background(colors.background.copy(alpha = veilAlpha))
+                .background(colors.background.copy(alpha = if (seeThrough) 0.45f else 0.9f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     onClickLabel = "关闭分组", onClick = onDismiss)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
-            val panelShape = toolBoxShape(ToolBoxThemeTokens.radii.sheet)
+            val panelRadius = ToolBoxThemeTokens.radii.sheet
+            val panelShape = toolBoxShape(panelRadius)
             Column(
                 Modifier.widthIn(max = 480.dp).fillMaxWidth()
                     .graphicsLayer {
@@ -622,8 +601,7 @@ internal fun CatalogGroupFolderOverlay(
                         spotColor = Color.Black.copy(alpha = if (dark) 0.6f else 0.22f),
                     )
                     .clip(panelShape)
-                    // Translucent glass: the blurred page tints it, never reads through it.
-                    .background(materials.overlayFallback.copy(alpha = if (seeThrough) 0.86f else 1f))
+                    .toolBoxWindowGlassEffect(glass, panelRadius)
                     .border(0.5.dp, materials.overlayBorder, panelShape)
                     .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
