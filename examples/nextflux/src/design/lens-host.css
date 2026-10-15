@@ -157,7 +157,7 @@
 }
 .article-list-header > [data-sidebar="trigger"]:is(:active, [data-pressed="true"], [data-nf-pressed="true"]):not(#nf-press)::before,
 .action-buttons .reader-topbar-row .nextflux-close-button:is(:active, [data-pressed="true"], [data-nf-pressed="true"]):not(#nf-press)::before {
-  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 62%), var(--nf-glass);
+  background: radial-gradient(circle at var(--nf-gx, 50%) var(--nf-gy, 50%), rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 62%), var(--nf-press-base, var(--nf-glass));
   filter: brightness(1.08);
   transform: none;
   transition-duration: 80ms;
@@ -167,6 +167,9 @@
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  /* Held, they keep the solid surface under the sheen. */
+  .article-list-header > [data-sidebar="trigger"],
+  .action-buttons .reader-topbar-row .nextflux-close-button { --nf-press-base: var(--surface); }
   .article-list-header > [data-sidebar="trigger"]::before,
   .article-list-inline-tabs .tabs__list::before,
   .article-list-scoped-tabs .tabs__list::before,

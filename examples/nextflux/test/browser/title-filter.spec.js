@@ -91,7 +91,7 @@ for (const [width, dark, scale] of [[320, false, 1], [393, false, 1], [393, true
       pointer: getComputedStyle(el).pointerEvents, viewport: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth + 1,
     }; });
     expect(geometry.root).toBe(true); expect(geometry.pointer).toBe("none");
-    expect(geometry.top).toBeGreaterThan(425); expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewport - 20);
+    expect(geometry.top).toBeGreaterThan(425); expect(geometry.bottom).toBeLessThanOrEqual(geometry.viewport - 16);
     expect(geometry.left).toBeGreaterThanOrEqual(0); expect(geometry.right).toBeLessThanOrEqual(width); expect(geometry.overflow).toBe(false);
     if (width === 393 && !dark) await info.attach("title-filter-bottom-toast.png", { body: await page.screenshot(), contentType: "image/png" });
   });

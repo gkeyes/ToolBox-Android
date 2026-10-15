@@ -7,6 +7,7 @@
 @import "./design/ios27.css";
 @import "./design/glass-buttons.css";
 @import "./design/lens-host.css";
+@import "./design/panel-glass.css";
 
 @config '../tailwind.config.js';
 
