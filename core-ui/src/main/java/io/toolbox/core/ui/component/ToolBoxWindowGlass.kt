@@ -120,12 +120,18 @@ private class WindowCopyBackdrop(
     var regionLuminance: Float = copy.luminance
         private set
 
+    private val layerProbe by lazy { GraphicsLayerScope() }
+
     override fun DrawScope.drawBackdrop(
         density: Density,
         coordinates: LayoutCoordinates?,
         layerBlock: (GraphicsLayerScope.() -> Unit)?,
     ) {
         motion()
+        // A pressed button grows through layerBlock, a layer the node's coordinates already sit
+        // in (so the origin and scale below compensate for it); read it so every frame of the
+        // press redraws the copy in register instead of stretching the last one.
+        if (layerBlock != null) layerProbe.layerBlock()
         val node = coordinates?.takeIf { it.isAttached } ?: return
         // On screen, not in window: popups and dialogs need not share the page window's origin.
         val origin = node.positionOnScreen() - copy.rootOnScreen
