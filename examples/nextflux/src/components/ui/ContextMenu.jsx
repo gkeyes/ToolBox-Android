@@ -155,16 +155,48 @@ const ContextMenu = ({ isOpen, onClose, position, children }) => {
 };
 
 const ContextMenuItem = ({ onClick, children, className, startContent }) => {
+  // The menu can scroll when it fits neither side of the row, so a touch that
+  // moves is a scroll, not a tap: only run the action for a finger that stayed put.
+  const touchStart = useRef(null);
+
   const handleClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     onClick?.();
   };
 
+  const handleTouchStart = (e) => {
+    const t = e.touches[0];
+    touchStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+  };
+
+  const handleTouchMove = (e) => {
+    const t = e.touches[0];
+    const start = touchStart.current;
+    if (t && start && Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) {
+      touchStart.current = null;
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start) {
+      e.preventDefault();
+      return;
+    }
+    handleClick(e);
+  };
+
   return (
     <div
       onClick={handleClick}
-      onTouchEnd={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={() => {
+        touchStart.current = null;
+      }}
       className={cn(
         "ds-state ds-press-row min-h-12 px-3 cursor-pointer rounded-[var(--ds-radius-small)] text-[length:var(--ds-text-body)]",
         "select-none",
