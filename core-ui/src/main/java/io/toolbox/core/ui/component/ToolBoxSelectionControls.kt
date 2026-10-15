@@ -143,7 +143,9 @@ fun ToolBoxSegmentedControl(
                 dragging = true
                 val completed = try {
                     val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                    start != null && run {
+                    if (start == null) {
+                        false
+                    } else {
                         follow(start.position.x)
                         horizontalDrag(start.id) { change ->
                             change.consume()
