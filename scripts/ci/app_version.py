@@ -98,8 +98,11 @@ def compute(base_name, base_code, fragments, shipped, floor=None):
                 f"Add one in a follow-up PR (see {version_bump.FRAGMENTS_README}); this build is not published.")
         return base_name, base_code, []
     name, code = bump_version(base_name, [bump for _, bump, _ in fragments]), base_code + 1
-    if floor and floor[1] > code and version_bump.parse_semver(floor[0]) > version_bump.parse_semver(name):
-        name, code = floor
+    if floor:
+        # Each part separately: a minor bump over an old dev build can pass the floor's name but not its code.
+        if version_bump.parse_semver(floor[0]) > version_bump.parse_semver(name):
+            name = floor[0]
+        code = max(code, floor[1])
     return name, code, [line for _, _, line in fragments]
 
 

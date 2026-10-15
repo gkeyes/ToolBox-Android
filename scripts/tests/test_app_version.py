@@ -77,6 +77,9 @@ class ComputeTest(unittest.TestCase):
                          app_version.compute("0.13.10", 86, fragments, [], floor=("0.13.14", 90)))
         self.assertEqual(("0.13.15", 91, ["修正。"]),
                          app_version.compute("0.13.14", 90, fragments, [], floor=("0.13.14", 90)))
+        # A minor bump can pass the floor's name while its code would still be lower: neither part goes below it.
+        self.assertEqual(("0.14.0", 94, ["新增。"]), app_version.compute(
+            "0.13.14", 90, [("changes/a.md", "minor", "新增。")], [], floor=("0.13.18", 94)))
         # Without a fragment the published version stands; the written one alone is not a new build.
         self.assertEqual(("0.13.10", 86, []), app_version.compute("0.13.10", 86, [], [], floor=("0.13.14", 90)))
 
