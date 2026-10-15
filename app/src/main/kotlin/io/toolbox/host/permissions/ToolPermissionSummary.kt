@@ -22,8 +22,14 @@ import kotlinx.coroutines.sync.withPermit
 internal sealed interface ToolPermissionSummary {
     data object Loading : ToolPermissionSummary
     data object Unavailable : ToolPermissionSummary
-    data class Ready(val enabled: Int, val total: Int) : ToolPermissionSummary
+    /** [granted] lists the declared capabilities counted in [enabled]. */
+    data class Ready(val enabled: Int, val total: Int, val granted: Set<String> = emptySet()) : ToolPermissionSummary
 }
+
+/** Stored grants stay on after the user revokes the Android permission in system settings; count those as off. */
+internal fun ToolPermissionSummary.withSystemState(systemGranted: (String) -> Boolean, exactAlarms: Boolean = true): ToolPermissionSummary =
+    if (this !is ToolPermissionSummary.Ready) this
+    else granted.filterTo(mutableSetOf()) { capabilitySystemAllowed(it, systemGranted, exactAlarms) }.let { on -> copy(enabled = on.size, granted = on) }
 
 internal val ToolPermissionSummary.label: String
     get() = when (this) {
@@ -72,8 +78,6 @@ internal class ToolPermissionSummaryReader(
 
 internal fun summarizeToolPermissions(toolId: String, declared: Set<String>, grants: List<PermissionGrant>): ToolPermissionSummary.Ready {
     val values = grants.filter { it.toolId == toolId }.associateBy(PermissionGrant::capability)
-    return ToolPermissionSummary.Ready(
-        enabled = declared.count { capability -> values[capability]?.granted ?: capability.defaultEnabled() },
-        total = declared.size,
-    )
+    val granted = declared.filterTo(mutableSetOf()) { capability -> values[capability]?.granted ?: capability.defaultEnabled() }
+    return ToolPermissionSummary.Ready(enabled = granted.size, total = declared.size, granted = granted)
 }

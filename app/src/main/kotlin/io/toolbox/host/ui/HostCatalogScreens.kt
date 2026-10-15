@@ -59,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.togetherWith
@@ -398,13 +399,18 @@ internal fun ToolDetailScreen(
     val entrance = rememberToolBoxEntrance("tool-detail")
     var groupsOpen by rememberSaveable(toolId) { mutableStateOf(false) }
     var deleteConfirmed by rememberSaveable(toolId) { mutableStateOf(false) }
-    // Feedback is catalog-wide; drop whatever an earlier screen left so this page only shows its own results.
-    var staleFeedbackCleared by rememberSaveable(toolId) { mutableStateOf(false) }
-    LaunchedEffect(toolId) {
-        if (!staleFeedbackCleared) {
-            staleFeedbackCleared = true
-            if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
-        }
+    // Feedback is catalog-wide: a message the list was already showing stays for the list, and this
+    // page only shows results that arrive while it is open.
+    // Saved by text so a rotation doesn't reclassify this page's own message as the list's.
+    var entryMessage by rememberSaveable(toolId) { mutableStateOf(state.feedback?.message) }
+    LaunchedEffect(state.feedback == null) { if (state.feedback == null) entryMessage = null }
+    val ownFeedback = state.feedback?.takeIf { it.message != entryMessage }
+    // Anything started here makes the next result this page's own, even if its text matches the list's
+    // message, which is retired at that point.
+    val act: (CatalogAction) -> Unit = { action ->
+        if (state.feedback?.message?.let { it == entryMessage } == true) onAction(CatalogAction.DismissFeedback)
+        entryMessage = null
+        onAction(action)
     }
     // Leave the page once the confirmed delete lands; the list shows the "已删除" notice.
     LaunchedEffect(deleteConfirmed, tool == null) {
@@ -431,18 +437,6 @@ internal fun ToolDetailScreen(
             ),
             overscrollEffect = null,
         ) {
-            // Favorite, group and delete results started here have no operation id, so they land in feedback.
-            state.feedback?.let { feedback ->
-                item("detail-feedback") {
-                    FeedbackSurface(
-                        message = feedback.message,
-                        tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
-                        dismissible = true,
-                        onDismiss = { onAction(CatalogAction.DismissFeedback) },
-                        modifier = Modifier.padding(bottom = ToolBoxThemeTokens.spacing.oneHalf),
-                    )
-                }
-            }
             if (tool == null) {
                 item("missing") {
                     CatalogStatusState("该工具已不存在", icon = ToolBoxIconKey.Tools, detail = "它可能已被删除或正在更新。")
@@ -455,7 +449,7 @@ internal fun ToolDetailScreen(
                         tool = tool,
                         favorite = favorite,
                         onOpen = { onAction(CatalogAction.RequestRuntimeLaunch(tool.toolId)) },
-                        onToggleFavorite = { onAction(CatalogAction.SetFavorite(tool.toolId, !favorite)) },
+                        onToggleFavorite = { act(CatalogAction.SetFavorite(tool.toolId, !favorite)) },
                         onGroups = { groupsOpen = !groupsOpen },
                         modifier = Modifier.toolBoxEntrance(entrance, 0),
                     )
@@ -481,7 +475,7 @@ internal fun ToolDetailScreen(
                         ToolBoxSwitchSettingRow(
                             title = "收藏",
                             checked = favorite,
-                            onCheckedChange = { onAction(CatalogAction.SetFavorite(tool.toolId, it)) },
+                            onCheckedChange = { act(CatalogAction.SetFavorite(tool.toolId, it)) },
                             summary = "显示在首页“常用”",
                             icon = ToolBoxIconKey.Star,
                             modifier = Modifier.testTag("tool_detail_favorite"),
@@ -515,7 +509,7 @@ internal fun ToolDetailScreen(
                                         group = group,
                                         selected = tool.toolId in group.members,
                                         onChecked = { selected ->
-                                            onAction(CatalogAction.SetGroupMembership(group.id, tool.toolId, selected))
+                                            act(CatalogAction.SetGroupMembership(group.id, tool.toolId, selected))
                                         },
                                     )
                                 }
@@ -550,6 +544,23 @@ internal fun ToolDetailScreen(
                 }
             }
         }
+        // Favorite, group and delete results started here have no operation id, so they land in feedback.
+        // It floats above the bottom edge so it is seen and announced wherever the page is scrolled.
+        ownFeedback?.let { feedback ->
+            FeedbackSurface(
+                message = feedback.message,
+                tone = if (feedback is CatalogFeedback.Completed) FeedbackTone.Success else FeedbackTone.Error,
+                dismissible = true,
+                onDismiss = { onAction(CatalogAction.DismissFeedback) },
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .widthIn(max = ToolBoxThemeTokens.sizes.detailContentMaxWidth)
+                    .padding(bottom = chromePadding.calculateBottomPadding())
+                    .padding(horizontal = ToolBoxThemeTokens.spacing.two, vertical = ToolBoxThemeTokens.spacing.oneHalf)
+                    .shadow(8.dp, toolBoxShape(ToolBoxThemeTokens.radii.control), clip = false)
+                    .background(ToolBoxThemeTokens.colors.surface, toolBoxShape(ToolBoxThemeTokens.radii.control))
+                    .testTag("detail_feedback"),
+            )
+        }
 
         if (confirmation != null) ToolBoxModalDialog(
             onDismissRequest = { onAction(CatalogAction.CancelUninstall) },
@@ -561,9 +572,9 @@ internal fun ToolDetailScreen(
                     summary = "工具文件、权限、存储和后台任务都会一并删除。",
                     confirmLabel = "确认删除",
                     onConfirm = {
-                        if (state.feedback != null) onAction(CatalogAction.DismissFeedback)
+                        if (ownFeedback != null) onAction(CatalogAction.DismissFeedback)
                         deleteConfirmed = true
-                        onAction(CatalogAction.ConfirmUninstall)
+                        act(CatalogAction.ConfirmUninstall)
                     },
                     onCancel = { onAction(CatalogAction.CancelUninstall) },
                     destructive = true,

@@ -334,9 +334,21 @@ internal fun String.defaultEnabled() = this in setOf(
     "haptics",
 )
 
+/** Whether Android still allows [capability]; location works with either coarse or fine, alarms need exact-alarm access. */
+internal fun capabilitySystemAllowed(capability: String, granted: (String) -> Boolean, exactAlarms: Boolean = true): Boolean {
+    val permissions = capability.androidPermissions()
+    return when {
+        capability == "alarms" -> exactAlarms
+        permissions.isEmpty() -> true
+        capability == "location" -> permissions.any(granted)
+        else -> permissions.all(granted)
+    }
+}
+
 private fun String.androidPermissions(): List<String> = when (this) {
     "alarms" -> listOf(EXACT_ALARM_PERMISSION)
-    "notifications" -> if (android.os.Build.VERSION.SDK_INT >= 33) listOf("android.permission.POST_NOTIFICATIONS") else emptyList()
+    // minSdk is 33, so notifications always need the runtime permission.
+    "notifications" -> listOf("android.permission.POST_NOTIFICATIONS")
     "location" -> listOf("android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION")
     "location.background" -> listOf("android.permission.ACCESS_BACKGROUND_LOCATION")
     else -> emptyList()
