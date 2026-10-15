@@ -202,6 +202,11 @@
     pointer-events: none;
     transition: opacity var(--ds-dur-effects) var(--ds-ease-effects);
   }
+  /* The card's overflow clip doesn't reach a pressed (scaled) row's state layer,
+     so the end rows round their own layer to the card's corners. */
+  .ds-group-card > .nf-set-row.is-pressable:is(:first-child, :last-child)::after { corner-shape: squircle; }
+  .ds-group-card > .nf-set-row.is-pressable:first-child::after { border-start-start-radius: var(--nf-card-radius, 26px); border-start-end-radius: var(--nf-card-radius, 26px); }
+  .ds-group-card > .nf-set-row.is-pressable:last-child::after { border-end-start-radius: var(--nf-card-radius, 26px); border-end-end-radius: var(--nf-card-radius, 26px); }
   .nf-set-row.is-pressable:active:not([data-disabled="true"]):not([aria-disabled="true"]),
   .nf-set-row.is-pressable[data-pressed="true"] {
     transform: scale(var(--ds-press-scale-row));
