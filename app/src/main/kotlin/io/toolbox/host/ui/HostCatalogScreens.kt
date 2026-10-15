@@ -230,7 +230,8 @@ internal fun ToolManagerContent(
                     )
                 }
             }
-            state.feedback?.let { feedback ->
+            // The load-failed status below already says the list can't be read; don't repeat it in a banner.
+            state.feedback?.takeUnless { state.loadFailed && (it as? CatalogFeedback.Failure)?.code == "CATALOG_UNAVAILABLE" }?.let { feedback ->
                 item("catalog-feedback") {
                     FeedbackSurface(
                         message = feedback.message,
