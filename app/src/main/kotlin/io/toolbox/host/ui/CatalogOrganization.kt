@@ -529,8 +529,8 @@ private fun NewGroupFolder(onClick: () -> Unit, modifier: Modifier = Modifier) {
             Modifier.fillMaxWidth().height(metrics.height)
                 .toolBoxGlassPress(interactionSource, shape = shape)
                 .toolBoxClearGlass(shape)
+                // No border: the glass rim highlight is the edge, as on the group capsules beside it.
                 .clip(shape)
-                .border(1.5.dp, colors.primary.copy(alpha = 0.45f), shape)
                 .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick)
                 .testTag("catalog_home_new_group_tile"),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -849,6 +849,6 @@ private fun HomeEmptySection(message: String, action: String, onAction: () -> Un
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         AppText(message, Modifier.weight(1f), color = ToolBoxThemeTokens.colors.textSecondary,
             textStyle = ToolBoxThemeTokens.textStyles.metadata)
-        ToolBoxTextButton(action, onAction, outlined = false)
+        ToolBoxTextButton(action, onAction)
     }
 }
