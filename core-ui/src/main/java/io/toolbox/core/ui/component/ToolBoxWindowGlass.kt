@@ -252,15 +252,16 @@ internal class PanelTone {
  * through and washes out secondary text: thicken the fill then. [pageLuminance] runs from the
  * darkest to the brightest cell under the panel. A light panel is left alone: its secondary text
  * still reads over black (5:1 at .66), and saturated tiles read as "dark", so thickening it made
- * panels over colourful pages look solid. A faint light control (a 24% clear-glass disc) over dark
- * content still takes the panel's .66 so its dark icon stays visible.
+ * panels over colourful pages look solid. A faint light control (a 24% clear-glass disc) over
+ * near-black content still takes the panel's .66 so its dark icon stays visible; over coloured
+ * tiles the dark icon already reads at .24.
  */
 private fun legibleFill(fill: Color, pageLuminance: ClosedFloatingPointRange<Float>): Color {
     val darkPanel = fill.copy(alpha = 1f).luminance() < 0.5f
     return when {
         darkPanel && pageLuminance.endInclusive > 0.45f && fill.alpha < DarkPanelLegibleAlpha ->
             fill.copy(alpha = DarkPanelLegibleAlpha)
-        !darkPanel && pageLuminance.start < 0.25f && fill.alpha < FaintFillAlpha ->
+        !darkPanel && pageLuminance.start < 0.05f && fill.alpha < FaintFillAlpha ->
             fill.copy(alpha = LightControlLegibleAlpha)
         else -> fill
     }

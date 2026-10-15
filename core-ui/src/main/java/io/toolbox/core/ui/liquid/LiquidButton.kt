@@ -92,22 +92,24 @@ fun LiquidButton(
                         val grow = minOf(4f.dp.toPx() / size.height, 12f.dp.toPx() / size.width)
                         val scale = lerp(1f, 1f + grow, progress)
 
-                        val maxOffset = size.minDimension
+                        // The drag shift and stretch level off at 6dp and 4dp however far the finger goes.
+                        val maxOffset = minOf(size.minDimension, 6f.dp.toPx())
                         val initialDerivative = 0.05f
                         val offset = interactiveHighlight.offset
                         translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
                         translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
 
-                        val maxDragScale = 4f.dp.toPx() / size.height
+                        // Each side stretches by at most 4dp of its own length.
+                        val maxDragStretch = 4f.dp.toPx()
                         val offsetAngle = atan2(offset.y, offset.x)
                         scaleX =
                             scale +
-                                    maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension) *
-                                    (width / height).fastCoerceAtMost(1f)
+                                    maxDragStretch / width *
+                                    abs(cos(offsetAngle) * offset.x / size.maxDimension).fastCoerceAtMost(1f)
                         scaleY =
                             scale +
-                                    maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension) *
-                                    (height / width).fastCoerceAtMost(1f)
+                                    maxDragStretch / height *
+                                    abs(sin(offsetAngle) * offset.y / size.maxDimension).fastCoerceAtMost(1f)
                     }
                 } else {
                     null
