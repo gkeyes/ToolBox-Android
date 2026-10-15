@@ -42,6 +42,12 @@ async function boot() {
   startupStage = "打开阅读界面";
   installLinkHandling();
   await import("./render.jsx");
+  // A full-text test cut short last time left its rule on the server.
+  if (auth.userId) {
+    Promise.all([import("./toolbox/fulltext-adapter/rollbacks.js"), import("./api/miniflux.js")])
+      .then(([{ replayRollbacks }, { default: api }]) => replayRollbacks({ auth: authState.get(), api }))
+      .catch(() => {});
+  }
 }
 boot().catch((error) => {
   document.getElementById("splash-screen")?.remove();

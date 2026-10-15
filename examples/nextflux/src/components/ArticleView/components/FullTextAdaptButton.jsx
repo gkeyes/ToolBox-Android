@@ -8,10 +8,12 @@ import { activeArticle } from "@/stores/articlesStore.js";
 import { feeds } from "@/stores/feedsStore.js";
 import { settingsState } from "@/stores/settingsStore.js";
 import minifluxAPI from "@/api/miniflux.js";
+import { authState } from "@/stores/authStore.js";
 import CustomModal from "@/components/ui/CustomModal.jsx";
 import { fetchSourceSnapshot, inspectSelector } from "@/toolbox/fulltext-adapter/fulltext-source.mjs";
 import { isMiniMaxProvider, suggestScraperRule } from "@/toolbox/fulltext-adapter/fulltext-ai.mjs";
-import { applyScraperRule, contentMetrics, testScraperRule } from "@/toolbox/fulltext-adapter/fulltext-server.mjs";
+import { applyScraperRule, assertNoPendingRollback, contentMetrics, testScraperRule } from "@/toolbox/fulltext-adapter/fulltext-server.mjs";
+import { replayRollbacks, rollbackJournal } from "@/toolbox/fulltext-adapter/rollbacks.js";
 import "@/toolbox/fulltext-adapter/fulltext-adapter.css";
 
 const STREAM_VIEW_LIMIT = 24000;
@@ -72,6 +74,7 @@ export default function FullTextAdaptButton() {
     const cancelled=()=>{ if(run.signal.aborted) throw {code:"CANCELLED"}; };
     try{
       if(!settings.aiApiKey) throw new Error("请先在 NextFlux 设置中配置 AI API Key。");
+      assertNoPendingRollback(await replayRollbacks({auth:authState.get(),api:minifluxAPI}),feedId);
       const [remote,source]=await Promise.all([minifluxAPI.getFeed(feedId),fetchSourceSnapshot(article.url)]);
       cancelled();
       if(Number(activeArticle.get()?.id)!==Number(article.id)) throw new Error("文章已切换，请重新打开全文适配。");
@@ -97,7 +100,7 @@ export default function FullTextAdaptButton() {
   async function test(){
     if(!candidate||!baseline)return; setError("");setPhase("testing");
     try{
-      const result=await testScraperRule({feedId,entryId:article.id,candidate:candidate.rule,baselineRule:baseline.scraper_rules||"",api:minifluxAPI});
+      const result=await testScraperRule({feedId,entryId:article.id,candidate:candidate.rule,baselineRule:baseline.scraper_rules||"",api:minifluxAPI,journal:rollbackJournal(authState.get())});
       setTested(result);setPhase("tested");
     }catch(e){setError(e.message||"测试抓取失败。");setPhase("candidate");}
   }
@@ -105,7 +108,7 @@ export default function FullTextAdaptButton() {
   async function apply(){
     if(!candidate||!baseline||!tested)return; setError("");setPhase("applying");
     try{
-      const saved=await applyScraperRule({feedId,candidate:candidate.rule,baselineRule:baseline.scraper_rules||"",api:minifluxAPI});
+      const saved=await applyScraperRule({feedId,candidate:candidate.rule,baselineRule:baseline.scraper_rules||"",api:minifluxAPI,journal:rollbackJournal(authState.get())});
       feeds.set(feeds.get().map(f=>Number(f.id)===feedId?{...f,scraper_rules:saved.scraper_rules}:f));
       setPhase("done");
     }catch(e){setError(e.message||"保存规则失败。");setPhase("tested");}

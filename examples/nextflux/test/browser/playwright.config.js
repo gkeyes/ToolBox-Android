@@ -9,7 +9,9 @@ export default defineConfig({
   retries: 0,
   timeout: 30_000,
   expect: { timeout: 10_000 },
-  reporter: [["list"], ["json", { outputFile: "test-results/reading-results.json" }]],
+  // On CI, failures also become annotations on the check run: the job log and
+  // the results artifact are not always reachable for whoever reads the PR.
+  reporter: [["list"], ...(process.env.CI ? [["github"]] : []), ["json", { outputFile: "test-results/reading-results.json" }]],
   outputDir: "test-results/artifacts",
   use: {
     baseURL: "http://127.0.0.1:4175",
