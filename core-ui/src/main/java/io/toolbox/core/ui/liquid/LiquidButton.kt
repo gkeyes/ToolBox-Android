@@ -99,16 +99,17 @@ fun LiquidButton(
                         translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
                         translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
 
-                        val maxDragScale = 4f.dp.toPx() / size.height
+                        // Each side stretches by at most 4dp of its own length.
+                        val maxDragStretch = 4f.dp.toPx()
                         val offsetAngle = atan2(offset.y, offset.x)
                         scaleX =
                             scale +
-                                    maxDragScale * abs(cos(offsetAngle) * offset.x / size.maxDimension).fastCoerceAtMost(1f) *
-                                    (width / height).fastCoerceAtMost(1f)
+                                    maxDragStretch / width *
+                                    abs(cos(offsetAngle) * offset.x / size.maxDimension).fastCoerceAtMost(1f)
                         scaleY =
                             scale +
-                                    maxDragScale * abs(sin(offsetAngle) * offset.y / size.maxDimension).fastCoerceAtMost(1f) *
-                                    (height / width).fastCoerceAtMost(1f)
+                                    maxDragStretch / height *
+                                    abs(sin(offsetAngle) * offset.y / size.maxDimension).fastCoerceAtMost(1f)
                     }
                 } else {
                     null
