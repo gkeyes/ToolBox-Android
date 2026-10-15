@@ -116,7 +116,10 @@ export function createOverlayJanitor({
   // in a body-level portal means an overlay is legitimately open.
   const dialogOpen = () => [...doc.body.children].some((child) =>
     child.id !== "root" && child.tagName !== "SCRIPT" && hasVisibleDialog(child, win));
-  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) && !doc.querySelector("dialog[open]") && !dialogOpen();
+  // The long-press menu is a body-level portal too, with a full-screen scrim
+  // and no dialog role: while it is mounted, its scrim is meant to be there.
+  const menuOpen = () => Boolean(doc.querySelector("body > .nextflux-context-menu"));
+  const quiet = () => !isOverlayExpected() && !fullscreenElement(doc) && !doc.querySelector("dialog[open]") && !dialogOpen() && !menuOpen();
 
   const release = (found) => {
     const released = [];

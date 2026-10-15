@@ -636,6 +636,26 @@ test("the overlay janitor releases a stranded layer and a stale inert root", asy
   await expect.poll(() => page.evaluate(() => document.getElementById("root").inert)).toBe(false);
 });
 
+test("the overlay janitor leaves an open long-press menu and its scrim alone", async ({ page }) => {
+  await open(page, 393);
+  // Same portal shape as ContextMenu.jsx: a full-screen scrim beside the menu.
+  await page.evaluate(() => {
+    const scrim = document.createElement("div");
+    scrim.className = "nextflux-context-scrim";
+    scrim.style.cssText = "position:fixed;inset:0;z-index:9998";
+    scrim.addEventListener("click", () => { scrim.remove(); document.querySelector("body > .nextflux-context-menu")?.remove(); });
+    const menu = document.createElement("div");
+    menu.className = "nextflux-context-menu";
+    menu.style.cssText = "position:fixed;left:20px;top:200px;width:220px;height:120px;z-index:9999";
+    document.body.append(scrim, menu);
+  });
+  expect(await page.evaluate(() => window.controlsOverlayJanitor.check())).toEqual([]);
+  await page.waitForTimeout(3000);
+  expect(await page.evaluate(() => document.querySelector("[data-nextflux-released]"))).toBe(null);
+  await page.mouse.click(300, 600); // a tap outside still closes the menu
+  await expect(page.locator(".nextflux-context-scrim")).toHaveCount(0);
+});
+
 test("the overlay janitor never touches an open sheet", async ({ page }) => {
   await open(page, 393);
   await page.getByRole("button", { name: "更多", exact: true }).click();
