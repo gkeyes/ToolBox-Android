@@ -16,6 +16,8 @@
   /* Secondary text on floating glass: #6C6C70 / #98989F fall under 4.5:1
      once busy content shows through, so panels use a stronger grey. */
   --nf-panel-secondary: #48484A;
+  /* Disabled labels: about 5:1 on their fill, a step fainter than secondary. */
+  --nf-panel-disabled: #636366;
   /* The rim is lightly tinted so the lens has something to bend; the core
      (::after) adds the rest of the --nf-menu tint under the content. */
   --nf-panel-rim: rgb(255 255 255 / 0.6);
@@ -26,6 +28,7 @@
   --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
   --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
   --nf-panel-secondary: #C7C7CC;
+  --nf-panel-disabled: #AEAEB2;
   --nf-panel-rim: rgb(44 44 46 / 0.62);
   --nf-panel-core: rgb(44 44 46 / 0.63);
 }
@@ -34,6 +37,7 @@
     --nf-menu-drop: 0 18px 50px rgb(0 0 0 / 0.55);
     --nf-menu-inset: inset 0 1px 1px rgb(255 255 255 / 0.22), inset 0 0 0 0.5px rgb(255 255 255 / 0.22);
     --nf-panel-secondary: #C7C7CC;
+    --nf-panel-disabled: #AEAEB2;
     --nf-panel-rim: rgb(44 44 46 / 0.62);
     --nf-panel-core: rgb(44 44 46 / 0.63);
   }
@@ -111,10 +115,10 @@ html .nextflux-modal-surface .button.button--primary:not(.nf-set-row) { --nf-btn
 html .nextflux-modal-surface .button.button--danger:not(.nf-set-row) { --nf-btn-glass: color-mix(in srgb, var(--nf-btn-danger) 80%, black); }
 /* Disabled buttons in panels all share one look instead of fading to half
    opacity (搜索 before a query was white at 2.6:1): a fill fainter than the
-   enabled grey button's 8%, with secondary text. */
+   enabled grey button's 8%, with a faint label. */
 html .nextflux-modal-surface .button:not(.nf-set-row):is(:disabled, [aria-disabled="true"]) {
   --nf-btn-glass: color-mix(in srgb, var(--ds-on-surface, currentColor) 4%, transparent);
-  color: var(--nf-panel-secondary);
+  color: var(--nf-panel-disabled);
   opacity: 1;
 }
 

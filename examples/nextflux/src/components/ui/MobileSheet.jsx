@@ -70,6 +70,8 @@ export default function MobileSheet({
   // by dragging down, the backdrop, Escape or their own headerEnd button, and
   // the hidden button stays for screen readers.
   hideHeader = false,
+  // See CustomModal: marks a sheet that refuses to close for system back.
+  locked = false,
   children,
   footer,
 }) {
@@ -249,6 +251,7 @@ export default function MobileSheet({
         <Drawer.Content>
           <Drawer.Dialog
             ref={dialogRef}
+            data-nf-locked={locked || undefined}
             className={cn(
               "nextflux-modal-surface nextflux-mobile-sheet nextflux-floating-sheet p-0",
               fixedHeight && "h-4/5",

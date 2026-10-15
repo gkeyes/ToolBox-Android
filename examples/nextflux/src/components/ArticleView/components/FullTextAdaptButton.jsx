@@ -123,7 +123,7 @@ export default function FullTextAdaptButton() {
   return <>
     <Tooltip delay={0}><Button className="nextflux-toolbar-button" aria-label="全文适配" title="全文适配" variant="ghost" isIconOnly size="sm" onPress={()=>start()}><WandSparkles className="size-4 text-muted"/></Button>
       <Tooltip.Content showArrow><Tooltip.Arrow/>全文适配</Tooltip.Content></Tooltip>
-    <CustomModal open={open} onOpenChange={next=>{if(!next)close();}} title="AI 全文适配" footer={footer}>
+    <CustomModal open={open} onOpenChange={next=>{if(!next)close();}} title="AI 全文适配" footer={footer} locked={locked}>
       <div className="nf-fulltext-adapt">
         <p className="nf-fulltext-note">{feed?.title||baseline?.title||"当前订阅"} · AI 只接收压缩后的网页结构，不发送登录凭据。</p>
 
