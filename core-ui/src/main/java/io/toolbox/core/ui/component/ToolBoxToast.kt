@@ -97,7 +97,8 @@ fun ToolBoxToastHost(modifier: Modifier = Modifier) {
     LaunchedEffect(request) {
         val shown = request ?: return@LaunchedEffect
         // Copy the page before the capsule shows: the capsule refracts that copy.
-        if (!visible && realBlur) glass.capture(view)
+        // A toast that arrives while the last one animates out keeps that copy, which has no capsule in it.
+        if (realBlur && !glass.ready) glass.capture(view)
         visible = true
         delay(shown.durationMs)
         visible = false

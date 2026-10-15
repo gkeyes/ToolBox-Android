@@ -39,6 +39,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.toolbox.core.ui.theme.ToolBoxThemeTokens
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
 
 /**
  * Scroll position that drives the large-title collapse.
@@ -253,6 +262,42 @@ fun ToolBoxCollapsingTopBar(
                 ),
                 size = androidx.compose.ui.geometry.Size(size.width, total),
             )
+        }
+        // Behind the colour fade, the page under the bar and its fade band is blurred like the
+        // boards' backdrop-filter. It only draws while the page is the live glass page; during a
+        // transition the colour fade above carries the bar on its own.
+        if (glassState != null && glassRendersLive()) {
+            val barHeight = ToolBoxThemeTokens.sizes.topBar
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        alpha = progress(readScrolled())
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        val fadeStart = (size.height - edgeFade.toPx()) / size.height
+                        drawRect(
+                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to Color.Black,
+                                fadeStart * 0.85f to Color.Black,
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    .drawBackdrop(
+                        backdrop = glassState.backdrop,
+                        shape = { RectangleShape },
+                        effects = { blur(12.dp.toPx()) },
+                        highlight = null,
+                        shadow = null,
+                    ),
+            ) {
+                Spacer(Modifier.windowInsetsTopHeight(insets))
+                Spacer(Modifier.height(barHeight + edgeFade))
+            }
         }
         ToolBoxTopBar(
             title = title,

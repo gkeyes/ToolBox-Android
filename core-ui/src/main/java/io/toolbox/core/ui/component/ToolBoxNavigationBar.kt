@@ -71,7 +71,8 @@ fun ToolBoxNavigationBar(
         if (item.id != selectedId) haptics.tick()
         onItemSelected(item)
     }
-    if (glassState != null && ToolBoxThemeTokens.materials.realBlurEnabled && items.isNotEmpty()) {
+    // Only when the page is really recorded: otherwise the tabs would refract an empty backdrop.
+    if (glassState != null && glassRendersLive() && items.isNotEmpty()) {
         LiquidTabNavigationBar(
             items = items,
             selectedId = selectedId,
