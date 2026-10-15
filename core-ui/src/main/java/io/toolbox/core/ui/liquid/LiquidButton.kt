@@ -168,14 +168,14 @@ internal fun followingHighlight(interaction: InteractiveHighlight): Highlight {
     // -1..1 across each axis, so the angle follows the button's shape rather than raw pixels.
     val dx = (touch.x - size.width / 2f) / (size.width / 2f)
     val dy = (touch.y - size.height / 2f) / (size.height / 2f)
-    val touchAngle = atan2(dy, dx)
-    // Blend the resting and finger orientations as doubled-angle vectors: the light repeats every
-    // 180°, so this stays continuous where a signed shortest turn would flip across its cut.
-    val weight = (hypot(dx, dy) / FullTurnReach).fastCoerceIn(0f, 1f) * progress
-    val rest = Math.toRadians(2.0 * RestingHighlightAngle).toFloat()
-    val x = lerp(cos(rest), cos(2f * touchAngle), weight)
-    val y = lerp(sin(rest), sin(2f * touchAngle), weight)
-    val angle = if (x * x + y * y < 1e-6f) RestingHighlightAngle else Math.toDegrees(atan2(y, x).toDouble()).toFloat() / 2f
+    val touchAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+    // Shortest turn on the 180° period. Near ±90° the two ways round are the same orientation only
+    // at a full turn, so the turn is pushed to full there; elsewhere it grows with the distance
+    // from the centre, which keeps a press near the middle from swinging the light.
+    val turn = ((touchAngle - RestingHighlightAngle) % 180f + 270f) % 180f - 90f
+    val reach = (hypot(dx, dy) / FullTurnReach).fastCoerceIn(0f, 1f)
+    val nearCut = (abs(turn) / 90f).let { it * it * it * it }
+    val angle = RestingHighlightAngle + turn * progress * (reach + (1f - reach) * nearCut)
     return Highlight(
         style = HighlightStyle.Default(
             color = Color.White.copy(alpha = 0.5f + 0.3f * progress),

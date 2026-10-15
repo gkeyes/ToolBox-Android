@@ -93,8 +93,11 @@ fun ToolBoxSegmentedControl(
     val trackFill = ToolBoxNeutralFill.copy(alpha = if (dark) 0.24f else 0.12f)
     val pillFill = if (dark) Color(0xFF636366) else Color.White
     val live = glassRendersLive()
+    // An out-of-range index means nothing is selected: no thumb, every segment pickable. The
+    // clamped index only positions the thumb.
+    val hasSelection = selectedIndex in options.indices
     val selected = selectedIndex.coerceIn(0, options.lastIndex)
-    val currentSelected by rememberUpdatedState(selected)
+    val currentSelected by rememberUpdatedState(selectedIndex)
     val currentOnSelect by rememberUpdatedState(onSelect)
     var dragging by remember { mutableStateOf(false) }
     val lift = animateFloatAsState(
@@ -129,11 +132,13 @@ fun ToolBoxSegmentedControl(
         // (a vertical one is left to the scrolling parent) and picks the segment it's released
         // on. Taps elsewhere, keys and accessibility go through each segment's selectable.
         val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-        val gestures = if (!enabled) Modifier else Modifier.pointerInput(segmentPx, lastIndex, rtl) {
+        val gestures = if (!enabled || !hasSelection) Modifier else Modifier.pointerInput(segmentPx, lastIndex, rtl) {
             // Pointer x measured from the layout start, matching the Row and the thumb's offset.
             fun fromStart(x: Float) = if (rtl) size.width - x else x
             awaitEachGesture {
-                val down = awaitFirstDown()
+                // The segment's selectable consumes the down for its tap; still watch it, and only
+                // consume once the drag passes horizontal slop.
+                val down = awaitFirstDown(requireUnconsumed = false)
                 // Hit-test the thumb where it is now, even mid-slide.
                 val thumbStart = thumbX.value
                 if (fromStart(down.position.x) !in thumbStart..thumbStart + segmentPx) return@awaitEachGesture
@@ -173,7 +178,7 @@ fun ToolBoxSegmentedControl(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             options.forEachIndexed { index, label ->
-                val isSelected = index == selected
+                val isSelected = index == selectedIndex
                 val textColor = animateColorAsState(
                     if (isSelected) colors.textPrimary else colors.textSecondary,
                     ToolBoxMotion.effects(),
@@ -212,6 +217,7 @@ fun ToolBoxSegmentedControl(
                 }
             }
         }
+        if (!hasSelection) return@BoxWithConstraints
         val thumb = Modifier
             .offset { IntOffset(thumbX.value.roundToInt(), 0) }
             .width(segmentWidth)
