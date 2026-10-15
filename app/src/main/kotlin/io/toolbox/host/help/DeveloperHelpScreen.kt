@@ -66,6 +66,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import io.toolbox.core.ui.component.ToolBoxPinnedSearchField
+import io.toolbox.core.ui.component.toolBoxPinnedSearchScroll
 import io.toolbox.core.ui.component.rememberToolBoxListBackdrop
 import io.toolbox.core.ui.component.glassRendersLive
 import com.kyant.backdrop.backdrops.layerBackdrop
