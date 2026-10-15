@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -78,7 +78,7 @@
   let storageOK=false,restoreError='',bootError='',rawBackup=null;
   let data=emptyLedger(),busy=false;
   let entryValues={};
-  let draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
+  let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
 
   let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
@@ -151,7 +151,7 @@
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
     if(!$('#sheet').open)$('#sheet').showModal();
     $('#sheet-body').scrollTop=0;
-    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftBase=draftBase();activeDraftReview=false;
+    draftSnapshot=formSnapshot();activeDraftId=$('#sheet form[data-form]')?uid('d'):'';activeDraftOriginal=null;activeDraftWritten=false;activeDraftBase=draftBase();activeDraftReview=false;
     $('#draft-status').textContent='';
     // Opening a sheet never summons the soft keyboard without a field tap.
     $('#sheet [data-action="close-dialog"]').focus({preventScroll:true});
@@ -530,7 +530,7 @@
       else if(a==='csv')await exportCSV();
       else if(a==='csv-payments')await exportPayments();
       else if(a==='export-raw'){await exportFile('筑账_原始数据_'+nowDate()+'.txt',typeof rawBackup==='string'?rawBackup:JSON.stringify(rawBackup,null,2),'text/plain;charset=utf-8');}
-      else if(a==='import'){if(runtime.isNative){const text=await runtime.openFile();if(text!==null)previewImport(text);else toast('已取消导入');}else{$('#import-file').value='';$('#import-file').click();}}
+      else if(a==='import'){if(runtime.isNative){let text;try{text=await runtime.openFile();}catch(error){if(error instanceof TypeError&&!error.code)throw new Error('文件不是有效的筑账备份，未更改当前数据。');throw error;}if(text!==null)previewImport(text);else toast('已取消导入');}else{$('#import-file').value='';$('#import-file').click();}}
       else if(a==='import-confirm'){if(pendingImport){const err=restoreError;restoreError='';if(!await replaceLedger(pendingImport,'备份已恢复'))restoreError=err;}}
       else if(a==='retry-storage'){closeDialog(true);await boot();}
       else if(a==='resume-draft'){openDraftList();}
@@ -542,7 +542,7 @@
       else if(a==='continue-edit'){pendingNavigation=null;closeGuard();}
       else if(a==='new-ledger')confirmation('清空当前账本？','清空将删除当前项目、预算、费用与支出流水。此操作不可撤销，请先导出备份。','clear-ledger','','确认清空');
       else if(a==='clear-ledger'){await replaceLedger(emptyLedger(),'账本已清空');}
-    }catch(error){showError(error.message||'操作失败，请重试。');}
+    }catch(error){showError(runtime.explain(error));}
   });
   document.addEventListener('input',e=>{
     if(e.target.id==='refund-adjust')updateRefundAdjustment();
@@ -626,6 +626,7 @@
     const form=$('#sheet form[data-form]');if(!form)return null;
     const v=Object.fromEntries(formFields(form));
     if(form.dataset.form==='project')return {kind:'project',value:clone(data.project)};
+    if(form.dataset.form==='apply'&&v['apply-target']&&v['apply-target']!=='new'){const item=data.items.find(i=>i.id===v['apply-target']);return item?{kind:'item',id:item.id,value:clone(item)}:null;}
     if(form.dataset.form==='item'&&v.id){const item=data.items.find(i=>i.id===v.id);return item?{kind:'item',id:v.id,value:clone(item)}:null;}
     return null;
   }
@@ -641,7 +642,8 @@
     }finally{draftBusy=false;controls.forEach(b=>b.disabled=false);}
   }
   function markDraft(){
-    if(busy||!isFormDirty())return;
+    if(busy)return;
+    if(!isFormDirty()){clearTimeout(draftTimer);if(activeDraftId&&!activeDraftOriginal&&activeDraftWritten&&$('#sheet').open){activeDraftWritten=false;$('#draft-status').textContent='';clearDraft(activeDraftId).catch(()=>{});}return;}
     $('#draft-status').textContent='草稿待保存';clearTimeout(draftTimer);
     draftTimer=setTimeout(()=>saveDraftNow().catch(error=>{if($('#sheet').open){$('#draft-status').textContent='草稿未保存';showError('草稿保存失败：'+runtime.explain(error));}}),450);
   }
@@ -656,8 +658,8 @@
   function saveDraftNow(){
     clearTimeout(draftTimer);const form=$('#sheet form[data-form]');
     if(!form||!isFormDirty()||busy)return Promise.resolve();
-    const id=activeDraftId||(activeDraftId=uid('d'));
-    const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues)};
+    const id=activeDraftId||(activeDraftId=uid('d'));activeDraftWritten=true;
+    const record={id,type:form.dataset.form,title:$('#sheet-title').textContent,fields:formFields(form),baseRevision:data.revision||0,baseEntity:clone(form.dataset.form==='apply'?draftBase():activeDraftBase),requiresReview:activeDraftReview,time:new Date().toISOString(),applyTotal:applyResult?.total??null,entryValues:clone(entryValues)};
     return mutateDrafts(list=>[record,...list.filter(d=>d.id!==id)]).then(()=>{if($('#sheet').open&&activeDraftId===id&&isFormDirty())$('#draft-status').textContent='草稿已保存';});
   }
   function clearDraft(id=activeDraftId,all=false){clearTimeout(draftTimer);return mutateDrafts(list=>all?[]:list.filter(d=>d.id!==id));}
@@ -699,7 +701,7 @@
       $('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===values['payment-item']));
     }
     if(draft.type==='apply')updateApplyDiff();refreshDateFields();
-    const baseNow=activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
+    const baseNow=draft.type==='apply'?draftBase():activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
     activeDraftId=draft.id;activeDraftOriginal=clone(source);activeDraftBase=baseNow;activeDraftReview=conflict;
     if(conflict)appendDraftReview();
     draftSnapshot=conflict?'__restored_draft__':formSnapshot();$('#draft-status').textContent='草稿已恢复';
@@ -710,6 +712,7 @@
   }
   // Replacing the ledger retires previous drafts in the same ledger write, even if draft cleanup fails.
   async function replaceLedger(next,message){
+    if(draftsUnreadable){showError('已保存的草稿未能读取，暂不能替换账本。请退出并重新打开筑账后再试。');return false;}
     next=clone(next);next.completedDrafts=[...new Set([...(next.completedDrafts||[]),...drafts.map(d=>d.id)])];
     if(!await write(next))return false;
     pendingImport=null;ui.query='';ui.category='all';ui.room='all';ui.merchant=null;done(message);

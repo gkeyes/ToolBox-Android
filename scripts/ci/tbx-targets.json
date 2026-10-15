@@ -318,6 +318,7 @@
       "runtime.js",
       "calendar.js",
       "app.js",
+      "lens.js",
       "icon.svg",
       "integrity.json"
     ],

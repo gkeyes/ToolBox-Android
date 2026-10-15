@@ -5,7 +5,7 @@ source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${source_dir}/../.." && pwd)"
 output_path="${1:-${repo_root}/build/examples/zhuzhang.tbx}"
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/toolbox-zhuzhang.XXXXXX")"
-entries=(manifest.json index.html style.css runtime.js calendar.js app.js icon.svg)
+entries=(manifest.json index.html style.css runtime.js calendar.js app.js lens.js icon.svg)
 trap 'rm -rf -- "${stage_dir}"' EXIT
 
 for entry in "${entries[@]}"; do

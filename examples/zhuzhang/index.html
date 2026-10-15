@@ -9,7 +9,7 @@
 <meta content="筑账：离线装修预算、付款记录、费用测算与统计。" name="description"/>
 <title>筑账 · 装修预算</title>
 
-<link href="style.css" rel="stylesheet"/><link href="icon.svg" rel="icon" type="image/svg+xml"/><script defer="True" src="runtime.js"></script><script defer="True" src="calendar.js"></script><script defer="True" src="app.js"></script></head>
+<link href="style.css" rel="stylesheet"/><link href="icon.svg" rel="icon" type="image/svg+xml"/><script defer="True" src="runtime.js"></script><script defer="True" src="calendar.js"></script><script defer="True" src="app.js"></script><script defer="True" src="lens.js"></script></head>
 <body>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"></path><path d="M9 7h6"></path></symbol>
@@ -48,7 +48,7 @@
 <button aria-label="编辑当前项目与预算" class="project-switch" data-action="project"><span class="project-square"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name small medium">装修项目</strong><span class="project-meta caption muted" style="display:block;margin-top:2px">项目设置</span></span><svg class="icon small-icon chevron" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button>
 <nav class="side-nav" id="side-nav"></nav>
 <button class="button primary sidebar-add" data-action="payment"><svg class="icon" fill="none" stroke="currentColor"><use href="#i-plus"></use></svg>记一笔</button>
-<div class="sidebar-bottom"><button class="text-button" data-action="settings"><svg class="icon small-icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"></use></svg>项目与数据</button><p class="sidebar-foot">筑账 1.2.0 · 离线账本</p></div>
+<div class="sidebar-bottom"><button class="text-button" data-action="settings"><svg class="icon small-icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"></use></svg>项目与数据</button><p class="sidebar-foot">筑账 1.3.0 · 离线账本</p></div>
 </aside>
 <div class="workspace">
 <header class="topbar"><div class="crumb"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg><span class="project-name">装修项目</span><span>/</span><span id="crumb-page">预算总览</span></div><button class="mobile-project" data-action="project"><span class="brand-mark"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name">装修项目</strong><small class="project-meta">项目设置</small></span><svg class="icon" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button><div class="top-actions"><span class="demo-mark" id="runtime-badge">正在连接</span><button aria-label="项目与数据设置" class="icon-button" data-action="settings"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round"><use href="#i-dots"></use></svg></button></div></header>
