@@ -189,6 +189,7 @@ internal class CatalogViewModel(
             CatalogAction.CancelUninstall -> update { it.copy(uninstallConfirmation = null) }
             CatalogAction.ConfirmUninstall -> confirmUninstall()
             is CatalogAction.ExportTool -> exportTool(action.toolId, action.location)
+            CatalogAction.ExportPickerUnavailable -> showFailure("EXPORT_PICKER", "无法打开保存对话框，请确认系统“文件”应用可用。")
             CatalogAction.DismissFeedback -> update { it.copy(feedback = null) }
             CatalogAction.RetryLoad -> retryLoad()
         }

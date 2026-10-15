@@ -484,7 +484,10 @@ internal fun ToolDetailScreen(
                             title = "导出工具",
                             summary = "保存为 .tbx 文件，可再次导入；不含工具数据",
                             icon = ToolBoxIconKey.Share,
-                            onClick = { runCatching { exportLauncher.launch(exportFileName(tool.name, tool.versionName)) } },
+                            onClick = {
+                                runCatching { exportLauncher.launch(exportFileName(tool.name, tool.versionName)) }
+                                    .onFailure { act(CatalogAction.ExportPickerUnavailable) }
+                            },
                             modifier = Modifier.testTag("tool_detail_export"),
                         )
                     }

@@ -151,7 +151,8 @@ internal class HostDependencies(
         io.toolbox.host.backup.HostToolPackageExporter(
             application.filesDir, repositories.catalog, packageMutations,
             io.toolbox.host.backup.AndroidBackupDocumentIO(application.contentResolver),
-            java.io.File(application.cacheDir, "tool-export"),
+            // Shares the backup scratch root, so HostBackupService.recover also clears sessions a process death left.
+            java.io.File(application.cacheDir, "backup-operations"),
             io.toolbox.tool.packagekit.AndroidPackageResourceProbe(application),
         )
     }

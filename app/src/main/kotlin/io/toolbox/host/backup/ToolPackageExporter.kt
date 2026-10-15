@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.activity.result.contract.ActivityResultContracts
 import io.toolbox.core.data.CatalogRepository
 import io.toolbox.core.data.DataMutationLock
+import io.toolbox.host.importflow.isUnsafeFormatCodePoint
 import io.toolbox.tool.packagekit.PackageResourceProbe
 import io.toolbox.tool.packagekit.PackageValidationResult
 import io.toolbox.tool.packagekit.ToolPackageInspectors
@@ -32,9 +33,23 @@ internal fun interface ToolExportOperations {
     suspend fun exportTool(toolId: String, location: String): ToolExportResult
 }
 
-/** Suggested file name for the save dialog: the tool name and version, without path characters. */
-internal fun exportFileName(toolName: String, versionName: String): String =
-    "${toolName}-${versionName}".replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().ifEmpty { "tool" } + ".tbx"
+/**
+ * Suggested file name for the save dialog: the tool name and version. Path, reserved, control and
+ * format characters become "_", as the importer rejects a selected name containing them.
+ */
+internal fun exportFileName(toolName: String, versionName: String): String {
+    val raw = "$toolName-$versionName".trim()
+    val cleaned = buildString {
+        var offset = 0
+        while (offset < raw.length) {
+            val codePoint = Character.codePointAt(raw, offset)
+            if ((codePoint < 0x80 && codePoint.toChar() in "\\/:*?\"<>|") || Character.isISOControl(codePoint) || isUnsafeFormatCodePoint(codePoint)) append('_')
+            else appendCodePoint(codePoint)
+            offset += Character.charCount(codePoint)
+        }
+    }
+    return cleaned.ifEmpty { "tool" } + ".tbx"
+}
 
 /** Same repack and checks as a backup's package.tbx, for one tool. */
 internal class HostToolPackageExporter(

@@ -57,6 +57,7 @@ class ToolExportEntryTest {
     @Test
     fun fileNameDropsPathCharacters() {
         assertEquals("a_b_c-1.0.tbx", exportFileName("a/b:c", "1.0"))
+        assertEquals("有_余-1.0.tbx", exportFileName("有\u200B余", "1.0"))
     }
 
     private companion object {
