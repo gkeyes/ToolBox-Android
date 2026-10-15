@@ -513,3 +513,29 @@ body[data-page=home] .workspace{padding-bottom:0}
  .nav-plus{color:#97d8c5}
 }
 @media (prefers-color-scheme:dark){.primary{background:#2f7d63}}
+/* 1.5.0 · 记帐选外观: the look row in the ledger forms, the picker's own dialog, the toast's action */
+.model-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:18px;border:1.5px dashed color-mix(in srgb,var(--accent) 55%,transparent);background:var(--accent-soft);text-align:left;width:100%;color:var(--ink)}
+.model-row[hidden]{display:none}
+.model-row.has{border-style:solid}
+.model-row .th{width:64px;height:64px;border-radius:14px;background:radial-gradient(circle at 50% 35%,var(--stage-a),var(--stage-b));display:grid;place-items:center;flex:0 0 auto;overflow:hidden;color:var(--accent)}
+.model-row .th svg{width:26px;height:26px}
+.model-row .th img{width:100%;height:100%;object-fit:contain}
+.model-row .look-text{flex:1;min-width:0}
+.model-row b{display:block;font-size:14px;font-weight:650;color:var(--ink)}
+.model-row small{display:block;font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
+.model-row .look-go{color:var(--muted);display:flex}
+.model-row .look-go .icon{width:18px;height:18px}
+.model-row.off{border-style:solid;border-color:var(--line);background:var(--surface);opacity:.75;cursor:default}
+.model-row.off .th{color:var(--muted)}
+.model-row.off .look-go{display:none}
+.model-row[aria-busy="true"] .th{animation:look-wait 1s ease-in-out infinite alternate}
+@keyframes look-wait{to{opacity:.45}}
+#look-dialog{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;overflow:visible}
+#look-dialog::backdrop{background:transparent;backdrop-filter:none}
+#toast.has-action{pointer-events:auto;padding:7px 7px 7px 16px;display:flex;align-items:center;gap:10px}
+#toast .toast-text{flex:1}
+#toast .toast-action{height:32px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:650;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 22%,transparent);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.model-row[aria-busy="true"] .th{animation:none}}
+#toast.has-action .icon{margin-right:0}
+/* 「已放进…」 sits at the top of 我的家, under the title, so the room it points at stays in view */
+body[data-page="home"] #toast.has-action{top:calc(var(--home-top,64px) + 78px);bottom:auto}

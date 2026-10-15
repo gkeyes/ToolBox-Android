@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -146,10 +146,14 @@
   function badge(i){return `<span class="badge ${missingPrice(i)?'warn':i.status==='estimate'?'gray':''}">${statusText(i)}</span>`;}
   function comparisonLabel(g){return g.unbudgeted?'预算未齐':g.expected>g.budget?(g.unknown?'至少超出 ':'超出 ')+money(g.expected-g.budget):g.unknown?'待补估价':signed(g.expected-g.budget);}
 
-  function toast(text){
-    const el=$('#toast');clearTimeout(toastTimer);el.innerHTML=icon('check')+esc(text);
+  // action: {label, run} adds one button (1.5.0 「去摆放」); the toast then stays a little longer and takes taps.
+  function toast(text,action){
+    const el=$('#toast');clearTimeout(toastTimer);el.innerHTML=icon('check')+`<span class="toast-text">${esc(text)}</span>`+(action?`<button type="button" class="toast-action">${esc(action.label)}</button>`:'');
+    el.classList.toggle('has-action',Boolean(action));
+    const hide=()=>{clearTimeout(toastTimer);el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}};
+    if(action)el.querySelector('.toast-action').onclick=()=>{hide();action.run();};
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
-    el.classList.add('show');toastTimer=setTimeout(()=>{el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}},3000);
+    el.classList.add('show');toastTimer=setTimeout(hide,action?5200:3000);
   }
   function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
   function dialog(title,html){
@@ -172,8 +176,8 @@
     if($('#sheet').open)$('#sheet').close();
   }
 
-  function done(message){
-    const committed=activeDraftId;draftSnapshot=formSnapshot();closeDialog(true);entryValues={};render();toast(message);
+  function done(message,after){
+    const committed=activeDraftId;draftSnapshot=formSnapshot();closeDialog(true);entryValues={};render();if(after)after(message);else toast(message);
     if(committed)clearDraft(committed).catch(()=>{showError('记录已保存，草稿清理未完成。该草稿不会重复记账。');});
   }
   function openPicker(title,options,current,onPick){pickerState={options,current,onPick};$('#picker-title').textContent=title;$('#picker-search').value='';renderPicker();if(!$('#picker').open)$('#picker').showModal();$('#picker [data-action="close-picker"]').focus({preventScroll:true});}
@@ -351,6 +355,71 @@
     target.textContent='';homeState.mod.mount(target,ui.page==='home'?'home':'mini');
   }
 
+  /* ---------- 1.5.0 · record-time look: 家具家电 picks a look in the ledger form and lands in 我的家 on save ---------- */
+  const CUBE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>';
+  const planRects=source=>HM.makeRects(HM.planOf(source.project.home,source.project.layout)).rects;
+  // The look is a form field, so drafts, mode switches and the unsaved-changes guard carry it like any other.
+  function lookRow(kind=''){
+    const value=typeof kind==='string'&&Object.prototype.hasOwnProperty.call(HM.KINDS,kind)?kind:'';
+    return `<input type="hidden" name="model-kind" id="model-kind" value="${value}"><button type="button" class="model-row form-row" id="look-row" data-action="pick-look" hidden><span class="th" id="look-th">${CUBE}</span><span class="look-text"><b id="look-t">选一个外观</b><small id="look-s"></small></span><span class="look-go" aria-hidden="true">${icon('right')}</span></button>`;
+  }
+  // Applies the form's look to the item about to be saved; true when it now stands somewhere new or looks different.
+  function lookOnSave(next,item,kind){return HM.applyLook(item,String(kind||''),planRects(next),next.items);}
+  function lookContext(){
+    const form=$('#sheet form[data-form]');if(!form||!$('#look-row'))return null;
+    let category,room,existing=null;
+    if(form.dataset.form==='payment'){
+      if($('#payment-kind').value==='refund')return {state:'hidden'};
+      if($('#payment-target').value==='linked'){const i=data.items.find(x=>x.id===$('#payment-item').value);if(!i)return {state:'hidden'};category=i.category;room=i.room;existing=HM.sanitizeModel(i.model);}
+      else{category=$('#item-category').value;room=$('#item-room').value;}
+    }else if(form.dataset.form==='item'){
+      category=$('#item-category').value;room=$('#item-room').value;
+      const old=data.items.find(x=>x.id===form.elements.namedItem('id')?.value);existing=old?HM.sanitizeModel(old.model):null;
+    }else return null;
+    let state=HM.lookState(category,room,planRects(data));
+    if(state==='ok'&&homeState.failed)state='no3d';
+    return {state,room,existing};
+  }
+  function refreshLook(){
+    const c=lookContext(),row=$('#look-row');if(!c||!row)return;
+    row.hidden=c.state==='hidden';if(row.hidden)return;
+    const off=c.state!=='ok',picked=$('#model-kind').value,kind=off?'':picked||c.existing?.kind||'';
+    row.classList.toggle('off',off);row.classList.toggle('has',Boolean(kind));
+    if(off)row.setAttribute('aria-disabled','true');else row.removeAttribute('aria-disabled');
+    const thumb=kind&&homeState.mod?homeState.mod.thumbs()[kind]:'';
+    $('#look-th').innerHTML=thumb?`<img alt="" src="${thumb}">`:CUBE;
+    const [t,sub]=c.state==='whole'?['全屋的东西不放进模型','像全屋灯具这类不好定位的，只记账不显示']
+      :c.state==='missing'?[`户型里没有「${c.room}」`,'先记账；换个户型后，可在「我的家」摆放里放进去']
+      :c.state==='no3d'?['这台设备暂不显示 3D 外观','先记账；外观可以以后在支持的设备上挑']
+      :kind?['已选外观 · 可更换',c.existing&&!picked?`已在${c.room}，换外观不挪位置`:`记完放进${c.room}`]
+      :['选一个外观',`挑一个样子相近的，记完放进${c.room}`];
+    $('#look-t').textContent=t;$('#look-s').textContent=sub;
+    row.setAttribute('aria-label',`${t}，${sub}`);
+    // A restored draft can name a look before the 3D module (and its thumbnails) has loaded.
+    if(kind&&!homeState.mod&&!homeState.failed)loadHome().then(mod=>{if(mod)refreshLook();});
+  }
+  async function openLook(){
+    const c=lookContext();if(!c||c.state!=='ok')return;
+    if(!homeState.mod&&!webglAvailable()){homeState.failed=true;refreshLook();toast('这台设备暂不显示 3D 外观，可以先记账');return;}
+    const row=$('#look-row');row.setAttribute('aria-busy','true');
+    const mod=await loadHome();if(row.isConnected)row.removeAttribute('aria-busy');
+    if(!mod){refreshLook();toast('这台设备暂不显示 3D 外观，可以先记账');return;}
+    if(!$('#sheet').open||!row.isConnected)return;
+    mod.lendPicker($('#look-dialog'),{sel:$('#model-kind').value||c.existing?.kind||null,hint:`挑一个样子相近的，记完放进${c.room}。`,
+      cb:kind=>{const input=$('#model-kind');if(!input||!row.isConnected)return;input.value=kind;refreshLook();markDraft();},
+      onClose:()=>{if(row.isConnected)row.focus({preventScroll:true});}});
+  }
+  // After a save that put a look into a room: open 我的家 on that room, drop it in, offer 摆放.
+  function revealLook(id){
+    const i=data.items.find(x=>x.id===id);if(!i)return;
+    navigate('home');
+    const show=mod=>{
+      if(!mod||ui.page!=='home'){toast('已保存，外观会显示在「我的家」');return;}
+      if(mod.reveal(id))toast(`已放进${i.room}`,{label:'去摆放',run:()=>mod.arrange(id)});
+      else toast(`已保存。「${i.room}」放满了，这件计入房间标签的 +N`);
+    };
+    if(homeState.mod)requestAnimationFrame(()=>show(homeState.mod));else loadHome().then(mod=>requestAnimationFrame(()=>show(mod)));
+  }
   function entryTabs(mode,editing=false){
     const modes=editing?[['plan','项目策划'],['estimate','费用预算']]:[['plan','项目策划'],['estimate','费用预算'],['expense','直接记账']];
     return `<div class="segmented entry-tabs" role="group" aria-label="记录类型">${modes.map(([v,l])=>`<button type="button" class="seg ${mode===v?'active':''}" data-action="entry-mode" data-mode="${v}" aria-pressed="${mode===v}">${l}</button>`).join('')}</div>`;
@@ -383,7 +452,8 @@
     const legacy=fresh?(mode==='plan'?'price':'budget'):'';
     const retained=legacy&&carry[legacy]!==undefined&&carry[legacy]!==''?String(carry[legacy]):'';
     const title=mode==='info'?'编辑资料':fresh?(mode==='plan'?'新增项目预算':'新增费用预算'):(mode==='plan'?'修改项目预算':'修改预计费用');
-    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保存另一页填写的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
+    dialog(title,`<form id="item-form" data-form="item" novalidate><input type="hidden" name="id" value="${esc(v.id)}"><input type="hidden" name="record-mode" value="${mode}">${mode==='info'?'':entryTabs(mode,!fresh)}${baseFields(v)}${mode==='info'?'':`<label class="field entry-money-field"><span>${label}（元）${mode==='estimate'?'<small>可留空</small>':''}</span><div class="money-field"><span aria-hidden="true">¥</span><input inputmode="decimal" name="${field}" value="${esc(amount)}" aria-label="${label}（元）" placeholder="${mode==='plan'?'0.00':'待估价'}" autocomplete="off"></div><small class="field-note">${mode==='plan'?'用于规划该项目的支出上限。':'填写估价或报价，保存后不计入实际支出。'}</small></label>${retained?`<input type="hidden" name="retained-${legacy}" value="${esc(retained)}"><p class="form-hint">同时保存另一页填写的${legacy==='budget'?'项目预算':'预计费用'} ${esc(retained)} 元。</p>`:''}${mode==='estimate'?`<label class="check-row"><input type="checkbox" name="quote-confirmed" ${carry['quote-confirmed']==='on'||(!('quote-confirmed' in carry)&&v.status!=='estimate')?'checked':''}><span>报价已确认</span></label>`:''}`}${lookRow(carry['model-kind'])}${optionalFields(v)}<div class="dialog-actions"><button type="submit" class="button primary">${mode==='info'?'保存资料':mode==='plan'?'保存项目预算':'保存预计费用'}</button></div></form>`);
+    refreshLook();draftSnapshot=formSnapshot();
   }
   async function submitItem(form){
     const f=new FormData(form),id=String(f.get('id')||''),old=data.items.find(i=>i.id===id),mode=String(f.get('record-mode')||'estimate');
@@ -403,18 +473,19 @@
     if(!old&&f.has('retained-price'))item.price=fixed(f.get('retained-price'),2,'预计费用');
     const next=clone(data);
     if(old){next.items=next.items.map(i=>i.id===id?item:i);next.changes.push({date:new Date().toISOString(),itemId:id,note:mode==='plan'?`项目预算：${budgetText(old)} → ${budgetText(item)}`:mode==='estimate'?`预计费用：${priceText(old)} → ${priceText(item)}`:'项目资料已更新'});}else next.items.push(item);
-    if(await write(next))done(mode==='info'?'资料已保存':mode==='plan'?'项目预算已保存':'费用预算已保存');
+    const placed=lookOnSave(next,item,f.get('model-kind'));
+    if(await write(next))done(mode==='info'?'资料已保存':mode==='plan'?'项目预算已保存':'费用预算已保存',placed?()=>revealLook(item.id):null);
   }
   function openPayment(itemId='',full=false,carry={}){
     const i=data.items.find(i=>i.id===itemId),v={name:carry.name||'',category:carry['item-category']||(ui.category==='all'?'construction':ui.category),room:carry['item-room']||(ui.room==='all'?'全屋':ui.room),merchant:carry.merchant||'',note:carry.note||''};
     const linked=Boolean(i)||carry['payment-target']==='linked',amount=carry.amount??(full&&i?rawMoney(remaining(i)):'');
     dialog('记录实际支出',`<form id="payment-form" data-form="payment" novalidate><input type="hidden" name="record-mode" value="expense">${i?'':entryTabs('expense')}<div class="segmented payment-types" aria-label="资金类型"><button type="button" class="seg active" data-action="payment-kind" data-kind="payment" aria-pressed="true">支出</button><button type="button" class="seg" data-action="payment-kind" data-kind="refund" aria-pressed="false">退款</button></div><input type="hidden" name="kind" id="payment-kind" value="payment"><label class="field entry-money-field"><span id="payment-amount-label">实际支出（元）</span><div class="money-field"><span aria-hidden="true">¥</span><input name="amount" id="payment-amount" inputmode="decimal" placeholder="0.00" value="${esc(amount)}" aria-labelledby="payment-amount-label" autocomplete="off"></div></label>
-    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div></div><div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
+    <input type="hidden" name="payment-target" id="payment-target" value="${linked?'linked':'new'}"><div class="payment-target-row" aria-label="费用归属"><button type="button" data-action="payment-target" data-target="new" class="target-option">新增费用</button><button type="button" data-action="payment-target" data-target="linked" class="target-option">关联预算</button></div><div id="payment-new-fields">${baseFields(v)}<label class="field form-row"><span>商家或施工方 <small>选填</small></span><input class="plain" name="merchant" value="${esc(v.merchant)}" placeholder="填写商家或施工方" maxlength="100"></label></div><div id="payment-linked-fields">${pickerField('payment-item','关联项目',i?.id||'',i?.name||'选择预算项目','item')}<div id="payment-item-info">${paymentInfo(i)}</div></div>${lookRow(carry['model-kind'])}<div class="field-grid form-row">${dateField('date','支出日期',carry.date||nowDate(),true)}<label class="field"><span>备注 <small>选填</small></span><input class="plain" name="note" value="${esc(v.note)}" placeholder="填写款项用途" maxlength="1000"></label></div><div id="refund-adjustment" class="refund-adjustment" hidden><label class="check-row"><input type="checkbox" id="refund-adjust" name="refund-adjust"><span>同时修改该项目的预计费用</span></label><div id="refund-price-row" hidden><label class="field form-row"><span>调整后预计费用（元）</span><input class="plain" inputmode="decimal" name="refund-price" id="refund-price" placeholder="填写新的项目总费用"></label><p class="form-hint">适用于退货或减项。请填写调整后的总费用，不是本次退款额。</p></div></div><p class="form-hint" id="payment-hint"></p><div class="dialog-actions"><button type="submit" class="button primary" id="payment-save">保存支出</button></div></form>`);
     updatePaymentTarget(linked?'linked':'new');
     if(carry.kind==='refund')updatePaymentKind('refund');
     if(carry['refund-adjust']==='on')$('#refund-adjust').checked=true;
     if(carry['refund-price']!==undefined)$('#refund-price').value=carry['refund-price'];
-    updateRefundAdjustment();draftSnapshot=formSnapshot();
+    updateRefundAdjustment();refreshLook();draftSnapshot=formSnapshot();
   }
   function paymentInfo(i){
     if(!i)return '<p class="form-hint">选择项目后，支出将自动关联该项目。</p>';
@@ -438,7 +509,7 @@
     $('#payment-save').textContent=refund?'保存退款':'保存支出';
     $('#sheet-title').textContent=refund?'记录退款':'记录实际支出';
     if(i?.status==='settled')$('#payment-hint').textContent+=' 该项目已结算，新增收支后将重新核对结算。';
-    updateRefundAdjustment();
+    updateRefundAdjustment();refreshLook();
   }
 
   function updateRefundAdjustment(){
@@ -486,8 +557,9 @@
       next.changes.push({date:new Date().toISOString(),itemId:item.id,note:`退款时调整预计费用：${before} → ${money(revised)}`});
     }
     assertCashTimeline(next,item.id);
+    const placed=kind==='payment'&&lookOnSave(next,item,f.get('model-kind'));
     // A direct expense creates its item and transaction in one validated snapshot.
-    if(await write(next))done(kind==='refund'?'退款已保存':'支出已保存');
+    if(await write(next))done(kind==='refund'?'退款已保存':'支出已保存',placed?()=>revealLook(item.id):null);
   }
   function openDetail(id){
     const i=data.items.find(x=>x.id===id);if(!i)return;
@@ -551,7 +623,7 @@
     if(kind==='category'){title='费用类别';options=CATS.map(c=>({value:c.id,label:c.name}));}
     if(kind==='room'){title='所在空间';options=[...new Set([...ROOMS,...data.items.map(i=>i.room)])].map(r=>({value:r,label:r}));}
     if(kind==='apply'){title='应用到费用项';options=[{value:'new',label:'新增费用项',sub:'不修改现有项目'},...data.items.filter(i=>i.status==='estimate'&&!data.payments.some(t=>t.itemId===i.id)).map(i=>({value:i.id,label:i.name,sub:'当前预计 '+(i.price===null?'待估价':money(i.price))}))];}
-    openPicker(title,options,current,o=>{field.value=o.value;$('#'+button.dataset.field+'-label').textContent=o.label;if(kind==='item'){if(o.value!==current){$('#refund-adjust').checked=false;$('#refund-price').value='';}$('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===o.value));updatePaymentHint();}if(kind==='apply')updateApplyDiff();markDraft();});
+    openPicker(title,options,current,o=>{field.value=o.value;$('#'+button.dataset.field+'-label').textContent=o.label;if(kind==='item'){if(o.value!==current){$('#refund-adjust').checked=false;$('#refund-price').value='';}$('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===o.value));updatePaymentHint();}if(kind==='apply')updateApplyDiff();if(['category','room'].includes(kind))refreshLook();markDraft();});
   }
   // Delegated events keep dynamically rendered pages and bottom sheets consistent.
   document.addEventListener('click',async e=>{
@@ -575,6 +647,7 @@
       else if(a==='close-dialog')closeDialog();
       else if(a==='close-picker')$('#picker').close();
       else if(a==='form-picker')formPicker(b);
+      else if(a==='pick-look')await openLook();
       else if(a==='pick'){const o=pickerState.options[Number(b.dataset.index)];if(o){const fn=pickerState.onPick;$('#picker').close();fn(o);}}
       else if(a==='ledger-tab'){ui.ledgerTab=b.dataset.tab;render();}
       else if(a==='due-list')navigate('ledger',{ledgerTab:'due',category:'all',room:'all',query:''});
@@ -770,7 +843,7 @@
       updatePaymentTarget(values['payment-target']||(values['payment-item']?'linked':'new'));updatePaymentKind(values.kind||'payment');
       $('#payment-item-info').innerHTML=paymentInfo(data.items.find(i=>i.id===values['payment-item']));
     }
-    if(draft.type==='apply')updateApplyDiff();refreshDateFields();
+    if(draft.type==='apply')updateApplyDiff();refreshDateFields();refreshLook();
     const baseNow=draft.type==='apply'?draftBase():activeDraftBase,conflict=Boolean(draft.requiresReview||(draft.baseEntity?JSON.stringify(draft.baseEntity)!==JSON.stringify(baseNow):(baseNow&&draft.baseRevision!==data.revision)));
     activeDraftId=draft.id;activeDraftOriginal=clone(source);activeDraftBase=baseNow;activeDraftReview=conflict;
     if(conflict)appendDraftReview();
@@ -846,6 +919,6 @@
   }
 
   // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
-  window.ZZApp=Object.freeze({validate,version:VERSION});
+  window.ZZApp=Object.freeze({validate,lookOnSave,lookRow,version:VERSION});
   boot();
 })();

@@ -173,3 +173,72 @@ test('1.4.0 ships 我的家 as a lazily imported module with vendored three.js',
   assert.ok(!/PointLight/.test(read('home3d.js')), 'no point lights: the night glow is emissive');
   assert.match(read('home3d.js'), /addEventListener\('touchstart'/);
 });
+
+// 1.5.0 · record-time look: the form's model-kind becomes item.model when the ledger is saved.
+const withFridge = () => {
+  const next = app.validate(base());
+  next.items.push({ id: 'n', name: '冰箱', category: 'furniture', room: '厨房', budget: null, price: null, costMode: 'actual', status: 'confirmed', merchant: '', due: '', note: '' });
+  return next;
+};
+
+test('a look picked in the form is saved on the item with a free spot in its room', () => {
+  const next = withFridge(), item = next.items.find((i) => i.id === 'n');
+  assert.equal(app.lookOnSave(next, item, 'fridgeA'), true);
+  assert.equal(item.model.kind, 'fridgeA');
+  assert.deepEqual(HM.sanitizeModel(item.model), item.model, 'a saveable model');
+  const out = app.validate(JSON.parse(JSON.stringify(next)));
+  assert.deepEqual(out.items.find((i) => i.id === 'n').model, item.model, 'it survives validate()');
+  const { rects } = HM.makeRects(HM.planOf(null, '三室两厅'));
+  const ac = { id: 'ac', category: 'furniture', room: '次卧' };
+  assert.equal(HM.applyLook(ac, 'acA', rects, []), true);
+  assert.equal(ac.model.rot, 0, 'a wall unit goes on the outer wall');
+  assert.equal(app.lookOnSave(next, { ...item, model: undefined }, ''), false, 'saving without a look still works');
+  assert.equal(app.lookOnSave(next, { ...item, model: undefined }, 'spaceship'), false, 'unknown looks are ignored');
+});
+
+test('全屋, other categories and rooms missing from the plan get no look', () => {
+  const next = withFridge(), item = next.items.find((i) => i.id === 'n');
+  item.room = '全屋';
+  assert.equal(app.lookOnSave(next, item, 'fridgeA'), false);
+  assert.ok(!('model' in item));
+  const water = next.items.find((i) => i.id === 'b');
+  assert.equal(app.lookOnSave(next, water, 'sofaA'), false);
+  assert.ok(!('model' in water));
+  const { rects } = HM.makeRects(HM.planOf(null, '两室一厅'));
+  assert.equal(HM.lookState('furniture', '次卧2', rects), 'missing');
+  assert.equal(HM.lookState('furniture', '全屋', rects), 'whole');
+  assert.equal(HM.lookState('soft', '主卧', rects), 'hidden');
+  assert.equal(HM.lookState('furniture', '主卧', rects), 'ok');
+});
+
+test('re-picking a look keeps where the item already stands', () => {
+  const next = withFridge(), sofa = next.items.find((i) => i.id === 'a');
+  sofa.model = { kind: 'sofaA', x: .3, z: .8, rot: 2 };
+  assert.equal(app.lookOnSave(next, sofa, 'sofaB'), true);
+  assert.deepEqual(sofa.model, { kind: 'sofaB', x: .3, z: .8, rot: 2 });
+  assert.equal(app.lookOnSave(next, sofa, 'sofaB'), false, 'the same look changes nothing');
+  assert.equal(app.lookOnSave(next, sofa, ''), false, 'no new pick keeps the model');
+  assert.equal(sofa.model.kind, 'sofaB');
+  // A second sofa in the same room does not land on the first one.
+  const other = { id: 'o', category: 'furniture', room: '客餐厅' };
+  next.items.push(other);
+  assert.equal(app.lookOnSave(next, other, 'sofaC'), true);
+  assert.notDeepEqual([other.model.x, other.model.z], [sofa.model.x, sofa.model.z]);
+});
+
+test('the look is a named form field in both ledger forms, so drafts carry it', () => {
+  const row = app.lookRow('fridgeB');
+  assert.match(row, /<input type="hidden" name="model-kind" id="model-kind" value="fridgeB">/);
+  assert.match(app.lookRow('<x>'), /name="model-kind" id="model-kind" value=""/, 'only known looks are written back');
+  const src = read('app.js');
+  const form = (id) => src.slice(src.indexOf(`<form id="${id}"`), src.indexOf('</form>', src.indexOf(`<form id="${id}"`)));
+  assert.match(form('payment-form'), /\$\{lookRow\(carry\['model-kind'\]\)\}/, 'payment form');
+  assert.match(form('item-form'), /\$\{lookRow\(carry\['model-kind'\]\)\}/, 'item form');
+  // Outside #payment-new-fields / #payment-linked-fields, so switching target never disables it.
+  const pay = form('payment-form');
+  assert.ok(pay.indexOf('lookRow(') > pay.indexOf('${paymentInfo(i)}</div></div>'), 'after both target containers have closed');
+  // Drafts are FormData entries (formFields), restored by field name, so a hidden named input round-trips.
+  assert.match(src, /const fields=\[\.\.\.new FormData\(form\)\.entries\(\)\]/);
+  assert.match(src, /form\.elements\.namedItem\(name\)/);
+  assert.match(src, /lookOnSave\(next,item,f\.get\('model-kind'\)\)/);
+});

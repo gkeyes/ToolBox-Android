@@ -385,7 +385,7 @@ export function createHome(api) {
     tween({ tx: (bb.x0 + bb.x1) / 2 - HOUSE.W / 2, tz: (bb.z0 + bb.z1) / 2 - HOUSE.D / 2, zoom }, 700);
   }
   function stepDrops(now) {
-    drops = drops.filter(d => { const k = Math.min(1, (now - d.t0) / 750); const b = k < 1 ? Math.abs(Math.cos(k * PI * 1.5)) * (1 - k) * 1.6 : 0; d.e.g.position.y = b; d.e.g.scale.setScalar(.6 + .4 * (k < .15 ? k / .15 : 1)); return k < 1; });
+    drops = drops.filter(d => { d.e.g.visible = now >= d.t0; const k = Math.max(0, Math.min(1, (now - d.t0) / 750)); const b = k < 1 ? Math.abs(Math.cos(k * PI * 1.5)) * (1 - k) * 1.6 : 0; d.e.g.position.y = b; d.e.g.scale.setScalar(.6 + .4 * (k < .15 ? k / .15 : 1)); return k < 1; });
     return drops.length > 0;
   }
 
@@ -538,7 +538,21 @@ export function createHome(api) {
   }
   let openSheets = [];
   function openSheet(name) { const el = q(`[data-sheet="${name}"]`); if (!openSheets.includes(el)) openSheets.push(el); el.classList.add('on'); q('.hv-scrim').classList.add('on'); el.querySelector('[data-hv="close"]').focus({ preventScroll: true }); }
-  function closeSheet(el) { el = el || openSheets[openSheets.length - 1]; if (!el) return; el.classList.remove('on'); openSheets = openSheets.filter(x => x !== el); if (!openSheets.length) q('.hv-scrim').classList.remove('on'); }
+  function closeSheet(el) { el = el || openSheets[openSheets.length - 1]; if (!el) return; el.classList.remove('on'); openSheets = openSheets.filter(x => x !== el); if (!openSheets.length) q('.hv-scrim').classList.remove('on'); if (lent && el.dataset.sheet === 'pick') giveBack(); }
+  // 1.5.0 · the ledger form is a modal <dialog>, so the picker borrows a dialog of its own to sit above it;
+  // the sheets go back to <body> once it closes.
+  let lent = null;
+  function giveBack() {
+    const l = lent; lent = null;
+    setTimeout(() => { document.body.appendChild(layer); if (l.dialog.open) l.dialog.close(); l.onClose && l.onClose(); }, reduced() ? 0 : 320);
+  }
+  function lendPicker(dialog, opts) {
+    if (lent) return;
+    lent = { dialog, onClose: opts.onClose };
+    dialog.appendChild(layer); if (!dialog.open) dialog.showModal();
+    q('[data-sheet="pick"]').getBoundingClientRect(); // a frame at rest, so the sheet slides up
+    openPicker(opts);
+  }
   const closeAll = () => [...openSheets].forEach(closeSheet);
   let pick = { sel: null, cb: null };
   function openPicker(opts) {
@@ -662,9 +676,22 @@ export function createHome(api) {
     sync(); fit(); wallsStep(true); last = 0; invalidate();
   }
   function hide() { closeAll(); view = null; if (raf) cancelAnimationFrame(raf); raf = 0; gesture = drag = handleDrag = pinch = null; if (host) { resizeObs.unobserve(host); io?.unobserve(host); } host = null; }
+  // 1.5.0 · after a look is recorded: fly to its room and drop it in (instant with reduced motion).
+  function reveal(id) {
+    if (view !== 'home') return false;
+    sync(); const e = items.get(id); if (!e || !e.shown) return false;
+    focusRoom(e.room, 1.8);
+    if (!reduced()) drops.push({ e, t0: performance.now() + 420 });
+    invalidate(); return true;
+  }
+  function arrange(id) {
+    if (view !== 'home') return;
+    setMode('place'); const e = items.get(id);
+    if (e && e.shown) { select(e); focusRoom(e.room, 1.45); }
+  }
   function setUi(ui) { if (ui && typeof ui.labels === 'boolean') { labelsOn = ui.labels; paintLabelBtn(); paintLabels(); } }
   paintLabelBtn();
   // Test hooks for the screenshot script: none of these change the ledger.
   const debug = { cam, items, select: id => select(items.get(id) || null), screen: (id, h = .3) => { const e = items.get(id); if (!e) return null; const r = canvas.getBoundingClientRect(); const [x, y] = project(new THREE.Vector3(e.x, h, e.z)); return [r.left + x, r.top + y]; }, mode: () => mode, setMode };
-  return { mount, hide, sync, setUi, openPicker, thumbs, debug };
+  return { mount, hide, sync, setUi, openPicker, lendPicker, reveal, arrange, thumbs, debug };
 }

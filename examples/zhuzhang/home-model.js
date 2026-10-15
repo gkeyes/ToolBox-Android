@@ -150,6 +150,30 @@
     const {fx,fz,rot}=best.p;
     return {kind,x:Math.round(fx*10000)/10000,z:Math.round(fz*10000)/10000,rot};
   }
+  // 1.5.0 · the look picked while recording (the form's model-kind) → item.model, in place.
+  // Only 家具家电 in a room of the plan gets a look; 全屋 never does. An item that already stands
+  // somewhere keeps its spot and only changes look; a new one gets a free spot from findSpot.
+  // Returns true when item.model was set or changed (the app then shows it dropping in).
+  function lookState(category,room,rects){
+    if(category!==FURNITURE)return 'hidden';
+    if(room==='全屋')return 'whole';
+    return bbox(rects,room)?'ok':'missing';
+  }
+  function applyLook(item,kind,rects,items=[]){
+    if(!kind||!Object.prototype.hasOwnProperty.call(KINDS,kind))return false;
+    if(lookState(item.category,item.room,rects)!=='ok')return false;
+    const had=sanitizeModel(item.model);
+    if(had){if(had.kind===kind)return false;item.model={...had,kind};return true;}
+    const others=[];
+    for(const o of items){
+      if(o===item||o.id===item.id||o.category!==FURNITURE||o.room!==item.room)continue;
+      const m=sanitizeModel(o.model);if(!m)continue;
+      const p=placeFromModel(m,rects,item.room);if(!p)continue;
+      const [w,d]=footprint(KINDS[m.kind],p.rot);others.push({x:p.x,z:p.z,w,d});
+    }
+    const spot=findSpot(kind,rects,item.room,others);if(!spot)return false;
+    item.model=spot;return true;
+  }
   // Resize handles: interior walls that can move, and the move itself (pure: returns a new plan).
   function handles(t){
     const {W}=makeRects(t),z1=t.D1,z2=t.D1+t.D2,hs=[];let x=0;
@@ -181,7 +205,7 @@
     }
     return out+'</svg>';
   }
-  const api={FURNITURE,KINDS,ORDER,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,handles,moveHandle,planSvg};
+  const api={FURNITURE,KINDS,ORDER,TEMPLATES,TEMPLATE_ORDER,MAX_PER_ROOM,WALL_T,GAP,deriveTemplate,planOf,sizesOf,sanitizeHome,sanitizeModel,makeRects,roomNames,area,bbox,nearestRect,footprint,clampPlacement,placeFromModel,fitsRoom,fitRoom,findSpot,lookState,applyLook,handles,moveHandle,planSvg};
   root.ZZHomeModel=Object.freeze(api);
   if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
