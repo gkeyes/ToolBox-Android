@@ -199,20 +199,25 @@ private fun BrowserAddressCapsule(
             // The domain shrinks to fit rather than being cut, down to a floor that ignores the system
             // font scale so "example.com" stays whole at 320dp; tapping shows the full address. Anything
             // still too long is cut from the start, so the end of the domain is what stays visible.
-            val minHostSize = with(LocalDensity.current) { 10.dp.toSp() }
+            val hostStyle = ToolBoxThemeTokens.textStyles.body.copy(
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = hostColor,
+            )
+            // Below a 0.67 font scale the 10dp floor would exceed the 15sp maximum, which StepBased rejects.
+            val minHostSize = with(LocalDensity.current) { 10.dp.toSp() }.let { if (it.value > 15f) 15.sp else it }
+            // Its own text, so cutting the domain from the start can never hide the status.
+            if (state.interaction.unresponsive) {
+                ToolBoxText("未响应 · ", maxLines = 1, style = hostStyle.copy(fontSize = minHostSize))
+            }
             BasicText(
-                (if (state.interaction.unresponsive) "未响应 · " else "") +
-                    // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
-                    if (BrowserPublicSuffix.ready) browserDisplayHost(uri.host.orEmpty()) else uri.host.orEmpty(),
+                // Checked first: a lookup before the list loads would latch OkHttp's failure for the process.
+                if (BrowserPublicSuffix.ready) browserDisplayHost(uri.host.orEmpty()) else uri.host.orEmpty(),
                 modifier = Modifier.weight(1f, fill = false).testTag("browser_address_host"),
                 maxLines = 1,
                 overflow = TextOverflow.StartEllipsis,
                 autoSize = TextAutoSize.StepBased(minFontSize = minHostSize, maxFontSize = 15.sp, stepSize = 0.5.sp),
-                style = ToolBoxThemeTokens.textStyles.body.copy(
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = hostColor,
-                ),
+                style = hostStyle,
             )
         }
         BrowserRefreshButton(
