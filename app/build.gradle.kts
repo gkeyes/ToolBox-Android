@@ -127,9 +127,8 @@ android {
         }
 
     buildTypes {
-        debug {
-            stableSigningConfig?.let { signingConfig = it }
-        }
+        // Debug keeps the default debug key: a debuggable build signed with the stable key could
+        // replace a user's release install and expose its tool data over adb.
         release {
             isDebuggable = false
             isMinifyEnabled = true

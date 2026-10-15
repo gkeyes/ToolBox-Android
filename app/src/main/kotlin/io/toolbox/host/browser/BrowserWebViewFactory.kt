@@ -27,7 +27,6 @@ import androidx.activity.ComponentActivity
 import androidx.webkit.UserAgentMetadata
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
-import io.toolbox.tool.runtime.validateRuntimeBrowserUrl
 
 /** Activity-side operations the WebView clients call back into. Every page callback first checks that it
  * belongs to the current page ([BrowserUiState.webView]); stale pages are ignored. */
@@ -50,11 +49,7 @@ internal interface BrowserPageHost {
     fun browserChromeTopThresholdPx(): Int
 }
 
-internal fun validBrowserUrl(url: String): String? = try {
-    validateRuntimeBrowserUrl(url)
-} catch (_: IllegalArgumentException) {
-    null
-}
+internal fun validBrowserUrl(url: String): String? = BrowserWebUrl.valid(url)
 
 /** Creates the ordinary-web WebView: settings, user agent, cookies, and the page/chrome/renderer clients. */
 internal class BrowserWebViewFactory(
