@@ -79,6 +79,8 @@ window.ZZRuntime = (() => {
   }
   // ToolBox 0.8.28+ awaits this before an orderly close; older hosts and the browser preview ignore it.
   function onFlush(handler) { try { native?.runtime?.registerFlushHandler?.(handler); } catch (_) {} }
-  return Object.freeze({init,get,set,remove,saveFile,openFile,explain,onFlush,
+  // Presentation state (closing turns false again when the person cancels an exit); ignored where unsupported.
+  function onState(handler) { try { native?.runtime?.onStateChanged?.(handler); } catch (_) {} }
+  return Object.freeze({init,get,set,remove,saveFile,openFile,explain,onFlush,onState,
     get isNative(){return Boolean(native);}, get info(){return info;}});
 })();

@@ -862,8 +862,9 @@
     });return draftQueue;
   }
   // resume: saved by the host's close flush (system Back exit); the next launch reopens this form by itself.
-  // Once closing, later saves (pagehide) keep the mark.
+  // Once closing, later saves (pagehide) keep the mark, until the host reports the exit was cancelled.
   let closing=false;
+  runtime.onState?.(s=>{if(s&&s.closing===false)closing=false;});
   function saveDraftNow({resume=false}={}){
     if(resume)closing=true;resume=resume||closing;
     clearTimeout(draftTimer);const form=$('#sheet form[data-form]');
@@ -989,7 +990,9 @@
   function resumeClosedForm(){
     if(!storageOK||bootError||restoreError)return;
     const d=availableDrafts().find(x=>x.resume);if(!d)return;
-    mutateDrafts(list=>list.map(x=>{if(!x.resume)return x;const{resume,...rest}=x;return rest;})).catch(()=>{});
+    // Unmark in memory first: the restored form's original (put back by 放弃本次修改) must not carry it.
+    const unmark=list=>list.map(x=>{if(!x.resume)return x;const{resume,...rest}=x;return rest;});
+    drafts=unmark(drafts);mutateDrafts(unmark).catch(()=>{});
     restoreDraft(d.id);
     if($('#sheet').open)toast('已恢复上次没保存的内容');
   }
