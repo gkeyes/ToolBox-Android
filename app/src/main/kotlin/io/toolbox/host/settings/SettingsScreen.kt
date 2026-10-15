@@ -38,7 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.toolbox.core.ui.component.ToolBoxGroupedSurface
 import io.toolbox.core.ui.component.ToolBoxIcon
 import io.toolbox.core.ui.component.ToolBoxIconKey
-import io.toolbox.core.ui.component.toolBoxPressFeedback
+import io.toolbox.core.ui.component.toolBoxBareGlow
+import io.toolbox.core.ui.component.toolBoxGlassPress
 import io.toolbox.core.ui.component.toolBoxShape
 import io.toolbox.core.ui.component.ToolBoxTextButton
 import io.toolbox.core.ui.component.ToolBoxBusyIndicator
@@ -212,7 +213,7 @@ private fun SettingsHeroCard(onClick: () -> Unit, modifier: Modifier = Modifier)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .toolBoxPressFeedback(interactionSource, shape = shape)
+            .toolBoxGlassPress(interactionSource, shape = shape, glow = toolBoxBareGlow())
             .clip(shape)
             .background(colors.surface)
             .drawBehind {

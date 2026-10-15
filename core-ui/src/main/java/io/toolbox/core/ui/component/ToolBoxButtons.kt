@@ -142,15 +142,16 @@ private fun ToolBoxActionButton(
             backdrop = LocalToolBoxButtonBackdrop.current ?: emptyBackdrop(),
             modifier = modifier.sizeIn(minWidth = 48.dp),
             enabled = enabled,
-            // Disabled fades the fill and label, not a layer around the button: a layer alpha
-            // would clip the capsule's shadow to a hard rectangle.
-            surfaceColor = if (enabled) glass.container else glass.container.copy(alpha = glass.container.alpha * 0.42f),
+            // Disabled is plain clear glass with a grey label (iOS), whatever the tone: a faded
+            // accent reads as a solid dark-blue slab in dark mode. Colours, not a layer alpha,
+            // which would clip the capsule's shadow to a hard rectangle.
+            surfaceColor = if (enabled) glass.container else toolBoxClearGlassFill(),
             blurRadius = LocalToolBoxButtonBlur.current,
             contentPadding = PaddingValues(horizontal = if (compact) 14.dp else 20.dp),
             height = height,
         ) {
-            val content = if (enabled) glass.content else glass.content.copy(alpha = glass.content.alpha * 0.42f)
-            ToolBoxActionLabel(label, icon, (iconColorOverride ?: glass.content).let { if (enabled) it else it.copy(alpha = it.alpha * 0.42f) },
+            val content = if (enabled) glass.content else ToolBoxThemeTokens.disabledContent
+            ToolBoxActionLabel(label, icon, if (enabled) iconColorOverride ?: glass.content else content,
                 labelStyle.copy(color = content), compact)
         }
         return
