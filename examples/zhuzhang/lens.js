@@ -2,6 +2,8 @@
 // Ported from examples/nextflux/src/design/lens.js: one SVG displacement filter
 // per element size, referenced through --zz-lens. style.css falls back to plain
 // frosted glass when this doesn't run or the engine can't take url() there.
+// 1.4.0: the filter is applied by each element's ::before (inherits --zz-lens), never by the
+// host: a host border or outer shadow shifts where Chromium places the map. Sizes stay in CSS px.
 (() => {
 "use strict";
 const NS = "http://www.w3.org/2000/svg";
@@ -13,6 +15,7 @@ const REGION = 4096; // px of filter region around the element (see filterFor)
 // (the close button paints its 44px disc on ::before, 2px inside a 48px target).
 const TARGETS = [
   { selector: ".bottom-nav" },
+  { selector: ".nav-plus" },
   { selector: ".calc-dock" },
   { selector: ".top-actions > .icon-button" },
 ];

@@ -4,7 +4,7 @@
   // Ledger money is integer cents. DOM content originating from users is escaped.
   const KEY = 'ledger.v1';
   const runtime = window.ZZRuntime;
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const MAX_CENTS = 100000000000;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
@@ -35,8 +35,9 @@
     {id:'furniture',name:'家具家电',icon:'sofa',color:'#c5ab8a'},
     {id:'soft',name:'软装杂项',icon:'lamp',color:'#cbd4c3'}
   ];
-  const ROOMS=['全屋','客餐厅','厨房','主卧','次卧','卫生间','阳台'];
-  const NAV=[['overview','grid','总览','预算总览'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['calculator','calc','测算','费用测算']];
+  const ROOMS=['全屋','客餐厅','厨房','主卧','次卧','次卧2','卫生间','阳台'];
+  const HM=window.ZZHomeModel; // 1.4.0 我的家: templates, saved-shape sanitizers, placement math (home-model.js)
+  const NAV=[['overview','grid','总览','预算总览'],['ledger','list','清单','费用清单'],['statistics','chart','统计','预算统计'],['calculator','calc','测算','费用测算'],['home','home','我的家','我的家']];
   const cat = id => CATS.find(c=>c.id===id) || CATS[0];
 
   // Rebuild a whitelisted shape on restore; reject dangling references and invalid amounts.
@@ -48,6 +49,8 @@
     const cents=(v,positive=false)=>{if(!Number.isSafeInteger(v)||v<0||v>MAX_CENTS||(positive&&v===0))fail('备份中存在无效金额。');return v;};
     const p=source.project;
     const out={schemaVersion:2,project:{name:string(p.name,60,false),area:string(p.area??'',20),layout:string(p.layout??'',60),budget:cents(p.budget),initialBudget:cents(p.initialBudget??p.budget)},revision:Number.isSafeInteger(source.revision)&&source.revision>=0?source.revision:0,completedDrafts:[],items:[],payments:[],changes:[]};
+    // 1.4.0: optional floor plan. Unknown template → dropped (the plan is derived from 户型 again); sizes clamped.
+    const home=HM.sanitizeHome(p.home);if(home)out.project.home=home;
     if(source.completedDrafts!==undefined){if(!Array.isArray(source.completedDrafts))fail('草稿提交记录无效。');out.completedDrafts=[...new Set(source.completedDrafts.map(id=>string(id,100,false)))];}
     const ids=new Set();
     for(const i of source.items){
@@ -56,6 +59,8 @@
       if(!CATS.some(c=>c.id===i.category)||!['estimate','confirmed','settled'].includes(i.status))fail('备份中存在不支持的分类或状态。');
       if(i.due&&!validDate(i.due))fail('备份中付款日期无效。');
       out.items.push({id,name:string(i.name,100,false),category:i.category,room:string(i.room,50,false),budget:i.budget===null?null:cents(i.budget),price:i.price===null?null:cents(i.price),costMode:source.schemaVersion===1?'estimated':(i.costMode||'estimated'),status:i.status,merchant:string(i.merchant??'',100),due:string(i.due??'',10),note:string(i.note??'',1500)});
+      // 1.4.0: optional look and position in 我的家. Unknown look → dropped; fractions and quarter turns clamped.
+      const model=HM.sanitizeModel(i.model);if(model)out.items[out.items.length-1].model=model;
     }
     const pids=new Set();
     for(const t of source.payments){
@@ -81,29 +86,30 @@
   let activeDraftWritten=false,draftsUnreadable=false,drafts=[],storedDraftIds=new Set(),activeDraftOriginal=null,activeDraftId='',activeDraftBase=null,activeDraftReview=false,pendingNavigation=null,draftBusy=false;
   let draftTimer=null,draftQueue=Promise.resolve(),draftSnapshot='',calcTimer=null,calcQueue=Promise.resolve(),calcSaving=Promise.resolve(true);
 
-  let page=['overview','ledger','calculator','statistics'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+  let page=['overview','ledger','calculator','statistics','home'].includes(location.hash.slice(1))?location.hash.slice(1):'overview';
   const ui={page,ledgerTab:'items',category:'all',room:'all',merchant:null,query:'',statsGroup:'category',calcMode:'area',calc:{quantity:'',price:'',loss:'0',labor:'0',auxiliary:'0',freight:'0',install:'0',pack:'',packing:false,fixed:''},baseline:null};
   let pickerState=null, pendingImport=null, applyResult=null, toastTimer;
-  async function write(next){
+  // background: a 我的家 change (moving furniture, the floor plan) that is not the open form's submission.
+  async function write(next,{background=false}={}){
     if(busy)return false;
     busy=true;
-    document.body.classList.add('saving');
-    const submit=$('#sheet [type="submit"]');
+    if(!background)document.body.classList.add('saving');
+    const submit=background?null:$('#sheet [type="submit"]');
     const label=submit?.innerHTML;
-    const controls=$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
+    const controls=background?[]:$$('#sheet input,#sheet button,#sheet textarea').map(el=>[el,el.disabled]);
     controls.forEach(([el])=>el.disabled=true);
     if(submit){submit.disabled=true;submit.textContent='正在保存…';}
     try{
       if(!storageOK)throw new Error(bootError||'存储未就绪；记录未保存，请重试连接。');
       if(restoreError)throw new Error('原始账本无法解析。请先导出原始数据，再导入有效备份。');
-      if(activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
+      if(!background&&activeDraftId&&$('#sheet').open&&$('#sheet form[data-form]'))next.completedDrafts=[...new Set([...(next.completedDrafts||[]),activeDraftId])];
       if(!draftsUnreadable)next.completedDrafts=(next.completedDrafts||[]).filter(id=>id===activeDraftId||storedDraftIds.has(id));
       next=validate(next);next.revision=(data.revision||0)+1;
       await runtime.set(KEY,next);
       data=next;
       return true;
     }catch(error){showError(runtime.explain(error));return false;}
-    finally{busy=false;document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
+    finally{busy=false;if(!background)document.body.classList.remove('saving');controls.forEach(([el,wasDisabled])=>{if(el.isConnected)el.disabled=wasDisabled;});if(submit?.isConnected){submit.disabled=false;submit.innerHTML=label;}}
   }
   const paymentIndex = new WeakMap();
   function cashIndex(source){
@@ -145,7 +151,7 @@
     try{if(el.showPopover&&!el.matches(':popover-open'))el.showPopover();}catch(_){}
     el.classList.add('show');toastTimer=setTimeout(()=>{el.classList.remove('show');try{if(el.hidePopover&&el.matches(':popover-open'))el.hidePopover();}catch(_){}},3000);
   }
-  function showError(message){const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  function showError(message){if(ui.page==='home'&&!$('#guard').open&&!$('#sheet').open&&matchMedia('(max-width:700px)').matches){toast(message);return;}const body=$('#guard').open?$('#guard .guard-content'):$('#sheet').open?$('#sheet-body'):$('#main');let box=body.querySelector('.error-message');if(!box){box=document.createElement('div');box.className='error-message';box.setAttribute('role','alert');body.prepend(box);}box.textContent=message;box.scrollIntoView({block:'nearest',behavior:'smooth'});}
   function dialog(title,html){
     clearTimeout(draftTimer);
     $('#sheet-title').textContent=title;$('#sheet-body').innerHTML=html;
@@ -183,7 +189,7 @@
     const t=totals(),hasBudget=data.project.budget>0,pct=hasBudget?t.expected/data.project.budget*100:0,balance=data.project.budget-t.expected;
     const over=hasBudget&&balance<0,due=dueItems(),first=due[0],recent=[...data.payments].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3),groups=groupItems(),overs=overshoots();
     const reserveText=!hasBudget?'尚未设置总预算，可继续记录费用与支出。':t.unknown?`${t.unknown} 项待估价，暂不判断最终结余。`:t.unbudgeted?`${t.unbudgeted} 项未设置项目预算，未计入分项超支比较。`:t.budget>data.project.budget?`项目预算超额分配 ${money(t.budget-data.project.budget)}。`:t.expected>t.budget?`预计需使用预备金 ${money(t.expected-t.budget)}。`:'预计费用未超出已分配预算。';
-    return heading('装修预算','项目预算、费用预计与实际支出',`<button class="button outline desktop-action" data-action="export">${icon('download','small-icon')}导出备份</button>`)+`
+    return heading('装修预算','项目预算、费用预计与实际支出',`<button class="button outline desktop-action" data-action="export">${icon('download','small-icon')}导出备份</button>`)+homeCard()+`
       <div class="home-grid"><div class="home-left">
       <section class="card budget-card" aria-label="预算概览"><div class="between"><div><div class="budget-label">${t.unknown?'已知费用合计':'预计总费用'}</div><div class="hero-amount num"><span class="currency">¥</span>${fmt(t.expected)}</div></div><span class="badge ${over?'danger':t.unknown?'warn':''}">${!hasBudget?'未设总预算':over?(t.unknown?'已知费用超预算':'预计超支'):t.unknown?'待补估价':'预算内'}</span></div>
       <div class="budget-progress-label"><button class="budget-limit-link" data-action="project">总预算 ${hasBudget?money(data.project.budget):'未设置'}</button><span>${hasBudget?pct.toFixed(1)+'%':'—'}</span></div><div class="progress-track" role="progressbar" aria-label="预计费用占总预算" aria-valuenow="${Math.min(pct,100).toFixed(1)}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="width:${Math.min(pct,100)}%;${over?'background:var(--red)':''}"></div></div>
@@ -273,12 +279,76 @@
 
   function render(){
     document.title='筑账 · '+NAV.find(n=>n[0]===ui.page)[3];
-    const navHtml=mobile=>NAV.map(([p,i,l,full])=>`<button class="${mobile?'':'nav-button '}${ui.page===p?'active':''}" data-action="nav" data-page="${p}" ${ui.page===p?'aria-current="page"':''}>${icon(i)}<span>${mobile?l:full}</span></button>`).join('');
-    $('#side-nav').innerHTML=navHtml(false);$('#bottom-nav').innerHTML=navHtml(true);const quick=document.createElement('button');quick.className='nav-quick';quick.dataset.action='payment';quick.setAttribute('aria-label','记一笔付款或退款');quick.innerHTML='<span class="nav-quick-icon">'+icon('plus')+'</span><span>记一笔</span>';$('#bottom-nav').insertBefore(quick,$('#bottom-nav').children[2]);$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
+    paintNav();$('#crumb-page').textContent=NAV.find(n=>n[0]===ui.page)[3];
     $$('.project-name').forEach(el=>el.textContent=data.project.name);$$('.project-meta').forEach(el=>el.textContent=[data.project.area?data.project.area+'㎡':'',data.project.layout].filter(Boolean).join(' · ')||'项目与预算');
-    $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,ledger:renderLedger,calculator:renderCalculator,statistics:renderStatistics}[ui.page])()}</div>`;
+    $('#main').innerHTML=`<div class="page-content">${({overview:renderOverview,ledger:renderLedger,calculator:renderCalculator,statistics:renderStatistics,home:renderHome}[ui.page])()}</div>`;
     $('#fab').classList.add('hidden');document.body.dataset.page=ui.page;updateChrome();updateDraftBanner();
     const warning=restoreError||bootError;$('#storage-warning').textContent=warning;$('#storage-warning').classList.toggle('hidden',!warning);
+    mountHome();
+  }
+  // 1.4.0 · bottom bar: five tabs in one glass capsule (built once, so the active pill can slide); 记一笔 is the round + beside it.
+  function paintNav(){
+    $('#side-nav').innerHTML=NAV.map(([p,i,,full])=>`<button class="nav-button ${ui.page===p?'active':''}" data-action="nav" data-page="${p}" ${ui.page===p?'aria-current="page"':''}>${icon(i)}<span>${full}</span></button>`).join('');
+    const bar=$('#bottom-nav');
+    if(!bar.querySelector('.nav-pill'))bar.innerHTML='<span class="nav-pill" aria-hidden="true"></span>'+NAV.map(([p,i,l])=>`<button data-action="nav" data-page="${p}">${icon(i)}<span>${l}</span></button>`).join('');
+    for(const b of bar.querySelectorAll('button')){const on=b.dataset.page===ui.page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
+    movePill();
+  }
+  function movePill(){
+    const bar=$('#bottom-nav'),pill=bar.querySelector('.nav-pill'),on=bar.querySelector('button.active');if(!pill)return;
+    if(!on||!on.offsetWidth){pill.style.opacity='0';return;}
+    pill.style.opacity='1';pill.style.width=on.offsetWidth+'px';pill.style.transform=`translateX(${on.offsetLeft}px)`;
+    if(!pill.dataset.ready)requestAnimationFrame(()=>{pill.dataset.ready='1';});
+  }
+  window.addEventListener('resize',()=>{movePill();if(ui.page==='home')homeTop();});
+
+  /* ---------- 1.4.0 · 我的家 bridge: the 3D module is imported only when the card or the tab is shown ---------- */
+  const homeState={mod:null,loading:null,failed:false,ui:{labels:true}};
+  const placedItems=()=>{const t=HM.planOf(data.project.home,data.project.layout),{rects}=HM.makeRects(t),rooms=new Set(HM.roomNames(rects));return {t,rects,rooms,list:data.items.filter(i=>i.category===HM.FURNITURE&&i.room!=='全屋'&&i.model&&rooms.has(i.room))};};
+  function homeCard(){
+    const {t,rooms,list}=placedItems();
+    return `<section class="home-card" data-action="nav" data-page="home" aria-label="我的家"><div class="home-card-slot" id="home-card-slot">${homeState.mod?'':HM.planSvg(t)}</div><div class="home-card-cap"><b>我的家</b><span>${list.length} 件 · ${rooms.size} 个空间</span></div><button class="home-card-go hg gbtn gchip" data-action="nav" data-page="home">进入我的家 ${icon('right','small-icon')}</button></section>`;
+  }
+  function renderHome(){
+    if(!homeState.failed)return `<div class="home-host" id="home-host"><div class="home-loading">${HM.planSvg(placedItems().t)}<span>正在搭建我的家…</span></div></div>`;
+    const {t,rects,list}=placedItems(),counts={};for(const i of list)counts[i.room]=(counts[i.room]||0)+1;
+    return heading('我的家','这台设备暂不支持 3D 显示，下面是户型平面')+`<section class="card card-pad home-fallback">${HM.planSvg(t,counts,{text:true,label:t.n+'平面图'})}<p class="form-hint">${esc(t.n)} · ${HM.roomNames(rects).length} 个空间 · 已放进 ${list.length} 件家具家电。账本的记录与统计不受影响。</p></section>`;
+  }
+  function homeTop(){const bar=$('.topbar');if(bar)document.documentElement.style.setProperty('--home-top',Math.max(0,bar.getBoundingClientRect().bottom)+'px');}
+  function homeWrite(mutate){
+    const run=async()=>{
+      for(let n=0;n<40;n++){
+        if(!busy&&!draftBusy){const next=clone(data);if(mutate(next)===false)return false;return await write(next,{background:true});}
+        await new Promise(r=>setTimeout(r,250));
+      }
+      return false;
+    };
+    return homeQueue=homeQueue.then(run,run);
+  }
+  let homeQueue=Promise.resolve(true);
+  const homeApi=Object.freeze({
+    data:()=>data,paid:i=>paid(i),money,esc,toast,
+    saveModel:(id,model)=>homeWrite(next=>{const i=next.items.find(x=>x.id===id);if(!i)return false;i.model=model;}),
+    saveHome:home=>homeWrite(next=>{next.project.home=home;}),
+    saveUi:value=>{homeState.ui=value;if(storageOK)runtime.set('home.ui.v1',value).catch(()=>{});}
+  });
+  // Probe WebGL before importing three.js: without it the tab shows the static plan, with no error from the renderer.
+  function webglAvailable(){
+    try{const c=document.createElement('canvas'),gl=c.getContext('webgl2')||c.getContext('webgl');if(!gl)return false;gl.getExtension('WEBGL_lose_context')?.loseContext();return true;}catch(_){return false;}
+  }
+  function loadHome(){
+    if(!homeState.loading&&!webglAvailable()){homeState.failed=true;homeState.loading=Promise.resolve(null);if(ui.page==='home')render();}
+    if(!homeState.loading)homeState.loading=import('./home3d.js').then(m=>{homeState.mod=m.createHome(homeApi);homeState.mod.setUi(homeState.ui);window.ZZHomeDebug=homeState.mod.debug;return homeState.mod;}).catch(error=>{
+      homeState.failed=true;console.warn('筑账：我的家 3D 不可用，改用平面图。',error);if(ui.page==='home')render();return null;
+    });
+    return homeState.loading;
+  }
+  function mountHome(){
+    const target=ui.page==='home'?$('#home-host'):ui.page==='overview'?$('#home-card-slot'):null;
+    if(!target||homeState.failed){homeState.mod?.hide();return;}
+    if(!homeState.mod){loadHome().then(mod=>{if(mod&&target.isConnected)mountHome();});return;}
+    if(ui.page==='home')homeTop();
+    target.textContent='';homeState.mod.mount(target,ui.page==='home'?'home':'mini');
   }
 
   function entryTabs(mode,editing=false){
@@ -564,7 +634,7 @@
       if(form.dataset.form==='item')await submitItem(form);
       if(form.dataset.form==='settlement')await submitSettlement(form);
       if(form.dataset.form==='project'){
-        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area.length>20)throw new Error('面积最多 20 个字符。');if(area)fixed(area,2,'面积');const next=clone(data);next.project={name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
+        const f=new FormData(form),budget=String(f.get('budget')||'').trim()===''?0:fixed(f.get('budget'),2,'总预算');const name=String(f.get('name')).trim();if(!name)throw new Error('请填写项目名称。');const area=String(f.get('area')||'').trim();if(area.length>20)throw new Error('面积最多 20 个字符。');if(area)fixed(area,2,'面积');const next=clone(data);next.project={...data.project,name,area,layout:String(f.get('layout')||'').trim(),budget,initialBudget:data.project.initialBudget||data.project.budget||budget};next.changes.push({date:new Date().toISOString(),itemId:'project',note:`总预算 ${money(data.project.budget)} → ${money(budget)}`});if(await write(next))done('项目设置已保存');
       }
       if(form.dataset.form==='apply'){
         const f=new FormData(form),id=String(f.get('apply-target')),next=clone(data),item=next.items.find(i=>i.id===id);if(!applyResult)throw new Error('测算结果已失效，请重新计算。');
@@ -770,9 +840,12 @@
       else data=emptyLedger();
       try{loadDrafts(await runtime.get('draft.v1'));}catch(_){drafts=[];draftsUnreadable=true;}
       try{loadCalc(await runtime.get('calculator.v1'));}catch(_){}
+      try{const v=await runtime.get('home.ui.v1');if(v&&typeof v.labels==='boolean'){homeState.ui={labels:v.labels};homeState.mod?.setUi(homeState.ui);}}catch(_){}
     }catch(error){bootError=runtime.explain(error);}
     render();
   }
 
+  // validate() is exposed for the unit tests; the 3D module talks to the ledger only through homeApi.
+  window.ZZApp=Object.freeze({validate,version:VERSION});
   boot();
 })();
