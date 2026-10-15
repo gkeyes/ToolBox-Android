@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+
+<html data-runtime="toolbox" lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<meta content="#f6f5f1" media="(prefers-color-scheme: light)" name="theme-color"/><meta content="#0c0f0e" media="(prefers-color-scheme: dark)" name="theme-color"/>
+<meta content="light dark" name="color-scheme"/>
+<meta content="筑账：离线装修预算、付款记录、费用测算与统计。" name="description"/>
+<title>筑账 · 装修预算</title>
+
+<link href="style.css" rel="stylesheet"/><link href="icon.svg" rel="icon" type="image/svg+xml"/><script defer="True" src="runtime.js"></script><script defer="True" src="calendar.js"></script><script defer="True" src="app.js"></script></head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"></path><path d="M9 7h6"></path></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect height="7" rx="1.5" width="7" x="3" y="3"></rect><rect height="7" rx="1.5" width="7" x="14" y="3"></rect><rect height="7" rx="1.5" width="7" x="3" y="14"></rect><rect height="7" rx="1.5" width="7" x="14" y="14"></rect></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><rect height="18" rx="2" width="14" x="5" y="3"></rect><path d="M9 8h6M9 12h6M9 16h4"></path></symbol>
+<symbol id="i-calc" viewBox="0 0 24 24"><rect height="19" rx="2.5" width="15" x="4.5" y="2.5"></rect><path d="M8 6.5h8M8 11h1M15 11h1M8 15h1M15 15h1M8 18h1M15 18h1"></path></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h17M6 16V9M12 16V4M18 16v-5"></path></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"></path></symbol>
+<symbol id="i-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"></path></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"></path></symbol>
+<symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"></path></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7v.3"></path></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20 8V6a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14v10H6a3 3 0 0 1-3-3V7"></path><path d="M21 13h-5v4h5Z"></path></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6l4 2"></path></symbol>
+<symbol id="i-tool" viewBox="0 0 24 24"><path d="m14 4 6 6M12 6l6 6M14 4l-3 3 1 3-8 8 2 2 8-8 3 1 3-3M3 3l5 5"></path></symbol>
+<symbol id="i-tile" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"></rect><path d="M3 12h18M12 3v18"></path></symbol>
+<symbol id="i-cabinet" viewBox="0 0 24 24"><rect height="17" rx="1.5" width="16" x="4" y="3"></rect><path d="M12 3v17M9 9v4M15 9v4M6 20v2M18 20v2"></path></symbol>
+<symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M5 18v3M19 18v3"></path><path d="M3 18h18v-7a2 2 0 0 0-4 0v2H7v-2a2 2 0 0 0-4 0Z"></path></symbol>
+<symbol id="i-lamp" viewBox="0 0 24 24"><path d="M8 3h8l4 11H4L8 3ZM12 14v7M8 21h8"></path></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"></path></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v4h16v-4"></path></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"></path><circle cx="9" cy="7" fill="var(--surface)" r="3"></circle><circle cx="15" cy="17" fill="var(--surface)" r="3"></circle></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 4v6h6M3 10a9 9 0 1 1 1 8"></path></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect height="13" rx="2" width="12" x="8" y="8"></rect><path d="M16 8V3H3v13h5"></path></symbol>
+<symbol id="i-leaf" viewBox="0 0 24 24"><path d="M19 4C8 2 3 6 5 13c2 7 13 5 14-9ZM5 20l9-11"></path></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14v6Z"></path></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"></path></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v7l-4 2v-9L4 5Z"></path></symbol>
+</defs></svg>
+<aside aria-label="主导航" class="sidebar">
+<div class="brand"><div class="brand-mark"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></div><div><div class="brand-name">筑账</div><div class="brand-sub">装修预算管理</div></div></div>
+<button aria-label="编辑当前项目与预算" class="project-switch" data-action="project"><span class="project-square"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name small medium">装修项目</strong><span class="project-meta caption muted" style="display:block;margin-top:2px">项目设置</span></span><svg class="icon small-icon chevron" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button>
+<nav class="side-nav" id="side-nav"></nav>
+<button class="button primary sidebar-add" data-action="payment"><svg class="icon" fill="none" stroke="currentColor"><use href="#i-plus"></use></svg>记一笔</button>
+<div class="sidebar-bottom"><button class="text-button" data-action="settings"><svg class="icon small-icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"></use></svg>项目与数据</button><p class="sidebar-foot">筑账 1.2.0 · 离线账本</p></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><div class="crumb"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg><span class="project-name">装修项目</span><span>/</span><span id="crumb-page">预算总览</span></div><button class="mobile-project" data-action="project"><span class="brand-mark"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><use href="#i-home"></use></svg></span><span><strong class="project-name">装修项目</strong><small class="project-meta">项目设置</small></span><svg class="icon" fill="none" stroke="currentColor"><use href="#i-down"></use></svg></button><div class="top-actions"><span class="demo-mark" id="runtime-badge">正在连接</span><button aria-label="项目与数据设置" class="icon-button" data-action="settings"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round"><use href="#i-dots"></use></svg></button></div></header>
+<div class="local-warning hidden" id="storage-warning" role="status"></div>
+<main aria-busy="true" class="main" id="main">正在读取账本…</main>
+</div>
+<nav aria-label="底部导航" class="bottom-nav" id="bottom-nav"></nav>
+<button aria-label="记录付款或退款" class="fab" data-action="payment" id="fab"><svg class="icon" fill="none" stroke="currentColor"><use href="#i-plus"></use></svg>记一笔</button>
+<dialog aria-labelledby="sheet-title" id="sheet"><div class="dialog-shell"><div class="sheet-handle"></div><div class="dialog-head"><h2 id="sheet-title"></h2><span aria-live="polite" class="draft-status" id="draft-status"></span><button aria-label="关闭弹窗" class="icon-button" data-action="close-dialog"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round"><use href="#i-close"></use></svg></button></div><div class="dialog-body" id="sheet-body"></div></div></dialog>
+<dialog aria-labelledby="picker-title" id="picker"><div class="dialog-shell"><div class="sheet-handle"></div><div class="dialog-head"><h2 id="picker-title"></h2><button aria-label="关闭选择面板" class="icon-button" data-action="close-picker"><svg class="icon" fill="none" stroke="currentColor" stroke-linecap="round"><use href="#i-close"></use></svg></button></div><div class="dialog-body"><div class="search-box"><svg class="icon" fill="none" stroke="currentColor"><use href="#i-search"></use></svg><input aria-label="搜索选项" autocomplete="off" id="picker-search" placeholder="搜索"/></div><div class="picker-list" id="picker-list"></div></div></div></dialog>
+<div aria-live="polite" class="toast" id="toast" popover="manual" role="status"></div>
+<input accept=".json,application/json" hidden="" id="import-file" type="file"/>
+<noscript><p style="padding:30px">请启用 JavaScript 以使用筑账。</p></noscript>
+
+<dialog aria-labelledby="guard-title" id="guard"><div class="guard-content"><span class="guard-eyebrow">未完成的编辑</span><h2 id="guard-title">尚有未保存的内容</h2><p>保留草稿可稍后继续。草稿不会计入预算或付款统计。</p><div class="guard-actions"><button class="button primary full" data-action="continue-edit">继续编辑</button><button class="button secondary full" data-action="keep-draft">保留草稿并关闭</button><button class="button danger-button full" data-action="discard-draft">放弃本次修改</button></div></div></dialog></body>
+</html>
+

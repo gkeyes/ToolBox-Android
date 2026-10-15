@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#4FB98F"/><stop offset="0.55" stop-color="#2E8A6A"/><stop offset="1" stop-color="#1D6650"/></linearGradient>
+<radialGradient id="sheen" cx="0.22" cy="0.04" r="0.85"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+<radialGradient id="shade" cx="0.62" cy="1.08" r="0.75"><stop offset="0" stop-color="#000000" stop-opacity="0.22"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+<linearGradient id="glyph" x1="0" y1="0.18" x2="0" y2="0.86" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E9F7F0"/></linearGradient>
+<linearGradient id="coin" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE08A"/><stop offset="1" stop-color="#F2B233"/></linearGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#shade)"/>
+<rect width="1024" height="1024" fill="url(#sheen)"/>
+<g opacity="0.07" transform="translate(0 30)">
+<path d="M512,214L800,442A40,40 0 0 1 815,473V758A50,50 0 0 1 765,808H259A50,50 0 0 1 209,758V473A40,40 0 0 1 224,442Z" fill="#000000"/>
+</g>
+<g opacity="0.09" transform="translate(0 20)">
+<path d="M512,214L800,442A40,40 0 0 1 815,473V758A50,50 0 0 1 765,808H259A50,50 0 0 1 209,758V473A40,40 0 0 1 224,442Z" fill="#000000"/>
+</g>
+<g opacity="0.12" transform="translate(0 11)">
+<path d="M512,214L800,442A40,40 0 0 1 815,473V758A50,50 0 0 1 765,808H259A50,50 0 0 1 209,758V473A40,40 0 0 1 224,442Z" fill="#000000"/>
+</g>
+<g opacity="0.1" transform="translate(0 5)">
+<path d="M512,214L800,442A40,40 0 0 1 815,473V758A50,50 0 0 1 765,808H259A50,50 0 0 1 209,758V473A40,40 0 0 1 224,442Z" fill="#000000"/>
+</g>
+<path d="M512,214L800,442A40,40 0 0 1 815,473V758A50,50 0 0 1 765,808H259A50,50 0 0 1 209,758V473A40,40 0 0 1 224,442Z" fill="url(#glyph)"/>
+<path d="M440,450L512,540L584,450M512,540V700M446,580H578M446,640H578" fill="none" stroke="#2E8A6A" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="translate(742 262)">
+<circle r="104" fill="#000000" opacity="0.12" transform="translate(0 10)"/>
+<circle r="104" fill="url(#coin)"/>
+<circle r="104" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="10"/>
+<path d="M-44,2L-12,34L48,-30" fill="none" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="10"/>
+</svg>
