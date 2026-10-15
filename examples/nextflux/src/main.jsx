@@ -20,10 +20,11 @@ async function boot() {
   window.ToolBox.runtime.registerFlushHandler(async () => {
     // Stores must read the restored preference engine, including during early exit.
     await initializePreferences();
-    const [{ flushSyncWork }, { flushBackgroundWork }] = await Promise.all([
+    const [{ flushSyncWork }, { flushBackgroundWork }, { flushScraperTests }] = await Promise.all([
       import("./stores/syncStore.js"), import("./toolbox/background.js"),
+      import("./toolbox/fulltext-adapter/fulltext-server.mjs"),
     ]);
-    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork()]);
+    const work = await Promise.allSettled([flushSyncWork(), flushBackgroundWork(), flushScraperTests()]);
     await flushPreferences();
     const failure = work.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;
@@ -42,6 +43,8 @@ async function boot() {
   startupStage = "打开阅读界面";
   installLinkHandling();
   await import("./render.jsx");
+  // A full-text test cut short last time left its rule on the server.
+  if (auth.userId) import("./toolbox/fulltext-adapter/rollbacks.js").then(({ replayRollbacks }) => replayRollbacks()).catch(() => {});
 }
 boot().catch((error) => {
   document.getElementById("splash-screen")?.remove();
