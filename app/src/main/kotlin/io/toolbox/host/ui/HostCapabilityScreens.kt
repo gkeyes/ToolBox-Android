@@ -60,9 +60,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -148,7 +145,7 @@ internal fun RuntimeShellScreen(
         }
     }
     val immersiveNavigationBar = isHyperOsGestureNavigation(LocalContext.current)
-    // Last finger-down on the page; a touch ends a run of Backs the page took (see RuntimeExitConfirmation).
+    // When a finger last lifted on the page; a touch ends a run of Backs the page took (see RuntimeExitConfirmation).
     var pageTouchedAt by remember { mutableLongStateOf(0L) }
     ToolBoxRuntimeScaffold(
         modifier = Modifier
@@ -160,16 +157,7 @@ internal fun RuntimeShellScreen(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    // Watches only: nothing is consumed, so the page keeps every touch.
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            if (event.type == PointerEventType.Press) pageTouchedAt = SystemClock.elapsedRealtime()
-                        }
-                    }
-                },
+                .fillMaxSize(),
         ) {
             when (val current = state) {
                 RuntimeUiState.Loading -> RuntimeCenteredState(runtimeLoadingTitle(toolName), "正在准备页面。")
@@ -177,7 +165,17 @@ internal fun RuntimeShellScreen(
                 is RuntimeUiState.Ready -> key(current.webView) {
                     AndroidView(
                         factory = { context ->
-                            android.widget.FrameLayout(context).also { container ->
+                            // Watches only. A finger lifted on the page counts as a touch; an edge Back
+                            // swipe also starts as a touch on the page, but the system cancels it rather
+                            // than lifting it, so it never counts.
+                            object : android.widget.FrameLayout(context) {
+                                override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+                                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
+                                        pageTouchedAt = SystemClock.elapsedRealtime()
+                                    }
+                                    return super.dispatchTouchEvent(event)
+                                }
+                            }.also { container ->
                                 (current.webView.parent as? android.view.ViewGroup)?.removeView(current.webView)
                                 container.addView(
                                     current.webView,
@@ -469,7 +467,8 @@ internal fun RuntimeExitConfirmation(
             askingPage = false
             if (handled) {
                 pageBackStreak++
-                pageTookLastBackAt = SystemClock.elapsedRealtime()
+                // The press time: a touch while the page was still answering also restarts the count.
+                pageTookLastBackAt = now
             } else {
                 pageBackStreak = 0
                 exitBack(now)
