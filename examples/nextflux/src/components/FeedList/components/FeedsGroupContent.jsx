@@ -15,7 +15,6 @@ import {
 import { Link } from "react-router";
 import {
   SidebarMenuAction,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -84,8 +83,15 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
             to={`/category/${category.id}`}
             onClick={() => isMobile && setOpenMobile(false)}
             onContextMenu={handleContextMenu}
+            className="flex-wrap gap-x-[12px] gap-y-0 pl-[44px] pr-[12px]!"
           >
-            <span className="pl-[32px] min-w-0 truncate font-medium">{category.title}</span>
+            {/* At large text on a narrow sidebar the name keeps room for a few
+                characters and the count moves to the next line. */}
+            <span className="min-w-[min(100%,3.6em)] flex-1 truncate font-medium">{category.title}</span>
+            <span className="sidebar-badge ml-auto shrink-0 tabular-nums select-none">
+              {$getCategoryCount(category.id) !== 0 &&
+                $getCategoryCount(category.id)}
+            </span>
           </Link>
         </SidebarMenuButton>
 
@@ -94,10 +100,6 @@ const FeedsGroupContent = ({ category, active, activeFeedId }) => {
             <ChevronRight />
           </SidebarMenuAction>
         </CollapsibleTrigger>
-        <SidebarMenuBadge>
-          {$getCategoryCount(category.id) !== 0 &&
-            $getCategoryCount(category.id)}
-        </SidebarMenuBadge>
         <CollapsibleContent>
           <SidebarMenuSub className="m-0 px-0 border-none">
             {category.feeds.map((feed) => (
