@@ -7,6 +7,7 @@ import {
   AlignStartVertical,
   CaseSensitive,
   ListOrdered,
+  Rows3,
   SquareCode,
   Type,
   UnfoldHorizontal,
@@ -146,6 +147,7 @@ export default function Readability() {
     fontFamily,
     titleFontSize,
     titleAlignType,
+    articleTitleLines,
     showLineNumbers,
     forceDarkCodeTheme,
   } = useStore(settingsState);
@@ -180,6 +182,19 @@ export default function Readability() {
           max={3.0}
           min={1.0}
           step={0.2}
+        />
+        <SliderItem
+          label={t("settings.readability.articleTitleLines")}
+          icon={
+            <SettingIcon variant="purple">
+              <Rows3 />
+            </SettingIcon>
+          }
+          settingName="articleTitleLines"
+          settingValue={articleTitleLines}
+          max={5}
+          min={1}
+          step={1}
         />
       </ItemWrapper>
       <ItemWrapper title={t("settings.readability.text")}>

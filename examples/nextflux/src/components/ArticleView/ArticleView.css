@@ -219,7 +219,7 @@ div.force-dark-code-theme .shiki span {
 }
 .nextflux-continuous-layer[data-phase="idle"] .nextflux-continuous-next-page { visibility: hidden; }
 .nextflux-continuous-layer:not([data-phase="idle"]) .nextflux-continuous-next-page { will-change: transform; }
-.nextflux-continuous-next-page-inner { min-height: 100%; }
+.nextflux-continuous-next-page-inner { min-height: 100%; margin-top: calc(-1 * var(--nf-continuous-shift, 0px)); }
 .nextflux-continuous-progress-dock {
   position: absolute;
   left: 50%;
@@ -295,6 +295,14 @@ div.force-dark-code-theme .shiki span {
   color: var(--ds-text-primary, var(--foreground));
 }
 .nextflux-article-header .article-title .nextflux-article-title-link { font-weight: 700; }
+/* 正文页标题最多显示的行数（设置 › 阅读 › 标题 › 行数） */
+.nf-article-title-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--nf-article-title-lines, 5);
+  line-clamp: var(--nf-article-title-lines, 5);
+  overflow: hidden;
+}
 .nextflux-article-header .nextflux-article-date {
   color: var(--ds-text-secondary, var(--muted));
   font-variant-numeric: tabular-nums;

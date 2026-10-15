@@ -340,6 +340,7 @@ export default {
       articleTitle: "标题",
       titleAlign: "对齐",
       titleFontSize: "大小",
+      articleTitleLines: "行数",
       reset: "重 置",
     },
     speech: {

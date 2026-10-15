@@ -340,6 +340,7 @@ export default {
       articleTitle: "TITRE",
       titleAlign: "Alignement",
       titleFontSize: "Taille",
+      articleTitleLines: "Lignes",
       reset: "Réinitialiser",
     },
     speech: {

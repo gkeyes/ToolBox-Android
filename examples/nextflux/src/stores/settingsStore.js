@@ -9,6 +9,7 @@ const defaultValue = {
   fontFamily: "system-ui",
   titleFontSize: 1.6, // 标题相对于正文大小的倍数
   titleAlignType: "left",
+  articleTitleLines: 5, // 正文页标题最多显示的行数（1–5）
   feedIconShape: "square", // circle, square
   useGrayIcon: false,
   sortDirection: "desc", // asc, desc
@@ -92,6 +93,7 @@ export const resetSettings = () => {
     "fontFamily",
     "titleFontSize",
     "titleAlignType",
+    "articleTitleLines",
     "autoHideToolbar",
     "showLineNumbers",
     "forceDarkCodeTheme",
