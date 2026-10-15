@@ -24,7 +24,21 @@ internal class BrowserUiState {
     var unresponsiveRenderer: WebViewRenderProcess? = null
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
-    var error by mutableStateOf<String?>(null)
+    private var pageMessage by mutableStateOf<String?>(null)
+    /** True when [error] holds a neutral notice (website data cleared), not a page-load failure. */
+    var errorIsNotice by mutableStateOf(false)
+        private set
+    var error: String?
+        get() = pageMessage
+        set(value) {
+            pageMessage = value
+            errorIsNotice = false
+        }
+
+    fun showNotice(message: String) {
+        pageMessage = message
+        errorIsNotice = true
+    }
     var menu by mutableStateOf(false)
     var mediaDiagnosticsSheet by mutableStateOf(false)
     var mediaDiagnosticsRunning by mutableStateOf(false)

@@ -162,7 +162,8 @@ export default function MobileSheet({
       // the sheet already off-screen. Closing must never depend on a CSS
       // transition firing after inline style changes: if the overlay's exit
       // never completes, its backdrop stays mounted and swallows every tap.
-      const offscreen = dialog.getBoundingClientRect().height + 32;
+      // Floating sheets sit above a bottom margin; travel past that too.
+      const offscreen = dialog.getBoundingClientRect().height + 32 + (parseFloat(getComputedStyle(dialog).marginBottom) || 0);
       const pending = { dialog, offscreen, animation: null };
       dismissRef.current = pending;
       const close = () => {

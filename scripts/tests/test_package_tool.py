@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("package_tool", ROOT / "scripts/package-tool.py")
 PACKAGER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PACKAGER)
+# NextFlux's packager carries the repository's dependency-free manifest.schema.json checker.
+SCHEMA_SPEC = importlib.util.spec_from_file_location("nextflux_package", ROOT / "examples/nextflux/package.py")
+SCHEMA_CHECKER = importlib.util.module_from_spec(SCHEMA_SPEC)
+SCHEMA_SPEC.loader.exec_module(SCHEMA_CHECKER)
+SCHEMA = json.loads((ROOT / "schema/manifest.schema.json").read_text(encoding="utf-8"))
 
 
 class PackageToolTest(unittest.TestCase):
@@ -133,6 +138,118 @@ class PackageToolTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     PACKAGER.package_tool(source, root / "result.tbx")
                 self.assertEqual([path.name for path in root.iterdir()], ["source"])
+
+    def write_manifest(self, source, **changes):
+        manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+        manifest.update(changes)
+        (source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    def assert_rejected_without_output(self, prepare):
+        with tempfile.TemporaryDirectory(dir=self.root) as directory:
+            root = Path(directory)
+            source = root / "source"
+            shutil.copytree(self.source, source)
+            prepare(source)
+            with self.assertRaises(ValueError):
+                PACKAGER.package_tool(source, root / "result.tbx")
+            self.assertEqual([path.name for path in root.iterdir()], ["source"])
+
+    def test_host_payload_rules_are_mirrored(self):
+        # ZipArchiveReader.sniffPayload and PackagePathPolicy.forbiddenCode, by name and by content.
+        cases = {
+            "nested.bz2": b"plain", "nested.xz": b"plain", "nested.gz": b"plain",
+            "classes.dex": b"plain", "lib/native.so": b"plain", "Main.class": b"plain",
+            "base.odex": b"plain", "base.vdex": b"plain", "base.oat": b"plain",
+            "elf.js": b"\x7fELF\x02", "dex.txt": b"dex\n035", "java.bin": b"\xca\xfe\xba\xbe",
+            "zip.png": b"PK\x03\x04", "empty-zip.dat": b"PK\x05\x06" + bytes(18), "gzip.css": b"\x1f\x8b\x08",
+            "seven.bin": b"7z\xbc\xaf\x27\x1c", "rar.bin": b"Rar!\x1a\x07\x00", "bzip.bin": b"BZh91AY",
+            "xz.bin": b"\xfd7zXZ\x00", "tar.bin": bytes(257) + b"ustar\x0000",
+        }
+        for name, payload in cases.items():
+            with self.subTest(name=name):
+                def prepare(source, name=name, payload=payload):
+                    (source / name).parent.mkdir(parents=True, exist_ok=True)
+                    (source / name).write_bytes(payload)
+                self.assert_rejected_without_output(prepare)
+
+    def test_host_path_rules_are_mirrored(self):
+        names = ["a%2e%2e.js", "b%2F.js", "c%5c.js", "C:drive.js"]
+        for name in names:
+            with self.subTest(name=name[:40]):
+                self.assert_rejected_without_output(lambda source, name=name: (source / name).write_text("1", encoding="utf-8"))
+        def file_and_directory(source):
+            (source / "Data").write_text("file", encoding="utf-8")
+            (source / "data").mkdir()
+            (source / "data/part.js").write_text("1", encoding="utf-8")
+        self.assert_rejected_without_output(file_and_directory)
+        # Most filesystems cannot hold a longer name; the rule itself still matches the host's 255 bytes.
+        with self.assertRaises(ValueError):
+            PACKAGER.validate_path("dir/" + "é" * 128)
+        self.assertEqual(PACKAGER.validate_path("dir/" + "é" * 127), "dir/" + "é" * 127)
+        # A 255-byte component is still accepted, as on the host.
+        (self.source / ("y" * 252 + ".js")).write_text("1", encoding="utf-8")
+        PACKAGER.package_tool(self.source, self.root / "long-name.tbx")
+
+    def test_core_manifest_rules_are_mirrored(self):
+        long_permission = [{"name": "alarms", "reason": "Wake up"}]
+        cases = {
+            "unknown field": {"futureField": True},
+            "unknown permission": {"permissions": [{"name": "future.capability", "reason": "New"}]},
+            "duplicate permission": {"permissions": [{"name": "storage", "reason": "a"}, {"name": "storage", "reason": "b"}]},
+            "0.3 capability on 0.2 host": {"minHostVersion": "0.2.9", "permissions": long_permission},
+            "dot entry": {"entry": "./index.html"},
+            "empty segment entry": {"entry": "a//index.html"},
+            "non-ASCII entry": {"entry": "页面.html"},
+            "non-HTML entry": {"entry": "app.js"},
+            "directory icon": {"icon": "img/"},
+            "versionCode zero": {"versionCode": 0},
+            "boolean versionCode": {"versionCode": True},
+            "fractional versionCode": {"versionCode": 1.5},
+            "bad id": {"id": "Example"},
+            "bad apiVersion": {"apiVersion": "2.0"},
+            "bad securityProfile": {"securityProfile": "open"},
+            "bad network": {"network": {"maxResponseBytes": 0}},
+            "removed network field": {"network": {"allowDomains": []}},
+            "duplicate categories": {"categories": ["a", "a"]},
+            "bad ui": {"ui": {"orientation": "sideways"}},
+        }
+        for label, changes in cases.items():
+            with self.subTest(case=label):
+                self.assert_rejected_without_output(lambda source, changes=changes: self.write_manifest(source, **changes))
+        for raw in ('{"schemaVersion":1,"schemaVersion":1}', '{"versionCode": NaN}'):
+            with self.subTest(raw=raw):
+                with self.assertRaises(ValueError):
+                    PACKAGER.validate_manifest(raw.encode("utf-8"))
+        accepted = dict(minHostVersion="0.3.0", permissions=long_permission, versionCode=2.0,
+                        network={"maxResponseBytes": 9007199254740991, "timeoutMs": 0},
+                        ui={"orientation": "portrait", "allowFullscreen": True})
+        self.write_manifest(self.source, **accepted)
+        PACKAGER.package_tool(self.source, self.root / "accepted.tbx")
+
+    def test_schema_agrees_with_the_host_manifest_rules(self):
+        base = json.loads((self.source / "manifest.json").read_text(encoding="utf-8"))
+        alarms = [{"name": "alarms", "reason": "Wake up"}]
+        cases = [{"entry": entry} for entry in (
+            "index.html", "pages/help.html", "./index.html", "a//index.html", "a/./index.html",
+            "../index.html", "/index.html", "pages/", "x" * 250 + ".html", "x" * 251 + ".html",
+        )] + [{"icon": icon} for icon in ("icon.svg", "img/", "./icon.svg", "a//icon.svg", "x" * 255, "x" * 256)] + [
+            {"minHostVersion": version, "permissions": alarms}
+            for version in ("0.2.9", "0.3.0", "0.3.0-beta", "0.10.0", "1.0.0", "00.03.00", "0.02.9")
+        ]
+        for changes in cases:
+            manifest = dict(base, **changes)
+            with self.subTest(changes={key: str(value)[:40] for key, value in changes.items()}):
+                try:
+                    PACKAGER.validate_manifest(json.dumps(manifest).encode("utf-8"))
+                    host = True
+                except ValueError:
+                    host = False
+                try:
+                    SCHEMA_CHECKER.schema_check(manifest, SCHEMA, SCHEMA)
+                    schema = True
+                except ValueError:
+                    schema = False
+                self.assertEqual(host, schema)
 
     def test_output_inside_source_is_rejected(self):
         with self.assertRaises(ValueError):
